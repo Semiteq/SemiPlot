@@ -37,9 +37,13 @@
                       IsChecked="{Binding IsSticky, Mode=OneWay}"
                       Command="{Binding ToggleStickyCommand}" />
 
-        <ToggleButton Content="Δ Cursors"
-                      IsChecked="{Binding DeltaCursorsEnabled, Mode=OneWay}"
-                      Command="{Binding ToggleDeltaCursorsCommand}" />
+        <ToggleButton Content="Delta"
+                      IsChecked="{Binding IsDeltaModeEnabled, Mode=OneWay}"
+                      Command="{Binding ToggleDeltaModeCommand}" />
+
+        <TextBlock Text="{Binding DeltaReadoutText}"
+                   IsVisible="{Binding IsDeltaModeEnabled}"
+                   VerticalAlignment="Center" />
 
     </StackPanel>
 

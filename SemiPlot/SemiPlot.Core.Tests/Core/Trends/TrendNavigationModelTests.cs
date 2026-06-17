@@ -136,9 +136,56 @@ public sealed class TrendNavigationModelTests
 
 		model.Zoom(factor: 0.5, anchor: anchor);
 
+		// Width quantization snaps the target onto the zoom ladder, so the result is close to the requested
+		// half-width rather than exactly 5 minutes; the anchor's relative position is still preserved.
 		var anchorFractionAfter = (anchor - model.From) / model.Width;
 		anchorFractionAfter.Should().BeApproximately(anchorFractionBefore, 1e-9);
-		model.Width.Should().Be(TimeSpan.FromMinutes(5.0));
+		model.Width.Should().BeCloseTo(TimeSpan.FromMinutes(5.0), TimeSpan.FromMinutes(1.0));
+	}
+
+	[Fact]
+	public void Zoom_InThenOut_ReturnsToOriginWindowWithinTolerance()
+	{
+		var model = Model(isSticky: false, windowWidth: TimeSpan.FromHours(1.0));
+		var anchor = model.From + (model.Width / 2.0);
+
+		// One zoom snaps the window onto the quantization ladder; capture that as the origin so the cycle is
+		// measured between two on-ladder windows (the starting 1h width is not itself a ladder point).
+		model.Zoom(factor: 0.8, anchor: anchor);
+		model.Zoom(factor: 1.25, anchor: anchor);
+		var fromOrigin = model.From;
+		var toOrigin = model.To;
+		var widthOrigin = model.Width;
+
+		// Anchor at the window centre: width quantization makes the reciprocal in/out factors land on the
+		// same zoom-ladder points, so a centred in-then-out cycle retraces to the origin window exactly.
+		for (var notch = 0; notch < 8; notch++)
+		{
+			model.Zoom(factor: 0.8, anchor: anchor);
+		}
+
+		for (var notch = 0; notch < 8; notch++)
+		{
+			model.Zoom(factor: 1.25, anchor: anchor);
+		}
+
+		model.Width.Should().BeCloseTo(widthOrigin, TimeSpan.FromMilliseconds(1.0));
+		model.From.Should().BeCloseTo(fromOrigin, TimeSpan.FromMilliseconds(1.0));
+		model.To.Should().BeCloseTo(toOrigin, TimeSpan.FromMilliseconds(1.0));
+	}
+
+	[Fact]
+	public void Zoom_OutFarPast_ClampsFromToFirstSample()
+	{
+		var model = Model(isSticky: true, windowWidth: TimeSpan.FromHours(1.0));
+		var anchor = model.From + TimeSpan.FromMinutes(30.0);
+
+		for (var notch = 0; notch < 40; notch++)
+		{
+			model.Zoom(factor: 1.25, anchor: anchor);
+		}
+
+		model.From.Should().BeOnOrAfter(_firstSample);
 	}
 
 	[Fact]

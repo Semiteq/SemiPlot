@@ -3,12 +3,15 @@ using System.Reactive.Linq;
 
 using FluentResults;
 
+using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
 
-namespace SemiPlot.Core.Data;
+namespace SemiPlot.DataSource.Stub;
 
 public sealed class RandomStubDataProvider : IDataProvider
 {
+	private static readonly TimeSpan _archiveDepth = TimeSpan.FromDays(7.0);
+
 	private readonly long _seed;
 	private readonly IScheduler _scheduler;
 	private readonly TimeSpan _realtimeInterval;
@@ -82,6 +85,13 @@ public sealed class RandomStubDataProvider : IDataProvider
 		return Task.FromResult(Result.Ok<IReadOnlyList<PenHistoryEnvelope>>(envelopes));
 	}
 
+	// The synthetic archive reaches back a fixed depth from the current wall-clock.
+	public Task<Result<ArchiveExtent>> QueryArchiveExtentAsync()
+	{
+		var now = _utcNow();
+		return Task.FromResult(Result.Ok(new ArchiveExtent(now - _archiveDepth, now)));
+	}
+
 	private PenHistoryEnvelope BuildEnvelope(
 		long penId,
 		DateTime fromUtc,
@@ -104,8 +114,7 @@ public sealed class RandomStubDataProvider : IDataProvider
 		return MinMaxDecimator.Decimate(penId, timestamps, values, targetColumnCount);
 	}
 
-	// Bad-quality samples map to null at the provider boundary so the null=gap path flows through
-	// the decimator the same way a real OPC bad status would.
+	// Bad-quality samples map to null at the provider boundary so the null=gap path flows downstream.
 	private double? ValueAt(SyntheticPen pen, long penId, long tickIndex)
 	{
 		if (SyntheticQuality.IsBad(penId, tickIndex))

@@ -7,10 +7,8 @@ using SemiPlot.UI.Chart;
 
 namespace SemiPlot.UI.Legend;
 
-// One pen's legend row. It mirrors the pen's live state (visibility, current value, value-at-cursor,
-// active flag, axis range) from the chart view model and turns the two user gestures back into chart
-// calls: the visibility checkbox toggles the pen on the chart, and selecting the row makes it active.
-// All chart access is read-only state plus the two existing mutators; no rendering or scale logic.
+// One pen's legend row: mirrors the pen's live state from the chart view model and turns the visibility
+// and select gestures back into chart calls. No rendering or scale logic.
 public sealed class TrendLegendRowViewModel : ReactiveObject, IDisposable
 {
 	private readonly TrendChartViewModel _chartViewModel;
@@ -103,7 +101,6 @@ public sealed class TrendLegendRowViewModel : ReactiveObject, IDisposable
 		}
 	}
 
-	// Two-way bound to the checkbox; toggling it propagates the new visibility to the pen on the chart.
 	public bool IsVisible
 	{
 		get => _isVisible;
@@ -117,7 +114,6 @@ public sealed class TrendLegendRowViewModel : ReactiveObject, IDisposable
 		}
 	}
 
-	// Selecting the row (clicking it) makes this pen the chart's active pen.
 	public void Select()
 	{
 		_chartViewModel.SetActivePen(_penId);

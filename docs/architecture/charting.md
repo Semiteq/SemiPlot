@@ -110,25 +110,40 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   `CurrentValue`, and the history-load / realtime-append / fold logic.
 - `Chart/ChartAxisBinder` — applies the `PenScaleModel` output to ScottPlot Y axes
   (`AddLeftAxis`/`AddRightAxis`, shared-group axis assignment, `SetLimitsY`, shared-X pinning).
-- `Chart/ChartNavigationController` — owns the `TrendNavigationModel`, the layer-by-zoom mapping,
-  the live-edge advance; raises `WindowChanged` (`NavigationWindow` = `[From, To]` + `Layer`).
+- `Chart/ChartNavigationController` — owns the `TrendNavigationModel`, the layer-by-zoom mapping
+  (with a 10% hysteresis band at each ceiling), the live-edge advance; raises `WindowChanged`
+  (`NavigationWindow` = `[From, To]` + `Layer` + `RequiresHistoryRequery`).
+- `Chart/ChartHistoryRequestDebouncer` — the single chokepoint for gesture-driven history re-queries:
+  `Throttle` (one trailing request after the gesture goes quiet) → query on the data scheduler →
+  `Switch` (latest-wins, drops stale in-flight responses) → apply on the UI scheduler. The startup
+  initial load bypasses it; the first-snap path stays non-requerying.
 - `Chart/ChartRealtimeApplier` — the append-vs-fold rule per layer for incoming `RealtimeBatch`es.
 - `Chart/ChartCursorReader` / `ChartDeltaCursorReader` — view-side state wrapping the Core cursor
-  models, resolving the visible / active pens.
+  models, resolving the visible / active pens (`ChartDeltaCursorReader.FormatReadout` formats Δt/Δy).
+- `Chart/ChartHoverReadout` — wraps a bottom-X-pinned `ScottPlot.Plottables.Text`; shows the local
+  timestamp + every visible pen's `Center` value at the cursor X, suppressed during drag / delta mode.
+- `Chart/LeftButtonTool` (enum `Pan | DeltaPlacement`) — the single left-button gesture state, sourced
+  from the toolbar delta toggle.
+- `Chart/ChartAxisRegion` + `ChartAxisEdit` — Y-axis click-region hit-test (panel band, upper/lower
+  split, pixel→value with Y inversion) and the seed-untouched-bound helper for inline range edits.
 - `Chart/LocalTimeAxis` + `PenLineStyleMap` — UTC↔local-OADate conversion at every render boundary;
   `PenLineStyle` → `Scatter.ConnectStyle`.
 - `Toolbar/TrendToolbarView` + `TrendToolbarViewModel` — autoscale, set-limits, layer selector,
-  jump-to-now, sticky toggle, Δ-cursor toggle (ReactiveUI commands).
+  jump-to-now, sticky toggle, delta-mode toggle + inline Δt/Δy readout (ReactiveUI commands).
 - `Legend/TrendLegendView` + `TrendLegendViewModel` (+ group / row VMs and two converters) — the
   grouped mini-legend: checkbox visibility, color, name, current value, value-at-cursor, scale range.
+- `Minimap/MinimapView` + `MinimapViewModel` — Canvas-based archive-overview strip; navigates via the
+  shared `ChartNavigationController` (see trend-interaction.md).
 
 **Core models (`SemiPlot.Core.Trends`, renderer-agnostic, unit-tested):**
 
 - `PenScaleModel` — per-axis `(Min, Max)` + autoscale mode + visibility + axis key (active pen on
   the primary axis; per-pen or shared-group scaling; Auto / Manual / AutoscaleToWindow; log sanitize).
 - `TrendNavigationModel` — `[from, to]` window, sticky flag, zoom width; pan / zoom / jump-to-now /
-  live-edge advance, clamped 1 s … 1 year.
-- `MinMaxDecimator` — samples + target column count → min AND max per column (+ center).
+  live-edge advance, clamped 1 s … 1 year, zoom width quantized onto a 1.25 ladder, `From ≥ FirstSample`.
+- `MinMaxDecimator` — samples + target column count → min AND max per column (+ center); NaN-gap anchor
+  at empty leading/trailing edge sub-spans. **Lives in `SemiPlot.DataSource.Stub`** (stub-only caller).
+- `MinimapGeometry` — extent + window → strip start/width fractions, and fraction → timestamp.
 - `CursorReadoutModel` — cursor X → per-pen interpolated `Center` value (gaps → no value).
 - `DeltaCursorModel` — two cursor times → `DeltaReadout` (Δt + Δy for the active pen).
 
@@ -144,6 +159,9 @@ view model:
   via `IObservable<TrendHistory>` (layer + envelopes).
 - **Realtime:** `IObservable<RealtimeBatch>` — a union timeline plus per-pen `double?[]` (`null` =
   gap), buffered on the data scheduler and observed on the UI scheduler.
+- **Archive extent:** `QueryArchiveExtentAsync()` returns an `ArchiveExtent(FirstUtc, LastUtc)` —
+  the full stored time span. `TrendCoordinator.QueryArchiveExtentAsync()` is a pass-through to the
+  provider (mirroring `QueryHistoryAsync`); the minimap consumes it (see trend-interaction.md).
 
 These records are ScottPlot's input shape after the view model maps them onto `Coordinates` /
 `FillY` data sources; there is no serialization step.

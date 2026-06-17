@@ -98,20 +98,22 @@ public sealed class TrendToolbarViewModelTests
 	}
 
 	[AvaloniaFact]
-	public void ToggleDeltaCursorsCommand_EnablesAndDisablesOnChart()
+	public void ToggleDeltaModeCommand_EntersAndExitsDeltaModeOnChart()
 	{
 		var (chart, toolbar) = CreateToolbar();
-		toolbar.DeltaCursorsEnabled.Should().BeFalse();
+		toolbar.IsDeltaModeEnabled.Should().BeFalse();
 
-		toolbar.ToggleDeltaCursorsCommand.Execute().Subscribe();
+		toolbar.ToggleDeltaModeCommand.Execute().Subscribe();
 
-		toolbar.DeltaCursorsEnabled.Should().BeTrue();
-		chart.DeltaCursorsEnabled.Should().BeTrue();
+		toolbar.IsDeltaModeEnabled.Should().BeTrue();
+		chart.IsDeltaModeEnabled.Should().BeTrue();
+		chart.ActiveLeftButtonTool.Should().Be(LeftButtonTool.DeltaPlacement);
 
-		toolbar.ToggleDeltaCursorsCommand.Execute().Subscribe();
+		toolbar.ToggleDeltaModeCommand.Execute().Subscribe();
 
-		toolbar.DeltaCursorsEnabled.Should().BeFalse();
-		chart.DeltaCursorsEnabled.Should().BeFalse();
+		toolbar.IsDeltaModeEnabled.Should().BeFalse();
+		chart.IsDeltaModeEnabled.Should().BeFalse();
+		chart.ActiveLeftButtonTool.Should().Be(LeftButtonTool.Pan);
 	}
 
 	[AvaloniaFact]
@@ -169,7 +171,7 @@ public sealed class TrendToolbarViewModelTests
 			scheduler,
 			ImmediateScheduler.Instance,
 			_batchWindow);
-		var chart = new TrendChartViewModel(coordinator, ImmediateScheduler.Instance);
+		var chart = new TrendChartViewModel(coordinator, scheduler, ImmediateScheduler.Instance);
 		var toolbar = new TrendToolbarViewModel(chart);
 
 		return (chart, toolbar);

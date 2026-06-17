@@ -24,6 +24,16 @@ public sealed class ChartAxisBinder
 
 	public IReadOnlyDictionary<string, IYAxis> AxesByKey => _axesByKey;
 
+	// The IYAxis bound to a given axis key, or null before that key's first Apply. The host resolves the
+	// active pen's axis through this so axis-region pointer edits target the same instance the pen renders
+	// against, never a freshly created duplicate.
+	public IYAxis? FindAxis(string axisKey)
+	{
+		ArgumentNullException.ThrowIfNull(axisKey);
+
+		return _axesByKey.GetValueOrDefault(axisKey);
+	}
+
 	public void Apply(
 		IReadOnlyList<PenScale> scales,
 		IReadOnlyDictionary<long, TrendPenState> pensById)

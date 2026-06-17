@@ -2,7 +2,9 @@
 
 using Microsoft.Extensions.DependencyInjection;
 
-namespace SemiPlot.Core.Data;
+using SemiPlot.Core.Data;
+
+namespace SemiPlot.DataSource.Stub;
 
 public static class DataServiceCollectionExtensions
 {

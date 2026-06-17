@@ -12,6 +12,7 @@ using SemiPlot.Core.Data;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.MainWindow;
+using SemiPlot.UI.Minimap;
 
 namespace SemiPlot.UI;
 
@@ -88,13 +89,20 @@ public class App : Application
 			chartViewModel.AddPen(pen);
 		}
 
-		serviceProvider.GetRequiredService<MainWindowViewModel>().ChartViewModel = chartViewModel;
+		var mainWindowViewModel = serviceProvider.GetRequiredService<MainWindowViewModel>();
+		mainWindowViewModel.ChartViewModel = chartViewModel;
+
+		var minimapFactory = serviceProvider
+			.GetRequiredService<Func<TrendCoordinator, ChartNavigationController, IScheduler, MinimapViewModel>>();
+		var minimapViewModel = minimapFactory(coordinator, chartViewModel.Navigation, uiScheduler);
+		mainWindowViewModel.MinimapViewModel = minimapViewModel;
 
 		coordinator.Start();
 
 		// Seed the first history load over the default window so the chart is populated before any user
 		// pan/zoom (the only other re-query path is a navigation gesture).
 		chartViewModel.RequestInitialHistory();
+		_ = minimapViewModel.LoadExtentAsync();
 	}
 
 	private static void EnsureSingleStart()

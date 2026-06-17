@@ -1,12 +1,8 @@
 ﻿namespace SemiPlot.Core.Trends;
 
-// Renderer-agnostic X-trace cursor model. Given a cursor X (timestamp) and each visible pen's
-// decimated envelope, it reads the pen's center-channel value at that X and returns a per-pen map.
-// The center channel is sampled, not the min/max band, so the readout is consistent with the legend.
-//
-// Resolution per pen is gap-aware: an exact column hit returns that column's Center; an X between two
-// finite columns is linearly interpolated; if either bounding column is a NaN gap, or X falls outside
-// the pen's column range, the pen has no value (null). Pens whose envelope is empty are omitted.
+// Renderer-agnostic X-trace cursor model returning each pen's center-channel value at a cursor X.
+// Gap-aware: exact hits return Center, between columns interpolates, but a NaN gap or out-of-range X
+// yields null so the readout never bridges a gap.
 public sealed class CursorReadoutModel
 {
 	public IReadOnlyDictionary<long, double?> ReadAt(

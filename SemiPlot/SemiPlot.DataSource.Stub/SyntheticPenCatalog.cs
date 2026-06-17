@@ -1,6 +1,6 @@
 ﻿using SemiPlot.Core.Trends;
 
-namespace SemiPlot.Core.Data;
+namespace SemiPlot.DataSource.Stub;
 
 public static class SyntheticPenCatalog
 {

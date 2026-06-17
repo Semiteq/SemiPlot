@@ -2,9 +2,8 @@
 
 namespace SemiPlot.UI.Chart;
 
-// Owns the dual-cursor state and resolves the active pen's envelope so the renderer-agnostic
-// DeltaCursorModel can measure Δt/Δy. Kept separate from the chart view model so the cursor view-state
-// has one home and the view model stays within its size budget; the delta math itself lives in Core.
+// Owns the dual-cursor view-state and resolves the active pen's envelope so the renderer-agnostic
+// DeltaCursorModel can measure Δt/Δy.
 public sealed class ChartDeltaCursorReader(
 	IReadOnlyDictionary<long, PenHistoryEnvelope> envelopesById)
 {
@@ -36,5 +35,34 @@ public sealed class ChartDeltaCursorReader(
 			?? _emptyEnvelope with { PenId = activePenId };
 
 		return _deltaCursor.Compute(envelope);
+	}
+
+	// Formats a measurement for the toolbar readout: Δt always shows, Δy only once both endpoints
+	// resolve on the active pen (a gap endpoint yields a dash). Returns an empty string before two
+	// cursors are placed.
+	public static string FormatReadout(DeltaReadout? readout)
+	{
+		if (readout is null)
+		{
+			return string.Empty;
+		}
+
+		var deltaY = readout.DeltaY is { } value ? value.ToString("0.###") : "—";
+		return $"Δt {FormatDeltaTime(readout.DeltaTime)}   Δy {deltaY}";
+	}
+
+	private static string FormatDeltaTime(TimeSpan deltaTime)
+	{
+		if (deltaTime.TotalHours >= 1.0)
+		{
+			return $"{(int)deltaTime.TotalHours}h {deltaTime.Minutes}m {deltaTime.Seconds}s";
+		}
+
+		if (deltaTime.TotalMinutes >= 1.0)
+		{
+			return $"{deltaTime.Minutes}m {deltaTime.Seconds}s";
+		}
+
+		return $"{deltaTime.TotalSeconds:0.###}s";
 	}
 }

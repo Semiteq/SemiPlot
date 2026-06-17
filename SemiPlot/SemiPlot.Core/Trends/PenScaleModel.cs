@@ -1,14 +1,8 @@
 ﻿namespace SemiPlot.Core.Trends;
 
-// Renderer-agnostic axis/scale model. Given each pen's decimated envelope, the per-pen scale
-// settings, the active pen, and the currently visible X window, it computes one PenScale per axis
-// key: its (Min, Max), the mode that produced them, visibility, and whether it carries the active
-// pen. It is pure data: it derives ranges and axis keys only and never touches a renderer.
-//
-// The active pen's axis is marked IsActive so the host can show it on the primary axis; every other
-// axis autoscales independently and is hidden by default. Pens sharing an axis key share one range
-// (a shared-group scale). Logarithmic axes sanitize non-positive values (which have no log) by
-// dropping them before the range is computed.
+// Renderer-agnostic axis/scale model: from each pen's envelope, scale settings, the active pen, and the
+// visible X window it derives one PenScale per axis key (pens sharing a key share a range). Pure data,
+// no renderer. Logarithmic axes drop non-positive values before computing the range.
 public sealed class PenScaleModel
 {
 	private const double AutoPaddingFraction = 0.05;

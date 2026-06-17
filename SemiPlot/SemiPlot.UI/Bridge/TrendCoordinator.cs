@@ -16,7 +16,7 @@ public sealed class TrendCoordinator : IDisposable
 	// Realtime input is coalesced at <= 10 Hz: samples arriving within this window are batched into a
 	// single columnar RealtimeBatch on the data scheduler before crossing to the UI thread.
 	private static readonly TimeSpan _defaultBatchWindow = TimeSpan.FromMilliseconds(100);
-	private const int DefaultTargetColumnCount = 1024;
+	public const int DefaultTargetColumnCount = 1024;
 
 	private readonly IDataProvider _dataProvider;
 	private readonly ILogger<TrendCoordinator> _logger;
@@ -107,6 +107,16 @@ public sealed class TrendCoordinator : IDisposable
 		ObjectDisposedException.ThrowIf(_isDisposed, this);
 
 		return _dataProvider.QueryHistoryAsync(penIds, fromUtc, toUtc, layer, targetColumnCount);
+	}
+
+	// Pass-through to the provider's archive-extent seam (mirrors QueryHistoryAsync). The minimap view
+	// model awaits this and marshals the result onto the UI scheduler, so the minimap never holds the
+	// IDataProvider directly.
+	public Task<Result<ArchiveExtent>> QueryArchiveExtentAsync()
+	{
+		ObjectDisposedException.ThrowIf(_isDisposed, this);
+
+		return _dataProvider.QueryArchiveExtentAsync();
 	}
 
 	public void Dispose()

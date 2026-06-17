@@ -3,6 +3,7 @@
 using SemiPlot.Core.Data;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.Legend;
+using SemiPlot.UI.Minimap;
 using SemiPlot.UI.Toolbar;
 
 namespace SemiPlot.UI.MainWindow;
@@ -14,6 +15,7 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 	private TrendChartViewModel? _chartViewModel;
 	private TrendToolbarViewModel? _toolbarViewModel;
 	private TrendLegendViewModel? _legendViewModel;
+	private MinimapViewModel? _minimapViewModel;
 
 	public MainWindowViewModel(IDataProvider dataProvider)
 	{
@@ -52,10 +54,23 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 		private set => this.RaiseAndSetIfChanged(ref _legendViewModel, value);
 	}
 
+	// Built in the composition root alongside the chart view model (it needs the coordinator and UI
+	// scheduler the chart VM does not surface) and assigned here so it shares the chart's navigation.
+	public MinimapViewModel? MinimapViewModel
+	{
+		get => _minimapViewModel;
+		set
+		{
+			_minimapViewModel?.Dispose();
+			this.RaiseAndSetIfChanged(ref _minimapViewModel, value);
+		}
+	}
+
 	public void Dispose()
 	{
 		_toolbarViewModel?.Dispose();
 		_legendViewModel?.Dispose();
+		_minimapViewModel?.Dispose();
 		_chartViewModel?.Dispose();
 	}
 }

@@ -1,12 +1,10 @@
 ﻿using SemiPlot.Core.Trends;
 
-namespace SemiPlot.Core.Data;
+namespace SemiPlot.DataSource.Stub;
 
-// Reduces a pen's raw samples to a min/max envelope sized for a target number of pixel columns.
-// Each column preserves both the minimum and the maximum value it covers, so a single-sample spike
-// survives that naive Nth-element sampling would drop. Gaps (null values) split the timeline into
-// independent segments separated by NaN columns, so a column never straddles a gap and aliases a
-// spike across it. Inputs already at or below the target are passed through unchanged.
+// Reduces a pen's raw samples to a min/max envelope sized for a target column count. Each column keeps
+// its min and max so a single-sample spike survives; gaps (nulls) split the timeline into segments
+// separated by NaN columns so a column never straddles a gap and aliases a spike across it.
 public static class MinMaxDecimator
 {
 	public static PenHistoryEnvelope Decimate(
@@ -69,9 +67,23 @@ public static class MinMaxDecimator
 		int targetColumnCount)
 	{
 		var segments = SplitIntoNonNullSegments(values);
-		var totalPopulated = segments.Sum(segment => segment.Length);
-		var appendedSegment = false;
+		if (segments.Count == 0)
+		{
+			AppendPassThrough(builder, timestamps, values);
+			return;
+		}
 
+		var totalPopulated = segments.Sum(segment => segment.Length);
+
+		// A null run at the window edges leaves no column there, so the chart would bridge the empty edge
+		// span with a straight line to the live-edge/next point. Anchoring a NaN gap at the window edge
+		// forces the line to segment instead (the right-side straight-line collapse fix).
+		if (segments[0].Start > 0)
+		{
+			builder.AppendGap(timestamps[0]);
+		}
+
+		var appendedSegment = false;
 		foreach (var segment in segments)
 		{
 			if (appendedSegment)
@@ -82,6 +94,13 @@ public static class MinMaxDecimator
 			var columnsForSegment = AllocateColumns(segment.Length, totalPopulated, targetColumnCount);
 			DecimateSegment(builder, timestamps, values, segment, columnsForSegment);
 			appendedSegment = true;
+		}
+
+		var lastSegment = segments[^1];
+		var lastPopulatedIndex = lastSegment.Start + lastSegment.Length - 1;
+		if (lastPopulatedIndex < timestamps.Count - 1)
+		{
+			builder.AppendGap(timestamps[^1]);
 		}
 	}
 

@@ -4,8 +4,8 @@ using AwesomeAssertions;
 
 using Microsoft.Reactive.Testing;
 
-using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
+using SemiPlot.DataSource.Stub;
 
 using Xunit;
 
@@ -235,6 +235,19 @@ public sealed class RandomStubDataProviderTests
 
 		observed.Should().NotBeEmpty();
 		observed.Should().OnlyContain(batch => batch.Count == 0);
+	}
+
+	[Fact]
+	public async Task QueryArchiveExtentAsync_ReturnsSevenDayDepthEndingAtNow()
+	{
+		var now = new DateTime(2026, 6, 15, 12, 0, 0, DateTimeKind.Utc);
+		var provider = new RandomStubDataProvider(new TestScheduler(), utcNow: () => now);
+
+		var result = await provider.QueryArchiveExtentAsync();
+
+		result.IsSuccess.Should().BeTrue();
+		result.Value.LastUtc.Should().Be(now);
+		result.Value.FirstUtc.Should().Be(now - TimeSpan.FromDays(7.0));
 	}
 
 	private static RandomStubDataProvider CreateProvider(IScheduler scheduler)

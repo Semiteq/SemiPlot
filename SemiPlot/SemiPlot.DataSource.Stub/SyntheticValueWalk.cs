@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.Core.Data;
+﻿namespace SemiPlot.DataSource.Stub;
 
 public static class SyntheticValueWalk
 {

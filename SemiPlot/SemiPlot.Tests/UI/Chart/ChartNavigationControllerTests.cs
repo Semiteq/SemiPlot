@@ -156,6 +156,24 @@ public sealed class ChartNavigationControllerTests
 		raised!.RequiresHistoryRequery.Should().BeTrue();
 	}
 
+	[Fact]
+	public void LayerForWidth_DoesNotFlipFlopAcrossOneHourBoundaryUnderHysteresis()
+	{
+		var controller = Loaded();
+
+		// Cross just past the 1h Raw/Minute ceiling, then nudge back and forth inside the hysteresis band.
+		controller.ZoomAt(1.05, controller.To);
+		var layerAfterCrossing = controller.ActiveLayer;
+		layerAfterCrossing.Should().Be(AggregationLayer.Raw);
+
+		for (var notch = 0; notch < 6; notch++)
+		{
+			controller.ZoomAt(1.02, controller.To);
+			controller.ZoomAt(0.98, controller.To);
+			controller.ActiveLayer.Should().Be(AggregationLayer.Raw);
+		}
+	}
+
 	private static ChartNavigationController Loaded()
 	{
 		var controller = new ChartNavigationController();

@@ -1,5 +1,6 @@
 ﻿using System.Reactive;
 using System.Reactive.Disposables;
+using System.Reactive.Linq;
 
 using ReactiveUI;
 
@@ -8,12 +9,9 @@ using SemiPlot.UI.Chart;
 
 namespace SemiPlot.UI.Toolbar;
 
-// Exposes the chart actions as ReactiveUI commands so the toolbar duplicates the axis gestures
-// (autoscale / fixed limits) and carries the layer indicator plus the jump-to-now and sticky-toggle
-// controls. The axis commands operate on the active pen; jump-to-now and the sticky toggle drive the
-// chart's navigation controller, and the sticky flag mirrors the controller's state. The aggregation
-// layer is chosen automatically from the zoom width, so the layer property is a read-only reflection of
-// the controller's active layer rather than a user-settable input.
+// Exposes the chart's axis/navigation actions as ReactiveUI commands for the toolbar. The sticky and
+// delta-mode flags mirror their single sources of truth (the navigation controller and the chart view
+// model); the layer is a read-only reflection of the layer auto-selected from the zoom width.
 public sealed class TrendToolbarViewModel : ReactiveObject, IDisposable
 {
 	private readonly TrendChartViewModel _chartViewModel;
@@ -23,7 +21,7 @@ public sealed class TrendToolbarViewModel : ReactiveObject, IDisposable
 	private double _manualMin;
 	private double _manualMax = 1.0;
 	private bool _isSticky;
-	private bool _deltaCursorsEnabled;
+	private bool _isDeltaModeEnabled;
 
 	public TrendToolbarViewModel(TrendChartViewModel chartViewModel)
 	{
@@ -36,11 +34,19 @@ public sealed class TrendToolbarViewModel : ReactiveObject, IDisposable
 		_disposables.Add(SetActiveAxisLimitsCommand = ReactiveCommand.Create(SetActiveAxisLimits));
 		_disposables.Add(JumpToNowCommand = ReactiveCommand.Create(JumpToNow));
 		_disposables.Add(ToggleStickyCommand = ReactiveCommand.Create(ToggleSticky));
-		_disposables.Add(ToggleDeltaCursorsCommand = ReactiveCommand.Create(ToggleDeltaCursors));
+		_disposables.Add(ToggleDeltaModeCommand = ReactiveCommand.Create(ToggleDeltaMode));
 
 		_chartViewModel.Navigation.WindowChanged += OnNavigationWindowChanged;
 		_disposables.Add(Disposable.Create(() =>
 			_chartViewModel.Navigation.WindowChanged -= OnNavigationWindowChanged));
+
+		_disposables.Add(_chartViewModel
+			.WhenAnyValue(viewModel => viewModel.DeltaReadoutText)
+			.Subscribe(_ => this.RaisePropertyChanged(nameof(DeltaReadoutText))));
+
+		_disposables.Add(_chartViewModel
+			.WhenAnyValue(viewModel => viewModel.IsDeltaModeEnabled)
+			.Subscribe(isEnabled => IsDeltaModeEnabled = isEnabled));
 	}
 
 	public ReactiveCommand<Unit, Unit> AutoscaleActiveAxisCommand { get; }
@@ -51,9 +57,8 @@ public sealed class TrendToolbarViewModel : ReactiveObject, IDisposable
 
 	public ReactiveCommand<Unit, Unit> ToggleStickyCommand { get; }
 
-	public ReactiveCommand<Unit, Unit> ToggleDeltaCursorsCommand { get; }
+	public ReactiveCommand<Unit, Unit> ToggleDeltaModeCommand { get; }
 
-	// Read-only reflection of the layer auto-selected from the current zoom width.
 	public AggregationLayer ActiveLayer
 	{
 		get => _activeLayer;
@@ -78,11 +83,13 @@ public sealed class TrendToolbarViewModel : ReactiveObject, IDisposable
 		private set => this.RaiseAndSetIfChanged(ref _isSticky, value);
 	}
 
-	public bool DeltaCursorsEnabled
+	public bool IsDeltaModeEnabled
 	{
-		get => _deltaCursorsEnabled;
-		private set => this.RaiseAndSetIfChanged(ref _deltaCursorsEnabled, value);
+		get => _isDeltaModeEnabled;
+		private set => this.RaiseAndSetIfChanged(ref _isDeltaModeEnabled, value);
 	}
+
+	public string DeltaReadoutText => _chartViewModel.DeltaReadoutText;
 
 	public void Dispose()
 	{
@@ -115,9 +122,8 @@ public sealed class TrendToolbarViewModel : ReactiveObject, IDisposable
 		_chartViewModel.Navigation.SetSticky(!_chartViewModel.Navigation.IsSticky);
 	}
 
-	private void ToggleDeltaCursors()
+	private void ToggleDeltaMode()
 	{
-		_chartViewModel.SetDeltaCursorsEnabled(!_chartViewModel.DeltaCursorsEnabled);
-		DeltaCursorsEnabled = _chartViewModel.DeltaCursorsEnabled;
+		_chartViewModel.SetDeltaModeEnabled(!_chartViewModel.IsDeltaModeEnabled);
 	}
 }

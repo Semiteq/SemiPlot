@@ -2,7 +2,7 @@
 
 using AwesomeAssertions;
 
-using SemiPlot.Core.Data;
+using SemiPlot.DataSource.Stub;
 
 using Xunit;
 

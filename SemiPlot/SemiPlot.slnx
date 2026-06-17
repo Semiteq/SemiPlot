@@ -1,6 +1,7 @@
 <Solution>
     <Project Path="SemiPlot.Core/SemiPlot.Core.csproj" />
     <Project Path="SemiPlot.Core.Tests/SemiPlot.Core.Tests.csproj" />
+    <Project Path="SemiPlot.DataSource.Stub/SemiPlot.DataSource.Stub.csproj" />
     <Project Path="SemiPlot.Tests/SemiPlot.Tests.csproj" />
     <Project Path="SemiPlot.UI/SemiPlot.UI.csproj" />
 </Solution>

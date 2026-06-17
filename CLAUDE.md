@@ -20,13 +20,24 @@ dotnet format SemiPlot/SemiPlot.slnx                    # pre-commit hook enforc
 
 Tests are split into two projects:
 
-- `SemiPlot.Core.Tests` — pure Core (no UI reference), uses `xunit.v3`. Builds and runs green
-  independently of UI state; hosts the renderer-agnostic model tests (decimation, navigation, scale,
-  cursor, delta).
-- `SemiPlot.Tests` — UI/Bridge/Di tests; references `SemiPlot.UI`. Runs on the
-  `Avalonia.Headless` harness with `xunit` v2 (not v3 — `Avalonia.Headless.XUnit` is xunit-v2-only).
-  `TestAppBuilder.cs` carries `[assembly: AvaloniaTestApplication]`. Tests touching
-  ReactiveUI/ScottPlot pipelines use `[AvaloniaFact]`/`[AvaloniaTheory]`; pure logic stays plain `[Fact]`.
+- `SemiPlot.Core.Tests` — pure Core (no UI reference), uses `xunit.v3` with plain `[Fact]`. Builds and
+  runs green independently of UI state; hosts the renderer-agnostic model tests (decimation, navigation,
+  scale, cursor, delta).
+- `SemiPlot.Tests` — UI/headless tests; references `SemiPlot.UI`. Runs on the `Avalonia.Headless`
+  harness with `xunit` v2 + `Avalonia.Headless.XUnit`. `TestAppBuilder.cs` carries
+  `[assembly: AvaloniaTestApplication]`. Tests touching ReactiveUI/ScottPlot pipelines use
+  `[AvaloniaFact]`/`[AvaloniaTheory]`; pure logic stays plain `[Fact]`.
+
+The split is deliberate and not a temporary workaround: `Avalonia.Headless.XUnit 11.3.8` is built
+against xunit v2 (its `AvaloniaFactAttribute : FactAttribute` plus a v2 test discoverer), while
+`SemiPlot.Core.Tests` is on xunit.v3. One project cannot hold both xunit majors. Merging would force
+Core down to xunit v2 AND re-couple the Core tests to the UI build — losing the ability to run the Core
+model suite independently. So Core tests stay pure (xunit.v3, no UI reference) and headless UI tests
+stay in the `SemiPlot.UI`-referencing project on xunit v2.
+
+Backlog (test unification): bump Avalonia `11.3.8 → 12.0.x` (verify `ScottPlot.Avalonia` compatibility
+on 12 first), then unify the two test projects on xunit.v3 in a single project —
+`Avalonia.Headless.XUnit 12.x` targets xunit.v3.
 
 ```powershell
 dotnet test SemiPlot/SemiPlot.slnx                                       # full suite
@@ -111,9 +122,21 @@ No abbreviations in names.
 
 - MVVM via ReactiveUI: VMs derive from `ReactiveObject`; use `WhenAnyValue`/OAPH/`ReactiveCommand`
   over the one shared `MainThreadScheduler`. Each view owns a `.axaml` + `.axaml.cs` pair.
-- ScottPlot is a thin render target: renderer-agnostic logic (decimation, navigation, scale, cursor)
-  lives in unit-tested Core models; only views touch `AvaPlot`. The data hub (`TrendCoordinator`)
-  feeds the chart VM via `IObservable`/awaitables (see `docs/architecture/data-integration.md`).
+- ScottPlot is a thin render target: renderer-agnostic logic (navigation, scale, cursor) lives in
+  unit-tested Core models; only views touch `AvaPlot`. The data hub (`TrendCoordinator`) feeds the
+  chart VM via `IObservable`/awaitables (see `docs/architecture/data-integration.md`).
+- The left-button gesture is one state, never overlapping branches: a `Chart/LeftButtonTool`
+  (`Pan | DeltaPlacement`) enum sourced from the toolbar delta toggle decides pan vs delta placement,
+  and the axis-region edit is a pre-branch ahead of it. Toolbar `IsSticky` has a single writer (the
+  `WindowChanged` handler refreshing from `Navigation.IsSticky`) — do not reintroduce imperative
+  `IsSticky =` assignments.
+
+### Data-source projects
+
+- `IDataProvider` + its DTOs stay in `SemiPlot.Core`; every concrete provider lives in its own
+  `SemiPlot.DataSource.*` project (`SemiPlot.DataSource.Stub` is the current stub, and owns the
+  stub-only `MinMaxDecimator`). Core must not reference a data-source project; real providers slot in
+  as siblings without touching Core.
 
 ---
 

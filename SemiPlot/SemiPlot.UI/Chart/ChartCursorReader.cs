@@ -3,8 +3,7 @@
 namespace SemiPlot.UI.Chart;
 
 // Selects the visible pens' envelopes and maps a cursor X to each one's center-channel value via the
-// renderer-agnostic CursorReadoutModel. Kept separate so the chart view model stays within its size
-// budget and the visibility filtering has one home; the model itself holds the interpolation/gap math.
+// renderer-agnostic CursorReadoutModel.
 public sealed class ChartCursorReader(
 	IReadOnlyDictionary<long, TrendPenState> pensById,
 	IReadOnlyDictionary<long, PenHistoryEnvelope> envelopesById)

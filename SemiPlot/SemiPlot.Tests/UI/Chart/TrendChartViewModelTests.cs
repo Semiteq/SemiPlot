@@ -4,6 +4,8 @@ using Avalonia.Headless.XUnit;
 
 using AwesomeAssertions;
 
+using FluentResults;
+
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Reactive.Testing;
 
@@ -22,6 +24,7 @@ namespace SemiPlot.Tests.UI.Chart;
 public sealed class TrendChartViewModelTests
 {
 	private static readonly TimeSpan _batchWindow = TimeSpan.FromMilliseconds(33);
+	private static readonly TimeSpan _historyDebounceWindow = TimeSpan.FromMilliseconds(150);
 	private static readonly DateTime _from = new(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
 	private static readonly DateTime _to = new(2026, 6, 15, 9, 0, 0, DateTimeKind.Utc);
 
@@ -204,10 +207,11 @@ public sealed class TrendChartViewModelTests
 	[AvaloniaFact]
 	public void ZoomOut_DrivesACoarserLayerReQuery()
 	{
-		var (viewModel, _, _, provider) = CreateViewModel();
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
 		viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
 
 		viewModel.Navigation.ZoomAt(48.0, viewModel.Navigation.To);
+		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
 
 		viewModel.Navigation.ActiveLayer.Should().Be(AggregationLayer.Minute);
 		provider.LastQueriedLayer.Should().Be(AggregationLayer.Minute);
@@ -216,12 +220,13 @@ public sealed class TrendChartViewModelTests
 	[AvaloniaFact]
 	public void PanBackward_ReQueriesShiftedWindow()
 	{
-		var (viewModel, _, coordinator, provider) = CreateViewModel();
+		var (viewModel, scheduler, coordinator, provider) = CreateViewModel();
 		viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
 		coordinator.RequestHistory([1], _from.AddDays(-1.0), _to);
 		var beforeFrom = viewModel.Navigation.From;
 
 		viewModel.Navigation.PanBy(TimeSpan.FromMinutes(-10.0));
+		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
 
 		viewModel.Navigation.From.Should().BeBefore(beforeFrom);
 		provider.LastQueriedFromUtc.Should().Be(viewModel.Navigation.From);
@@ -459,6 +464,197 @@ public sealed class TrendChartViewModelTests
 		}
 	}
 
+	[AvaloniaFact]
+	public void RapidZoom_EmitsExactlyOneTrailingHistoryRequest()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+
+		// Each notch pushes a window onto the debounced stream within the quiet period, so the throttle
+		// must collapse them to a single trailing query instead of one query per notch.
+		for (var notch = 0; notch < 5; notch++)
+		{
+			viewModel.Navigation.ZoomAt(2.0, viewModel.Navigation.To);
+			scheduler.AdvanceBy(TimeSpan.FromMilliseconds(20).Ticks);
+		}
+
+		provider.HistoryQueryCount.Should().Be(0);
+
+		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+
+		provider.HistoryQueryCount.Should().Be(1);
+	}
+
+	[AvaloniaFact]
+	public void AfterStreamGoesQuiet_TheLastWindowIsQueried()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+
+		viewModel.Navigation.ZoomAt(2.0, viewModel.Navigation.To);
+		scheduler.AdvanceBy(TimeSpan.FromMilliseconds(20).Ticks);
+		viewModel.Navigation.ZoomAt(48.0, viewModel.Navigation.To);
+		var lastFrom = viewModel.Navigation.From;
+		var lastTo = viewModel.Navigation.To;
+		var lastLayer = viewModel.Navigation.ActiveLayer;
+
+		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+
+		provider.LastQueriedFromUtc.Should().Be(lastFrom);
+		provider.LastQueriedToUtc.Should().Be(lastTo);
+		provider.LastQueriedLayer.Should().Be(lastLayer);
+	}
+
+	[AvaloniaFact]
+	public void DefaultLeftButtonTool_IsPan()
+	{
+		var (viewModel, _, _, _) = CreateViewModel();
+
+		viewModel.ActiveLeftButtonTool.Should().Be(LeftButtonTool.Pan);
+	}
+
+	[AvaloniaFact]
+	public void EnteringDeltaMode_SwitchesLeftButtonToolToDeltaPlacement()
+	{
+		var (viewModel, _, _, _) = CreateViewModel();
+
+		viewModel.SetDeltaModeEnabled(true);
+
+		viewModel.IsDeltaModeEnabled.Should().BeTrue();
+		viewModel.ActiveLeftButtonTool.Should().Be(LeftButtonTool.DeltaPlacement);
+	}
+
+	[AvaloniaFact]
+	public void DeltaMode_TwoClicks_PlaceBothCursorsAndSurfaceDeltaTimeAndActivePenDeltaY()
+	{
+		var (viewModel, _, coordinator, _) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+		coordinator.RequestHistory([1], _from, _to);
+		viewModel.SetDeltaModeEnabled(true);
+
+		viewModel.PlaceDeltaCursor(_from);
+		viewModel.PlaceDeltaCursor(_to);
+
+		viewModel.DeltaFirstCursor.Should().Be(_from);
+		viewModel.DeltaSecondCursor.Should().Be(_to);
+		viewModel.DeltaReadout.Should().NotBeNull();
+		viewModel.DeltaReadout!.DeltaTime.Should().Be(_to - _from);
+		viewModel.DeltaReadout.DeltaY.Should().Be(1.0);
+		viewModel.DeltaReadoutText.Should().Contain("Δt").And.Contain("Δy");
+	}
+
+	[AvaloniaFact]
+	public void DeltaMode_RoutesLeftButtonToDeltaPlacementInsteadOfPan()
+	{
+		var (viewModel, _, coordinator, _) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+		coordinator.RequestHistory([1], _from, _to);
+		viewModel.SetDeltaModeEnabled(true);
+
+		viewModel.ActiveLeftButtonTool.Should().Be(LeftButtonTool.DeltaPlacement);
+	}
+
+	[AvaloniaFact]
+	public void ExitingDeltaMode_ReturnsToPanAndClearsCursors()
+	{
+		var (viewModel, _, coordinator, _) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+		coordinator.RequestHistory([1], _from, _to);
+		viewModel.SetDeltaModeEnabled(true);
+		viewModel.PlaceDeltaCursor(_from);
+		viewModel.PlaceDeltaCursor(_to);
+
+		viewModel.SetDeltaModeEnabled(false);
+
+		viewModel.IsDeltaModeEnabled.Should().BeFalse();
+		viewModel.ActiveLeftButtonTool.Should().Be(LeftButtonTool.Pan);
+		viewModel.DeltaFirstCursor.Should().BeNull();
+		viewModel.DeltaSecondCursor.Should().BeNull();
+		viewModel.DeltaReadout.Should().BeNull();
+		viewModel.DeltaReadoutText.Should().BeEmpty();
+	}
+
+	[AvaloniaFact]
+	public void LeftDrag_PansTheNavigationWindow_WithoutPlacingACursorOrZooming()
+	{
+		var (viewModel, scheduler, coordinator, _) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+		coordinator.RequestHistory([1], _from.AddDays(-1.0), _to);
+		var fromBefore = viewModel.Navigation.From;
+		var toBefore = viewModel.Navigation.To;
+		var widthBefore = toBefore - fromBefore;
+
+		viewModel.BeginDrag();
+		viewModel.Navigation.PanBy(TimeSpan.FromMinutes(-10.0));
+		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		viewModel.EndDrag();
+
+		viewModel.ActiveLeftButtonTool.Should().Be(LeftButtonTool.Pan);
+		viewModel.Navigation.From.Should().BeBefore(fromBefore);
+		viewModel.Navigation.To.Should().BeBefore(toBefore);
+		(viewModel.Navigation.To - viewModel.Navigation.From).Should().Be(widthBefore);
+		viewModel.DeltaFirstCursor.Should().BeNull();
+		viewModel.DeltaReadout.Should().BeNull();
+	}
+
+	[AvaloniaFact]
+	public void HoverDuringDrag_DoesNotPublishTheTraceCursor()
+	{
+		var (viewModel, _, coordinator, _) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+		coordinator.RequestHistory([1], _from, _to);
+
+		viewModel.BeginDrag();
+		viewModel.MoveCursor(_from.AddMinutes(30.0));
+
+		viewModel.IsDragging.Should().BeTrue();
+		viewModel.CursorTime.Should().BeNull();
+		viewModel.CursorValues.Should().BeEmpty();
+	}
+
+	[AvaloniaFact]
+	public void HoverAfterDragEnds_PublishesTheTraceCursorAgain()
+	{
+		var (viewModel, _, coordinator, _) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+		coordinator.RequestHistory([1], _from, _to);
+
+		viewModel.BeginDrag();
+		viewModel.EndDrag();
+		viewModel.MoveCursor(_from.AddMinutes(30.0));
+
+		viewModel.IsDragging.Should().BeFalse();
+		viewModel.CursorTime.Should().Be(_from.AddMinutes(30.0));
+	}
+
+	[AvaloniaFact]
+	public void StaleInitialHistory_DoesNotOverwriteANewerDebouncedGestureWindow()
+	{
+		// Cross-path latest-wins: the coordinator's initial history query (sequence 1) is held in flight
+		// while a newer debounced gesture query (sequence 2) completes and loads its window. When the stale
+		// initial result is finally released it must be dropped by the ApplyHistory sequence guard so it
+		// never overwrites the newer window with older data.
+		var (viewModel, scheduler, coordinator, provider) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+
+		provider.GatedLayer = AggregationLayer.Raw;
+		viewModel.RequestInitialHistory();
+
+		viewModel.Navigation.ZoomAt(48.0, viewModel.Navigation.To);
+		viewModel.Navigation.ActiveLayer.Should().NotBe(AggregationLayer.Raw);
+		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+
+		viewModel.FindPen(1)!.CurrentValue.Should().Be(2.0);
+
+		// Release the stale initial query with a recognizably different value; the guard must drop it.
+		provider.HistoryGate.SetResult(Result.Ok<IReadOnlyList<PenHistoryEnvelope>>(
+		[
+			new PenHistoryEnvelope(1, [_from, _to], [99.0, 99.0], [99.0, 99.0], [99.0, 99.0])
+		]));
+
+		viewModel.FindPen(1)!.CurrentValue.Should().Be(2.0);
+	}
+
 	private static (TrendChartViewModel ViewModel, TestScheduler Scheduler, TrendCoordinator Coordinator, FakeDataProvider Provider)
 		CreateViewModel(TimeSpan? realtimeInterval = null)
 	{
@@ -470,7 +666,7 @@ public sealed class TrendChartViewModelTests
 			scheduler,
 			ImmediateScheduler.Instance,
 			_batchWindow);
-		var viewModel = new TrendChartViewModel(coordinator, ImmediateScheduler.Instance);
+		var viewModel = new TrendChartViewModel(coordinator, scheduler, ImmediateScheduler.Instance);
 
 		return (viewModel, scheduler, coordinator, provider);
 	}

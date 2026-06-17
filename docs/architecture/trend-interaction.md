@@ -91,7 +91,18 @@ viewer *behaves* under operator interaction.
 - **Jump-to-real-time** re-attaches sticky; now-marker at the right edge.
 - Panning back is allowed **arbitrarily far, down to the first stored sample** in the DB.
 - **Zoom** spans **1 second to 1 year** with no lag at the 30 FPS budget — guaranteed by
-  decimation, not by the chart control (see "Decimation & performance").
+  decimation, not by the chart control (see "Decimation & performance"). Zoom width is **quantized
+  onto a 1.25 geometric ladder** (`TrendNavigationModel.Zoom`); the reciprocal wheel factors
+  (in 0.8 = 1/1.25, out 1.25) share grid points so an in→out cycle round-trips to the origin width
+  instead of drifting through accumulated float error. `From` is clamped to `≥ FirstSample` so a wide
+  window never reaches back past the first stored sample and renders the missing left span as data.
+- **Zoom history is debounced off the UI thread.** Gesture-driven re-queries flow through a single
+  chokepoint (`Chart/ChartHistoryRequestDebouncer`): `Throttle` collapses rapid notches to one
+  trailing request after the gesture goes quiet, the query runs on the data scheduler, and `Switch`
+  drops any still-in-flight query when a newer window arrives (latest-wins, so a stale response never
+  overwrites the current window). Per-zoom redraws are coalesced through the 30 FPS `Sample(33 ms)`
+  redraw seam, not an inline refresh. The startup `RequestInitialHistory` bypasses the debounce and
+  fires once promptly; the first-snap `TrackDataExtents` path stays non-requerying (single initial load).
 - **Axis scaling:** double-click an axis = autoscale; entering min/max = fixed manual limits.
   The same actions are available from a toolbar.
 - **Autoscale modes:** `auto` (fit data with padding so pens are not flush to top/bottom),
@@ -112,14 +123,39 @@ viewer *behaves* under operator interaction.
 
 ## Navigation & cursors
 
-- **Scroll = zoom; mouse drag = pan.**
+ScottPlot's built-in mouse processing is disabled (`UserInputProcessor.Disable()`); all gestures
+are routed through `Chart/TrendChartView` onto the navigation controller. The left button is a
+single tool with an explicit state (`Chart/LeftButtonTool` = `Pan` | `DeltaPlacement`); the active
+tool is sourced from the toolbar delta-mode toggle (`TrendChartViewModel.ActiveLeftButtonTool`),
+so there is one left-button gesture, not overlapping hidden branches.
+
+- **Scroll = zoom about the cursor anchor; left-drag = hand pan.** Press captures the pointer and
+  switches the cursor to a grab icon (`StandardCursorType.SizeAll`); each move pans the X window via
+  `TrendNavigationModel.Pan`; release ends the drag and restores the hand cursor. The hover readout
+  and cursor line are suppressed for the duration of the drag.
 - **Sticky to real-time by default.** A button detaches sticky (pan into the past); clicking it
-  again re-attaches and returns to real-time.
+  again re-attaches and returns to real-time. `WindowChanged` is the single writer of the toolbar
+  `IsSticky` (refreshed from `Navigation.IsSticky`), so auto-detach and `JumpToNow` re-attach stay
+  in sync with the button — no double write path.
 - **Panning so the live edge scrolls out of the view** auto-detaches sticky.
-- **Vertical cursor (X-trace):** reads each visible pen's value at the cursor X — the standard
-  multi-pen readout (Ignition Power Chart "X Trace": vertical line, interpolated value per pen).
-- **Dual cursors (Δt / Δy)** — **in MVP:** two cursors measuring time/value deltas (step
-  duration, ramp rate).
+- **On-chart hover readout (X-trace):** a `ScottPlot.Plottables.Text` (`Chart/ChartHoverReadout`)
+  pinned to `Plot.Axes.Bottom` shows, on hover, the local timestamp plus every *visible* pen's
+  `Center` value at the cursor X (one line per pen; gap → dash). It is suppressed while a drag is in
+  progress or delta mode is active (`IsDragging || IsDeltaModeEnabled`). Fed synchronously from the
+  view model's already-computed `CursorTime` / `CursorValues` (no new observable).
+- **Delta cursors (Δt / Δy) via an explicit toolbar mode.** A toolbar "Delta" toggle
+  (`TrendToolbarViewModel.IsDeltaModeEnabled`) sets the chart into `DeltaPlacement`: two left clicks
+  place the cursors and drag does NOT pan; toggling off clears the placed cursors and hides the
+  lines. Δt and the **active-pen** Δy (`Core/Trends/DeltaCursorModel` → `DeltaReadout`) are shown in
+  an inline toolbar readout next to the toggle. (The legacy `DeltaCursorsEnabled` flag and the hidden
+  left-click hijack branch were deleted.)
+- **Y-axis click-region range edit.** A press on the active pen's Y-axis panel band
+  (`Chart/ChartAxisRegion`, computed from the last render layout) is handled before pan/delta routing:
+  a single click in the **upper** half edits MAX, the **lower** half edits MIN (top pixel = max,
+  accounting for pixel-Y inversion), opening an inline numeric editor seeded with the clicked value;
+  a **double-click** autoscales the axis (`ScaleMode.Auto`). The untouched bound is carried from the
+  current computed range (`Chart/ChartAxisEdit.SeedManualLimits`) and committed into `PenScaleModel`
+  manual limits. The press never starts a pan or places a delta cursor.
 - ~~Horizontal cursor~~ — dropped from scope.
 
 ## Decimation & performance (architectural core)
@@ -131,7 +167,14 @@ Underwrites "no lag from 1 s to 1 year." A data-layer requirement, not a chart-c
   returns roughly viewport-width points.
 - **Zoom level selects the archive layer** (raw / minute / hour / day): deeper ranges use coarser
   layers — the existing layer design (data-integration.md), validated by industry (MasterSCADA
-  layered archive; AVEVA "Cyclic" retrieval).
+  layered archive; AVEVA "Cyclic" retrieval). `ChartNavigationController.LayerForWidth` applies a
+  **10% hysteresis band** at each ceiling so a notch-by-notch zoom hovering on the 1 h Raw/Minute
+  boundary does not flip-flop the layer every notch (which, at the Raw side, appended a far-right raw
+  point that straight-lined across the wide span).
+- **Empty edge sub-spans render as gaps, not straight lines.** When the visible window's leading or
+  trailing sub-span has no data, `MinMaxDecimator` anchors a `NaN` column at the window edge so the
+  line segments there instead of the chart bridging the empty span with a straight line to the
+  live-edge point (the right-side straight-line collapse fix).
 - **Use a min/max-per-pixel envelope, not plain sampling.** Plain decimation aliases away spikes
   (AVEVA warns of exactly this). Retain min AND max per pixel column so spikes survive (M4:
   min/max/first/last per column → visually lossless; MinMaxLTTB for speed; Power Chart "MinMax").
@@ -160,6 +203,24 @@ Underwrites "no lag from 1 s to 1 year." A data-layer requirement, not a chart-c
 
 - Grouped mini-legend: checkbox / color / name / current value (charting.md). Add **value at
   cursor** and the active pen's **scale range**.
+
+## Archive-overview minimap
+
+A thin overview strip beneath the chart shows the **full archive extent** with the current
+`[From, To]` view window highlighted, for orientation and fast navigation across long archives.
+
+- The extent comes from a new `IDataProvider.QueryArchiveExtentAsync()` seam returning an
+  `ArchiveExtent(FirstUtc, LastUtc)` (data-integration.md). The stub returns a synthetic depth
+  (now − 7 days … now); the real provider will return the true archive bounds.
+- `Minimap/MinimapViewModel` reaches the extent through a `TrendCoordinator.QueryArchiveExtentAsync()`
+  pass-through (mirroring the `QueryHistoryAsync` seam + UI-scheduler discipline); it never holds the
+  `IDataProvider` directly. Extent → strip / window → fractions geometry is pure
+  (`Core/Trends/MinimapGeometry`).
+- `Minimap/MinimapView` is a Canvas-based strip (not a second `AvaPlot`): a highlight border sized
+  from `WindowStartFraction` / `WindowWidthFraction`. Press/drag converts pointer-X to a fraction →
+  `NavigateToFraction`, which recenters the window via the **same** `ChartNavigationController` the
+  chart navigates with. The highlight tracks every `WindowChanged` (pan / zoom and the sticky
+  live-edge advance).
 
 ## Out of scope / later
 

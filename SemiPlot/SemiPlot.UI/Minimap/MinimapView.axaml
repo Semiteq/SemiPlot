@@ -1,0 +1,43 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:minimap="clr-namespace:SemiPlot.UI.Minimap"
+             mc:Ignorable="d"
+             d:DesignWidth="900"
+             d:DesignHeight="36"
+             x:Class="SemiPlot.UI.Minimap.MinimapView"
+             x:DataType="minimap:MinimapViewModel">
+
+    <Border Background="#252526"
+            BorderThickness="0,1,0,0"
+            BorderBrush="Gray">
+        <Canvas Name="StripCanvas"
+                Background="#2D2D30"
+                ClipToBounds="True"
+                Cursor="Hand">
+            <Rectangle Name="Baseline"
+                       Canvas.Left="0"
+                       Height="1"
+                       Fill="#3F3F46" />
+            <TextBlock Name="ExtentFirstLabel"
+                       Canvas.Left="4"
+                       FontSize="10"
+                       Foreground="#A0A0A0"
+                       IsHitTestVisible="False"
+                       Text="{Binding ExtentFirstLabel}" />
+            <TextBlock Name="ExtentLastLabel"
+                       Canvas.Top="0"
+                       FontSize="10"
+                       Foreground="#A0A0A0"
+                       IsHitTestVisible="False"
+                       Text="{Binding ExtentLastLabel}" />
+            <Border Name="WindowHighlight"
+                    Canvas.Top="0"
+                    Background="#603B82F6"
+                    BorderThickness="2"
+                    BorderBrush="#FF60A5FA" />
+        </Canvas>
+    </Border>
+
+</UserControl>

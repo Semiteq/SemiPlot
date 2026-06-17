@@ -14,17 +14,25 @@ and is swappable with the stub.
 - **Realtime:** subscribe to a set of tag ids → stream of samples `(tagId, timestamp, value)`.
 - **History:** `query(tagIds, from, to, layer)` → one series per tag, each a columnar set of
   `(timestamp, value)`. `layer` selects archive resolution (raw / minute / hour / day).
+- **Archive extent:** `QueryArchiveExtentAsync()` → `ArchiveExtent(FirstUtc, LastUtc)` — the full
+  stored time span, consumed by the archive-overview minimap (charting.md / trend-interaction.md).
 - **Quality:** intentionally omitted from the current abstraction (`Sample` carries no
   `quality`). It returns with the real provider, which will surface the archive `q` column for gap
   rendering.
 
+`IDataProvider` and its DTOs (`Pen` / `Sample` / `PenHistoryEnvelope` / `ArchiveExtent`) live in
+`SemiPlot.Core`. The concrete provider lives in a separate `SemiPlot.DataSource.*` project — the
+current stub is `SemiPlot.DataSource.Stub` (which also owns the stub-only `MinMaxDecimator`), so Core
+holds only the abstraction + DTOs and real providers slot in as sibling projects.
+
 Implementations:
 
-- `RandomStubDataProvider` — **current**. Emits deterministic-ish random walks for a set of
-  synthetic pens (realtime stream + synthesized history). Lets the whole UI be built and tested
-  with no SCADA present.
-- `SimpleScadaDataProvider` — **future**. Realtime via OPC UA client; history via SQL; optional
-  TCP fallback. Not implemented yet.
+- `RandomStubDataProvider` (`SemiPlot.DataSource.Stub`) — **current**. Emits deterministic-ish random
+  walks for a set of synthetic pens (realtime stream + synthesized history); `QueryArchiveExtentAsync`
+  returns a synthetic depth (now − 7 days … now). Lets the whole UI be built and tested with no SCADA
+  present.
+- `SimpleScadaDataProvider` (future `SemiPlot.DataSource.*` sibling) — **future**. Realtime via OPC UA
+  client; history via SQL; optional TCP fallback. Not implemented yet.
 
 ## Host↔viewer data contract
 
@@ -44,6 +52,7 @@ The coordinator and view models exchange these `SemiPlot.Core.Trends` records (i
 | `TrendHistory`        | coordinator → VM | `Layer` + `Pens`: per-pen `PenHistoryEnvelope` (`Timestamps` + `Min` + `Max` + `Center`; NaN = gap). |
 | `RequestHistory(...)` | VM → coordinator | `penIds`, `fromUtc`, `toUtc` — re-queries at the current layer. |
 | `SetLayer(layer)`     | VM → coordinator | `raw\|minute\|hour\|day` — updates the layer and re-queries the last window. |
+| `ArchiveExtent`       | provider → minimap | `FirstUtc`, `LastUtc` — full stored span, via `QueryArchiveExtentAsync()`. |
 
 The Simple-Scada integration below (OPC UA + SQL) is unaffected by this change.
 

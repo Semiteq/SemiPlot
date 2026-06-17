@@ -16,7 +16,6 @@ public partial class TrendLegendView : UserControl
 		AvaloniaXamlLoader.Load(this);
 	}
 
-	// Clicking anywhere on a row makes its pen the active pen on the chart.
 	private void OnRowPressed(object? sender, PointerPressedEventArgs eventArgs)
 	{
 		if (sender is Control { DataContext: TrendLegendRowViewModel row })

@@ -1,8 +1,6 @@
 ﻿namespace SemiPlot.Core.Trends;
 
-// Per-pen decimated history: parallel ascending arrays where, for each column, the band spans
-// [Min, Max] and Center is the representative value used by cursor and legend readouts. Gaps are
-// represented by NaN in Min/Max/Center so the renderer can break the line and band at the same X.
+// Per-pen decimated history as parallel ascending arrays; a gap is NaN in Min/Max/Center at that column.
 public sealed record PenHistoryEnvelope(
 	long PenId,
 	IReadOnlyList<DateTime> Timestamps,

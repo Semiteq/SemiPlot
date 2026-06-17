@@ -1,8 +1,6 @@
 ﻿namespace SemiPlot.Core.Trends;
 
-// A coalesced realtime update: one ascending timeline shared by every pen in the batch, with each
-// pen carrying one nullable value per timestamp. A null value marks a gap (no sample / bad quality)
-// at that timestamp for that pen.
+// A coalesced realtime update sharing one ascending timeline across pens; a null value marks a gap.
 public sealed record RealtimeBatch(
 	IReadOnlyList<DateTime> Timestamps,
 	IReadOnlyList<PenRealtimeValues> Pens);

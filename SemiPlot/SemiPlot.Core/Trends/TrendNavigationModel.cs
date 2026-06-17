@@ -1,20 +1,18 @@
 ﻿namespace SemiPlot.Core.Trends;
 
-// Renderer-agnostic time-navigation state machine for a single chart. It owns the visible view
-// window [From, To] (UTC), the sticky flag, and the zoom width (= To - From). It is pure logic:
-// "now" (the live edge) and the first stored sample arrive as inputs, never read from a clock, so
-// the model stays deterministic and unit-testable.
-//
-// Sticky semantics (trend-interaction.md):
-//   - When sticky, the window's right edge tracks the live edge as it advances; width is constant.
-//   - Panning so the live edge scrolls out of the window (into the past) auto-detaches sticky.
-//   - Jump-to-real-time re-attaches sticky and places the now-marker at the RIGHT edge (not centered).
-//   - Panning back is clamped so From never precedes the first stored sample.
-//   - Zoom width is clamped to [1 second, 1 year].
+// Renderer-agnostic time-navigation state machine owning the view window [From, To], the sticky flag,
+// and the zoom width. Pure logic: the live edge and first stored sample arrive as inputs, never a clock.
+// Sticky semantics are specified in trend-interaction.md.
 public sealed class TrendNavigationModel
 {
 	private static readonly TimeSpan MinimumWidth = TimeSpan.FromSeconds(1.0);
 	private static readonly TimeSpan MaximumWidth = TimeSpan.FromDays(365.0);
+
+	// Zoom widths are snapped onto a geometric ladder MinimumWidth * ZoomQuantizationRatio^n. The wheel
+	// uses reciprocal factors (zoom-in 0.8 = 1/1.25, zoom-out 1.25), so quantizing each result onto the
+	// 1.25 grid makes an in-then-out cycle land back on the exact origin width instead of drifting away
+	// through accumulated floating-point error across repeated notches.
+	private const double ZoomQuantizationRatio = 1.25;
 
 	private DateTime _from;
 	private DateTime _to;
@@ -63,8 +61,10 @@ public sealed class TrendNavigationModel
 		}
 	}
 
-	// Changes the window width about an anchor (held fixed in time), clamped to [1 s, 1 year]. The
-	// anchor's relative position inside the window is preserved as the width scales.
+	// Changes the window width about an anchor (held fixed in time), clamped to [1 s, 1 year] and snapped
+	// onto the zoom ladder so reciprocal in/out gestures round-trip. The anchor's relative position inside
+	// the window is preserved as the width scales, and From is clamped so it never precedes the first
+	// stored sample (a window that reached back past it would render the missing left span as data).
 	public void Zoom(double factor, DateTime anchor)
 	{
 		if (factor <= 0.0 || double.IsNaN(factor) || double.IsInfinity(factor))
@@ -73,13 +73,35 @@ public sealed class TrendNavigationModel
 		}
 
 		var currentWidth = Width;
-		var targetWidth = ClampWidthSpan(currentWidth * factor);
+		var targetWidth = ClampWidthSpan(QuantizeWidth(currentWidth * factor));
 
 		var anchorFraction = (anchor - _from) / currentWidth;
 		var from = anchor - (targetWidth * anchorFraction);
+		// Tradeoff: when the computed From would reach back past the first stored sample it is clamped to
+		// FirstSample, which means the anchor is no longer held exactly fixed in time for that one zoom.
+		// Honouring the clamp (never rendering a span with no data on the left) is preferred over keeping
+		// the anchor pinned, since the alternative would draw the missing left span as data.
+		if (from < _firstSample)
+		{
+			from = _firstSample;
+		}
 
 		_from = from;
 		_to = from + targetWidth;
+	}
+
+	// Snaps a width onto the geometric ladder MinimumWidth * ZoomQuantizationRatio^n so the reciprocal
+	// wheel factors land on shared grid points and an in-then-out cycle returns to the origin width.
+	private static TimeSpan QuantizeWidth(TimeSpan width)
+	{
+		if (width <= MinimumWidth)
+		{
+			return MinimumWidth;
+		}
+
+		var steps = Math.Round(Math.Log(width / MinimumWidth) / Math.Log(ZoomQuantizationRatio));
+		var quantizedSeconds = MinimumWidth.TotalSeconds * Math.Pow(ZoomQuantizationRatio, steps);
+		return TimeSpan.FromSeconds(quantizedSeconds);
 	}
 
 	// Re-attaches sticky and places the now-marker at the RIGHT edge, keeping the current width.
@@ -96,8 +118,6 @@ public sealed class TrendNavigationModel
 		IsSticky = false;
 	}
 
-	// When sticky, advances the window so its right edge tracks the live edge, keeping width constant.
-	// When not sticky, the window is left unchanged.
 	public void OnLiveEdge(DateTime now)
 	{
 		if (!IsSticky)

@@ -1,6 +1,6 @@
 ﻿using AwesomeAssertions;
 
-using SemiPlot.Core.Data;
+using SemiPlot.DataSource.Stub;
 
 using Xunit;
 
@@ -197,6 +197,57 @@ public sealed class MinMaxDecimatorTests
 		envelope.Timestamps.Should().HaveCount(2);
 		envelope.Center[1].Should().Be(7.0);
 		envelope.Timestamps[1].Should().Be(timestamps[3]);
+	}
+
+	[Fact]
+	public void Decimate_TrailingNullRun_AnchorsNaNGapAtWindowEnd()
+	{
+		const int sampleCount = 600;
+		const int targetColumns = 30;
+
+		var timestamps = BuildTimestamps(sampleCount);
+		var values = new double?[sampleCount];
+		for (var index = 0; index < sampleCount; index++)
+		{
+			values[index] = index;
+		}
+
+		// Empty the right third of the window so a chart without an edge gap would straight-line across it.
+		for (var index = 400; index < sampleCount; index++)
+		{
+			values[index] = null;
+		}
+
+		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, targetColumns);
+
+		envelope.Timestamps[^1].Should().Be(timestamps[^1]);
+		double.IsNaN(envelope.Center[^1]).Should().BeTrue();
+		envelope.Timestamps.Should().BeInAscendingOrder();
+	}
+
+	[Fact]
+	public void Decimate_LeadingNullRun_AnchorsNaNGapAtWindowStart()
+	{
+		const int sampleCount = 600;
+		const int targetColumns = 30;
+
+		var timestamps = BuildTimestamps(sampleCount);
+		var values = new double?[sampleCount];
+		for (var index = 0; index < sampleCount; index++)
+		{
+			values[index] = index;
+		}
+
+		for (var index = 0; index < 200; index++)
+		{
+			values[index] = null;
+		}
+
+		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, targetColumns);
+
+		envelope.Timestamps[0].Should().Be(timestamps[0]);
+		double.IsNaN(envelope.Center[0]).Should().BeTrue();
+		envelope.Timestamps.Should().BeInAscendingOrder();
 	}
 
 	[Fact]

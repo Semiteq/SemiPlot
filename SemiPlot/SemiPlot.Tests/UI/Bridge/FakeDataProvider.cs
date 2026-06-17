@@ -17,6 +17,10 @@ internal sealed class FakeDataProvider : IDataProvider
 	private readonly IScheduler _scheduler;
 	private readonly TimeSpan _realtimeInterval;
 
+	public DateTime ArchiveFirstUtc { get; set; } = new(2025, 12, 25, 0, 0, 0, DateTimeKind.Utc);
+
+	public DateTime ArchiveLastUtc { get; set; } = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
 	public FakeDataProvider(IScheduler scheduler, TimeSpan realtimeInterval)
 	{
 		_scheduler = scheduler;
@@ -31,6 +35,12 @@ internal sealed class FakeDataProvider : IDataProvider
 	public IReadOnlyList<Pen> Pens { get; }
 
 	public bool FailHistory { get; set; }
+
+	// When set, a history query for this exact layer returns this gate's task instead of completing
+	// synchronously, so a test can hold one query in flight while a newer one completes (cross-path race).
+	public AggregationLayer? GatedLayer { get; set; }
+
+	public TaskCompletionSource<Result<IReadOnlyList<PenHistoryEnvelope>>> HistoryGate { get; } = new();
 
 	public int HistoryQueryCount { get; private set; }
 
@@ -77,6 +87,11 @@ internal sealed class FakeDataProvider : IDataProvider
 			return Task.FromResult(Result.Fail<IReadOnlyList<PenHistoryEnvelope>>("Forced history failure."));
 		}
 
+		if (GatedLayer == layer)
+		{
+			return HistoryGate.Task;
+		}
+
 		var envelopes = penIds
 			.Select(id => new PenHistoryEnvelope(
 				id,
@@ -87,5 +102,10 @@ internal sealed class FakeDataProvider : IDataProvider
 			.ToArray();
 
 		return Task.FromResult(Result.Ok<IReadOnlyList<PenHistoryEnvelope>>(envelopes));
+	}
+
+	public Task<Result<ArchiveExtent>> QueryArchiveExtentAsync()
+	{
+		return Task.FromResult(Result.Ok(new ArchiveExtent(ArchiveFirstUtc, ArchiveLastUtc)));
 	}
 }

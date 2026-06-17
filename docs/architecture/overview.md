@@ -48,10 +48,17 @@ Constraint: **$0 budget** — only free/OSS components.
               ▼
 +-------------------------------------------------------------+
 |  SemiPlot.Core                                              |
-|   - IDataProvider abstraction + records (Pen, envelope, …)  |
-|   - MinMaxDecimator + renderer-agnostic models              |
-|   - RandomStubDataProvider   (current; emits random data)   |
-|   - SimpleScadaDataProvider  (future; OPC UA + SQL)         |
+|   - IDataProvider abstraction + records (Pen, envelope,     |
+|     ArchiveExtent, …)                                       |
+|   - renderer-agnostic models (navigation, scale, cursor, …) |
++-------------------------------------------------------------+
+              │ implemented by a SemiPlot.DataSource.* project
+              ▼
++-------------------------------------------------------------+
+|  SemiPlot.DataSource.Stub  (current)                        |
+|   - RandomStubDataProvider  (emits random data)             |
+|   - MinMaxDecimator + synthetic pen/value generators        |
+|  SemiPlot.DataSource.*  (future; OPC UA + SQL)              |
 +-------------------------------------------------------------+
 ```
 

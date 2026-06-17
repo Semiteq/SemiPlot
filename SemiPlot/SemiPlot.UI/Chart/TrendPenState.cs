@@ -7,10 +7,8 @@ using SemiPlot.Core.Trends;
 
 namespace SemiPlot.UI.Chart;
 
-// Owns one pen's two plottables (the center Scatter line and the Min/Max FillY band) and the
-// backing point buffers, keeping all current-value/visibility bookkeeping off the AvaPlot control
-// so the chart view model stays unit-testable headless. History loads reset the buffers; realtime
-// samples append a single point per pen with the band degenerate (Min == Max) at the live edge.
+// Owns one pen's two plottables (center Scatter line + Min/Max FillY band) and their backing point
+// buffers, keeping value/visibility bookkeeping off the AvaPlot control so the view model stays headless.
 public sealed class TrendPenState : ReactiveObject
 {
 	// Bounds the realtime tail so the buffers do not grow without limit when the chart is detached from
@@ -86,8 +84,7 @@ public sealed class TrendPenState : ReactiveObject
 		CurrentValue = LastNonGapCenter();
 	}
 
-	// Appends the realtime tail: the center line grows by one point and the band degenerates to
-	// Min == Max == value at the live edge (a null sample is a gap, drawn as NaN).
+	// The band degenerates to Min == Max == value at the live edge; a null sample is a gap, drawn as NaN.
 	public void AppendRealtime(DateTime timestampUtc, double? value)
 	{
 		var x = LocalTimeAxis.ToAxis(timestampUtc);
@@ -104,7 +101,6 @@ public sealed class TrendPenState : ReactiveObject
 		}
 	}
 
-	// Drops the oldest realtime points once the tail exceeds the cap, keeping the buffers bounded.
 	private void TrimToCap()
 	{
 		var overflow = _centerPoints.Count - MaxRealtimePoints;
@@ -117,11 +113,8 @@ public sealed class TrendPenState : ReactiveObject
 		_bandPoints.RemoveRange(0, overflow);
 	}
 
-	// At coarse aggregation layers (minute/hour/day) a realtime sample does not draw a raw point;
-	// it folds into the current (last) decimation column, widening that column's Min/Max band and
-	// moving its center, consistent with the decimation envelope contract. A null sample, an empty
-	// buffer, or a gap-valued tail is skipped (the next coarse-layer history re-query supplies the
-	// proper column).
+	// At coarse layers a realtime sample folds into the current (last) decimation column instead of drawing
+	// a raw point, widening its Min/Max band; a null/empty/gap tail is skipped (the next re-query fixes it).
 	public void FoldRealtime(double? value)
 	{
 		if (!value.HasValue || _bandPoints.Count == 0)

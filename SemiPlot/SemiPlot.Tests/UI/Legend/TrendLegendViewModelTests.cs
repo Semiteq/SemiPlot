@@ -136,7 +136,7 @@ public sealed class TrendLegendViewModelTests
 			scheduler,
 			ImmediateScheduler.Instance,
 			_batchWindow);
-		var chart = new TrendChartViewModel(coordinator, ImmediateScheduler.Instance);
+		var chart = new TrendChartViewModel(coordinator, scheduler, ImmediateScheduler.Instance);
 
 		return (chart, coordinator);
 	}

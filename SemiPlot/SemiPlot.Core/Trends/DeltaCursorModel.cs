@@ -1,10 +1,7 @@
 ﻿namespace SemiPlot.Core.Trends;
 
-// Renderer-agnostic dual-cursor model. Two cursors are placed at times t1 and t2; the measurement is
-// Δt = |t2 - t1| plus the active pen's center-channel change Δy = value(t2) - value(t1). Because pens
-// share X but have independent Y scales, a global Δy is meaningless, so Δy is reported only for the
-// active/selected pen passed to Compute. The endpoint values reuse CursorReadoutModel's interpolation
-// and gap rules, so Δy is null when either endpoint lies in a gap or outside the pen's range.
+// Renderer-agnostic dual-cursor model measuring Δt plus the active pen's Δy. Δy is per active pen only
+// (pens share X but not Y) and reuses CursorReadoutModel's interpolation and gap rules.
 public sealed class DeltaCursorModel
 {
 	private readonly CursorReadoutModel _cursorReadout = new();
@@ -15,8 +12,7 @@ public sealed class DeltaCursorModel
 
 	public bool HasBothCursors => FirstCursor.HasValue && SecondCursor.HasValue;
 
-	// Places the next cursor: the first placement sets cursor one, the second sets cursor two, and any
-	// further placement starts a fresh measurement from the new point.
+	// A third placement starts a fresh measurement from the new point.
 	public void Place(DateTime cursorTime)
 	{
 		if (!FirstCursor.HasValue || SecondCursor.HasValue)
@@ -35,9 +31,6 @@ public sealed class DeltaCursorModel
 		SecondCursor = null;
 	}
 
-	// Returns the measurement once both cursors are placed; Δy resolves the active pen's value at each
-	// endpoint and is null when either endpoint is a gap or out of range. Returns null until both
-	// cursors exist.
 	public DeltaReadout? Compute(PenHistoryEnvelope activePenEnvelope)
 	{
 		ArgumentNullException.ThrowIfNull(activePenEnvelope);

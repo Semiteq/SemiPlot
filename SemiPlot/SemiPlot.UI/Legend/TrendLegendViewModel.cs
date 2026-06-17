@@ -6,10 +6,8 @@ using SemiPlot.UI.Chart;
 
 namespace SemiPlot.UI.Legend;
 
-// The grouped mini-legend. It builds one row per chart pen, groups them by Pen.Group, and lets each
-// row reflect the pen's live state and drive visibility/active-pen back onto the chart. The legend
-// holds no scale or render logic itself: it only projects the chart view model's read surface into a
-// grouped, bindable shape and disposes the per-pen row subscriptions.
+// The grouped mini-legend: one row per chart pen grouped by Pen.Group, projecting the chart view model's
+// read surface into a bindable shape. Holds no scale or render logic.
 public sealed class TrendLegendViewModel : ReactiveObject, IDisposable
 {
 	private readonly IReadOnlyList<TrendLegendRowViewModel> _rows;

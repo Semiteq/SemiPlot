@@ -8,16 +8,16 @@ public interface IDataProvider
 {
 	IReadOnlyList<Pen> Pens { get; }
 
-	// Cold per call: each call returns an independent sequence and no samples flow until subscribed.
-	// The subscriber owns the returned IDisposable and tears the subscription down by disposing it.
+	// Cold per call: no samples flow until subscribed; the subscriber disposes the returned IDisposable.
 	IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<long> penIds);
 
-	// Returns a decimated min/max envelope per pen sized to targetColumnCount. The stub decimates
-	// in process; a future server-side SQL aggregate replaces that behind this same seam.
+	// Returns a decimated min/max envelope per pen sized to targetColumnCount.
 	Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(
 		IReadOnlyList<long> penIds,
 		DateTime fromUtc,
 		DateTime toUtc,
 		AggregationLayer layer,
 		int targetColumnCount);
+
+	Task<Result<ArchiveExtent>> QueryArchiveExtentAsync();
 }

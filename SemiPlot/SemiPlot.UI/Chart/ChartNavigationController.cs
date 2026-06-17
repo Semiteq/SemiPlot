@@ -2,17 +2,21 @@
 
 namespace SemiPlot.UI.Chart;
 
-// Owns the time-navigation state machine and the layer-by-zoom mapping so the chart view model and
-// the view stay thin. Scroll/drag gestures (mapped by the view) and the toolbar commands flow through
-// here onto the TrendNavigationModel; after every window change the controller picks the aggregation
-// layer from the window width and raises WindowChanged carrying [From, To] + Layer. The view model
-// translates that into a coordinator re-query and the view drives the chart's bottom (time) axis.
+// Owns the time-navigation state machine and the layer-by-zoom mapping. Gestures and toolbar commands
+// flow through here onto the TrendNavigationModel; after every window change it picks the aggregation
+// layer from the width and raises WindowChanged ([From, To] + Layer) for the view model and view.
 public sealed class ChartNavigationController
 {
 	private static readonly TimeSpan RawLayerCeiling = TimeSpan.FromHours(1.0);
 	private static readonly TimeSpan MinuteLayerCeiling = TimeSpan.FromDays(2.0);
 	private static readonly TimeSpan HourLayerCeiling = TimeSpan.FromDays(60.0);
 	private static readonly TimeSpan DefaultWindowWidth = TimeSpan.FromHours(1.0);
+
+	// Hysteresis band around each layer ceiling: once a layer is active, the width must move at least this
+	// fraction past the boundary before the layer changes. Without it a zoom gesture that hovers on the 1h
+	// Raw/Minute boundary flip-flops the layer every notch, and at the Raw side the realtime tail appends a
+	// far-right raw point that straight-lines across the wide span (the right-side collapse artifact).
+	private const double LayerHysteresisFraction = 0.1;
 
 	private TrendNavigationModel _navigation;
 	private AggregationLayer _activeLayer;
@@ -128,24 +132,40 @@ public sealed class ChartNavigationController
 	}
 
 	// Coarser layers as the window widens so the decimated column count stays bounded; at coarse layers
-	// realtime points fold into the current decimation column rather than drawing raw samples.
-	private static AggregationLayer LayerForWidth(TimeSpan width)
+	// realtime points fold into the current decimation column rather than drawing raw samples. Hysteresis
+	// (relative to the current layer) keeps a notch-by-notch zoom from flip-flopping across a ceiling.
+	private AggregationLayer LayerForWidth(TimeSpan width)
 	{
-		if (width <= RawLayerCeiling)
+		var rawCeiling = BoundaryWithHysteresis(RawLayerCeiling, _activeLayer == AggregationLayer.Raw);
+		if (width <= rawCeiling)
 		{
 			return AggregationLayer.Raw;
 		}
 
-		if (width <= MinuteLayerCeiling)
+		var minuteCeiling = BoundaryWithHysteresis(MinuteLayerCeiling, _activeLayer == AggregationLayer.Minute);
+		if (width <= minuteCeiling)
 		{
 			return AggregationLayer.Minute;
 		}
 
-		if (width <= HourLayerCeiling)
+		var hourCeiling = BoundaryWithHysteresis(HourLayerCeiling, _activeLayer == AggregationLayer.Hour);
+		if (width <= hourCeiling)
 		{
 			return AggregationLayer.Hour;
 		}
 
 		return AggregationLayer.Day;
+	}
+
+	// While a layer is active its upper ceiling is pushed out by the hysteresis fraction so the width must
+	// clear the boundary by a margin before the layer coarsens; otherwise the plain ceiling applies.
+	private static TimeSpan BoundaryWithHysteresis(TimeSpan ceiling, bool isCurrentLayerBelowCeiling)
+	{
+		if (!isCurrentLayerBelowCeiling)
+		{
+			return ceiling;
+		}
+
+		return ceiling * (1.0 + LayerHysteresisFraction);
 	}
 }

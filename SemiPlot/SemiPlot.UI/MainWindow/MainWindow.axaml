@@ -6,6 +6,7 @@
         xmlns:chart="clr-namespace:SemiPlot.UI.Chart"
         xmlns:toolbar="clr-namespace:SemiPlot.UI.Toolbar"
         xmlns:legend="clr-namespace:SemiPlot.UI.Legend"
+        xmlns:minimap="clr-namespace:SemiPlot.UI.Minimap"
         mc:Ignorable="d"
         d:DesignWidth="1280"
         d:DesignHeight="800"
@@ -16,7 +17,7 @@
         Height="800"
         WindowStartupLocation="CenterScreen">
 
-    <Grid RowDefinitions="Auto,*,Auto,Auto">
+    <Grid RowDefinitions="Auto,*,Auto,Auto,Auto">
 
         <Border Grid.Row="0"
                 Name="Toolbar"
@@ -46,14 +47,19 @@
 
         </Grid>
 
-        <Border Grid.Row="2"
+        <minimap:MinimapView Grid.Row="2"
+                             Name="Minimap"
+                             Height="36"
+                             DataContext="{Binding MinimapViewModel}" />
+
+        <Border Grid.Row="3"
                 Name="MessagePanel"
                 BorderThickness="0,1,0,0"
                 BorderBrush="Gray"
                 Padding="8,4"
                 IsVisible="False" />
 
-        <Border Grid.Row="3"
+        <Border Grid.Row="4"
                 Name="StatusBar"
                 BorderThickness="0,1,0,0"
                 BorderBrush="Gray"

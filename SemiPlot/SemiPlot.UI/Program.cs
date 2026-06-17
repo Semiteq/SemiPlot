@@ -3,7 +3,7 @@ using System.IO;
 
 using Microsoft.Extensions.DependencyInjection;
 
-using SemiPlot.Core.Data;
+using SemiPlot.DataSource.Stub;
 
 using Serilog;
 using Serilog.Events;

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk"/>
+    <PackageReference Include="Microsoft.Reactive.Testing"/>
+    <PackageReference Include="xunit"/>
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="AwesomeAssertions"/>
+    <PackageReference Include="Avalonia.Headless"/>
+    <PackageReference Include="Avalonia.Headless.XUnit"/>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection"/>
+    <PackageReference Include="Serilog"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SemiPlot.Core\SemiPlot.Core.csproj"/>
+    <ProjectReference Include="..\SemiPlot.UI\SemiPlot.UI.csproj"/>
+  </ItemGroup>
+
+</Project>

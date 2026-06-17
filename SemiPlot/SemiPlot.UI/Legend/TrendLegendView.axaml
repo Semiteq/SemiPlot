@@ -1,0 +1,83 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:legend="clr-namespace:SemiPlot.UI.Legend"
+             mc:Ignorable="d"
+             d:DesignWidth="320"
+             d:DesignHeight="400"
+             x:Class="SemiPlot.UI.Legend.TrendLegendView"
+             x:DataType="legend:TrendLegendViewModel">
+
+    <UserControl.Resources>
+        <legend:HexColorToBrushConverter x:Key="HexColorToBrush" />
+    </UserControl.Resources>
+
+    <ScrollViewer>
+        <ItemsControl ItemsSource="{Binding Groups}">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="legend:TrendLegendGroupViewModel">
+                    <StackPanel Margin="0,0,0,8">
+
+                        <TextBlock Text="{Binding Name}"
+                                   FontWeight="Bold"
+                                   Margin="4,4,0,2" />
+
+                        <ItemsControl ItemsSource="{Binding Rows}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="legend:TrendLegendRowViewModel">
+                                    <Border Name="RowRoot"
+                                            Background="Transparent"
+                                            PointerPressed="OnRowPressed"
+                                            Padding="4,2">
+
+                                        <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto"
+                                              VerticalAlignment="Center">
+
+                                            <CheckBox Grid.Column="0"
+                                                      IsChecked="{Binding IsVisible}"
+                                                      VerticalAlignment="Center"
+                                                      Margin="0,0,4,0" />
+
+                                            <Border Grid.Column="1"
+                                                    Width="12"
+                                                    Height="12"
+                                                    Margin="0,0,6,0"
+                                                    VerticalAlignment="Center"
+                                                    Background="{Binding ColorHex, Converter={StaticResource HexColorToBrush}}" />
+
+                                            <TextBlock Grid.Column="2"
+                                                       Text="{Binding Name}"
+                                                       FontWeight="{Binding IsActive, Converter={x:Static legend:ActiveToWeightConverter.Instance}}"
+                                                       VerticalAlignment="Center" />
+
+                                            <TextBlock Grid.Column="3"
+                                                       Text="{Binding CurrentValueText}"
+                                                       Margin="6,0,0,0"
+                                                       VerticalAlignment="Center" />
+
+                                            <TextBlock Grid.Column="4"
+                                                       Text="{Binding CursorValueText}"
+                                                       Opacity="0.7"
+                                                       Margin="6,0,0,0"
+                                                       VerticalAlignment="Center" />
+
+                                            <TextBlock Grid.Column="5"
+                                                       Text="{Binding ScaleRangeText}"
+                                                       Opacity="0.5"
+                                                       Margin="6,0,0,0"
+                                                       VerticalAlignment="Center" />
+
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                    </StackPanel>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </ScrollViewer>
+
+</UserControl>

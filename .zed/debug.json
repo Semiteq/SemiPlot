@@ -1,0 +1,12 @@
+[
+	{
+		"label": "Launch SemiPlot.UI",
+		"adapter": "netcoredbg",
+		"request": "launch",
+		"program": "${ZED_WORKTREE_ROOT}/SemiPlot/Artifacts/bin/SemiPlot.UI/debug/SemiPlot.UI.dll",
+		"cwd": "${ZED_WORKTREE_ROOT}/SemiPlot/Artifacts/bin/SemiPlot.UI/debug",
+		"args": [],
+		"stopAtEntry": false,
+		"build": "Build UI"
+	}
+]

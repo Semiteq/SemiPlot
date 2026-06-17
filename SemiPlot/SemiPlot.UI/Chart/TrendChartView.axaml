@@ -1,0 +1,15 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:scottplot="clr-namespace:ScottPlot.Avalonia;assembly=ScottPlot.Avalonia"
+             xmlns:chart="clr-namespace:SemiPlot.UI.Chart"
+             mc:Ignorable="d"
+             d:DesignWidth="1280"
+             d:DesignHeight="600"
+             x:Class="SemiPlot.UI.Chart.TrendChartView"
+             x:DataType="chart:TrendChartViewModel">
+
+    <scottplot:AvaPlot Name="Plot" />
+
+</UserControl>

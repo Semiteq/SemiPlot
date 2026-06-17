@@ -1,0 +1,19 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+Artifacts/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+
+# IDE
+.vs/
+.idea/
+
+# Logs
+*.log
+
+# OS
+Thumbs.db
+desktop.ini

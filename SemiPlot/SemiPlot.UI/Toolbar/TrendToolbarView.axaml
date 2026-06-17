@@ -1,0 +1,46 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:toolbar="clr-namespace:SemiPlot.UI.Toolbar"
+             mc:Ignorable="d"
+             d:DesignWidth="900"
+             d:DesignHeight="40"
+             x:Class="SemiPlot.UI.Toolbar.TrendToolbarView"
+             x:DataType="toolbar:TrendToolbarViewModel">
+
+    <StackPanel Orientation="Horizontal"
+                Spacing="8"
+                VerticalAlignment="Center">
+
+        <Button Content="Autoscale"
+                Command="{Binding AutoscaleActiveAxisCommand}" />
+
+        <TextBox Width="80"
+                 Watermark="Min"
+                 Text="{Binding ManualMin}" />
+
+        <TextBox Width="80"
+                 Watermark="Max"
+                 Text="{Binding ManualMax}" />
+
+        <Button Content="Set Limits"
+                Command="{Binding SetActiveAxisLimitsCommand}" />
+
+        <TextBlock Text="{Binding ActiveLayer, StringFormat='Layer: {0}'}"
+                   VerticalAlignment="Center" />
+
+        <Button Content="Jump to Now"
+                Command="{Binding JumpToNowCommand}" />
+
+        <ToggleButton Content="Sticky"
+                      IsChecked="{Binding IsSticky, Mode=OneWay}"
+                      Command="{Binding ToggleStickyCommand}" />
+
+        <ToggleButton Content="Δ Cursors"
+                      IsChecked="{Binding DeltaCursorsEnabled, Mode=OneWay}"
+                      Command="{Binding ToggleDeltaCursorsCommand}" />
+
+    </StackPanel>
+
+</UserControl>

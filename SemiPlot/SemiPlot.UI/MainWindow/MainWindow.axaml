@@ -1,0 +1,67 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:SemiPlot.UI.MainWindow"
+        xmlns:chart="clr-namespace:SemiPlot.UI.Chart"
+        xmlns:toolbar="clr-namespace:SemiPlot.UI.Toolbar"
+        xmlns:legend="clr-namespace:SemiPlot.UI.Legend"
+        mc:Ignorable="d"
+        d:DesignWidth="1280"
+        d:DesignHeight="800"
+        x:Class="SemiPlot.UI.MainWindow.MainWindow"
+        x:DataType="local:MainWindowViewModel"
+        Title="SemiPlot — Trend Viewer"
+        Width="1280"
+        Height="800"
+        WindowStartupLocation="CenterScreen">
+
+    <Grid RowDefinitions="Auto,*,Auto,Auto">
+
+        <Border Grid.Row="0"
+                Name="Toolbar"
+                BorderThickness="0,0,0,1"
+                BorderBrush="Gray"
+                Padding="8,4">
+            <toolbar:TrendToolbarView DataContext="{Binding ToolbarViewModel}" />
+        </Border>
+
+        <Grid Grid.Row="1"
+              ColumnDefinitions="*,Auto">
+
+            <Border Grid.Column="0"
+                    Name="ChartContent"
+                    Background="#1E1E1E">
+                <chart:TrendChartView DataContext="{Binding ChartViewModel}" />
+            </Border>
+
+            <Border Grid.Column="1"
+                    Name="LegendPanel"
+                    Width="280"
+                    BorderThickness="1,0,0,0"
+                    BorderBrush="Gray"
+                    Padding="4">
+                <legend:TrendLegendView DataContext="{Binding LegendViewModel}" />
+            </Border>
+
+        </Grid>
+
+        <Border Grid.Row="2"
+                Name="MessagePanel"
+                BorderThickness="0,1,0,0"
+                BorderBrush="Gray"
+                Padding="8,4"
+                IsVisible="False" />
+
+        <Border Grid.Row="3"
+                Name="StatusBar"
+                BorderThickness="0,1,0,0"
+                BorderBrush="Gray"
+                Padding="8,4">
+            <TextBlock Text="{Binding PenCount, StringFormat='Pens: {0}'}"
+                       VerticalAlignment="Center" />
+        </Border>
+
+    </Grid>
+
+</Window>

@@ -1,7 +1,7 @@
 ﻿namespace SemiPlot.Core.Trends;
 
 public sealed record Pen(
-	long ProjectVarId,
+	long PenId,
 	string Name,
 	string Group,
 	string Color,

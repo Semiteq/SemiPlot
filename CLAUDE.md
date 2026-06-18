@@ -18,31 +18,21 @@ dotnet format SemiPlot/SemiPlot.slnx                    # pre-commit hook enforc
 
 ## Test
 
-Tests are split into two projects:
+All tests live in one project, `SemiPlot.Tests`, on `xunit` v2 + `Avalonia.Headless.XUnit`. It
+references `SemiPlot.UI`. `TestAppBuilder.cs` carries `[assembly: AvaloniaTestApplication]` and provides
+the headless harness. Pure logic (renderer-agnostic Core models: decimation, navigation, scale, cursor,
+delta) uses plain `[Fact]`; tests touching ReactiveUI/ScottPlot/Avalonia use `[AvaloniaFact]`/`[AvaloniaTheory]`.
 
-- `SemiPlot.Core.Tests` — pure Core (no UI reference), uses `xunit.v3` with plain `[Fact]`. Builds and
-  runs green independently of UI state; hosts the renderer-agnostic model tests (decimation, navigation,
-  scale, cursor, delta).
-- `SemiPlot.Tests` — UI/headless tests; references `SemiPlot.UI`. Runs on the `Avalonia.Headless`
-  harness with `xunit` v2 + `Avalonia.Headless.XUnit`. `TestAppBuilder.cs` carries
-  `[assembly: AvaloniaTestApplication]`. Tests touching ReactiveUI/ScottPlot pipelines use
-  `[AvaloniaFact]`/`[AvaloniaTheory]`; pure logic stays plain `[Fact]`.
-
-The split is deliberate and not a temporary workaround: `Avalonia.Headless.XUnit 11.3.8` is built
-against xunit v2 (its `AvaloniaFactAttribute : FactAttribute` plus a v2 test discoverer), while
-`SemiPlot.Core.Tests` is on xunit.v3. One project cannot hold both xunit majors. Merging would force
-Core down to xunit v2 AND re-couple the Core tests to the UI build — losing the ability to run the Core
-model suite independently. So Core tests stay pure (xunit.v3, no UI reference) and headless UI tests
-stay in the `SemiPlot.UI`-referencing project on xunit v2.
-
-Backlog (test unification): bump Avalonia `11.3.8 → 12.0.x` (verify `ScottPlot.Avalonia` compatibility
-on 12 first), then unify the two test projects on xunit.v3 in a single project —
-`Avalonia.Headless.XUnit 12.x` targets xunit.v3.
+Accepted trade-off: the Core model tests now build against the UI project, so they no longer run
+independently of the UI build. This was chosen deliberately — `Avalonia.Headless.XUnit 11.3.x` is
+xUnit-v2-only and `ScottPlot.Avalonia` has no released Avalonia-12 build, so staying on Avalonia 11 +
+xUnit v2 in a single project is simpler than maintaining a two-project split across xUnit majors. The
+xUnit-v3 / Avalonia-12 unification is deferred until `ScottPlot.Avalonia` ships an Avalonia-12 release;
+revisit then.
 
 ```powershell
 dotnet test SemiPlot/SemiPlot.slnx                                       # full suite
-dotnet test SemiPlot/SemiPlot.Core.Tests/SemiPlot.Core.Tests.csproj      # Core models only
-dotnet test SemiPlot/SemiPlot.Tests/SemiPlot.Tests.csproj                # UI / headless
+dotnet test SemiPlot/SemiPlot.Tests/SemiPlot.Tests.csproj                # the single test project
 dotnet test SemiPlot/SemiPlot.slnx --filter "Area=Data"
 dotnet test SemiPlot/SemiPlot.slnx --filter "Category=Unit"
 dotnet test SemiPlot/SemiPlot.slnx --filter "FullyQualifiedName~TestMethodName"

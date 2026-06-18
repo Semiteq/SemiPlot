@@ -13,9 +13,9 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 	private readonly IDataProvider _dataProvider;
 
 	private TrendChartViewModel? _chartViewModel;
-	private TrendToolbarViewModel? _toolbarViewModel;
 	private TrendLegendViewModel? _legendViewModel;
 	private MinimapViewModel? _minimapViewModel;
+	private TrendToolbarViewModel? _toolbarViewModel;
 
 	public MainWindowViewModel(IDataProvider dataProvider)
 	{
@@ -25,8 +25,6 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 
 	public int PenCount => _dataProvider.Pens.Count;
 
-	// Assigned after the UI scheduler is captured (App.AfterSetup), once the coordinator exists. The
-	// toolbar and legend VMs are built from the chart VM in the same step so they target a live chart.
 	public TrendChartViewModel? ChartViewModel
 	{
 		get => _chartViewModel;
@@ -54,8 +52,6 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 		private set => this.RaiseAndSetIfChanged(ref _legendViewModel, value);
 	}
 
-	// Built in the composition root alongside the chart view model (it needs the coordinator and UI
-	// scheduler the chart VM does not surface) and assigned here so it shares the chart's navigation.
 	public MinimapViewModel? MinimapViewModel
 	{
 		get => _minimapViewModel;

@@ -13,7 +13,7 @@ namespace SemiPlot.Tests.Core.Data;
 [Trait("Category", "Unit")]
 public sealed class SyntheticPenCatalogTests
 {
-	private static readonly Regex HexColor = new("^#[0-9A-Fa-f]{6}$", RegexOptions.Compiled);
+	private static readonly Regex _hexColor = new("^#[0-9A-Fa-f]{6}$", RegexOptions.Compiled);
 
 	[Fact]
 	public void Build_IsDeterministic()
@@ -25,11 +25,11 @@ public sealed class SyntheticPenCatalogTests
 	}
 
 	[Fact]
-	public void Build_ProjectVarIdsAreUnique()
+	public void Build_PenIdsAreUnique()
 	{
 		var pens = SyntheticPenCatalog.Build();
 
-		pens.Select(pen => pen.ProjectVarId).Should().OnlyHaveUniqueItems();
+		pens.Select(pen => pen.PenId).Should().OnlyHaveUniqueItems();
 	}
 
 	[Fact]
@@ -58,6 +58,6 @@ public sealed class SyntheticPenCatalogTests
 	{
 		var pens = SyntheticPenCatalog.Build();
 
-		pens.Should().OnlyContain(pen => HexColor.IsMatch(pen.Color));
+		pens.Should().OnlyContain(pen => _hexColor.IsMatch(pen.Color));
 	}
 }

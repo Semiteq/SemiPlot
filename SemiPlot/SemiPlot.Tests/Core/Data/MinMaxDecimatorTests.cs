@@ -1,5 +1,6 @@
 ﻿using AwesomeAssertions;
 
+using SemiPlot.Core.Trends;
 using SemiPlot.DataSource.Stub;
 
 using Xunit;
@@ -142,7 +143,7 @@ public sealed class MinMaxDecimatorTests
 		envelope.Max.Should().Contain(value => double.IsNaN(value));
 		envelope.Timestamps.Should().BeInAscendingOrder();
 
-		// No finite band column may sit inside the gap interval — that proves a column never straddles it.
+		// No finite column may sit inside the gap interval, proving a column never straddles it.
 		var gapStart = timestamps[200];
 		var gapEnd = timestamps[249];
 		for (var column = 0; column < envelope.Timestamps.Count; column++)
@@ -166,8 +167,8 @@ public sealed class MinMaxDecimatorTests
 		var timestamps = BuildTimestamps(sampleCount);
 		var values = new double?[sampleCount];
 
-		// Make the max precede the min inside every bucket so the column X cannot be the min timestamp;
-		// it must be the center sample's timestamp, and the result must still be strictly ascending.
+		// Max precedes min in every bucket, so column X must be the center sample's timestamp (not an
+		// extremum's) yet stay strictly ascending.
 		for (var index = 0; index < sampleCount; index++)
 		{
 			values[index] = -index;
@@ -186,9 +187,8 @@ public sealed class MinMaxDecimatorTests
 	[Fact]
 	public void Decimate_CenterValueIsPairedWithItsOwnTimestamp()
 	{
-		// Five samples, two target columns → buckets {0,1} and {2,3,4}. The second bucket's center index
-		// is 3; its column timestamp must be timestamps[3] (the center sample's time), proving the center
-		// value and its X share one sample rather than the center value riding an extremum timestamp.
+		// Buckets {0,1} and {2,3,4}; the second's center index is 3, so its column X must be timestamps[3],
+		// proving the center value and its X share one sample.
 		var timestamps = BuildTimestamps(5);
 		var values = new double?[] { 10.0, 5.0, 0.0, 7.0, 3.0 };
 
@@ -212,7 +212,7 @@ public sealed class MinMaxDecimatorTests
 			values[index] = index;
 		}
 
-		// Empty the right third of the window so a chart without an edge gap would straight-line across it.
+		// Empty the right third so a chart without an edge gap would straight-line across it.
 		for (var index = 400; index < sampleCount; index++)
 		{
 			values[index] = null;
@@ -281,6 +281,68 @@ public sealed class MinMaxDecimatorTests
 		var act = () => MinMaxDecimator.Decimate(PenId, timestamps, values, targetColumnCount: 3);
 
 		act.Should().Throw<ArgumentException>();
+	}
+
+	[Fact]
+	public void Decimate_EmittedEnvelope_SatisfiesEnvelopeValidation()
+	{
+		const int sampleCount = 5000;
+		const int targetColumns = 120;
+
+		var timestamps = BuildTimestamps(sampleCount);
+		var values = new double?[sampleCount];
+		for (var index = 0; index < sampleCount; index++)
+		{
+			values[index] = Math.Sin(index / 9.0);
+		}
+
+		for (var index = 1000; index < 1100; index++)
+		{
+			values[index] = null;
+		}
+
+		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, targetColumns);
+
+		// Re-running the columns back through the validating constructor proves the producer honors
+		// the envelope invariants (equal column lengths, strictly ascending timestamps).
+		var act = () => new PenHistoryEnvelope(
+			envelope.PenId,
+			envelope.Timestamps,
+			envelope.Min,
+			envelope.Max,
+			envelope.Center);
+
+		act.Should().NotThrow();
+	}
+
+	[Fact]
+	public void Decimate_GapFollowedByShortSegment_EmitsStrictlyAscendingTimestamps()
+	{
+		const int sampleCount = 600;
+		const int targetColumns = 50;
+
+		var timestamps = BuildTimestamps(sampleCount);
+		var values = new double?[sampleCount];
+		for (var index = 0; index < sampleCount; index++)
+		{
+			values[index] = Math.Sin(index / 7.0);
+		}
+
+		for (var index = sampleCount - 50; index < sampleCount - 1; index++)
+		{
+			values[index] = null;
+		}
+
+		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, targetColumns);
+
+		for (var index = 1; index < envelope.Timestamps.Count; index++)
+		{
+			envelope.Timestamps[index].Should().BeAfter(envelope.Timestamps[index - 1]);
+		}
+
+		var rebuild = () => new PenHistoryEnvelope(
+			envelope.PenId, envelope.Timestamps, envelope.Min, envelope.Max, envelope.Center);
+		rebuild.Should().NotThrow();
 	}
 
 	private static IReadOnlyList<DateTime> BuildTimestamps(int count)

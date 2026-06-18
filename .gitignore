@@ -17,3 +17,6 @@ Artifacts/
 # OS
 Thumbs.db
 desktop.ini
+
+# scratch screenshots for issue repro
+example_pics/

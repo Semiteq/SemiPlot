@@ -5,8 +5,6 @@ using Avalonia.Media;
 
 namespace SemiPlot.UI.Legend;
 
-// Turns a pen's hex color string (e.g. "#ff0000") into a brush for the legend's color swatch, so the
-// view model stays free of Avalonia media types. An unparsable value yields a transparent brush.
 public sealed class HexColorToBrushConverter : IValueConverter
 {
 	public static readonly HexColorToBrushConverter Instance = new();

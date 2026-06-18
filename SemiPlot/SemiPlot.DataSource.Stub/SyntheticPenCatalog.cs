@@ -69,6 +69,7 @@ public static class SyntheticPenCatalog
 	{
 		var span = 5.0 + index * 12.0;
 		var min = index * 2.0;
+
 		return (min, min + span);
 	}
 
@@ -77,6 +78,7 @@ public static class SyntheticPenCatalog
 	{
 		const double goldenRatioConjugate = 0.618033988749895;
 		var hue = (penId * goldenRatioConjugate) % 1.0;
+
 		return HsvToHex(hue, saturation: 0.65, value: 0.85);
 	}
 

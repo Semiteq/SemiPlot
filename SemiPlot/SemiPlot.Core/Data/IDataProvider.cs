@@ -11,7 +11,6 @@ public interface IDataProvider
 	// Cold per call: no samples flow until subscribed; the subscriber disposes the returned IDisposable.
 	IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<long> penIds);
 
-	// Returns a decimated min/max envelope per pen sized to targetColumnCount.
 	Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(
 		IReadOnlyList<long> penIds,
 		DateTime fromUtc,

@@ -1,8 +1,5 @@
 ﻿namespace SemiPlot.Core.Trends;
 
-// Renderer-agnostic axis/scale model: from each pen's envelope, scale settings, the active pen, and the
-// visible X window it derives one PenScale per axis key (pens sharing a key share a range). Pure data,
-// no renderer. Logarithmic axes drop non-positive values before computing the range.
 public sealed class PenScaleModel
 {
 	private const double AutoPaddingFraction = 0.05;
@@ -84,6 +81,7 @@ public sealed class PenScaleModel
 
 		var min = values.Min();
 		var max = values.Max();
+
 		return PadRange(min, max, isLogarithmic);
 	}
 
@@ -174,6 +172,7 @@ public sealed class PenScaleModel
 		}
 
 		var padding = (max - min) * AutoPaddingFraction;
+
 		return ClampLowerToPositive(min - padding, max + padding, isLogarithmic);
 	}
 

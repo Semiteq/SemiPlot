@@ -7,22 +7,20 @@ using SemiPlot.UI.Chart;
 
 namespace SemiPlot.UI.Legend;
 
-// One pen's legend row: mirrors the pen's live state from the chart view model and turns the visibility
-// and select gestures back into chart calls. No rendering or scale logic.
 public sealed class TrendLegendRowViewModel : ReactiveObject, IDisposable
 {
 	private readonly TrendChartViewModel _chartViewModel;
-	private readonly TrendPenState _penState;
-	private readonly long _penId;
-	private readonly CompositeDisposable _subscriptions = new();
-
-	private readonly ObservableAsPropertyHelper<bool> _isActive;
 	private readonly ObservableAsPropertyHelper<double?> _currentValue;
 	private readonly ObservableAsPropertyHelper<double?> _cursorValue;
+
+	private readonly ObservableAsPropertyHelper<bool> _isActive;
+	private readonly long _penId;
+	private readonly TrendPenState _penState;
 	private readonly ObservableAsPropertyHelper<(double Min, double Max)?> _scaleRange;
+	private readonly CompositeDisposable _subscriptions = new();
+	private bool _isSettingVisibilityFromChart;
 
 	private bool _isVisible;
-	private bool _isSettingVisibilityFromChart;
 
 	public TrendLegendRowViewModel(TrendChartViewModel chartViewModel, TrendPenState penState)
 	{
@@ -31,7 +29,7 @@ public sealed class TrendLegendRowViewModel : ReactiveObject, IDisposable
 
 		_chartViewModel = chartViewModel;
 		_penState = penState;
-		_penId = penState.Pen.ProjectVarId;
+		_penId = penState.Pen.PenId;
 		_isVisible = penState.IsVisible;
 
 		_currentValue = penState
@@ -95,6 +93,7 @@ public sealed class TrendLegendRowViewModel : ReactiveObject, IDisposable
 		get
 		{
 			var range = ScaleRange;
+
 			return range is { } value
 				? $"{value.Min:0.###}..{value.Max:0.###}"
 				: "—";
@@ -114,14 +113,14 @@ public sealed class TrendLegendRowViewModel : ReactiveObject, IDisposable
 		}
 	}
 
-	public void Select()
-	{
-		_chartViewModel.SetActivePen(_penId);
-	}
-
 	public void Dispose()
 	{
 		_subscriptions.Dispose();
+	}
+
+	public void Select()
+	{
+		_chartViewModel.SetActivePen(_penId);
 	}
 
 	private static string FormatValue(double? value)

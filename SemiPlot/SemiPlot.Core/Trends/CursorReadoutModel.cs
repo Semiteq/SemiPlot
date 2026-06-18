@@ -1,8 +1,5 @@
 ﻿namespace SemiPlot.Core.Trends;
 
-// Renderer-agnostic X-trace cursor model returning each pen's center-channel value at a cursor X.
-// Gap-aware: exact hits return Center, between columns interpolates, but a NaN gap or out-of-range X
-// yields null so the readout never bridges a gap.
 public sealed class CursorReadoutModel
 {
 	public IReadOnlyDictionary<long, double?> ReadAt(
@@ -44,13 +41,14 @@ public sealed class CursorReadoutModel
 		}
 
 		var lowerIndex = upperIndex - 1;
+
 		return Interpolate(
 			timestamps[lowerIndex], centers[lowerIndex],
 			timestamps[upperIndex], centers[upperIndex],
 			cursorTime);
 	}
 
-	// First column whose timestamp is at or after the cursor; the range check guarantees one exists.
+	// The prior range check guarantees a column at or after the cursor exists.
 	private static int FindUpperBound(IReadOnlyList<DateTime> timestamps, DateTime cursorTime)
 	{
 		var low = 0;
@@ -91,6 +89,7 @@ public sealed class CursorReadoutModel
 		}
 
 		var fraction = (cursorTime - lowerTime).TotalSeconds / span;
+
 		return lowerValue + ((upperValue - lowerValue) * fraction);
 	}
 

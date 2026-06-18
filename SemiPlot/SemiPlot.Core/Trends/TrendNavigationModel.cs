@@ -1,22 +1,15 @@
 ﻿namespace SemiPlot.Core.Trends;
 
-// Renderer-agnostic time-navigation state machine owning the view window [From, To], the sticky flag,
-// and the zoom width. Pure logic: the live edge and first stored sample arrive as inputs, never a clock.
+// The live edge and first stored sample arrive as inputs, never a clock.
 // Sticky semantics are specified in trend-interaction.md.
 public sealed class TrendNavigationModel
 {
-	private static readonly TimeSpan MinimumWidth = TimeSpan.FromSeconds(1.0);
-	private static readonly TimeSpan MaximumWidth = TimeSpan.FromDays(365.0);
-
-	// Zoom widths are snapped onto a geometric ladder MinimumWidth * ZoomQuantizationRatio^n. The wheel
-	// uses reciprocal factors (zoom-in 0.8 = 1/1.25, zoom-out 1.25), so quantizing each result onto the
-	// 1.25 grid makes an in-then-out cycle land back on the exact origin width instead of drifting away
-	// through accumulated floating-point error across repeated notches.
+	// Zoom widths snap onto the geometric ladder _minimumWidth * ZoomQuantizationRatio^n. The wheel uses
+	// reciprocal factors (zoom-in 0.8 = 1/1.25, zoom-out 1.25), so snapping onto this grid makes an
+	// in-then-out cycle return to the exact origin width instead of drifting via floating-point error.
 	private const double ZoomQuantizationRatio = 1.25;
-
-	private DateTime _from;
-	private DateTime _to;
-	private readonly DateTime _firstSample;
+	private static readonly TimeSpan _minimumWidth = TimeSpan.FromSeconds(1.0);
+	private static readonly TimeSpan _maximumWidth = TimeSpan.FromDays(365.0);
 
 	public TrendNavigationModel(DateTime from, DateTime to, DateTime firstSample, bool isSticky)
 	{
@@ -25,46 +18,43 @@ public sealed class TrendNavigationModel
 			throw new ArgumentException("View window end must be after its start.", nameof(to));
 		}
 
-		_firstSample = firstSample;
-		(_from, _to) = ClampWidth(from, to);
+		FirstSample = firstSample;
+		(From, To) = ClampWidth(from, to);
 		IsSticky = isSticky;
 	}
 
-	public DateTime From => _from;
+	public DateTime From { get; private set; }
 
-	public DateTime To => _to;
+	public DateTime To { get; private set; }
 
-	public TimeSpan Width => _to - _from;
+	public TimeSpan Width => To - From;
 
 	public bool IsSticky { get; private set; }
 
-	public DateTime FirstSample => _firstSample;
+	public DateTime FirstSample { get; }
 
-	// Shifts the window by delta, keeping width constant. A negative delta pans into the past; if it
-	// would push From before the first stored sample, the shift is clamped so From == FirstSample.
-	// If the resulting window no longer contains the supplied live edge, sticky auto-detaches.
+	// From is clamped to FirstSample so a pan into the past never reaches before stored data.
+	// If the resulting window no longer contains the live edge, sticky auto-detaches.
 	public void Pan(TimeSpan delta, DateTime now)
 	{
 		var width = Width;
-		var from = _from + delta;
-		if (from < _firstSample)
+		var from = From + delta;
+		if (from < FirstSample)
 		{
-			from = _firstSample;
+			from = FirstSample;
 		}
 
-		_from = from;
-		_to = from + width;
+		From = from;
+		To = from + width;
 
-		if (now > _to || now < _from)
+		if (now > To || now < From)
 		{
 			IsSticky = false;
 		}
 	}
 
-	// Changes the window width about an anchor (held fixed in time), clamped to [1 s, 1 year] and snapped
-	// onto the zoom ladder so reciprocal in/out gestures round-trip. The anchor's relative position inside
-	// the window is preserved as the width scales, and From is clamped so it never precedes the first
-	// stored sample (a window that reached back past it would render the missing left span as data).
+	// Scales width about an anchor held fixed in time, clamped to [1 s, 1 year] and snapped onto the zoom
+	// ladder so reciprocal in/out gestures round-trip.
 	public void Zoom(double factor, DateTime anchor)
 	{
 		if (factor <= 0.0 || double.IsNaN(factor) || double.IsInfinity(factor))
@@ -75,41 +65,38 @@ public sealed class TrendNavigationModel
 		var currentWidth = Width;
 		var targetWidth = ClampWidthSpan(QuantizeWidth(currentWidth * factor));
 
-		var anchorFraction = (anchor - _from) / currentWidth;
+		var anchorFraction = (anchor - From) / currentWidth;
 		var from = anchor - (targetWidth * anchorFraction);
-		// Tradeoff: when the computed From would reach back past the first stored sample it is clamped to
-		// FirstSample, which means the anchor is no longer held exactly fixed in time for that one zoom.
-		// Honouring the clamp (never rendering a span with no data on the left) is preferred over keeping
-		// the anchor pinned, since the alternative would draw the missing left span as data.
-		if (from < _firstSample)
+		// Tradeoff: when From would reach back past the first stored sample it is clamped to FirstSample
+		// (so the anchor is not held exactly fixed for that zoom). Clamping is preferred over pinning the
+		// anchor, since the alternative would render the empty left span as data.
+		if (from < FirstSample)
 		{
-			from = _firstSample;
+			from = FirstSample;
 		}
 
-		_from = from;
-		_to = from + targetWidth;
+		From = from;
+		To = from + targetWidth;
 	}
 
-	// Snaps a width onto the geometric ladder MinimumWidth * ZoomQuantizationRatio^n so the reciprocal
-	// wheel factors land on shared grid points and an in-then-out cycle returns to the origin width.
 	private static TimeSpan QuantizeWidth(TimeSpan width)
 	{
-		if (width <= MinimumWidth)
+		if (width <= _minimumWidth)
 		{
-			return MinimumWidth;
+			return _minimumWidth;
 		}
 
-		var steps = Math.Round(Math.Log(width / MinimumWidth) / Math.Log(ZoomQuantizationRatio));
-		var quantizedSeconds = MinimumWidth.TotalSeconds * Math.Pow(ZoomQuantizationRatio, steps);
+		var steps = Math.Round(Math.Log(width / _minimumWidth) / Math.Log(ZoomQuantizationRatio));
+		var quantizedSeconds = _minimumWidth.TotalSeconds * Math.Pow(ZoomQuantizationRatio, steps);
+
 		return TimeSpan.FromSeconds(quantizedSeconds);
 	}
 
-	// Re-attaches sticky and places the now-marker at the RIGHT edge, keeping the current width.
 	public void JumpToNow(DateTime now)
 	{
 		var width = Width;
-		_to = now;
-		_from = now - width;
+		To = now;
+		From = now - width;
 		IsSticky = true;
 	}
 
@@ -126,26 +113,27 @@ public sealed class TrendNavigationModel
 		}
 
 		var width = Width;
-		_to = now;
-		_from = now - width;
+		To = now;
+		From = now - width;
 	}
 
 	private (DateTime From, DateTime To) ClampWidth(DateTime from, DateTime to)
 	{
 		var width = ClampWidthSpan(to - from);
+
 		return (from, from + width);
 	}
 
 	private static TimeSpan ClampWidthSpan(TimeSpan width)
 	{
-		if (width < MinimumWidth)
+		if (width < _minimumWidth)
 		{
-			return MinimumWidth;
+			return _minimumWidth;
 		}
 
-		if (width > MaximumWidth)
+		if (width > _maximumWidth)
 		{
-			return MaximumWidth;
+			return _maximumWidth;
 		}
 
 		return width;

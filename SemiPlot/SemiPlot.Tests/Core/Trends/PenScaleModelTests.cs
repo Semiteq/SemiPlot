@@ -94,10 +94,7 @@ public sealed class PenScaleModelTests
 	public void Compute_AutoscaleToWindow_FitsOnlyValuesInsideVisibleWindow()
 	{
 		var model = new PenScaleModel();
-		var settings = new[]
-		{
-			new PenScaleSettings(PenId: 1, AxisKey: "a", Mode: ScaleMode.AutoscaleToWindow)
-		};
+		var settings = new[] { new PenScaleSettings(PenId: 1, AxisKey: "a", Mode: ScaleMode.AutoscaleToWindow) };
 
 		var timestamps = new[] { _origin, _origin.AddHours(1), _origin.AddHours(2), _origin.AddHours(3) };
 		var min = new[] { 0.0, 50.0, 1000.0, -500.0 };
@@ -124,10 +121,7 @@ public sealed class PenScaleModelTests
 		{
 			new PenScaleSettings(PenId: 1, AxisKey: "a", Mode: ScaleMode.Manual, ManualMin: -2.0, ManualMax: 8.0)
 		};
-		var envelopes = new Dictionary<long, PenHistoryEnvelope>
-		{
-			[1] = Envelope(1, (1000.0, 2000.0))
-		};
+		var envelopes = new Dictionary<long, PenHistoryEnvelope> { [1] = Envelope(1, (1000.0, 2000.0)) };
 
 		var scales = model.Compute(settings, envelopes, activePenId: 1, _origin, _origin.AddHours(1));
 
@@ -141,10 +135,7 @@ public sealed class PenScaleModelTests
 	public void Compute_LogarithmicAxis_DropsNonPositiveValuesBeforeComputingRange()
 	{
 		var model = new PenScaleModel();
-		var settings = new[]
-		{
-			new PenScaleSettings(PenId: 1, AxisKey: "a", IsLogarithmic: true)
-		};
+		var settings = new[] { new PenScaleSettings(PenId: 1, AxisKey: "a", IsLogarithmic: true) };
 
 		var timestamps = new[] { _origin, _origin.AddHours(1), _origin.AddHours(2) };
 		var min = new[] { -5.0, 2.0, 0.0 };
@@ -167,14 +158,8 @@ public sealed class PenScaleModelTests
 	public void Compute_LogarithmicAxisWithNoPositiveValues_FallsBackToPositiveDefaultRange()
 	{
 		var model = new PenScaleModel();
-		var settings = new[]
-		{
-			new PenScaleSettings(PenId: 1, AxisKey: "a", IsLogarithmic: true)
-		};
-		var envelopes = new Dictionary<long, PenHistoryEnvelope>
-		{
-			[1] = Envelope(1, (-10.0, -1.0))
-		};
+		var settings = new[] { new PenScaleSettings(PenId: 1, AxisKey: "a", IsLogarithmic: true) };
+		var envelopes = new Dictionary<long, PenHistoryEnvelope> { [1] = Envelope(1, (-10.0, -1.0)) };
 
 		var scales = model.Compute(settings, envelopes, activePenId: 1, _origin, _origin.AddHours(1));
 
@@ -187,14 +172,8 @@ public sealed class PenScaleModelTests
 	public void Compute_HiddenPen_MarksAxisNotVisible()
 	{
 		var model = new PenScaleModel();
-		var settings = new[]
-		{
-			new PenScaleSettings(PenId: 1, AxisKey: "a", IsVisible: false)
-		};
-		var envelopes = new Dictionary<long, PenHistoryEnvelope>
-		{
-			[1] = Envelope(1, (0.0, 10.0))
-		};
+		var settings = new[] { new PenScaleSettings(PenId: 1, AxisKey: "a", IsVisible: false) };
+		var envelopes = new Dictionary<long, PenHistoryEnvelope> { [1] = Envelope(1, (0.0, 10.0)) };
 
 		var scales = model.Compute(settings, envelopes, activePenId: 1, _origin, _origin.AddHours(1));
 
@@ -205,10 +184,7 @@ public sealed class PenScaleModelTests
 	public void Compute_AutoModeIgnoresNaNGapColumns()
 	{
 		var model = new PenScaleModel();
-		var settings = new[]
-		{
-			new PenScaleSettings(PenId: 1, AxisKey: "a")
-		};
+		var settings = new[] { new PenScaleSettings(PenId: 1, AxisKey: "a") };
 
 		var timestamps = new[] { _origin, _origin.AddHours(1), _origin.AddHours(2) };
 		var min = new[] { 4.0, double.NaN, 6.0 };
@@ -231,14 +207,8 @@ public sealed class PenScaleModelTests
 	public void Compute_FlatLine_PadsByHalfAUnitOnEachSide()
 	{
 		var model = new PenScaleModel();
-		var settings = new[]
-		{
-			new PenScaleSettings(PenId: 1, AxisKey: "a")
-		};
-		var envelopes = new Dictionary<long, PenHistoryEnvelope>
-		{
-			[1] = Envelope(1, (5.0, 5.0))
-		};
+		var settings = new[] { new PenScaleSettings(PenId: 1, AxisKey: "a") };
+		var envelopes = new Dictionary<long, PenHistoryEnvelope> { [1] = Envelope(1, (5.0, 5.0)) };
 
 		var scales = model.Compute(settings, envelopes, activePenId: 1, _origin, _origin.AddHours(1));
 
@@ -255,10 +225,7 @@ public sealed class PenScaleModelTests
 		{
 			new PenScaleSettings(PenId: 1, AxisKey: "a", Mode: ScaleMode.Manual, ManualMin: 90.0, ManualMax: 10.0)
 		};
-		var envelopes = new Dictionary<long, PenHistoryEnvelope>
-		{
-			[1] = Envelope(1, (0.0, 1.0))
-		};
+		var envelopes = new Dictionary<long, PenHistoryEnvelope> { [1] = Envelope(1, (0.0, 1.0)) };
 
 		var scales = model.Compute(settings, envelopes, activePenId: 1, _origin, _origin.AddHours(1));
 
@@ -276,10 +243,7 @@ public sealed class PenScaleModelTests
 			new PenScaleSettings(
 				PenId: 1, AxisKey: "a", Mode: ScaleMode.Manual, ManualMin: -5.0, ManualMax: 100.0, IsLogarithmic: true)
 		};
-		var envelopes = new Dictionary<long, PenHistoryEnvelope>
-		{
-			[1] = Envelope(1, (1.0, 50.0))
-		};
+		var envelopes = new Dictionary<long, PenHistoryEnvelope> { [1] = Envelope(1, (1.0, 50.0)) };
 
 		var scales = model.Compute(settings, envelopes, activePenId: 1, _origin, _origin.AddHours(1));
 

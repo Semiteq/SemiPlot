@@ -69,9 +69,8 @@ public class App : Application
 			.LogToTrace();
 	}
 
-	// UseReactiveUI() above has already registered AvaloniaScheduler as RxApp.MainThreadScheduler.
-	// The UI scheduler is captured here — after the scheduler is set — and handed to the coordinator
-	// factory so that the realtime pipeline observes batches on the correct thread.
+	// UseReactiveUI() has registered AvaloniaScheduler as RxApp.MainThreadScheduler by now, so the UI
+	// scheduler can only be captured here — after that ordering — and handed to the factories.
 	private static void InitializeServices(IServiceProvider serviceProvider)
 	{
 		var uiScheduler = AvaloniaScheduler.Instance;
@@ -99,9 +98,7 @@ public class App : Application
 
 		coordinator.Start();
 
-		// Seed the first history load over the default window so the chart is populated before any user
-		// pan/zoom (the only other re-query path is a navigation gesture).
-		chartViewModel.RequestInitialHistory();
+		_ = chartViewModel.RequestInitialHistory();
 		_ = minimapViewModel.LoadExtentAsync();
 	}
 

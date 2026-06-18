@@ -71,8 +71,7 @@ public sealed class ChartAxisRegionTests
 		var layout = plot.RenderManager.LastRender.Layout;
 		var dataRect = layout.DataRect;
 		var verticalCenter = (dataRect.Top + dataRect.Bottom) / 2f;
-		// The right panel sits at [Right + offset, Right + offset + size]; probe its measured midpoint so
-		// the assertion does not depend on the exact panel width ScottPlot chose.
+		// Probe the panel's measured midpoint so the assertion does not depend on ScottPlot's panel width.
 		var offset = layout.PanelOffsets[rightAxis];
 		var size = layout.PanelSizes[rightAxis];
 		var insideRightPanel = dataRect.Right + offset + (size / 2f);
@@ -84,9 +83,9 @@ public sealed class ChartAxisRegionTests
 	[Fact]
 	public void ValueAt_DegenerateHeight_ReturnsTheAxisMaxInsteadOfDividingByZero()
 	{
-		// A zero-height data area (a not-yet-laid-out or collapsed panel) would divide by zero in the
-		// pixel->value mapping; the guard returns the axis maximum instead.
-		var region = ChartAxisRegion.ForTesting(panelLeft: 0f, panelRight: 10f, dataTop: 50f, dataBottom: 50f, axisMin: 1.0, axisMax: 9.0);
+		// A zero-height data area would divide by zero in the pixel->value mapping; the guard returns the max.
+		var region = ChartAxisRegion.ForTesting(panelLeft: 0f, panelRight: 10f, dataTop: 50f, dataBottom: 50f,
+			axisMin: 1.0, axisMax: 9.0);
 
 		region.ValueAt(50f).Should().Be(9.0);
 	}
@@ -97,6 +96,7 @@ public sealed class ChartAxisRegionTests
 		plot.Add.Scatter(new double[] { 0, 1, 2 }, new double[] { 0, 50, 100 });
 		plot.Axes.SetLimitsY(0.0, 100.0, plot.Axes.Left);
 		plot.RenderInMemory(PlotWidth, PlotHeight);
+
 		return (plot, plot.Axes.Left);
 	}
 }

@@ -1,5 +1,4 @@
-﻿using System.Linq;
-using System.Reactive.Concurrency;
+﻿using System.Reactive.Concurrency;
 
 using Avalonia.Headless.XUnit;
 
@@ -30,7 +29,7 @@ public sealed class TrendLegendViewModelTests
 	[AvaloniaFact]
 	public void Groups_AreKeyedByPenGroup()
 	{
-		var (chart, _) = CreateChart();
+		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Pen 1", "Heaters", "#ff0000"));
 		chart.AddPen(new Pen(2, "Pen 2", "Heaters", "#00ff00"));
 		chart.AddPen(new Pen(3, "Pen 3", "Pressures", "#0000ff"));
@@ -45,7 +44,7 @@ public sealed class TrendLegendViewModelTests
 	[AvaloniaFact]
 	public void TogglingRowCheckbox_FlipsChartPenVisibility()
 	{
-		var (chart, _) = CreateChart();
+		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Pen 1", "Heaters", "#ff0000"));
 		using var legend = new TrendLegendViewModel(chart);
 		var row = SingleRow(legend, 1);
@@ -62,7 +61,7 @@ public sealed class TrendLegendViewModelTests
 	[AvaloniaFact]
 	public void RowVisibility_MirrorsChartDrivenVisibilityChange()
 	{
-		var (chart, _) = CreateChart();
+		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Pen 1", "Heaters", "#ff0000"));
 		using var legend = new TrendLegendViewModel(chart);
 		var row = SingleRow(legend, 1);
@@ -75,7 +74,7 @@ public sealed class TrendLegendViewModelTests
 	[AvaloniaFact]
 	public void SelectingRow_SetsTheActivePenOnChart()
 	{
-		var (chart, _) = CreateChart();
+		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Pen 1", "Heaters", "#ff0000"));
 		chart.AddPen(new Pen(2, "Pen 2", "Pressures", "#00ff00"));
 		using var legend = new TrendLegendViewModel(chart);
@@ -89,13 +88,13 @@ public sealed class TrendLegendViewModelTests
 	}
 
 	[AvaloniaFact]
-	public void CursorValue_ReflectsChartCursorValues()
+	public async Task CursorValue_ReflectsChartCursorValues()
 	{
-		var (chart, coordinator) = CreateChart();
+		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Pen 1", "Heaters", "#ff0000"));
 		using var legend = new TrendLegendViewModel(chart);
 		var row = SingleRow(legend, 1);
-		coordinator.RequestHistory([1], _from, _to);
+		await LoadInitialHistory(chart, _from, _to);
 
 		chart.MoveCursor(_from);
 
@@ -107,16 +106,23 @@ public sealed class TrendLegendViewModelTests
 	}
 
 	[AvaloniaFact]
-	public void CurrentValue_ReflectsChartHistoryLoad()
+	public async Task CurrentValue_ReflectsChartHistoryLoad()
 	{
-		var (chart, coordinator) = CreateChart();
+		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Pen 1", "Heaters", "#ff0000"));
 		using var legend = new TrendLegendViewModel(chart);
 		var row = SingleRow(legend, 1);
 
-		coordinator.RequestHistory([1], _from, _to);
+		await LoadInitialHistory(chart, _from, _to);
 
 		row.CurrentValue.Should().Be(2.0);
+	}
+
+	private static Task LoadInitialHistory(TrendChartViewModel chart, DateTime from, DateTime to)
+	{
+		chart.Navigation.TrackDataExtents(from, to);
+
+		return chart.RequestInitialHistory();
 	}
 
 	private static TrendLegendRowViewModel SingleRow(TrendLegendViewModel legend, long penId)
@@ -126,18 +132,17 @@ public sealed class TrendLegendViewModelTests
 			.Single(row => row.Name == $"Pen {penId}");
 	}
 
-	private static (TrendChartViewModel Chart, TrendCoordinator Coordinator) CreateChart()
+	private static TrendChartViewModel CreateChart()
 	{
 		var scheduler = new TestScheduler();
 		var provider = new FakeDataProvider(scheduler, TimeSpan.FromMilliseconds(10));
 		var coordinator = new TrendCoordinator(
 			provider,
-			NullLogger<TrendCoordinator>.Instance,
 			scheduler,
 			ImmediateScheduler.Instance,
 			_batchWindow);
-		var chart = new TrendChartViewModel(coordinator, scheduler, ImmediateScheduler.Instance);
 
-		return (chart, coordinator);
+		return new TrendChartViewModel(
+			coordinator, scheduler, ImmediateScheduler.Instance, NullLogger<TrendChartViewModel>.Instance);
 	}
 }

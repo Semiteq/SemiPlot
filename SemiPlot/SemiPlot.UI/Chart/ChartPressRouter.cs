@@ -1,9 +1,6 @@
 ﻿namespace SemiPlot.UI.Chart;
 
-// The pure left-button press dispatch decision the view's OnPointerPressed performs: an axis-region hit
-// pre-empts pan and delta (a double-click autoscales, a single click edits a bound), then delta mode
-// places a cursor, otherwise the press starts a hand-pan. Kept separate from the view so the branch
-// ordering is unit-testable without driving real pointer events through the AvaPlot control.
+// Branch ordering: an axis-region hit pre-empts delta and pan; delta mode pre-empts pan.
 public static class ChartPressRouter
 {
 	public static ChartPressAction Route(bool isAxisRegionHit, int clickCount, LeftButtonTool activeTool)

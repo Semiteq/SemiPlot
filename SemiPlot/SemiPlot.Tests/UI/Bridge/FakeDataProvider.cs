@@ -10,16 +10,13 @@ namespace SemiPlot.Tests.UI.Bridge;
 
 internal sealed class FakeDataProvider : IDataProvider
 {
-	// A fixed anchor on purpose: the coordinator tests assert batch structure and dispatch, not a
-	// history-to-realtime timestamp join, so a deterministic epoch keeps them stable.
-	private static readonly DateTime RealtimeEpoch = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-
-	private readonly IScheduler _scheduler;
+	// The default last-column center value an unoverridden layer returns; tests assert against this.
+	public const double DefaultCenter = 2.0;
+	// A deterministic epoch: tests assert batch structure and dispatch, not a history-to-realtime join.
+	private static readonly DateTime _realtimeEpoch = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 	private readonly TimeSpan _realtimeInterval;
 
-	public DateTime ArchiveFirstUtc { get; set; } = new(2025, 12, 25, 0, 0, 0, DateTimeKind.Utc);
-
-	public DateTime ArchiveLastUtc { get; set; } = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+	private readonly IScheduler _scheduler;
 
 	public FakeDataProvider(IScheduler scheduler, TimeSpan realtimeInterval)
 	{
@@ -32,13 +29,19 @@ internal sealed class FakeDataProvider : IDataProvider
 		];
 	}
 
-	public IReadOnlyList<Pen> Pens { get; }
+	public DateTime ArchiveFirstUtc { get; set; } = new(2025, 12, 25, 0, 0, 0, DateTimeKind.Utc);
+
+	public DateTime ArchiveLastUtc { get; set; } = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
 	public bool FailHistory { get; set; }
 
-	// When set, a history query for this exact layer returns this gate's task instead of completing
-	// synchronously, so a test can hold one query in flight while a newer one completes (cross-path race).
+	// When set, a query for this layer returns the gate's task, holding it in flight so a newer query can
+	// complete first (cross-path race).
 	public AggregationLayer? GatedLayer { get; set; }
+
+	// Per-layer center value override: lets a test distinguish which layer's result was applied last
+	// (e.g. an initial Raw load vs. a superseding coarser-layer gesture re-query).
+	public Dictionary<AggregationLayer, double> LayerCenterOverrides { get; } = [];
 
 	public TaskCompletionSource<Result<IReadOnlyList<PenHistoryEnvelope>>> HistoryGate { get; } = new();
 
@@ -54,16 +57,18 @@ internal sealed class FakeDataProvider : IDataProvider
 
 	public int? LastQueriedTargetColumnCount { get; private set; }
 
+	public IReadOnlyList<Pen> Pens { get; }
+
 	public IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<long> penIds)
 	{
-		var subscribed = penIds.Where(id => Pens.Any(pen => pen.ProjectVarId == id)).ToArray();
+		var subscribed = penIds.Where(id => Pens.Any(pen => pen.PenId == id)).ToArray();
 
 		return Observable
 			.Interval(_realtimeInterval, _scheduler)
 			.Select(tick => (IReadOnlyList<Sample>)subscribed
 				.Select(id => new Sample(
 					id,
-					RealtimeEpoch + TimeSpan.FromTicks(_realtimeInterval.Ticks * (tick + 1)),
+					_realtimeEpoch + TimeSpan.FromTicks(_realtimeInterval.Ticks * (tick + 1)),
 					id + tick))
 				.ToArray());
 	}
@@ -92,13 +97,17 @@ internal sealed class FakeDataProvider : IDataProvider
 			return HistoryGate.Task;
 		}
 
+		var center = LayerCenterOverrides.TryGetValue(layer, out var overridden)
+			? overridden
+			: DefaultCenter;
+
 		var envelopes = penIds
 			.Select(id => new PenHistoryEnvelope(
 				id,
 				[fromUtc, toUtc],
-				[1.0, 2.0],
-				[1.0, 2.0],
-				[1.0, 2.0]))
+				[1.0, center],
+				[1.0, center],
+				[1.0, center]))
 			.ToArray();
 
 		return Task.FromResult(Result.Ok<IReadOnlyList<PenHistoryEnvelope>>(envelopes));

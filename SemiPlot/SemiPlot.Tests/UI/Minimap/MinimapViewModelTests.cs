@@ -7,6 +7,7 @@ using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Reactive.Testing;
 
+using SemiPlot.Core.Trends;
 using SemiPlot.Tests.UI.Bridge;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
@@ -64,11 +65,10 @@ public sealed class MinimapViewModelTests
 		var (viewModel, navigation, _) = CreateViewModel();
 		await viewModel.LoadExtentAsync();
 
-		// Snap the navigation window onto a known sub-span of the extent: the controller seeds the window
-		// to [last - width, last] when the data extents first arrive.
+		// Seeds the window to [last - width, last], a known sub-span of the extent.
 		navigation.TrackDataExtents(_extentFirst, _extentLast);
 
-		var (start, width) = SemiPlot.Core.Trends.MinimapGeometry.WindowFraction(
+		var (start, width) = MinimapGeometry.WindowFraction(
 			_extentFirst, _extentLast, navigation.From, navigation.To);
 
 		viewModel.WindowStartFraction.Should().BeApproximately(start, 1e-9);
@@ -86,7 +86,7 @@ public sealed class MinimapViewModelTests
 		viewModel.NavigateToFraction(0.5);
 
 		var center = navigation.From + ((navigation.To - navigation.From) / 2.0);
-		var expectedMidpoint = SemiPlot.Core.Trends.MinimapGeometry.TimeAtFraction(_extentFirst, _extentLast, 0.5);
+		var expectedMidpoint = MinimapGeometry.TimeAtFraction(_extentFirst, _extentLast, 0.5);
 		(center - expectedMidpoint).Duration().Should().BeLessThan(TimeSpan.FromSeconds(1.0));
 	}
 
@@ -114,7 +114,6 @@ public sealed class MinimapViewModelTests
 		};
 		var coordinator = new TrendCoordinator(
 			provider,
-			NullLogger<TrendCoordinator>.Instance,
 			scheduler,
 			ImmediateScheduler.Instance,
 			_batchWindow);

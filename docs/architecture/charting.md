@@ -43,7 +43,11 @@ center). Cursor and legend read the `Center` channel consistently across the sea
 driven per-axis via `SetLimitsY(min, max, axis)` from the Core `PenScaleModel` output (no global
 `AutoScale`). Every plottable is pinned to `plot.Axes.Bottom` explicitly at creation, so all pens
 share one X axis and per-pen axes are Y-only. Redraws are coalesced to 30 FPS via a
-`Sample(33 ms)` redraw seam driving `AvaPlot.Refresh()`.
+`Sample(33 ms)` redraw seam driving `AvaPlot.Refresh()`. Only data/window/visibility/gesture/
+delta-toggle changes drive ScottPlot redraws (through that throttled seam); hover and pointer-exit do
+**not** call `AvaPlot.Refresh()`. A pointer-move updates only the cheap Avalonia cursor overlay, which
+is repositioned from the `RedrawRequested` seam (after `Refresh()`) and on `SizeChanged`. Keeping the
+re-rasterization off the per-pointer-event path is the point of the overlay.
 
 ## Reference: legacy SCADA trend window
 
@@ -120,8 +124,13 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
 - `Chart/ChartRealtimeApplier` — the append-vs-fold rule per layer for incoming `RealtimeBatch`es.
 - `Chart/ChartCursorReader` / `ChartDeltaCursorReader` — view-side state wrapping the Core cursor
   models, resolving the visible / active pens (`ChartDeltaCursorReader.FormatReadout` formats Δt/Δy).
-- `Chart/ChartHoverReadout` — wraps a bottom-X-pinned `ScottPlot.Plottables.Text`; shows the local
-  timestamp + every visible pen's `Center` value at the cursor X, suppressed during drag / delta mode.
+- `Chart/ChartHoverReadout` — pure static `BuildContent`: builds the readout string (local timestamp +
+  every visible pen's value at the cursor X; gap or missing pen → dash) that feeds the Avalonia overlay
+  `TextBlock`. No plottable; unit-tested as plain `[Fact]`.
+- `Chart/ChartCursorOverlay` — pure projection (no Avalonia/`AvaPlot` deps): cursor pixel X + `DataRect`
+  + render scale → crosshair endpoints + readout anchor in DIP space, clamped to the data rect; unit-tested.
+  The view (`TrendChartView`) renders the result onto a transparent overlay `Canvas` (crosshair `Line` +
+  readout `Border`), suppressed during drag / delta mode.
 - `Chart/LeftButtonTool` (enum `Pan | DeltaPlacement`) — the single left-button gesture state, sourced
   from the toolbar delta toggle.
 - `Chart/ChartAxisRegion` + `ChartAxisEdit` — Y-axis click-region hit-test (panel band, upper/lower
@@ -153,10 +162,11 @@ The viewer consumes data only through `IDataProvider` (see data-integration.md),
 strongly typed — **no JSON message bridge**. `TrendCoordinator` is the Rx hub between provider and
 view model:
 
-- **History:** `QueryHistoryAsync(penIds, from, to, layer, targetColumnCount)` returns one
-  `PenHistoryEnvelope` per pen (ascending `Timestamps` + `Min` + `Max` + `Center`; NaN = gap);
-  `RequestHistory(...)` + `SetLayer(...)` re-query through the decimation seam and surface results
-  via `IObservable<TrendHistory>` (layer + envelopes).
+- **History:** `QueryHistoryAsync(penIds, from, to, layer, targetColumnCount)` is the single history
+  query, returning one `PenHistoryEnvelope` per pen (ascending `Timestamps` + `Min` + `Max` +
+  `Center`; NaN = gap). The view model awaits it directly for the initial load and routes gesture
+  re-queries through `ChartHistoryRequestDebouncer`; both apply via one monotonic-sequence path so the
+  latest window wins.
 - **Realtime:** `IObservable<RealtimeBatch>` — a union timeline plus per-pen `double?[]` (`null` =
   gap), buffered on the data scheduler and observed on the UI scheduler.
 - **Archive extent:** `QueryArchiveExtentAsync()` returns an `ArchiveExtent(FirstUtc, LastUtc)` —

@@ -11,12 +11,12 @@ namespace SemiPlot.DataSource.Stub;
 public sealed class RandomStubDataProvider : IDataProvider
 {
 	private static readonly TimeSpan _archiveDepth = TimeSpan.FromDays(7.0);
+	private readonly IReadOnlyDictionary<long, SyntheticPen> _pensById;
+	private readonly TimeSpan _realtimeInterval;
+	private readonly IScheduler _scheduler;
 
 	private readonly long _seed;
-	private readonly IScheduler _scheduler;
-	private readonly TimeSpan _realtimeInterval;
 	private readonly Func<DateTime> _utcNow;
-	private readonly IReadOnlyDictionary<long, SyntheticPen> _pensById;
 
 	public RandomStubDataProvider(
 		IScheduler scheduler,
@@ -30,7 +30,7 @@ public sealed class RandomStubDataProvider : IDataProvider
 		_utcNow = utcNow ?? (() => DateTime.UtcNow);
 
 		var catalog = SyntheticPenCatalog.Build();
-		_pensById = catalog.ToDictionary(pen => pen.ProjectVarId);
+		_pensById = catalog.ToDictionary(pen => pen.PenId);
 		Pens = catalog.Select(pen => pen.ToPen()).ToArray();
 	}
 
@@ -89,6 +89,7 @@ public sealed class RandomStubDataProvider : IDataProvider
 	public Task<Result<ArchiveExtent>> QueryArchiveExtentAsync()
 	{
 		var now = _utcNow();
+
 		return Task.FromResult(Result.Ok(new ArchiveExtent(now - _archiveDepth, now)));
 	}
 
@@ -134,6 +135,7 @@ public sealed class RandomStubDataProvider : IDataProvider
 			{
 				var pen = _pensById[penId];
 				var value = SyntheticValueWalk.Value(_seed, penId, tickIndex, pen.MinValue, pen.MaxValue);
+
 				return new Sample(penId, timestamp, value);
 			})
 			.ToArray();

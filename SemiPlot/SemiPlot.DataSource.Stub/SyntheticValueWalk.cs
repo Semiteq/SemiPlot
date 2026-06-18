@@ -5,6 +5,7 @@ public static class SyntheticValueWalk
 	public static double Value(long seed, long penId, long tickIndex, double minValue, double maxValue)
 	{
 		var normalized = Normalized(seed, penId, tickIndex);
+
 		return minValue + normalized * (maxValue - minValue);
 	}
 
@@ -26,6 +27,7 @@ public static class SyntheticValueWalk
 		var jitter = ToUnitInterval(Hash((long)penHash, tickIndex)) - 0.5;
 
 		var combined = 0.6 * slow + 0.25 * fast + 0.15 * (2.0 * jitter);
+
 		return Math.Clamp((combined + 1.0) / 2.0, 0.0, 1.0);
 	}
 
@@ -45,6 +47,7 @@ public static class SyntheticValueWalk
 			value ^= value >> 27;
 			value *= 0x94D049BB133111EBUL;
 			value ^= value >> 31;
+
 			return value;
 		}
 	}

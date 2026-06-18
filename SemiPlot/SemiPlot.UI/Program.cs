@@ -1,5 +1,4 @@
 ﻿using System.Globalization;
-using System.IO;
 
 using Microsoft.Extensions.DependencyInjection;
 
@@ -21,8 +20,6 @@ public static class Program
 
 		try
 		{
-			// Disposed after the classic-desktop lifetime returns, cascading disposal to the singleton
-			// view models (chart/toolbar/legend) and the coordinator they own.
 			using var serviceProvider = BuildServiceProvider();
 
 			App.Run(serviceProvider);
@@ -52,6 +49,7 @@ public static class Program
 	private static string ResolveLogFilePath()
 	{
 		var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
 		return Path.Combine(root, "SemiPlot", "Logs", "semiplot.log");
 	}
 
@@ -100,6 +98,7 @@ public static class Program
 		{
 			Console.Error.WriteLine(
 				$"Failed to create log directory for '{filePath}': {ex.Message}. File logging is disabled.");
+
 			return false;
 		}
 	}

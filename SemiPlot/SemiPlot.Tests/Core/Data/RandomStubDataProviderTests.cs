@@ -27,7 +27,7 @@ public sealed class RandomStubDataProviderTests
 		var provider = CreateProvider(new TestScheduler());
 
 		provider.Pens.Should().NotBeEmpty();
-		provider.Pens.Select(pen => pen.ProjectVarId).Should().OnlyHaveUniqueItems();
+		provider.Pens.Select(pen => pen.PenId).Should().OnlyHaveUniqueItems();
 	}
 
 	[Fact]
@@ -88,8 +88,8 @@ public sealed class RandomStubDataProviderTests
 	public async Task QueryHistoryAsync_FiniteBandValuesStayWithinPenRange()
 	{
 		var provider = CreateProvider(new TestScheduler());
-		var penId = provider.Pens[0].ProjectVarId;
-		var synthetic = SyntheticPenCatalog.Build().Single(candidate => candidate.ProjectVarId == penId);
+		var penId = provider.Pens[0].PenId;
+		var synthetic = SyntheticPenCatalog.Build().Single(candidate => candidate.PenId == penId);
 
 		var result = await provider.QueryHistoryAsync([penId], _from, _to, AggregationLayer.Minute, TargetColumns);
 
@@ -108,7 +108,7 @@ public sealed class RandomStubDataProviderTests
 	{
 		var provider = CreateProvider(new TestScheduler());
 
-		// One sample per second across an hour guarantees the deterministic bad-quality cadence fires.
+		// A full hour at one sample/second guarantees the deterministic bad-quality cadence fires.
 		var result = await provider.QueryHistoryAsync(PenIds(), _from, _to, AggregationLayer.Raw, TargetColumns);
 
 		var envelope = result.Value.Single();
@@ -168,8 +168,8 @@ public sealed class RandomStubDataProviderTests
 	{
 		var scheduler = new TestScheduler();
 		var provider = CreateProvider(scheduler);
-		var subscribedPenId = provider.Pens[0].ProjectVarId;
-		var otherPenId = provider.Pens[1].ProjectVarId;
+		var subscribedPenId = provider.Pens[0].PenId;
+		var otherPenId = provider.Pens[1].PenId;
 
 		var observed = new List<IReadOnlyList<Sample>>();
 		using var subscription = provider.Subscribe([subscribedPenId]).Subscribe(observed.Add);
@@ -190,11 +190,11 @@ public sealed class RandomStubDataProviderTests
 		var pen = provider.Pens[0];
 
 		var observed = new List<IReadOnlyList<Sample>>();
-		using var subscription = provider.Subscribe([pen.ProjectVarId]).Subscribe(observed.Add);
+		using var subscription = provider.Subscribe([pen.PenId]).Subscribe(observed.Add);
 
 		scheduler.AdvanceBy(TimeSpan.FromSeconds(10).Ticks);
 
-		var synthetic = SyntheticPenCatalog.Build().Single(candidate => candidate.ProjectVarId == pen.ProjectVarId);
+		var synthetic = SyntheticPenCatalog.Build().Single(candidate => candidate.PenId == pen.PenId);
 		var values = observed.SelectMany(batch => batch).Select(sample => sample.Value).ToArray();
 		values.Should().NotBeEmpty();
 		values.Should().OnlyContain(value => double.IsFinite(value));
@@ -208,7 +208,7 @@ public sealed class RandomStubDataProviderTests
 		var anchor = new DateTime(2026, 6, 15, 12, 0, 0, DateTimeKind.Utc);
 		var interval = TimeSpan.FromSeconds(1);
 		var provider = new RandomStubDataProvider(scheduler, realtimeInterval: interval, utcNow: () => anchor);
-		var penId = provider.Pens[0].ProjectVarId;
+		var penId = provider.Pens[0].PenId;
 
 		var observed = new List<IReadOnlyList<Sample>>();
 		using var subscription = provider.Subscribe([penId]).Subscribe(observed.Add);
@@ -257,6 +257,6 @@ public sealed class RandomStubDataProviderTests
 
 	private static IReadOnlyList<long> PenIds()
 	{
-		return [new RandomStubDataProvider(new TestScheduler()).Pens[0].ProjectVarId];
+		return [new RandomStubDataProvider(new TestScheduler()).Pens[0].PenId];
 	}
 }

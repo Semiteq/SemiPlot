@@ -3,7 +3,7 @@
 namespace SemiPlot.DataSource.Stub;
 
 public sealed record SyntheticPen(
-	long ProjectVarId,
+	long PenId,
 	string Name,
 	string Group,
 	string Color,
@@ -13,6 +13,6 @@ public sealed record SyntheticPen(
 {
 	public Pen ToPen()
 	{
-		return new(ProjectVarId, Name, Group, Color, LineStyle);
+		return new(PenId, Name, Group, Color, LineStyle);
 	}
 }

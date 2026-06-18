@@ -75,7 +75,7 @@ public sealed class TrendNavigationModelTests
 		var model = Model(isSticky: true, windowWidth: TimeSpan.FromMinutes(10.0));
 		var now = model.To;
 
-		// Pan far into the future so the live edge ends up before the window's new From.
+		// Pan far enough that the live edge lands before the window's new From.
 		model.Pan(TimeSpan.FromMinutes(30.0), now);
 
 		model.IsSticky.Should().BeFalse();
@@ -136,8 +136,8 @@ public sealed class TrendNavigationModelTests
 
 		model.Zoom(factor: 0.5, anchor: anchor);
 
-		// Width quantization snaps the target onto the zoom ladder, so the result is close to the requested
-		// half-width rather than exactly 5 minutes; the anchor's relative position is still preserved.
+		// Width quantization snaps onto the zoom ladder (near, not exactly, the requested half-width); the
+		// anchor's relative position is still preserved.
 		var anchorFractionAfter = (anchor - model.From) / model.Width;
 		anchorFractionAfter.Should().BeApproximately(anchorFractionBefore, 1e-9);
 		model.Width.Should().BeCloseTo(TimeSpan.FromMinutes(5.0), TimeSpan.FromMinutes(1.0));
@@ -149,16 +149,16 @@ public sealed class TrendNavigationModelTests
 		var model = Model(isSticky: false, windowWidth: TimeSpan.FromHours(1.0));
 		var anchor = model.From + (model.Width / 2.0);
 
-		// One zoom snaps the window onto the quantization ladder; capture that as the origin so the cycle is
-		// measured between two on-ladder windows (the starting 1h width is not itself a ladder point).
+		// Capture the origin after one zoom snaps onto the ladder, so the cycle is measured between two
+		// on-ladder windows (the starting 1h width is not itself a ladder point).
 		model.Zoom(factor: 0.8, anchor: anchor);
 		model.Zoom(factor: 1.25, anchor: anchor);
 		var fromOrigin = model.From;
 		var toOrigin = model.To;
 		var widthOrigin = model.Width;
 
-		// Anchor at the window centre: width quantization makes the reciprocal in/out factors land on the
-		// same zoom-ladder points, so a centred in-then-out cycle retraces to the origin window exactly.
+		// Centred anchor: reciprocal in/out factors land on the same ladder points, so the cycle retraces
+		// to the origin window exactly.
 		for (var notch = 0; notch < 8; notch++)
 		{
 			model.Zoom(factor: 0.8, anchor: anchor);
@@ -222,6 +222,7 @@ public sealed class TrendNavigationModelTests
 	{
 		var to = _origin;
 		var from = _origin - windowWidth;
+
 		return new TrendNavigationModel(from, to, _firstSample, isSticky);
 	}
 }

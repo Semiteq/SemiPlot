@@ -10,21 +10,18 @@ using ReactiveUI;
 
 namespace SemiPlot.UI.Minimap;
 
-// The archive-overview strip: the highlight rectangle is drawn from the view model's window fractions
-// scaled by the control width, and a press/drag converts the pointer X into a fraction to navigate.
 public partial class MinimapView : UserControl
 {
-	// A narrow window over a wide extent maps to a sub-pixel fraction; this floor keeps the marker
-	// visible so the strip never reads as an empty bar.
+	// Floors a sub-pixel window fraction so the marker stays visible.
 	private const double MinimumHighlightWidth = 6.0;
 	private const double LabelEdgePadding = 4.0;
 
 	private readonly CompositeDisposable _disposables = new();
-	private Canvas? _stripCanvas;
-	private Border? _windowHighlight;
 	private Rectangle? _baseline;
 	private TextBlock? _extentLastLabel;
 	private bool _isDragging;
+	private Canvas? _stripCanvas;
+	private Border? _windowHighlight;
 
 	public MinimapView()
 	{
@@ -82,11 +79,10 @@ public partial class MinimapView : UserControl
 		LayoutBaseline(width, height);
 		LayoutEndLabel(width, height);
 
-		// No extent yet means the navigation window has no anchor on the strip, so the highlight is hidden
-		// rather than defaulting to a misleading full-width selection.
 		if (!viewModel.HasExtent)
 		{
 			_windowHighlight.IsVisible = false;
+
 			return;
 		}
 
@@ -107,8 +103,6 @@ public partial class MinimapView : UserControl
 		Canvas.SetTop(_baseline, height / 2.0);
 	}
 
-	// The first-end label is left-anchored in the XAML; the last-end label is right-anchored here because
-	// its offset depends on the measured text width.
 	private void LayoutEndLabel(double width, double height)
 	{
 		if (_extentLastLabel is null)
@@ -152,8 +146,7 @@ public partial class MinimapView : UserControl
 		_isDragging = false;
 	}
 
-	// Capture can be lost mid-drag without a PointerReleased (window deactivation); clear the drag flag so
-	// the strip does not stay stuck following the pointer.
+	// Capture can be lost mid-drag without a PointerReleased (window deactivation); clear the drag flag.
 	private void OnPointerCaptureLost(object? sender, PointerCaptureLostEventArgs args)
 	{
 		_isDragging = false;

@@ -5,8 +5,6 @@ using Avalonia.Media;
 
 namespace SemiPlot.UI.Legend;
 
-// Renders the active pen's legend row name in bold so the operator can see which pen drives the
-// primary axis. Any non-active row stays at normal weight.
 public sealed class ActiveToWeightConverter : IValueConverter
 {
 	public static readonly ActiveToWeightConverter Instance = new();

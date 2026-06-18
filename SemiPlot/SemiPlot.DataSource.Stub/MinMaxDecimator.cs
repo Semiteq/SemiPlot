@@ -2,9 +2,8 @@
 
 namespace SemiPlot.DataSource.Stub;
 
-// Reduces a pen's raw samples to a min/max envelope sized for a target column count. Each column keeps
-// its min and max so a single-sample spike survives; gaps (nulls) split the timeline into segments
-// separated by NaN columns so a column never straddles a gap and aliases a spike across it.
+// Each column keeps its min and max so a single-sample spike survives; gaps (nulls) split the timeline
+// into segments separated by NaN columns, so a column never straddles a gap and aliases a spike across it.
 public static class MinMaxDecimator
 {
 	public static PenHistoryEnvelope Decimate(
@@ -34,10 +33,12 @@ public static class MinMaxDecimator
 		if (timestamps.Count <= targetColumnCount)
 		{
 			AppendPassThrough(builder, timestamps, values);
+
 			return builder.Build();
 		}
 
 		AppendDecimatedSegments(builder, timestamps, values, targetColumnCount);
+
 		return builder.Build();
 	}
 
@@ -70,6 +71,7 @@ public static class MinMaxDecimator
 		if (segments.Count == 0)
 		{
 			AppendPassThrough(builder, timestamps, values);
+
 			return;
 		}
 
@@ -88,7 +90,8 @@ public static class MinMaxDecimator
 		{
 			if (appendedSegment)
 			{
-				builder.AppendGap(timestamps[segment.Start]);
+				var lastNullIndexBeforeSegment = segment.Start - 1;
+				builder.AppendGap(timestamps[lastNullIndexBeforeSegment]);
 			}
 
 			var columnsForSegment = AllocateColumns(segment.Length, totalPopulated, targetColumnCount);
@@ -163,6 +166,7 @@ public static class MinMaxDecimator
 	private static int AllocateColumns(int segmentLength, int totalPopulated, int targetColumnCount)
 	{
 		var share = (int)((long)segmentLength * targetColumnCount / totalPopulated);
+
 		return Math.Clamp(share, 1, segmentLength);
 	}
 

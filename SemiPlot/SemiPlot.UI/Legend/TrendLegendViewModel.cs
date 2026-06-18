@@ -1,13 +1,9 @@
-﻿using System.Linq;
-
-using ReactiveUI;
+﻿using ReactiveUI;
 
 using SemiPlot.UI.Chart;
 
 namespace SemiPlot.UI.Legend;
 
-// The grouped mini-legend: one row per chart pen grouped by Pen.Group, projecting the chart view model's
-// read surface into a bindable shape. Holds no scale or render logic.
 public sealed class TrendLegendViewModel : ReactiveObject, IDisposable
 {
 	private readonly IReadOnlyList<TrendLegendRowViewModel> _rows;

@@ -33,11 +33,13 @@ public sealed class ChartHistoryRequestDebouncerTests
 			request =>
 			{
 				queryCount++;
+
 				return Observable
 					.Return(Ok(request))
 					.ToTask();
 			},
 			(_, _) => { },
+			_ => { },
 			_debounceWindow,
 			scheduler,
 			ImmediateScheduler.Instance);
@@ -58,9 +60,8 @@ public sealed class ChartHistoryRequestDebouncerTests
 	[Fact]
 	public async Task StaleResponse_IsDroppedWhenANewerWindowSupersedesAnInFlightQuery()
 	{
-		// A slow first query is still in flight when a newer window arrives; Switch must unsubscribe the
-		// stale query so its late response never overwrites the newer window (latest-wins). Real schedulers
-		// are used here because the latest-wins guard spans a real async query boundary.
+		// A slow first query is in flight when a newer window arrives; Switch must drop its late response
+		// (latest-wins). Real schedulers are used because the guard spans a real async query boundary.
 		var firstQueryGate = new TaskCompletionSource();
 		var firstQueryStarted = new TaskCompletionSource();
 		var applied = new List<AggregationLayer>();
@@ -86,6 +87,7 @@ public sealed class ChartHistoryRequestDebouncerTests
 					secondApplied.TrySetResult();
 				}
 			},
+			_ => { },
 			shortWindow,
 			DefaultScheduler.Instance,
 			ImmediateScheduler.Instance);
@@ -96,13 +98,36 @@ public sealed class ChartHistoryRequestDebouncerTests
 		debouncer.Request(RequestForLayer(AggregationLayer.Hour));
 		await secondApplied.Task;
 
-		// Release the stale first query only after the newer one has already been applied; its result must
-		// be dropped by Switch.
+		// Release the stale first query after the newer one was applied; Switch must drop its result.
 		firstQueryGate.SetResult();
 		await Task.Delay(50);
 
 		applied.Should().ContainSingle();
 		applied[0].Should().Be(AggregationLayer.Hour);
+	}
+
+	[Fact]
+	public void ThrowingQuery_IsReportedAndDropped_WithoutKillingTheStream()
+	{
+		var scheduler = new TestScheduler();
+		var reportedFailures = new List<Exception>();
+		var appliedLayers = new List<AggregationLayer>();
+		using var debouncer = new ChartHistoryRequestDebouncer(
+			_ => throw new InvalidOperationException("query failed"),
+			(history, _) => appliedLayers.Add(history.Layer),
+			reportedFailures.Add,
+			_debounceWindow,
+			scheduler,
+			ImmediateScheduler.Instance);
+
+		debouncer.Request(RequestForLayer(AggregationLayer.Raw));
+		scheduler.AdvanceBy(_debounceWindow.Ticks + 1);
+
+		debouncer.Request(RequestForLayer(AggregationLayer.Hour));
+		scheduler.AdvanceBy(_debounceWindow.Ticks + 1);
+
+		reportedFailures.Should().HaveCount(2);
+		appliedLayers.Should().BeEmpty();
 	}
 
 	private static Result<IReadOnlyList<PenHistoryEnvelope>> Ok(HistoryRequest request)
@@ -113,6 +138,6 @@ public sealed class ChartHistoryRequestDebouncerTests
 
 	private static HistoryRequest RequestForLayer(AggregationLayer layer)
 	{
-		return new HistoryRequest([1], _from, _to, layer, 0L);
+		return new HistoryRequest([1], _from, _to, layer, 0L, HistoryColumnTarget.MaxColumns);
 	}
 }

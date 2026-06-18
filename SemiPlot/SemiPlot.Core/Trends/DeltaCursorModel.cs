@@ -1,7 +1,6 @@
 ﻿namespace SemiPlot.Core.Trends;
 
-// Renderer-agnostic dual-cursor model measuring Δt plus the active pen's Δy. Δy is per active pen only
-// (pens share X but not Y) and reuses CursorReadoutModel's interpolation and gap rules.
+// Δy is measured for the active pen only, since pens share X but not Y.
 public sealed class DeltaCursorModel
 {
 	private readonly CursorReadoutModel _cursorReadout = new();
@@ -19,6 +18,7 @@ public sealed class DeltaCursorModel
 		{
 			FirstCursor = cursorTime;
 			SecondCursor = null;
+
 			return;
 		}
 

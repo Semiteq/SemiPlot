@@ -161,7 +161,7 @@ public sealed class ChartNavigationControllerTests
 	{
 		var controller = Loaded();
 
-		// Cross just past the 1h Raw/Minute ceiling, then nudge back and forth inside the hysteresis band.
+		// Cross just past the 1h Raw/Minute ceiling, then nudge inside the hysteresis band.
 		controller.ZoomAt(1.05, controller.To);
 		var layerAfterCrossing = controller.ActiveLayer;
 		layerAfterCrossing.Should().Be(AggregationLayer.Raw);
@@ -178,6 +178,7 @@ public sealed class ChartNavigationControllerTests
 	{
 		var controller = new ChartNavigationController();
 		controller.TrackDataExtents(_first, _last);
+
 		return controller;
 	}
 }

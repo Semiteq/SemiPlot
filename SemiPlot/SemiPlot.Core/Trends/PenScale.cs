@@ -1,6 +1,5 @@
 ﻿namespace SemiPlot.Core.Trends;
 
-// A computed Y range for one axis (a shared group or a single pen).
 public sealed record PenScale(
 	string AxisKey,
 	IReadOnlyList<long> PenIds,

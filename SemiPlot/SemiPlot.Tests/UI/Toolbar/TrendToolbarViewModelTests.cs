@@ -1,5 +1,4 @@
-﻿using System.Reactive;
-using System.Reactive.Concurrency;
+﻿using System.Reactive.Concurrency;
 
 using Avalonia.Headless.XUnit;
 
@@ -167,11 +166,11 @@ public sealed class TrendToolbarViewModelTests
 		var provider = new FakeDataProvider(scheduler, TimeSpan.FromMilliseconds(10));
 		var coordinator = new TrendCoordinator(
 			provider,
-			NullLogger<TrendCoordinator>.Instance,
 			scheduler,
 			ImmediateScheduler.Instance,
 			_batchWindow);
-		var chart = new TrendChartViewModel(coordinator, scheduler, ImmediateScheduler.Instance);
+		var chart = new TrendChartViewModel(
+			coordinator, scheduler, ImmediateScheduler.Instance, NullLogger<TrendChartViewModel>.Instance);
 		var toolbar = new TrendToolbarViewModel(chart);
 
 		return (chart, toolbar);

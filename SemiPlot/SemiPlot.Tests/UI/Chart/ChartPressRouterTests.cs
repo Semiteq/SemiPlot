@@ -6,10 +6,8 @@ using Xunit;
 
 namespace SemiPlot.Tests.UI.Chart;
 
-// Asserts the left-button press dispatch decision the view performs in OnPointerPressed: the branch
-// ordering (axis-region pre-empts delta and pan; delta mode pre-empts pan) and the single/double-click
-// split on the axis region. This is the LOGIC of the pointer pipeline, decoupled from the AvaPlot
-// control so it can be tested without injecting real pointer events.
+// Branch ordering of the left-button press dispatch: axis-region pre-empts delta and pan, delta mode
+// pre-empts pan, and the axis region splits single- vs double-click.
 [Trait("Component", "UI")]
 [Trait("Area", "Chart")]
 [Trait("Category", "Unit")]

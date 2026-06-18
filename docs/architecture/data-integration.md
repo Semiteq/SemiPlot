@@ -10,7 +10,7 @@ read paths plus a fallback. All concrete schema/endpoint facts are
 The UI depends only on this abstraction. The real Simple-Scada integration sits behind it
 and is swappable with the stub.
 
-- **Identity:** a pen/tag is identified by a Simple-Scada `ProjectVarId` (long) and a name.
+- **Identity:** a pen/tag is identified by a `PenId` (long, the Simple-Scada project-variable id) and a name.
 - **Realtime:** subscribe to a set of tag ids → stream of samples `(tagId, timestamp, value)`.
 - **History:** `query(tagIds, from, to, layer)` → one series per tag, each a columnar set of
   `(timestamp, value)`. `layer` selects archive resolution (raw / minute / hour / day).
@@ -38,20 +38,19 @@ Implementations:
 
 > **Superseded.** The original Host↔JS JSON message bridge (WebView2 `PostWebMessageAsJson` ↔
 > `window.chrome.webview.postMessage`) is **removed**. The in-process Avalonia + ScottPlot viewer
-> replaced it: `TrendCoordinator` exposes realtime as `IObservable<RealtimeBatch>` and history as
-> `IObservable<TrendHistory>` / `QueryHistoryAsync`, with inbound `RequestHistory` / `SetLayer`
-> calls — all strongly typed in-process, no JSON, no `type` discriminator (see charting.md). The
-> records below describe the same logical payloads in their current typed form.
+> replaced it: `TrendCoordinator` exposes realtime as `IObservable<RealtimeBatch>` and history
+> through a single awaitable `QueryHistoryAsync` — all strongly typed in-process, no JSON, no `type`
+> discriminator (see charting.md). The records below describe the same logical payloads in their
+> current typed form.
 
 The coordinator and view models exchange these `SemiPlot.Core.Trends` records (in-process, typed):
 
 | Record                | Direction        | Payload |
 | --------------------- | ---------------- | ------- |
-| `Pen` catalog         | provider → UI    | `IDataProvider.Pens`: `ProjectVarId`, name, group, color, line style — read once on start. |
+| `Pen` catalog         | provider → UI    | `IDataProvider.Pens`: `PenId` (Simple-Scada project-variable id), name, group, color, line style — read once on start. |
 | `RealtimeBatch`       | coordinator → VM | `Timestamps`: union timeline; `Pens`: `[{ PenId, Values: double?[] }]` index-aligned (`null` = gap). |
 | `TrendHistory`        | coordinator → VM | `Layer` + `Pens`: per-pen `PenHistoryEnvelope` (`Timestamps` + `Min` + `Max` + `Center`; NaN = gap). |
-| `RequestHistory(...)` | VM → coordinator | `penIds`, `fromUtc`, `toUtc` — re-queries at the current layer. |
-| `SetLayer(layer)`     | VM → coordinator | `raw\|minute\|hour\|day` — updates the layer and re-queries the last window. |
+| `QueryHistoryAsync(...)` | VM → coordinator | `penIds`, `fromUtc`, `toUtc`, `layer`, `targetColumnCount` — the single awaitable history query; both the initial load and every gesture re-query (debounced) flow through it. |
 | `ArchiveExtent`       | provider → minimap | `FirstUtc`, `LastUtc` — full stored span, via `QueryArchiveExtentAsync()`. |
 
 The Simple-Scada integration below (OPC UA + SQL) is unaffected by this change.

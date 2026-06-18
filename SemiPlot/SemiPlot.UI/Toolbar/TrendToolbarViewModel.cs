@@ -1,6 +1,5 @@
 ﻿using System.Reactive;
 using System.Reactive.Disposables;
-using System.Reactive.Linq;
 
 using ReactiveUI;
 
@@ -9,19 +8,18 @@ using SemiPlot.UI.Chart;
 
 namespace SemiPlot.UI.Toolbar;
 
-// Exposes the chart's axis/navigation actions as ReactiveUI commands for the toolbar. The sticky and
-// delta-mode flags mirror their single sources of truth (the navigation controller and the chart view
-// model); the layer is a read-only reflection of the layer auto-selected from the zoom width.
+// The sticky and delta-mode flags mirror their single sources of truth (the navigation controller and
+// the chart view model).
 public sealed class TrendToolbarViewModel : ReactiveObject, IDisposable
 {
 	private readonly TrendChartViewModel _chartViewModel;
 	private readonly CompositeDisposable _disposables = new();
 
 	private AggregationLayer _activeLayer;
-	private double _manualMin;
-	private double _manualMax = 1.0;
-	private bool _isSticky;
 	private bool _isDeltaModeEnabled;
+	private bool _isSticky;
+	private double _manualMax = 1.0;
+	private double _manualMin;
 
 	public TrendToolbarViewModel(TrendChartViewModel chartViewModel)
 	{

@@ -73,9 +73,10 @@ ScottPlot control, fed in-process by `TrendCoordinator` over `IObservable`/await
   the samples on the data scheduler into a coalesced `RealtimeBatch` (≤ 10 Hz / 100 ms),
   crosses to the UI scheduler via `ObserveOn`, and exposes them as `IObservable<RealtimeBatch>`;
   the chart view model subscribes and appends to the per-pen plottables.
-- **History:** the chart requests a window → `TrendCoordinator.QueryHistoryAsync`/`RequestHistory`
-  → provider returns one decimated `PenHistoryEnvelope` per pen (ascending `X` + `Min`/`Max`/
-  `Center`) → results surface as `IObservable<TrendHistory>` the view model loads into the plot.
+- **History:** the chart requests a window → `TrendCoordinator.QueryHistoryAsync` (the single history
+  query; the initial load awaits it directly, gesture re-queries go through the debouncer) → provider
+  returns one decimated `PenHistoryEnvelope` per pen (ascending `X` + `Min`/`Max`/`Center`) → the view
+  model applies the result through one monotonic-sequence path (latest window wins) into the plot.
 
 ## Deployment
 

@@ -7,24 +7,18 @@ using SemiPlot.Core.Trends;
 
 namespace SemiPlot.UI.Chart;
 
-// Owns one pen's two plottables (center Scatter line + Min/Max FillY band) and their backing point
-// buffers, keeping value/visibility bookkeeping off the AvaPlot control so the view model stays headless.
 public sealed class TrendPenState : ReactiveObject
 {
-	// Bounds the realtime tail so the buffers do not grow without limit when the chart is detached from
-	// the live edge (not sticky) and never re-queries. Far more than any visible window of decimated
-	// columns, so trimming never drops on-screen data; the oldest points fall off the back of the tail.
 	private const int MaxRealtimePoints = 100_000;
-
-	private readonly List<Coordinates> _centerPoints;
 	private readonly List<(double X, double Top, double Bottom)> _bandPoints = [];
 
-	private bool _isVisible = true;
+	private readonly List<Coordinates> _centerPoints;
 	private double? _currentValue;
 
-	// The centerPoints list MUST be the exact instance the center-line Scatter was built against
-	// (ScottPlot's Scatter holds a live reference to it and re-reads it on every render). Mutating any
-	// other list would leave the center line empty while only the band updated.
+	private bool _isVisible = true;
+
+	// centerPoints MUST be the exact instance the center-line Scatter was built against: ScottPlot's
+	// Scatter holds a live reference to it and re-reads it on every render.
 	public TrendPenState(Pen pen, Scatter centerLine, FillY band, List<Coordinates> centerPoints)
 	{
 		ArgumentNullException.ThrowIfNull(pen);
@@ -56,7 +50,7 @@ public sealed class TrendPenState : ReactiveObject
 		{
 			this.RaiseAndSetIfChanged(ref _isVisible, value);
 			CenterLine.IsVisible = value;
-			Band.IsVisible = value;
+			ApplyBandVisibility();
 		}
 	}
 
@@ -81,10 +75,10 @@ public sealed class TrendPenState : ReactiveObject
 		}
 
 		Band.SetDataSource(_bandPoints);
+		ApplyBandVisibility();
 		CurrentValue = LastNonGapCenter();
 	}
 
-	// The band degenerates to Min == Max == value at the live edge; a null sample is a gap, drawn as NaN.
 	public void AppendRealtime(DateTime timestampUtc, double? value)
 	{
 		var x = LocalTimeAxis.ToAxis(timestampUtc);
@@ -94,6 +88,7 @@ public sealed class TrendPenState : ReactiveObject
 		_bandPoints.Add((x, y, y));
 		TrimToCap();
 		Band.SetDataSource(_bandPoints);
+		ApplyBandVisibility();
 
 		if (value.HasValue)
 		{
@@ -114,7 +109,7 @@ public sealed class TrendPenState : ReactiveObject
 	}
 
 	// At coarse layers a realtime sample folds into the current (last) decimation column instead of drawing
-	// a raw point, widening its Min/Max band; a null/empty/gap tail is skipped (the next re-query fixes it).
+	// a raw point, widening its Min/Max band; a null/empty/gap tail is skipped.
 	public void FoldRealtime(double? value)
 	{
 		if (!value.HasValue || _bandPoints.Count == 0)
@@ -134,8 +129,16 @@ public sealed class TrendPenState : ReactiveObject
 		_bandPoints[index] = (x, foldedTop, foldedBottom);
 		_centerPoints[index] = new Coordinates(x, value.Value);
 		Band.SetDataSource(_bandPoints);
+		ApplyBandVisibility();
 
 		CurrentValue = value;
+	}
+
+	// A degenerate band (all Min == Max) draws nothing yet still costs a full polygon path build per
+	// frame, so it is hidden until a non-zero spread appears.
+	private void ApplyBandVisibility()
+	{
+		Band.IsVisible = _isVisible && !BandDegeneracy.IsDegenerate(_bandPoints);
 	}
 
 	private double? LastNonGapCenter()

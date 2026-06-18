@@ -2,15 +2,12 @@
 
 namespace SemiPlot.UI.Chart;
 
-// Applies coalesced realtime batches to the per-pen buffers and advances the navigation live edge.
-// At the Raw layer each sample appends a raw point; at coarse layers it folds into the current
-// decimation column instead (consistent with the envelope contract).
 public sealed class ChartRealtimeApplier(
 	IReadOnlyDictionary<long, TrendPenState> pensById,
 	ChartNavigationController navigation)
 {
-	private readonly IReadOnlyDictionary<long, TrendPenState> _pensById = pensById;
 	private readonly ChartNavigationController _navigation = navigation;
+	private readonly IReadOnlyDictionary<long, TrendPenState> _pensById = pensById;
 
 	public void Apply(RealtimeBatch batch, bool foldIntoColumn)
 	{

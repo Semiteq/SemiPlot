@@ -18,11 +18,9 @@ using Xunit;
 
 namespace SemiPlot.Tests.UI.Chart;
 
-// Exercises the Y-axis click-region range edit at the seam the view composes: the active pen's axis is
-// resolved off the view model, the pointer pixel is classified against the axis panel by ChartAxisRegion,
-// the untouched bound is seeded by ChartAxisEdit, and the result is fed back through SetAxisLimits /
-// AutoscaleAxis. It asserts upper-region edits MAX, lower edits MIN, a double-click autoscales, and the
-// axis-region press never touches the pan window or the delta cursors.
+// The Y-axis click-region range edit at the seam the view composes: ChartAxisRegion classifies the
+// pixel, ChartAxisEdit seeds the untouched bound, and the result feeds back through SetAxisLimits /
+// AutoscaleAxis.
 [Trait("Component", "UI")]
 [Trait("Area", "Chart")]
 [Trait("Category", "Unit")]
@@ -70,7 +68,6 @@ public sealed class ChartAxisRegionEditTests
 		viewModel.SetAxisLimits(1, 10.0, 90.0);
 		viewModel.ScaleSettings[1].Mode.Should().Be(ScaleMode.Manual);
 
-		// A double-click on the axis region maps to AutoscaleAxis in the view's pre-branch.
 		viewModel.AutoscaleAxis(viewModel.ActivePenId).Should().BeTrue();
 
 		viewModel.ScaleSettings[1].Mode.Should().Be(ScaleMode.Auto);
@@ -79,9 +76,8 @@ public sealed class ChartAxisRegionEditTests
 	[AvaloniaFact]
 	public void ApplyingAnAxisEdit_LeavesTheNavigationWindowAndDeltaCursorsUntouched()
 	{
-		// The press-routing guarantee that an axis-region click never pans or places a delta cursor is
-		// covered by ChartPressRouterTests; this asserts the apply seam itself (SetAxisLimits) has no pan
-		// or delta side effect.
+		// ChartPressRouterTests covers the press routing; this asserts the apply seam (SetAxisLimits) itself
+		// has no pan or delta side effect.
 		var viewModel = CreateLoadedViewModel();
 		var (region, dataRect) = RenderRegion(viewModel);
 		var fromBefore = viewModel.Navigation.From;
@@ -118,6 +114,7 @@ public sealed class ChartAxisRegionEditTests
 		var axis = viewModel.ActivePenAxis!;
 		var region = ChartAxisRegion.TryCreate(viewModel.Plot, axis);
 		region.Should().NotBeNull();
+
 		return (region!, viewModel.Plot.RenderManager.LastRender.Layout.DataRect);
 	}
 
@@ -127,11 +124,11 @@ public sealed class ChartAxisRegionEditTests
 		var provider = new FakeDataProvider(scheduler, TimeSpan.FromMilliseconds(10));
 		var coordinator = new TrendCoordinator(
 			provider,
-			NullLogger<TrendCoordinator>.Instance,
 			scheduler,
 			ImmediateScheduler.Instance,
 			_batchWindow);
-		var viewModel = new TrendChartViewModel(coordinator, scheduler, ImmediateScheduler.Instance);
+		var viewModel = new TrendChartViewModel(
+			coordinator, scheduler, ImmediateScheduler.Instance, NullLogger<TrendChartViewModel>.Instance);
 		var state = viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
 		state.LoadHistory(new PenHistoryEnvelope(
 			1,

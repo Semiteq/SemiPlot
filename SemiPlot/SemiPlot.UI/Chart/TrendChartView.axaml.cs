@@ -1,5 +1,4 @@
 ﻿using System.Reactive.Disposables;
-using System.Reactive.Linq;
 
 using Avalonia;
 using Avalonia.Controls;
@@ -11,15 +10,14 @@ using ReactiveUI;
 
 using ScottPlot;
 using ScottPlot.Avalonia;
+using ScottPlot.Plottables;
+using ScottPlot.TickGenerators;
 
 using Cursor = Avalonia.Input.Cursor;
+using Line = Avalonia.Controls.Shapes.Line;
 
 namespace SemiPlot.UI.Chart;
 
-// The only type that touches the AvaPlot control. ScottPlot's built-in mouse processing is disabled
-// so scroll and drag are routed onto the navigation controller instead: scroll zooms about the cursor
-// anchor, left-drag pans. The controller's window changes drive the bottom (time) axis limits, and a
-// redraw is bound to the coalesced RedrawRequested stream.
 public partial class TrendChartView : UserControl
 {
 	private const double ZoomInFactor = 0.8;
@@ -29,16 +27,17 @@ public partial class TrendChartView : UserControl
 	private static readonly Cursor _grabbingCursor = new(StandardCursorType.SizeAll);
 
 	private readonly CompositeDisposable _disposables = new();
+	private TextBox? _axisBoundEditor;
+	private bool _axisEditEditsMax;
+	private Line? _crosshairLine;
+	private VerticalLine? _deltaFirstLine;
+	private VerticalLine? _deltaSecondLine;
+	private Point? _dragOrigin;
 
 	private AvaPlot? _plotControl;
-	private TextBox? _axisBoundEditor;
+	private Border? _readoutBox;
+	private TextBlock? _readoutText;
 	private TrendChartViewModel? _viewModel;
-	private Point? _dragOrigin;
-	private bool _axisEditEditsMax;
-	private ChartHoverReadout? _hoverReadout;
-	private ScottPlot.Plottables.VerticalLine? _cursorLine;
-	private ScottPlot.Plottables.VerticalLine? _deltaFirstLine;
-	private ScottPlot.Plottables.VerticalLine? _deltaSecondLine;
 
 	public TrendChartView()
 	{
@@ -51,6 +50,9 @@ public partial class TrendChartView : UserControl
 		AvaloniaXamlLoader.Load(this);
 		_plotControl = this.FindControl<AvaPlot>("Plot");
 		_axisBoundEditor = this.FindControl<TextBox>("AxisBoundEditor");
+		_crosshairLine = this.FindControl<Line>("CrosshairLine");
+		_readoutBox = this.FindControl<Border>("ReadoutBox");
+		_readoutText = this.FindControl<TextBlock>("ReadoutText");
 
 		if (_axisBoundEditor is not null)
 		{
@@ -68,7 +70,13 @@ public partial class TrendChartView : UserControl
 			_plotControl.PointerReleased += OnPointerReleased;
 			_plotControl.PointerCaptureLost += OnPointerCaptureLost;
 			_plotControl.PointerExited += OnPointerExited;
+			_plotControl.SizeChanged += OnPlotSizeChanged;
 		}
+	}
+
+	private void OnPlotSizeChanged(object? sender, SizeChangedEventArgs eventArgs)
+	{
+		RepositionCursorOverlay();
 	}
 
 	private void OnDataContextChanged(object? sender, EventArgs eventArgs)
@@ -83,9 +91,7 @@ public partial class TrendChartView : UserControl
 
 		_plotControl.Reset(_viewModel.Plot);
 		ApplyLocalTimeTicks(_viewModel.Plot);
-		CreateCursorLine(_viewModel.Plot);
 		CreateDeltaCursorLines(_viewModel.Plot);
-		_hoverReadout = new ChartHoverReadout(_viewModel.Plot);
 		ApplyWindow(_viewModel.Navigation.From, _viewModel.Navigation.To);
 
 		_viewModel.Navigation.WindowChanged += OnNavigationWindowChanged;
@@ -97,22 +103,24 @@ public partial class TrendChartView : UserControl
 			.Subscribe(_ => OnDeltaModeChanged()));
 
 		_disposables.Add(_viewModel.RedrawRequested
-			.Subscribe(_ => _plotControl.Refresh()));
+			.Subscribe(_ =>
+			{
+				_plotControl.Refresh();
+				RepositionCursorOverlay();
+			}));
 	}
 
-	// Leaving delta mode clears the placed cursors in the view model, so the drawn delta lines are
-	// hidden to match; entering mode re-syncs them from whatever state the reader holds.
 	private void OnDeltaModeChanged()
 	{
 		UpdateDeltaCursorLines();
-		UpdateHoverReadout();
-		_plotControl?.Refresh();
+		RepositionCursorOverlay();
 	}
 
+	// X-limit-only update; repaint is routed through the throttled RedrawRequested seam to avoid a second
+	// un-throttled re-render per pan/zoom step.
 	private void OnNavigationWindowChanged(object? sender, NavigationWindow window)
 	{
 		ApplyWindow(window.From, window.To);
-		_plotControl?.Refresh();
 	}
 
 	private void ApplyWindow(DateTime from, DateTime to)
@@ -136,7 +144,7 @@ public partial class TrendChartView : UserControl
 	private void OnPointerPressed(object? sender, PointerPressedEventArgs eventArgs)
 	{
 		if (_viewModel is null || _plotControl is null
-			|| !eventArgs.GetCurrentPoint(_plotControl).Properties.IsLeftButtonPressed)
+							   || !eventArgs.GetCurrentPoint(_plotControl).Properties.IsLeftButtonPressed)
 		{
 			return;
 		}
@@ -151,28 +159,29 @@ public partial class TrendChartView : UserControl
 				HideAxisBoundEditor();
 				_viewModel.AutoscaleAxis(_viewModel.ActivePenId);
 				eventArgs.Handled = true;
+
 				break;
 
 			case ChartPressAction.EditAxisBound:
 				BeginAxisBoundEdit(region!, position);
 				eventArgs.Handled = true;
+
 				break;
 
 			case ChartPressAction.PlaceDeltaCursor:
 				_viewModel.PlaceDeltaCursor(AnchorAt(position));
 				UpdateDeltaCursorLines();
 				_plotControl.Refresh();
+
 				break;
 
 			default:
 				BeginPan(eventArgs);
+
 				break;
 		}
 	}
 
-	// Resolves the active pen's Y-axis region only when the press lands inside its panel band; null when
-	// the press is over the data area (a pan/delta) or before any render. A press inside the band is an
-	// axis-range edit, never a pan or a delta-cursor placement.
 	private ChartAxisRegion? ResolveAxisRegion(Point position)
 	{
 		if (_viewModel!.ActivePenAxis is not { } axis)
@@ -189,15 +198,12 @@ public partial class TrendChartView : UserControl
 		return region;
 	}
 
-	// A single click in the upper half edits MAX, the lower half edits MIN.
 	private void BeginAxisBoundEdit(ChartAxisRegion region, Point position)
 	{
 		_axisEditEditsMax = region.IsUpperHalf((float)position.Y);
 		ShowAxisBoundEditor(position, region.ValueAt((float)position.Y));
 	}
 
-	// Opens the inline numeric editor seeded with the value the operator clicked at on the axis, anchored
-	// at the press position; committing feeds PenScaleModel manual limits for the active pen's axis.
 	private void ShowAxisBoundEditor(Point position, double seedValue)
 	{
 		if (_axisBoundEditor is null)
@@ -226,6 +232,7 @@ public partial class TrendChartView : UserControl
 		{
 			CommitAxisBoundEditor();
 			eventArgs.Handled = true;
+
 			return;
 		}
 
@@ -265,12 +272,7 @@ public partial class TrendChartView : UserControl
 		_plotControl!.Cursor = _grabbingCursor;
 		eventArgs.Pointer.Capture(_plotControl);
 
-		if (_cursorLine is not null)
-		{
-			_cursorLine.IsVisible = false;
-		}
-
-		UpdateHoverReadout();
+		HideCursorOverlay();
 		_plotControl.Refresh();
 	}
 
@@ -288,6 +290,7 @@ public partial class TrendChartView : UserControl
 			var delta = AnchorAt(origin) - AnchorAt(current);
 			_dragOrigin = current;
 			_viewModel.Navigation.PanBy(delta);
+
 			return;
 		}
 
@@ -305,9 +308,8 @@ public partial class TrendChartView : UserControl
 		EndDrag();
 	}
 
-	// Pointer capture can be lost mid-drag without a PointerReleased (window deactivation, focus steal).
-	// Without this the drag state, grab cursor and hover suppression would stay stuck, so the same cleanup
-	// the release path performs is run here.
+	// Capture can be lost mid-drag without a PointerReleased (window deactivation, focus steal); mirror the
+	// release path's cleanup so drag state, grab cursor and hover suppression do not stay stuck.
 	private void OnPointerCaptureLost(object? sender, PointerCaptureLostEventArgs eventArgs)
 	{
 		if (_dragOrigin is null)
@@ -332,33 +334,17 @@ public partial class TrendChartView : UserControl
 	private void OnPointerExited(object? sender, PointerEventArgs eventArgs)
 	{
 		_viewModel?.ClearCursor();
-
-		if (_cursorLine is not null)
-		{
-			_cursorLine.IsVisible = false;
-		}
-
-		UpdateHoverReadout();
-		_plotControl?.Refresh();
+		HideCursorOverlay();
 	}
 
-	// The plotted X coordinates are local-time OADates (LocalTimeAxis), so a DateTime tick generator on
-	// the existing bottom axis renders human-readable local-time labels. The generator is assigned in
-	// place rather than via Plot.Axes.DateTimeTicksBottom() (which replaces the axis) so the shared
-	// bottom-X axis instance the plottables are pinned to is preserved.
-	private static void ApplyLocalTimeTicks(ScottPlot.Plot plot)
+	// The tick generator is assigned in place rather than via Plot.Axes.DateTimeTicksBottom() (which
+	// replaces the axis) so the shared bottom-X axis instance the plottables are pinned to is preserved.
+	private static void ApplyLocalTimeTicks(Plot plot)
 	{
-		plot.Axes.Bottom.TickGenerator = new ScottPlot.TickGenerators.DateTimeAutomatic();
+		plot.Axes.Bottom.TickGenerator = new DateTimeAutomatic();
 	}
 
-	private void CreateCursorLine(ScottPlot.Plot plot)
-	{
-		_cursorLine = plot.Add.VerticalLine(0.0);
-		_cursorLine.Axes.XAxis = plot.Axes.Bottom;
-		_cursorLine.IsVisible = false;
-	}
-
-	private void CreateDeltaCursorLines(ScottPlot.Plot plot)
+	private void CreateDeltaCursorLines(Plot plot)
 	{
 		_deltaFirstLine = plot.Add.VerticalLine(0.0);
 		_deltaFirstLine.Axes.XAxis = plot.Axes.Bottom;
@@ -375,7 +361,7 @@ public partial class TrendChartView : UserControl
 		PlaceDeltaLine(_deltaSecondLine, _viewModel?.DeltaSecondCursor);
 	}
 
-	private static void PlaceDeltaLine(ScottPlot.Plottables.VerticalLine? line, DateTime? cursorTime)
+	private static void PlaceDeltaLine(VerticalLine? line, DateTime? cursorTime)
 	{
 		if (line is null)
 		{
@@ -386,6 +372,7 @@ public partial class TrendChartView : UserControl
 		{
 			line.X = LocalTimeAxis.ToAxis(time);
 			line.IsVisible = true;
+
 			return;
 		}
 
@@ -395,37 +382,78 @@ public partial class TrendChartView : UserControl
 	private void MoveCursorTo(DateTime cursorTime)
 	{
 		_viewModel?.MoveCursor(cursorTime);
-
-		// The plain hover line is suppressed in delta mode (and while dragging) so only the delta cursors
-		// are shown; matching the on-chart readout suppression in UpdateHoverReadout.
-		var showHoverLine = _viewModel is { IsDragging: false, IsDeltaModeEnabled: false };
-		if (_cursorLine is not null)
-		{
-			_cursorLine.X = LocalTimeAxis.ToAxis(cursorTime);
-			_cursorLine.IsVisible = showHoverLine;
-		}
-
-		UpdateHoverReadout();
-		_plotControl?.Refresh();
+		RepositionCursorOverlay();
 	}
 
-	// Re-feeds the on-chart all-pens readout from the view model's synchronously-computed cursor state.
-	// It is suppressed while a hand-pan drag is in progress or delta mode is active, so only the plain
-	// hover X-trace surfaces it.
-	private void UpdateHoverReadout()
+	private void RepositionCursorOverlay()
 	{
-		if (_viewModel is null || _hoverReadout is null)
+		if (_viewModel is null || _plotControl is null)
 		{
+			HideCursorOverlay();
+
 			return;
 		}
 
 		var suppress = _viewModel.IsDragging || _viewModel.IsDeltaModeEnabled;
-		_hoverReadout.Update(_viewModel.CursorTime, _viewModel.CursorValues, _viewModel.Pens, suppress);
+		if (suppress || _viewModel.CursorTime is not { } cursorTime)
+		{
+			HideCursorOverlay();
+
+			return;
+		}
+
+		var dataRect = _plotControl.Plot.LastRender.DataRect;
+		var cursorPixelX = _plotControl.Plot.GetPixel(new Coordinates(LocalTimeAxis.ToAxis(cursorTime), 0.0)).X;
+		var placement = ChartCursorOverlay.Project(
+			cursorPixelX,
+			new DataRectPixels(dataRect.Left, dataRect.Right, dataRect.Top, dataRect.Bottom),
+			_plotControl.Plot.ScaleFactor);
+
+		ApplyOverlayPlacement(placement, cursorTime);
+	}
+
+	private void ApplyOverlayPlacement(OverlayPlacement placement, DateTime cursorTime)
+	{
+		if (!placement.IsVisible)
+		{
+			HideCursorOverlay();
+
+			return;
+		}
+
+		if (_crosshairLine is not null)
+		{
+			_crosshairLine.StartPoint = new Point(placement.LineX, placement.LineTop);
+			_crosshairLine.EndPoint = new Point(placement.LineX, placement.LineBottom);
+			_crosshairLine.IsVisible = true;
+		}
+
+		if (_readoutBox is not null && _readoutText is not null)
+		{
+			_readoutText.Text = ChartHoverReadout.BuildContent(cursorTime, _viewModel!.CursorValues, _viewModel.Pens);
+			Canvas.SetLeft(_readoutBox, placement.LineX);
+			Canvas.SetTop(_readoutBox, placement.LineTop);
+			_readoutBox.IsVisible = true;
+		}
+	}
+
+	private void HideCursorOverlay()
+	{
+		if (_crosshairLine is not null)
+		{
+			_crosshairLine.IsVisible = false;
+		}
+
+		if (_readoutBox is not null)
+		{
+			_readoutBox.IsVisible = false;
+		}
 	}
 
 	private DateTime AnchorAt(Point position)
 	{
 		var x = _plotControl!.Plot.GetCoordinates(new Pixel((float)position.X, (float)position.Y)).X;
+
 		return LocalTimeAxis.FromAxis(x);
 	}
 }

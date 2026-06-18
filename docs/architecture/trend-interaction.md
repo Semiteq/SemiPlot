@@ -77,7 +77,7 @@ viewer *behaves* under operator interaction.
 | Now-marker      | Marker at the latest measured sample = current moment / live edge.      |
 | Sticky          | View auto-scrolls to keep the live edge at the right edge (real-time follow). |
 | Active pen      | The pen whose scale is shown on the primary axis; selected by click.    |
-| Cursor / X-trace | On-hover vertical line reading each pen's value at the cursor X.        |
+| Cursor / X-trace | On-hover Avalonia overlay vertical line reading each pen's value at the cursor X. |
 
 > Terminology fix: the user's draft used "слой графика" for a plotted curve. To avoid clashing
 > with the archive-resolution "layer", a plotted curve is always a **pen**.
@@ -101,8 +101,10 @@ viewer *behaves* under operator interaction.
   trailing request after the gesture goes quiet, the query runs on the data scheduler, and `Switch`
   drops any still-in-flight query when a newer window arrives (latest-wins, so a stale response never
   overwrites the current window). Per-zoom redraws are coalesced through the 30 FPS `Sample(33 ms)`
-  redraw seam, not an inline refresh. The startup `RequestInitialHistory` bypasses the debounce and
-  fires once promptly; the first-snap `TrackDataExtents` path stays non-requerying (single initial load).
+  redraw seam, not an inline refresh. The startup `RequestInitialHistory` awaits `QueryHistoryAsync`
+  directly (bypassing the debounce, fires once promptly) and applies through the same
+  monotonic-sequence counter as every gesture re-query, so the initial load and gestures share one
+  latest-wins history path; the first-snap `TrackDataExtents` path stays non-requerying (single initial load).
 - **Axis scaling:** double-click an axis = autoscale; entering min/max = fixed manual limits.
   The same actions are available from a toolbar.
 - **Autoscale modes:** `auto` (fit data with padding so pens are not flush to top/bottom),
@@ -132,17 +134,23 @@ so there is one left-button gesture, not overlapping hidden branches.
 - **Scroll = zoom about the cursor anchor; left-drag = hand pan.** Press captures the pointer and
   switches the cursor to a grab icon (`StandardCursorType.SizeAll`); each move pans the X window via
   `TrendNavigationModel.Pan`; release ends the drag and restores the hand cursor. The hover readout
-  and cursor line are suppressed for the duration of the drag.
+  and crosshair (an Avalonia overlay) are suppressed for the duration of the drag.
 - **Sticky to real-time by default.** A button detaches sticky (pan into the past); clicking it
   again re-attaches and returns to real-time. `WindowChanged` is the single writer of the toolbar
   `IsSticky` (refreshed from `Navigation.IsSticky`), so auto-detach and `JumpToNow` re-attach stay
   in sync with the button — no double write path.
 - **Panning so the live edge scrolls out of the view** auto-detaches sticky.
-- **On-chart hover readout (X-trace):** a `ScottPlot.Plottables.Text` (`Chart/ChartHoverReadout`)
-  pinned to `Plot.Axes.Bottom` shows, on hover, the local timestamp plus every *visible* pen's
-  `Center` value at the cursor X (one line per pen; gap → dash). It is suppressed while a drag is in
-  progress or delta mode is active (`IsDragging || IsDeltaModeEnabled`). Fed synchronously from the
-  view model's already-computed `CursorTime` / `CursorValues` (no new observable).
+- **Hover readout + crosshair (X-trace) live in an Avalonia overlay, not on the plot.** Moving the
+  pointer does NOT trigger a ScottPlot re-render. The crosshair is an Avalonia `Line` and the readout
+  an Avalonia `Border`/`TextBlock` laid out on a transparent `Canvas` over the `AvaPlot`
+  (`Chart/TrendChartView`). On hover the view positions them by projecting the view model's cursor X
+  through `Plot.GetPixel` and `Chart/ChartCursorOverlay` (cursor pixel X + `DataRect` + render scale →
+  crosshair endpoints + readout anchor in DIP space, clamped). The readout text is the pure
+  `Chart/ChartHoverReadout.BuildContent` string: the local timestamp plus every *visible* pen's value
+  at the cursor X (one line per pen; gap or missing pen → dash). The overlay is suppressed while a drag
+  is in progress or delta mode is active (`IsDragging || IsDeltaModeEnabled`) and is repositioned from
+  the throttled `RedrawRequested` seam (after `Refresh()`) and on `SizeChanged` so it tracks
+  pan/zoom/resize/live-edge without per-event re-renders.
 - **Delta cursors (Δt / Δy) via an explicit toolbar mode.** A toolbar "Delta" toggle
   (`TrendToolbarViewModel.IsDeltaModeEnabled`) sets the chart into `DeltaPlacement`: two left clicks
   place the cursors and drag does NOT pan; toggling off clears the placed cursors and hides the

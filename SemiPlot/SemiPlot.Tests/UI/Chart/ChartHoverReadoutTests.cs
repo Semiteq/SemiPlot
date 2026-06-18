@@ -1,15 +1,8 @@
-﻿using System.Reactive.Concurrency;
+﻿using AwesomeAssertions;
 
-using Avalonia.Headless.XUnit;
-
-using AwesomeAssertions;
-
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Reactive.Testing;
+using ScottPlot;
 
 using SemiPlot.Core.Trends;
-using SemiPlot.Tests.UI.Bridge;
-using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
 
 using Xunit;
@@ -21,30 +14,24 @@ namespace SemiPlot.Tests.UI.Chart;
 [Trait("Category", "Unit")]
 public sealed class ChartHoverReadoutTests
 {
-	private static readonly TimeSpan _batchWindow = TimeSpan.FromMilliseconds(33);
 	private static readonly DateTime _cursor = new(2026, 6, 15, 8, 1, 0, DateTimeKind.Utc);
 
-	[AvaloniaFact]
-	public void Update_OnHover_ShowsEveryVisiblePenValueAtCursorPlusTimestamp()
+	[Fact]
+	public void BuildContent_ShowsEveryVisiblePenValueAtCursorPlusTimestamp()
 	{
-		var viewModel = CreateViewModel();
-		var pens = AddTwoPens(viewModel);
-		var readout = new ChartHoverReadout(viewModel.Plot);
+		var pens = new[] { CreatePen(1, "Pen 1"), CreatePen(2, "Pen 2") };
 		var values = new Dictionary<long, double?> { [1] = 2.0, [2] = 20.0 };
 
-		readout.Update(_cursor, values, pens, suppress: false);
+		var content = ChartHoverReadout.BuildContent(_cursor, values, pens);
 
-		readout.IsVisible.Should().BeTrue();
-		readout.Content.Should().Contain("Pen 1: 2").And.Contain("Pen 2: 20");
-		readout.Content.Should().Contain(LocalTimestamp(_cursor));
+		content.Should().Contain("Pen 1: 2").And.Contain("Pen 2: 20");
+		content.Should().Contain(LocalTimestamp(_cursor));
 	}
 
-	[AvaloniaFact]
+	[Fact]
 	public void BuildContent_PenWithGapAtCursor_RendersDashForThatPen()
 	{
-		var viewModel = CreateViewModel();
-		var pens = AddTwoPens(viewModel);
-		// A gap (or out-of-range X) surfaces as a null value in CursorValues for that pen.
+		var pens = new[] { CreatePen(1, "Pen 1"), CreatePen(2, "Pen 2") };
 		var values = new Dictionary<long, double?> { [1] = 2.0, [2] = null };
 
 		var content = ChartHoverReadout.BuildContent(_cursor, values, pens);
@@ -53,12 +40,13 @@ public sealed class ChartHoverReadoutTests
 		content.Should().Contain("Pen 2: —");
 	}
 
-	[AvaloniaFact]
+	[Fact]
 	public void BuildContent_SkipsHiddenPens()
 	{
-		var viewModel = CreateViewModel();
-		var pens = AddTwoPens(viewModel);
-		viewModel.SetPenVisibility(2, false);
+		var visible = CreatePen(1, "Pen 1");
+		var hidden = CreatePen(2, "Pen 2");
+		hidden.IsVisible = false;
+		var pens = new[] { visible, hidden };
 		var values = new Dictionary<long, double?> { [1] = 2.0, [2] = 20.0 };
 
 		var content = ChartHoverReadout.BuildContent(_cursor, values, pens);
@@ -67,33 +55,40 @@ public sealed class ChartHoverReadoutTests
 		content.Should().NotContain("Pen 2");
 	}
 
-	[AvaloniaFact]
-	public void Update_WhileSuppressed_HidesTheReadout()
+	[Fact]
+	public void BuildContent_NoPens_RendersTimestampOnly()
 	{
-		var viewModel = CreateViewModel();
-		var pens = AddTwoPens(viewModel);
-		var readout = new ChartHoverReadout(viewModel.Plot);
-		var values = new Dictionary<long, double?> { [1] = 2.0, [2] = 20.0 };
+		var values = new Dictionary<long, double?>();
 
-		readout.Update(_cursor, values, pens, suppress: false);
-		readout.IsVisible.Should().BeTrue();
+		var content = ChartHoverReadout.BuildContent(_cursor, values, Array.Empty<TrendPenState>());
 
-		readout.Update(_cursor, values, pens, suppress: true);
-
-		readout.IsVisible.Should().BeFalse();
+		content.Should().Be(LocalTimestamp(_cursor));
 	}
 
-	[AvaloniaFact]
-	public void Update_WithNoCursor_HidesTheReadout()
+	[Fact]
+	public void BuildContent_AllPensHidden_RendersTimestampOnly()
 	{
-		var viewModel = CreateViewModel();
-		var pens = AddTwoPens(viewModel);
-		var readout = new ChartHoverReadout(viewModel.Plot);
+		var first = CreatePen(1, "Pen 1");
+		var second = CreatePen(2, "Pen 2");
+		first.IsVisible = false;
+		second.IsVisible = false;
+		var pens = new[] { first, second };
 		var values = new Dictionary<long, double?> { [1] = 2.0, [2] = 20.0 };
 
-		readout.Update(cursorTime: null, values, pens, suppress: false);
+		var content = ChartHoverReadout.BuildContent(_cursor, values, pens);
 
-		readout.IsVisible.Should().BeFalse();
+		content.Should().Be(LocalTimestamp(_cursor));
+	}
+
+	[Fact]
+	public void BuildContent_PenMissingFromValues_RendersDash()
+	{
+		var pens = new[] { CreatePen(1, "Pen 1") };
+		var values = new Dictionary<long, double?>();
+
+		var content = ChartHoverReadout.BuildContent(_cursor, values, pens);
+
+		content.Should().Contain("Pen 1: —");
 	}
 
 	private static string LocalTimestamp(DateTime cursorUtc)
@@ -101,24 +96,13 @@ public sealed class ChartHoverReadoutTests
 		return cursorUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
 	}
 
-	private static IReadOnlyCollection<TrendPenState> AddTwoPens(TrendChartViewModel viewModel)
+	private static TrendPenState CreatePen(long projectVarId, string name)
 	{
-		viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
-		viewModel.AddPen(new Pen(2, "Pen 2", "Group B", "#00ff00"));
-		return viewModel.Pens;
-	}
+		var plot = new Plot();
+		var centerPoints = new List<Coordinates>();
+		var centerLine = plot.Add.Scatter(centerPoints);
+		var band = plot.Add.FillY([], [], []);
 
-	private static TrendChartViewModel CreateViewModel()
-	{
-		var scheduler = new TestScheduler();
-		var provider = new FakeDataProvider(scheduler, TimeSpan.FromMilliseconds(10));
-		var coordinator = new TrendCoordinator(
-			provider,
-			NullLogger<TrendCoordinator>.Instance,
-			scheduler,
-			ImmediateScheduler.Instance,
-			_batchWindow);
-
-		return new TrendChartViewModel(coordinator, scheduler, ImmediateScheduler.Instance);
+		return new TrendPenState(new Pen(projectVarId, name, "Group", "#ff0000"), centerLine, band, centerPoints);
 	}
 }

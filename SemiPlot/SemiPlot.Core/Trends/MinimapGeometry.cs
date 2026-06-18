@@ -1,6 +1,5 @@
 ﻿namespace SemiPlot.Core.Trends;
 
-// Pure fraction<->time mapping for the archive-overview minimap: the extent [first, last] maps to [0, 1].
 public static class MinimapGeometry
 {
 	// A zero-or-negative extent span (no data yet) yields the full strip so the highlight never collapses.
@@ -18,12 +17,14 @@ public static class MinimapGeometry
 
 		var start = Clamp01((windowFrom - extentFirst).TotalSeconds / span);
 		var end = Clamp01((windowTo - extentFirst).TotalSeconds / span);
+
 		return (start, end - start);
 	}
 
 	public static DateTime TimeAtFraction(DateTime extentFirst, DateTime extentLast, double fraction)
 	{
 		var span = extentLast - extentFirst;
+
 		return extentFirst + (span * Clamp01(fraction));
 	}
 

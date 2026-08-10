@@ -60,5 +60,5 @@ dotnet build SemiPlot/SemiPlot.UI/SemiPlot.UI.csproj
 dotnet run --project SemiPlot/SemiPlot.UI/SemiPlot.UI.csproj
 
 # Тесты
-dotnet test SemiPlot/SemiPlot.slnx
+dotnet test SemiPlot.slnx
 ```

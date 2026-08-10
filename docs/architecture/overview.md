@@ -21,8 +21,8 @@ It must handle two classes of data:
 | Chart renderer   | ScottPlot 5 (`ScottPlot.Avalonia` 5.1.57, MIT, SkiaSharp) — native control |
 | MVVM             | ReactiveUI (`ReactiveUI.Avalonia` 11.3.8)                             |
 | Backend (in-proc)| .NET data provider abstraction over the data sources                   |
-| Realtime source  | OPC UA client to Simple-Scada's built-in UA server                     |
-| History source   | Read-only SQL against the Simple-Scada archive DB                      |
+| Data source      | One read-only PostgreSQL connection to the Simple-Scada archive — history, extent and realtime alike (`data-integration.md`) |
+| Coarse resolutions | The SCADA's own archive layers; nothing of ours runs in or beside the database (`history-read-path-evaluation.md`) |
 | Logging          | Serilog (file, rolling 5 MB / 5 files; mirrors SemiStep conventions)  |
 
 Constraint: **$0 budget** — only free/OSS components.
@@ -58,7 +58,7 @@ Constraint: **$0 budget** — only free/OSS components.
 |  SemiPlot.DataSource.Stub  (current)                        |
 |   - RandomStubDataProvider  (emits random data)             |
 |   - MinMaxDecimator + synthetic pen/value generators        |
-|  SemiPlot.DataSource.*  (future; OPC UA + SQL)              |
+|  SemiPlot.DataSource.Postgres  (production; read-only SQL)  |
 +-------------------------------------------------------------+
 ```
 
@@ -87,4 +87,6 @@ ScottPlot control, fed in-process by `TrendCoordinator` over `IObservable`/await
 ## Scope status
 
 Current focus: the **UI part** (Avalonia + ScottPlot viewer) backed by a **random data
-stub**. Real OPC UA + SQL providers are deferred (see data-integration.md).
+stub**. The PostgreSQL provider is specified but not yet implemented — see
+[data-integration.md](./data-integration.md) for the contract and `docs/plans/` for the
+implementation plan.

@@ -7,10 +7,10 @@ each is a scoped future task.
 ## Functional / integration
 
 - **Real data provider (accuracy).** The viewer runs on `RandomStubDataProvider` (synthetic walks,
-  `now-7d..now` extent). Implement `SimpleScadaDataProvider` (OPC UA realtime + read-only SQL/PostgreSQL
-  history, per `docs/architecture/data-integration.md`) as a sibling `SemiPlot.DataSource.*` project behind
-  `IDataProvider`. Real archive data is needed for true accuracy and to exercise the decimation/extent paths
-  against production volumes. `QueryArchiveExtentAsync` must return the real archive first/last sample.
+  `now-7d..now` extent). The production provider is specified in `docs/architecture/data-integration.md`
+  and planned in `docs/plans/20260619-simplescada-postgres-provider.md`: one read-only PostgreSQL
+  connection serving history, extent and realtime alike. Real archive data is still needed to exercise
+  the decimation and extent paths against production volumes.
 
 - **Minimap — further work.** The current strip shows the window position over the extent (visible marker +
   extent labels) but no data preview. Wanted: a richer overview (e.g. a downsampled trace/heat preview of the

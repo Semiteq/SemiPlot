@@ -1,154 +1,293 @@
-# Data Integration (Simple-Scada 2)
+# Data integration — the boundary between SemiPlot and the archive
 
-How SemiPlot reads real-time tags and historical archive data from Simple-Scada 2.
-Simple-Scada exposes **no single official data API**; the design below combines two
-read paths plus a fallback. All concrete schema/endpoint facts are
-**documented-but-unverified** until checked against a live, configured project.
+This document defines the contract: who owns what, what SemiPlot asks the database, and what it
+does with the answers. The archive itself is described in `scada-archive.md`; the database instance
+we ship is in `postgres-instance.md`. Requirement identifiers (`DA-`, `RT-`) refer to
+`trend-feature-spec.md`. Claim provenance follows `sources.md`.
 
-## IDataProvider abstraction
+There is no application server. The desktop client connects to PostgreSQL directly, so this
+document and the provider code are the entire integration surface.
 
-The UI depends only on this abstraction. The real Simple-Scada integration sits behind it
-and is swappable with the stub.
+## Responsibility zones
 
-- **Identity:** a pen/tag is identified by a `PenId` (long, the Simple-Scada project-variable id) and a name.
-- **Realtime:** subscribe to a set of tag ids → stream of samples `(tagId, timestamp, value)`.
-- **History:** `query(tagIds, from, to, layer)` → one series per tag, each a columnar set of
-  `(timestamp, value)`. `layer` selects archive resolution (raw / minute / hour / day).
-- **Archive extent:** `QueryArchiveExtentAsync()` → `ArchiveExtent(FirstUtc, LastUtc)` — the full
-  stored time span, consumed by the archive-overview minimap (charting.md / trend-interaction.md).
-- **Quality:** intentionally omitted from the current abstraction (`Sample` carries no
-  `quality`). It returns with the real provider, which will surface the archive `q` column for gap
-  rendering.
+| Concern | Simple-Scada | SemiPlot | Neither — we add it |
+| --- | --- | --- | --- |
+| Schema of `trends` / `messages`, partition creation, writes, thinning | owns | reads only | |
+| Executing retention (deleting old partitions) | owns | | |
+| Choosing the retention depth | setting lives in the SCADA project | decision is ours `[DEC:common-retention]` | |
+| PostgreSQL instance: installation, configuration, roles, backup, upgrade | client of it | owns | |
+| Variable number to name mapping | absent | | `semiplot_tags` `[DEC:semiplot-tags]` |
+| Knowledge of the archive's time zone | not stored anywhere | owns, in configuration | |
+| Layer choice, decimation, gap rendering, envelope assembly | | owns | |
+| Realtime freshness | write and flush cadence | poll cadence | |
 
-`IDataProvider` and its DTOs (`Pen` / `Sample` / `PenHistoryEnvelope` / `ArchiveExtent`) live in
-`SemiPlot.Core`. The concrete provider lives in a separate `SemiPlot.DataSource.*` project — the
-current stub is `SemiPlot.DataSource.Stub` (which also owns the stub-only `MinMaxDecimator`), so Core
-holds only the abstraction + DTOs and real providers slot in as sibling projects.
+Two rules follow and are not negotiable: SemiPlot never writes to vendor objects
+`[DEC:read-only-consumer]`, and every additive object is prefixed `semiplot_`
+`[DEC:additive-objects]`.
 
-Implementations:
+## The provider surface
 
-- `RandomStubDataProvider` (`SemiPlot.DataSource.Stub`) — **current**. Emits deterministic-ish random
-  walks for a set of synthetic pens (realtime stream + synthesized history); `QueryArchiveExtentAsync`
-  returns a synthetic depth (now − 7 days … now). Lets the whole UI be built and tested with no SCADA
-  present.
-- `SimpleScadaDataProvider` (future `SemiPlot.DataSource.*` sibling) — **future**. Realtime via OPC UA
-  client; history via SQL; optional TCP fallback. Not implemented yet.
+The UI depends only on `IDataProvider` (`SemiPlot.Core/Data/IDataProvider.cs`). The interface and
+its DTOs live in `SemiPlot.Core`; each concrete provider is a sibling `SemiPlot.DataSource.*`
+project, so Core never references a data source.
 
-## Host↔viewer data contract
+```csharp
+public interface IDataProvider
+{
+    IReadOnlyList<Pen> Pens { get; }
 
-> **Superseded.** The original Host↔JS JSON message bridge (WebView2 `PostWebMessageAsJson` ↔
-> `window.chrome.webview.postMessage`) is **removed**. The in-process Avalonia + ScottPlot viewer
-> replaced it: `TrendCoordinator` exposes realtime as `IObservable<RealtimeBatch>` and history
-> through a single awaitable `QueryHistoryAsync` — all strongly typed in-process, no JSON, no `type`
-> discriminator (see charting.md). The records below describe the same logical payloads in their
-> current typed form.
+    IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<long> penIds);
 
-The coordinator and view models exchange these `SemiPlot.Core.Trends` records (in-process, typed):
+    Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(
+        IReadOnlyList<long> penIds,
+        DateTime fromUtc,
+        DateTime toUtc,
+        AggregationLayer layer,
+        int targetColumnCount);
 
-| Record                | Direction        | Payload |
-| --------------------- | ---------------- | ------- |
-| `Pen` catalog         | provider → UI    | `IDataProvider.Pens`: `PenId` (Simple-Scada project-variable id), name, group, color, line style — read once on start. |
-| `RealtimeBatch`       | coordinator → VM | `Timestamps`: union timeline; `Pens`: `[{ PenId, Values: double?[] }]` index-aligned (`null` = gap). |
-| `TrendHistory`        | coordinator → VM | `Layer` + `Pens`: per-pen `PenHistoryEnvelope` (`Timestamps` + `Min` + `Max` + `Center`; NaN = gap). |
-| `QueryHistoryAsync(...)` | VM → coordinator | `penIds`, `fromUtc`, `toUtc`, `layer`, `targetColumnCount` — the single awaitable history query; both the initial load and every gesture re-query (debounced) flow through it. |
-| `ArchiveExtent`       | provider → minimap | `FirstUtc`, `LastUtc` — full stored span, via `QueryArchiveExtentAsync()`. |
+    Task<Result<ArchiveExtent>> QueryArchiveExtentAsync();
+}
+```
 
-The Simple-Scada integration below (OPC UA + SQL) is unaffected by this change.
+| Type | Shape | Notes |
+| --- | --- | --- |
+| `Pen` | `PenId`, `Name`, `Group`, `Color`, `LineStyle` | `PenId` is the archive's `trends.id`. |
+| `Sample` | `PenId`, `TimestampUtc`, `Value` | Realtime element. Timestamps are UTC by the time they leave the provider. |
+| `PenHistoryEnvelope` | parallel `Timestamps` / `Min` / `Max` / `Center`, strictly ascending, `NaN` marks a gap | One per pen per history query. |
+| `ArchiveExtent` | `FirstUtc`, `LastUtc` | Full stored span, consumed by the minimap (`TM-4`). |
+| `AggregationLayer` | `Raw`, `Minute`, `Hour`, `Day` | Maps one-to-one onto the archive's `l` column. |
 
-## Integration options (ranked)
+Implementations: `RandomStubDataProvider` in `SemiPlot.DataSource.Stub` (synthetic, used by tests
+and demos) and `PostgresDataProvider` in `SemiPlot.DataSource.Postgres` (production). The
+composition root picks one by configuration.
 
-### A. Direct archive DB read (SQL) — primary for history
-Connect a read-only SQL client to the project's configured archive engine and query the v2
-archive tables. Engine is per-project: **MySQL ≥ 5.6.2, MS SQL Server (2016 SP1+), or
-PostgreSQL ≥ 12**. (SQLite/Firebird drivers shipped with Simple-Scada belong to the
-Stimulsoft reporting engine, not the archive store.)
-- Gives: archive only. **Not realtime** — the server buffers writes in memory (up to ~2M
-  records) and batch-flushes, so recent samples lag.
-- Status: schema documented (RU manual), used in practice; **not sanctioned as an external API**
-  (may change between versions). Connection params live in the encrypted `System.itgr` project
-  file — obtain from the customer project (Editor → Settings → Database).
+## Operation to SQL
 
-### B. Built-in OPC UA server — primary for realtime
-Enable the UA server per project; connect as a read-only OPC UA client to
-`opc.tcp://<host>:<port>`, browse the tag tree (group structure preserved), subscribe to live
-values. Read-only mode and user/password auth available; the client cert must be trusted
-server-side first.
-- Gives: live tags only (no documented HDA/history).
-- Status: **confirmed as a real feature** — `Editor.exe` (managed project configurator) contains
-  `OPCUAServer` / `UAServer` tokens, and the RU manual documents `opcuaset.html`. On a fresh
-  demo only a `UA-client` certificate exists under `%ProgramData%\Simple-Scada 2\Certificates\`;
-  the server cert is generated when the UA server is enabled and first run. Final live
-  confirmation = enable UA server in a project + connect with UaExpert.
+All statement text lives in one place in `SemiPlot.DataSource.Postgres`. No SQL exists anywhere
+else in the solution. Parameters are always bound, never interpolated.
 
-### C. Local TCP protocol to Server.exe (127.0.0.1:8753) — fallback
-`ssclib.dll` (managed) connects to `127.0.0.1:8753` with length-prefixed binary frames.
-Opcodes include `cqGetData=1` (realtime) and a report/history path; history requests carry
-`TimeFrom/TimeTo`, per-column `ProjectVarID (long)`, aggregation `ProcessingType (byte)`, and
-`Period (int)`.
-- Gives: **both** realtime and server-computed aggregated history (avg/min/max/integral/…).
-- Status: unofficial, reverse-engineered, hardcoded to localhost (viewer or a small bridge must
-  run on the SCADA host), version-fragile. Use only if B is unavailable or DB creds/schema cannot
-  be obtained.
+### Pen catalog
 
-### Avoid
-- **Web WebSocket / "REST":** the `Web/` module is a proprietary browser HMI over WebSocket
-  (`/sgc/...`), payloads in Google.Protobuf, default port 8755 — no documented third-party
-  contract. (`Web/pipes/` is pipeline graphic sprites, not IPC named pipes.)
-- **Scripting push (TM_HTTP / file / RunSQL):** documented but architecturally a *push* and
-  requires editing the customer's project — out of scope for a passive read-only viewer.
-- **Native protobuf server↔client protocol:** compiled into packed native binaries, not reusable.
+```sql
+SELECT id, name, group_name, color, line_style
+FROM semiplot_tags
+ORDER BY group_name, name;
+```
 
-## Archive DB schema (archive system v2)
+An empty table yields an empty pen list, not a failure — a fresh installation before commissioning
+is a normal state.
 
-Default since 2.5.15.0 (PostgreSQL since 2.6.1.0). From the RU manual `tablestruct.html`,
-corroborated by report column aliases. **Confirm against a live DB before relying on it.**
+### Archive extent
 
-**`trends`** — historical tag values:
+```sql
+SELECT min(lo) AS first, max(hi) AS last
+FROM semiplot_tags tag
+CROSS JOIN LATERAL (
+    SELECT (SELECT min(t) FROM trends WHERE id = tag.id AND l = 0) AS lo,
+           (SELECT max(t) FROM trends WHERE id = tag.id AND l = 0) AS hi
+) bounds;
+```
 
-| col | meaning |
-| --- | ------- |
-| `id` | variable identifier (join key to tag name) |
-| `t`  | timestamp of value change |
-| `v`  | value |
-| `q`  | quality (OPC-UA quality code; `0x00`/`0x10`/`0x20` = good; low nibble flags gap start/end) |
-| `l`  | archive layer / decimation: `0`=raw, `1`=minute, `2`=hour, `3`=day |
+The per-variable subqueries are what make this cheap. A bare `SELECT min(t) FROM trends WHERE l = 0`
+cannot use `PRIMARY KEY (id, l, t)` — the leading column is `id` — and degenerates into a scan of
+the whole archive. Bounded per `id`, each subquery walks the index to its edge.
 
-**`messages`** — alarms / events:
+An archive with no rows yields nulls, which map to an empty extent rather than an error.
 
-| col | meaning |
-| --- | ------- |
-| `t`   | time |
-| `gid` | group id (sentinels: `-2` boundary, `-3` auth, `-4` operator actions, `-5` client connect, `-6` project) |
-| `mid` | message id |
-| `k`   | type: `0`=alarm, `1`=warning, `2`=normal |
-| `n`   | object name |
-| `v`   | message text |
-| `uid` | user id |
-| `r`   | recover/clear time |
-| `c`   | acknowledge time (doc rendering may show a Cyrillic `с` — verify exact column name) |
+### History, chosen layer already sparse enough
 
-To confirm on a live project DB:
+```sql
+SELECT id, t, v, q
+FROM trends
+WHERE id = ANY(@ids) AND l = @layer AND t >= @from AND t < @to
+ORDER BY id, t;
+```
 
-- **`id` → tag name** mapping is not in the public schema. An opt-in "create variable table"
-  action produces **`variables_data`** (`ID` + name + description) — the join table, but it may
-  not exist in a given project. Confirm, or find another name source.
-- Column data types per engine; exact acknowledge-column name in `messages`.
-- Archive **v1** (legacy) has a different per-variable table structure and is incompatible — check
-  per project.
+Rows are folded into envelopes client-side by the existing min/max decimator, which also inserts the
+`NaN` anchors that break the line at gaps (`DA-5`).
 
-## Real-time access
+### History, chosen layer still denser than the canvas
 
-1. **OPC UA server (B)** — standard UA client subscription. Live values only. NodeId/namespace
-   scheme is undocumented — browse empirically.
-2. **TCP `cqGetData=1` (C)** — fallback; works regardless of the OPC UA question, localhost-bound.
+```sql
+SELECT id,
+       date_bin(@bucket, t, @origin)                       AS bucket,
+       min(v)                                              AS v_min,
+       max(v)                                              AS v_max,
+       (array_agg(v ORDER BY t))[1]                        AS v_first,
+       (array_agg(v ORDER BY t DESC))[1]                   AS v_last,
+       min(t)                                              AS t_first,
+       max(t)                                              AS t_last,
+       (array_agg(q ORDER BY t))[1]                        AS q_first,
+       (array_agg(q ORDER BY t DESC))[1]                   AS q_last,
+       count(*) FILTER (WHERE q = 32)                      AS breaks
+FROM trends
+WHERE id = ANY(@ids) AND l = @layer AND t >= @from AND t < @to
+GROUP BY id, bucket
+ORDER BY id, bucket;
+```
 
-The archive DB (A) is **not** suitable for realtime (in-memory write queue + batch flush).
+`@bucket` is the window width divided by `targetColumnCount`, so the statement returns at most one
+row per pixel column per pen (`DA-2`, `DA-6`). `date_bin` requires PostgreSQL 14 or newer, which our
+instance satisfies. `@origin` is the window start, so buckets align to the visible window rather
+than to an arbitrary epoch, which keeps the leftmost column from being clipped.
 
-## Open items to verify on the running demo
+### Realtime poll
 
-1. Live-confirm the OPC UA server (enable in a project → `UA-server` cert appears → UaExpert
-   connects to `opc.tcp://host:port`).
-2. Target project's archive version (v1/v2) and engine (MySQL/MSSQL/PostgreSQL).
-3. DB connection params (from the project config).
-4. Presence of `variables_data` (the `id`→name table) and exact `messages` column names/types.
-5. Whether the OPC UA server is HDA-capable (assume no).
+```sql
+SELECT id, t, v, q
+FROM trends
+WHERE id = ANY(@ids) AND l = 0 AND t > @lastSeen
+ORDER BY t;
+```
+
+The variable list is mandatory. A poll predicated on time alone cannot use the primary key and
+degenerates into a sequential scan of the current day's partition on every tick.
+
+### Gap explanation
+
+```sql
+SELECT t, n, v
+FROM messages
+WHERE gid = -6 AND t >= @from AND t < @to
+ORDER BY t;
+```
+
+Read only to tell the operator why a gap exists. Never a source of trend data.
+
+## Layer ladder
+
+The archive offers four resolutions; the renderer needs about one point per pixel column. The rule
+is: **choose the coarsest layer whose point spacing still fits inside one pixel column.**
+
+Point spacing follows from the vendor's budget of four points per period `[FORUM:1032]`, so it is
+one quarter of the period, not the period itself:
+
+| Layer | `l` | Period | Point spacing | Lower bound of window width, 1000 columns |
+| --- | --- | --- | --- | --- |
+| `Raw` | 0 | — | the archiving interval | — |
+| `Minute` | 1 | minute | 15 s | ≈ 4.2 hours |
+| `Hour` | 2 | hour | 15 min | ≈ 10.4 days |
+| `Day` | 3 | day | 6 h | ≈ 250 days |
+
+Generally, a layer becomes usable once `window / targetColumnCount ≥ spacing`; the thresholds above
+are that inequality solved for 1000 columns.
+
+`AggregationLayerExtensions.ToSampleInterval` currently returns the period rather than the spacing,
+which makes every threshold four times too conservative. It must return the spacing.
+
+Two adjustments the ladder needs:
+
+- **Hysteresis.** Switch layers on thresholds separated by a margin, so that a window hovering on a
+  boundary does not flip layer on every wheel notch and change the visible line thickness.
+- **Fresh tail.** Coarse layers are flushed on their own cadence, so a window reaching "now" has an
+  empty tail in `l=1/2/3`. The provider fills the tail from `l=0` and concatenates. The seam is the
+  newest timestamp present in the coarse layer.
+
+Correctness of the envelope at every layer rests on the vendor's selection preserving each period's
+extremes `[FORUM:1974]`. That is well supported but not yet measured by us — see the open questions
+in `scada-archive.md`. If the pending experiment refutes it, the ladder collapses to raw plus
+server-side bucketing and wide windows lose amplitude fidelity.
+
+## Time boundary
+
+The archive stores naive local wall-clock time; everything above the provider is UTC.
+
+- Reading: `t` is interpreted in the configured `source_time_zone` and converted to
+  `DateTime(Kind = Utc)`.
+- Writing query bounds: UTC window edges are converted back to naive local before binding.
+- The conversion happens only at the provider edge. No other component knows the archive's zone.
+- Display-local rendering is a separate, later conversion performed by `LocalTimeAxis`.
+
+The zone lives in configuration because the database does not record it and cannot be asked. If the
+SCADA host's zone is changed, the configuration must be changed with it; historical data written
+before the change stays in the old zone and is not correctable. Daylight-saving transitions shift or
+duplicate an hour of history; this is accepted as cosmetic.
+
+## Quality and gaps
+
+The provider maps the archive's quality marks onto the envelope's gap representation (`DA-8`):
+
+| Archive | Envelope |
+| --- | --- |
+| `q = 0` | ordinary point |
+| `q = 32` (last sample before a break) | point kept, then a `NaN` anchor inserted after it |
+| `q = 16` (first sample after a break) | point kept; the line resumes here |
+| absence of rows without a preceding `q = 32` | no anchor — the value simply did not change |
+
+The distinction in the last row is the whole reason the marks exist. Treating every row gap as a
+line break would shred a steady signal into fragments; ignoring the marks would draw a straight line
+across hours of missing data.
+
+In the bucketed query the same information survives as `q_first`, `q_last` and `breaks`, and the
+client walks buckets in time order holding one of two states: after a bucket whose `q_last` is 32 it
+is inside a gap and empty buckets stay empty; otherwise empty buckets render as a horizontal
+continuation of `v_last`.
+
+## Realtime
+
+`Subscribe` returns a cold observable. On subscription the provider polls the raw layer on the data
+scheduler, advances `lastSeen` to the newest timestamp it received, and emits the new samples
+converted to UTC (`RT-1`). Disposal stops the poll.
+
+Two invariants:
+
+- A query error logs and drops that tick. It never throws on the UI thread and never terminates the
+  observable.
+- The provider never emits a timestamp at or before the last one already delivered, which is what
+  keeps the history-to-realtime seam monotonic (`DA-7`).
+
+Batching, the union timeline and the hand-off to the UI scheduler happen above the provider, in
+`TrendCoordinator` (see `charting.md`).
+
+## Error semantics
+
+Everything on the data path returns `FluentResults`. Exceptions never cross to the UI thread
+(`DA-1`).
+
+| Situation | Provider result | What the operator sees |
+| --- | --- | --- |
+| Connection refused or DNS failure at startup | failed `Result` | Explicit "no connection to the archive" state, retry available |
+| Connection lost mid-session | failed `Result` on the query; realtime tick dropped | Chart keeps the data it has; staleness is visible |
+| Query timeout | failed `Result` | Same as above; the timeout is a configured bound, not an accident |
+| `trends` does not exist (SCADA never started) | failed `Result`, distinguished from a connection failure | "Archive not initialised" — a normal state on a fresh installation |
+| `semiplot_tags` empty or missing | empty pen list, success | "No variables configured" — commissioning is not finished |
+| Archive present but no rows in the window | success, empty envelopes | Empty chart, no error |
+
+## Configuration
+
+A YAML file in a `--config-dir`, following the convention of the sibling project. Fields: host,
+port, database, user, password, `source_time_zone`, poll interval, schema, statement timeout, and a
+file-version field checked on load. Loading returns a `Result`; a malformed file is reported at
+startup rather than at first query.
+
+The password is stored in plain text. The mitigation is that SemiPlot connects under a read-only
+role, so a leaked credential exposes reading the archive and nothing else. File permissions are the
+operator's responsibility.
+
+## Keeping this document honest
+
+Documentation that describes SQL drifts from the SQL. Three artifacts prevent that:
+
+1. All statement text lives in one class; this document quotes it and names the file. Nothing else
+   in the solution issues SQL.
+2. Unit tests pin the generated statement text and parameter names for every operation, so a change
+   in the code that this document does not describe shows up as a failing test.
+3. Gated integration tests run `EXPLAIN` on the windowed history query and the realtime poll and
+   assert that both use `tpk`. This turns the two documented hazards — the missing layer predicate
+   and the missing variable list — into enforced invariants rather than warnings in prose.
+
+## Field triage
+
+When a chart is empty, check in this order. Each step distinguishes a different failure.
+
+1. Is the database reachable at all? A connection failure is reported distinctly from an empty
+   archive.
+2. Does `trends` exist? If not, the SCADA project has never run against this database.
+3. `SELECT max(t) FROM trends WHERE id = <one known id> AND l = 0` — if the newest sample is old,
+   archiving has stopped and the problem is on the SCADA side, not ours.
+4. Is the pen present in `semiplot_tags`? An unmapped variable cannot be drawn even though its data
+   exists.
+5. Does the window overlap the data? Compare against the extent, and suspect a `source_time_zone`
+   mismatch if the offset looks like a whole number of hours.
+6. Is `tpdefault` non-empty? Rows there indicate the SCADA failed to create a daily partition; they
+   are outside every date range and effectively invisible.

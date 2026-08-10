@@ -5,15 +5,15 @@ process tools: ICP / RIE / PECVD). It reads live tags and historical archives fr
 Simple-Scada 2 and renders interactive, multi-axis trends.
 Platform: .NET 10, Windows, C# 14. UI: Avalonia 11.3.x desktop (Win32 + Skia) with ReactiveUI
 for MVVM and ScottPlot.Avalonia (SkiaSharp) for rendering — no WPF, WebView2, or JS frontend.
-Solution: `SemiPlot/SemiPlot.slnx`. All commands run from repository root.
+Solution: `SemiPlot.slnx`. All commands run from repository root.
 
 ## Build
 
 ```powershell
 dotnet build SemiPlot/SemiPlot.UI/SemiPlot.UI.csproj    # recommended (entry executable)
-dotnet build SemiPlot/SemiPlot.slnx                     # all projects
+dotnet build SemiPlot.slnx                     # all projects
 dotnet run   --project SemiPlot/SemiPlot.UI/SemiPlot.UI.csproj
-dotnet format SemiPlot/SemiPlot.slnx                    # pre-commit hook enforces this
+dotnet format SemiPlot.slnx                    # pre-commit hook enforces this
 ```
 
 ## Test
@@ -31,11 +31,11 @@ xUnit-v3 / Avalonia-12 unification is deferred until `ScottPlot.Avalonia` ships 
 revisit then.
 
 ```powershell
-dotnet test SemiPlot/SemiPlot.slnx                                       # full suite
+dotnet test SemiPlot.slnx                                       # full suite
 dotnet test SemiPlot/SemiPlot.Tests/SemiPlot.Tests.csproj                # the single test project
-dotnet test SemiPlot/SemiPlot.slnx --filter "Area=Data"
-dotnet test SemiPlot/SemiPlot.slnx --filter "Category=Unit"
-dotnet test SemiPlot/SemiPlot.slnx --filter "FullyQualifiedName~TestMethodName"
+dotnet test SemiPlot.slnx --filter "Area=Data"
+dotnet test SemiPlot.slnx --filter "Category=Unit"
+dotnet test SemiPlot.slnx --filter "FullyQualifiedName~TestMethodName"
 ```
 
 Test traits: `[Trait("Component", "Core|UI")]`, `[Trait("Area", "Data|Bridge|Di")]`,

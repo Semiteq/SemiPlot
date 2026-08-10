@@ -11,9 +11,32 @@ implementation plans see `docs/plans/`.
   charting features (pens, multi-axis per-pen scaling, cursor, aggregation layers, time navigation).
 - [trend-interaction.md](./trend-interaction.md) — behavior spec: time navigation, sticky scroll,
   axis management, cursors, decimation, rendering; the locked decisions log.
-- [data-integration.md](./data-integration.md) — how SemiPlot reads from Simple-Scada 2
-  (OPC UA realtime + SQL archive), the archive schema, the `IDataProvider` abstraction, and
-  the random stub used until real sources are wired.
+- [data-integration.md](./data-integration.md) — the contract between SemiPlot and the archive
+  database: responsibility zones, the `IDataProvider` surface, the exact SQL issued per operation,
+  layer selection, the time boundary, gap mapping, error semantics and field triage.
+- [scada-archive.md](./scada-archive.md) — the Simple-Scada 2 archive as it exists: tables and
+  columns, archive layers, quality marks and gaps, write and retention behaviour, reader hazards,
+  and what remains unverified.
+- [postgres-instance.md](./postgres-instance.md) — the PostgreSQL server we supply: installation,
+  every configuration setting we change and why, roles and privileges, the objects we add,
+  provisioning order, backup and upgrades.
+- [sources.md](./sources.md) — citation convention and the registry every factual claim resolves
+  against: vendor manual pages, vendor forum topics, our own measurements, our own decisions.
+
+- [trend-feature-spec.md](./trend-feature-spec.md) — canonical requirements + acceptance rubric for
+  the trend canvas, derived from MasterSCADA "MasterTrend". The design docs above cross-reference its
+  feature IDs (TM-/AY-/PN-/CU-/DA-/RT-/MS-) instead of restating requirements; MasterSCADA-derived
+  definitions take precedence wherever they conflict.
+
+## Decision records
+
+- [grafana-vs-build-evaluation.md](./grafana-vs-build-evaluation.md) — Grafana (stock / ECharts panel
+  / custom plugin) vs non-Grafana tools vs building SemiPlot. Outcome: continue SemiPlot; Grafana
+  rejected (3 MUST blockers: per-pen Y axis, per-pen Y-layer resize, T1/T2 measurement cursors). This
+  captures the decision process, not stable design.
+- [history-read-path-evaluation.md](./history-read-path-evaluation.md) — where the history read path
+  reduces data. Outcome: read the SCADA's own archive layers; build no summary tables, aggregator
+  service, scheduler or extensions of our own.
 
 ## Locked decisions (summary)
 
@@ -22,7 +45,9 @@ implementation plans see `docs/plans/`.
 | Platform        | .NET 10 (`net10.0-windows`), Windows, C# 14                                 |
 | Desktop shell   | Avalonia 11.3.8 (Win32 + Skia + FluentTheme), ReactiveUI MVVM               |
 | Chart renderer  | ScottPlot 5 (`ScottPlot.Avalonia` 5.1.57, MIT, SkiaSharp) — native control  |
-| Realtime source | OPC UA client to Simple-Scada's built-in UA server                          |
-| History source  | Read-only SQL against the Simple-Scada archive DB (`trends` / `messages`)   |
-| Fallback source | Local TCP protocol on `127.0.0.1:8753` (undocumented, reverse-engineered)   |
+| Data source     | One read-only PostgreSQL connection to the Simple-Scada archive (`trends` / `messages`) — history, extent and realtime alike. No application server, no OPC UA client, no local TCP protocol |
+| Wide windows    | The SCADA's own archive layers (`l = 1/2/3`); no summary tables, aggregator service, scheduler or extensions of ours — see `history-read-path-evaluation.md` |
+| Retention       | One depth for all archived data; coarse layers cannot outlive raw data       |
+| Tag names       | Our own `semiplot_tags` table, filled by hand — the archive stores numbers only |
 | Budget          | $0 — free / OSS components only                                             |
+| Visualization   | Build SemiPlot (custom); Grafana rejected — see `grafana-vs-build-evaluation.md` |

@@ -51,54 +51,48 @@ re-rasterization off the per-pointer-event path is the point of the overlay.
 
 ## Reference: legacy SCADA trend window
 
-The legacy Simple-Scada trend window ("Параметры (Графики)") is the functional reference —
-SemiPlot must match its capabilities and improve usability.
+The legacy Simple-Scada trend window ("Параметры (Графики)") is a functional reference —
+SemiPlot must match its capabilities and improve usability. The authoritative feature set is
+trend-feature-spec.md (MasterSCADA-derived); this section only records the visual elements to
+reproduce.
 
 The capture itself is not kept here: the only one available is from a live installation and
 discloses the customer's tag list. The elements below are what SemiPlot reproduces.
 
 Elements to reproduce and improve:
 
-- **Left Y axis = scale of the selected pen** (legacy shows the active pen's scale). SemiPlot
-  must additionally support several independent scales **simultaneously**, not only the
-  single selected pen's scale.
-- **Mini-legend** with columns: checkbox / color / name / current value. Pens are logically
-  grouped (ICP, RIE, pressures, gases, temperatures).
-- **Aggregation layer selector** ("Слой": minute / second / hour / day) — switches the
-  resolution of historical data; maps to the archive `l` column (see data-integration.md).
-- **Cursor** with value readout at a point (timestamp + every pen's value).
-- **Time navigation:** zoom/pan, jump to start/end, range selection.
+- **Left Y axis = scale of the selected pen** (legacy shows the active pen's scale), on top of
+  the simultaneous multi-axis capability (trend-feature-spec.md §AY-1, §AY-2).
+- **Mini-legend** with columns: checkbox / color / name / current value
+  (trend-feature-spec.md §PN-8). Pens are logically grouped (ICP, RIE, pressures, gases,
+  temperatures).
+- **Aggregation layer selector** ("Слой": raw / minute / hour / day) — switches the resolution
+  of historical data; maps to the archive `l` column (see data-integration.md). Behavior in
+  trend-feature-spec.md §DA-2, §DA-4.
+- **Cursor** with value readout at a point (trend-feature-spec.md §CU-1, §CU-2).
+- **Time navigation:** zoom/pan, jump to start/end, range selection
+  (trend-feature-spec.md §TM-1 … §TM-4).
 - Toolbar (snapshot, save, print, refresh, favorite, help) and tabs (Trends / Values /
   Legend / Settings).
 
 ## Required charting features
 
-1. **Pens (series)**
-   - Add/remove pens at runtime; toggle individual pen visibility without rebuilding the chart.
-   - Each pen has identity (tag id + name), color, group, and current value.
+The full prioritized requirement set lives in trend-feature-spec.md and is not duplicated here.
+The mapping below routes the major capability groups to their feature IDs:
 
-2. **Y axes / scaling**
-   - **Per-pen independent min/max** (multiple Y axes on one chart). Example: 10 gas lines with
-     different ranges shown together, each scaled individually.
-   - **Shared common scale** for a group of pens (e.g. all 16 heater sources in one scale).
-   - Switching the active pen surfaces its scale on the primary axis (legacy behavior), on top
-     of the simultaneous multi-axis capability.
+- **Pens (series)** — runtime add/remove, per-pen visibility, identity/color/group/value:
+  trend-feature-spec.md §PN-1, §PN-4.
+- **Y axes / scaling** — per-pen independent min/max, multiple Y axes, shared group scale,
+  active-pen scale on the primary axis: trend-feature-spec.md §AY-1, §AY-2.
+- **Cursor / inspection** — vertical cursor reading every visible pen at the cursor X:
+  trend-feature-spec.md §CU-1, §CU-2.
+- **History performance** — smooth zoom/pan over long archives via aggregation layers and
+  decimation: trend-feature-spec.md §DA-2, §DA-3, §DA-5.
+- **Grouping / layout** — view pen groups separately or together: trend-feature-spec.md §MS-2.
 
-3. **Cursor / inspection**
-   - Vertical cursor / crosshair reading the value of **every** visible pen at the cursor X.
-
-4. **History performance**
-   - Smooth zoom/pan/scroll over long archives without lag. Resolution is controlled by
-     aggregation layers (raw / minute / hour / day); deeper ranges use coarser layers.
-
-5. **Grouping / layout**
-   - View pen groups separately (e.g. dampers separately from heaters), or together.
-
-## Canonical use cases
-
-- 16 dampers + 16 heat sources: view all 16 heaters together on one shared scale, separately
-  view all dampers.
-- 10 gas lines with different min..max ranges: all visible on one chart, each with its own scale.
+Canonical use cases (acceptance fixtures): 16 dampers + 16 heat sources (all 16 heaters together
+on one shared scale, dampers viewed separately) and 10 gas lines with different min..max ranges
+(all on one chart, each with its own scale — §AY-2).
 
 ## Module layout (Avalonia views / view models / Core models)
 

@@ -22,7 +22,7 @@ Conventions: `CLAUDE.md`.
 - **Stack (locked):** .NET 10, C# 14, Windows. WPF host + Microsoft WebView2; uPlot (MIT) web
   frontend as static ES modules under `SemiPlot.UI/Web/` (no npm build). Host→JS via
   `WebView2.PostWebMessageAsJson` (batched per frame); JS→host via web messages.
-- **Project organization mirrors SemiStep** (`C:\Users\admin\projects\SemiStep`):
+- **Project organization mirrors SemiStep** (sibling repository):
   `*.Core` / `*.UI` / `*.Tests`, `Directory.Build.props` + `Directory.Packages.props` (central
   package management), DI extension methods, FluentResults, Serilog, xunit.v3 with traits.
 - **Realtime abstraction:** `System.Reactive` `IObservable<>` (matches SemiStep). `Buffer(timespan)`
@@ -91,7 +91,7 @@ Key decisions:
 
 - **Repo layout:** solution and projects live under `<repo>/SemiPlot/` — `SemiPlot/SemiPlot.slnx`,
   `SemiPlot/SemiPlot.Core`, etc. — mirroring SemiStep's `<repo>/SemiStep/SemiStep.slnx` nesting.
-  All build/test paths in this plan are relative to the repo root `C:\Users\admin\projects\SemiPlot`.
+  All build/test paths in this plan are relative to the repository root.
 - **SDK pin:** root `global.json` pins the SDK (`10.0.100`, `rollForward: latestFeature`), like SemiStep.
 - **TFMs:** `Directory.Build.props` sets `net10.0`. `SemiPlot.UI` overrides to `net10.0-windows`
   with `<UseWPF>true</UseWPF>`. `SemiPlot.Tests` targets `net10.0-windows` (it references UI).

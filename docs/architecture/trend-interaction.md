@@ -269,7 +269,7 @@ and fast navigation across long archives.
 - No qualifying open-source .NET SCADA trend-viewer reference repo exists; built from library
   primitives, with ScottPlot's `DataLogger` demo as the nearest realtime pattern.
 
-### Reuse from SemiStep (C:\Users\admin\projects\SemiStep)
+### Reuse from SemiStep (sibling repository)
 
 Same author, same conventions — reuse directly:
 

@@ -33,7 +33,7 @@ Authoritative spec: `docs/architecture/trend-interaction.md` (behavior + Decisio
   `SemiPlot.UI`** (verified `SemiPlot.Tests.csproj`). Therefore, the moment the UI stops compiling
   (Task 1), the **entire** test assembly cannot build and no `--filter` can run. Resolved by splitting
   Core-only tests into a `SemiPlot.Core.Tests` project with no UI reference (Task 2).
-- **SemiStep reference (`C:\Users\admin\projects\SemiStep`):** Avalonia 12.0.4 / net10, `ReactiveUI.Avalonia`,
+- **SemiStep reference (sibling repository):** Avalonia 12.0.4 / net10, `ReactiveUI.Avalonia`,
   MS.DI extension methods, Serilog (file, 5 MB / 5 files), FluentTheme; scheduler-capturing singletons
   initialized in `.AfterSetup(...)` after `UseReactiveUI()`; `MainWindow` `Grid` = menu / content /
   message panel / status bar. **SemiPlot mirrors SemiStep's patterns, NOT its versions** — see below.

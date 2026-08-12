@@ -1,5 +1,6 @@
 # SemiPlot
 
+[![CI](https://github.com/Semiteq/SemiPlot/actions/workflows/ci.yml/badge.svg)](https://github.com/Semiteq/SemiPlot/actions/workflows/ci.yml)
 ![C#](https://img.shields.io/badge/C%23-.NET-blue)
 ![.NET](https://img.shields.io/badge/.NET-10%2B-512BD4)
 ![Platform](https://img.shields.io/badge/platform-Windows-informational)
@@ -7,6 +8,8 @@
 ![Status](https://img.shields.io/badge/status-stub--backed%20WIP-yellow)
 
 SemiPlot — приложение для просмотра графиков и трендов технологических параметров промышленных установок. Использует SimpleScada как источник данных.
+
+[Документация](./docs/architecture/README.md)
 
 <div align="center">
     <img src=./logo.png width=400 />

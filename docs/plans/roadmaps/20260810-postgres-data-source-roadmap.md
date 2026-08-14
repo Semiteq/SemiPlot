@@ -2,17 +2,26 @@
 
 **Issues:** none declared — the repository has no issue tracker in use. This roadmap covers the
 whole span from "the viewer runs on synthetic data" to "the viewer reads a real Simple-Scada
-archive", sliced into nine independently shippable pull requests.
+archive", sliced into ten independently shippable pull requests.
+
+**Amended 2026-08-14** after the archive-populator sanity review: the bench is two solution
+projects provisioned by SemiBase (verified: `v0.1.0` at `aa037a4`, all commands cross-platform,
+its CI provisions a Linux container by running `all` twice, and the `v0.1.0` release ships
+`linux_amd64`/`windows_amd64` binaries, so no consumer needs a Go toolchain); the seeder populates
+`semiplot_tags`;
+failure handling adopts the SemiStep typed-results discipline; the stub fallback is removed from
+the composition slice; and a final slice replaces the stub with a live demo bench.
 
 ## Summary
 
 SemiPlot renders trends correctly but has never read a real archive: the only implementation of
 `IDataProvider` emits random walks. The architecture for reading the Simple-Scada 2 PostgreSQL
 archive is settled and documented, and one piece of already-shipped code — the aggregation-layer
-thresholds — is wrong by a factor of four against that architecture. Nine slices deliver a
-production provider plus the local test bench it is developed against. The roadmap closes when the
-application, pointed at a populated database, draws real history, follows the live edge, and selects
-archive layers by window width.
+thresholds — is wrong by a factor of four against that architecture. Ten slices deliver a
+production provider, the local test bench it is developed against, and a live demo bench that
+retires the synthetic stub. The roadmap closes when the application, pointed at a populated
+database, draws real history, follows the live edge, selects archive layers by window width, and
+the stub project is gone.
 
 **Thesis:** every resolution the trend canvas needs already exists in the vendor's archive, so the
 provider only has to choose a layer, reduce it to the canvas width, and reconstruct gaps — it never
@@ -50,7 +59,9 @@ conservative, and the viewer would read raw data across windows a coarse layer s
 
 | Concern | Today | Target |
 | --- | --- | --- |
-| Production data source | `RandomStubDataProvider` | `PostgresDataProvider`, chosen by configuration, stub retained for tests |
+| Production data source | `RandomStubDataProvider` | `PostgresDataProvider`, selected by configuration; a missing or invalid configuration is a visible error state, never a silent stub |
+| Synthetic stub | composition-root default | project deleted; manual "see something in the UI" runs on a seeded live demo database through the real provider |
+| Failure reporting | generic `Result` errors, log strings | two decoupled error planes (SemiStep pattern): a finite, stable public surface in Core — one sealed error type with structured fields per operator-visible state — and freely changing internal errors that cross the boundary only mapped into a public type, detail riding `CausedBy` into the log |
 | Layer spacing | period (1 min / 1 h / 1 d) | period ÷ 4 (15 s / 15 min / 6 h) |
 | Layer thresholds | fixed ceilings on window width | derived from `window / targetColumnCount ≥ spacing`, hysteresis retained |
 | Wide-window reduction | client-side only | server-side pixel buckets when the layer is denser than the canvas |
@@ -100,6 +111,14 @@ it.
   default suite stays green on a machine without one.
 - **Fixture rows from a real archive.** Envelope assembly and gap reconstruction are tested against
   rows extracted from a real Simple-Scada dump, not against rows we imagined.
+- **Typed failure assertions.** Every operator-visible failure is a sealed public error class
+  carrying structured fields; tests assert `result.HasError<T>()` on type and fields, never on
+  message text and never on log output. Internal errors and log strings stay free to change — only
+  the public plane is pinned.
+- **Public-surface coverage test.** A build-time reflection test (added in the composition slice)
+  enumerates every public, non-abstract error type in Core and fails when one lacks a mapped UI
+  state — a new public error type cannot silently leak past the operator, and an internal error
+  cannot silently become public. SemiStep's `CoreErrorLocalizationCoverageTests` is the model.
 
 ## Slices
 
@@ -131,27 +150,29 @@ it.
 - **Scope:** Build the local test bench. Extract the verified archive DDL from the customer's dump
   into a schema script held in the repository — daily range partitions, the default partition, the
   `(id, l, t)` primary key, `timestamp(3) without time zone` — so the bench reproduces the structure
-  a real SCADA creates rather than a hand-written approximation. Add a deterministic populator, a
-  standalone script outside the solution, that creates the daily partitions itself and writes
-  archive-shaped data: anchor pairs on change at a 100 ms grid, long steady stretches with no rows,
-  steps at recipe transitions, noise around setpoints, occasional spikes, and real breaks marked
-  `q = 32` then `q = 16` with no rows in between. It fills the coarse layers by the vendor's
-  documented rule — first, last, minimum and maximum of each period, deduplicated, copied verbatim
-  with the same timestamps, values and quality, with break markers replicated into every layer.
-  Variable count, day count and change rate are parameters; randomness is seeded so runs reproduce.
-  It writes into a dedicated database, never into the leftovers from earlier experiments. Also
-  extract a small fixture of real rows from the dump for the database-free tests that later slices
-  need.
+  a real SCADA creates rather than a hand-written approximation. Two solution projects: a
+  deterministic seeder console (`SemiPlot.Tools.ArchiveSeeder`, event-driven segments, anchor pairs
+  on change, long steady stretches with no rows, breaks marked `q = 32` then `q = 16`, coarse layers
+  filled by the vendor's rule in testable C#) and a `net10.0` test project
+  (`SemiPlot.Tests.Data`, xunit v3) owning the gated harness the later slices reuse: one
+  Testcontainers PostgreSQL per run, provisioned by `semibase create` pinned at `v0.1.0` — the same
+  command that provisions a site — a seeded template database cloned per test class, skip-with-reason
+  by default and failure under `SEMIPLOT_REQUIRE_DB=1`. The seeder writes as `scada_writer`, gated
+  reads run as `semiplot_reader`, and `--admin-connection` fills `semiplot_tags` from the seeder's
+  pen catalogue. The synthetic value walk and pen catalogue are copied from the stub, not
+  referenced — the seeder owns its copies. A `data-tests` CI job on `ubuntu-latest` enforces the
+  availability policy. Also extract a small anonymised fixture of real rows from the dump for the
+  database-free tests that later slices need.
 - **Issue:** none
-- **Blast radius:** additive only — a script and a schema file. No solution project, no application
-  code.
+- **Blast radius:** additive — two solution projects, `sql/`, the CI workflow, the two shared props
+  files, `SemiPlot.slnx`. No application code.
 - **Risk:** medium, concentrated in fidelity: data that does not reproduce the archive's shape would
   make every later slice's tests pass against conditions that never occur.
-- **Depends on:** independent
+- **Depends on:** independent (external: SemiBase `v0.1.0`)
 - **Stacking base:** master
 - **Scope guard:** no provider code; no alternative layer-selection rule; nothing that writes to a
-  production archive.
-- **Plan:** —
+  production archive; no live/follow mode — that is the final slice's.
+- **Plan:** docs/plans/20260810-archive-populator.md
 - **PR:** —
 - **Branch:** —
 
@@ -164,6 +185,22 @@ it.
   string built through the Npgsql builder rather than by concatenation. The time boundary
   converter: naive local to UTC on the way out, UTC to naive local for query bounds, with the zone
   resolved once from configuration. All of it is pure logic and testable without a database.
+  This slice also establishes the error discipline the rest of the roadmap follows — the SemiStep
+  pattern (`SemiStep/Docs/architecture/error-reporting.md`), two decoupled planes:
+  - **Public plane** — a finite set of sealed FluentResults error types in Core beside
+    `IDataProvider`, one per operator-visible state (malformed connection file, version mismatch,
+    unreachable database, schema mismatch, empty catalogue, query timeout, ...). Each carries
+    structured fields via a primary constructor and builds its message in the base constructor.
+    This surface is the stable contract: the UI maps it to states, tests assert on it, and it grows
+    only when a new operator-visible state exists — SemiStep's published rule, "a public error type
+    exists iff a distinct operator sentence exists", enforced there by a build-time reflection
+    coverage test; the composition slice adds the same enforcement here.
+  - **Internal plane** — provider-internal failures (Npgsql exceptions, SQLSTATE codes, parse
+    details) are free to change and never leak raw across the boundary: they cross only mapped
+    into a public type, with the raw detail riding `.CausedBy(...)` into the log — SemiStep's
+    envelope shape (`RecipeLoadFailedError`, `PlcCommandFailedError`).
+
+  Tests assert by public error type and fields, never by message text.
 - **Issue:** none
 - **Blast radius:** additive — one new project and its registration. The composition root is not
   switched over in this slice.
@@ -176,17 +213,18 @@ it.
 - **Branch:** —
 
 ### Slice postgres-catalog-and-extent — Status: PENDING
-- **Scope:** The first two operations that touch the database. Create `semiplot_tags` and load the
-  pen catalogue from it, mapping the stored line style onto the domain enum and treating an empty or
-  absent table as an empty pen list rather than as a failure. Implement the archive extent using
-  per-variable bounded subqueries, because an unbounded minimum over the whole table cannot use the
-  primary key and scans the entire archive. Establish the gated integration test pattern here: a
-  disposable database, clean skipping when no server answers, and the trait scheme the rest of the
-  slices reuse.
+- **Scope:** The first two operations that touch the database. Load the pen catalogue from
+  `semiplot_tags` — the table itself is created by `semibase create` and populated by the bench
+  seeder — mapping the stored line style onto the domain enum; an empty or absent table is a
+  distinct typed state (`EmptyTagCatalogError`-shaped, surfaced to the operator by the composition
+  slice), not a silent empty list and not a crash. Implement the archive extent using per-variable
+  bounded subqueries, because an unbounded minimum over the whole table cannot use the primary key
+  and scans the entire archive. The gated harness — container, provisioning, template cloning,
+  skip policy, traits — is owned by archive-populator and reused here unchanged.
 - **Issue:** none
 - **Blast radius:** the provider only; the application still runs on the stub.
-- **Risk:** medium, concentrated in the integration test harness — if skipping is not clean, the
-  default suite stops being trustworthy on a machine without a database.
+- **Risk:** low-medium — the harness risk moved to archive-populator; what remains is the extent
+  query shape.
 - **Depends on:** archive-populator, postgres-provider-scaffold
 - **Stacking base:** master
 - **Scope guard:** no history queries, no realtime, no composition changes.
@@ -201,7 +239,8 @@ it.
   per-pen assembly, with timestamps converted at the boundary. Fold the returned rows into one
   envelope per pen through the existing decimator, preserving the strictly ascending contract. Pin
   the statement text and parameter names in unit tests, and assert through `EXPLAIN` that the query
-  uses the primary key.
+  uses the primary key. A read exceeding the reader role's `statement_timeout` (SQLSTATE `57014`)
+  surfaces as a typed error, not a bare exception.
 - **Issue:** none
 - **Blast radius:** the provider only.
 - **Risk:** medium, concentrated in envelope assembly against archive-shaped input — anchor pairs and
@@ -257,9 +296,11 @@ it.
 - **Scope:** The live edge. A cold observable that polls the raw layer for samples newer than the
   last one seen, on the injected data scheduler, carrying the variable list in every query because a
   time-only predicate cannot use the primary key and would scan the current day's partition on every
-  tick. Disposal stops the poll; a query error logs and drops that tick without throwing on the UI
-  thread and without terminating the observable; and the provider never emits a timestamp at or
-  before the last one already delivered, which is what keeps the history-to-realtime seam monotonic.
+  tick. Disposal stops the poll; a query error drops that tick without throwing on the UI thread and
+  without terminating the observable, and repeated consecutive failures surface as a typed
+  connection-state change the UI can show, not only as log lines; the provider never emits a
+  timestamp at or before the last one already delivered, which is what keeps the
+  history-to-realtime seam monotonic.
   An integration test appends rows and asserts they arrive once, in order, without duplicates, and an
   `EXPLAIN` assertion pins the index usage.
 - **Issue:** none
@@ -273,21 +314,59 @@ it.
 - **Branch:** —
 
 ### Slice postgres-startup-and-composition — Status: PENDING
-- **Scope:** Make the application actually use the provider. A startup probe verifies the shape of
-  the archive table against the catalogue and distinguishes the states the operator must be able to
-  tell apart: no connection, no archive table, an unexpected table shape, an empty pen catalogue, and
-  a non-empty default partition. The composition root selects the PostgreSQL provider when a valid
-  connection file is present and falls back to the stub otherwise, reporting a malformed file loudly
-  instead of crashing. DI tests cover both branches. This is the slice after which the application,
-  pointed at a populated database, draws real data.
+- **Scope:** Make the application actually use the provider. A startup probe returns a `Result`
+  whose **public-plane** typed errors distinguish the states the operator must be able to tell
+  apart: no connection file, a malformed file, no connection, no archive table, an unexpected table
+  shape, an empty pen catalogue, and a non-empty default partition. The UI maps each public error
+  type onto a distinct visible state — the application stays alive, draws nothing, and says why —
+  and a build-time reflection coverage test (see Guard strategy) makes the mapping total: every
+  public error type in Core has a UI state, and internal errors reach the UI only wrapped in a
+  public envelope. **There is no stub fallback**:
+  the database is part of the service, and an unreachable database is an error, never silently
+  substituted synthetic data. The stub remains selectable only by an explicit development flag until
+  the final slice deletes it. DI tests cover the selection; a thin end-to-end suite (5–7 journeys on
+  `Avalonia.Headless` against a bench-seeded database, gated like the data tests) proves the
+  composed application: pens listed from `semiplot_tags`, history drawn with counts consistent with
+  the seed, a break rendered as a broken line, layer switch on zoom, a live insert arriving once,
+  and one test per startup error state asserting the UI state — never log text. On Windows CI the
+  suite reaches PostgreSQL through `SEMIPLOT_TEST_PG` (the runner image ships a stopped PostgreSQL
+  service — verify the image at slice time). This automates the roadmap's close condition.
 - **Issue:** none
-- **Blast radius:** the composition root and startup path — the only slice that changes what the
+- **Blast radius:** the composition root and startup path — the first slice that changes what the
   running application does by default.
-- **Risk:** medium, concentrated in the fallback behaviour: a misconfigured installation must degrade
-  visibly rather than silently showing synthetic data as if it were real.
+- **Risk:** medium, concentrated in the error-state mapping and in keeping the E2E suite thin: the
+  layer boundaries are already covered by contract, so E2E asserts composition, not behaviour
+  matrices.
 - **Depends on:** postgres-gap-reconstruction, postgres-realtime-poll
 - **Stacking base:** master
-- **Scope guard:** no new queries; no UI redesign of the error states beyond surfacing them.
+- **Scope guard:** no new queries; no UI redesign of the error states beyond surfacing them; no
+  stub deletion — that is the final slice's.
+- **Plan:** —
+- **PR:** —
+- **Branch:** —
+
+### Slice live-demo-and-stub-retirement — Status: PENDING
+- **Scope:** Replace the synthetic stub with a live demo bench and delete it. The seeder gains a
+  `--follow` mode: after seeding history up to "now" it keeps walking the same segment sequence in
+  real time as `scada_writer` — raw rows continuously, coarse layers flushed when their period
+  closes (which makes the freshness lag of `l=1/2/3` visible in the running application), the next
+  day's partition created ahead of midnight, and `q = 32`/`q = 16` markers across a graceful stop
+  and restart, so stopping and restarting the demo writer produces real breaks. `--follow` only
+  appends; the only destruction lives in `scripts/seed-demo.ps1`, which wraps drop-and-recreate of
+  the demo database (`semibase create` → seeder with a current-time `--end` → printed connection
+  file). The demo writer plays the role of the SCADA, not of SemiPlot — the application remains a
+  strict read-only consumer. Then delete `SemiPlot.DataSource.Stub`: the project, its solution
+  entry, its DI registration and the development flag; check nothing else references its classes
+  (`MinMaxDecimator` in particular) and relocate anything that is still needed. `FakeDataProvider`
+  in the test project stays — it is a test double, not the stub.
+- **Issue:** none
+- **Blast radius:** the seeder tool, `scripts/`, the composition root, and one deleted project.
+- **Risk:** low — the demo path exercises code every earlier slice already tests; the deletion is
+  mechanical.
+- **Depends on:** postgres-startup-and-composition
+- **Stacking base:** master
+- **Scope guard:** no in-database procedures or scheduled jobs for the demo writer — rejected
+  below; no changes to provider queries.
 - **Plan:** —
 - **PR:** —
 - **Branch:** —
@@ -296,9 +375,11 @@ it.
 
 Every slice not marked DROPPED has a MERGED PR. No slice owns an issue, so no issue closes
 automatically; there is no tracking issue to close by hand. The functional close condition is that
-the application, pointed at a database populated by the bench, draws real history, follows the live
-edge, selects layers by window width, and breaks the line only where the archive says a break
-occurred.
+the application, pointed at a database seeded by the bench, draws real history, follows a live
+edge moved by the `--follow` demo writer, selects layers by window width, breaks the line only
+where the archive says a break occurred, and `SemiPlot.DataSource.Stub` no longer exists. The
+end-to-end suite of the composition slice asserts this automatically; the demo stand confirms it
+by eye.
 
 ## Rejected alternatives
 
@@ -319,6 +400,13 @@ Settled during design — do not relitigate without new facts. The full reasonin
 - A second implementation of the layer-selection rule in the populator, to see how badly the picture
   degrades if the vendor's rule differs — dropped as scope; the risk stays recorded as unverified in
   the architecture docs.
+- The demo writer as an in-database procedure with a scheduler — pg_cron has no Windows release and
+  the stand's PostgreSQL runs on Windows, so an external caller is needed anyway; it would be a
+  second implementation of the generation rule, in SQL, untestable without a database; and
+  `postgres-instance.md` deliberately keeps the instance free of our functions, triggers and jobs.
+- A stub fallback in the composition root — removed 2026-08-14: synthetic data silently standing in
+  for process data is the worst failure mode for an operator tool. An unreachable database is a
+  visible error state.
 
 ## Open forks for the operator
 

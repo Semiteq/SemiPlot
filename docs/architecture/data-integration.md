@@ -1,8 +1,8 @@
 # Data integration — the boundary between SemiPlot and the archive
 
 This document defines the contract: who owns what, what SemiPlot asks the database, and what it
-does with the answers. The archive itself is described in `scada-archive.md`; the database instance
-we ship is in `postgres-instance.md`. Requirement identifiers (`DA-`, `RT-`) refer to
+does with the answers. The archive itself is described in `scada-archive.md`; the instance SemiPlot
+reads is in `postgres-instance.md`. Requirement identifiers (`DA-`, `RT-`) refer to
 `trend-feature-spec.md`. Claim provenance follows `sources.md`.
 
 There is no application server. The desktop client connects to PostgreSQL directly, so this
@@ -15,7 +15,7 @@ document and the provider code are the entire integration surface.
 | Schema of `trends` / `messages`, partition creation, writes, thinning | owns | reads only | |
 | Executing retention (deleting old partitions) | owns | | |
 | Choosing the retention depth | setting lives in the SCADA project | decision is ours `[DEC:common-retention]` | |
-| PostgreSQL instance: installation, configuration, roles, backup, upgrade | client of it | owns | |
+| PostgreSQL instance: installation, configuration, roles, backup, upgrade | client of it | client of it — provisioned by SemiBase, see `postgres-instance.md` | |
 | Variable number to name mapping | absent | | `semiplot_tags` `[DEC:semiplot-tags]` |
 | Knowledge of the archive's time zone | not stored anywhere | owns, in configuration | |
 | Layer choice, decimation, gap rendering, envelope assembly | | owns | |

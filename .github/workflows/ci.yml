@@ -9,6 +9,7 @@ on:
       - "SemiPlot/**"
       - "SemiPlot.slnx"
       - "global.json"
+      - "sql/**"
       - "!**.md"
   pull_request:
     paths:
@@ -17,6 +18,7 @@ on:
       - "SemiPlot/**"
       - "SemiPlot.slnx"
       - "global.json"
+      - "sql/**"
       - "!**.md"
 
 concurrency:
@@ -49,3 +51,45 @@ jobs:
 
       - name: test
         run: dotnet test SemiPlot/SemiPlot.Tests/SemiPlot.Tests.csproj -c Release --no-build --logger "console;verbosity=normal"
+
+  data-tests:
+    name: Data Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    env:
+      # On a pipeline an unavailable container runtime is a failure, never a silent skip. The Windows
+      # job deliberately does not set this: Windows runners cannot run Linux containers.
+      SEMIPLOT_REQUIRE_DB: "1"
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      # The pin is a tagged release, not a moving latest, so a change in SemiBase cannot fail this
+      # suite without a version to blame. The published binary means no Go toolchain on the runner.
+      - name: install semibase
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v0.1.0 --repo Semiteq/SemiBase \
+            --pattern semibase_0.1.0_linux_amd64 --dir "$RUNNER_TEMP"
+          chmod +x "$RUNNER_TEMP/semibase_0.1.0_linux_amd64"
+          echo "SEMIBASE_EXE=$RUNNER_TEMP/semibase_0.1.0_linux_amd64" >> "$GITHUB_ENV"
+
+      - name: restore
+        run: dotnet restore SemiPlot/SemiPlot.Tests.Data/SemiPlot.Tests.Data.csproj
+
+      - name: build
+        run: dotnet build SemiPlot/SemiPlot.Tests.Data/SemiPlot.Tests.Data.csproj -c Release --no-restore
+
+      - name: test
+        run: dotnet test SemiPlot/SemiPlot.Tests.Data/SemiPlot.Tests.Data.csproj -c Release --no-build --logger "console;verbosity=normal"

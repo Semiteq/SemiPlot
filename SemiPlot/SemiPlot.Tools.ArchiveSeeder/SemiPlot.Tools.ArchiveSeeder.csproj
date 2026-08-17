@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FluentResults"/>
+    <PackageReference Include="Npgsql"/>
+  </ItemGroup>
+
+  <!-- The schema script lives in sql/ next to its README; the binary carries it, because neither the
+       console nor a test assembly has a path back to the repository at runtime. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\sql\semiplot_dev.sql"
+                      LogicalName="SemiPlot.Tools.ArchiveSeeder.semiplot_dev.sql"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SemiPlot.Core\SemiPlot.Core.csproj"/>
+  </ItemGroup>
+
+</Project>

@@ -21,13 +21,17 @@ public sealed class TrendCoordinator : IDisposable
 
 	private IDisposable? _realtimeSubscription;
 
+	// pens must be dataProvider's own catalogue: the coordinator subscribes to these identifiers without
+	// asking the provider whether it knows them, and a provider silently drops the ones it does not.
 	public TrendCoordinator(
 		IDataProvider dataProvider,
+		IReadOnlyList<Pen> pens,
 		IScheduler dataScheduler,
 		IScheduler uiScheduler,
 		TimeSpan? batchWindow = null)
 	{
 		ArgumentNullException.ThrowIfNull(dataProvider);
+		ArgumentNullException.ThrowIfNull(pens);
 		ArgumentNullException.ThrowIfNull(dataScheduler);
 		ArgumentNullException.ThrowIfNull(uiScheduler);
 
@@ -35,10 +39,8 @@ public sealed class TrendCoordinator : IDisposable
 		_dataScheduler = dataScheduler;
 		_uiScheduler = uiScheduler;
 		_batchWindow = batchWindow ?? _defaultBatchWindow;
-		RealtimeBatches = BuildRealtimeBatches();
+		RealtimeBatches = BuildRealtimeBatches(pens);
 	}
-
-	public IReadOnlyList<Pen> Pens => _dataProvider.Pens;
 
 	public IObservable<RealtimeBatch> RealtimeBatches { get; }
 
@@ -81,9 +83,9 @@ public sealed class TrendCoordinator : IDisposable
 		return _dataProvider.QueryArchiveExtentAsync();
 	}
 
-	private IObservable<RealtimeBatch> BuildRealtimeBatches()
+	private IObservable<RealtimeBatch> BuildRealtimeBatches(IReadOnlyList<Pen> pens)
 	{
-		var penIds = _dataProvider.Pens.Select(pen => pen.PenId).ToArray();
+		var penIds = pens.Select(pen => pen.PenId).ToArray();
 
 		return _dataProvider
 			.Subscribe(penIds)

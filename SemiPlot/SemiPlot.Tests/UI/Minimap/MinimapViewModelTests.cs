@@ -114,6 +114,7 @@ public sealed class MinimapViewModelTests
 		};
 		var coordinator = new TrendCoordinator(
 			provider,
+			provider.Pens,
 			scheduler,
 			ImmediateScheduler.Instance,
 			_batchWindow);

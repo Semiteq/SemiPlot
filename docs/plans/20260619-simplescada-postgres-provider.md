@@ -20,6 +20,22 @@ Two facts govern every task below and are easy to get wrong: every query must co
 points return up to four times; and every query must carry the variable list, or it cannot use
 `PRIMARY KEY (id, l, t)` and scans a whole partition.
 
+## Superseded
+
+**This plan is superseded by `docs/plans/roadmaps/20260810-postgres-data-source-roadmap.md`**, which
+slices the same work into independently shippable branches. Read the roadmap first; use this file only
+for the archive facts above and the SQL detail, and treat its task list as stale. Three specifics are
+known wrong:
+
+- Task 4 says "load `Pens` at startup". `IDataProvider.Pens` no longer exists — the catalogue is
+  `Task<Result<IReadOnlyList<Pen>>> QueryPensAsync()` (slice `provider-pen-query-seam`). Whether an
+  empty or missing `semiplot_tags` is an empty success or a typed failure is `postgres-catalog-and-extent`'s
+  open question, not settled here.
+- Task 4 also creates `sql/semiplot_tags.sql`. The table is created by `semibase create`, so the DDL
+  is not this repository's to own.
+- Every task puts its tests under `SemiPlot.Tests/Data/...`. Data-source tests live in the separate
+  `SemiPlot.Tests.Data` project, which owns the gated database harness.
+
 ## Development approach
 
 - Regular: implement, then add or update tests in the same task.

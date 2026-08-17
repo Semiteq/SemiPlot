@@ -11,6 +11,7 @@ namespace SemiPlot.DataSource.Stub;
 public sealed class RandomStubDataProvider : IDataProvider
 {
 	private static readonly TimeSpan _archiveDepth = TimeSpan.FromDays(7.0);
+	private readonly IReadOnlyList<Pen> _pens;
 	private readonly IReadOnlyDictionary<long, SyntheticPen> _pensById;
 	private readonly TimeSpan _realtimeInterval;
 	private readonly IScheduler _scheduler;
@@ -31,10 +32,8 @@ public sealed class RandomStubDataProvider : IDataProvider
 
 		var catalog = SyntheticPenCatalog.Build();
 		_pensById = catalog.ToDictionary(pen => pen.PenId);
-		Pens = catalog.Select(pen => pen.ToPen()).ToArray();
+		_pens = catalog.Select(pen => pen.ToPen()).ToArray();
 	}
-
-	public IReadOnlyList<Pen> Pens { get; }
 
 	public IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<long> penIds)
 	{
@@ -52,6 +51,11 @@ public sealed class RandomStubDataProvider : IDataProvider
 		return Observable
 			.Interval(_realtimeInterval, _scheduler)
 			.Select(tick => (IReadOnlyList<Sample>)SamplesAt(subscribed, subscribedAtUtc, tick + 1));
+	}
+
+	public Task<Result<IReadOnlyList<Pen>>> QueryPensAsync()
+	{
+		return Task.FromResult(Result.Ok(_pens));
 	}
 
 	public Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(

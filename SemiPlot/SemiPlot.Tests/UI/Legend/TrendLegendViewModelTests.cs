@@ -138,6 +138,7 @@ public sealed class TrendLegendViewModelTests
 		var provider = new FakeDataProvider(scheduler, TimeSpan.FromMilliseconds(10));
 		var coordinator = new TrendCoordinator(
 			provider,
+			provider.Pens,
 			scheduler,
 			ImmediateScheduler.Instance,
 			_batchWindow);

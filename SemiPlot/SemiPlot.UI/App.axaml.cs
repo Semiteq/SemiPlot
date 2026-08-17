@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using ReactiveUI.Avalonia;
 
 using SemiPlot.Core.Data;
+using SemiPlot.Core.Trends;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.MainWindow;
@@ -70,20 +71,25 @@ public class App : Application
 	}
 
 	// UseReactiveUI() has registered AvaloniaScheduler as RxApp.MainThreadScheduler by now, so the UI
-	// scheduler can only be captured here — after that ordering — and handed to the factories.
+	// scheduler can only be captured here — after that ordering — and handed to the coordinator and the
+	// view-model factories.
 	private static void InitializeServices(IServiceProvider serviceProvider)
 	{
 		var uiScheduler = AvaloniaScheduler.Instance;
+		var dataProvider = serviceProvider.GetRequiredService<IDataProvider>();
+		var pens = LoadPens(dataProvider);
 
-		var coordinatorFactory = serviceProvider.GetRequiredService<Func<IScheduler, TrendCoordinator>>();
-		var coordinator = coordinatorFactory(uiScheduler);
+		var coordinator = new TrendCoordinator(
+			dataProvider,
+			pens,
+			serviceProvider.GetRequiredService<IScheduler>(),
+			uiScheduler);
 
 		var chartFactory =
 			serviceProvider.GetRequiredService<Func<TrendCoordinator, IScheduler, TrendChartViewModel>>();
 		var chartViewModel = chartFactory(coordinator, uiScheduler);
 
-		var dataProvider = serviceProvider.GetRequiredService<IDataProvider>();
-		foreach (var pen in dataProvider.Pens)
+		foreach (var pen in pens)
 		{
 			chartViewModel.AddPen(pen);
 		}
@@ -100,6 +106,12 @@ public class App : Application
 
 		_ = chartViewModel.RequestInitialHistory();
 		_ = minimapViewModel.LoadExtentAsync();
+	}
+
+	// AfterSetup takes a synchronous delegate, so the one catalogue read the startup path needs blocks here.
+	private static IReadOnlyList<Pen> LoadPens(IDataProvider dataProvider)
+	{
+		return dataProvider.QueryPensAsync().GetAwaiter().GetResult().Value;
 	}
 
 	private static void EnsureSingleStart()

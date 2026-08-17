@@ -64,7 +64,7 @@ dotnet test SemiPlot.slnx --filter "Category=Unit"
 dotnet test SemiPlot.slnx --filter "FullyQualifiedName~TestMethodName"
 ```
 
-Test traits: `[Trait("Component", "Core|UI")]`, `[Trait("Area", "Data|Bridge|Di")]`,
+Test traits: `[Trait("Component", "Core|UI")]`, `[Trait("Area", "Data|Bridge|Chart|Di")]`,
 `[Trait("Category", "Unit|Integration")]`. Every test class carries all three; `SemiPlot.Tests.Data`
 is `Component=Core` throughout, since nothing in it touches the UI.
 
@@ -145,7 +145,8 @@ No abbreviations in names.
 - Avoid mutable static state.
 - Core `AddData()` keeps the bare data `IScheduler`. The UI scheduler is not a second container
   registration: capture `AvaloniaScheduler.Instance` (= `RxApp.MainThreadScheduler`) in the
-  `.AfterSetup(...)` callback after `UseReactiveUI()` and pass it explicitly via the coordinator factory.
+  `.AfterSetup(...)` callback after `UseReactiveUI()` and pass it explicitly to the coordinator
+  constructor and the chart/minimap factories.
 
 ### Interface Design
 

@@ -1,6 +1,5 @@
 ﻿using ReactiveUI;
 
-using SemiPlot.Core.Data;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.Legend;
 using SemiPlot.UI.Minimap;
@@ -10,31 +9,32 @@ namespace SemiPlot.UI.MainWindow;
 
 public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 {
-	private readonly IDataProvider _dataProvider;
-
 	private TrendChartViewModel? _chartViewModel;
 	private TrendLegendViewModel? _legendViewModel;
 	private MinimapViewModel? _minimapViewModel;
 	private TrendToolbarViewModel? _toolbarViewModel;
 
-	public MainWindowViewModel(IDataProvider dataProvider)
-	{
-		ArgumentNullException.ThrowIfNull(dataProvider);
-		_dataProvider = dataProvider;
-	}
-
-	public int PenCount => _dataProvider.Pens.Count;
+	// Notified only when ChartViewModel is assigned. TrendChartViewModel.Pens is a live view, so adding or
+	// removing a pen after assignment leaves this stale — whoever makes the pen set dynamic owns that chain.
+	public int PenCount => ChartViewModel?.Pens.Count ?? 0;
 
 	public TrendChartViewModel? ChartViewModel
 	{
 		get => _chartViewModel;
 		set
 		{
+			if (ReferenceEquals(_chartViewModel, value))
+			{
+				return;
+			}
+
 			_toolbarViewModel?.Dispose();
 			_legendViewModel?.Dispose();
 			_chartViewModel?.Dispose();
 
 			this.RaiseAndSetIfChanged(ref _chartViewModel, value);
+			this.RaisePropertyChanged(nameof(PenCount));
+
 			ToolbarViewModel = value is null ? null : new TrendToolbarViewModel(value);
 			LegendViewModel = value is null ? null : new TrendLegendViewModel(value);
 		}

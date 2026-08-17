@@ -740,6 +740,7 @@ public sealed class TrendChartViewModelTests
 		var provider = new FakeDataProvider(scheduler, realtimeInterval ?? TimeSpan.FromMilliseconds(10));
 		var coordinator = new TrendCoordinator(
 			provider,
+			provider.Pens,
 			scheduler,
 			ImmediateScheduler.Instance,
 			_batchWindow);

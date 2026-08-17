@@ -34,9 +34,10 @@ project, so Core never references a data source.
 ```csharp
 public interface IDataProvider
 {
-    IReadOnlyList<Pen> Pens { get; }
-
+    // Cold per call: no samples flow until subscribed; the subscriber disposes the returned IDisposable.
     IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<long> penIds);
+
+    Task<Result<IReadOnlyList<Pen>>> QueryPensAsync();
 
     Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(
         IReadOnlyList<long> penIds,
@@ -56,6 +57,17 @@ public interface IDataProvider
 | `PenHistoryEnvelope` | parallel `Timestamps` / `Min` / `Max` / `Center`, strictly ascending, `NaN` marks a gap | One per pen per history query. |
 | `ArchiveExtent` | `FirstUtc`, `LastUtc` | Full stored span, consumed by the minimap (`TM-4`). |
 | `AggregationLayer` | `Raw`, `Minute`, `Hour`, `Day` | Maps one-to-one onto the archive's `l` column. |
+
+The pen catalogue is a query, not a property, because reading it can fail: the server can be
+unreachable, the table can be absent, the read can time out. Like every other read on this interface
+the failure travels as a failed `Result` and never as an exception crossing to the UI thread. The
+error types that name those states are defined with the PostgreSQL provider.
+
+As built, the composition root does not yet honour that last part for the catalogue: `App.axaml.cs`
+reads the catalogue once at startup and lets a failed `Result` throw, so the process fails to start
+instead of showing the "no connection to the archive" state the error-semantics table below promises.
+This is the startup thread, before any UI thread exists. Turning it into an operator-visible state is
+owned by slice `postgres-startup-and-composition`.
 
 Implementations: `RandomStubDataProvider` in `SemiPlot.DataSource.Stub` (synthetic, used by tests
 and demos) and `PostgresDataProvider` in `SemiPlot.DataSource.Postgres` (production). The

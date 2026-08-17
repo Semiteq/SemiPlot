@@ -180,7 +180,7 @@ it.
 - **PR:** #1 (merged)
 - **Branch:** archive-populator (deleted after merge)
 
-### Slice provider-pen-query-seam — Status: IN-PROGRESS
+### Slice provider-pen-query-seam — Status: DONE
 - **Scope:** Give the pen catalogue a failure channel before anything tries to load it from a
   database. `IDataProvider` exposes the catalogue as a plain `IReadOnlyList<Pen>` property, which
   cannot report a failed read; the next-but-one slice reads it from `semiplot_tags`, where
@@ -202,11 +202,11 @@ it.
 - **Stacking base:** master
 - **Scope guard:** no new project, no Npgsql, no error types, no configuration. This slice changes a
   seam and nothing else — the provider scaffold that uses the new shape is the slice after it.
-- **Plan:** docs/plans/20260817-provider-pen-query-seam.md
-- **PR:** —
+- **Plan:** docs/plans/completed/20260817-provider-pen-query-seam.md
+- **PR:** #2 (merged)
 - **Branch:** provider-pen-query-seam
 
-### Slice postgres-provider-scaffold — Status: PENDING
+### Slice postgres-provider-scaffold — Status: IN-PROGRESS
 - **Scope:** Stand up the provider project with everything that needs no query. A
   `SemiPlot.DataSource.Postgres` project referencing Core only, Npgsql added through central package
   management, a DI extension registering the provider, and the provider itself implementing
@@ -238,9 +238,9 @@ it.
 - **Depends on:** independent
 - **Stacking base:** master
 - **Scope guard:** no SQL, no queries, no change to which provider the application uses.
-- **Plan:** —
+- **Plan:** docs/plans/20260817-postgres-provider-scaffold.md
 - **PR:** —
-- **Branch:** —
+- **Branch:** postgres-provider-scaffold
 
 ### Slice postgres-catalog-and-extent — Status: PENDING
 - **Scope:** The first two operations that touch the database. Load the pen catalogue from

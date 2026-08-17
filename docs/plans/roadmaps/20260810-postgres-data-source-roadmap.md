@@ -122,7 +122,7 @@ it.
 
 ## Slices
 
-### Slice layer-ladder-spacing — Status: PENDING
+### Slice layer-ladder-spacing — Status: IN-PROGRESS
 - **Scope:** Correct the aggregation-layer arithmetic. `AggregationLayer` exposes each layer's point
   spacing — a quarter of its period, so 15 s, 15 min and 6 h — instead of returning the period
   itself. `ChartNavigationController.LayerForWidth` derives its ceilings from that spacing and the
@@ -146,7 +146,7 @@ it.
 - **PR:** —
 - **Branch:** —
 
-### Slice archive-populator — Status: IN-PROGRESS
+### Slice archive-populator — Status: DONE
 - **Scope:** Build the local test bench. Extract the verified archive DDL from the customer's dump
   into a schema script held in the repository — daily range partitions, the default partition, the
   `(id, l, t)` primary key, `timestamp(3) without time zone` — so the bench reproduces the structure
@@ -176,9 +176,9 @@ it.
 - **Stacking base:** master
 - **Scope guard:** no provider code; no alternative layer-selection rule; nothing that writes to a
   production archive; no live/follow mode — that is the final slice's.
-- **Plan:** docs/plans/20260810-archive-populator.md
-- **PR:** —
-- **Branch:** archive-populator
+- **Plan:** docs/plans/completed/20260810-archive-populator.md
+- **PR:** #1 (merged)
+- **Branch:** archive-populator (deleted after merge)
 
 ### Slice postgres-provider-scaffold — Status: PENDING
 - **Scope:** Stand up the provider project with everything that needs no query. A

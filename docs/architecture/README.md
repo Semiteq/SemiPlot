@@ -17,11 +17,19 @@ implementation plans see `docs/plans/`.
 - [scada-archive.md](./scada-archive.md) — the Simple-Scada 2 archive as it exists: tables and
   columns, archive layers, quality marks and gaps, write and retention behaviour, reader hazards,
   and what remains unverified.
-- [postgres-instance.md](./postgres-instance.md) — the PostgreSQL server we supply: installation,
-  every configuration setting we change and why, roles and privileges, the objects we add,
-  provisioning order, backup and upgrades.
+- [postgres-instance.md](./postgres-instance.md) — the instance as SemiPlot consumes it: the reader
+  role's contract, the `semiplot_tags` columns read, the provisioning states the client must
+  survive, retention and capacity. Installation, configuration, provisioning order and the role
+  definitions are owned by SemiBase (`github.com/Semiteq/SemiBase`) and cross-referenced there.
 - [sources.md](./sources.md) — citation convention and the registry every factual claim resolves
   against: vendor manual pages, vendor forum topics, our own measurements, our own decisions.
+- [bench.md](./bench.md) — the seeded PostgreSQL bench the data-source slices develop against: the
+  seeder, the generated waveform, the layer thinning it applies, the container fixture and the
+  template-and-clone lifecycle, plus the environment that gates the integration tests.
+
+Data files referenced from the docs above live in [`sql/`](../../sql) — `semiplot_dev.sql`, the
+vendor archive schema the seeder carries as an embedded resource, and `sql/README.md`, which records
+where it and the committed 140-row real-archive slice came from.
 
 - [trend-feature-spec.md](./trend-feature-spec.md) — canonical requirements + acceptance rubric for
   the trend canvas, derived from MasterSCADA "MasterTrend". The design docs above cross-reference its

@@ -47,6 +47,7 @@ SemiPlot — приложение для просмотра графиков и 
 | ОС              | Windows 10 или Windows 11 (64-bit)                            |
 | Среда сборки    | .NET 10 SDK                                                   |
 | Источник данных | На текущем этапе не требуется (заглушка); далее — SimpleScada |
+| Тестовый стенд  | Только для интеграционных тестов: Docker (или иная среда контейнеров) и бинарник `semibase` v0.1.0 из `github.com/Semiteq/SemiBase`; без них эти тесты пропускаются |
 
 ---
 
@@ -62,3 +63,16 @@ dotnet run --project SemiPlot/SemiPlot.UI/SemiPlot.UI.csproj
 # Тесты
 dotnet test SemiPlot.slnx
 ```
+
+Интеграционные тесты стенда (`SemiPlot.Tests.Data`, трейт `Category=Integration`) поднимают
+PostgreSQL в контейнере и провизионируют его командой `semibase create`. Если контейнерной среды или
+бинарника `semibase` нет, эти тесты **пропускаются с указанием причины**, а не проваливаются, —
+`dotnet test SemiPlot.slnx` на такой машине проходит, но проверяет меньше. Чтобы запустить их:
+
+```powershell
+$env:SEMIBASE_EXE = "<путь к semibase.exe>"   # или положить бинарник в PATH
+dotnet test SemiPlot.slnx
+```
+
+`SEMIPLOT_REQUIRE_DB=1` превращает пропуск в падение — это то, что делает CI. Полный список
+переменных окружения — в `CLAUDE.md`, раздел «Gated data tests».

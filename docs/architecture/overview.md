@@ -28,7 +28,11 @@ It must handle two classes of data:
 Constraint: **$0 budget** — only free/OSS components.
 
 > Version note: SemiPlot pins **Avalonia 11.3.x** (binding floor 11.3.8, set by
-> `ReactiveUI.Avalonia` 11.3.8) because `ScottPlot.Avalonia` 5.1.x has no Avalonia 12 build.
+> `ReactiveUI.Avalonia` 11.3.8) and `ScottPlot.Avalonia` 5.1.57, which depends on Avalonia 11.3.4.
+> Nothing external blocks the move to Avalonia 12 any more: `ScottPlot.Avalonia` 5.1.59 depends on
+> Avalonia 12.0.0 and `ReactiveUI.Avalonia` publishes 12.1.1 (verified against the NuGet nuspecs on
+> 2026-08-14). What remains is the UI bump itself, which also unblocks the xunit-v3 unification of the
+> two test projects — see the exit path in the root `CLAUDE.md`.
 > `Avalonia.HarfBuzz` has no 11.3.x package on NuGet (only 12.x); HarfBuzz text shaping arrives
 > transitively via `Avalonia.Skia` 11.3.8 → `HarfBuzzSharp`, so no explicit `UseHarfBuzz()` call.
 

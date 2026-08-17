@@ -123,6 +123,20 @@ Taken together — a fixed budget of four, extremes guaranteed, every stored row
 is the classic first / last / minimum / maximum selection, deduplicated when those coincide. The
 identity of the two non-extreme points is inference rather than vendor statement, `UNVERIFIED`.
 
+**Half of that inference now has evidence.** In one measured minute the coarse layer carries a row
+that is neither an extreme nor a marker and that is the last raw row of its minute, so *last of the
+period* is one of the two non-extreme points `[MEAS:dump-20260805]`. *First of the period* stays
+inferred: in every minute of the measured sample the first raw row is a marker, which is copied into
+every layer anyway, so nothing there separates the two readings.
+
+**Which row survives when the extreme value repeats: the later one** `[MEAS:dump-20260805]`. Where a
+period's minimum or maximum occurs at two instants, the coarse layer carries the row with the larger
+timestamp — the last poll tick still holding that value, which is the corner where the step ends.
+The extreme *values* are identical either way, so an envelope read from a coarse layer is unaffected
+by the tie-break; only the abscissa of the point moves. A reader that reproduces the selection rule
+for its own purposes has to know this: taking the earliest row instead keeps the same envelope and
+loses the width of the step.
+
 **Which minimum and maximum survive.** Those of the period, not of the whole archive. A minute-layer
 row set for one minute carries that minute's lowest and highest samples. The silhouette of the trend
 therefore survives at every zoom level: the amplitude of an excursion is preserved, only its shape
@@ -194,6 +208,13 @@ Two consequences. The archive is explicitly step-shaped, with the corner of each
 real sample, so linear interpolation between a pair is exact. And row count scales with the number
 of changes rather than with elapsed time — a quiet variable costs almost nothing.
 
+**The poll tick jitters.** Of 34 change rows in the measured archive, 30 sat exactly 100 ms after
+their predecessor and 4 sat 104 to 109 ms after it; the four late ones fall at the same two instants
+for both variables, so the tick itself ran late rather than one variable being treated differently
+`[MEAS:dump-20260805]`. Two rows closer together than the poll interval were never observed. A
+reader that keys anything on the pair spacing must allow roughly 10 ms of tolerance rather than
+demand an exact interval.
+
 Values accumulate in memory and reach the database on periodic flushes; a rarely changing variable
 reaches it rarely, though a write can also land within a millisecond `[FORUM:1847]`. During a
 database outage the engine accumulates up to roughly two million records in memory `[MAN:archsysv2]`,
@@ -224,7 +245,8 @@ The account under which the SCADA connects needs `ALTER`, `CREATE`, `DROP`, `INS
 **Thinning is neither configurable nor disableable.** No such setting exists in the manual, and the
 word does not occur in any resource string of the editor, server or options applications
 `[MEAS:install-inspection]`. The coarse layers are always written; their cost has to be accepted as
-fixed overhead, roughly 1465 rows per variable per day at the four-per-period budget.
+fixed overhead, at most about 5860 rows per variable per day at the four-per-period budget — 1440
+minutes, 24 hours and one day at four points each. A variable that changes rarely produces fewer.
 
 ## Reader hazards
 
@@ -249,7 +271,7 @@ Carried deliberately as open, to be settled by a controlled experiment rather th
 | Question | Why it is open | Impact |
 | --- | --- | --- |
 | Are the thinning periods aligned to the calendar minute/hour/day, or to the flush window? | Never stated; measured coarse timestamps are raw sample times and reveal nothing about bucket edges. | Affects accuracy at period boundaries only. |
-| Which two of the four points are the non-extreme ones? | Inferred as first and last of the period; no vendor statement. | None for us: we need the extremes and the period edges, and both are present. |
+| Which two of the four points are the non-extreme ones? | Inferred as first and last of the period; no vendor statement. *Last* is confirmed on measured rows, *first* is not — every sample minute opens on a marker row, which is copied regardless. | None for us: we need the extremes and the period edges, and both are present. |
 | Did archive system v2 keep the v1 flush cadences? | The cadence statement is v1-era. | Sets how stale the coarse layers are near the live edge. |
 | Do the hour and day layers behave like the minute layer? | The measured archive spans two hours with twelve restarts, so `l=2` and `l=3` were never exercised across their own periods. | Wide-window fidelity beyond ten days. |
 

@@ -16,30 +16,81 @@ dotnet run   --project SemiPlot/SemiPlot.UI/SemiPlot.UI.csproj
 dotnet format SemiPlot.slnx                    # pre-commit hook enforces this
 ```
 
-## Test
-
-All tests live in one project, `SemiPlot.Tests`, on `xunit` v2 + `Avalonia.Headless.XUnit`. It
-references `SemiPlot.UI`. `TestAppBuilder.cs` carries `[assembly: AvaloniaTestApplication]` and provides
-the headless harness. Pure logic (renderer-agnostic Core models: decimation, navigation, scale, cursor,
-delta) uses plain `[Fact]`; tests touching ReactiveUI/ScottPlot/Avalonia use `[AvaloniaFact]`/`[AvaloniaTheory]`.
-
-Accepted trade-off: the Core model tests now build against the UI project, so they no longer run
-independently of the UI build. This was chosen deliberately — `Avalonia.Headless.XUnit 11.3.x` is
-xUnit-v2-only and `ScottPlot.Avalonia` has no released Avalonia-12 build, so staying on Avalonia 11 +
-xUnit v2 in a single project is simpler than maintaining a two-project split across xUnit majors. The
-xUnit-v3 / Avalonia-12 unification is deferred until `ScottPlot.Avalonia` ships an Avalonia-12 release;
-revisit then.
+The bench seeder fills an empty, `semibase create`-provisioned database with a generated archive. It
+refuses a database that already holds `public.trends` and issues no `DROP` anywhere:
 
 ```powershell
-dotnet test SemiPlot.slnx                                       # full suite
-dotnet test SemiPlot/SemiPlot.Tests/SemiPlot.Tests.csproj                # the single test project
+dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.ArchiveSeeder.csproj -- `
+  --connection "Host=localhost;Database=semiplot_dev;Username=scada_writer;Password=<writer>" `
+  --admin-connection "Host=localhost;Database=semiplot_dev;Username=postgres;Password=<super>" `
+  --end 2026-01-02T00:00:00 --days 1 --pens 8 --seed 1
+```
+
+`--connection` and `--end` are required; `--end` carries no time zone, so two runs of the same seed
+produce the same archive. `--admin-connection` is optional and only fills `semiplot_tags`, which
+`scada_writer` holds no privilege on. Run it with no arguments for the full option list.
+
+## Test
+
+Tests live in two projects, split by target framework rather than by taste.
+
+| Project | Target | Framework | References | Holds |
+| --- | --- | --- | --- | --- |
+| `SemiPlot.Tests` | `net10.0-windows` | xunit v2 + `Avalonia.Headless.XUnit` | `SemiPlot.UI` | Everything touching the UI, plus the renderer-agnostic Core models |
+| `SemiPlot.Tests.Data` | `net10.0` | xunit v3 | `SemiPlot.Core`, `SemiPlot.Tools.ArchiveSeeder` | Bench and data-source tests, pure and container-gated. Never Avalonia, never the UI |
+
+`SemiPlot.Tests` carries `TestAppBuilder.cs` with `[assembly: AvaloniaTestApplication]`. Pure logic
+(decimation, navigation, scale, cursor, delta) uses plain `[Fact]`; tests touching
+ReactiveUI/ScottPlot/Avalonia use `[AvaloniaFact]`/`[AvaloniaTheory]`. The Core model tests build
+against the UI project, so they do not run independently of the UI build — the accepted cost of
+keeping one Avalonia project. `SemiPlot.Tests.Data` stays plain `net10.0` so it runs on a Linux CI
+runner, which a project referencing `SemiPlot.UI` structurally cannot. The two xunit majors coexist
+with no runner setting: `dotnet test` runs each project in its own process.
+
+**Exit path for the split.** It ends with the Avalonia 11 → 12 bump of the UI, after which
+`SemiPlot.Tests` takes `Avalonia.Headless.XUnit` 12.x and both projects sit on xunit v3. Nothing
+external blocks that any more. Verified against the NuGet nuspecs on 2026-08-14:
+`Avalonia.Headless.XUnit` 11.3.8 (pinned here) depends on `xunit.core` 2.4.0 while 12.0.0 and later
+depend on `xunit.v3.extensibility.core` 3.2.2; `ScottPlot.Avalonia` 5.1.57 (pinned here) and 5.1.58
+depend on `Avalonia` 11.3.4 while 5.1.59 depends on `Avalonia` 12.0.0; `ReactiveUI.Avalonia`
+publishes 12.1.1. What remains is the UI bump itself, which is its own piece of work.
+
+```powershell
+dotnet test SemiPlot.slnx                                                 # full suite, both projects
+dotnet test SemiPlot/SemiPlot.Tests/SemiPlot.Tests.csproj                 # UI and Core models
+dotnet test SemiPlot/SemiPlot.Tests.Data/SemiPlot.Tests.Data.csproj       # bench and data source
 dotnet test SemiPlot.slnx --filter "Area=Data"
 dotnet test SemiPlot.slnx --filter "Category=Unit"
 dotnet test SemiPlot.slnx --filter "FullyQualifiedName~TestMethodName"
 ```
 
 Test traits: `[Trait("Component", "Core|UI")]`, `[Trait("Area", "Data|Bridge|Di")]`,
-`[Trait("Category", "Unit|Integration")]`.
+`[Trait("Category", "Unit|Integration")]`. Every test class carries all three; `SemiPlot.Tests.Data`
+is `Component=Core` throughout, since nothing in it touches the UI.
+
+**Assertions split by project, deliberately.** `SemiPlot.Tests` uses AwesomeAssertions
+(`.Should()`) exclusively. `SemiPlot.Tests.Data` uses raw xunit `Assert.` exclusively and references
+no assertion library: its assertions are mostly `Assert.Equal`, `Assert.Contains` and `Assert.All`
+over rows and database state, where the fluent form buys no diagnostic the raw form does not already
+give. Keep each project on its own style rather than mixing the two inside one file.
+
+### Gated data tests
+
+The integration tests in `SemiPlot.Tests.Data` need a container runtime and the `semibase` binary
+(`github.com/Semiteq/SemiBase`, pinned `v0.1.0`, taken as a release asset — no Go toolchain). Either
+one missing is reported as a skip with a stated reason, never as a pass. Environment carries the
+policy:
+
+| Variable | Effect | Unset means |
+| --- | --- | --- |
+| `SEMIPLOT_TEST_PG` | Connection string of an existing semibase-provisioned server to use instead of a container; the fixture re-runs `semibase create` against it, which is idempotent | start a container |
+| `SEMIPLOT_PG_IMAGE` | Image tag for that container | `postgres:17-alpine` |
+| `SEMIPLOT_REQUIRE_DB` | `1` or `true` turns an unavailable runtime from a skip into a failure. The CI `data-tests` job sets it; a developer machine must not | skip with a reason |
+| `SEMIBASE_EXE` | Path to the `semibase` binary | search `PATH` |
+| `SEMIBASE_WRITER_PASSWORD`, `SEMIBASE_READER_PASSWORD` | Role passwords for `semibase create`, read **only** on the `SEMIPLOT_TEST_PG` path — a real server's roles already have passwords. The container path uses fixed dummy passwords of the fixture's own, so a developer needs no variable at all | required on the `SEMIPLOT_TEST_PG` path, unused otherwise |
+
+`SEMIBASE_SUPER_PASSWORD` is passed to `semibase` by the fixture, taken from the container or from
+the `SEMIPLOT_TEST_PG` connection string; setting it in the shell changes nothing.
 
 ## Code Style
 
@@ -127,6 +178,11 @@ No abbreviations in names.
   `SemiPlot.DataSource.*` project (`SemiPlot.DataSource.Stub` is the current stub, and owns the
   stub-only `MinMaxDecimator`). Core must not reference a data-source project; real providers slot in
   as siblings without touching Core.
+- The bench seeder `SemiPlot.Tools.ArchiveSeeder` owns verbatim copies of `SyntheticValueWalk`,
+  `SyntheticPenCatalog` and `SyntheticPen` and must not reference `SemiPlot.DataSource.Stub`: the
+  stub evolves for UI reasons while the bench stays frozen, a golden-digest test pins its output, and
+  later slices develop against that output. `sql/semiplot_dev.sql` is an `EmbeddedResource` of that
+  project. Roles, grants and `semiplot_tags` are SemiBase's and are never defined in this repository.
 
 ---
 

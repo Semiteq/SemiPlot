@@ -2,5 +2,7 @@
     <Project Path="SemiPlot/SemiPlot.Core/SemiPlot.Core.csproj"/>
     <Project Path="SemiPlot/SemiPlot.DataSource.Stub/SemiPlot.DataSource.Stub.csproj"/>
     <Project Path="SemiPlot/SemiPlot.Tests/SemiPlot.Tests.csproj"/>
+    <Project Path="SemiPlot/SemiPlot.Tests.Data/SemiPlot.Tests.Data.csproj"/>
+    <Project Path="SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.ArchiveSeeder.csproj"/>
     <Project Path="SemiPlot/SemiPlot.UI/SemiPlot.UI.csproj"/>
 </Solution>

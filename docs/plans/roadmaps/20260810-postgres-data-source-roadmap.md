@@ -146,7 +146,7 @@ it.
 - **PR:** —
 - **Branch:** —
 
-### Slice archive-populator — Status: PENDING
+### Slice archive-populator — Status: IN-PROGRESS
 - **Scope:** Build the local test bench. Extract the verified archive DDL from the customer's dump
   into a schema script held in the repository — daily range partitions, the default partition, the
   `(id, l, t)` primary key, `timestamp(3) without time zone` — so the bench reproduces the structure
@@ -155,7 +155,9 @@ it.
   on change, long steady stretches with no rows, breaks marked `q = 32` then `q = 16`, coarse layers
   filled by the vendor's rule in testable C#) and a `net10.0` test project
   (`SemiPlot.Tests.Data`, xunit v3) owning the gated harness the later slices reuse: one
-  Testcontainers PostgreSQL per run, provisioned by `semibase create` pinned at `v0.1.0` — the same
+  Testcontainers PostgreSQL per run (`postgres:17-alpine`, overridable through `SEMIPLOT_PG_IMAGE`,
+  with `SEMIPLOT_TEST_PG` as the escape hatch to an existing provisioned server), provisioned by
+  `semibase create` pinned at `v0.1.0` — the same
   command that provisions a site — a seeded template database cloned per test class, skip-with-reason
   by default and failure under `SEMIPLOT_REQUIRE_DB=1`. The seeder writes as `scada_writer`, gated
   reads run as `semiplot_reader`, and `--admin-connection` fills `semiplot_tags` from the seeder's
@@ -164,8 +166,10 @@ it.
   availability policy. Also extract a small anonymised fixture of real rows from the dump for the
   database-free tests that later slices need.
 - **Issue:** none
-- **Blast radius:** additive — two solution projects, `sql/`, the CI workflow, the two shared props
-  files, `SemiPlot.slnx`. No application code.
+- **Blast radius:** additive — two solution projects, `sql/`, the CI workflow,
+  `SemiPlot/Directory.Packages.props`, `SemiPlot.slnx`. No application code, and
+  `SemiPlot/Directory.Build.props` stays untouched: the new projects inherit its `TargetFramework`
+  and `IsPackable` instead of redeclaring them.
 - **Risk:** medium, concentrated in fidelity: data that does not reproduce the archive's shape would
   make every later slice's tests pass against conditions that never occur.
 - **Depends on:** independent (external: SemiBase `v0.1.0`)
@@ -174,7 +178,7 @@ it.
   production archive; no live/follow mode — that is the final slice's.
 - **Plan:** docs/plans/20260810-archive-populator.md
 - **PR:** —
-- **Branch:** —
+- **Branch:** archive-populator
 
 ### Slice postgres-provider-scaffold — Status: PENDING
 - **Scope:** Stand up the provider project with everything that needs no query. A
@@ -414,7 +418,13 @@ Settled during design — do not relitigate without new facts. The full reasonin
 vendor forum answers state that a coarse layer holds up to four points per period chosen by
 magnitude, and the measured dump is consistent with it, but we have never watched the SCADA thin a
 period with our own instrument. Confirming it needs a running installation, which does not exist
-yet. The design stands regardless: if the rule turns out to differ, the read path stops trusting
+yet. Partly narrowed in slice archive-populator: the bench's thinner was confronted with the dump's
+real `l = 1` rows and every period's extreme *values* agreed, so envelopes read from a coarse layer
+are safe either way. Two details went into `docs/architecture/scada-archive.md` with it — when an
+extreme value repeats the vendor keeps the later row while the bench keeps the earlier one, which
+moves the abscissa and not the envelope, and one selected point is confirmed to be the last row of
+its period. The dump still spans two hours with twelve restarts, so the hour and day layers remain
+untested across their own periods. The design stands regardless: if the rule turns out to differ, the read path stops trusting
 coarse layers for envelopes and the lazy-materialisation alternative above becomes the answer, which
 changes the provider's layer strategy and nothing else. The experiment and its query are recorded at
 the end of `docs/architecture/scada-archive.md` and run when a stand becomes available.

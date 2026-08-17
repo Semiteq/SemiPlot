@@ -48,8 +48,11 @@ operator interaction.
   stock FluentTheme (as SemiStep does); IJ-style theming is a later, separate effort.
 - **Scheduler seam:** Core keeps the bare `IScheduler` (`DefaultScheduler.Instance`) for data timing;
   the UI scheduler (`AvaloniaScheduler.Instance`) is captured in `AfterSetup` and passed explicitly to
-  the coordinator — `TrendCoordinator(IDataProvider, ILogger, IScheduler dataScheduler, IScheduler uiScheduler)`,
+  the coordinator — `TrendCoordinator(IDataProvider dataProvider, IReadOnlyList<Pen> pens,
+  IScheduler dataScheduler, IScheduler uiScheduler, TimeSpan? batchWindow = null)`,
   `Buffer` on the data scheduler, `ObserveOn` on the UI one. No second `IScheduler` container registration.
+  The pen catalogue is passed in because the coordinator needs the pen identifiers in its constructor
+  and `QueryPensAsync` cannot be awaited there; the composition root reads it once and hands it over.
 - **Decimation envelope contract:** history record per pen = ascending `X[]` + `Min[]` + `Max[]` + center
   `Y[]`; realtime stays single-value `double?[]` (null = gap); rendered as `Scatter` + `FillY` (see Renderer).
 - **Δ cursors:** Δy is reported only for the **active/selected pen** (pens share X but have independent Y

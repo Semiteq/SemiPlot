@@ -3,7 +3,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-using SemiPlot.Core.Data;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.MainWindow;
@@ -19,12 +18,6 @@ public static class UiServiceCollectionExtensions
 
 		// The UI scheduler is only known after UseReactiveUI() registers AvaloniaScheduler, so it is a
 		// factory parameter rather than a container registration.
-		services.AddSingleton<Func<IScheduler, TrendCoordinator>>(provider =>
-			uiScheduler => new TrendCoordinator(
-				provider.GetRequiredService<IDataProvider>(),
-				provider.GetRequiredService<IScheduler>(),
-				uiScheduler));
-
 		services.AddSingleton<Func<TrendCoordinator, IScheduler, TrendChartViewModel>>(provider =>
 			(coordinator, uiScheduler) => new TrendChartViewModel(
 				coordinator,

@@ -8,9 +8,10 @@ each is a scoped future task.
 
 - **Real data provider (accuracy).** The viewer runs on `RandomStubDataProvider` (synthetic walks,
   `now-7d..now` extent). The production provider is specified in `docs/architecture/data-integration.md`
-  and planned in `docs/plans/20260619-simplescada-postgres-provider.md`: one read-only PostgreSQL
-  connection serving history, extent and realtime alike. Real archive data is still needed to exercise
-  the decimation and extent paths against production volumes.
+  and planned in `docs/plans/roadmaps/20260810-postgres-data-source-roadmap.md`, which supersedes
+  `docs/plans/20260619-simplescada-postgres-provider.md`: one read-only PostgreSQL connection serving
+  history, extent and realtime alike. Real archive data is still needed to exercise the decimation and
+  extent paths against production volumes.
 
 - **Minimap — further work.** The current strip shows the window position over the extent (visible marker +
   extent labels) but no data preview. Wanted: a richer overview (e.g. a downsampled trace/heat preview of the

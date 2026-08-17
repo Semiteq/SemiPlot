@@ -98,20 +98,26 @@ through the new one.
 - `RandomStubDataProviderTests.Pens_ExposesCatalog` (`:24-31`) — replaced in Task 1 by the same
   assertions against `QueryPensAsync`, and deleted with the property in Task 4.
 
-**Three tests appear:** `QueryPensAsync_ExposesCatalog` in Task 1, and two in a new
-`MainWindowViewModelTests` in Task 3.
+**Three tests appear in the planned scope:** `QueryPensAsync_ExposesCatalog` in Task 1, and two in a new
+`MainWindowViewModelTests` in Task 3. The review round added more; Acceptance Evidence item 2 carries
+the full final list.
 
 **`PenCount` is the one genuine behaviour change and needs its own tests.** There is no
 `MainWindowViewModelTests` in the repository today; the property's only coverage is an assertion
 inside `CompositionRootTests.cs:46`, which stops meaning anything once the count no longer comes from
 the container. Task 3 adds a proper home for it.
 
-**No test asserts a failed catalogue read**, because no implementer can fail one. The first belongs to
-`postgres-catalog-and-extent`.
+**No test asserts a failed catalogue read**, because neither implementer can fail one. `FakeDataProvider`
+could gain a `FailPens` flag the way it has `FailHistory`, but there is nothing left in this slice to
+point it at: `LoadPens` carries no hand-written failure branch, only `Result<T>.Value`, whose throw is
+FluentResults' own tested behaviour. The first failed-catalogue test belongs to
+`postgres-catalog-and-extent`, and the first assertion about what the operator sees to
+`postgres-startup-and-composition`.
 
-**The composition root's new throw on a failed `Result` is untested.** `App` has no test surface and
-no implementer can produce the failure, so it is a new production branch with no guard — stated here
-rather than left implicit.
+**The composition root has no test surface.** `App` is not constructible under test, so `LoadPens` and
+`InitializeServices` are unguarded — stated here rather than left implicit. Removing the coordinator's
+container factory shrank what that gap covers: the coordinator wiring is now a compile error when wrong
+instead of a startup exception.
 
 **Nothing is added to `SemiPlot.Tests.Data`.** This slice touches no data-source code. New tests in
 `SemiPlot.Tests` follow that project's conventions: AwesomeAssertions, and `[AvaloniaFact]` for
@@ -127,10 +133,20 @@ The change is a refactor, so the evidence is that behaviour is identical and the
    property), `TrendChartViewModel.Pens` and `RealtimeBatch.Pens` are unrelated and stay.
 
 2. **The suite passes, and the count moves by exactly the named tests.**
-   `dotnet test SemiPlot.slnx` — zero failures. Against the branch point, `SemiPlot.Tests` loses
-   `Pens_ExposesTheProviderCatalog` and `Pens_ExposesCatalog`, and gains `QueryPensAsync_ExposesCatalog`
-   plus two `MainWindowViewModelTests` — a net of plus one. Any other movement means a test was lost
-   rather than migrated.
+   `dotnet test SemiPlot.slnx` — zero failures. `SemiPlot.Tests` goes from 250 at the branch point to
+   256, and `SemiPlot.Tests.Data` stays at 183 passed plus 24 skipped. Across the whole slice, including
+   the review rounds, `SemiPlot.Tests` loses `RandomStubDataProviderTests.Pens_ExposesCatalog`,
+   `TrendCoordinatorTests.Pens_ExposesTheProviderCatalog` and
+   `CompositionRootTests.Container_ResolvesMainWindowViewModel_UnderHeadlessHarness`; it gains
+   `RandomStubDataProviderTests.QueryPensAsync_ExposesCatalog`,
+   `TrendCoordinatorTests.Start_WithAnEmptyCatalog_EmitsNoRealtimeBatch`,
+   `CompositionRootTests.Container_ResolvesChartFactory`,
+   `CompositionRootTests.Container_ResolvesMinimapFactory`, and the five `MainWindowViewModelTests`
+   (`PenCount_WithoutChart_IsZero`, `ChartViewModel_WhenAssigned_PublishesThePenCount`,
+   `ChartViewModel_WhenReassigned_PublishesTheNewPenCount`,
+   `ChartViewModel_WhenClearedToNull_PublishesAZeroPenCount`,
+   `ChartViewModel_WhenAssignedTheSameInstance_KeepsTheChartAlive`). Any other movement means a test was
+   lost rather than migrated.
 
 3. **The application still starts and still shows the pen count.**
    `dotnet run --project SemiPlot/SemiPlot.UI/SemiPlot.UI.csproj` — the window opens, the chart draws
@@ -173,15 +189,28 @@ need to re-expose the catalogue it was handed.
 registration at `UiServiceCollectionExtensions.cs:18` stays a plain `AddSingleton` and both
 `GetRequiredService<MainWindowViewModel>()` sites keep working.
 
-**The startup read blocks, and that is acceptable exactly once.** `AfterSetup` takes a synchronous
-delegate, so the composition root calls `QueryPensAsync().GetAwaiter().GetResult()`. Against the stub
-this completes immediately. Whether a real database read belongs at startup at all is
-`postgres-startup-and-composition`'s question; noting it here stops that slice rediscovering it. The
-alternative — letting the coordinator factory perform the read — was rejected because it would hide a
-blocking call inside a DI factory, where nothing signals that resolving a service touches a database.
+**The startup read blocks, and that is acceptable only because the stub completes synchronously.**
+`AfterSetup` takes a synchronous delegate, so the composition root calls
+`QueryPensAsync().GetAwaiter().GetResult()`. The stub returns an already-completed
+`Task.FromResult`, so nothing is ever awaited and nothing is posted anywhere.
 
-**A failed read throws at startup, for now.** The stub cannot fail, so the branch is unreachable
-today. Making it a visible operator state rather than a crash is the composition slice's job.
+The cost is not "a blocking wait" — it is a **deadlock**. Avalonia installs its synchronization context
+during `Setup`, before `AfterSetup` runs, and the dispatcher does not start pumping until
+`StartWithClassicDesktopLifetime`. So the first `QueryPensAsync` that genuinely awaits — the first one
+backed by Npgsql — captures its continuation on that context, posts it to a dispatcher that will never
+pump while `InitializeServices` is on the stack, and hangs with no window and no log line.
+`postgres-startup-and-composition` must therefore restructure the read, not merely decide whether a
+blocking read at startup is tasteful: `ConfigureAwait(false)` inside the provider is not a fix the
+composition root can rely on, and `Task.Run(...).GetAwaiter().GetResult()` trades the deadlock for a
+frozen splash. The alternative of letting the coordinator factory perform the read was rejected because
+it would hide the same call inside a DI factory, where nothing signals that resolving a service touches
+a database.
+
+**A failed read throws at startup, for now.** `LoadPens` reads `Result<T>.Value`, which throws
+`InvalidOperationException` carrying the error messages when the result failed (FluentResults 4.0.0,
+verified). No hand-written failure branch is needed to produce that. The stub cannot fail, so the throw
+is unreachable today. Making it a visible operator state rather than a crash is the composition slice's
+job.
 
 ## Technical Details
 
@@ -222,9 +251,16 @@ sites are positional; it is not a safety mechanism — `IReadOnlyList<Pen>` and 
 unrelated types, so every position is equally compiler-checked. The new parameter gets the same
 `ArgumentNullException.ThrowIfNull` guard the existing three have at `:30-32`.
 
-**The registered factory type changes with it**, from `Func<IScheduler, TrendCoordinator>` to
-`Func<IReadOnlyList<Pen>, IScheduler, TrendCoordinator>`, so the registration at
-`UiServiceCollectionExtensions.cs:23` and the resolution at `App.axaml.cs:78` move together.
+**The coordinator's registered factory is deleted rather than widened.** The first cut changed
+`Func<IScheduler, TrendCoordinator>` into `Func<IReadOnlyList<Pen>, IScheduler, TrendCoordinator>`, which
+kept a runtime-only contract that the registration and the resolution had to spell identically or fail
+with an `InvalidOperationException` at startup — and no test resolved it. Its only job was to hide two
+`GetRequiredService` calls from its single caller, which already made one of them itself. Review removed
+it: `InitializeServices` now writes
+`new TrendCoordinator(dataProvider, pens, serviceProvider.GetRequiredService<IScheduler>(), uiScheduler)`
+and the wiring is compile-checked. No lifetime was lost — the delegate was the singleton, the coordinator
+it built never was. The chart and minimap factories are untouched; a container test now resolves both, so
+drift in those two surfaces as a test failure rather than at startup.
 
 **`MainWindowViewModel.PenCount` raises change notification through the `ChartViewModel` setter.**
 Not because the binding would otherwise read zero — `AfterSetup` runs before the window's
@@ -235,7 +271,9 @@ and nothing guarantees that ordering stays true.
 
 One hole it does not close: `TrendChartViewModel.Pens` is a live view over `_pensById`
 (`TrendChartViewModel.cs:108`), so an `AddPen` after assignment moves the count with no notification.
-Accepted for now — every pen is added at `App.axaml.cs:85-89` before the assignment at `:92`.
+Accepted for now — every pen is added in `InitializeServices` before the assignment, and `RemovePen` has
+no production caller. Review moved this note onto `PenCount` itself as a comment, so it is found by
+whoever makes the pen set dynamic rather than only by whoever reads this archived plan.
 
 ## What Goes Where
 
@@ -253,14 +291,14 @@ Accepted for now — every pen is added at `App.axaml.cs:85-89` before the assig
 - Modify: `SemiPlot/SemiPlot.Tests/UI/Bridge/FakeDataProvider.cs`
 - Modify: `SemiPlot/SemiPlot.Tests/Core/Data/RandomStubDataProviderTests.cs`
 
-- [ ] add `Task<Result<IReadOnlyList<Pen>>> QueryPensAsync()` to the interface, leaving `Pens` in
+- [x] add `Task<Result<IReadOnlyList<Pen>>> QueryPensAsync()` to the interface, leaving `Pens` in
       place — nothing calls the new member yet and nothing breaks
-- [ ] both implementers return their existing catalogue as a successful `Result`; neither can fail
-- [ ] write `QueryPensAsync_ExposesCatalog` asserting success, a non-empty catalogue and unique
+- [x] both implementers return their existing catalogue as a successful `Result`; neither can fail
+- [x] write `QueryPensAsync_ExposesCatalog` asserting success, a non-empty catalogue and unique
       `PenId`s — the same assertions `Pens_ExposesCatalog` makes at
       `RandomStubDataProviderTests.cs:24-31`. Write it in its final form now so Task 4 only deletes
       the old test rather than churning this one
-- [ ] run tests — the whole suite must pass before Task 2
+- [x] run tests — the whole suite must pass before Task 2
 
 ### Task 2: Move the coordinator and the composition root off the property
 
@@ -278,22 +316,23 @@ Accepted for now — every pen is added at `App.axaml.cs:85-89` before the assig
 This task changes nine files at once and that is not a granularity failure: a constructor signature
 breaks all seven call sites simultaneously, so no smaller step compiles.
 
-- [ ] the constructor takes the catalogue as its second parameter, per the signature in Technical
+- [x] the constructor takes the catalogue as its second parameter, per the signature in Technical
       Details, guards it with `ArgumentNullException.ThrowIfNull`, and uses it in
       `BuildRealtimeBatches()` (`TrendCoordinator.cs:86`) instead of reading the provider
-- [ ] delete the passthrough `Pens` property (`TrendCoordinator.cs:41`) and the single test that
+- [x] delete the passthrough `Pens` property (`TrendCoordinator.cs:41`) and the single test that
       reads it, `Pens_ExposesTheProviderCatalog` (`TrendCoordinatorTests.cs:28`)
-- [ ] the factory registration at `UiServiceCollectionExtensions.cs:23` becomes
-      `Func<IReadOnlyList<Pen>, IScheduler, TrendCoordinator>`, and the resolution at
-      `App.axaml.cs:78` changes to the same closed type
-- [ ] `App.axaml.cs` loads the catalogue once with `QueryPensAsync().GetAwaiter().GetResult()`,
+- [x] the composition root passes the catalogue at the coordinator's construction site in
+      `App.axaml.cs`, which is the only place a `TrendCoordinator` is built
+- [x] `App.axaml.cs` loads the catalogue once with `QueryPensAsync().GetAwaiter().GetResult()`,
       throwing on a failed `Result`, and uses it for **both** the coordinator factory call and the
-      `AddPen` loop at `:86`; the direct `IDataProvider` resolution at `:85` is deleted
-- [ ] update all six direct construction sites in the test project, each passing the catalogue its
+      `AddPen` loop at `:86`; the direct `IDataProvider` resolution at `:85` is deleted — the
+      provider is still resolved once, moved to the top of `InitializeServices` as the argument of
+      the new `LoadPens` helper that performs the blocking read
+- [x] update all six direct construction sites in the test project, each passing the catalogue its
       fake provider already holds, so the realtime batches those tests exercise are unchanged
-- [ ] `TrendCoordinatorTests.cs:58,60` keep reading `provider.Pens` — that is the fake's own property,
+- [x] `TrendCoordinatorTests.cs:58,60` keep reading `provider.Pens` — that is the fake's own property,
       not the interface member, and it stays
-- [ ] run tests — the whole suite must pass before Task 3
+- [x] run tests — the whole suite must pass before Task 3
 
 ### Task 3: Move the window's pen count off the provider
 
@@ -302,19 +341,19 @@ breaks all seven call sites simultaneously, so no smaller step compiles.
 - Modify: `SemiPlot/SemiPlot.Tests/UI/Di/CompositionRootTests.cs`
 - Create: `SemiPlot/SemiPlot.Tests/UI/MainWindow/MainWindowViewModelTests.cs`
 
-- [ ] `PenCount` becomes `ChartViewModel?.Pens.Count ?? 0`, and the `IDataProvider` constructor
+- [x] `PenCount` becomes `ChartViewModel?.Pens.Count ?? 0`, and the `IDataProvider` constructor
       dependency is removed — the registration at `UiServiceCollectionExtensions.cs:18` stays a plain
       `AddSingleton` and both resolution sites keep working
-- [ ] the `ChartViewModel` setter raises change notification for `PenCount` as well
-- [ ] drop the `PenCount.Should().BeGreaterThan(0)` assertion from
+- [x] the `ChartViewModel` setter raises change notification for `PenCount` as well
+- [x] drop the `PenCount.Should().BeGreaterThan(0)` assertion from
       `CompositionRootTests.cs:46`. That test resolves the view model straight from the container and
       never assigns a chart, so after the change the count says nothing about the container; the
       surrounding resolution assertion stays
-- [ ] write `MainWindowViewModelTests` with two facts: no chart assigned yields a count of zero, and
+- [x] write `MainWindowViewModelTests` with two facts: no chart assigned yields a count of zero, and
       assigning a chart carrying pens yields the matching count and raises
       `PropertyChanged(nameof(PenCount))`. Use `[AvaloniaFact]` — constructing a
       `TrendChartViewModel` needs the headless harness, as every other test that builds one does
-- [ ] run tests — the whole suite must pass before Task 4
+- [x] run tests — the whole suite must pass before Task 4
 
 ### Task 4: Remove the property from the interface
 
@@ -323,33 +362,49 @@ breaks all seven call sites simultaneously, so no smaller step compiles.
 - Modify: `SemiPlot/SemiPlot.DataSource.Stub/RandomStubDataProvider.cs`
 - Modify: `SemiPlot/SemiPlot.Tests/Core/Data/RandomStubDataProviderTests.cs`
 
-- [ ] remove `Pens` from the interface and from `RandomStubDataProvider`, whose catalogue becomes a
+- [x] remove `Pens` from the interface and from `RandomStubDataProvider`, whose catalogue becomes a
       private field backing `QueryPensAsync` — it reads `_pensById`, not its own property, so nothing
       internal breaks
-- [ ] **`FakeDataProvider.Pens` stays**, as a plain property that is no longer an interface member:
+- [x] **`FakeDataProvider.Pens` stays**, as a plain property that is no longer an interface member:
       it is used internally at `FakeDataProvider.cs:64` and read by `TrendCoordinatorTests` and the
       six construction sites
-- [ ] delete `Pens_ExposesCatalog` (`RandomStubDataProviderTests.cs:24-31`), whose assertions Task 1
+- [x] delete `Pens_ExposesCatalog` (`RandomStubDataProviderTests.cs:24-31`), whose assertions Task 1
       already reproduced against `QueryPensAsync`
-- [ ] migrate the remaining `RandomStubDataProviderTests` reads at `:91,171,172,190,211` onto
+- [x] migrate the remaining `RandomStubDataProviderTests` reads at `:91,171,172,190,211` onto
       `QueryPensAsync`, keeping what each asserted
-- [ ] the private helper at `:258-261` is synchronous and called from both synchronous and
+- [x] the private helper at `:258-261` is synchronous and called from both synchronous and
       asynchronous tests: resolve it as
       `QueryPensAsync().GetAwaiter().GetResult().Value[0].PenId` rather than making it async and
-      changing its call sites
-- [ ] run tests — the whole suite must pass before Task 5
+      changing its call sites — expressed as a shared private `Catalog(provider)` helper the four
+      synchronous reads and `PenIds()` all use
+- [x] run tests — the whole suite must pass before Task 5
 
 ### Task 5: Verify acceptance criteria
 
 **Files:** none — verification only.
 
-- [ ] every check in Acceptance Evidence produces its stated result
-- [ ] `dotnet test SemiPlot.slnx` — zero failures, and the count moves by exactly the tests named in
-      Testing Strategy
-- [ ] `git diff --name-only master...HEAD` lists nothing under
-      `SemiPlot/SemiPlot.DataSource.Postgres/` or `SemiPlot/SemiPlot.Tests.Data/`
-- [ ] `dotnet format SemiPlot.slnx` reports no changes
-- [ ] start the application and confirm the chart draws and the status line still reads the pen count
+- [x] every check in Acceptance Evidence produces its stated result — checks 1 to 4 pass as written.
+      Check 5 (architecture documents match the code) is still false and is Task 6's own work: it is
+      listed as acceptance evidence for the slice, not for this task, and cannot pass before the task
+      that performs the edit
+- [x] `dotnet test SemiPlot.slnx` — zero failures, and the count moves by exactly the tests named in
+      Testing Strategy. `SemiPlot.Tests` 250 at the branch point (`243fa5c`) against 251 on this
+      branch; `SemiPlot.Tests.Data` 183 passed and 24 skipped, unchanged and untouched. Each named
+      test checked by name: `Pens_ExposesTheProviderCatalog` and `Pens_ExposesCatalog` present at the
+      branch point and absent now, `QueryPensAsync_ExposesCatalog` plus
+      `MainWindowViewModelTests.PenCount_WithoutChart_IsZero` and
+      `ChartViewModel_WhenAssigned_PublishesThePenCount` added
+- [x] `git diff --name-only master...HEAD` lists nothing under
+      `SemiPlot/SemiPlot.DataSource.Postgres/` or `SemiPlot/SemiPlot.Tests.Data/` — the diff is 16
+      source files plus this plan, none of them under either path
+- [x] `dotnet format SemiPlot.slnx` reports no changes — `--verify-no-changes` exits 0
+- [x] start the application and confirm the chart draws and the status line still reads the pen count
+      — **deferred to operator verification**; the drawn chart and the status text cannot be read
+      without eyes on the screen. What was checked: `dotnet build SemiPlot.slnx` succeeds with zero
+      errors; the built executable runs for 10 seconds without exiting and creates a top-level window
+      titled "SemiPlot - Trend Viewer"; no new line reaches `%LOCALAPPDATA%\SemiPlot\Logs\semiplot.log`
+      during the run, so the composition root's blocking `QueryPensAsync` read and the `AddPen` loop
+      raise nothing. The chart content and the "Pens: N" text remain unverified
 
 ### Task 6: Update the architecture documents and the roadmap
 
@@ -358,18 +413,60 @@ breaks all seven call sites simultaneously, so no smaller step compiles.
 - Modify: `docs/architecture/trend-interaction.md`
 - Modify: `docs/plans/roadmaps/20260810-postgres-data-source-roadmap.md`
 
-- [ ] update the `IDataProvider` block at `docs/architecture/data-integration.md:35-49` so the
-      reproduced source matches the interface
-- [ ] correct the whole coordinator signature at `docs/architecture/trend-interaction.md:51`: it
+- [x] update the `IDataProvider` block at `docs/architecture/data-integration.md:35-49` so the
+      reproduced source matches the interface — copied from `SemiPlot/SemiPlot.Core/Data/IDataProvider.cs`,
+      so the block now also carries the `Subscribe` comment the document had dropped
+- [x] correct the whole coordinator signature at `docs/architecture/trend-interaction.md:51`: it
       names an `ILogger` parameter that does not exist and omits the trailing
       `TimeSpan? batchWindow = null`, both wrong before this slice as well as after
-- [ ] record in `data-integration.md` that a catalogue read can fail and that the failure travels as a
-      `Result`, without naming error types — those arrive with `postgres-provider-scaffold`
-- [ ] stamp this slice in the roadmap: `Status`, `Plan`, `PR` and `Branch`, following the form used
-      for `archive-populator`
-- [ ] verify the roadmap is still inert:
+- [x] record in `data-integration.md` that a catalogue read can fail and that the failure travels as a
+      `Result`, without naming error types — those arrive with `postgres-provider-scaffold`. The
+      paragraph sits under the DTO table in "The provider surface" and does not touch the
+      empty-`semiplot_tags` sentence, whose typed-failure-versus-empty-success question belongs to
+      `postgres-catalog-and-extent`
+- [x] stamp this slice in the roadmap: `Status`, `Plan`, `PR` and `Branch`, following the form used
+      for `archive-populator` — `IN-PROGRESS`, the plan at its current path, branch
+      `provider-pen-query-seam`, `PR: —` because no pull request exists yet
+- [x] verify the roadmap is still inert:
       `bash .../skills/roadmap/scripts/check-inert.sh docs/plans/roadmaps/20260810-postgres-data-source-roadmap.md`
-- [ ] move this plan to `docs/plans/completed/`
+      — prints `inert`
+- [x] move this plan to `docs/plans/completed/` — **deferred to delivery**. Archiving happens after
+      the operator has tested the branch, and the review phases that follow this task read the plan
+      where it is. The roadmap entry points at `docs/plans/20260817-provider-pen-query-seam.md` and
+      moves to the `completed/` path when the slice is stamped `DONE`
+
+### + Task 7: Review pass
+
+**Files:**
+- Modify: `SemiPlot/SemiPlot.UI/UiServiceCollectionExtensions.cs`, `SemiPlot/SemiPlot.UI/App.axaml.cs`,
+  `SemiPlot/SemiPlot.UI/Bridge/TrendCoordinator.cs`, `SemiPlot/SemiPlot.UI/MainWindow/MainWindowViewModel.cs`
+- Modify: `SemiPlot/SemiPlot.Tests/UI/Bridge/TrendCoordinatorTests.cs`,
+  `SemiPlot/SemiPlot.Tests/UI/Di/CompositionRootTests.cs`,
+  `SemiPlot/SemiPlot.Tests/UI/MainWindow/MainWindowViewModelTests.cs`
+- Modify: `CLAUDE.md`, `docs/architecture/data-integration.md`,
+  `docs/plans/20260619-simplescada-postgres-provider.md`, `docs/plans/backlog.md`
+
+- [x] delete the coordinator's container factory; `InitializeServices` constructs the coordinator
+      directly, so the wiring is compile-checked (see Technical Details)
+- [x] `LoadPens` drops its hand-written failure branch for `Result<T>.Value`, whose throw already
+      carries the errors
+- [x] the coordinator takes the catalogue as a `BuildRealtimeBatches` argument instead of a field, and
+      the constructor parameter names the invariant that it must be the provider's own catalogue
+- [x] `MainWindowViewModelTests` asserts `PenCount` from inside the `PropertyChanged` handler and covers
+      chart-to-chart and chart-to-null; verified by swapping the raise above `RaiseAndSetIfChanged` and
+      seeing the tests fail
+- [x] new tests: an empty catalogue emits no realtime batch; the container resolves the two surviving
+      `Func<>` factories, replacing the duplicated `MainWindowViewModel` resolution test
+- [x] `SemiPlot.Tests` 251 → 256: three `MainWindowViewModelTests` and one `TrendCoordinatorTests`
+      added, plus the container's `MainWindowViewModel` resolution test replaced by two factory
+      resolution tests, a net gain of one. `SemiPlot.Tests.Data` unchanged at 183 passed, 24 skipped
+- [x] **not done, and deliberately**: the seven near-identical `new TrendCoordinator(...)` blocks in the
+      test project are not extracted into a shared helper. They differ in per-file `_batchWindow`, in
+      realtime interval and in provider setup, so a helper saves a few lines per site while touching
+      seven green test files in a slice whose point is that behaviour did not change. Worth doing when a
+      further constructor change forces those files open anyway
+- [x] **accepted, not fixed**: commit `f9b0df1` is typed `test:` but changes only this plan file; it
+      should have been `docs:`. History is not rewritten for it
 
 ## Post-Completion
 
@@ -386,7 +483,41 @@ does not start before this lands. `postgres-catalog-and-extent` is the first sli
 unresolved question of whether an empty or missing `semiplot_tags` is a typed failure or an empty
 success, on which the roadmap and `data-integration.md` currently disagree.
 
-**Blocking at startup is inherited, not endorsed.** The composition root calls
-`GetAwaiter().GetResult()` because `AfterSetup` is synchronous. Against the stub this is free.
-`postgres-startup-and-composition` owns whether a real database read belongs there at all, and what
-the operator sees when it fails.
+**Blocking at startup is inherited, not endorsed, and it does not survive a real provider.** The
+composition root calls `GetAwaiter().GetResult()` because `AfterSetup` is synchronous. Against the stub
+this is free — the task is already complete. Against Npgsql it deadlocks: the Avalonia synchronization
+context is installed during `Setup`, the dispatcher only starts pumping at
+`StartWithClassicDesktopLifetime`, so a continuation captured inside `AfterSetup` is posted to a
+dispatcher that never runs while `InitializeServices` is on the stack. The symptom is a hang with no
+window and no log line, not a slow start. `postgres-startup-and-composition` owns the restructuring, and
+what the operator sees when the read fails.
+
+**Executed by exec:**
+
+- branch: provider-pen-query-seam
+
+## Verify it yourself
+
+This slice changes an interface and claims no behaviour moved. The first three checks are mechanical;
+the fourth is the operator's, because the one binding that changed source is not reachable headlessly.
+
+1. **The synchronous catalogue is gone from the seam.**
+   `git grep -n "Pens" -- SemiPlot/SemiPlot.Core/Data/IDataProvider.cs` returns exactly one line, the
+   `QueryPensAsync` declaration. `git grep -nE "IReadOnlyList<Pen> Pens" -- "*.cs"` returns exactly one
+   hit, `FakeDataProvider.cs:60` — the test double's own property, which is not an interface member and
+   is deliberately kept as the catalogue the construction sites pass in.
+
+2. **The suite grew only where the slice added behaviour.**
+   `dotnet test SemiPlot.slnx` reports `SemiPlot.Tests` 256 passed and `SemiPlot.Tests.Data` 183 passed
+   with 24 skipped. The data project is untouched by this branch and its count must not move;
+   `SemiPlot.Tests` goes 251 → 256 by the arithmetic in Task 7.
+
+3. **The self-assignment guard is load-bearing, not decorative.**
+   Revert only the early return in `MainWindowViewModel`'s `ChartViewModel` setter and
+   `ChartViewModel_WhenAssignedTheSameInstance_KeepsTheChartAlive` fails with `ObjectDisposedException`
+   from `TrendChartViewModel`. The unguarded setter disposed the chart before deciding it had not
+   changed, then rebuilt the toolbar and legend on top of the dead instance.
+
+4. **The pen count still reads the same on screen.** `dotnet run --project SemiPlot/SemiPlot.UI` and
+   compare the status line against the previous build. `PenCount` now derives from the chart rather than
+   from the provider, and its XAML binding is exercised by no headless test.

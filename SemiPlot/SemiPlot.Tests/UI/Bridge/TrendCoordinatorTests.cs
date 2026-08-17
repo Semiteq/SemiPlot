@@ -21,14 +21,6 @@ public sealed class TrendCoordinatorTests
 	private static readonly DateTime _to = new(2026, 6, 15, 9, 0, 0, DateTimeKind.Utc);
 
 	[Fact]
-	public void Pens_ExposesTheProviderCatalog()
-	{
-		var (coordinator, _, provider) = CreateCoordinator();
-
-		coordinator.Pens.Should().BeSameAs(provider.Pens);
-	}
-
-	[Fact]
 	public void Start_EmitsOneRealtimeBatchPerBufferWindow()
 	{
 		var (coordinator, scheduler, _) = CreateCoordinator(realtimeInterval: TimeSpan.FromMilliseconds(10));
@@ -103,6 +95,26 @@ public sealed class TrendCoordinatorTests
 		act.Should().Throw<ObjectDisposedException>();
 	}
 
+	[Fact]
+	public void Start_WithAnEmptyCatalog_EmitsNoRealtimeBatch()
+	{
+		var scheduler = new TestScheduler();
+		var provider = new FakeDataProvider(scheduler, TimeSpan.FromMilliseconds(10));
+		using var coordinator = new TrendCoordinator(
+			provider,
+			[],
+			scheduler,
+			ImmediateScheduler.Instance,
+			_batchWindow);
+		var batches = new List<RealtimeBatch>();
+		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
+
+		coordinator.Start();
+		scheduler.AdvanceBy(_batchWindow.Ticks * 5);
+
+		batches.Should().BeEmpty();
+	}
+
 	private static (TrendCoordinator Coordinator, TestScheduler Scheduler, FakeDataProvider Provider)
 		CreateCoordinator(TimeSpan? realtimeInterval = null)
 	{
@@ -110,6 +122,7 @@ public sealed class TrendCoordinatorTests
 		var provider = new FakeDataProvider(scheduler, realtimeInterval ?? TimeSpan.FromMilliseconds(10));
 		var coordinator = new TrendCoordinator(
 			provider,
+			provider.Pens,
 			scheduler,
 			ImmediateScheduler.Instance,
 			_batchWindow);

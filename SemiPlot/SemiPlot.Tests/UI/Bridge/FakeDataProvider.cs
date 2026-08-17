@@ -73,6 +73,11 @@ internal sealed class FakeDataProvider : IDataProvider
 				.ToArray());
 	}
 
+	public Task<Result<IReadOnlyList<Pen>>> QueryPensAsync()
+	{
+		return Task.FromResult(Result.Ok(Pens));
+	}
+
 	public Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(
 		IReadOnlyList<long> penIds,
 		DateTime fromUtc,

@@ -22,12 +22,15 @@ public sealed class RandomStubDataProviderTests
 	private static readonly DateTime _to = new(2026, 6, 15, 9, 0, 0, DateTimeKind.Utc);
 
 	[Fact]
-	public void Pens_ExposesCatalog()
+	public async Task QueryPensAsync_ExposesCatalog()
 	{
 		var provider = CreateProvider(new TestScheduler());
 
-		provider.Pens.Should().NotBeEmpty();
-		provider.Pens.Select(pen => pen.PenId).Should().OnlyHaveUniqueItems();
+		var result = await provider.QueryPensAsync();
+
+		result.IsSuccess.Should().BeTrue();
+		result.Value.Should().NotBeEmpty();
+		result.Value.Select(pen => pen.PenId).Should().OnlyHaveUniqueItems();
 	}
 
 	[Fact]
@@ -88,7 +91,7 @@ public sealed class RandomStubDataProviderTests
 	public async Task QueryHistoryAsync_FiniteBandValuesStayWithinPenRange()
 	{
 		var provider = CreateProvider(new TestScheduler());
-		var penId = provider.Pens[0].PenId;
+		var penId = Catalog(provider)[0].PenId;
 		var synthetic = SyntheticPenCatalog.Build().Single(candidate => candidate.PenId == penId);
 
 		var result = await provider.QueryHistoryAsync([penId], _from, _to, AggregationLayer.Minute, TargetColumns);
@@ -168,8 +171,9 @@ public sealed class RandomStubDataProviderTests
 	{
 		var scheduler = new TestScheduler();
 		var provider = CreateProvider(scheduler);
-		var subscribedPenId = provider.Pens[0].PenId;
-		var otherPenId = provider.Pens[1].PenId;
+		var pens = Catalog(provider);
+		var subscribedPenId = pens[0].PenId;
+		var otherPenId = pens[1].PenId;
 
 		var observed = new List<IReadOnlyList<Sample>>();
 		using var subscription = provider.Subscribe([subscribedPenId]).Subscribe(observed.Add);
@@ -187,7 +191,7 @@ public sealed class RandomStubDataProviderTests
 	{
 		var scheduler = new TestScheduler();
 		var provider = CreateProvider(scheduler);
-		var pen = provider.Pens[0];
+		var pen = Catalog(provider)[0];
 
 		var observed = new List<IReadOnlyList<Sample>>();
 		using var subscription = provider.Subscribe([pen.PenId]).Subscribe(observed.Add);
@@ -208,7 +212,7 @@ public sealed class RandomStubDataProviderTests
 		var anchor = new DateTime(2026, 6, 15, 12, 0, 0, DateTimeKind.Utc);
 		var interval = TimeSpan.FromSeconds(1);
 		var provider = new RandomStubDataProvider(scheduler, realtimeInterval: interval, utcNow: () => anchor);
-		var penId = provider.Pens[0].PenId;
+		var penId = Catalog(provider)[0].PenId;
 
 		var observed = new List<IReadOnlyList<Sample>>();
 		using var subscription = provider.Subscribe([penId]).Subscribe(observed.Add);
@@ -257,6 +261,11 @@ public sealed class RandomStubDataProviderTests
 
 	private static IReadOnlyList<long> PenIds()
 	{
-		return [new RandomStubDataProvider(new TestScheduler()).Pens[0].PenId];
+		return [Catalog(new RandomStubDataProvider(new TestScheduler()))[0].PenId];
+	}
+
+	private static IReadOnlyList<Pen> Catalog(RandomStubDataProvider provider)
+	{
+		return provider.QueryPensAsync().GetAwaiter().GetResult().Value;
 	}
 }

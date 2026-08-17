@@ -2,7 +2,7 @@
 
 **Issues:** none declared — the repository has no issue tracker in use. This roadmap covers the
 whole span from "the viewer runs on synthetic data" to "the viewer reads a real Simple-Scada
-archive", sliced into ten independently shippable pull requests.
+archive", sliced into eleven independently shippable pull requests.
 
 **Amended 2026-08-14** after the archive-populator sanity review: the bench is two solution
 projects provisioned by SemiBase (verified: `v0.1.0` at `aa037a4`, all commands cross-platform,
@@ -17,7 +17,7 @@ the composition slice; and a final slice replaces the stub with a live demo benc
 SemiPlot renders trends correctly but has never read a real archive: the only implementation of
 `IDataProvider` emits random walks. The architecture for reading the Simple-Scada 2 PostgreSQL
 archive is settled and documented, and one piece of already-shipped code — the aggregation-layer
-thresholds — is wrong by a factor of four against that architecture. Ten slices deliver a
+thresholds — is wrong by a factor of four against that architecture. Eleven slices deliver a
 production provider, the local test bench it is developed against, and a live demo bench that
 retires the synthetic stub. The roadmap closes when the application, pointed at a populated
 database, draws real history, follows the live edge, selects archive layers by window width, and
@@ -179,6 +179,32 @@ it.
 - **Plan:** docs/plans/completed/20260810-archive-populator.md
 - **PR:** #1 (merged)
 - **Branch:** archive-populator (deleted after merge)
+
+### Slice provider-pen-query-seam — Status: PENDING
+- **Scope:** Give the pen catalogue a failure channel before anything tries to load it from a
+  database. `IDataProvider` exposes the catalogue as a plain `IReadOnlyList<Pen>` property, which
+  cannot report a failed read; the next-but-one slice reads it from `semiplot_tags`, where
+  unreachable, not-initialised and timed-out are all reachable. The property becomes
+  `Task<Result<IReadOnlyList<Pen>>> QueryPensAsync()`, matching the two query methods already on the
+  interface, and every implementer and consumer follows: the stub, `FakeDataProvider`,
+  `TrendCoordinator` and its DI factory, the composition root, and `MainWindowViewModel`, whose
+  `PenCount` is bound in XAML and cannot be computed from an injected provider once the read is
+  awaitable. Six test files construct `TrendCoordinator` directly and follow the constructor change.
+  Behaviour is unchanged throughout — the stub cannot fail, so no failure path is exercised yet.
+- **Issue:** none
+- **Blast radius:** mechanism — one Core interface member and the shape of one view model's
+  dependency. Surface — no user-visible behaviour changes; the application still starts on the stub
+  and draws the same chart.
+- **Risk:** medium, concentrated in `MainWindowViewModel`: it is registered by plain constructor
+  injection and resolved twice from the container, so making its `PenCount` depend on an awaited read
+  is a DI-shape question rather than a call-site edit.
+- **Depends on:** independent
+- **Stacking base:** master
+- **Scope guard:** no new project, no Npgsql, no error types, no configuration. This slice changes a
+  seam and nothing else — the provider scaffold that uses the new shape is the slice after it.
+- **Plan:** —
+- **PR:** —
+- **Branch:** —
 
 ### Slice postgres-provider-scaffold — Status: PENDING
 - **Scope:** Stand up the provider project with everything that needs no query. A

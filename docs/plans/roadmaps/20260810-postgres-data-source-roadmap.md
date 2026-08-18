@@ -206,7 +206,7 @@ it.
 - **PR:** #2 (merged)
 - **Branch:** provider-pen-query-seam
 
-### Slice postgres-provider-scaffold — Status: IN-PROGRESS
+### Slice postgres-provider-scaffold — Status: DONE
 - **Scope:** Stand up the provider project with everything that needs no query. A
   `SemiPlot.DataSource.Postgres` project referencing Core only, Npgsql added through central package
   management, a DI extension registering the provider, and the provider itself implementing
@@ -238,8 +238,8 @@ it.
 - **Depends on:** independent
 - **Stacking base:** master
 - **Scope guard:** no SQL, no queries, no change to which provider the application uses.
-- **Plan:** docs/plans/20260817-postgres-provider-scaffold.md
-- **PR:** —
+- **Plan:** docs/plans/completed/20260817-postgres-provider-scaffold.md
+- **PR:** #3 (merged)
 - **Branch:** postgres-provider-scaffold
 
 ### Slice postgres-catalog-and-extent — Status: PENDING

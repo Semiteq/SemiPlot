@@ -118,6 +118,12 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 			return;
 		}
 
+		// An empty extent is a normal state of a fresh archive: leave HasExtent false so the strip stays blank.
+		if (result.Value.IsEmpty)
+		{
+			return;
+		}
+
 		ExtentFirst = result.Value.FirstUtc;
 		ExtentLast = result.Value.LastUtc;
 		HasExtent = true;

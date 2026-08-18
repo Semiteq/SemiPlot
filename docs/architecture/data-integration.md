@@ -55,7 +55,7 @@ public interface IDataProvider
 | `Pen` | `PenId`, `Name`, `Group`, `Color`, `LineStyle` | `PenId` is the archive's `trends.id`. |
 | `Sample` | `PenId`, `TimestampUtc`, `Value` | Realtime element. Timestamps are UTC by the time they leave the provider. |
 | `PenHistoryEnvelope` | parallel `Timestamps` / `Min` / `Max` / `Center`, strictly ascending, `NaN` marks a gap | One per pen per history query. |
-| `ArchiveExtent` | `FirstUtc`, `LastUtc` | Full stored span, consumed by the minimap (`TM-4`). |
+| `ArchiveExtent` | `FirstUtc`, `LastUtc`, `IsEmpty` | The span of the configured variables, consumed by the minimap (`TM-4`). `ArchiveExtent.Empty` is the no-span form; the two timestamps are meaningful only when `IsEmpty` is false. |
 | `AggregationLayer` | `Raw`, `Minute`, `Hour`, `Day` | Maps one-to-one onto the archive's `l` column. |
 
 The pen catalogue is a query, not a property, because reading it can fail: the server can be
@@ -75,19 +75,27 @@ composition root picks one by configuration.
 
 ## Operation to SQL
 
-All statement text lives in one place in `SemiPlot.DataSource.Postgres`. No SQL exists anywhere
-else in the solution. Parameters are always bound, never interpolated.
+All statement text on the application and provider path lives in one place in
+`SemiPlot.DataSource.Postgres`. No SQL exists anywhere else on that path. Parameters are always
+bound, never interpolated. The bench seeder and the gated test harness own SQL of their own by
+design — the schema resource, the partition DDL, the `COPY`, the catalogue upsert, `CREATE DATABASE`
+and `DROP DATABASE` — and are outside the rule.
 
 ### Pen catalog
 
 ```sql
 SELECT id, name, group_name, color, line_style
 FROM semiplot_tags
-ORDER BY group_name, name;
+ORDER BY coalesce(group_name, ''), name;
 ```
 
+The ordering coalesces because the read does: `group_name` is nullable and `Pen.Group` is not, so a
+null is projected onto the empty string. PostgreSQL sorts nulls last and the empty string first, so
+ordering on the raw column would return a list not ordered by the values it carries.
+
 An empty table yields an empty pen list, not a failure — a fresh installation before commissioning
-is a normal state.
+is a normal state. A missing table is the other state and is a failure: `42P01` maps to
+`ArchiveNotInitialisedError` with `Table` naming `semiplot_tags`.
 
 ### Archive extent
 
@@ -102,9 +110,18 @@ CROSS JOIN LATERAL (
 
 The per-variable subqueries are what make this cheap. A bare `SELECT min(t) FROM trends WHERE l = 0`
 cannot use `PRIMARY KEY (id, l, t)` — the leading column is `id` — and degenerates into a scan of
-the whole archive. Bounded per `id`, each subquery walks the index to its edge.
+the whole archive. Bounded per `id`, each subquery reaches an index edge per partition rather than
+one edge overall: `trends` is partitioned on `t` and the statement carries no `t` predicate, so no
+partition is pruned and each bound becomes a `MergeAppend` over one index scan per partition. The
+cost scales with the partition count, not with the archive's row count — far cheaper than the
+unbounded form, which reads every row of every partition.
 
-An archive with no rows yields nulls, which map to an empty extent rather than an error.
+An archive with no rows yields nulls, which map to `ArchiveExtent.Empty` rather than to an error.
+
+The extent is the span of the configured variables, not of the archive. The statement is rooted at
+`semiplot_tags`, so a present-but-empty catalogue over an archive holding months of rows also yields
+`ArchiveExtent.Empty`. That is the intended behaviour: with no configured variables there is nothing
+to draw, and a minimap strip spanning data no pen can render would be a lie.
 
 ### History, chosen layer already sparse enough
 
@@ -272,7 +289,8 @@ Everything on the data path returns `FluentResults`. Exceptions never cross to t
 | The database does not exist (SQLSTATE `3D000`, the server answers) | failed `Result`, distinguished from a connection failure | "Archive database missing" — the remedy is running `semibase create` |
 | The credentials are refused or a grant is missing (SQLSTATE `28P01`, `28000`, `42501`) | failed `Result`, distinguished from a connection failure | "Archive access denied" — the remedy is the user, password or grants, not the network |
 | `trends` does not exist (SCADA never started) | failed `Result`, distinguished from a connection failure | "Archive not initialised" — a normal state on a fresh installation |
-| `semiplot_tags` empty or missing | empty pen list, success | "No variables configured" — commissioning is not finished |
+| `semiplot_tags` does not exist (provisioning unfinished) | failed `Result` carrying `ArchiveNotInitialisedError` whose `Table` is `semiplot_tags` | "Archive not initialised" — the remedy is running `semibase create` |
+| `semiplot_tags` present but empty | empty pen list, success | "No variables configured" — commissioning is not finished |
 | Archive present but no rows in the window | success, empty envelopes | Empty chart, no error |
 
 ### Two error planes
@@ -292,9 +310,14 @@ The rule that decides whether a type exists:
 > Operator-visible states that are not failures travel in the success channel.
 
 The second sentence is why the last row of the table above carries no error type: an empty query
-window is a state the operator reads, not a failure. Whether an empty or missing `semiplot_tags`
-belongs on the same side is an open question — the table row above says it does, the roadmap entry
-for `postgres-catalog-and-extent` says it does not — and that slice owns the decision.
+window is a state the operator reads, not a failure. An empty `semiplot_tags` sits on that same
+side and a missing one does not, and the split is why no `EmptyTagCatalogError` exists. An empty
+catalogue is a successful read of zero rows: the database answered correctly and nothing is broken,
+and routing it as a failure would make every generic failure handler log a warning on every start of
+a fresh installation. A missing `semiplot_tags` raises `42P01` and is a failure, carried by
+`ArchiveNotInitialisedError` with `Table` naming the table. The two states stay distinguishable —
+commissioning unfinished against provisioning unfinished — which is what the provisioning order in
+`postgres-instance.md` requires, and the split needs no error type of its own.
 
 | Type | Fields | Operator sentence |
 | --- | --- | --- |
@@ -306,17 +329,24 @@ for `postgres-catalog-and-extent` says it does not — and that slice owns the d
 | `ArchiveAccessDeniedError` | host, port, database, username | The credentials or the grants are wrong |
 | `ArchiveNotInitialisedError` | host, port, database, table | The database is there but a table the read needs is not |
 | `ArchiveQueryTimedOutError` | host, port, database, timeout (the effective server `statement_timeout` the failing session ran under, read back from that session) | The read exceeded its configured bound |
+| `ArchiveReadFailedError` | host, port, database, sqlState (empty when the failure carried none) | The archive rejected the read for a reason this build does not recognise |
 
-The three connection-file types are raised by the settings loader. The five `Archive*` types are the
+The three connection-file types are raised by the settings loader. The six `Archive*` types are the
 vocabulary the read path maps its SQLSTATEs onto — `3D000`, `28P01` and `42P01` are separate types
 rather than one schema error because they send the operator to separate remedies: run `semibase
 create`, fix the credentials, start the SCADA once. `ArchiveNotInitialisedError` carries the table
 name rather than assuming `trends`, because `42P01` is table-agnostic and the remedy follows the
-table — `trends` is the SCADA's, `semiplot_tags` is SemiBase's.
+table — `trends` is the SCADA's, `semiplot_tags` is SemiBase's. `ArchiveReadFailedError` closes the
+mapping: anything the table above does not name arrives as that type carrying its SQLSTATE, so
+nothing escapes as an exception and nothing crosses as an untyped `Result.Fail(string)` a consumer
+cannot route on.
 
-`57014` is the one SQLSTATE that does not map on its own: the server answers it both for
-`statement_timeout` and for a client-issued cancel, and the chart cancels in-flight reads when it
-pans. A consumer checks its own cancellation token before reporting `ArchiveQueryTimedOutError`.
+`57014` maps unconditionally to `ArchiveQueryTimedOutError`. The server answers that SQLSTATE both
+for `statement_timeout` and for a client-issued cancel, and the chart cancels in-flight reads when it
+pans, so the two will have to be told apart — but no read on the provider path takes a
+`CancellationToken` yet, and a caller's own cancellation raises `OperationCanceledException`, which
+the mapper rethrows rather than turning into a failed `Result`. Slice `postgres-history-read` is the
+first to hand a token down and owns splitting the two.
 
 One further type, `ProviderNotImplementedError`, exists only while `PostgresDataProvider` is a
 scaffold: its unimplemented members return a failed `Result` carrying it, so a mis-wired composition
@@ -358,13 +388,20 @@ operator's responsibility.
 
 Documentation that describes SQL drifts from the SQL. Three artifacts prevent that:
 
-1. All statement text lives in one class; this document quotes it and names the file. Nothing else
-   in the solution issues SQL.
+1. All statement text on the application and provider path lives in one class; this document quotes
+   it and names the file. Nothing else on that path issues SQL. The bench seeder and the test projects
+   own SQL of their own by design and are outside the rule.
 2. Unit tests pin the generated statement text and parameter names for every operation, so a change
    in the code that this document does not describe shows up as a failing test.
-3. Gated integration tests run `EXPLAIN` on the windowed history query and the realtime poll and
-   assert that both use `tpk`. This turns the two documented hazards — the missing layer predicate
-   and the missing variable list — into enforced invariants rather than warnings in prose.
+3. A gated integration test runs `EXPLAIN` on the extent statement and asserts the plan's shape: an
+   index scan under each bounded subquery, and no sequential scan of a `trends` partition holding
+   rows. The plan never names `tpk` — it is the parent partitioned index of a
+   `PARTITION BY RANGE (t)` table and is never scanned, so what `EXPLAIN` prints is each partition's
+   own cloned `<partition>_pkey`. The shape assertion survives partition renaming and still fails the
+   moment a predicate is dropped, which turns an unbounded extent minimum from a warning in prose
+   into an enforced invariant. The windowed history query and the realtime poll carry the same
+   hazards — the missing layer predicate and the missing variable list — and get the same treatment
+   in the slices that implement them.
 
 ## Field triage
 

@@ -7,6 +7,7 @@ using AwesomeAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Reactive.Testing;
 
+using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.UI.Bridge;
 using SemiPlot.UI.Bridge;
@@ -36,6 +37,19 @@ public sealed class MinimapViewModelTests
 		viewModel.HasExtent.Should().BeTrue();
 		viewModel.ExtentFirst.Should().Be(_extentFirst);
 		viewModel.ExtentLast.Should().Be(_extentLast);
+	}
+
+	[AvaloniaFact]
+	public async Task LoadExtentAsync_WithAnEmptyExtent_LeavesHasExtentFalse()
+	{
+		var (viewModel, _, provider) = CreateViewModel();
+		provider.ArchiveExtentOverride = ArchiveExtent.Empty;
+
+		await viewModel.LoadExtentAsync();
+
+		viewModel.HasExtent.Should().BeFalse();
+		viewModel.ExtentFirstLabel.Should().BeEmpty();
+		viewModel.ExtentLastLabel.Should().BeEmpty();
 	}
 
 	[AvaloniaFact]

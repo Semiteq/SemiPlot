@@ -33,6 +33,8 @@ internal sealed class FakeDataProvider : IDataProvider
 
 	public DateTime ArchiveLastUtc { get; set; } = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
+	public ArchiveExtent? ArchiveExtentOverride { get; set; }
+
 	public bool FailHistory { get; set; }
 
 	// When set, a query for this layer returns the gate's task, holding it in flight so a newer query can
@@ -120,6 +122,6 @@ internal sealed class FakeDataProvider : IDataProvider
 
 	public Task<Result<ArchiveExtent>> QueryArchiveExtentAsync()
 	{
-		return Task.FromResult(Result.Ok(new ArchiveExtent(ArchiveFirstUtc, ArchiveLastUtc)));
+		return Task.FromResult(Result.Ok(ArchiveExtentOverride ?? new ArchiveExtent(ArchiveFirstUtc, ArchiveLastUtc)));
 	}
 }

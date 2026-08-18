@@ -64,8 +64,12 @@ writes to it.
 | `line_style` | yes | Mapped onto the domain line-style enum |
 | `unit` | no | Present in the table; no query reads it yet |
 
-The catalogue query is in `data-integration.md`. An absent or empty table is a normal state with its
-own message, not a failure.
+The catalogue query is in `data-integration.md`. An absent table and an empty one are both normal
+states with their own message, and neither is ever a crash — but they travel in different channels.
+An empty table is a successful read of zero rows, because the database answered correctly and
+nothing is broken. An absent table is a typed failure carrying the table name, because provisioning
+has not finished. Keeping the two apart is what lets the operator be sent to `semibase create` in
+one case and to commissioning in the other.
 
 If several client versions ever have to coexist against one database, a `semiplot_meta` table
 carrying a schema version is the intended mechanism. It is not needed while a single client version

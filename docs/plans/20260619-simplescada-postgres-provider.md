@@ -35,6 +35,10 @@ known wrong:
   is not this repository's to own.
 - Every task puts its tests under `SemiPlot.Tests/Data/...`. Data-source tests live in the separate
   `SemiPlot.Tests.Data` project, which owns the gated database harness.
+- The `EXPLAIN` assertions above once read "uses `tpk`". No `EXPLAIN` can produce that: `tpk` is the
+  parent partitioned index of a `PARTITION BY RANGE (t)` table and is never scanned, so the plan
+  names each partition's own cloned `<partition>_pkey`. They are stated as plan-shape assertions
+  instead, matching `docs/architecture/data-integration.md`.
 
 ## Development approach
 
@@ -52,8 +56,9 @@ known wrong:
   text and parameter names pinned per operation; envelope assembly including gap anchors.
 - **Integration (gated):** against a disposable database seeded with the exact `trends` shape —
   pens from `semiplot_tags`, extent, history per layer, gap reconstruction, realtime append,
-  dropped connection yielding a failed `Result`. Plus `EXPLAIN` assertions that the windowed history
-  query and the realtime poll use `tpk`.
+  dropped connection yielding a failed `Result`. Plus `EXPLAIN` assertions on the plan's shape for
+  the windowed history query and the realtime poll: an index scan reaching the rows, and no
+  sequential scan of a `trends` partition holding rows.
 - No UI test changes: the provider sits below the view-model seam, which uses `FakeDataProvider`.
 
 ## Progress tracking
@@ -176,7 +181,8 @@ their tests.
       the observable
 - [ ] never emit a timestamp at or before the last delivered one (§DA-7)
 - [ ] gated integration test: appended rows arrive once, in order, without duplicates
-- [ ] `EXPLAIN` assertion that the poll uses `tpk`
+- [ ] `EXPLAIN` assertion that the poll reaches its rows through an index and scans no row-holding
+      `trends` partition sequentially
 - [ ] tests pass
 
 ### Task 11: Startup compatibility probe

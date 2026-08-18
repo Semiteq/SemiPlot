@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection"/>
     <PackageReference Include="Microsoft.NET.Test.Sdk"/>
     <PackageReference Include="Npgsql"/>
     <PackageReference Include="Testcontainers.PostgreSql"/>
@@ -22,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SemiPlot.Core\SemiPlot.Core.csproj"/>
+    <ProjectReference Include="..\SemiPlot.DataSource.Postgres\SemiPlot.DataSource.Postgres.csproj"/>
     <ProjectReference Include="..\SemiPlot.Tools.ArchiveSeeder\SemiPlot.Tools.ArchiveSeeder.csproj"/>
   </ItemGroup>
 

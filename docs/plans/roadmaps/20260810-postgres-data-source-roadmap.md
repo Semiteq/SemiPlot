@@ -250,7 +250,10 @@ it.
   slice), not a silent empty list and not a crash. Implement the archive extent using per-variable
   bounded subqueries, because an unbounded minimum over the whole table cannot use the primary key
   and scans the entire archive. The gated harness — container, provisioning, template cloning,
-  skip policy, traits — is owned by archive-populator and reused here unchanged.
+  skip policy, traits — is owned by archive-populator and reused here unchanged. That typed-state
+  position contradicts `docs/architecture/data-integration.md`, whose error-semantics table makes an
+  empty or missing `semiplot_tags` a successful `Result` with an empty pen list; this slice settles
+  the disagreement and amends whichever document loses.
 - **Issue:** none
 - **Blast radius:** the provider only; the application still runs on the stub.
 - **Risk:** low-medium — the harness risk moved to archive-populator; what remains is the extent
@@ -333,6 +336,9 @@ it.
   history-to-realtime seam monotonic.
   An integration test appends rows and asserts they arrive once, in order, without duplicates, and an
   `EXPLAIN` assertion pins the index usage.
+  `Subscribe` is the last member of the scaffold left unimplemented, so this slice also **owns the
+  deletion of `ProviderNotImplementedError`** — the temporary error type the scaffold's members
+  return — together with the last body that returns it.
 - **Issue:** none
 - **Blast radius:** the provider only; the batching and scheduler hand-off above it are unchanged.
 - **Risk:** medium, concentrated in the seam invariant and in poll error handling.

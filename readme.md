@@ -34,7 +34,7 @@ SemiPlot — приложение для просмотра графиков и 
 - **Оболочка:** Avalonia 11.3.x (Win32 + Skia) + ReactiveUI
 - **Графика:** ScottPlot.Avalonia 5.1.57 (нативный рендеринг, SkiaSharp)
 - **Данные:** абстракция `IDataProvider`; сейчас — `RandomStubDataProvider`,
-  далее — `SimpleScadaDataProvider` (OPC UA + SQL архив, см. документацию)
+  далее — `PostgresDataProvider` (архив PostgreSQL от Simple-Scada 2, см. документацию)
 
 Подробно — в `docs/architecture/` (overview, charting, trend-interaction, data-integration).
 

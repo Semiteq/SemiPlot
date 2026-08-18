@@ -14,8 +14,10 @@ the composition slice; and a final slice replaces the stub with a live demo benc
 
 ## Summary
 
-SemiPlot renders trends correctly but has never read a real archive: the only implementation of
-`IDataProvider` emits random walks. The architecture for reading the Simple-Scada 2 PostgreSQL
+SemiPlot renders trends on synthetic data: the running application resolves `IDataProvider` to the
+stub, which emits random walks. `PostgresDataProvider` stands beside it and reads the pen catalogue
+and the archive extent from a real database, but its history and realtime members are still
+unimplemented and no composition selects it. The architecture for reading the Simple-Scada 2 PostgreSQL
 archive is settled and documented, and one piece of already-shipped code — the aggregation-layer
 thresholds — is wrong by a factor of four against that architecture. Eleven slices deliver a
 production provider, the local test bench it is developed against, and a live demo bench that
@@ -33,7 +35,9 @@ pass, zero failures. Trust rule: prefer the shapes over the numbers if they have
 ## Root cause
 
 The provider seam was designed early and honoured — the UI depends only on `IDataProvider`, and the
-stub is swappable. What never followed is a real implementation. Two consequences compound.
+stub is swappable. What followed late is a real implementation, and it is still half-built: the
+PostgreSQL provider reads the catalogue and the extent, the application reads neither. Two
+consequences compound.
 
 First, everything downstream of the seam has been validated only against synthetic data whose shape
 does not match the archive: the stub emits evenly spaced samples, while the archive writes anchor
@@ -46,14 +50,14 @@ day. The vendor writes up to four points per period, so the real point spacing i
 Every threshold in `ChartNavigationController.LayerForWidth` is therefore four times too
 conservative, and the viewer would read raw data across windows a coarse layer serves comfortably.
 
-| Area | Cost of the gap today |
+| Area | State today |
 | --- | --- |
-| `IDataProvider` implementations | One synthetic implementation; nothing reads the archive |
+| `IDataProvider` implementations | Two: the stub the application resolves, and `PostgresDataProvider`, which reads the catalogue and the extent but neither history nor the live edge |
 | Layer selection | Thresholds four times too conservative; raw reads where a layer would do |
 | Gap rendering | Modelled synthetically; the archive's quality marks are not read at all |
-| Time handling | The archive's naive local timestamps have no conversion boundary |
-| Tag identity | The archive stores numbers; no name mapping exists anywhere |
-| Test bench | No database to develop against, and no data shaped like the archive |
+| Time handling | `ArchiveTimeConverter` owns the naive-local-to-UTC boundary at the provider edge |
+| Tag identity | `semiplot_tags` maps numbers to names, read through `PenLineStyleReader`; the application still lists synthetic pens |
+| Test bench | A seeded local database, its gated harness and DB-free fixture rows exist |
 
 ## Target end state
 
@@ -61,14 +65,14 @@ conservative, and the viewer would read raw data across windows a coarse layer s
 | --- | --- | --- |
 | Production data source | `RandomStubDataProvider` | `PostgresDataProvider`, selected by configuration; a missing or invalid configuration is a visible error state, never a silent stub |
 | Synthetic stub | composition-root default | project deleted; manual "see something in the UI" runs on a seeded live demo database through the real provider |
-| Failure reporting | generic `Result` errors, log strings | two decoupled error planes (SemiStep pattern): a finite, stable public surface in Core — one sealed error type with structured fields per operator-visible state — and freely changing internal errors that cross the boundary only mapped into a public type, detail riding `CausedBy` into the log |
+| Failure reporting | two decoupled error planes (SemiStep pattern): ten sealed public types with structured fields in `SemiPlot/SemiPlot.Core/Data/Errors`, internal detail riding `CausedBy` into the log. One of the ten, `ProviderNotImplementedError`, is scaffolding and leaves with the last unimplemented member | the same two planes, with every public type mapped to a UI state and the mapping held total by a build-time reflection coverage test |
 | Layer spacing | period (1 min / 1 h / 1 d) | period ÷ 4 (15 s / 15 min / 6 h) |
 | Layer thresholds | fixed ceilings on window width | derived from `window / targetColumnCount ≥ spacing`, hysteresis retained |
 | Wide-window reduction | client-side only | server-side pixel buckets when the layer is denser than the canvas |
 | Gaps | synthetic | reconstructed from `q = 32` / `q = 16`, distinguished from unchanged values |
-| Timestamps | UTC throughout | converted from naive local at the provider boundary, UTC above it |
-| Pen catalogue | synthetic list | `semiplot_tags`, filled by hand |
-| Test bench | none | a populated local database with archive-shaped data, plus DB-free tests over fixture rows |
+| Timestamps | `ArchiveTimeConverter` converts both ways at the provider boundary; no application path reaches it, so the running viewer is UTC throughout | converted from naive local at the provider boundary, UTC above it |
+| Pen catalogue | the provider reads `semiplot_tags`; the application lists the stub's synthetic pens | `semiplot_tags`, filled by hand |
+| Test bench | a populated local database with archive-shaped data, plus DB-free tests over fixture rows | unchanged; later slices develop against it |
 
 Every architectural choice behind this table is already recorded: `docs/architecture/scada-archive.md`
 for the archive, `data-integration.md` for the contract and the exact SQL, `postgres-instance.md`
@@ -78,27 +82,35 @@ for the server, `history-read-path-evaluation.md` for why nothing of ours runs i
 
 The blast radius is bounded by the provider seam, which was built for exactly this substitution.
 
-`IDataProvider` is referenced from ten files: its own definition, the stub and its DI extension, the
-composition root and `App.axaml.cs`, `TrendCoordinator`, two view models, and two test files
-including `FakeDataProvider`. Adding a second implementation touches none of them except the
-composition root.
+`IDataProvider` is referenced from 14 files: its own definition, the stub and its DI extension, the
+PostgreSQL provider and its DI extension, `App.axaml.cs`, `TrendCoordinator`, `MinimapViewModel`,
+and six test files including `FakeDataProvider`. Adding a second implementation touches none of them
+except the composition root: across four merged slices the PostgreSQL provider, its DI extension and
+its tests arrived beside the stub, and the composition root still resolves the stub — the startup
+slice is where it switches.
 
-`AggregationLayer` is referenced from eighteen files, but the change is confined to what
+`AggregationLayer` is referenced from 20 files, but the change is confined to what
 `ToSampleInterval` returns and how `LayerForWidth` derives its ceilings. The enum itself, its
 ordering and its use as a request field are unchanged, so every consumer that merely carries a layer
 value is unaffected by construction. The consumers that would notice are the stub provider, which
 uses the interval to synthesize history, and the navigation controller's thresholds — both are
 inside the first slice.
 
-The database side is additive only. Nothing in this roadmap writes to `trends` or `messages`,
-creates an index on them, or attaches a trigger. The only object we create is `semiplot_tags`.
+The database side is additive only, and the customer's production archive is read-only throughout:
+no slice inserts a row into its `trends` or `messages`, creates an index on them, or attaches a
+trigger. Writing belongs to the bench alone, in a development database of our own —
+`sql/semiplot_dev.sql` creates `public.trends` and its `tpdefault` catch-all there, the seeder fills
+them, and the live-demo slice keeps appending. This repository creates no object in an archive at
+all: `semiplot_tags` is created by `semibase create`, which owns every role, grant and table on that
+side.
 
 ## Guard strategy
 
 Each guard below is a hypothesis the owning slice plan must confirm fires at HEAD before relying on
 it.
 
-- **The existing 250 tests.** The layer-spacing slice changes numbers that `AggregationLayerTests`,
+- **The existing 622 tests** — 257 in `SemiPlot.Tests`, 365 in `SemiPlot.Tests.Data` of which 35 skip
+  without a database, zero failures. The layer-spacing slice changes numbers that `AggregationLayerTests`,
   `ChartNavigationControllerTests` and `RandomStubDataProviderTests` assert directly; those tests
   failing is the intended signal, and their updated values are the specification.
 - **Statement-text pinning.** Every SQL statement is asserted character for character together with
@@ -146,9 +158,9 @@ it.
 - **Scope guard:** no database, no changes to the layer enum's members or to `IDataProvider`, and no
   work on the PostgreSQL provider. The stub provider's synthesis step is in scope, because it is a
   call site of the method whose meaning changes.
-- **Plan:** —
+- **Plan:** docs/plans/20260810-layer-ladder-spacing.md
 - **PR:** —
-- **Branch:** —
+- **Branch:** layer-ladder-spacing (carries commit `e4d1cc5`, not merged)
 
 ### Slice archive-populator — Status: DONE
 - **Scope:** Build the local test bench. Extract the verified archive DDL from the customer's dump
@@ -223,7 +235,7 @@ it.
   pattern (`SemiStep/Docs/architecture/error-reporting.md`), two decoupled planes:
   - **Public plane** — a finite set of sealed FluentResults error types in Core beside
     `IDataProvider`, one per operator-visible **failure** (malformed connection file, version
-    mismatch, unreachable database, schema mismatch, query timeout, ...). An operator-visible state
+    mismatch, unreachable database, uninitialised archive, query timeout, ...). An operator-visible state
     that is not a failure — an empty catalogue among them — travels in the success channel and gets
     no error type; postgres-catalog-and-extent settles that split. Each carries
     structured fields via a primary constructor and builds its message in the base constructor.
@@ -248,7 +260,7 @@ it.
 - **PR:** #3 (merged)
 - **Branch:** postgres-provider-scaffold
 
-### Slice postgres-catalog-and-extent — Status: PENDING
+### Slice postgres-catalog-and-extent — Status: DONE
 - **Scope:** The first two operations that touch the database. Load the pen catalogue from
   `semiplot_tags` — the table itself is created by `semibase create` and populated by the bench
   seeder — mapping the stored line style onto the domain enum. The empty-versus-missing question is
@@ -259,14 +271,17 @@ it.
   Implement the archive extent using per-variable bounded subqueries, because an unbounded minimum
   over the whole table cannot use the primary key and scans the entire archive; `ArchiveExtent` gains
   an explicit empty form, because a fresh archive returns nulls and mapping them onto
-  `default(DateTime)` would hand the minimap an extent beginning in year 0001. This slice also
+  `default(DateTime)` would hand the minimap an extent beginning in year 0001. A SQLSTATE the mapper
+  does not recognise gets a public type of its own, `ArchiveReadFailedError`, carrying the code, so
+  no internal exception reaches the operator raw. This slice also
   introduces the single class that owns every SQL statement on the application and provider path,
   and the discipline that no SQL exists anywhere else on that path. The gated harness — container,
   provisioning, template cloning, skip policy, traits — is owned by archive-populator and reused here
   unchanged.
 - **Issue:** none
-- **Blast radius:** the provider, plus three files outside it —
-  `SemiPlot/SemiPlot.Core/Data/ArchiveExtent.cs` and `SemiPlot/SemiPlot.Core/Trends/PenLineStyle.cs`
+- **Blast radius:** the provider, plus four files outside it — `SemiPlot/SemiPlot.Core/Data/ArchiveExtent.cs`,
+  the added `SemiPlot/SemiPlot.Core/Data/Errors/ArchiveReadFailedError.cs` and
+  `SemiPlot/SemiPlot.Core/Trends/PenLineStyle.cs`
   in Core, and `SemiPlot/SemiPlot.UI/Minimap/MinimapViewModel.cs`, which follows the extent's new
   empty form. The application still runs on the stub.
 - **Risk:** low-medium — the harness risk moved to archive-populator; what remains is the extent
@@ -277,9 +292,9 @@ it.
   root, which stays untouched and still selects the stub. `AddPostgresData` itself does change: it
   takes `PostgresConnectionSettings` and gains registrations for the data source, the time converter,
   the exception mapper and the missing-relation probe.
-- **Plan:** —
-- **PR:** —
-- **Branch:** —
+- **Plan:** docs/plans/completed/20260818-postgres-catalog-and-extent.md
+- **PR:** #4 (merged)
+- **Branch:** postgres-catalog-and-extent
 
 ### Slice postgres-history-read — Status: PENDING
 - **Scope:** History from a chosen layer by direct read. Inherit the single statement class from
@@ -289,8 +304,13 @@ it.
   envelope per pen through the existing decimator, preserving the strictly ascending contract. Pin
   the statement text and parameter names in unit tests, and assert through `EXPLAIN` that the query
   reaches its rows through an index and scans no row-holding `trends` partition sequentially — the
-  plan cannot name `tpk`, for the reason in Guard strategy. A read exceeding the reader role's
-  `statement_timeout` (SQLSTATE `57014`) surfaces as a typed error, not a bare exception.
+  plan cannot name `tpk`, for the reason in Guard strategy. The typed timeout path is inherited, not
+  built: `ArchiveExceptionMapper` already maps SQLSTATE `57014` onto `ArchiveQueryTimedOutError`
+  carrying the effective bound `ArchiveDataSource` reads back from `pg_settings` per physical
+  connection, and the windowed read travels it unchanged. `QueryHistoryAsync` is the last body that
+  returns `ProviderNotImplementedError`, so this slice also **owns the deletion of that type** — the
+  temporary error the scaffold gave its unimplemented members — together with the tests that assert
+  on it.
 - **Issue:** none
 - **Blast radius:** the provider only.
 - **Risk:** medium, concentrated in envelope assembly against archive-shaped input — anchor pairs and
@@ -353,9 +373,8 @@ it.
   history-to-realtime seam monotonic.
   An integration test appends rows and asserts they arrive once, in order, without duplicates, and an
   `EXPLAIN` assertion pins the index usage.
-  `Subscribe` is the last member of the scaffold left unimplemented, so this slice also **owns the
-  deletion of `ProviderNotImplementedError`** — the temporary error type the scaffold's members
-  return — together with the last body that returns it.
+  `Subscribe` returns an empty observable today, which is a silent live edge rather than a failure;
+  this slice replaces that body with the poll.
 - **Issue:** none
 - **Blast radius:** the provider only; the batching and scheduler hand-off above it are unchanged.
 - **Risk:** medium, concentrated in the seam invariant and in poll error handling.
@@ -369,8 +388,12 @@ it.
 ### Slice postgres-startup-and-composition — Status: PENDING
 - **Scope:** Make the application actually use the provider. A startup probe returns a `Result`
   whose **public-plane** typed errors distinguish the states the operator must be able to tell
-  apart: no connection file, a malformed file, no connection, no archive table, an unexpected table
-  shape, and a non-empty default partition. An empty pen catalogue is not among them:
+  apart. Most of that vocabulary is already shipped: the sealed types in
+  `SemiPlot/SemiPlot.Core/Data/Errors` cover the connection file — absent, malformed, wrong version —
+  and the database — unreachable, missing, access denied, not initialised, query timed out, read
+  failed on an unmapped SQLSTATE — and every one of them needs its own visible state here. Two
+  operator states have no type yet and are genuinely new work here: an
+  unexpected table shape, and a non-empty default partition. An empty pen catalogue is not among them:
   postgres-catalog-and-extent settles it as a success-channel state, so this slice surfaces it as a
   UI state reached through a successful `Result` and pins it with a named test of its own, outside
   the reflection coverage guard, which enumerates error types only. That named test is what keeps

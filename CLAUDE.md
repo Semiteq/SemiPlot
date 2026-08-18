@@ -37,7 +37,7 @@ Tests live in two projects, split by target framework rather than by taste.
 | Project | Target | Framework | References | Holds |
 | --- | --- | --- | --- | --- |
 | `SemiPlot.Tests` | `net10.0-windows` | xunit v2 + `Avalonia.Headless.XUnit` | `SemiPlot.UI` | Everything touching the UI, plus the renderer-agnostic Core models |
-| `SemiPlot.Tests.Data` | `net10.0` | xunit v3 | `SemiPlot.Core`, `SemiPlot.Tools.ArchiveSeeder` | Bench and data-source tests, pure and container-gated. Never Avalonia, never the UI |
+| `SemiPlot.Tests.Data` | `net10.0` | xunit v3 | `SemiPlot.Core`, `SemiPlot.Tools.ArchiveSeeder`, `SemiPlot.DataSource.Postgres` | Bench and data-source tests, pure and container-gated. Never Avalonia, never the UI |
 
 `SemiPlot.Tests` carries `TestAppBuilder.cs` with `[assembly: AvaloniaTestApplication]`. Pure logic
 (decimation, navigation, scale, cursor, delta) uses plain `[Fact]`; tests touching
@@ -73,6 +73,9 @@ is `Component=Core` throughout, since nothing in it touches the UI.
 no assertion library: its assertions are mostly `Assert.Equal`, `Assert.Contains` and `Assert.All`
 over rows and database state, where the fluent form buys no diagnostic the raw form does not already
 give. Keep each project on its own style rather than mixing the two inside one file.
+
+**Tests over provider errors assert by error type and structured field, never on exact message
+wording** — the message is built in the error's base constructor and stays free to change.
 
 ### Gated data tests
 

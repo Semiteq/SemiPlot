@@ -1,5 +1,6 @@
 <Solution>
     <Project Path="SemiPlot/SemiPlot.Core/SemiPlot.Core.csproj"/>
+    <Project Path="SemiPlot/SemiPlot.DataSource.Postgres/SemiPlot.DataSource.Postgres.csproj"/>
     <Project Path="SemiPlot/SemiPlot.DataSource.Stub/SemiPlot.DataSource.Stub.csproj"/>
     <Project Path="SemiPlot/SemiPlot.Tests/SemiPlot.Tests.csproj"/>
     <Project Path="SemiPlot/SemiPlot.Tests.Data/SemiPlot.Tests.Data.csproj"/>

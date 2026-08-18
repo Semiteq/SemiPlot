@@ -215,6 +215,14 @@ SCADA host's zone is changed, the configuration must be changed with it; histori
 before the change stays in the old zone and is not correctable. Daylight-saving transitions shift or
 duplicate an hour of history; this is accepted as cosmetic.
 
+Two consequences of that follow from the archive storing no offset, and no stateless conversion
+avoids either. At the autumn fall-back both passes over the repeated hour carry identical naive
+values, so the converted sequence repeats an hour. At the spring-forward gap a value inside the gap
+takes the standard-time offset while the value after it takes the daylight one, so an ascending naive
+sequence converts to a *descending* one across the transition. The strictly ascending
+`PenHistoryEnvelope` contract is therefore not the converter's to keep — the component that assembles
+envelopes owns what to do about both.
+
 ## Quality and gaps
 
 The provider maps the archive's quality marks onto the envelope's gap representation (`DA-8`):
@@ -261,15 +269,85 @@ Everything on the data path returns `FluentResults`. Exceptions never cross to t
 | Connection refused or DNS failure at startup | failed `Result` | Explicit "no connection to the archive" state, retry available |
 | Connection lost mid-session | failed `Result` on the query; realtime tick dropped | Chart keeps the data it has; staleness is visible |
 | Query timeout | failed `Result` | Same as above; the timeout is a configured bound, not an accident |
+| The database does not exist (SQLSTATE `3D000`, the server answers) | failed `Result`, distinguished from a connection failure | "Archive database missing" — the remedy is running `semibase create` |
+| The credentials are refused or a grant is missing (SQLSTATE `28P01`, `28000`, `42501`) | failed `Result`, distinguished from a connection failure | "Archive access denied" — the remedy is the user, password or grants, not the network |
 | `trends` does not exist (SCADA never started) | failed `Result`, distinguished from a connection failure | "Archive not initialised" — a normal state on a fresh installation |
 | `semiplot_tags` empty or missing | empty pen list, success | "No variables configured" — commissioning is not finished |
 | Archive present but no rows in the window | success, empty envelopes | Empty chart, no error |
 
+### Two error planes
+
+A failure crosses the provider boundary in one shape only. Inside the provider it is whatever Npgsql,
+the file system or the YAML parser produced — an exception, a SQLSTATE string, a parse position — and
+none of that crosses. At the boundary it is mapped onto one of a small set of sealed public error
+types in `SemiPlot.Core/Data/Errors/`, beside `IDataProvider`, and the original rides
+`.CausedBy(...)` so the log keeps the detail. The internal plane is free to change with the driver;
+the public plane is the contract the UI maps onto states and tests assert against. Messages are built
+in the base constructor and are not part of that contract — they may be reworded without a slice
+noticing.
+
+The rule that decides whether a type exists:
+
+> A public error type exists if and only if a distinct operator-visible **failure** sentence exists.
+> Operator-visible states that are not failures travel in the success channel.
+
+The second sentence is why the last row of the table above carries no error type: an empty query
+window is a state the operator reads, not a failure. Whether an empty or missing `semiplot_tags`
+belongs on the same side is an open question — the table row above says it does, the roadmap entry
+for `postgres-catalog-and-extent` says it does not — and that slice owns the decision.
+
+| Type | Fields | Operator sentence |
+| --- | --- | --- |
+| `ConnectionFileNotFoundError` | path | The connection file is not where it was expected |
+| `ConnectionFileInvalidError` | path, kind (`Unreadable` \| `Unparseable` \| `MissingField` \| `OutOfRange` \| `UnknownTimeZone`), reason | The file exists but cannot be read as configuration |
+| `ConnectionFileVersionMismatchError` | path, foundVersion, expectedVersion | The file is a version this build does not accept |
+| `ArchiveUnreachableError` | host, port, database | No connection to the archive |
+| `ArchiveDatabaseMissingError` | host, port, database | The server answers but the database does not exist |
+| `ArchiveAccessDeniedError` | host, port, database, username | The credentials or the grants are wrong |
+| `ArchiveNotInitialisedError` | host, port, database, table | The database is there but a table the read needs is not |
+| `ArchiveQueryTimedOutError` | host, port, database, timeout (the effective server `statement_timeout` the failing session ran under, read back from that session) | The read exceeded its configured bound |
+
+The three connection-file types are raised by the settings loader. The five `Archive*` types are the
+vocabulary the read path maps its SQLSTATEs onto — `3D000`, `28P01` and `42P01` are separate types
+rather than one schema error because they send the operator to separate remedies: run `semibase
+create`, fix the credentials, start the SCADA once. `ArchiveNotInitialisedError` carries the table
+name rather than assuming `trends`, because `42P01` is table-agnostic and the remedy follows the
+table — `trends` is the SCADA's, `semiplot_tags` is SemiBase's.
+
+`57014` is the one SQLSTATE that does not map on its own: the server answers it both for
+`statement_timeout` and for a client-issued cancel, and the chart cancels in-flight reads when it
+pans. A consumer checks its own cancellation token before reporting `ArchiveQueryTimedOutError`.
+
+One further type, `ProviderNotImplementedError`, exists only while `PostgresDataProvider` is a
+scaffold: its unimplemented members return a failed `Result` carrying it, so a mis-wired composition
+fails loudly instead of drawing an empty chart. Slice `postgres-realtime-poll` implements the last of
+those members and deletes the type with it.
+
 ## Configuration
 
-A YAML file in a `--config-dir`, following the convention of the sibling project. Fields: host,
-port, database, user, password, `source_time_zone`, poll interval, schema, statement timeout, and a
-file-version field checked on load. Loading returns a `Result`; a malformed file is reported at
+A YAML file in a `--config-dir`, following the convention of the sibling project. All nine keys are
+required; the loader reports an absent one rather than defaulting it:
+
+```yaml
+connection_file_version: "1.0"
+host: scada-01
+port: 5432
+database: semiplot_dev
+user: semiplot_reader
+password: "change me"
+source_time_zone: Europe/Berlin
+poll_interval_ms: 1000
+schema: public
+```
+
+`source_time_zone` takes an IANA identifier, which .NET resolves on Windows as well, and is the zone
+the archive's naive timestamps are read in. The file states no query bound: the bound belongs to the
+`semiplot_reader` role and SemiBase owns it (`postgres-instance.md`), and SemiPlot sends no
+`statement_timeout` in any form. The connection string therefore carries `Command Timeout=0` so
+Npgsql's implicit 30 s client bound cannot abort a read before the server answers `57014`, and the
+read path derives its own per-command backstop from the effective bound it reads back from the
+session. Loading returns a `Result`; a malformed file — unreadable, unparseable, missing a key,
+holding a value outside its range, or naming a zone the machine does not know — is reported at
 startup rather than at first query.
 
 The password is stored in plain text. The mitigation is that SemiPlot connects under a read-only

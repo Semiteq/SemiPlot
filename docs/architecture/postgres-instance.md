@@ -39,8 +39,12 @@ SemiPlot connects as `semiplot_reader` and as nothing else.
 | `statement_timeout` | 30 s | A read that exceeds it fails with SQLSTATE `57014`. That is a bug in layer selection, not a slow disk — surface it as a typed error instead of retrying |
 | `idle_in_transaction_session_timeout` | 60 s | A transaction held open is killed rather than blocking vacuum on the partitions |
 
-Both timeouts are set on the role by `semibase create`, so they apply to every session SemiPlot
-opens and cannot be relaxed from the client side.
+Both timeouts are set on the role by `semibase create` as session defaults, so they apply to every
+session SemiPlot opens. They are defaults, not enforcement: PostgreSQL classes `statement_timeout` as
+`USERSET`, and a startup option or a plain `SET` overrides a role default from the client side.
+SemiPlot's contract is that it never sends `statement_timeout` in any form, so the value the reader
+role carries is the value every SemiPlot session runs under; the client reads the effective value
+back to report which bound a failed read hit.
 
 The reader credential is what makes the plaintext password in SemiPlot's configuration file an
 acceptable risk: it grants reading process history and nothing more.

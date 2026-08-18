@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="FluentResults"/>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions"/>
+    <PackageReference Include="Npgsql"/>
+    <PackageReference Include="System.Reactive"/>
+    <PackageReference Include="YamlDotNet"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SemiPlot.Core\SemiPlot.Core.csproj"/>
+  </ItemGroup>
+
+</Project>

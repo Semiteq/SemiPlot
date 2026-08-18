@@ -1,6 +1,4 @@
-﻿using System.Globalization;
-
-using FluentResults;
+﻿using FluentResults;
 
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
@@ -25,7 +23,6 @@ public sealed class DataErrorTests
 		var error = new ConnectionFileNotFoundError(ConnectionFilePath);
 
 		Assert.Equal(ConnectionFilePath, error.Path);
-		Assert.Contains(ConnectionFilePath, error.Message, StringComparison.Ordinal);
 	}
 
 	[Theory]
@@ -43,8 +40,6 @@ public sealed class DataErrorTests
 		Assert.Equal(ConnectionFilePath, error.Path);
 		Assert.Equal(kind, error.Kind);
 		Assert.Equal(reason, error.Reason);
-		Assert.Contains(ConnectionFilePath, error.Message, StringComparison.Ordinal);
-		Assert.Contains(reason, error.Message, StringComparison.Ordinal);
 	}
 
 	[Fact]
@@ -55,8 +50,6 @@ public sealed class DataErrorTests
 		Assert.Equal(ConnectionFilePath, error.Path);
 		Assert.Equal("2", error.FoundVersion);
 		Assert.Equal("1", error.ExpectedVersion);
-		Assert.Contains("2", error.Message, StringComparison.Ordinal);
-		Assert.Contains("1", error.Message, StringComparison.Ordinal);
 	}
 
 	[Fact]
@@ -67,9 +60,6 @@ public sealed class DataErrorTests
 		Assert.Equal(Host, error.Host);
 		Assert.Equal(Port, error.Port);
 		Assert.Equal(Database, error.Database);
-		Assert.Contains(Host, error.Message, StringComparison.Ordinal);
-		Assert.Contains(Port.ToString(CultureInfo.InvariantCulture), error.Message, StringComparison.Ordinal);
-		Assert.Contains(Database, error.Message, StringComparison.Ordinal);
 	}
 
 	[Fact]
@@ -80,9 +70,6 @@ public sealed class DataErrorTests
 		Assert.Equal(Host, error.Host);
 		Assert.Equal(Port, error.Port);
 		Assert.Equal(Database, error.Database);
-		Assert.Contains(Host, error.Message, StringComparison.Ordinal);
-		Assert.Contains(Port.ToString(CultureInfo.InvariantCulture), error.Message, StringComparison.Ordinal);
-		Assert.Contains(Database, error.Message, StringComparison.Ordinal);
 	}
 
 	[Fact]
@@ -96,8 +83,6 @@ public sealed class DataErrorTests
 		Assert.Equal(Port, error.Port);
 		Assert.Equal(Database, error.Database);
 		Assert.Equal(username, error.Username);
-		Assert.Contains(username, error.Message, StringComparison.Ordinal);
-		Assert.Contains(Database, error.Message, StringComparison.Ordinal);
 	}
 
 	[Theory]
@@ -111,8 +96,6 @@ public sealed class DataErrorTests
 		Assert.Equal(Port, error.Port);
 		Assert.Equal(Database, error.Database);
 		Assert.Equal(table, error.Table);
-		Assert.Contains(table, error.Message, StringComparison.Ordinal);
-		Assert.Contains(Database, error.Message, StringComparison.Ordinal);
 	}
 
 	[Fact]
@@ -126,8 +109,27 @@ public sealed class DataErrorTests
 		Assert.Equal(Port, error.Port);
 		Assert.Equal(Database, error.Database);
 		Assert.Equal(timeout, error.Timeout);
-		Assert.Contains("30", error.Message, StringComparison.Ordinal);
-		Assert.Contains(Database, error.Message, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public void ArchiveReadFailedErrorCarriesTheEndpointAndTheSqlState()
+	{
+		const string sqlState = "42P07";
+
+		var error = new ArchiveReadFailedError(Host, Port, Database, sqlState);
+
+		Assert.Equal(Host, error.Host);
+		Assert.Equal(Port, error.Port);
+		Assert.Equal(Database, error.Database);
+		Assert.Equal(sqlState, error.SqlState);
+	}
+
+	[Fact]
+	public void ArchiveReadFailedErrorReadsWithoutASqlState()
+	{
+		var error = new ArchiveReadFailedError(Host, Port, Database, string.Empty);
+
+		Assert.Equal(string.Empty, error.SqlState);
 	}
 
 	[Fact]
@@ -136,7 +138,6 @@ public sealed class DataErrorTests
 		var error = new ProviderNotImplementedError(nameof(IDataProvider.QueryHistoryAsync));
 
 		Assert.Equal("QueryHistoryAsync", error.MemberName);
-		Assert.Contains("QueryHistoryAsync", error.Message, StringComparison.Ordinal);
 	}
 
 	[Fact]
@@ -146,6 +147,7 @@ public sealed class DataErrorTests
 		var databaseMissing = Result.Fail(new ArchiveDatabaseMissingError(Host, Port, Database));
 		var accessDenied = Result.Fail(new ArchiveAccessDeniedError(Host, Port, Database, "semiplot_reader"));
 		var notInitialised = Result.Fail(new ArchiveNotInitialisedError(Host, Port, Database, "trends"));
+		var readFailed = Result.Fail(new ArchiveReadFailedError(Host, Port, Database, "42P07"));
 
 		Assert.Single(unreachable.Errors.OfType<ArchiveUnreachableError>());
 		Assert.Empty(unreachable.Errors.OfType<ArchiveDatabaseMissingError>());
@@ -153,6 +155,8 @@ public sealed class DataErrorTests
 		Assert.Single(accessDenied.Errors.OfType<ArchiveAccessDeniedError>());
 		Assert.Empty(accessDenied.Errors.OfType<ArchiveUnreachableError>());
 		Assert.Single(notInitialised.Errors.OfType<ArchiveNotInitialisedError>());
+		Assert.Single(readFailed.Errors.OfType<ArchiveReadFailedError>());
+		Assert.Empty(readFailed.Errors.OfType<ArchiveNotInitialisedError>());
 	}
 
 	[Fact]

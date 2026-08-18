@@ -3,6 +3,7 @@
   <ItemGroup>
     <PackageReference Include="FluentResults"/>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions"/>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"/>
     <PackageReference Include="Npgsql"/>
     <PackageReference Include="System.Reactive"/>
     <PackageReference Include="YamlDotNet"/>
@@ -10,6 +11,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SemiPlot.Core\SemiPlot.Core.csproj"/>
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SemiPlot.Tests.Data"/>
   </ItemGroup>
 
 </Project>

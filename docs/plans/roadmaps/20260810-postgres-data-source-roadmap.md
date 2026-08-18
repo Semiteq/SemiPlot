@@ -104,9 +104,13 @@ it.
 - **Statement-text pinning.** Every SQL statement is asserted character for character together with
   its parameter names, so a change in the code that the architecture docs do not describe surfaces as
   a failing diff rather than as an opinion.
-- **`EXPLAIN` assertions.** Gated integration tests assert that the windowed history query and the
-  realtime poll use the `tpk` primary key. This turns the two documented hazards — a missing layer
-  predicate and a missing variable list — into enforced invariants.
+- **`EXPLAIN` assertions.** Gated integration tests assert the plan's shape for the extent statement,
+  the windowed history query and the realtime poll: an index scan under each bounded subquery, and no
+  sequential scan of a `trends` partition holding rows. The plan cannot name `tpk` — it is the parent
+  partitioned index of a `PARTITION BY RANGE (t)` table and is never scanned, so `EXPLAIN` prints
+  each partition's own cloned `<partition>_pkey`. The shape assertion survives partition renaming and
+  turns the documented hazards — a missing layer predicate, a missing variable list and an unbounded
+  extent minimum — into enforced invariants.
 - **Gated integration suite.** Database-touching tests skip cleanly when no server answers, so the
   default suite stays green on a machine without one.
 - **Fixture rows from a real archive.** Envelope assembly and gap reconstruction are tested against
@@ -218,8 +222,10 @@ it.
   This slice also establishes the error discipline the rest of the roadmap follows — the SemiStep
   pattern (`SemiStep/Docs/architecture/error-reporting.md`), two decoupled planes:
   - **Public plane** — a finite set of sealed FluentResults error types in Core beside
-    `IDataProvider`, one per operator-visible state (malformed connection file, version mismatch,
-    unreachable database, schema mismatch, empty catalogue, query timeout, ...). Each carries
+    `IDataProvider`, one per operator-visible **failure** (malformed connection file, version
+    mismatch, unreachable database, schema mismatch, query timeout, ...). An operator-visible state
+    that is not a failure — an empty catalogue among them — travels in the success channel and gets
+    no error type; postgres-catalog-and-extent settles that split. Each carries
     structured fields via a primary constructor and builds its message in the base constructor.
     This surface is the stable contract: the UI maps it to states, tests assert on it, and it grows
     only when a new operator-visible state exists — SemiStep's published rule, "a public error type
@@ -245,35 +251,46 @@ it.
 ### Slice postgres-catalog-and-extent — Status: PENDING
 - **Scope:** The first two operations that touch the database. Load the pen catalogue from
   `semiplot_tags` — the table itself is created by `semibase create` and populated by the bench
-  seeder — mapping the stored line style onto the domain enum; an empty or absent table is a
-  distinct typed state (`EmptyTagCatalogError`-shaped, surfaced to the operator by the composition
-  slice), not a silent empty list and not a crash. Implement the archive extent using per-variable
-  bounded subqueries, because an unbounded minimum over the whole table cannot use the primary key
-  and scans the entire archive. The gated harness — container, provisioning, template cloning,
-  skip policy, traits — is owned by archive-populator and reused here unchanged. That typed-state
-  position contradicts `docs/architecture/data-integration.md`, whose error-semantics table makes an
-  empty or missing `semiplot_tags` a successful `Result` with an empty pen list; this slice settles
-  the disagreement and amends whichever document loses.
+  seeder — mapping the stored line style onto the domain enum. The empty-versus-missing question is
+  settled here and the answer splits it: an empty table is a successful read of zero rows, an absent
+  one is a failed `Result` carrying `ArchiveNotInitialisedError` with `Table` naming `semiplot_tags`.
+  No `EmptyTagCatalogError` is added — an empty catalogue is an operator-visible state and not a
+  failure sentence — and `docs/architecture/data-integration.md` carries the settled split.
+  Implement the archive extent using per-variable bounded subqueries, because an unbounded minimum
+  over the whole table cannot use the primary key and scans the entire archive; `ArchiveExtent` gains
+  an explicit empty form, because a fresh archive returns nulls and mapping them onto
+  `default(DateTime)` would hand the minimap an extent beginning in year 0001. This slice also
+  introduces the single class that owns every SQL statement on the application and provider path,
+  and the discipline that no SQL exists anywhere else on that path. The gated harness — container,
+  provisioning, template cloning, skip policy, traits — is owned by archive-populator and reused here
+  unchanged.
 - **Issue:** none
-- **Blast radius:** the provider only; the application still runs on the stub.
+- **Blast radius:** the provider, plus three files outside it —
+  `SemiPlot/SemiPlot.Core/Data/ArchiveExtent.cs` and `SemiPlot/SemiPlot.Core/Trends/PenLineStyle.cs`
+  in Core, and `SemiPlot/SemiPlot.UI/Minimap/MinimapViewModel.cs`, which follows the extent's new
+  empty form. The application still runs on the stub.
 - **Risk:** low-medium — the harness risk moved to archive-populator; what remains is the extent
   query shape.
 - **Depends on:** archive-populator, postgres-provider-scaffold
 - **Stacking base:** master
-- **Scope guard:** no history queries, no realtime, no composition changes.
+- **Scope guard:** no history queries, no realtime, and no change to the application's composition
+  root, which stays untouched and still selects the stub. `AddPostgresData` itself does change: it
+  takes `PostgresConnectionSettings` and gains registrations for the data source, the time converter,
+  the exception mapper and the missing-relation probe.
 - **Plan:** —
 - **PR:** —
 - **Branch:** —
 
 ### Slice postgres-history-read — Status: PENDING
-- **Scope:** History from a chosen layer by direct read. Introduce the single class that owns every
-  SQL statement in the solution and the discipline that no SQL exists anywhere else. Implement the
-  windowed read constrained on the variable list, the layer and the time bounds, ordered for
+- **Scope:** History from a chosen layer by direct read. Inherit the single statement class from
+  postgres-catalog-and-extent and add the windowed statement to it. Implement the windowed read
+  constrained on the variable list, the layer and the time bounds, ordered for
   per-pen assembly, with timestamps converted at the boundary. Fold the returned rows into one
   envelope per pen through the existing decimator, preserving the strictly ascending contract. Pin
   the statement text and parameter names in unit tests, and assert through `EXPLAIN` that the query
-  uses the primary key. A read exceeding the reader role's `statement_timeout` (SQLSTATE `57014`)
-  surfaces as a typed error, not a bare exception.
+  reaches its rows through an index and scans no row-holding `trends` partition sequentially — the
+  plan cannot name `tpk`, for the reason in Guard strategy. A read exceeding the reader role's
+  `statement_timeout` (SQLSTATE `57014`) surfaces as a typed error, not a bare exception.
 - **Issue:** none
 - **Blast radius:** the provider only.
 - **Risk:** medium, concentrated in envelope assembly against archive-shaped input — anchor pairs and
@@ -353,8 +370,13 @@ it.
 - **Scope:** Make the application actually use the provider. A startup probe returns a `Result`
   whose **public-plane** typed errors distinguish the states the operator must be able to tell
   apart: no connection file, a malformed file, no connection, no archive table, an unexpected table
-  shape, an empty pen catalogue, and a non-empty default partition. The UI maps each public error
-  type onto a distinct visible state — the application stays alive, draws nothing, and says why —
+  shape, and a non-empty default partition. An empty pen catalogue is not among them:
+  postgres-catalog-and-extent settles it as a success-channel state, so this slice surfaces it as a
+  UI state reached through a successful `Result` and pins it with a named test of its own, outside
+  the reflection coverage guard, which enumerates error types only. That named test is what keeps
+  `postgres-instance.md`'s "normal states with their own message" a state something can force and
+  something can see. The UI maps each public error type onto a distinct visible state — the
+  application stays alive, draws nothing, and says why —
   and a build-time reflection coverage test (see Guard strategy) makes the mapping total: every
   public error type in Core has a UI state, and internal errors reach the UI only wrapped in a
   public envelope. **There is no stub fallback**:

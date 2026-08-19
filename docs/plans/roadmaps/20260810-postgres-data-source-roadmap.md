@@ -2,7 +2,7 @@
 
 **Issues:** none declared — the repository has no issue tracker in use. This roadmap covers the
 whole span from "the viewer runs on synthetic data" to "the viewer reads a real Simple-Scada
-archive", sliced into eleven independently shippable pull requests.
+archive", sliced into twelve independently shippable pull requests.
 
 **Amended 2026-08-14** after the archive-populator sanity review: the bench is two solution
 projects provisioned by SemiBase (verified: `v0.1.0` at `aa037a4`, all commands cross-platform,
@@ -18,12 +18,11 @@ SemiPlot renders trends on synthetic data: the running application resolves `IDa
 stub, which emits random walks. `PostgresDataProvider` stands beside it and reads the pen catalogue
 and the archive extent from a real database, but its history and realtime members are still
 unimplemented and no composition selects it. The architecture for reading the Simple-Scada 2 PostgreSQL
-archive is settled and documented, and one piece of already-shipped code — the aggregation-layer
-thresholds — is wrong by a factor of four against that architecture. Eleven slices deliver a
-production provider, the local test bench it is developed against, and a live demo bench that
-retires the synthetic stub. The roadmap closes when the application, pointed at a populated
-database, draws real history, follows the live edge, selects archive layers by window width, and
-the stub project is gone.
+archive is settled and documented, and the aggregation-layer ladder already picks a resolution by
+the rule that architecture states. Twelve slices deliver a production provider, the local test bench
+it is developed against, and a live demo bench that retires the synthetic stub. The roadmap closes
+when the application, pointed at a populated database, draws real history, follows the live edge,
+selects archive layers by window width, and the stub project is gone.
 
 **Thesis:** every resolution the trend canvas needs already exists in the vendor's archive, so the
 provider only has to choose a layer, reduce it to the canvas width, and reconstruct gaps — it never
@@ -44,16 +43,16 @@ does not match the archive: the stub emits evenly spaced samples, while the arch
 pairs on change, leaves long stretches with no rows at all when a value is steady, and marks breaks
 in a quality column the stub does not model.
 
-Second, the layer machinery was written against an assumption that has since been disproved.
-`AggregationLayerExtensions.ToSampleInterval` returns the layer's period — one minute, one hour, one
-day. The vendor writes up to four points per period, so the real point spacing is a quarter of that.
-Every threshold in `ChartNavigationController.LayerForWidth` is therefore four times too
-conservative, and the viewer would read raw data across windows a coarse layer serves comfortably.
+Second, the layer machinery is right on paper and unconfirmed in the field. It follows the vendor's
+writing rule — up to four points per period, so a layer's point spacing is a quarter of its period,
+15 s, 15 min and 6 h — and `ChartNavigationController.LayerForWidth` derives every ceiling from that
+spacing and the live canvas column count. Against the stub a wrong choice draws the same curve as a
+right one, so only a run against a real archive can tell the two apart.
 
 | Area | State today |
 | --- | --- |
 | `IDataProvider` implementations | Two: the stub the application resolves, and `PostgresDataProvider`, which reads the catalogue and the extent but neither history nor the live edge |
-| Layer selection | Thresholds four times too conservative; raw reads where a layer would do |
+| Layer selection | Ceilings derived from each layer's point spacing and the live canvas column count; the choice is unconfirmed against a real archive |
 | Gap rendering | Modelled synthetically; the archive's quality marks are not read at all |
 | Time handling | `ArchiveTimeConverter` owns the naive-local-to-UTC boundary at the provider edge |
 | Tag identity | `semiplot_tags` maps numbers to names, read through `PenLineStyleReader`; the application still lists synthetic pens |
@@ -65,9 +64,9 @@ conservative, and the viewer would read raw data across windows a coarse layer s
 | --- | --- | --- |
 | Production data source | `RandomStubDataProvider` | `PostgresDataProvider`, selected by configuration; a missing or invalid configuration is a visible error state, never a silent stub |
 | Synthetic stub | composition-root default | project deleted; manual "see something in the UI" runs on a seeded live demo database through the real provider |
-| Failure reporting | two decoupled error planes (SemiStep pattern): ten sealed public types with structured fields in `SemiPlot/SemiPlot.Core/Data/Errors`, internal detail riding `CausedBy` into the log. One of the ten, `ProviderNotImplementedError`, is scaffolding and leaves with the last unimplemented member | the same two planes, with every public type mapped to a UI state and the mapping held total by a build-time reflection coverage test |
-| Layer spacing | period (1 min / 1 h / 1 d) | period ÷ 4 (15 s / 15 min / 6 h) |
-| Layer thresholds | fixed ceilings on window width | derived from `window / targetColumnCount ≥ spacing`, hysteresis retained |
+| Failure reporting | two decoupled error planes (SemiStep pattern): ten sealed public types with structured fields in `SemiPlot/SemiPlot.Core/Data/Errors`, internal detail riding `CausedBy` into the log. One of the ten, `ProviderNotImplementedError`, is scaffolding and leaves with the last unimplemented member | the same two planes, over a narrower vocabulary, with every public type mapped to a UI state by one exhaustive `switch` the compiler checks |
+| Layer spacing | period ÷ 4 (15 s / 15 min / 6 h) | unchanged; confirmed by eye against a real archive in the live-demo slice |
+| Layer thresholds | derived from `window / targetColumnCount ≥ spacing`, hysteresis retained | unchanged |
 | Wide-window reduction | client-side only | server-side pixel buckets when the layer is denser than the canvas |
 | Gaps | synthetic | reconstructed from `q = 32` / `q = 16`, distinguished from unchanged values |
 | Timestamps | `ArchiveTimeConverter` converts both ways at the provider boundary; no application path reaches it, so the running viewer is UTC throughout | converted from naive local at the provider boundary, UTC above it |
@@ -75,7 +74,7 @@ conservative, and the viewer would read raw data across windows a coarse layer s
 | Test bench | a populated local database with archive-shaped data, plus DB-free tests over fixture rows | unchanged; later slices develop against it |
 
 Every architectural choice behind this table is already recorded: `docs/architecture/scada-archive.md`
-for the archive, `data-integration.md` for the contract and the exact SQL, `postgres-instance.md`
+for the archive, `data-integration.md` for the contract and the read path, `postgres-instance.md`
 for the server, `history-read-path-evaluation.md` for why nothing of ours runs inside the database.
 
 ## Why it is safe
@@ -85,16 +84,14 @@ The blast radius is bounded by the provider seam, which was built for exactly th
 `IDataProvider` is referenced from 14 files: its own definition, the stub and its DI extension, the
 PostgreSQL provider and its DI extension, `App.axaml.cs`, `TrendCoordinator`, `MinimapViewModel`,
 and six test files including `FakeDataProvider`. Adding a second implementation touches none of them
-except the composition root: across four merged slices the PostgreSQL provider, its DI extension and
-its tests arrived beside the stub, and the composition root still resolves the stub — the startup
+except the composition root: the PostgreSQL provider, its DI extension and its tests arrived beside
+the stub across the merged slices, and the composition root still resolves the stub — the startup
 slice is where it switches.
 
-`AggregationLayer` is referenced from 20 files, but the change is confined to what
-`ToSampleInterval` returns and how `LayerForWidth` derives its ceilings. The enum itself, its
-ordering and its use as a request field are unchanged, so every consumer that merely carries a layer
-value is unaffected by construction. The consumers that would notice are the stub provider, which
-uses the interval to synthesize history, and the navigation controller's thresholds — both are
-inside the first slice.
+`AggregationLayer` is referenced from 20 files and no remaining slice changes it: the enum, its
+ordering, its use as a request field and the point spacing it exposes are settled. What the slices
+below change is which provider answers a request and how the answer is read, never how a layer is
+chosen.
 
 The database side is additive only, and the customer's production archive is read-only throughout:
 no slice inserts a row into its `trends` or `messages`, creates an index on them, or attaches a
@@ -109,13 +106,19 @@ side.
 Each guard below is a hypothesis the owning slice plan must confirm fires at HEAD before relying on
 it.
 
-- **The existing 622 tests** — 257 in `SemiPlot.Tests`, 365 in `SemiPlot.Tests.Data` of which 35 skip
-  without a database, zero failures. The layer-spacing slice changes numbers that `AggregationLayerTests`,
-  `ChartNavigationControllerTests` and `RandomStubDataProviderTests` assert directly; those tests
-  failing is the intended signal, and their updated values are the specification.
-- **Statement-text pinning.** Every SQL statement is asserted character for character together with
-  its parameter names, so a change in the code that the architecture docs do not describe surfaces as
-  a failing diff rather than as an opinion.
+- **The existing suite.** Both test projects pass with zero failures, the only skips being the
+  database-gated ones, and every slice below inherits that state: a failure in it is a regression,
+  not a pending update. The total is evidence, not the guard — it moves with every slice that adds a
+  test, so it is measured rather than tracked: at `58181ec`, `SemiPlot.Tests` passes 286 and
+  `SemiPlot.Tests.Data` 330 of 365, the 35 skipped for want of a database.
+  `AggregationLayerTests`, `ChartNavigationControllerTests` and `RandomStubDataProviderTests` hold
+  the ladder's numbers — each layer's point spacing, the ceilings derived from it and the hysteresis
+  band — so a slice that moves a rung by accident fails there first.
+- **Statement-text pinning.** Every SQL statement is asserted character for character, together with
+  its parameter names, against a literal held in the test file itself, so an accidental edit to
+  shipped SQL surfaces as a failing diff rather than as an opinion. `docs/architecture/data-integration.md`
+  names the class that holds the statements rather than quoting them normatively: the document is
+  documentation, not a build input, and one SQL change touches one file.
 - **`EXPLAIN` assertions.** Gated integration tests assert the plan's shape for the extent statement,
   the windowed history query and the realtime poll: an index scan under each bounded subquery, and no
   sequential scan of a `trends` partition holding rows. The plan cannot name `tpk` — it is the parent
@@ -131,14 +134,16 @@ it.
   carrying structured fields; tests assert `result.HasError<T>()` on type and fields, never on
   message text and never on log output. Internal errors and log strings stay free to change — only
   the public plane is pinned.
-- **Public-surface coverage test.** A build-time reflection test (added in the composition slice)
-  enumerates every public, non-abstract error type in Core and fails when one lacks a mapped UI
-  state — a new public error type cannot silently leak past the operator, and an internal error
-  cannot silently become public. SemiStep's `CoreErrorLocalizationCoverageTests` is the model.
+- **Exhaustive error-to-state mapping.** The UI maps public error types to states in one `switch`
+  over the error vocabulary, written without a catch-all arm so the compiler reports an unhandled
+  type (added in the composition slice). A new public error type cannot silently leak past the
+  operator, and an internal error cannot silently become public. SemiStep's
+  `CoreErrorLocalizationCoverageTests` gets the same guarantee by reflection at run time; the
+  compiler-checked form costs no test, no reflection, and nothing that grows with the vocabulary.
 
 ## Slices
 
-### Slice layer-ladder-spacing — Status: IN-PROGRESS
+### Slice layer-ladder-spacing — Status: DONE
 - **Scope:** Correct the aggregation-layer arithmetic. `AggregationLayer` exposes each layer's point
   spacing — a quarter of its period, so 15 s, 15 min and 6 h — instead of returning the period
   itself. `ChartNavigationController.LayerForWidth` derives its ceilings from that spacing and the
@@ -158,9 +163,9 @@ it.
 - **Scope guard:** no database, no changes to the layer enum's members or to `IDataProvider`, and no
   work on the PostgreSQL provider. The stub provider's synthesis step is in scope, because it is a
   call site of the method whose meaning changes.
-- **Plan:** docs/plans/20260810-layer-ladder-spacing.md
-- **PR:** —
-- **Branch:** layer-ladder-spacing (carries commit `e4d1cc5`, not merged)
+- **Plan:** docs/plans/completed/20260810-layer-ladder-spacing.md
+- **PR:** #5 (merged)
+- **Branch:** layer-ladder-spacing
 
 ### Slice archive-populator — Status: DONE
 - **Scope:** Build the local test bench. Extract the verified archive DDL from the customer's dump
@@ -242,7 +247,8 @@ it.
     This surface is the stable contract: the UI maps it to states, tests assert on it, and it grows
     only when a new operator-visible state exists — SemiStep's published rule, "a public error type
     exists iff a distinct operator sentence exists", enforced there by a build-time reflection
-    coverage test; the composition slice adds the same enforcement here.
+    coverage test; the composition slice enforces the same rule here through an exhaustive `switch`
+    the compiler checks.
   - **Internal plane** — provider-internal failures (Npgsql exceptions, SQLSTATE codes, parse
     details) are free to change and never leak raw across the boundary: they cross only mapped
     into a public type, with the raw detail riding `.CausedBy(...)` into the log — SemiStep's
@@ -302,15 +308,15 @@ it.
   constrained on the variable list, the layer and the time bounds, ordered for
   per-pen assembly, with timestamps converted at the boundary. Fold the returned rows into one
   envelope per pen through the existing decimator, preserving the strictly ascending contract. Pin
-  the statement text and parameter names in unit tests, and assert through `EXPLAIN` that the query
-  reaches its rows through an index and scans no row-holding `trends` partition sequentially — the
-  plan cannot name `tpk`, for the reason in Guard strategy. The typed timeout path is inherited, not
-  built: `ArchiveExceptionMapper` already maps SQLSTATE `57014` onto `ArchiveQueryTimedOutError`
-  carrying the effective bound `ArchiveDataSource` reads back from `pg_settings` per physical
-  connection, and the windowed read travels it unchanged. `QueryHistoryAsync` is the last body that
-  returns `ProviderNotImplementedError`, so this slice also **owns the deletion of that type** — the
-  temporary error the scaffold gave its unimplemented members — together with the tests that assert
-  on it.
+  the statement text and its parameter names character for character against a literal in the unit
+  test, and assert through `EXPLAIN` that the query reaches its rows through an index and scans no
+  row-holding `trends` partition sequentially — the plan cannot name `tpk`, for the reason in Guard
+  strategy. The typed timeout path is inherited, not built: `ArchiveExceptionMapper` already maps
+  SQLSTATE `57014` onto `ArchiveQueryTimedOutError`, and the windowed read travels it unchanged;
+  which bound that error reports is provider-simplification's to settle. `QueryHistoryAsync` is the
+  last body that returns `ProviderNotImplementedError`, so this slice also **owns the deletion of
+  that type** — the temporary error the scaffold gave its unimplemented members — together with the
+  tests that assert on it.
 - **Issue:** none
 - **Blast radius:** the provider only.
 - **Risk:** medium, concentrated in envelope assembly against archive-shaped input — anchor pairs and
@@ -324,40 +330,76 @@ it.
 - **PR:** —
 - **Branch:** —
 
-### Slice postgres-bucketed-read — Status: PENDING
-- **Scope:** Server-side reduction to pixel columns for windows where the chosen layer is still
-  denser than the canvas. A bucketing statement returning at most one row per column per pen with
-  the minimum, maximum, first and last values, the edge timestamps, the edge quality codes and a
-  break count, with buckets aligned to the window start so the leftmost column is not clipped. The
-  provider chooses between this path and the direct read by the expected row count. Statement text
-  pinned; an integration test compares bucketed output against the same window read directly.
+### Slice provider-simplification — Status: PENDING
+- **Scope:** Take back three things the shipped provider carries for no reader. Two are deletions.
+  `MissingRelationProbe` goes: it costs a class, a network round trip inside an error path, and its
+  own tests and registration, to name which of two relations a `42P01` refers to — in a state that
+  occurs once per site lifetime, and where the log already carries the raw exception naming the
+  table. Each read reports the relation its own statement touches instead. `ArchiveDataSource`
+  collapses to a fixed generous command timeout: the physical-connection initializer, the
+  `pg_settings` read-back and the cached bound exist so `ArchiveQueryTimedOutError` can report the
+  server's exact number, which nobody has asked to see. Both error types keep their public shape and
+  their fields; only the value in the reported timeout and the relation name change.
+  This slice also brings the shipped statement pinning onto the guard the roadmap states: the
+  catalogue and extent statements are pinned against a literal in the test instead of against fenced
+  blocks read out of `docs/architecture/data-integration.md` at run time, the hand-rolled fence
+  parser and the tests guarding it go, and the document is trimmed to name the class that holds the
+  statements. The SQL text itself does not change — the pinned literal is the shipped constant.
 - **Issue:** none
-- **Blast radius:** the provider only; adds a second read path alongside the first.
-- **Risk:** medium, concentrated in bucket alignment and in the choice threshold between the two
-  paths.
+- **Blast radius:** `SemiPlot.DataSource.Postgres` and its tests — the provider, its DI extension,
+  the exception mapper's timeout source, and the tests covering the three — plus the SQL section of
+  `docs/architecture/data-integration.md`. No other project and no application code.
+- **Risk:** low — each change deletes a mechanism rather than reshapes one, and no caller outside
+  the provider project reads what is removed.
 - **Depends on:** postgres-history-read
 - **Stacking base:** master
-- **Scope guard:** no gap reconstruction changes, no realtime, no layer-selection changes.
+- **Scope guard:** no behaviour change beyond the value reported in `ArchiveQueryTimedOutError` and
+  the relation named in one rare `42P01`; no new queries and no edit to the text of an existing one;
+  no error-type merges — those belong to postgres-startup-and-composition.
 - **Plan:** —
 - **PR:** —
 - **Branch:** —
 
 ### Slice postgres-gap-reconstruction — Status: PENDING
-- **Scope:** Make breaks render correctly on both read paths. A sample marked as the last before a
-  break is followed by a gap anchor; the first sample after a break resumes the line; and a long run
-  with no rows that is not preceded by a break marker renders as a horizontal continuation rather
-  than as a break. The same reconstruction is driven from the bucketed path's edge quality codes and
-  break count. Tests cover both paths, including a break spanning several buckets, and run against
-  the fixture rows extracted from a real archive as well as against the populated database.
+- **Scope:** Make breaks render correctly on the direct read path. A sample marked as the last before
+  a break is followed by a gap anchor; the first sample after a break resumes the line; and a long
+  run with no rows that is not preceded by a break marker renders as a horizontal continuation rather
+  than as a break. Tests run against the fixture rows extracted from a real archive as well as against
+  the populated database. This precedes bucketing because a misdrawn break is operator-visible
+  incorrectness while bucketing is a transfer optimisation, and correctness does not wait on an
+  optimisation: reconstruction on the direct read path needs nothing that bucketing provides.
 - **Issue:** none
 - **Blast radius:** the provider's envelope assembly; the rendering path above it already understands
   gap anchors.
 - **Risk:** high relative to the rest — this is the behaviour most likely to be subtly wrong, and
   wrong in a way that looks plausible on screen. A break drawn as a straight line across hours is
   the failure mode that misleads an operator.
-- **Depends on:** postgres-bucketed-read
+- **Depends on:** postgres-history-read
 - **Stacking base:** master
-- **Scope guard:** no changes to the statements themselves beyond what gap data requires; no realtime.
+- **Scope guard:** no changes to the statements themselves beyond what gap data requires; no
+  server-side bucketing; no realtime.
+- **Plan:** —
+- **PR:** —
+- **Branch:** —
+
+### Slice postgres-bucketed-read — Status: PENDING
+- **Scope:** Server-side reduction to pixel columns for windows where the chosen layer is still
+  denser than the canvas. A bucketing statement returning at most one row per column per pen with
+  the minimum, maximum, first and last values, the edge timestamps, the edge quality codes and a
+  break count, with buckets aligned to the window start so the leftmost column is not clipped. The
+  provider chooses between this path and the direct read by the expected row count. The gap
+  reconstruction already shipped on the direct path is fed from the bucketed path's edge quality
+  codes and break count, covering a break that spans several buckets. Statement text and parameter
+  names pinned character for character against a literal in the test; an integration test compares
+  bucketed output against the same window read directly.
+- **Issue:** none
+- **Blast radius:** the provider only; adds a second read path alongside the first.
+- **Risk:** medium, concentrated in bucket alignment and in the choice threshold between the two
+  paths.
+- **Depends on:** postgres-gap-reconstruction
+- **Stacking base:** master
+- **Scope guard:** no gap semantics beyond feeding the shipped reconstruction from bucket edges, no
+  realtime, no layer-selection changes.
 - **Plan:** —
 - **PR:** —
 - **Branch:** —
@@ -389,20 +431,32 @@ it.
 - **Scope:** Make the application actually use the provider. A startup probe returns a `Result`
   whose **public-plane** typed errors distinguish the states the operator must be able to tell
   apart. Most of that vocabulary is already shipped: the sealed types in
-  `SemiPlot/SemiPlot.Core/Data/Errors` cover the connection file — absent, malformed, wrong version —
-  and the database — unreachable, missing, access denied, not initialised, query timed out, read
-  failed on an unmapped SQLSTATE — and every one of them needs its own visible state here. Two
-  operator states have no type yet and are genuinely new work here: an
-  unexpected table shape, and a non-empty default partition. An empty pen catalogue is not among them:
-  postgres-catalog-and-extent settles it as a success-channel state, so this slice surfaces it as a
-  UI state reached through a successful `Result` and pins it with a named test of its own, outside
-  the reflection coverage guard, which enumerates error types only. That named test is what keeps
-  `postgres-instance.md`'s "normal states with their own message" a state something can force and
-  something can see. The UI maps each public error type onto a distinct visible state — the
+  `SemiPlot/SemiPlot.Core/Data/Errors` cover the connection file — absent, malformed, wrong
+  version — and the database — unreachable, missing, access denied, not initialised, query timed
+  out, read failed on an unmapped SQLSTATE — and each of them, after the two merges below, needs its
+  own visible state here. Two operator states have no type yet and are genuinely new work here: an
+  unexpected table shape, and a non-empty default partition. The two merges narrow the vocabulary
+  while it is being mapped, each pair costing a state without buying the operator a distinction:
+  `ConnectionFileVersionMismatchError` folds into `ConnectionFileInvalidError` as a
+  `ConnectionFileProblem` value, the file format having had one version ever; and
+  `ArchiveDatabaseMissingError` folds into `ArchiveNotInitialisedError`, both being "this server
+  carries no archive to read yet", discriminated by which object is absent — the database, the
+  SCADA's `trends`, or SemiBase's `semiplot_tags` — which is already how the surviving type routes
+  its remedy. The mapping is written once and against a settled vocabulary, which is why
+  provider-simplification lands before this slice rather than after it: it changes what
+  `ArchiveQueryTimedOutError` carries, and mapping a vocabulary that then moves underneath means
+  mapping it twice. An empty pen catalogue is not among the
+  new types: postgres-catalog-and-extent settles it as a success-channel state, so this slice
+  surfaces it as a UI state reached through a successful `Result` and pins it with a named test of
+  its own, separate from the mapping guard, which covers error types only. That named test is what
+  keeps `postgres-instance.md`'s "normal states with their own message" a state something can force
+  and something can see. The UI maps each public error type onto a distinct visible state — the
   application stays alive, draws nothing, and says why —
-  and a build-time reflection coverage test (see Guard strategy) makes the mapping total: every
+  in one exhaustive `switch` the compiler checks (see Guard strategy), so the mapping is total: every
   public error type in Core has a UI state, and internal errors reach the UI only wrapped in a
-  public envelope. **There is no stub fallback**:
+  public envelope. Whether an unhandled type fails the build or only warns turns on
+  `TreatWarningsAsErrors`, which `SemiPlot/Directory.Build.props` does not set; making that gate hard
+  is this slice's plan to settle. **There is no stub fallback**:
   the database is part of the service, and an unreachable database is an error, never silently
   substituted synthetic data. The stub remains selectable only by an explicit development flag until
   the final slice deletes it. DI tests cover the selection; a thin end-to-end suite (5–7 journeys on
@@ -418,10 +472,11 @@ it.
 - **Risk:** medium, concentrated in the error-state mapping and in keeping the E2E suite thin: the
   layer boundaries are already covered by contract, so E2E asserts composition, not behaviour
   matrices.
-- **Depends on:** postgres-gap-reconstruction, postgres-realtime-poll
+- **Depends on:** postgres-bucketed-read, postgres-realtime-poll, provider-simplification
 - **Stacking base:** master
 - **Scope guard:** no new queries; no UI redesign of the error states beyond surfacing them; no
-  stub deletion — that is the final slice's.
+  stub deletion — that is the final slice's. The two error-type merges are in scope only as far as
+  the types themselves and their call sites; no other error type is reshaped.
 - **Plan:** —
 - **PR:** —
 - **Branch:** —
@@ -440,6 +495,15 @@ it.
   entry, its DI registration and the development flag; check nothing else references its classes
   (`MinMaxDecimator` in particular) and relocate anything that is still needed. `FakeDataProvider`
   in the test project stays — it is a test double, not the stub.
+  This slice also owns the eyes-on confirmation of the layer ladder, which layer-ladder-spacing
+  deliberately deferred: against `RandomStubDataProvider` a wrong layer has no observable
+  consequence, because the stub synthesises points at whatever spacing `ToPointSpacing` hands it and
+  then decimates to the canvas column count, so the drawn curve is identical whether the ladder is
+  right or wrong. On a real archive the difference is large — too fine a layer reads an order of
+  magnitude more rows, too coarse loses detail. With the application drawing real data, maximise and
+  restore the window at a fixed time span and confirm the toolbar's layer readout follows the canvas
+  width and does not oscillate at a rung boundary. This is the first point at which the check can
+  tell a correct ladder from a broken one.
 - **Issue:** none
 - **Blast radius:** the seeder tool, `scripts/`, the composition root, and one deleted project.
 - **Risk:** low — the demo path exercises code every earlier slice already tests; the deletion is
@@ -454,11 +518,11 @@ it.
 
 ## Close condition
 
-Every slice not marked DROPPED has a MERGED PR. No slice owns an issue, so no issue closes
-automatically; there is no tracking issue to close by hand. The functional close condition is that
-the application, pointed at a database seeded by the bench, draws real history, follows a live
-edge moved by the `--follow` demo writer, selects layers by window width, breaks the line only
-where the archive says a break occurred, and `SemiPlot.DataSource.Stub` no longer exists. The
+Every one of the twelve slices not marked DROPPED has a MERGED PR. No slice owns an issue, so no
+issue closes automatically; there is no tracking issue to close by hand. The functional close
+condition is that the application, pointed at a database seeded by the bench, draws real history,
+follows a live edge moved by the `--follow` demo writer, selects layers by window width, breaks the
+line only where the archive says a break occurred, and `SemiPlot.DataSource.Stub` no longer exists. The
 end-to-end suite of the composition slice asserts this automatically; the demo stand confirms it
 by eye.
 

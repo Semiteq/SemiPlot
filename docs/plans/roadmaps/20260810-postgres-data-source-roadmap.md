@@ -418,10 +418,21 @@ it.
   derived command timeout with a fixed backstop, so a hung-but-accepting server otherwise leaves
   startup waiting the full backstop before `ArchiveUnreachableError` exists to map to a state.
 
-  A thin gated suite on `Avalonia.Headless` against a bench-seeded database proves the composition:
-  pens listed from `semiplot_tags`, history drawn with counts consistent with the seed, layer switch
-  on zoom, the empty-catalogue state, and one test per startup error state asserting the UI state,
-  never log text.
+  The composition is proved without a database. `App`'s private startup wiring is extracted into a
+  testable orchestrator returning a `Result` — today `LoadPens` reads `.GetAwaiter().GetResult().Value`
+  with no failure check inside a synchronous `AfterSetup`, which against a real server is an
+  unhandled crash on the first unreachable one. Composition tests resolve the whole graph over
+  `AddPostgresData` plus `AddUi`; the error-state mapping gets a test per public type driven by
+  `FakeDataProvider`; window seeding and pen dropping are view-model logic tested the same way. The
+  plan carries a manual protocol against the seeded bench for what those cannot reach: pens from
+  `semiplot_tags`, history counts, layer switch on zoom, and each startup error state forced by hand.
+
+  A headless end-to-end suite is deliberately **not** here. It needs Avalonia and a container at
+  once, and no CI runner provides both: `build-and-test` runs on `windows-latest`, which cannot run
+  Linux containers, and `data-tests` runs on `ubuntu-latest`, which cannot build a project
+  referencing `SemiPlot.UI`. Such a suite would be a developer-machine check that skips in CI
+  forever, so it waits for `avalonia-12-bump` to make it cheap and lands with the journeys in
+  `postgres-live-edge-and-demo`.
 - **Issue:** none
 - **Blast radius:** the composition root, the startup path, the chart view model and the navigation
   controller — the first slice that changes what the running application does by default.
@@ -429,11 +440,47 @@ it.
   synthetic equivalent to have been exercised against.
 - **Depends on:** provider-simplification
 - **Stacking base:** master
-- **Scope guard:** no change to any provider project and no new SQL. No gap semantics — a `q = 32`
-  break still draws as a step until postgres-gap-reconstruction. No realtime; `Subscribe` stays
-  empty and the live edge is static. No new error types beyond the two merges — the unexpected table
-  shape and the non-empty default partition arrive with the closing slice, and the exhaustive switch
-  forces their mapping then. No stub deletion; the flag stays until the closing slice.
+- **Scope guard:** no new SQL, no statement changes, and no provider behaviour change beyond the two
+  error-type merges, which necessarily edit `ArchiveExceptionMapper` and `PostgresConnectionLoader`
+  where those two types are constructed. No gap semantics — a `q = 32` break still draws as a step
+  until postgres-gap-reconstruction. No realtime; `Subscribe` stays empty and the live edge is
+  static. No new error types beyond the two merges — the unexpected table shape and the non-empty
+  default partition arrive with the closing slice, and the exhaustive switch forces their mapping
+  then. No stub deletion; the flag stays until the closing slice. No framework version changes;
+  the Avalonia bump is its own slice.
+- **Plan:** —
+- **PR:** —
+- **Branch:** —
+
+### Slice avalonia-12-bump — Status: PENDING
+- **Scope:** Take the UI to Avalonia 12 and both test projects to xunit v3, which `CLAUDE.md`
+  already names as the intended end state. Seven Avalonia packages move from 11.3.8 to 12.0.x,
+  `ReactiveUI.Avalonia` follows, `ScottPlot.Avalonia` moves 5.1.57 to 5.1.59 — the release that
+  depends on Avalonia 12 — and `SemiPlot.Tests` converts from xunit 2.9.3 to xunit v3, carrying its
+  roughly ninety `[AvaloniaFact]` and `[AvaloniaTheory]` tests across. The stack is not speculative:
+  a sibling repository of this operator's already ships `Avalonia.Headless.XUnit` 12.0.5 and
+  `xunit.v3` 3.2.2 in one project against Avalonia 12.0.5.
+
+  **The two test projects do not merge**, and `CLAUDE.md`'s exit path never said they would.
+  `SemiPlot.Tests.Data` stays plain `net10.0` because the `data-tests` job runs on `ubuntu-latest`,
+  the only runner that can start a container; a project referencing `SemiPlot.UI` cannot build
+  there. What dissolves is the xunit-major mismatch, after which `SemiPlot.Tests` may take a project
+  reference on `SemiPlot.Tests.Data` and consume the container harness directly — which is what
+  makes the end-to-end journeys cheap in the slice that owns them.
+
+  This slice lands after postgres-wire-up on purpose: by then the application draws real archive
+  data, so the bump has something to be judged against. Against the stub a rendering regression
+  draws the same curve as correct behaviour.
+- **Issue:** none
+- **Blast radius:** every Avalonia and ScottPlot reference, `SemiPlot.Tests`' framework and test
+  attributes, and the view code that touches input routing.
+- **Risk:** medium, concentrated in `ScottPlot.Avalonia` 5.1.59's `AvaPlot` on Avalonia 12 — the one
+  piece the sibling repository does not de-risk, since it carries no ScottPlot — and in the
+  pointer handling of `TrendChartView` and `MinimapView`.
+- **Depends on:** postgres-wire-up
+- **Stacking base:** master
+- **Scope guard:** no behaviour changes and no new features; a test may change only where the
+  framework forces it. No provider work.
 - **Plan:** —
 - **PR:** —
 - **Branch:** —
@@ -491,7 +538,7 @@ it.
 - **Blast radius:** the provider's realtime member, the composition root's provider selection, the
   deleted stub project and every reference to it, plus the new demo tool.
 - **Risk:** medium, concentrated in the seam invariant and in poll error handling.
-- **Depends on:** postgres-wire-up, postgres-gap-reconstruction
+- **Depends on:** postgres-wire-up, postgres-gap-reconstruction, avalonia-12-bump
 - **Stacking base:** master
 - **Scope guard:** no coordinator batching changes; no bucketing; no new error types beyond the
   connection-state change the poll needs.
@@ -523,8 +570,8 @@ issue closes automatically; there is no tracking issue to close by hand. The fun
 condition is that the application, pointed at a database seeded by the bench, draws real history,
 follows a live edge moved by the `--follow` demo writer, selects layers by window width, breaks the
 line only where the archive says a break occurred, and `SemiPlot.DataSource.Stub` no longer exists. The
-end-to-end suite of the composition slice asserts this automatically; the demo stand confirms it
-by eye.
+end-to-end journeys in postgres-live-edge-and-demo assert this on a developer machine; the demo
+stand confirms it by eye.
 
 ## Rejected alternatives
 

@@ -10,8 +10,10 @@ using Xunit;
 namespace SemiPlot.Tests.Data.Postgres;
 
 // Pins the provider's statement text against the architecture document itself, read at run time, so that
-// editing one side alone fails here. A literal copied into this file would only catch an edit to the
-// code, which is the half nobody needs pinning.
+// editing one side alone fails here. A literal copied into this file would catch the code half only, and
+// it is the weaker guard rather than the cheaper one: the document is the artifact each slice's brief is
+// assembled from, so a fence that silently stops describing the shipped statement corrupts the next
+// slice's plan while every test stays green.
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
 [Trait("Category", "Unit")]

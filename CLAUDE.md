@@ -189,6 +189,12 @@ No abbreviations in names.
   stub evolves for UI reasons while the bench stays frozen, a golden-digest test pins its output, and
   later slices develop against that output. `sql/semiplot_dev.sql` is an `EmbeddedResource` of that
   project. Roles, grants and `semiplot_tags` are SemiBase's and are never defined in this repository.
+- A diagnostic question the exception itself cannot answer is resolved by a cold-path reader: an
+  internal sealed type beside the provider that opens a fresh connection on the failure path
+  (`MissingRelationProbe` for `42P01`, `StatementTimeoutReader` for `57014`). It runs from
+  `PostgresDataProvider.MapAsync`, never from `ArchiveExceptionMapper`, which stays synchronous, pure
+  and unit-testable. Add one only when a distinct operator remedy depends on the answer — an extra
+  round trip against a server that has just failed buys nothing otherwise.
 
 ---
 

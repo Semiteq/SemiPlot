@@ -434,7 +434,7 @@ commissioning unfinished against provisioning unfinished — which is what the p
 | `ArchiveDatabaseMissingError` | host, port, database | The server answers but the database does not exist |
 | `ArchiveAccessDeniedError` | host, port, database, username | The credentials or the grants are wrong |
 | `ArchiveNotInitialisedError` | host, port, database, table | The database is there but a table the read needs is not |
-| `ArchiveQueryTimedOutError` | host, port, database, timeout (the effective server `statement_timeout` the failing session ran under, read back from that session) | The read exceeded its configured bound |
+| `ArchiveQueryTimedOutError` | host, port, database, timeout (the effective server `statement_timeout` the failing read ran under, read on the failure path from a session of the same reader role; `TimeSpan.Zero` means there is no bound to report — the read-back could not run, or the server bounds nothing) | The read exceeded its configured bound, or the server ended it and no bound can be named |
 | `ArchiveReadFailedError` | host, port, database, sqlState (empty when the failure carried none) | The archive rejected the read for a reason this build does not recognise |
 
 The three connection-file types are raised by the settings loader. The six `Archive*` types are the
@@ -453,6 +453,27 @@ pans, so the two will have to be told apart — but no member of `IDataProvider`
 `CancellationToken`, so no read on the provider path hands one down, and a caller's own cancellation
 raises `OperationCanceledException`, which the mapper rethrows rather than turning into a failed
 `Result`. The slice that gives the interface tokens owns splitting the two.
+
+The bound the error carries is read only once a `57014` has already arrived, on the same
+asynchronous failure path that runs the missing-relation probe, from a fresh connection of the same
+reader role. No successful read pays for it. The number is the one the failing read ran under
+because SemiPlot sends no `statement_timeout` in any form, so every session of that role runs under
+the role default. That holds while the default is static: role and database defaults bind at backend
+start and a pooled physical connection keeps its startup value, so an administrative change to the
+role default mid-run can leave one report one increment stale. A read-back that cannot run reports
+`TimeSpan.Zero`, and so does a server that bounds nothing; the two stay apart in the log and
+collapse in the operator sentence, because neither has a number.
+
+**A shipped limitation: the read-back runs under the bound that just fired.** It opens a session of
+the same reader role, so a `statement_timeout` smaller than the read-back itself cuts the read-back
+too and the error falls to the no-number wording. The read-back materialises `pg_show_all_settings()`
+and measures 4.246 ms cold and 1.6 to 1.8 ms warm on a `postgres:17-alpine` container, so the
+limitation bites only at a bound of a few milliseconds. That is the misconfigured-tiny-bound site
+where the number would be most diagnostic, and it is accepted rather than solved. It is no ground an
+eager read at connection time held either: that read ran the same `pg_settings` query under the same
+role on every physical connection open and let its failure out, so a bound below it failed the
+connection open itself, left the cached value unset and reported the same absent number. The lazy
+read costs no successful connection a round trip, and the log carries the reader's own failure.
 
 ## Configuration
 
@@ -476,10 +497,14 @@ the archive's naive timestamps are read in. The file states no query bound: the 
 `semiplot_reader` role and SemiBase owns it (`postgres-instance.md`), and SemiPlot sends no
 `statement_timeout` in any form. The connection string therefore carries `Command Timeout=0` so
 Npgsql's implicit 30 s client bound cannot abort a read before the server answers `57014`, and the
-read path derives its own per-command backstop from the effective bound it reads back from the
-session. Loading returns a `Result`; a malformed file — unreadable, unparseable, missing a key,
-holding a value outside its range, or naming a zone the machine does not know — is reported at
-startup rather than at first query.
+read path stamps its own per-command backstop, a fixed five minutes, on every command it builds.
+That backstop is a fixed bound rather than one derived from a value read at connection time, so it
+is no longer guaranteed above the server's: on a site whose reader role carries a
+`statement_timeout` above five minutes the client cancel and the server's own cancel race, and a
+slow-but-alive read can be reported as `ArchiveUnreachableError` rather than as
+`ArchiveQueryTimedOutError`. Loading returns a `Result`; a malformed file — unreadable, unparseable,
+missing a key, holding a value outside its range, or naming a zone the machine does not know — is
+reported at startup rather than at first query.
 
 The password is stored in plain text. The mitigation is that SemiPlot connects under a read-only
 role, so a leaked credential exposes reading the archive and nothing else. File permissions are the

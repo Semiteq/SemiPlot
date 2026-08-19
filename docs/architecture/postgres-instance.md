@@ -44,7 +44,10 @@ session SemiPlot opens. They are defaults, not enforcement: PostgreSQL classes `
 `USERSET`, and a startup option or a plain `SET` overrides a role default from the client side.
 SemiPlot's contract is that it never sends `statement_timeout` in any form, so the value the reader
 role carries is the value every SemiPlot session runs under; the client reads the effective value
-back to report which bound a failed read hit.
+only after a read has failed, from a fresh session of the same role, to report which bound that read
+hit. The number is stable while the role default is: role and database defaults bind at backend
+start and a pooled physical connection keeps its startup value, so an administrative change to the
+default mid-run can leave one report one increment stale.
 
 The reader credential is what makes the plaintext password in SemiPlot's configuration file an
 acceptable risk: it grants reading process history and nothing more.

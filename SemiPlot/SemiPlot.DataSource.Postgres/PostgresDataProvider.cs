@@ -20,7 +20,8 @@ namespace SemiPlot.DataSource.Postgres;
 /// <see cref="QueryHistoryAsync"/> a window of one layer, all crossing the boundary in UTC. Every failure
 /// leaves through the public error vocabulary — nothing internal crosses
 /// the boundary — and a <c>42P01</c> is resolved to a relation name by <see cref="MissingRelationProbe"/>
-/// before it is mapped, with the read supplying its own statement's fallback when the probe cannot answer.
+/// before it is mapped, with the read supplying its own statement's fallback when the probe cannot answer;
+/// a <c>57014</c> is likewise given the server's effective bound by <see cref="StatementTimeoutReader"/>.
 /// </summary>
 public sealed class PostgresDataProvider : IDataProvider
 {
@@ -28,26 +29,30 @@ public sealed class PostgresDataProvider : IDataProvider
 	private readonly ArchiveTimeConverter _timeConverter;
 	private readonly ArchiveExceptionMapper _exceptionMapper;
 	private readonly MissingRelationProbe _missingRelationProbe;
+	private readonly StatementTimeoutReader _statementTimeoutReader;
 	private readonly ILogger<PostgresDataProvider> _logger;
 
-	// Internal because two of its parameters are: a public constructor over an internal type is CS0051.
+	// Internal because three of its parameters are: a public constructor over an internal type is CS0051.
 	internal PostgresDataProvider(
 		ArchiveDataSource dataSource,
 		ArchiveTimeConverter timeConverter,
 		ArchiveExceptionMapper exceptionMapper,
 		MissingRelationProbe missingRelationProbe,
+		StatementTimeoutReader statementTimeoutReader,
 		ILogger<PostgresDataProvider> logger)
 	{
 		ArgumentNullException.ThrowIfNull(dataSource);
 		ArgumentNullException.ThrowIfNull(timeConverter);
 		ArgumentNullException.ThrowIfNull(exceptionMapper);
 		ArgumentNullException.ThrowIfNull(missingRelationProbe);
+		ArgumentNullException.ThrowIfNull(statementTimeoutReader);
 		ArgumentNullException.ThrowIfNull(logger);
 
 		_dataSource = dataSource;
 		_timeConverter = timeConverter;
 		_exceptionMapper = exceptionMapper;
 		_missingRelationProbe = missingRelationProbe;
+		_statementTimeoutReader = statementTimeoutReader;
 		_logger = logger;
 	}
 
@@ -287,17 +292,26 @@ public sealed class PostgresDataProvider : IDataProvider
 	}
 
 	// The probe's answer, or this read's own fallback relation when it has none, fills
-	// ArchiveNotInitialisedError.Table, which consumers route on and which can never be empty.
+	// ArchiveNotInitialisedError.Table, which consumers route on and which can never be empty. The
+	// statement-timeout read is the same shape and runs on 57014 only: both cost a connection and a query
+	// against a server that has already failed one, so no other path pays for them.
 	private async Task<Error> MapAsync(Exception exception, string fallbackRelation)
 	{
 		if (exception is PostgresException { SqlState: PostgresErrorCodes.UndefinedTable })
 		{
 			var missingRelation = await _missingRelationProbe.FindMissingRelationAsync().ConfigureAwait(false);
 
-			return _exceptionMapper.Map(exception, missingRelation ?? fallbackRelation);
+			return _exceptionMapper.Map(exception, missingRelation ?? fallbackRelation, effectiveBound: null);
 		}
 
-		var error = _exceptionMapper.Map(exception);
+		if (exception is PostgresException { SqlState: PostgresErrorCodes.QueryCanceled })
+		{
+			var effectiveBound = await _statementTimeoutReader.ReadEffectiveBoundAsync().ConfigureAwait(false);
+
+			return _exceptionMapper.Map(exception, missingRelation: null, effectiveBound);
+		}
+
+		var error = _exceptionMapper.Map(exception, missingRelation: null, effectiveBound: null);
 
 		// A read that fails with no server answer behind it — a null reference or a bad cast inside the row
 		// read — is a fault in this code, and ArchiveReadFailedError alone dresses it as a server state. It

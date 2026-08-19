@@ -302,7 +302,7 @@ it.
 - **PR:** #4 (merged)
 - **Branch:** postgres-catalog-and-extent
 
-### Slice postgres-history-read — Status: PENDING
+### Slice postgres-history-read — Status: DONE
 - **Scope:** History from a chosen layer by direct read. Inherit the single statement class from
   postgres-catalog-and-extent and add the windowed statement to it. Implement the windowed read
   constrained on the variable list, the layer and the time bounds, ordered for per-pen assembly,
@@ -332,9 +332,9 @@ it.
 - **Stacking base:** master
 - **Scope guard:** no server-side bucketing, no gap reconstruction beyond what the decimator already
   does, no realtime.
-- **Plan:** —
-- **PR:** —
-- **Branch:** —
+- **Plan:** docs/plans/completed/20260819-postgres-history-read.md
+- **PR:** #6 (merged)
+- **Branch:** postgres-history-read
 
 ### Slice provider-simplification — Status: PENDING
 - **Scope:** Take back three things the shipped provider carries for no reader. Two are deletions.

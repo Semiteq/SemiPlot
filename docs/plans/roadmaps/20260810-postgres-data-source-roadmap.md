@@ -64,7 +64,7 @@ right one, so only a run against a real archive can tell the two apart.
 | --- | --- | --- |
 | Production data source | `RandomStubDataProvider` | `PostgresDataProvider`, selected by configuration; a missing or invalid configuration is a visible error state, never a silent stub |
 | Synthetic stub | composition-root default | project deleted; manual "see something in the UI" runs on a seeded live demo database through the real provider |
-| Failure reporting | two decoupled error planes (SemiStep pattern): ten sealed public types with structured fields in `SemiPlot/SemiPlot.Core/Data/Errors`, internal detail riding `CausedBy` into the log. One of the ten, `ProviderNotImplementedError`, is scaffolding and leaves with the last unimplemented member | the same two planes, over a narrower vocabulary, with every public type mapped to a UI state by one exhaustive `switch` the compiler checks |
+| Failure reporting | two decoupled error planes (SemiStep pattern): nine sealed public types with structured fields in `SemiPlot/SemiPlot.Core/Data/Errors`, internal detail riding `CausedBy` into the log | the same two planes, over a narrower vocabulary, with every public type mapped to a UI state by one exhaustive `switch` the compiler checks |
 | Layer spacing | period ÷ 4 (15 s / 15 min / 6 h) | unchanged; confirmed by eye against a real archive in the live-demo slice |
 | Layer thresholds | derived from `window / targetColumnCount ≥ spacing`, hysteresis retained | unchanged |
 | Wide-window reduction | client-side only | server-side pixel buckets when the layer is denser than the canvas |
@@ -305,21 +305,24 @@ it.
 ### Slice postgres-history-read — Status: PENDING
 - **Scope:** History from a chosen layer by direct read. Inherit the single statement class from
   postgres-catalog-and-extent and add the windowed statement to it. Implement the windowed read
-  constrained on the variable list, the layer and the time bounds, ordered for
-  per-pen assembly, with timestamps converted at the boundary. Move `MinMaxDecimator` verbatim from
+  constrained on the variable list, the layer and the time bounds, ordered for per-pen assembly,
+  with timestamps converted at the boundary. Move `MinMaxDecimator` verbatim from
   `SemiPlot.DataSource.Stub` to `SemiPlot.Core/Trends` — both providers fold through it and neither
   data-source project may reference the other — then fold the returned rows into one envelope per
   pen through it, dropping any row whose converted timestamp does not strictly ascend, which is the
-  daylight-saving artefact `data-integration.md` assigns to the envelope assembler. Pin
-  the statement text and its parameter names character for character against a literal in the unit
-  test, and assert through `EXPLAIN` that the query reaches its rows through an index and scans no
-  row-holding `trends` partition sequentially — the plan cannot name `tpk`, for the reason in Guard
-  strategy. The typed timeout path is inherited, not built: `ArchiveExceptionMapper` already maps
-  SQLSTATE `57014` onto `ArchiveQueryTimedOutError`, and the windowed read travels it unchanged;
-  which bound that error reports is provider-simplification's to settle. `QueryHistoryAsync` is the
-  last body that returns `ProviderNotImplementedError`, so this slice also **owns the deletion of
-  that type** — the temporary error the scaffold gave its unimplemented members — together with the
-  tests that assert on it.
+  daylight-saving artefact `data-integration.md` assigns to the envelope assembler. Pin the
+  statement text character for character against the fenced block
+  `docs/architecture/data-integration.md` carries, the way the two shipped statements are pinned,
+  and pin the binder against that statement's own parameter names in a unit test of its own. Assert
+  through `EXPLAIN` that the query reaches its rows through an index, or a bitmap driven by one, and
+  scans no row-holding `trends` partition sequentially — the plan cannot name `tpk`, for the reason
+  in Guard strategy. The typed timeout path is inherited, not built: `ArchiveExceptionMapper`
+  already maps SQLSTATE `57014` onto `ArchiveQueryTimedOutError`, and the windowed read travels it
+  unchanged; which bound that error reports is provider-simplification's to settle.
+  `QueryHistoryAsync` is the last body returning the temporary not-implemented error the scaffold
+  gave its unimplemented members, so this slice also **owns the deletion of that type** together
+  with the tests that assert on it. A pen with no rows in the window gets no envelope, an interim
+  rule postgres-gap-reconstruction revises.
 - **Issue:** none
 - **Blast radius:** the provider only.
 - **Risk:** medium, concentrated in envelope assembly against archive-shaped input — anchor pairs and
@@ -367,7 +370,12 @@ it.
 - **Scope:** Make breaks render correctly on the direct read path. A sample marked as the last before
   a break is followed by a gap anchor; the first sample after a break resumes the line; and a long
   run with no rows that is not preceded by a break marker renders as a horizontal continuation rather
-  than as a break. Tests run against the fixture rows extracted from a real archive as well as against
+  than as a break. The windowed statement already selects `q`, so the statement does not change; the
+  read does. `ReadHistoryRow` projects the first three columns and `HistoryRowFold.Row` carries no
+  `q` member, so this slice extends the row struct and the reader as well as the fold. The left edge
+  needs one addition: a pre-window seed lookup for the pen's last row at or before the window start,
+  without which a pen last written before the window opens returns no rows and gets no envelope at
+  all. Tests run against the fixture rows extracted from a real archive as well as against
   the populated database. This precedes bucketing because a misdrawn break is operator-visible
   incorrectness while bucketing is a transfer optimisation, and correctness does not wait on an
   optimisation: reconstruction on the direct read path needs nothing that bucketing provides.
@@ -469,9 +477,17 @@ it.
   and one test per startup error state asserting the UI state — never log text. On Windows CI the
   suite reaches PostgreSQL through `SEMIPLOT_TEST_PG` (the runner image ships a stopped PostgreSQL
   service — verify the image at slice time). This automates the roadmap's close condition.
+  **The consumer side of the no-envelope rule is inherited here.** postgres-history-read ships an
+  interim rule where a pen with no rows in the window gets no envelope, and
+  `TrendChartViewModel.ApplyHistory` writes the pens a result carries while removing none — so a
+  pen the provider omits keeps the previous window's envelope on screen. Wiring the provider to
+  the chart is what makes that reachable at all, so this slice either drops the entry for a
+  requested pen the result omits, or takes the seeded envelope postgres-gap-reconstruction starts
+  sending. `docs/architecture/data-integration.md` carries the rule and its revision.
 - **Issue:** none
 - **Blast radius:** the composition root and startup path — the first slice that changes what the
-  running application does by default.
+  running application does by default. It also touches the chart view model, for the inherited
+  no-envelope rule above.
 - **Risk:** medium, concentrated in the error-state mapping and in keeping the E2E suite thin: the
   layer boundaries are already covered by contract, so E2E asserts composition, not behaviour
   matrices.

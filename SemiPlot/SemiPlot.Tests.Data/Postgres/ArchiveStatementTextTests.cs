@@ -1,4 +1,9 @@
-﻿using SemiPlot.DataSource.Postgres;
+﻿using System.Text.RegularExpressions;
+
+using Npgsql;
+
+using SemiPlot.Core.Trends;
+using SemiPlot.DataSource.Postgres;
 
 using Xunit;
 
@@ -14,14 +19,47 @@ public sealed class ArchiveStatementTextTests
 {
 	private const string DocumentPath = "docs/architecture/data-integration.md";
 
+	// Npgsql strips the sigil, so the command carries "ids" where the statement carries "@ids".
+	private static readonly Regex _parameterTokenPattern = new(@"@(\w+)");
+
 	[Theory]
 	[InlineData("### Pen catalog", ArchiveStatements.PenCatalog)]
 	[InlineData("### Archive extent", ArchiveStatements.ArchiveExtent)]
+	[InlineData("### History, chosen layer already sparse enough", ArchiveStatements.SparseHistoryWindow)]
 	public void EachDocumentedStatementMatchesTheConstantCharacterForCharacter(string heading, string statement)
 	{
 		var documented = ExtractFencedSql(ReadDocument(DocumentPath), heading);
 
 		Assert.Equal(documented, Normalise(statement));
+	}
+
+	// The drift that breaks production is the binder naming a parameter the statement does not.
+	[Fact]
+	public void TheWindowBinderNamesExactlyTheStatementsOwnParameters()
+	{
+		using var command = new NpgsqlCommand(ArchiveStatements.SparseHistoryWindow);
+
+		PostgresDataProvider.BindWindow(
+			command,
+			new ArchiveTimeConverter(TimeZoneInfo.Utc),
+			[1, 2],
+			new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc),
+			new DateTime(2026, 1, 2, 1, 0, 0, DateTimeKind.Utc),
+			AggregationLayer.Raw);
+
+		var bound = command.Parameters
+			.Select(parameter => parameter.ParameterName)
+			.Order(StringComparer.Ordinal)
+			.ToArray();
+
+		var declared = _parameterTokenPattern.Matches(ArchiveStatements.SparseHistoryWindow)
+			.Select(match => match.Groups[1].Value)
+			.Distinct(StringComparer.Ordinal)
+			.Order(StringComparer.Ordinal)
+			.ToArray();
+
+		Assert.NotEmpty(declared);
+		Assert.Equal(declared, bound);
 	}
 
 	[Fact]

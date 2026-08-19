@@ -120,6 +120,34 @@ public sealed class RandomStubDataProviderTests
 		envelope.Max.Should().Contain(value => double.IsNaN(value));
 	}
 
+	// The window is half-open, the contract both provider implementations honour: a sample landing exactly
+	// on toUtc belongs to the next window. An hour at the minute layer's 15-second spacing is therefore 240
+	// columns, not 241, and the pass-through keeps one column per sample because the count stays under the
+	// target.
+	[Fact]
+	public async Task QueryHistoryAsync_UpperBoundIsExclusive()
+	{
+		var provider = CreateProvider(new TestScheduler());
+
+		var result = await provider.QueryHistoryAsync(PenIds(), _from, _to, AggregationLayer.Minute, TargetColumns);
+
+		var envelope = result.Value.Single();
+		envelope.Timestamps.Should().HaveCount(240);
+		envelope.Timestamps[0].Should().Be(_from);
+		envelope.Timestamps[^1].Should().Be(_to - AggregationLayer.Minute.ToPointSpacing());
+	}
+
+	[Fact]
+	public async Task QueryHistoryAsync_ZeroWidthWindow_ReturnsAnEmptyEnvelope()
+	{
+		var provider = CreateProvider(new TestScheduler());
+
+		var result = await provider.QueryHistoryAsync(PenIds(), _from, _from, AggregationLayer.Minute, TargetColumns);
+
+		result.IsSuccess.Should().BeTrue();
+		result.Value.Single().Timestamps.Should().BeEmpty();
+	}
+
 	[Fact]
 	public async Task QueryHistoryAsync_FromAfterTo_Fails()
 	{
@@ -138,6 +166,33 @@ public sealed class RandomStubDataProviderTests
 		var provider = CreateProvider(new TestScheduler());
 
 		var result = await provider.QueryHistoryAsync(PenIds(), _from, _to, AggregationLayer.Minute, 0);
+
+		result.IsFailed.Should().BeTrue();
+		result.Errors.Should().ContainSingle()
+			.Which.Message.Should().Contain("target column count");
+	}
+
+	// Two caller defects at once. The range and target checks answer before the layer guard, which this
+	// provider reaches only inside ToPointSpacing, so the failed Result wins over the exception.
+	// PostgresDataProvider orders its guards to match; HistoryArgumentGuardTests pins the other half.
+	[Fact]
+	public async Task QueryHistoryAsync_InvertedWindowAndUndefinedLayer_FailsOnTheWindow()
+	{
+		var provider = CreateProvider(new TestScheduler());
+
+		var result = await provider.QueryHistoryAsync(PenIds(), _to, _from, (AggregationLayer)99, TargetColumns);
+
+		result.IsFailed.Should().BeTrue();
+		result.Errors.Should().ContainSingle()
+			.Which.Message.Should().Contain("Invalid range");
+	}
+
+	[Fact]
+	public async Task QueryHistoryAsync_NonPositiveTargetAndUndefinedLayer_FailsOnTheTarget()
+	{
+		var provider = CreateProvider(new TestScheduler());
+
+		var result = await provider.QueryHistoryAsync(PenIds(), _from, _to, (AggregationLayer)99, 0);
 
 		result.IsFailed.Should().BeTrue();
 		result.Errors.Should().ContainSingle()

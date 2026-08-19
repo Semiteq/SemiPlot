@@ -109,9 +109,10 @@ public sealed class RandomStubDataProvider : IDataProvider
 		var values = new List<double?>();
 
 		// Point spacing is a quarter of the layer period, so a coarse layer synthesises four times more
-		// points per unit of time than its period suggests.
+		// points per unit of time than its period suggests. The window is half-open, the contract both
+		// implementations honour, so a sample landing exactly on toUtc belongs to the next window.
 		var tickIndex = 0L;
-		for (var timestamp = fromUtc; timestamp <= toUtc; timestamp += interval)
+		for (var timestamp = fromUtc; timestamp < toUtc; timestamp += interval)
 		{
 			timestamps.Add(timestamp);
 			values.Add(ValueAt(pen, penId, tickIndex));

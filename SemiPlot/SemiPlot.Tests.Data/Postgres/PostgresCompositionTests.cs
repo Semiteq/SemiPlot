@@ -5,8 +5,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using SemiPlot.Core.Data;
-using SemiPlot.Core.Data.Errors;
-using SemiPlot.Core.Trends;
 using SemiPlot.DataSource.Postgres;
 using SemiPlot.DataSource.Postgres.Configuration;
 
@@ -171,23 +169,16 @@ public sealed class PostgresCompositionTests
 		Assert.Null(services.GetRequiredService<ArchiveDataSource>().EffectiveStatementTimeout);
 	}
 
+	// The non-null penIds precondition is the interface's, not one member's: RandomStubDataProvider
+	// throws here too, so an empty sequence for a null list would split the two implementations.
 	[Fact]
-	public async Task QueryHistoryAsyncFailsWithTheNotImplementedError()
+	public void SubscribeRejectsANullPenList()
 	{
 		var settings = Settings();
 		using var dataSource = new ArchiveDataSource(settings, NullLogger<ArchiveDataSource>.Instance);
 		var provider = NewProvider(settings, dataSource);
 
-		var result = await provider.QueryHistoryAsync(
-			[1L],
-			new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
-			new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc),
-			AggregationLayer.Raw,
-			100);
-
-		var error = Assert.Single(result.Errors.OfType<ProviderNotImplementedError>());
-		Assert.True(result.IsFailed);
-		Assert.Equal(nameof(IDataProvider.QueryHistoryAsync), error.MemberName);
+		Assert.Throws<ArgumentNullException>(() => provider.Subscribe(null!));
 	}
 
 	[Fact]

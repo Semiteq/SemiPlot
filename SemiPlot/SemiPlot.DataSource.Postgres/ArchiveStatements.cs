@@ -38,6 +38,18 @@ internal static class ArchiveStatements
 		""";
 
 	/// <summary>
+	/// <c>@ids</c> binds an array rather than an expanded list so the read keeps
+	/// <c>PRIMARY KEY (id, l, t)</c>, whose leading column is <c>id</c>, instead of reading every partition.
+	/// <c>q</c> is selected for the gap reconstruction that reads it; the fold ignores the column for now.
+	/// </summary>
+	public const string SparseHistoryWindow = """
+		SELECT id, t, v, q
+		FROM trends
+		WHERE id = ANY(@ids) AND l = @layer AND t >= @from AND t < @to
+		ORDER BY id, t;
+		""";
+
+	/// <summary>
 	/// The server's effective bound, read once per physical connection. <c>pg_settings.setting</c> is
 	/// text carrying the value in the parameter's base unit — milliseconds for this parameter — so a
 	/// reader role at <c>30s</c> reads back as <c>30000</c> and an unbounded server as <c>0</c>.

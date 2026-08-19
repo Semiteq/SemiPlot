@@ -1,6 +1,5 @@
 ﻿using FluentResults;
 
-using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
 
 using Xunit;
@@ -130,14 +129,6 @@ public sealed class DataErrorTests
 		var error = new ArchiveReadFailedError(Host, Port, Database, string.Empty);
 
 		Assert.Equal(string.Empty, error.SqlState);
-	}
-
-	[Fact]
-	public void ProviderNotImplementedErrorCarriesTheMemberName()
-	{
-		var error = new ProviderNotImplementedError(nameof(IDataProvider.QueryHistoryAsync));
-
-		Assert.Equal("QueryHistoryAsync", error.MemberName);
 	}
 
 	[Fact]

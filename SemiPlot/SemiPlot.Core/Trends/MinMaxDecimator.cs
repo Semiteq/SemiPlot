@@ -1,6 +1,4 @@
-﻿using SemiPlot.Core.Trends;
-
-namespace SemiPlot.DataSource.Stub;
+﻿namespace SemiPlot.Core.Trends;
 
 // Each column keeps its min and max so a single-sample spike survives; gaps (nulls) split the timeline
 // into segments separated by NaN columns, so a column never straddles a gap and aliases a spike across it.

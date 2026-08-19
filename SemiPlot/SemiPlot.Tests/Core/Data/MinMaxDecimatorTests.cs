@@ -1,7 +1,6 @@
 ﻿using AwesomeAssertions;
 
 using SemiPlot.Core.Trends;
-using SemiPlot.DataSource.Stub;
 
 using Xunit;
 

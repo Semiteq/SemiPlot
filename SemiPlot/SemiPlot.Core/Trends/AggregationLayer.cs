@@ -1,12 +1,13 @@
 ﻿namespace SemiPlot.Core.Trends;
 
-// Mirrors the Simple-Scada archive layer codes.
+// Mirrors the Simple-Scada archive layer codes. The values are explicit because they are bound to the
+// archive's l column directly, so a member inserted between two others would read the wrong layer.
 public enum AggregationLayer
 {
-	Raw,
-	Minute,
-	Hour,
-	Day
+	Raw = 0,
+	Minute = 1,
+	Hour = 2,
+	Day = 3
 }
 
 public static class AggregationLayerExtensions

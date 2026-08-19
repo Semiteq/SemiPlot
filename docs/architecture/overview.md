@@ -55,13 +55,14 @@ Constraint: **$0 budget** — only free/OSS components.
 |   - IDataProvider abstraction + records (Pen, envelope,     |
 |     ArchiveExtent, …)                                       |
 |   - renderer-agnostic models (navigation, scale, cursor, …) |
+|   - MinMaxDecimator, shared by every provider               |
 +-------------------------------------------------------------+
               │ implemented by a SemiPlot.DataSource.* project
               ▼
 +-------------------------------------------------------------+
 |  SemiPlot.DataSource.Stub  (current)                        |
 |   - RandomStubDataProvider  (emits random data)             |
-|   - MinMaxDecimator + synthetic pen/value generators        |
+|   - synthetic pen/value generators                          |
 |  SemiPlot.DataSource.Postgres  (production; read-only SQL)  |
 +-------------------------------------------------------------+
 ```
@@ -91,6 +92,8 @@ ScottPlot control, fed in-process by `TrendCoordinator` over `IObservable`/await
 ## Scope status
 
 Current focus: the **UI part** (Avalonia + ScottPlot viewer) backed by a **random data
-stub**. The PostgreSQL provider is specified but not yet implemented — see
+stub**. The PostgreSQL provider implements three of its four members — the pen catalogue, the
+archive extent and the windowed history read; `Subscribe` returns an empty sequence until
+`postgres-realtime-poll` fills it. The composition root still resolves the stub — see
 [data-integration.md](./data-integration.md) for the contract and `docs/plans/` for the
 implementation plan.

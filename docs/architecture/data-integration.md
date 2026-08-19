@@ -68,15 +68,13 @@ unreachable, the table can be absent, the read can time out. Like every other re
 the failure travels as a failed `Result` and never as an exception crossing to the UI thread. The
 error types that name those states are defined with the PostgreSQL provider.
 
-As built, the composition root does not yet honour that last part for the catalogue: `App.axaml.cs`
-reads the catalogue once at startup and lets a failed `Result` throw, so the process fails to start
-instead of showing the "no connection to the archive" state the error-semantics table below promises.
-This is the startup thread, before any UI thread exists. Turning it into an operator-visible state is
-owned by slice `postgres-startup-and-composition`.
+That holds on the startup path too: the pen catalogue is read before any window opens, and a failed
+`Result` there opens an error window naming the state rather than throwing through Avalonia's setup.
+The **Startup** section below states the sequence.
 
-Implementations: `RandomStubDataProvider` in `SemiPlot.DataSource.Stub` (synthetic, used by tests
-and demos) and `PostgresDataProvider` in `SemiPlot.DataSource.Postgres` (production). The
-composition root picks one by configuration.
+Implementations: `PostgresDataProvider` in `SemiPlot.DataSource.Postgres` (production, and what the
+composition root registers) and `RandomStubDataProvider` in `SemiPlot.DataSource.Stub` (synthetic,
+used by tests, demos and the `--use-stub` switch).
 
 ## Operation to SQL
 
@@ -159,11 +157,10 @@ It reads absence as nothing to draw, while the quality table below reads absence
 to draw where the table promises a horizontal continuation. Slice `postgres-gap-reconstruction`
 revises it.
 
-And no consumer drops a pen that a result omits. `TrendChartViewModel.ApplyHistory` writes the pens
-a result carries and removes none, so an omitted pen keeps the previous window's envelope: on a
-zoom-in the stale columns bracket the new window and the line draws straight across it, while the
-cursor readers and the scale model keep feeding on the stale series. Slice
-`postgres-startup-and-composition`, which wires this provider to the chart, owns that half.
+The consumer side is settled. `TrendChartViewModel.ApplyHistory` receives the requested identifiers
+beside the result and calls `DropPensMissingFromHistory`, which clears the curve and the envelope of
+every requested pen the result omits. So an omitted pen draws nothing rather than keeping the
+previous window's series under the cursor readers and the scale model.
 
 ### History, chosen layer still denser than the canvas
 
@@ -389,13 +386,13 @@ so no failure crosses to the UI thread (`DA-1`).
 
 | Situation | Provider result | What the operator sees |
 | --- | --- | --- |
-| Connection refused or DNS failure at startup | failed `Result` | Explicit "no connection to the archive" state, retry available |
+| Connection refused or DNS failure at startup | failed `Result` | `ErrorWindow` titled "No connection to the archive", naming the host and port, with a remedy and one **Close** button — no retry, the operator corrects the cause and starts again |
 | Connection lost mid-session | failed `Result` on the query; realtime tick dropped | Chart keeps the data it has; staleness is visible |
 | Query timeout | failed `Result` | Same as above; the timeout is a configured bound, not an accident |
-| The database does not exist (SQLSTATE `3D000`, the server answers) | failed `Result`, distinguished from a connection failure | "Archive database missing" — the remedy is running `semibase create` |
+| The database does not exist (SQLSTATE `3D000`, the server answers) | failed `Result` carrying `ArchiveNotInitialisedError` whose `MissingObject` is `Database`, distinguished from a connection failure | "Archive not initialised" — the remedy is running `semibase create` |
 | The credentials are refused or a grant is missing (SQLSTATE `28P01`, `28000`, `42501`) | failed `Result`, distinguished from a connection failure | "Archive access denied" — the remedy is the user, password or grants, not the network |
 | `trends` does not exist (SCADA never started) | failed `Result`, distinguished from a connection failure | "Archive not initialised" — a normal state on a fresh installation |
-| `semiplot_tags` does not exist (provisioning unfinished) | failed `Result` carrying `ArchiveNotInitialisedError` whose `Table` is `semiplot_tags` | "Archive not initialised" — the remedy is running `semibase create` |
+| `semiplot_tags` does not exist (provisioning unfinished) | failed `Result` carrying `ArchiveNotInitialisedError` whose `MissingObject` is `Table` and whose `Table` is `semiplot_tags` | "Archive not initialised" — the remedy is running `semibase create` |
 | `semiplot_tags` present but empty | empty pen list, success | "No variables configured" — commissioning is not finished |
 | Archive present but no rows in the window | success, empty envelope list — no pen has rows, so no pen gets an envelope | Empty chart, no error |
 
@@ -428,24 +425,36 @@ commissioning unfinished against provisioning unfinished — which is what the p
 | Type | Fields | Operator sentence |
 | --- | --- | --- |
 | `ConnectionFileNotFoundError` | path | The connection file is not where it was expected |
-| `ConnectionFileInvalidError` | path, kind (`Unreadable` \| `Unparseable` \| `MissingField` \| `OutOfRange` \| `UnknownTimeZone`), reason | The file exists but cannot be read as configuration |
-| `ConnectionFileVersionMismatchError` | path, foundVersion, expectedVersion | The file is a version this build does not accept |
+| `ConnectionFileInvalidError` | path, kind (`Unreadable` \| `Unparseable` \| `MissingField` \| `OutOfRange` \| `UnknownTimeZone` \| `VersionMismatch`), reason | The file exists but cannot be read as configuration, the version it declares included |
 | `ArchiveUnreachableError` | host, port, database | No connection to the archive |
-| `ArchiveDatabaseMissingError` | host, port, database | The server answers but the database does not exist |
 | `ArchiveAccessDeniedError` | host, port, database, username | The credentials or the grants are wrong |
-| `ArchiveNotInitialisedError` | host, port, database, table | The database is there but a table the read needs is not |
+| `ArchiveNotInitialisedError` | host, port, database, missingObject (`Database` \| `Table`), table (null on `Database`) | The server answers but the database, or a table the read needs, does not exist |
 | `ArchiveQueryTimedOutError` | host, port, database, timeout (the effective server `statement_timeout` the failing read ran under, read on the failure path from a session of the same reader role; `TimeSpan.Zero` means there is no bound to report — the read-back could not run, or the server bounds nothing) | The read exceeded its configured bound, or the server ended it and no bound can be named |
 | `ArchiveReadFailedError` | host, port, database, sqlState (empty when the failure carried none) | The archive rejected the read for a reason this build does not recognise |
 
-The three connection-file types are raised by the settings loader. The six `Archive*` types are the
-vocabulary the read path maps its SQLSTATEs onto — `3D000`, `28P01` and `42P01` are separate types
-rather than one schema error because they send the operator to separate remedies: run `semibase
-create`, fix the credentials, start the SCADA once. `ArchiveNotInitialisedError` carries the table
-name rather than assuming `trends`, because `42P01` is table-agnostic and the remedy follows the
-table — `trends` is the SCADA's, `semiplot_tags` is SemiBase's. `ArchiveReadFailedError` closes the
-mapping: anything the table above does not name arrives as that type carrying its SQLSTATE, so
+The two connection-file types are raised by the settings loader. The five `Archive*` types are the
+vocabulary the read path maps its SQLSTATEs onto — `28P01` is a type of its own rather than one
+schema error because it sends the operator to a separate remedy: fix the credentials, not the
+provisioning. `3D000` and `42P01` share `ArchiveNotInitialisedError` and stay apart inside it on
+`MissingObject`, because both say the same thing — something the read needs was never created — and
+differ only in what to create. On the table case the type carries the table name rather than assuming
+`trends`, because `42P01` is table-agnostic and the remedy follows the table — `trends` is the
+SCADA's, `semiplot_tags` is SemiBase's. On the database case `Table` is null: `3D000` names no
+relation, and the remedy is `semibase create`. `ArchiveReadFailedError` closes the mapping: anything
+the table above does not name arrives as that type carrying its SQLSTATE, so
 nothing escapes as an exception and nothing crosses as an untyped `Result.Fail(string)` a consumer
 cannot route on.
+
+**Seven public types, and every one of them reaches the operator.** `StartupFailureMapper`
+(`SemiPlot.UI/Startup/`) turns each into a title, a detail and a remedy of its own. The totality of
+that map is guarded by a reflection test rather than by the compiler: `CS8509` fires on any switch
+expression whose exhaustiveness cannot be proven, and over an interface it never can be, so a switch
+covering every type still warns and promoting that warning to an error would stop the build. The test
+enumerates the public `IError` types in `SemiPlot.Core.Data.Errors` and in `SemiPlot.UI.Startup`, and
+fails when one of them maps to the catch-all arm. A second test pins the enumeration at eight —
+Core's seven plus the UI-local `StartupReadTimedOutError` — because a coverage test over an empty set
+passes vacuously. Adding a public error type without an arm is therefore a failing test, not a vague
+window.
 
 `57014` maps unconditionally to `ArchiveQueryTimedOutError`. The server answers that SQLSTATE both
 for `statement_timeout` and for a client-issued cancel, and the chart cancels in-flight reads when it
@@ -477,8 +486,10 @@ read costs no successful connection a round trip, and the log carries the reader
 
 ## Configuration
 
-A YAML file in a `--config-dir`, following the convention of the sibling project. All nine keys are
-required; the loader reports an absent one rather than defaulting it:
+A YAML file named `archive-connection.yaml`, read from the configuration directory —
+`C:\DISTR\Config\SemiPlot` unless `--config-dir` names another one, following the `C:\DISTR\`
+convention of the sibling project. The directory is correctable from the command line; the file name
+is not. All nine keys are required; the loader reports an absent one rather than defaulting it:
 
 ```yaml
 connection_file_version: "1.0"
@@ -509,6 +520,62 @@ reported at startup rather than at first query.
 The password is stored in plain text. The mitigation is that SemiPlot connects under a read-only
 role, so a leaked credential exposes reading the archive and nothing else. File permissions are the
 operator's responsibility.
+
+## Startup
+
+Startup splits at the Avalonia boundary, because the schedulers do: the UI scheduler exists only once
+`UseReactiveUI()` has run inside `AfterSetup`, and `AfterSetup` takes a synchronous delegate, so an
+archive read left inside it either blocks Avalonia's setup or throws through it.
+
+`StartupProbe` (`SemiPlot.UI/Startup/StartupProbe.cs`) therefore runs in `Program`, ahead of
+`BuildAvaloniaApp()`, and touches no Avalonia or ReactiveUI type. Its sequence:
+
+1. Under `--use-stub`, register `AddData()` and read no connection file at all, so a development
+   machine holding none still reaches the stub.
+2. Otherwise load `<ConfigDir>/archive-connection.yaml` and register `AddPostgresData(settings)`.
+3. Resolve `IDataProvider`, read the pen catalogue, then read the archive extent.
+
+Each step answers with a `Result`. What the sequence carries — the container, the pens, the extent and
+the settings — crosses the Avalonia boundary in a `StartupData` record, so `App.InitializeServices`
+consumes data already read and awaits nothing. A failed step short-circuits, disposes the container,
+and carries its error to `Program`, which maps it through `StartupFailureMapper` and opens
+`ErrorWindow` in place of the main window. The two branches are exclusive by structure: the failure
+branch returns rather than falling through, and both go through one single-start guard, because a
+second `BuildAvaloniaApp()` throws once Avalonia is initialised. A failed archive never produces a
+stub — substituting synthetic data would let an operator read invented numbers as process data.
+
+**The startup reads are bounded by the caller, not by a token.** No member of `IDataProvider` takes a
+`CancellationToken`, so the probe wraps each read in `Task.WaitAsync(TimeSpan)` with a 30 s bound: a
+server that accepts TCP and answers nothing shows the error window instead of holding startup for the
+provider's five-minute backstop. That abandons the wait, not the query — the read keeps running on
+its pooled connection until the backstop ends it, and the error window opens without it. The expiring
+bound is `StartupReadTimedOutError`, which lives in `SemiPlot.UI.Startup` and stays apart from
+`ArchiveQueryTimedOutError`: the latter means the server ended the read, and would send the operator
+after a `statement_timeout` that may be working as configured.
+
+**The read bound sits above the connect timeout, and that ordering is load-bearing.**
+`PostgresConnectionSettings.ConnectTimeoutSeconds` writes Npgsql's connect bound out as 15 s instead
+of inheriting it, and `StartupProbe.DefaultReadBound` is 30 s. An unreachable host — wrong address,
+host down, a firewall that drops — fails inside the connect attempt, so the wider caller bound lets
+`ArchiveUnreachableError` win and the operator reads "no connection to the archive". Equal values race,
+and the loser reports a timeout whose remedy states the connection was accepted, which is the opposite
+of the truth on the single most common failure at a site.
+`StartupProbeTests.DefaultReadBound_StaysAboveTheConnectTimeout` pins the ordering.
+
+**A throw on the startup path is a failed `Result`, never an escape.** Resolving `IDataProvider`
+constructs the `NpgsqlDataSource` and can throw, and `ArchiveExceptionMapper` rethrows
+`OperationCanceledException` by design rather than mapping it. `StartupProbe.ReadAsync` catches both,
+logs the exception with its stack, disposes the container and returns a FluentResults
+`ExceptionalError`. `StartupFailureMapper` maps that through an `IExceptionalError` arm — the exception
+equivalent of its catch-all — so the operator gets a window naming the exception type instead of a
+process that exits with no window at all.
+
+An empty pen catalogue is a successful start rather than a failure, as the error-semantics table
+above requires: the window opens, draws nothing, and states that the catalogue is empty
+(`MainWindowViewModel.IsCatalogueEmpty`).
+
+Logging is configured before the probe runs, so every startup failure reaches the log file as well as
+the window. The log path and the argument list are in `overview.md`; the default level is `Warning`.
 
 ## Keeping this document honest
 

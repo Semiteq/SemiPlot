@@ -21,6 +21,14 @@ public sealed record PostgresConnectionSettings(
 	string Schema)
 {
 	/// <summary>
+	/// How long a connect attempt may take, in seconds. It equals Npgsql's own default and is written
+	/// out anyway, so a caller bounding a read can compare against a stated number instead of an
+	/// inherited one. A caller's read bound must exceed it: a host that answers nothing has to fail as
+	/// unreachable, which needs the connect attempt to lose no race against the caller's bound.
+	/// </summary>
+	public const int ConnectTimeoutSeconds = 15;
+
+	/// <summary>
 	/// Built through <see cref="NpgsqlConnectionStringBuilder"/> rather than concatenated: a password
 	/// holding ';' or '\'' survives the builder and corrupts a concatenated string silently, which then
 	/// fails as an authentication error pointing at the wrong cause.
@@ -38,7 +46,8 @@ public sealed record PostgresConnectionSettings(
 				Username = Username,
 				Password = Password,
 				SearchPath = Schema,
-				CommandTimeout = 0
+				CommandTimeout = 0,
+				Timeout = ConnectTimeoutSeconds
 			};
 
 			return builder.ConnectionString;

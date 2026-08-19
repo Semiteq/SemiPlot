@@ -185,6 +185,7 @@ public sealed class PostgresHistoryReadTests(
 
 		var error = Assert.Single(result.Errors.OfType<ArchiveNotInitialisedError>());
 
+		Assert.Equal(ArchiveObject.Table, error.MissingObject);
 		Assert.Equal("trends", error.Table);
 		Assert.Equal(database.Name, error.Database);
 	}

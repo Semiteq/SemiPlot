@@ -23,7 +23,7 @@ It must handle two classes of data:
 | Backend (in-proc)| .NET data provider abstraction over the data sources                   |
 | Data source      | One read-only PostgreSQL connection to the Simple-Scada archive — history, extent and realtime alike (`data-integration.md`) |
 | Coarse resolutions | The SCADA's own archive layers; nothing of ours runs in or beside the database (`history-read-path-evaluation.md`) |
-| Logging          | Serilog (file, rolling 5 MB / 5 files; mirrors SemiStep conventions)  |
+| Logging          | Serilog (`C:\DISTR\Logs\SemiPlot\`, rolling 5 MB / 5 files, `Warning` by default) |
 
 Constraint: **$0 budget** — only free/OSS components.
 
@@ -60,17 +60,19 @@ Constraint: **$0 budget** — only free/OSS components.
               │ implemented by a SemiPlot.DataSource.* project
               ▼
 +-------------------------------------------------------------+
-|  SemiPlot.DataSource.Stub  (current)                        |
+|  SemiPlot.DataSource.Postgres  (default; read-only SQL)     |
+|   - PostgresDataProvider over the Simple-Scada archive      |
+|  SemiPlot.DataSource.Stub  (development, --use-stub only)   |
 |   - RandomStubDataProvider  (emits random data)             |
 |   - synthetic pen/value generators                          |
-|  SemiPlot.DataSource.Postgres  (production; read-only SQL)  |
 +-------------------------------------------------------------+
 ```
 
 The UI never talks to a data source directly; it depends only on `IDataProvider`
-(see [data-integration.md](./data-integration.md)). This keeps the real Simple-Scada
-integration swappable behind the stub. There is **no web bridge**: the chart is a native
-ScottPlot control, fed in-process by `TrendCoordinator` over `IObservable`/awaitable seams.
+(see [data-integration.md](./data-integration.md)). The composition root resolves the PostgreSQL
+provider; `--use-stub` puts the synthetic one in its place for development, and neither falls back
+to the other. There is **no web bridge**: the chart is a native ScottPlot control, fed in-process by
+`TrendCoordinator` over `IObservable`/awaitable seams.
 
 ## Data flow
 
@@ -88,12 +90,36 @@ ScottPlot control, fed in-process by `TrendCoordinator` over `IObservable`/await
 - Single Windows desktop app, runs on operator PCs next to the SCADA. `net10.0-windows` with
   the Avalonia Win32 backend is the deliberate Windows-only operator-PC target.
 - Auto-update of the app itself via Velopack if/when needed.
+- Site paths follow the `C:\DISTR\` convention of the sibling SemiStep installation: configuration
+  in `C:\DISTR\Config\SemiPlot`, logs in `C:\DISTR\Logs\SemiPlot\`. Neither sits beside the
+  executable and neither is per-user.
+- The connection file `C:\DISTR\Config\SemiPlot\archive-connection.yaml` is required. An
+  installation without one opens the startup error window instead of a chart — the startup path is in
+  [data-integration.md](./data-integration.md).
+
+### Command line
+
+| Argument | Effect | Default |
+| --- | --- | --- |
+| `--config-dir <dir>` | Directory holding `archive-connection.yaml` | `C:\DISTR\Config\SemiPlot` |
+| `--log-file <path>` | Log file, rolling 5 MB / 5 files | `C:\DISTR\Logs\SemiPlot\semiplot.log` |
+| `--logging-level <level>` | `verbose` \| `debug` \| `info` (or `information`) \| `warning` \| `error` \| `fatal`, case-insensitive | `warning` |
+| `--use-stub` | Valueless switch selecting `SemiPlot.DataSource.Stub` | off |
+
+An argument the table does not name is ignored, and so is a valued argument given last with nothing
+after it; the default stands in both cases. An unrecognised logging level reads as `warning` and says
+so on the standard error stream — parsing runs before the logger exists, so it has no other route. A log
+directory that cannot be created disables file logging and leaves the console sink, rather than
+failing the start.
+
+The process exits `0` when the main window opened and closed normally, and `1` when the start failed —
+the error window and the fatal catch alike — so a launcher can tell one from the other.
 
 ## Scope status
 
-Current focus: the **UI part** (Avalonia + ScottPlot viewer) backed by a **random data
-stub**. The PostgreSQL provider implements three of its four members — the pen catalogue, the
-archive extent and the windowed history read; `Subscribe` returns an empty sequence until
-`postgres-realtime-poll` fills it. The composition root still resolves the stub — see
-[data-integration.md](./data-integration.md) for the contract and `docs/plans/` for the
-implementation plan.
+The application reads the real archive: the composition root registers `AddPostgresData`, and the
+synthetic stub is reachable only through `--use-stub`. The PostgreSQL provider implements three of
+its four members — the pen catalogue, the archive extent and the windowed history read; `Subscribe`
+returns an empty sequence until `postgres-realtime-poll` fills it, so the chart draws history and no
+live edge. See [data-integration.md](./data-integration.md) for the contract and `docs/plans/` for
+the implementation plan.

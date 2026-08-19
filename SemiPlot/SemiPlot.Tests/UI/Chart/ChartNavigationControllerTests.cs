@@ -1,5 +1,6 @@
 ﻿using AwesomeAssertions;
 
+using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
 using SemiPlot.UI.Chart;
 
@@ -325,6 +326,73 @@ public sealed class ChartNavigationControllerTests
 		ChartNavigationController
 			.LayerForWidth(TimeSpan.FromHours(windowHours), AggregationLayer.Raw, columnCount)
 			.Should().Be(expectedLayer);
+	}
+
+	// The seed is asserted through pan clamping rather than through a new first-sample accessor: the
+	// controller exposes none, the model's FirstSample is private to it, and the clamp is the behaviour the
+	// missing seed broke. Panning 30 days left must stop at the archive's first sample, not at the
+	// constructor's startup-minus-one-hour.
+	[Fact]
+	public void SeedFromArchiveExtent_OpensTheWindowOnAnArchiveWhollyInThePast()
+	{
+		var controller = new ChartNavigationController();
+
+		controller.SeedFromArchiveExtent(new ArchiveExtent(_first, _last));
+
+		controller.To.Should().Be(_last);
+		controller.From.Should().Be(_last - TimeSpan.FromHours(1.0));
+
+		controller.PanBy(TimeSpan.FromDays(-30.0));
+
+		controller.From.Should().Be(_first);
+	}
+
+	[Fact]
+	public void SeedFromArchiveExtent_WithAnExtentCoveringNow_ClampsPanningAtItsFirstSample()
+	{
+		var controller = new ChartNavigationController();
+		var now = DateTime.UtcNow;
+		var extent = new ArchiveExtent(now - TimeSpan.FromDays(2.0), now);
+
+		controller.SeedFromArchiveExtent(extent);
+
+		controller.To.Should().Be(extent.LastUtc);
+		controller.IsSticky.Should().BeTrue();
+
+		controller.PanBy(TimeSpan.FromDays(-30.0));
+
+		controller.From.Should().Be(extent.FirstUtc);
+	}
+
+	[Fact]
+	public void SeedFromArchiveExtent_WithAnEmptyExtent_LeavesTheWindowOnTheWallClock()
+	{
+		var controller = new ChartNavigationController();
+		var raised = 0;
+		controller.WindowChanged += (_, _) => raised++;
+
+		controller.SeedFromArchiveExtent(ArchiveExtent.Empty);
+
+		raised.Should().Be(0);
+		controller.To.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromMinutes(1.0));
+
+		// The has-data latch stays clear, so the first envelope carrying rows still snaps the window.
+		controller.TrackDataExtents(_first, _last);
+		controller.To.Should().Be(_last);
+	}
+
+	// The seed sets the has-data latch, so the first history envelope takes the no-op branch of
+	// TrackDataExtents instead of re-snapping the window and undoing the seed.
+	[Fact]
+	public void SeedFromArchiveExtent_SurvivesTheFirstHistoryEnvelope()
+	{
+		var controller = new ChartNavigationController();
+		controller.SeedFromArchiveExtent(new ArchiveExtent(_first, _last));
+
+		controller.TrackDataExtents(_last.AddHours(-1.0), _last.AddMinutes(-30.0));
+
+		controller.To.Should().Be(_last);
+		controller.From.Should().Be(_last - TimeSpan.FromHours(1.0));
 	}
 
 	// ceiling(layer) = nextCoarser(layer).ToPointSpacing() * columns. The spacings are spelled out rather

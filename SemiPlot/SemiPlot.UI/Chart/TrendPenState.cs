@@ -79,6 +79,17 @@ public sealed class TrendPenState : ReactiveObject
 		CurrentValue = LastNonGapCenter();
 	}
 
+	// A pen the provider returned no envelope for in the current window keeps no curve: leaving the
+	// previous window's points on screen would draw data from a range the operator is no longer viewing.
+	public void ClearHistory()
+	{
+		_centerPoints.Clear();
+		_bandPoints.Clear();
+		Band.SetDataSource(_bandPoints);
+		ApplyBandVisibility();
+		CurrentValue = null;
+	}
+
 	public void AppendRealtime(DateTime timestampUtc, double? value)
 	{
 		var x = LocalTimeAxis.ToAxis(timestampUtc);

@@ -18,6 +18,14 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 	// removing a pen after assignment leaves this stale — whoever makes the pen set dynamic owns that chain.
 	public int PenCount => ChartViewModel?.Pens.Count ?? 0;
 
+	/// <summary>
+	/// A chart that was built and holds no pen. The archive answered and provisioning is unfinished, which
+	/// is a success rather than an error window — so it needs a state the operator can read, otherwise an
+	/// empty catalogue and a broken chart look the same from the outside. False before a chart exists,
+	/// where nothing is drawn yet and there is nothing to explain.
+	/// </summary>
+	public bool IsCatalogueEmpty => ChartViewModel is not null && PenCount == 0;
+
 	public TrendChartViewModel? ChartViewModel
 	{
 		get => _chartViewModel;
@@ -34,6 +42,7 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 
 			this.RaiseAndSetIfChanged(ref _chartViewModel, value);
 			this.RaisePropertyChanged(nameof(PenCount));
+			this.RaisePropertyChanged(nameof(IsCatalogueEmpty));
 
 			ToolbarViewModel = value is null ? null : new TrendToolbarViewModel(value);
 			LegendViewModel = value is null ? null : new TrendLegendViewModel(value);

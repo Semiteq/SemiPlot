@@ -84,8 +84,8 @@ flowchart TB
     ui["Chart · minimap · toolbar"]
     coord["TrendCoordinator"]
     iface{{"IDataProvider"}}
-    stub["RandomStubDataProvider<br/>selected today"]
-    pg["PostgresDataProvider"]
+    stub["RandomStubDataProvider<br/>--use-stub only"]
+    pg["PostgresDataProvider<br/>registered by default"]
 
     subgraph plumbing["SemiPlot.DataSource.Postgres"]
         direction TB
@@ -93,10 +93,10 @@ flowchart TB
         ds["ArchiveDataSource<br/>connection · command bound"]
         conv["ArchiveTimeConverter<br/>naive local ⇄ UTC"]
         mapper["ArchiveExceptionMapper<br/>SQLSTATE → typed error"]
-        loader["PostgresConnectionLoader<br/>YAML, nine keys"]
+        loader["PostgresConnectionLoader<br/>archive-connection.yaml<br/>nine keys"]
     end
 
-    errs["SemiPlot.Core/Data/Errors<br/>nine sealed types"]
+    errs["SemiPlot.Core/Data/Errors<br/>seven sealed types"]
 
     ui --> coord --> iface
     iface -.-> stub
@@ -111,8 +111,11 @@ flowchart TB
     style stub stroke-dasharray:4 4
 ```
 
-The composition root still resolves the stub; `postgres-startup-and-composition` is the slice that
-switches it. Three of the four provider members are implemented — the pen catalogue, the archive
+The composition root resolves `PostgresDataProvider`. The stub is reachable only through
+`--use-stub` and is never a fallback from a failed archive: an archive that does not answer opens an
+error window, which `data-integration.md` states under **Startup**. Every one of the seven public
+error types maps to a state in that window, and a reflection coverage test fails when one does not.
+Three of the four provider members are implemented — the pen catalogue, the archive
 extent and the windowed history read. `Subscribe` returns an empty sequence until
 `postgres-realtime-poll` fills it.
 

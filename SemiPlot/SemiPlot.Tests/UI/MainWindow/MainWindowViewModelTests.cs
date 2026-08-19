@@ -91,6 +91,37 @@ public sealed class MainWindowViewModelTests
 		observedPenCounts.Should().BeEmpty();
 	}
 
+	// The empty-catalogue sentence is bound, so it appears only if the property publishes on the same
+	// assignment PenCount publishes on.
+	[AvaloniaFact]
+	public void ChartViewModel_WhenAssignedWithNoPens_PublishesTheEmptyCatalogueState()
+	{
+		using var viewModel = new MainWindowViewModel();
+		viewModel.IsCatalogueEmpty.Should().BeFalse();
+		var (chart, penCount) = CreateChartWithPens(0);
+		penCount.Should().Be(0);
+		var observed = ObserveEmptyCatalogueState(viewModel);
+
+		viewModel.ChartViewModel = chart;
+
+		viewModel.IsCatalogueEmpty.Should().BeTrue();
+		observed.Should().Equal(true);
+	}
+
+	private static List<bool> ObserveEmptyCatalogueState(MainWindowViewModel viewModel)
+	{
+		var observed = new List<bool>();
+		((INotifyPropertyChanged)viewModel).PropertyChanged += (_, args) =>
+		{
+			if (args.PropertyName == nameof(MainWindowViewModel.IsCatalogueEmpty))
+			{
+				observed.Add(viewModel.IsCatalogueEmpty);
+			}
+		};
+
+		return observed;
+	}
+
 	private static List<int> ObservePenCount(MainWindowViewModel viewModel)
 	{
 		var observed = new List<int>();

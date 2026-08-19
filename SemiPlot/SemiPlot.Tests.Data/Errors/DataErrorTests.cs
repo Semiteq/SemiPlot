@@ -30,6 +30,7 @@ public sealed class DataErrorTests
 	[InlineData(ConnectionFileProblem.MissingField)]
 	[InlineData(ConnectionFileProblem.OutOfRange)]
 	[InlineData(ConnectionFileProblem.UnknownTimeZone)]
+	[InlineData(ConnectionFileProblem.VersionMismatch)]
 	public void ConnectionFileInvalidErrorKeepsItsDiscriminator(ConnectionFileProblem kind)
 	{
 		const string reason = "source_time_zone is blank";
@@ -42,29 +43,9 @@ public sealed class DataErrorTests
 	}
 
 	[Fact]
-	public void ConnectionFileVersionMismatchErrorCarriesBothVersions()
-	{
-		var error = new ConnectionFileVersionMismatchError(ConnectionFilePath, "2", "1");
-
-		Assert.Equal(ConnectionFilePath, error.Path);
-		Assert.Equal("2", error.FoundVersion);
-		Assert.Equal("1", error.ExpectedVersion);
-	}
-
-	[Fact]
 	public void ArchiveUnreachableErrorCarriesTheEndpoint()
 	{
 		var error = new ArchiveUnreachableError(Host, Port, Database);
-
-		Assert.Equal(Host, error.Host);
-		Assert.Equal(Port, error.Port);
-		Assert.Equal(Database, error.Database);
-	}
-
-	[Fact]
-	public void ArchiveDatabaseMissingErrorCarriesTheEndpoint()
-	{
-		var error = new ArchiveDatabaseMissingError(Host, Port, Database);
 
 		Assert.Equal(Host, error.Host);
 		Assert.Equal(Port, error.Port);
@@ -89,12 +70,37 @@ public sealed class DataErrorTests
 	[InlineData("semiplot_tags")]
 	public void ArchiveNotInitialisedErrorCarriesTheMissingTable(string table)
 	{
-		var error = new ArchiveNotInitialisedError(Host, Port, Database, table);
+		var error = new ArchiveNotInitialisedError(Host, Port, Database, ArchiveObject.Table, table);
 
 		Assert.Equal(Host, error.Host);
 		Assert.Equal(Port, error.Port);
 		Assert.Equal(Database, error.Database);
+		Assert.Equal(ArchiveObject.Table, error.MissingObject);
 		Assert.Equal(table, error.Table);
+	}
+
+	// The consumer routes on Table once MissingObject says a table is absent, and a message reading
+	// "holds no table ''" names nothing to act on. So the pair is rejected where it is built.
+	[Theory]
+	[InlineData(null)]
+	[InlineData("")]
+	[InlineData("   ")]
+	public void ArchiveNotInitialisedErrorRejectsATableCaseNamingNoTable(string? table)
+	{
+		Assert.ThrowsAny<ArgumentException>(
+			() => new ArchiveNotInitialisedError(Host, Port, Database, ArchiveObject.Table, table));
+	}
+
+	[Fact]
+	public void ArchiveNotInitialisedErrorCarriesAMissingDatabaseWithNoTable()
+	{
+		var error = new ArchiveNotInitialisedError(Host, Port, Database, ArchiveObject.Database, table: null);
+
+		Assert.Equal(Host, error.Host);
+		Assert.Equal(Port, error.Port);
+		Assert.Equal(Database, error.Database);
+		Assert.Equal(ArchiveObject.Database, error.MissingObject);
+		Assert.Null(error.Table);
 	}
 
 	[Fact]
@@ -135,17 +141,23 @@ public sealed class DataErrorTests
 	public void EachArchiveStateStaysTellableApartThroughAFailedResult()
 	{
 		var unreachable = Result.Fail(new ArchiveUnreachableError(Host, Port, Database));
-		var databaseMissing = Result.Fail(new ArchiveDatabaseMissingError(Host, Port, Database));
+		var databaseMissing = Result.Fail(
+			new ArchiveNotInitialisedError(Host, Port, Database, ArchiveObject.Database, table: null));
 		var accessDenied = Result.Fail(new ArchiveAccessDeniedError(Host, Port, Database, "semiplot_reader"));
-		var notInitialised = Result.Fail(new ArchiveNotInitialisedError(Host, Port, Database, "trends"));
+		var tableMissing = Result.Fail(
+			new ArchiveNotInitialisedError(Host, Port, Database, ArchiveObject.Table, "trends"));
 		var readFailed = Result.Fail(new ArchiveReadFailedError(Host, Port, Database, "42P07"));
 
 		Assert.Single(unreachable.Errors.OfType<ArchiveUnreachableError>());
-		Assert.Empty(unreachable.Errors.OfType<ArchiveDatabaseMissingError>());
-		Assert.Single(databaseMissing.Errors.OfType<ArchiveDatabaseMissingError>());
+		Assert.Empty(unreachable.Errors.OfType<ArchiveNotInitialisedError>());
+		Assert.Equal(
+			ArchiveObject.Database,
+			Assert.Single(databaseMissing.Errors.OfType<ArchiveNotInitialisedError>()).MissingObject);
 		Assert.Single(accessDenied.Errors.OfType<ArchiveAccessDeniedError>());
 		Assert.Empty(accessDenied.Errors.OfType<ArchiveUnreachableError>());
-		Assert.Single(notInitialised.Errors.OfType<ArchiveNotInitialisedError>());
+		Assert.Equal(
+			ArchiveObject.Table,
+			Assert.Single(tableMissing.Errors.OfType<ArchiveNotInitialisedError>()).MissingObject);
 		Assert.Single(readFailed.Errors.OfType<ArchiveReadFailedError>());
 		Assert.Empty(readFailed.Errors.OfType<ArchiveNotInitialisedError>());
 	}

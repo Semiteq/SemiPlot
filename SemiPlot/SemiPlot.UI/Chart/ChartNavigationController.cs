@@ -1,4 +1,5 @@
-﻿using SemiPlot.Core.Trends;
+﻿using SemiPlot.Core.Data;
+using SemiPlot.Core.Trends;
 
 namespace SemiPlot.UI.Chart;
 
@@ -15,7 +16,6 @@ public sealed class ChartNavigationController
 	// each direction.
 	private const double ColumnCountHysteresisFraction = 0.1;
 	private static readonly TimeSpan _defaultWindowWidth = TimeSpan.FromHours(1.0);
-	private DateTime _firstSample;
 	private bool _hasData;
 	private DateTime _liveEdge;
 
@@ -25,9 +25,9 @@ public sealed class ChartNavigationController
 	public ChartNavigationController()
 	{
 		var now = DateTime.UtcNow;
-		_firstSample = now - _defaultWindowWidth;
+		var firstSample = now - _defaultWindowWidth;
 		_liveEdge = now;
-		_navigation = new TrendNavigationModel(_firstSample, now, _firstSample, isSticky: true);
+		_navigation = new TrendNavigationModel(firstSample, now, firstSample, isSticky: true);
 		ActiveLayer = LayerForCurrentWidth();
 	}
 
@@ -63,10 +63,34 @@ public sealed class ChartNavigationController
 				_navigation.From, _navigation.To, ActiveLayer, IsColumnCountChange: true));
 	}
 
+	/// <summary>
+	/// Opens the window on the archive instead of on the wall clock, from the extent startup already read.
+	/// </summary>
+	/// <remarks>
+	/// It routes through <see cref="TrackDataExtents"/> deliberately: that call sets the has-data latch, so
+	/// the first history envelope does not snap the window a second time and undo the seed. An archive whose
+	/// last sample is older than the opening window would otherwise never snap at all — no envelope has rows,
+	/// nothing calls <see cref="TrackDataExtents"/>, and a pan into the past clamps to startup minus one hour,
+	/// after the data the minimap is drawing.
+	/// <para>
+	/// An empty extent seeds nothing and leaves the wall-clock window, which is the only sensible view of an
+	/// archive with no rows.
+	/// </para>
+	/// </remarks>
+	public void SeedFromArchiveExtent(ArchiveExtent extent)
+	{
+		ArgumentNullException.ThrowIfNull(extent);
+
+		if (extent.IsEmpty)
+		{
+			return;
+		}
+
+		TrackDataExtents(extent.FirstUtc, extent.LastUtc);
+	}
+
 	public void TrackDataExtents(DateTime firstSample, DateTime lastSample)
 	{
-		_firstSample = firstSample;
-
 		if (_hasData)
 		{
 			return;

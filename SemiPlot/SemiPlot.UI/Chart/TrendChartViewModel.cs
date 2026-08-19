@@ -205,12 +205,13 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 		var layer = Navigation.ActiveLayer;
 		var sequence = NextHistorySequence();
+		IReadOnlyList<long> requestedPenIds = [.. _pensById.Keys];
 		_isInitialHistoryInFlight = true;
 
 		try
 		{
 			var result = await _coordinator.QueryHistoryAsync(
-				[.. _pensById.Keys], Navigation.From, Navigation.To, layer, _reportedColumnTarget);
+				requestedPenIds, Navigation.From, Navigation.To, layer, _reportedColumnTarget);
 			if (result.IsFailed)
 			{
 				ReleaseInitialHistoryGate();
@@ -218,7 +219,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 				return;
 			}
 
-			ScheduleHistoryApplyWhenAlive(new TrendHistory(layer, result.Value), sequence);
+			ScheduleHistoryApplyWhenAlive(new TrendHistory(layer, result.Value), requestedPenIds, sequence);
 		}
 		catch (Exception queryFailure)
 		{
@@ -248,7 +249,10 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		RequestHistory(Navigation.From, Navigation.To, Navigation.ActiveLayer);
 	}
 
-	private void ScheduleHistoryApplyWhenAlive(TrendHistory history, long sequence)
+	private void ScheduleHistoryApplyWhenAlive(
+		TrendHistory history,
+		IReadOnlyList<long> requestedPenIds,
+		long sequence)
 	{
 		var scheduledApply = _uiScheduler.Schedule(() =>
 		{
@@ -257,7 +261,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 				return;
 			}
 
-			ApplyHistory(history, sequence);
+			ApplyHistory(history, requestedPenIds, sequence);
 		});
 		_disposables.Add(scheduledApply);
 	}
@@ -501,7 +505,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	// Latest-window-wins: a result whose request sequence is older than the most recently applied one is
 	// dropped so an older window can never overwrite a newer one.
-	private void ApplyHistory(TrendHistory history, long sequence)
+	private void ApplyHistory(TrendHistory history, IReadOnlyList<long> requestedPenIds, long sequence)
 	{
 		if (sequence < _lastAppliedHistorySequence)
 		{
@@ -527,9 +531,29 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			}
 		}
 
+		DropPensMissingFromHistory(history, requestedPenIds);
 		ApplyAxisModel();
 		RequestRedraw();
 		ReleaseInitialHistoryGate();
+	}
+
+	// A requested pen the provider returned no envelope for has no data in this window, so its curve is
+	// cleared. Only the identifiers the request carried are considered: a pen added while the query was in
+	// flight was never asked about, and clearing it would drop a curve the result says nothing about.
+	private void DropPensMissingFromHistory(TrendHistory history, IReadOnlyList<long> requestedPenIds)
+	{
+		var returnedPenIds = history.Pens.Select(envelope => envelope.PenId).ToHashSet();
+
+		foreach (var penId in requestedPenIds)
+		{
+			if (returnedPenIds.Contains(penId))
+			{
+				continue;
+			}
+
+			_envelopesById.Remove(penId);
+			_pensById.GetValueOrDefault(penId)?.ClearHistory();
+		}
 	}
 
 	private bool UpdateAxisSettings(long penId, Func<PenScaleSettings, PenScaleSettings> update)

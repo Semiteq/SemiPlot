@@ -57,7 +57,12 @@
                 BorderThickness="0,1,0,0"
                 BorderBrush="Gray"
                 Padding="8,4"
-                IsVisible="False" />
+                IsVisible="{Binding IsCatalogueEmpty}">
+            <TextBlock Name="EmptyCatalogueMessage"
+                       Text="Pen catalogue is empty: the archive answered and semiplot_tags holds no pens. Ask whoever commissions this tool to fill it."
+                       TextWrapping="Wrap"
+                       VerticalAlignment="Center" />
+        </Border>
 
         <Border Grid.Row="4"
                 Name="StatusBar"

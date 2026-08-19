@@ -153,7 +153,10 @@ public static class PostgresConnectionLoader
 		if (!string.Equals(foundVersion, SupportedFileVersion, StringComparison.Ordinal))
 		{
 			return Result.Fail(
-				new ConnectionFileVersionMismatchError(filePath, foundVersion, SupportedFileVersion));
+				new ConnectionFileInvalidError(
+					filePath,
+					ConnectionFileProblem.VersionMismatch,
+					$"the file is version '{foundVersion}', not the supported '{SupportedFileVersion}'"));
 		}
 
 		return Result.Ok();

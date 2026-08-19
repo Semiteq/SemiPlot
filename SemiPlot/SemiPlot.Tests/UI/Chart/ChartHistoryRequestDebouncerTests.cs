@@ -38,7 +38,7 @@ public sealed class ChartHistoryRequestDebouncerTests
 					.Return(Ok(request))
 					.ToTask();
 			},
-			(_, _) => { },
+			(_, _, _) => { },
 			_ => { },
 			_debounceWindow,
 			scheduler,
@@ -79,7 +79,7 @@ public sealed class ChartHistoryRequestDebouncerTests
 
 				return Ok(request);
 			},
-			(history, _) =>
+			(history, _, _) =>
 			{
 				applied.Add(history.Layer);
 				if (history.Layer == AggregationLayer.Hour)
@@ -114,7 +114,7 @@ public sealed class ChartHistoryRequestDebouncerTests
 		var appliedLayers = new List<AggregationLayer>();
 		using var debouncer = new ChartHistoryRequestDebouncer(
 			_ => throw new InvalidOperationException("query failed"),
-			(history, _) => appliedLayers.Add(history.Layer),
+			(history, _, _) => appliedLayers.Add(history.Layer),
 			reportedFailures.Add,
 			_debounceWindow,
 			scheduler,
@@ -128,6 +128,27 @@ public sealed class ChartHistoryRequestDebouncerTests
 
 		reportedFailures.Should().HaveCount(2);
 		appliedLayers.Should().BeEmpty();
+	}
+
+	[Fact]
+	public void AppliedResult_CarriesTheIdentifiersItsRequestAskedFor()
+	{
+		// Without them the consumer cannot tell a pen the provider omitted from one it was never asked for.
+		var scheduler = new TestScheduler();
+		IReadOnlyList<long>? appliedPenIds = null;
+		using var debouncer = new ChartHistoryRequestDebouncer(
+			request => Task.FromResult(Ok(request)),
+			(_, requestedPenIds, _) => appliedPenIds = requestedPenIds,
+			_ => { },
+			_debounceWindow,
+			scheduler,
+			ImmediateScheduler.Instance);
+
+		debouncer.Request(new HistoryRequest(
+			[4L, 7L], _from, _to, AggregationLayer.Raw, 3L, HistoryColumnTarget.MaxColumns));
+		scheduler.AdvanceBy(_debounceWindow.Ticks + 1);
+
+		appliedPenIds.Should().Equal(4L, 7L);
 	}
 
 	private static Result<IReadOnlyList<PenHistoryEnvelope>> Ok(HistoryRequest request)

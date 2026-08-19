@@ -102,16 +102,15 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	}
 
 	[Fact]
-	public void AVersionMismatchYieldsTheMismatchError()
+	public void AVersionMismatchYieldsTheMismatchDiscriminator()
 	{
 		var path = WriteFile(Compose(Replace("connection_file_version", "\"2.0\"")));
 
 		var result = PostgresConnectionLoader.Load(path);
 
-		var error = Assert.Single(result.Errors.OfType<ConnectionFileVersionMismatchError>());
+		var error = Assert.Single(result.Errors.OfType<ConnectionFileInvalidError>());
 		Assert.Equal(path, error.Path);
-		Assert.Equal("2.0", error.FoundVersion);
-		Assert.Equal(PostgresConnectionLoader.SupportedFileVersion, error.ExpectedVersion);
+		Assert.Equal(ConnectionFileProblem.VersionMismatch, error.Kind);
 	}
 
 	// A file holding nothing but the version is what pins the ordering; an otherwise-complete file cannot.
@@ -122,8 +121,8 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 		var result = PostgresConnectionLoader.Load(path);
 
-		Assert.Single(result.Errors.OfType<ConnectionFileVersionMismatchError>());
-		Assert.Empty(result.Errors.OfType<ConnectionFileInvalidError>());
+		var error = Assert.Single(result.Errors.OfType<ConnectionFileInvalidError>());
+		Assert.Equal(ConnectionFileProblem.VersionMismatch, error.Kind);
 	}
 
 	[Fact]

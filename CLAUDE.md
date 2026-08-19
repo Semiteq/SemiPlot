@@ -150,6 +150,11 @@ No abbreviations in names.
   registration: capture `AvaloniaScheduler.Instance` (= `RxApp.MainThreadScheduler`) in the
   `.AfterSetup(...)` callback after `UseReactiveUI()` and pass it explicitly to the coordinator
   constructor and the chart/minimap factories.
+- Startup work that touches no Avalonia type belongs in `Program`, ahead of `BuildAvaloniaApp()`,
+  not in `.AfterSetup(...)`: that callback is synchronous, so a data read inside it either blocks
+  Avalonia's setup or throws through it. `StartupProbe` reads there and hands `App.Run` a
+  `StartupData` record; the UI scheduler is why the split lands exactly at that boundary
+  (`docs/architecture/data-integration.md`).
 
 ### Interface Design
 

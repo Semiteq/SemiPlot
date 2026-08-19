@@ -12,6 +12,12 @@ its CI provisions a Linux container by running `all` twice, and the `v0.1.0` rel
 failure handling adopts the SemiStep typed-results discipline; the stub fallback is removed from
 the composition slice; and a final slice replaces the stub with a live demo bench.
 
+**Amended 2026-08-19** after provider-simplification was found to be scoped from statements this
+document made before any code existed: the statement-pinning guard now records the mechanism that
+shipped, and that slice keeps `MissingRelationProbe` and the shipped pinning. A shipped decision
+that supersedes something written here amends this document in the same pull request — leaving the
+two to disagree is what let a regression be scoped as a return to plan.
+
 ## Summary
 
 SemiPlot renders trends on synthetic data: the running application resolves `IDataProvider` to the
@@ -114,11 +120,16 @@ it.
   `AggregationLayerTests`, `ChartNavigationControllerTests` and `RandomStubDataProviderTests` hold
   the ladder's numbers — each layer's point spacing, the ceilings derived from it and the hysteresis
   band — so a slice that moves a rung by accident fails there first.
-- **Statement-text pinning.** Every SQL statement is asserted character for character, together with
-  its parameter names, against a literal held in the test file itself, so an accidental edit to
-  shipped SQL surfaces as a failing diff rather than as an opinion. `docs/architecture/data-integration.md`
-  names the class that holds the statements rather than quoting them normatively: the document is
-  documentation, not a build input, and one SQL change touches one file.
+- **Statement-text pinning.** Every operational statement lives in one class,
+  `SemiPlot/SemiPlot.DataSource.Postgres/ArchiveStatements.cs`, and
+  `docs/architecture/data-integration.md` quotes each one in a fenced block under a stable heading.
+  `ArchiveStatementTextTests` reads those fences at run time and asserts constant-equals-fence, so an
+  edit to either side alone fails; binders are pinned against their statement's own parameter names.
+  A literal held in the test file would catch the code half only, and it is the weaker guard rather
+  than the cheaper one: the document is the artifact each slice's brief is assembled from, so a fence
+  that silently stops describing the shipped statement corrupts the next slice's plan while every
+  test stays green. The document also quotes statements no slice has built yet, which is what makes
+  it lead the code rather than trail it.
 - **`EXPLAIN` assertions.** Gated integration tests assert the plan's shape for the extent statement,
   the windowed history query and the realtime poll: an index scan under each bounded subquery, and no
   sequential scan of a `trends` partition holding rows. The plan cannot name `tpk` — it is the parent
@@ -337,31 +348,45 @@ it.
 - **Branch:** postgres-history-read
 
 ### Slice provider-simplification — Status: PENDING
-- **Scope:** Take back three things the shipped provider carries for no reader. Two are deletions.
-  `MissingRelationProbe` goes: it costs a class, a network round trip inside an error path, and its
-  own tests and registration, to name which of two relations a `42P01` refers to — in a state that
-  occurs once per site lifetime, and where the log already carries the raw exception naming the
-  table. Each read reports the relation its own statement touches instead. `ArchiveDataSource`
-  collapses to a fixed generous command timeout: the physical-connection initializer, the
-  `pg_settings` read-back and the cached bound exist so `ArchiveQueryTimedOutError` can report the
-  server's exact number, which nobody has asked to see. Both error types keep their public shape and
-  their fields; only the value in the reported timeout and the relation name change.
-  This slice also brings the shipped statement pinning onto the guard the roadmap states: the
-  catalogue and extent statements are pinned against a literal in the test instead of against fenced
-  blocks read out of `docs/architecture/data-integration.md` at run time, the hand-rolled fence
-  parser and the tests guarding it go, and the document is trimmed to name the class that holds the
-  statements. The SQL text itself does not change — the pinned literal is the shipped constant.
+- **Scope:** Take back the one thing the shipped provider carries for no reader, and correct two
+  comments that misdescribe what is kept. `ArchiveDataSource` carries the most intricate code in the
+  provider — a dual physical-connection initializer, an interlocked tick cache, a `pg_settings`
+  parse and a warn-on-change arm — and it serves two purposes that the slice plan must weigh
+  separately, because they are coupled through one field and a simplification can keep only one
+  cleanly. The first is truthful reporting: `ArchiveQueryTimedOutError` carries the bound the server
+  actually applied, which matters because `statement_timeout` is `USERSET`, so the effective value
+  genuinely varies per site and is knowable no other way. The second is an unambiguous client
+  timeout: the command bound is set one margin above the server's, so a `TimeoutException` can only
+  mean the server stopped answering, which is why it maps to `ArchiveUnreachableError` and never to
+  `ArchiveQueryTimedOutError`. A fixed generous bound drops both — the server's own default still
+  fires `57014` and the error then reports a number the server never applied, which is worse than
+  none. Reading `pg_settings` lazily on the `57014` path instead keeps the number true and deletes
+  the whole initializer apparatus, at the cost of choosing the client bound without knowing the
+  server's. The plan settles which purpose survives and states the cost; `ArchiveQueryTimedOutError`
+  keeps its public shape and fields either way, and if the number cannot be kept true it reports
+  unknown rather than a wrong one. The two comment corrections are
+  `SemiPlot/SemiPlot.Tests.Data/Postgres/ArchiveStatementTextTests.cs`, whose header claims the code
+  half needs no pinning when the code half is the production half, and
+  `SemiPlot/SemiPlot.DataSource.Postgres/MissingRelationProbe.cs`, whose class doc says a non-English
+  `lc_messages` would change the table name in the message text — localisation changes the wording
+  and the quote glyphs, not the interpolated identifier, and the real reason not to read it is that
+  the project routes on structured fields rather than on message text.
 - **Issue:** none
-- **Blast radius:** `SemiPlot.DataSource.Postgres` and its tests — the provider, its DI extension,
-  the exception mapper's timeout source, and the tests covering the three — plus the SQL section of
-  `docs/architecture/data-integration.md`. No other project and no application code.
-- **Risk:** low — each change deletes a mechanism rather than reshapes one, and no caller outside
-  the provider project reads what is removed.
+- **Blast radius:** `ArchiveDataSource`, the exception mapper's timeout source, the DI extension and
+  the tests covering the three, plus two comment-only edits named in the scope. Whatever the plan
+  settles about the reported number also lands in the error-semantics section of
+  `docs/architecture/data-integration.md`, in `postgres-instance.md`'s read-back rationale and in
+  `ArchiveQueryTimedOutError`'s own contract — those three describe the current behaviour and must
+  not be left describing it once it changes. No other project and no application code.
+- **Risk:** medium, concentrated in the client-bound choice rather than in the deletion: the bound
+  decides whether a slow-but-alive server reads as unreachable, and the dead-server detection time
+  moves with it.
 - **Depends on:** postgres-history-read
 - **Stacking base:** master
-- **Scope guard:** no behaviour change beyond the value reported in `ArchiveQueryTimedOutError` and
-  the relation named in one rare `42P01`; no new queries and no edit to the text of an existing one;
-  no error-type merges — those belong to postgres-startup-and-composition.
+- **Scope guard:** `MissingRelationProbe` stays — its deletion was scoped from a premise the code
+  disproves, and postgres-startup-and-composition deepens the reliance on the distinction it keeps.
+  Statement pinning stays as shipped. No new queries and no edit to the text of an existing one; no
+  error-type merges — those belong to postgres-startup-and-composition.
 - **Plan:** —
 - **PR:** —
 - **Branch:** —

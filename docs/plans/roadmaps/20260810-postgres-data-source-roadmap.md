@@ -2,7 +2,7 @@
 
 **Issues:** none declared — the repository has no issue tracker in use. This roadmap covers the
 whole span from "the viewer runs on synthetic data" to "the viewer reads a real Simple-Scada
-archive", sliced into twelve independently shippable pull requests.
+archive", sliced into independently shippable pull requests.
 
 **Amended 2026-08-14** after the archive-populator sanity review: the bench is two solution
 projects provisioned by SemiBase (verified: `v0.1.0` at `aa037a4`, all commands cross-platform,
@@ -18,6 +18,19 @@ shipped, and that slice keeps `MissingRelationProbe` and the shipped pinning. A 
 that supersedes something written here amends this document in the same pull request — leaving the
 two to disagree is what let a regression be scoped as a return to plan.
 
+**Re-sliced 2026-08-19** after provider-simplification shipped. The remaining work is four slices
+rather than six: `postgres-startup-and-composition` is split so the application reads the real
+archive one slice from here instead of four, because everything downstream has only ever been
+validated against synthetic data whose shape does not match the archive, and the slice most likely
+to be subtly wrong — gap reconstruction — was being built with nothing on screen to check it
+against. Realtime, the demo bench and the stub's retirement merge into one slice, which is what they
+always were. `postgres-bucketed-read` is dropped pending a measurement.
+
+**The planning apparatus scales to the risk the slice declares.** A low-risk slice takes a
+one-page plan and one review round; the full apparatus — a long plan, several review rounds — is for
+slices rated medium or higher. Five review rounds over a slice that corrects two comments is a cost
+with no defect behind it, and the test suite, not the rounds, is what catches behaviour.
+
 ## Summary
 
 SemiPlot renders trends on synthetic data: the running application resolves `IDataProvider` to the
@@ -25,7 +38,7 @@ stub, which emits random walks. `PostgresDataProvider` stands beside it and read
 and the archive extent from a real database, but its history and realtime members are still
 unimplemented and no composition selects it. The architecture for reading the Simple-Scada 2 PostgreSQL
 archive is settled and documented, and the aggregation-layer ladder already picks a resolution by
-the rule that architecture states. Twelve slices deliver a production provider, the local test bench
+the rule that architecture states. The slices below deliver a production provider, the local test bench
 it is developed against, and a live demo bench that retires the synthetic stub. The roadmap closes
 when the application, pointed at a populated database, draws real history, follows the live edge,
 selects archive layers by window width, and the stub project is gone.
@@ -128,8 +141,14 @@ it.
   A literal held in the test file would catch the code half only, and it is the weaker guard rather
   than the cheaper one: the document is the artifact each slice's brief is assembled from, so a fence
   that silently stops describing the shipped statement corrupts the next slice's plan while every
-  test stays green. The document also quotes statements no slice has built yet, which is what makes
-  it lead the code rather than trail it.
+  test stays green.
+
+  That is the mechanism as shipped, and it stays. It does not grow: two operational statements
+  (`RelationProbe`, `EffectiveStatementTimeout`) are already unpinned, both are one line used from
+  one call site, and both are covered behaviourally by gated tests that fail if the statement stops
+  working. A statement a future slice adds is pinned with a plain literal in its test unless the
+  document quotes it for a reader's sake anyway. Reading markdown at run time earns its place for
+  the three statements that carry the read path and buys progressively less for each one after.
 - **`EXPLAIN` assertions.** Gated integration tests assert the plan's shape for the extent statement,
   the windowed history query and the realtime poll: an index scan under each bounded subquery, and no
   sequential scan of a `trends` partition holding rows. The plan cannot name `tpk` — it is the parent
@@ -347,46 +366,74 @@ it.
 - **PR:** #6 (merged)
 - **Branch:** postgres-history-read
 
-### Slice provider-simplification — Status: PENDING
+### Slice provider-simplification — Status: DONE
 - **Scope:** Take back the one thing the shipped provider carries for no reader, and correct two
-  comments that misdescribe what is kept. `ArchiveDataSource` carries the most intricate code in the
-  provider — a dual physical-connection initializer, an interlocked tick cache, a `pg_settings`
-  parse and a warn-on-change arm — and it serves two purposes that the slice plan must weigh
-  separately, because they are coupled through one field and a simplification can keep only one
-  cleanly. The first is truthful reporting: `ArchiveQueryTimedOutError` carries the bound the server
-  actually applied, which matters because `statement_timeout` is `USERSET`, so the effective value
-  genuinely varies per site and is knowable no other way. The second is an unambiguous client
-  timeout: the command bound is set one margin above the server's, so a `TimeoutException` can only
-  mean the server stopped answering, which is why it maps to `ArchiveUnreachableError` and never to
-  `ArchiveQueryTimedOutError`. A fixed generous bound drops both — the server's own default still
-  fires `57014` and the error then reports a number the server never applied, which is worse than
-  none. Reading `pg_settings` lazily on the `57014` path instead keeps the number true and deletes
-  the whole initializer apparatus, at the cost of choosing the client bound without knowing the
-  server's. The plan settles which purpose survives and states the cost; `ArchiveQueryTimedOutError`
-  keeps its public shape and fields either way, and if the number cannot be kept true it reports
-  unknown rather than a wrong one. The two comment corrections are
-  `SemiPlot/SemiPlot.Tests.Data/Postgres/ArchiveStatementTextTests.cs`, whose header claims the code
-  half needs no pinning when the code half is the production half, and
-  `SemiPlot/SemiPlot.DataSource.Postgres/MissingRelationProbe.cs`, whose class doc says a non-English
-  `lc_messages` would change the table name in the message text — localisation changes the wording
-  and the quote glyphs, not the interpolated identifier, and the real reason not to read it is that
-  the project routes on structured fields rather than on message text.
+  comments that misdescribe what is kept. `ArchiveDataSource` carried the most intricate code in the
+  provider — a dual physical-connection initializer, an interlocked tick cache, a `pg_settings` parse
+  and a warn-on-change arm — serving two purposes coupled through one field: reporting the bound the
+  server actually applied, and setting each command's bound one margin above it so a client timeout
+  could only mean the server had stopped answering. The first survives, read lazily on the `57014`
+  path; the second is replaced by a fixed backstop, and the consequences are documented rather than
+  buried.
 - **Issue:** none
 - **Blast radius:** `ArchiveDataSource`, the exception mapper's timeout source, the DI extension and
-  the tests covering the three, plus two comment-only edits named in the scope. Whatever the plan
-  settles about the reported number also lands in the error-semantics section of
-  `docs/architecture/data-integration.md`, in `postgres-instance.md`'s read-back rationale and in
-  `ArchiveQueryTimedOutError`'s own contract — those three describe the current behaviour and must
-  not be left describing it once it changes. No other project and no application code.
-- **Risk:** medium, concentrated in the client-bound choice rather than in the deletion: the bound
-  decides whether a slow-but-alive server reads as unreachable, and the dead-server detection time
-  moves with it.
+  their tests, plus the error-semantics regions of `data-integration.md` and `postgres-instance.md`.
+- **Risk:** medium, concentrated in the client-bound choice rather than in the deletion.
 - **Depends on:** postgres-history-read
 - **Stacking base:** master
-- **Scope guard:** `MissingRelationProbe` stays — its deletion was scoped from a premise the code
-  disproves, and postgres-startup-and-composition deepens the reliance on the distinction it keeps.
-  Statement pinning stays as shipped. No new queries and no edit to the text of an existing one; no
-  error-type merges — those belong to postgres-startup-and-composition.
+- **Scope guard:** `MissingRelationProbe` stays; statement pinning stays as shipped; no new queries,
+  no error-type merges.
+- **Plan:** docs/plans/completed/20260819-provider-simplification.md
+- **PR:** #10 (merged)
+- **Branch:** provider-simplification
+
+### Slice postgres-wire-up — Status: PENDING
+- **Scope:** Make the application read the real archive, with every failure visible. `Program` and
+  `App` gain configuration-directory handling and load `PostgresConnectionSettings` at startup; the
+  composition root registers `AddPostgresData` by default, with the stub selectable only by an
+  explicit development flag. **There is no stub fallback** — an unreachable database is an error
+  state, never silently substituted synthetic data. A startup probe returns a `Result`, and the two
+  error-type merges land here: `ConnectionFileVersionMismatchError` folds into
+  `ConnectionFileInvalidError` as a `ConnectionFileProblem` value, the file format having had one
+  version ever; `ArchiveDatabaseMissingError` folds into `ArchiveNotInitialisedError`, both being
+  "this server carries no archive to read yet", discriminated by which object is absent. The UI maps
+  every remaining public error type onto a distinct visible state in one exhaustive `switch` with no
+  catch-all arm, so the compiler reports an unhandled type; whether that fails the build or only
+  warns turns on `TreatWarningsAsErrors`, which `SemiPlot/Directory.Build.props` does not set, and
+  making that gate hard is this slice's plan to settle. An empty pen catalogue is not an error:
+  postgres-catalog-and-extent settles it as a success-channel state, so it surfaces as a UI state
+  reached through a successful `Result`, pinned by a named test of its own.
+
+  Two pieces of work no slice previously owned land here because this slice is what makes them
+  reachable. **Startup seeds the window from the archive extent.** `ChartNavigationController` opens
+  on `now - 1h .. now` and `TrackDataExtents` moves `FirstSample` only from an envelope that has
+  rows, so an archive whose last sample is older than the opening window returns nothing, the window
+  never snaps onto the data, and panning clamps to a point after it — the minimap shows the extent
+  the chart cannot reach. **And `TrendChartViewModel.ApplyHistory` drops the entry for a requested
+  pen a result omits**, closing the consumer half of the interim no-envelope rule
+  postgres-history-read shipped; that path stays correct after gap reconstruction adds its seed
+  lookup, because a pen with no data at all still gets no envelope.
+
+  The startup probe needs its own bound or cancellation token: provider-simplification replaced the
+  derived command timeout with a fixed backstop, so a hung-but-accepting server otherwise leaves
+  startup waiting the full backstop before `ArchiveUnreachableError` exists to map to a state.
+
+  A thin gated suite on `Avalonia.Headless` against a bench-seeded database proves the composition:
+  pens listed from `semiplot_tags`, history drawn with counts consistent with the seed, layer switch
+  on zoom, the empty-catalogue state, and one test per startup error state asserting the UI state,
+  never log text.
+- **Issue:** none
+- **Blast radius:** the composition root, the startup path, the chart view model and the navigation
+  controller — the first slice that changes what the running application does by default.
+- **Risk:** medium, concentrated in the error-state mapping and in the extent seeding, which has no
+  synthetic equivalent to have been exercised against.
+- **Depends on:** provider-simplification
+- **Stacking base:** master
+- **Scope guard:** no change to any provider project and no new SQL. No gap semantics — a `q = 32`
+  break still draws as a step until postgres-gap-reconstruction. No realtime; `Subscribe` stays
+  empty and the live edge is static. No new error types beyond the two merges — the unexpected table
+  shape and the non-empty default partition arrive with the closing slice, and the exhaustive switch
+  forces their mapping then. No stub deletion; the flag stays until the closing slice.
 - **Plan:** —
 - **PR:** —
 - **Branch:** —
@@ -400,169 +447,78 @@ it.
   `q` member, so this slice extends the row struct and the reader as well as the fold. The left edge
   needs one addition: a pre-window seed lookup for the pen's last row at or before the window start,
   without which a pen last written before the window opens returns no rows and gets no envelope at
-  all. Tests run against the fixture rows extracted from a real archive as well as against
-  the populated database. This precedes bucketing because a misdrawn break is operator-visible
-  incorrectness while bucketing is a transfer optimisation, and correctness does not wait on an
-  optimisation: reconstruction on the direct read path needs nothing that bucketing provides.
+  all. Tests run against the fixture rows extracted from a real archive as well as against the
+  populated database.
 - **Issue:** none
 - **Blast radius:** the provider's envelope assembly; the rendering path above it already understands
   gap anchors.
 - **Risk:** high relative to the rest — this is the behaviour most likely to be subtly wrong, and
   wrong in a way that looks plausible on screen. A break drawn as a straight line across hours is
-  the failure mode that misleads an operator.
+  the failure mode that misleads an operator. This slice earns the full planning and review
+  apparatus; most do not.
 - **Depends on:** postgres-history-read
 - **Stacking base:** master
 - **Scope guard:** no changes to the statements themselves beyond what gap data requires; no
-  server-side bucketing; no realtime.
+  server-side bucketing; no realtime; no composition changes.
 - **Plan:** —
 - **PR:** —
 - **Branch:** —
 
-### Slice postgres-bucketed-read — Status: PENDING
-- **Scope:** Server-side reduction to pixel columns for windows where the chosen layer is still
-  denser than the canvas. A bucketing statement returning at most one row per column per pen with
-  the minimum, maximum, first and last values, the edge timestamps, the edge quality codes and a
-  break count, with buckets aligned to the window start so the leftmost column is not clipped. The
-  provider chooses between this path and the direct read by the expected row count. The gap
-  reconstruction already shipped on the direct path is fed from the bucketed path's edge quality
-  codes and break count, covering a break that spans several buckets. Statement text and parameter
-  names pinned character for character against a literal in the test; an integration test compares
-  bucketed output against the same window read directly.
-- **Issue:** none
-- **Blast radius:** the provider only; adds a second read path alongside the first.
-- **Risk:** medium, concentrated in bucket alignment and in the choice threshold between the two
-  paths.
-- **Depends on:** postgres-gap-reconstruction
-- **Stacking base:** master
-- **Scope guard:** no gap semantics beyond feeding the shipped reconstruction from bucket edges, no
-  realtime, no layer-selection changes.
-- **Plan:** —
-- **PR:** —
-- **Branch:** —
+### Slice postgres-live-edge-and-demo — Status: PENDING
+- **Scope:** The live edge, the demo bench that exercises it, and the stub's retirement — one piece
+  of work rather than three, because the poll is verified by watching a live archive grow and the
+  bench that grows it is what replaces the stub.
 
-### Slice postgres-realtime-poll — Status: PENDING
-- **Scope:** The live edge. A cold observable that polls the raw layer for samples newer than the
-  last one seen, on the injected data scheduler, carrying the variable list in every query because a
-  time-only predicate cannot use the primary key and would scan the current day's partition on every
-  tick. Disposal stops the poll; a query error drops that tick without throwing on the UI thread and
-  without terminating the observable, and repeated consecutive failures surface as a typed
-  connection-state change the UI can show, not only as log lines; the provider never emits a
-  timestamp at or before the last one already delivered, which is what keeps the
-  history-to-realtime seam monotonic.
-  An integration test appends rows and asserts they arrive once, in order, without duplicates, and an
-  `EXPLAIN` assertion pins the index usage.
-  `Subscribe` returns an empty observable today, which is a silent live edge rather than a failure;
-  this slice replaces that body with the poll.
+  A cold observable polls the raw layer for samples newer than the last one seen, on the injected
+  data scheduler, carrying the variable list in every query because a time-only predicate cannot use
+  the primary key and would scan the current day's partition on every tick. Disposal stops the poll;
+  a query error drops that tick without throwing on the UI thread and without terminating the
+  observable, and repeated consecutive failures surface as a typed connection-state change the UI can
+  show, not only as log lines. The provider never emits a timestamp at or before the last one already
+  delivered, which is what keeps the history-to-realtime seam monotonic.
+
+  **The fresh tail lands here**, which no slice previously owned: `data-integration.md` records that
+  a coarse-layer window ending at the live edge is missing up to one period at its right edge until
+  the tail is filled from `l = 0` and concatenated. A live archive makes that visible; a static bench
+  does not.
+
+  The demo bench appends to a seeded database on a wall-clock cadence so the live edge has something
+  to follow, the stub project is deleted, and the aggregation ladder gets its eyes-on confirmation
+  against real data — the check the roadmap has deferred since the beginning. The thin end-to-end
+  journeys that need a live archive land here too: a break rendered as a broken line, and a live
+  insert arriving once.
 - **Issue:** none
-- **Blast radius:** the provider only; the batching and scheduler hand-off above it are unchanged.
+- **Blast radius:** the provider's realtime member, the composition root's provider selection, the
+  deleted stub project and every reference to it, plus the new demo tool.
 - **Risk:** medium, concentrated in the seam invariant and in poll error handling.
-- **Depends on:** postgres-catalog-and-extent
+- **Depends on:** postgres-wire-up, postgres-gap-reconstruction
 - **Stacking base:** master
-- **Scope guard:** no changes to coordinator batching; no composition changes.
+- **Scope guard:** no coordinator batching changes; no bucketing; no new error types beyond the
+  connection-state change the poll needs.
 - **Plan:** —
 - **PR:** —
 - **Branch:** —
 
-### Slice postgres-startup-and-composition — Status: PENDING
-- **Scope:** Make the application actually use the provider. A startup probe returns a `Result`
-  whose **public-plane** typed errors distinguish the states the operator must be able to tell
-  apart. Most of that vocabulary is already shipped: the sealed types in
-  `SemiPlot/SemiPlot.Core/Data/Errors` cover the connection file — absent, malformed, wrong
-  version — and the database — unreachable, missing, access denied, not initialised, query timed
-  out, read failed on an unmapped SQLSTATE — and each of them, after the two merges below, needs its
-  own visible state here. Two operator states have no type yet and are genuinely new work here: an
-  unexpected table shape, and a non-empty default partition. The two merges narrow the vocabulary
-  while it is being mapped, each pair costing a state without buying the operator a distinction:
-  `ConnectionFileVersionMismatchError` folds into `ConnectionFileInvalidError` as a
-  `ConnectionFileProblem` value, the file format having had one version ever; and
-  `ArchiveDatabaseMissingError` folds into `ArchiveNotInitialisedError`, both being "this server
-  carries no archive to read yet", discriminated by which object is absent — the database, the
-  SCADA's `trends`, or SemiBase's `semiplot_tags` — which is already how the surviving type routes
-  its remedy. The mapping is written once and against a settled vocabulary, which is why
-  provider-simplification lands before this slice rather than after it: it changes what
-  `ArchiveQueryTimedOutError` carries, and mapping a vocabulary that then moves underneath means
-  mapping it twice. An empty pen catalogue is not among the
-  new types: postgres-catalog-and-extent settles it as a success-channel state, so this slice
-  surfaces it as a UI state reached through a successful `Result` and pins it with a named test of
-  its own, separate from the mapping guard, which covers error types only. That named test is what
-  keeps `postgres-instance.md`'s "normal states with their own message" a state something can force
-  and something can see. The UI maps each public error type onto a distinct visible state — the
-  application stays alive, draws nothing, and says why —
-  in one exhaustive `switch` the compiler checks (see Guard strategy), so the mapping is total: every
-  public error type in Core has a UI state, and internal errors reach the UI only wrapped in a
-  public envelope. Whether an unhandled type fails the build or only warns turns on
-  `TreatWarningsAsErrors`, which `SemiPlot/Directory.Build.props` does not set; making that gate hard
-  is this slice's plan to settle. **There is no stub fallback**:
-  the database is part of the service, and an unreachable database is an error, never silently
-  substituted synthetic data. The stub remains selectable only by an explicit development flag until
-  the final slice deletes it. DI tests cover the selection; a thin end-to-end suite (5–7 journeys on
-  `Avalonia.Headless` against a bench-seeded database, gated like the data tests) proves the
-  composed application: pens listed from `semiplot_tags`, history drawn with counts consistent with
-  the seed, a break rendered as a broken line, layer switch on zoom, a live insert arriving once,
-  and one test per startup error state asserting the UI state — never log text. On Windows CI the
-  suite reaches PostgreSQL through `SEMIPLOT_TEST_PG` (the runner image ships a stopped PostgreSQL
-  service — verify the image at slice time). This automates the roadmap's close condition.
-  **The consumer side of the no-envelope rule is inherited here.** postgres-history-read ships an
-  interim rule where a pen with no rows in the window gets no envelope, and
-  `TrendChartViewModel.ApplyHistory` writes the pens a result carries while removing none — so a
-  pen the provider omits keeps the previous window's envelope on screen. Wiring the provider to
-  the chart is what makes that reachable at all, so this slice either drops the entry for a
-  requested pen the result omits, or takes the seeded envelope postgres-gap-reconstruction starts
-  sending. `docs/architecture/data-integration.md` carries the rule and its revision.
-- **Issue:** none
-- **Blast radius:** the composition root and startup path — the first slice that changes what the
-  running application does by default. It also touches the chart view model, for the inherited
-  no-envelope rule above.
-- **Risk:** medium, concentrated in the error-state mapping and in keeping the E2E suite thin: the
-  layer boundaries are already covered by contract, so E2E asserts composition, not behaviour
-  matrices.
-- **Depends on:** postgres-bucketed-read, postgres-realtime-poll, provider-simplification
-- **Stacking base:** master
-- **Scope guard:** no new queries; no UI redesign of the error states beyond surfacing them; no
-  stub deletion — that is the final slice's. The two error-type merges are in scope only as far as
-  the types themselves and their call sites; no other error type is reshaped.
-- **Plan:** —
-- **PR:** —
-- **Branch:** —
-
-### Slice live-demo-and-stub-retirement — Status: PENDING
-- **Scope:** Replace the synthetic stub with a live demo bench and delete it. The seeder gains a
-  `--follow` mode: after seeding history up to "now" it keeps walking the same segment sequence in
-  real time as `scada_writer` — raw rows continuously, coarse layers flushed when their period
-  closes (which makes the freshness lag of `l=1/2/3` visible in the running application), the next
-  day's partition created ahead of midnight, and `q = 32`/`q = 16` markers across a graceful stop
-  and restart, so stopping and restarting the demo writer produces real breaks. `--follow` only
-  appends; the only destruction lives in `scripts/seed-demo.ps1`, which wraps drop-and-recreate of
-  the demo database (`semibase create` → seeder with a current-time `--end` → printed connection
-  file). The demo writer plays the role of the SCADA, not of SemiPlot — the application remains a
-  strict read-only consumer. Then delete `SemiPlot.DataSource.Stub`: the project, its solution
-  entry, its DI registration and the development flag; check nothing else references its classes
-  (`MinMaxDecimator` in particular) and relocate anything that is still needed. `FakeDataProvider`
-  in the test project stays — it is a test double, not the stub.
-  This slice also owns the eyes-on confirmation of the layer ladder, which layer-ladder-spacing
-  deliberately deferred: against `RandomStubDataProvider` a wrong layer has no observable
-  consequence, because the stub synthesises points at whatever spacing `ToPointSpacing` hands it and
-  then decimates to the canvas column count, so the drawn curve is identical whether the ladder is
-  right or wrong. On a real archive the difference is large — too fine a layer reads an order of
-  magnitude more rows, too coarse loses detail. With the application drawing real data, maximise and
-  restore the window at a fixed time span and confirm the toolbar's layer readout follows the canvas
-  width and does not oscillate at a rung boundary. This is the first point at which the check can
-  tell a correct ladder from a broken one.
-- **Issue:** none
-- **Blast radius:** the seeder tool, `scripts/`, the composition root, and one deleted project.
-- **Risk:** low — the demo path exercises code every earlier slice already tests; the deletion is
-  mechanical.
-- **Depends on:** postgres-startup-and-composition
-- **Stacking base:** master
-- **Scope guard:** no in-database procedures or scheduled jobs for the demo writer — rejected
-  below; no changes to provider queries.
+### Slice postgres-bucketed-read — Status: DROPPED — no measurement justifies it yet
+- **Scope:** Server-side reduction to pixel columns for windows where the chosen layer is still
+  denser than the canvas.
+- **Why dropped:** it is a transfer optimisation with no measured problem behind it. The worst case
+  the ladder permits is a window at a rung boundary reading on the order of 60 000 rows per pen,
+  which the client decimator already folds and which hysteresis makes transient. Building it would
+  add a second read path, a threshold between the two, its own statement pin, its own `EXPLAIN`
+  assertions and a direct-versus-bucketed comparison suite — all to speed up a case nobody has
+  observed being slow.
+- **Re-add condition:** a measurement from the demo bench or a site showing a wide-window read that
+  is slow enough to notice. Re-add it then, with the number in hand; slugs survive reordering, so
+  nothing else has to move.
+- **Depends on:** postgres-gap-reconstruction
 - **Plan:** —
 - **PR:** —
 - **Branch:** —
 
 ## Close condition
 
-Every one of the twelve slices not marked DROPPED has a MERGED PR. No slice owns an issue, so no
+Every slice not marked DROPPED has a MERGED PR. No slice owns an issue, so no
 issue closes automatically; there is no tracking issue to close by hand. The functional close
 condition is that the application, pointed at a database seeded by the bench, draws real history,
 follows a live edge moved by the `--follow` demo writer, selects layers by window width, breaks the

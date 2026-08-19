@@ -306,8 +306,11 @@ it.
 - **Scope:** History from a chosen layer by direct read. Inherit the single statement class from
   postgres-catalog-and-extent and add the windowed statement to it. Implement the windowed read
   constrained on the variable list, the layer and the time bounds, ordered for
-  per-pen assembly, with timestamps converted at the boundary. Fold the returned rows into one
-  envelope per pen through the existing decimator, preserving the strictly ascending contract. Pin
+  per-pen assembly, with timestamps converted at the boundary. Move `MinMaxDecimator` verbatim from
+  `SemiPlot.DataSource.Stub` to `SemiPlot.Core/Trends` — both providers fold through it and neither
+  data-source project may reference the other — then fold the returned rows into one envelope per
+  pen through it, dropping any row whose converted timestamp does not strictly ascend, which is the
+  daylight-saving artefact `data-integration.md` assigns to the envelope assembler. Pin
   the statement text and its parameter names character for character against a literal in the unit
   test, and assert through `EXPLAIN` that the query reaches its rows through an index and scans no
   row-holding `trends` partition sequentially — the plan cannot name `tpk`, for the reason in Guard

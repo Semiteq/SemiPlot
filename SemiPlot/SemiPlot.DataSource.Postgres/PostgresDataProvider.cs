@@ -96,9 +96,9 @@ public sealed class PostgresDataProvider : IDataProvider
 	/// rows. A window holding no rows at all is a successful empty list rather than a failure.
 	/// <para>
 	/// A pen with nothing in the window gets no envelope. That rule is <b>interim</b>:
-	/// <c>postgres-gap-reconstruction</c> revises it with a pre-window seed lookup, and
-	/// <c>postgres-startup-and-composition</c> owns the consumer side, where a pen dropped from one window's
-	/// result still carries the previous window's envelope. See docs/architecture/data-integration.md.
+	/// <c>postgres-gap-reconstruction</c> revises it with a pre-window seed lookup. The consumer side is
+	/// settled — <c>TrendChartViewModel.ApplyHistory</c> drops a requested pen the result omits, so no pen
+	/// carries the previous window's envelope. See docs/architecture/data-integration.md.
 	/// </para>
 	/// </summary>
 	public async Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(
@@ -292,9 +292,10 @@ public sealed class PostgresDataProvider : IDataProvider
 	}
 
 	// The probe's answer, or this read's own fallback relation when it has none, fills
-	// ArchiveNotInitialisedError.Table, which consumers route on and which can never be empty. The
-	// statement-timeout read is the same shape and runs on 57014 only: both cost a connection and a query
-	// against a server that has already failed one, so no other path pays for them.
+	// ArchiveNotInitialisedError.Table, which consumers route on and which can never be empty on the
+	// 42P01 path this method takes. The statement-timeout read is the same shape and runs on 57014 only:
+	// both cost a connection and a query against a server that has already failed one, so no other path
+	// pays for them.
 	private async Task<Error> MapAsync(Exception exception, string fallbackRelation)
 	{
 		if (exception is PostgresException { SqlState: PostgresErrorCodes.UndefinedTable })

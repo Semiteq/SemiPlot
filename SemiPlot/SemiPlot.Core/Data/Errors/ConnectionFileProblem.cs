@@ -6,5 +6,6 @@ public enum ConnectionFileProblem
 	Unparseable,
 	MissingField,
 	OutOfRange,
-	UnknownTimeZone
+	UnknownTimeZone,
+	VersionMismatch
 }

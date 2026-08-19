@@ -49,11 +49,13 @@ public sealed class ArchiveExceptionMapperTests
 	}
 
 	[Fact]
-	public void AMissingDatabaseMapsToTheDatabaseMissingError()
+	public void AMissingDatabaseMapsToTheDatabaseDiscriminatorAndNamesNoTable()
 	{
 		var error = Map(Postgres("3D000"));
 
-		var missing = Assert.IsType<ArchiveDatabaseMissingError>(error);
+		var missing = Assert.IsType<ArchiveNotInitialisedError>(error);
+		Assert.Equal(ArchiveObject.Database, missing.MissingObject);
+		Assert.Null(missing.Table);
 		AssertEndpoint(missing.Host, missing.Port, missing.Database);
 	}
 
@@ -65,8 +67,19 @@ public sealed class ArchiveExceptionMapperTests
 		var error = Map(Postgres("42P01"), relation);
 
 		var notInitialised = Assert.IsType<ArchiveNotInitialisedError>(error);
+		Assert.Equal(ArchiveObject.Table, notInitialised.MissingObject);
 		Assert.Equal(relation, notInitialised.Table);
 		AssertEndpoint(notInitialised.Host, notInitialised.Port, notInitialised.Database);
+	}
+
+	// The two SQLSTATEs now share one type, so the discriminator is the only thing keeping them apart.
+	[Fact]
+	public void TheTwoAbsentObjectStatesStayApartOnTheDiscriminator()
+	{
+		var databaseMissing = Assert.IsType<ArchiveNotInitialisedError>(Map(Postgres("3D000")));
+		var tableMissing = Assert.IsType<ArchiveNotInitialisedError>(Map(Postgres("42P01"), "trends"));
+
+		Assert.NotEqual(databaseMissing.MissingObject, tableMissing.MissingObject);
 	}
 
 	[Theory]

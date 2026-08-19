@@ -13,7 +13,8 @@ implementation plans see `docs/plans/`.
   axis management, cursors, decimation, rendering; the locked decisions log.
 - [data-integration.md](./data-integration.md) — the contract between SemiPlot and the archive
   database: responsibility zones, the `IDataProvider` surface, the exact SQL issued per operation,
-  layer selection, the time boundary, gap mapping, error semantics and field triage.
+  layer selection, the time boundary, gap mapping, error semantics, the startup path and field
+  triage.
 - [scada-archive.md](./scada-archive.md) — the Simple-Scada 2 archive as it exists: tables and
   columns, archive layers, quality marks and gaps, write and retention behaviour, reader hazards,
   and what remains unverified.

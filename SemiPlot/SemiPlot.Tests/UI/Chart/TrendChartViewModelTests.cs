@@ -849,6 +849,50 @@ public sealed class TrendChartViewModelTests
 		pen.CurrentValue.Should().BeNull();
 	}
 
+	[AvaloniaFact]
+	public async Task History_OmittingARequestedPen_ClearsThatPensCurve()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+		viewModel.AddPen(new Pen(2, "Pen 2", "Group A", "#00ff00"));
+
+		await LoadInitialHistory(viewModel, _from, _to);
+		viewModel.FindPen(2)!.CenterPoints.Should().HaveCount(2);
+
+		// The next window holds no row for pen 2, so the provider answers with no envelope for it at all.
+		provider.OmittedPenIds.Add(2);
+		viewModel.Navigation.ZoomAt(48.0, viewModel.Navigation.To);
+		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+
+		viewModel.FindPen(2)!.CenterPoints.Should().BeEmpty();
+		viewModel.FindPen(2)!.CurrentValue.Should().BeNull();
+		viewModel.FindPen(1)!.CenterPoints.Should().HaveCount(2);
+	}
+
+	[AvaloniaFact]
+	public void History_PenAddedWhileTheQueryWasInFlight_KeepsItsCurve()
+	{
+		// What the request asked for, not the current pen dictionary, decides what is cleared: pen 2 is
+		// added after the request was issued, so a result omitting it says nothing about it.
+		var (viewModel, _, _, provider) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+
+		provider.GatedLayer = AggregationLayer.Raw;
+		_ = viewModel.RequestInitialHistory();
+
+		var lateState = viewModel.AddPen(new Pen(2, "Pen 2", "Group A", "#00ff00"));
+		lateState.LoadHistory(new PenHistoryEnvelope(2, [_from, _to], [4.0, 4.0], [4.0, 4.0], [4.0, 4.0]));
+
+		provider.HistoryGate.SetResult(Result.Ok<IReadOnlyList<PenHistoryEnvelope>>(
+		[
+			new PenHistoryEnvelope(1, [_from, _to], [1.0, 2.0], [1.0, 2.0], [1.0, 2.0])
+		]));
+
+		viewModel.FindPen(1)!.CurrentValue.Should().Be(2.0);
+		lateState.CenterPoints.Should().HaveCount(2);
+		lateState.CurrentValue.Should().Be(4.0);
+	}
+
 	// Drives the production initial-load path: snap the navigation window to the test's range through the
 	// real first-data extents path, then await the direct QueryHistoryAsync seam. FakeDataProvider returns
 	// Task.FromResult on ImmediateScheduler, so the envelopes load synchronously and deterministically.

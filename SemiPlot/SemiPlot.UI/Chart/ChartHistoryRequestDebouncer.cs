@@ -18,7 +18,7 @@ public sealed class ChartHistoryRequestDebouncer : IDisposable
 
 	public ChartHistoryRequestDebouncer(
 		Func<HistoryRequest, Task<Result<IReadOnlyList<PenHistoryEnvelope>>>> queryAsync,
-		Action<TrendHistory, long> applyHistory,
+		Action<TrendHistory, IReadOnlyList<long>, long> applyHistory,
 		Action<Exception> reportQueryFailure,
 		TimeSpan debounceWindow,
 		IScheduler dataScheduler,
@@ -38,9 +38,14 @@ public sealed class ChartHistoryRequestDebouncer : IDisposable
 				.Catch((Exception queryFailure) => ReportAndDrop(reportQueryFailure, queryFailure)))
 			.Switch()
 			.Where(pair => pair.result.IsSuccess)
-			.Select(pair => (history: new TrendHistory(pair.request.Layer, pair.result.Value), pair.request.Sequence))
+			// The requested identifiers travel beside the history so the consumer can tell "asked for and
+			// not returned" from "not asked for": a pen added while the query was in flight is neither.
+			.Select(pair => (
+				history: new TrendHistory(pair.request.Layer, pair.result.Value),
+				requestedPenIds: pair.request.PenIds,
+				pair.request.Sequence))
 			.ObserveOn(uiScheduler)
-			.Subscribe(pair => applyHistory(pair.history, pair.Sequence));
+			.Subscribe(pair => applyHistory(pair.history, pair.requestedPenIds, pair.Sequence));
 	}
 
 	public void Dispose()

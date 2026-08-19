@@ -38,8 +38,9 @@ internal sealed class ArchiveExceptionMapper
 	/// <param name="exception">What the read threw.</param>
 	/// <param name="missingRelation">
 	/// The relation a <c>42P01</c> refers to, already resolved by the caller. Required on that path and
-	/// unused on every other: <c>ArchiveNotInitialisedError.Table</c> is what consumers route on. Passed
-	/// explicitly on every call, null included, so a new call site cannot omit it by accident.
+	/// unused on every other: <c>ArchiveNotInitialisedError.Table</c> is what consumers route on once
+	/// its <c>MissingObject</c> says a table is what is absent. Passed explicitly on every call, null
+	/// included, so a new call site cannot omit it by accident.
 	/// </param>
 	/// <param name="effectiveBound">
 	/// The server's <c>statement_timeout</c>, already resolved by the caller on the <c>57014</c> path and
@@ -101,11 +102,17 @@ internal sealed class ArchiveExceptionMapper
 
 		return postgres.SqlState switch
 		{
-			PostgresErrorCodes.InvalidCatalogName => new ArchiveDatabaseMissingError(host, port, database),
+			PostgresErrorCodes.InvalidCatalogName => new ArchiveNotInitialisedError(
+				host,
+				port,
+				database,
+				ArchiveObject.Database,
+				table: null),
 			PostgresErrorCodes.UndefinedTable => new ArchiveNotInitialisedError(
 				host,
 				port,
 				database,
+				ArchiveObject.Table,
 				RequireRelation(missingRelation)),
 			PostgresErrorCodes.InvalidPassword
 				or PostgresErrorCodes.InvalidAuthorizationSpecification

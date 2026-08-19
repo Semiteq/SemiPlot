@@ -1,0 +1,56 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:startup="clr-namespace:SemiPlot.UI.Startup"
+        x:Class="SemiPlot.UI.Startup.ErrorWindow"
+        x:DataType="startup:StartupFailureView"
+        Title="SemiPlot cannot start"
+        Width="640"
+        Height="320"
+        MinWidth="420"
+        MinHeight="240"
+        CanResize="True"
+        ShowInTaskbar="True"
+        WindowStartupLocation="CenterScreen">
+
+    <!-- The detail interpolates operator-supplied paths of no bounded length, so the body scrolls and
+         the window resizes. A fixed height pushes the remedy out of sight on a long config directory. -->
+    <Grid Margin="24" RowDefinitions="Auto,*,Auto">
+
+        <TextBlock Grid.Row="0"
+                   Name="TitleText"
+                   Text="{Binding Title}"
+                   FontSize="18"
+                   FontWeight="Bold"
+                   TextWrapping="Wrap" />
+
+        <ScrollViewer Grid.Row="1"
+                      HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto">
+
+            <StackPanel>
+
+                <TextBlock Name="DetailText"
+                           Text="{Binding Detail}"
+                           TextWrapping="Wrap"
+                           Margin="0,16,0,0" />
+
+                <TextBlock Text="What to do"
+                           FontWeight="Bold"
+                           Margin="0,20,0,0" />
+
+                <TextBlock Name="RemedyText"
+                           Text="{Binding Remedy}"
+                           TextWrapping="Wrap"
+                           Margin="0,6,0,0" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <Button Grid.Row="2"
+                Content="Close"
+                HorizontalAlignment="Right"
+                Margin="0,16,0,0"
+                Click="OnCloseClick"
+                IsDefault="True" />
+    </Grid>
+
+</Window>

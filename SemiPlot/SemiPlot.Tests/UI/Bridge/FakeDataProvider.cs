@@ -4,6 +4,7 @@ using System.Reactive.Linq;
 using FluentResults;
 
 using SemiPlot.Core.Data;
+using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
 
 namespace SemiPlot.Tests.UI.Bridge;
@@ -18,11 +19,13 @@ internal sealed class FakeDataProvider : IDataProvider
 
 	private readonly IScheduler _scheduler;
 
-	public FakeDataProvider(IScheduler scheduler, TimeSpan realtimeInterval)
+	// pens overrides the two-pen default catalogue. An empty list is the commissioned-but-unfilled
+	// semiplot_tags a real server answers with, which is a successful read and not a failure.
+	public FakeDataProvider(IScheduler scheduler, TimeSpan realtimeInterval, IReadOnlyList<Pen>? pens = null)
 	{
 		_scheduler = scheduler;
 		_realtimeInterval = realtimeInterval;
-		Pens =
+		Pens = pens ??
 		[
 			new Pen(1, "Pen 1", "Group A", "#ff0000"),
 			new Pen(2, "Pen 2", "Group A", "#00ff00")
@@ -37,6 +40,23 @@ internal sealed class FakeDataProvider : IDataProvider
 
 	public bool FailHistory { get; set; }
 
+	// The catalogue and extent reads succeed unconditionally otherwise, which is what the startup path
+	// could never be tested against. Both switches answer with a typed error, the shape a real provider
+	// returns, so a consumer routing on error type is exercised rather than one reading a message.
+	public bool FailPens { get; set; }
+
+	public bool FailExtent { get; set; }
+
+	// Held tasks for the catalogue and extent reads: a test completes them, or never does, to drive a
+	// caller's own bound on a read that answers nothing.
+	public TaskCompletionSource<Result<IReadOnlyList<Pen>>> PensGate { get; } = new();
+
+	public TaskCompletionSource<Result<ArchiveExtent>> ExtentGate { get; } = new();
+
+	public bool GatePens { get; set; }
+
+	public bool GateExtent { get; set; }
+
 	// When set, a query for this layer returns the gate's task, holding it in flight so a newer query can
 	// complete first (cross-path race).
 	public AggregationLayer? GatedLayer { get; set; }
@@ -46,6 +66,10 @@ internal sealed class FakeDataProvider : IDataProvider
 	public Dictionary<AggregationLayer, double> LayerCenterOverrides { get; } = [];
 
 	public TaskCompletionSource<Result<IReadOnlyList<PenHistoryEnvelope>>> HistoryGate { get; } = new();
+
+	// Pen identifiers the history read answers with no envelope at all, the shape a real provider returns
+	// for a pen holding no row in the window. A requested pen missing from the result is not an error.
+	public HashSet<long> OmittedPenIds { get; } = [];
 
 	public int HistoryQueryCount { get; private set; }
 
@@ -77,6 +101,17 @@ internal sealed class FakeDataProvider : IDataProvider
 
 	public Task<Result<IReadOnlyList<Pen>>> QueryPensAsync()
 	{
+		if (FailPens)
+		{
+			return Task.FromResult(
+				Result.Fail<IReadOnlyList<Pen>>(new ArchiveUnreachableError("bench", 5432, "semiplot_dev")));
+		}
+
+		if (GatePens)
+		{
+			return PensGate.Task;
+		}
+
 		return Task.FromResult(Result.Ok(Pens));
 	}
 
@@ -109,6 +144,7 @@ internal sealed class FakeDataProvider : IDataProvider
 			: DefaultCenter;
 
 		var envelopes = penIds
+			.Where(id => !OmittedPenIds.Contains(id))
 			.Select(id => new PenHistoryEnvelope(
 				id,
 				[fromUtc, toUtc],
@@ -122,6 +158,17 @@ internal sealed class FakeDataProvider : IDataProvider
 
 	public Task<Result<ArchiveExtent>> QueryArchiveExtentAsync()
 	{
+		if (FailExtent)
+		{
+			return Task.FromResult(
+				Result.Fail<ArchiveExtent>(new ArchiveReadFailedError("bench", 5432, "semiplot_dev", "42601")));
+		}
+
+		if (GateExtent)
+		{
+			return ExtentGate.Task;
+		}
+
 		return Task.FromResult(Result.Ok(ArchiveExtentOverride ?? new ArchiveExtent(ArchiveFirstUtc, ArchiveLastUtc)));
 	}
 }

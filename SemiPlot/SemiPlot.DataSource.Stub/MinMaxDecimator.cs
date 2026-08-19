@@ -28,7 +28,7 @@ public static class MinMaxDecimator
 				nameof(targetColumnCount), targetColumnCount, "Target column count must be at least one.");
 		}
 
-		var builder = new EnvelopeBuilder(penId, timestamps.Count);
+		var builder = new EnvelopeBuilder(penId, SeedCapacityFor(timestamps.Count, targetColumnCount));
 
 		if (timestamps.Count <= targetColumnCount)
 		{
@@ -40,6 +40,14 @@ public static class MinMaxDecimator
 		AppendDecimatedSegments(builder, timestamps, values, targetColumnCount);
 
 		return builder.Build();
+	}
+
+	// The builder's lists become the envelope's columns and are held for the life of the pen's chart state,
+	// so seeding them from the sample count would retain a pre-decimation-sized array behind a few thousand
+	// useful entries.
+	private static int SeedCapacityFor(int sampleCount, int targetColumnCount)
+	{
+		return (int)Math.Min(sampleCount, ((long)targetColumnCount * 2) + 4);
 	}
 
 	private static void AppendPassThrough(

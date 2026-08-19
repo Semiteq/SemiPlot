@@ -62,6 +62,27 @@ public sealed class MinMaxDecimatorTests
 	}
 
 	[Fact]
+	public void Decimate_DoesNotRetainBackingArraysSizedToTheInput()
+	{
+		const int sampleCount = 123_000;
+		const int targetColumns = 2048;
+
+		var timestamps = BuildTimestamps(sampleCount);
+		var values = new double?[sampleCount];
+		for (var index = 0; index < sampleCount; index++)
+		{
+			values[index] = Math.Sin(index / 11.0);
+		}
+
+		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, targetColumns);
+
+		CapacityOf(envelope.Timestamps).Should().BeLessThanOrEqualTo(targetColumns * 4);
+		CapacityOf(envelope.Min).Should().BeLessThanOrEqualTo(targetColumns * 4);
+		CapacityOf(envelope.Max).Should().BeLessThanOrEqualTo(targetColumns * 4);
+		CapacityOf(envelope.Center).Should().BeLessThanOrEqualTo(targetColumns * 4);
+	}
+
+	[Fact]
 	public void Decimate_ProducesMonotonicTimestamps()
 	{
 		const int sampleCount = 5000;
@@ -343,6 +364,11 @@ public sealed class MinMaxDecimatorTests
 		var rebuild = () => new PenHistoryEnvelope(
 			envelope.PenId, envelope.Timestamps, envelope.Min, envelope.Max, envelope.Center);
 		rebuild.Should().NotThrow();
+	}
+
+	private static int CapacityOf<T>(IReadOnlyList<T> column)
+	{
+		return column.Should().BeOfType<List<T>>().Subject.Capacity;
 	}
 
 	private static IReadOnlyList<DateTime> BuildTimestamps(int count)

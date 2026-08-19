@@ -8,15 +8,19 @@ public sealed class ChartNavigationController
 	// hovering on a boundary flip-flops the layer every notch, and at the Raw side the realtime tail
 	// straight-lines a far-right raw point across the wide span (the right-side collapse artifact).
 	private const double LayerHysteresisFraction = 0.1;
-	private static readonly TimeSpan _rawLayerCeiling = TimeSpan.FromHours(1.0);
-	private static readonly TimeSpan _minuteLayerCeiling = TimeSpan.FromDays(2.0);
-	private static readonly TimeSpan _hourLayerCeiling = TimeSpan.FromDays(60.0);
+
+	// Margin past a quantisation boundary the reported width must clear before the column count moves. One
+	// quantisation step doubles or halves every ceiling, so LayerHysteresisFraction cannot damp it: without
+	// this deadband one pixel of jitter across the 724/725 px boundary would flip the layer and re-query in
+	// each direction.
+	private const double ColumnCountHysteresisFraction = 0.1;
 	private static readonly TimeSpan _defaultWindowWidth = TimeSpan.FromHours(1.0);
 	private DateTime _firstSample;
 	private bool _hasData;
 	private DateTime _liveEdge;
 
 	private TrendNavigationModel _navigation;
+	private int _targetColumnCount = HistoryColumnTarget.MaxColumns;
 
 	public ChartNavigationController()
 	{
@@ -24,7 +28,7 @@ public sealed class ChartNavigationController
 		_firstSample = now - _defaultWindowWidth;
 		_liveEdge = now;
 		_navigation = new TrendNavigationModel(_firstSample, now, _firstSample, isSticky: true);
-		ActiveLayer = LayerForWidth(_navigation.Width);
+		ActiveLayer = LayerForCurrentWidth();
 	}
 
 	public DateTime From => _navigation.From;
@@ -35,7 +39,29 @@ public sealed class ChartNavigationController
 
 	public AggregationLayer ActiveLayer { get; private set; }
 
+	// Number of pixel columns the canvas will draw. The stored value is quantized, so it does not read back
+	// as the value passed to SetTargetColumnCount.
+	public int TargetColumnCount => _targetColumnCount;
+
 	public event EventHandler<NavigationWindow>? WindowChanged;
+
+	// A changed count also invalidates the decimation width the visible data was fetched at, so the window is
+	// re-queried even when the layer survives.
+	public void SetTargetColumnCount(int columns)
+	{
+		var quantized = QuantizeColumnCount(columns);
+		if (quantized == _targetColumnCount)
+		{
+			return;
+		}
+
+		_targetColumnCount = quantized;
+		ActiveLayer = LayerForCurrentWidth();
+		WindowChanged?.Invoke(
+			this,
+			new NavigationWindow(
+				_navigation.From, _navigation.To, ActiveLayer, IsColumnCountChange: true));
+	}
 
 	public void TrackDataExtents(DateTime firstSample, DateTime lastSample)
 	{
@@ -53,7 +79,7 @@ public sealed class ChartNavigationController
 
 		// The first snap must NOT re-query (would load history twice at startup); later navigation gestures
 		// go through ApplyWindowChange and do re-query.
-		ActiveLayer = LayerForWidth(_navigation.Width);
+		ActiveLayer = LayerForCurrentWidth();
 		WindowChanged?.Invoke(
 			this,
 			new NavigationWindow(_navigation.From, _navigation.To, ActiveLayer, RequiresHistoryRequery: false));
@@ -106,7 +132,7 @@ public sealed class ChartNavigationController
 		_navigation.OnLiveEdge(_liveEdge);
 
 		// A sticky live-edge advance keeps width constant: shift the axis but do not re-query history.
-		ActiveLayer = LayerForWidth(_navigation.Width);
+		ActiveLayer = LayerForCurrentWidth();
 		WindowChanged?.Invoke(
 			this,
 			new NavigationWindow(_navigation.From, _navigation.To, ActiveLayer, RequiresHistoryRequery: false));
@@ -114,31 +140,72 @@ public sealed class ChartNavigationController
 
 	private void ApplyWindowChange()
 	{
-		ActiveLayer = LayerForWidth(_navigation.Width);
+		ActiveLayer = LayerForCurrentWidth();
 		WindowChanged?.Invoke(this, new NavigationWindow(_navigation.From, _navigation.To, ActiveLayer));
 	}
 
-	private AggregationLayer LayerForWidth(TimeSpan width)
+	private AggregationLayer LayerForCurrentWidth()
 	{
-		var rawCeiling = BoundaryWithHysteresis(_rawLayerCeiling, ActiveLayer == AggregationLayer.Raw);
+		return LayerForWidth(_navigation.Width, ActiveLayer, _targetColumnCount);
+	}
+
+	// The layer in force is an argument because the hysteresis band widens the ceiling of that layer only, so
+	// the same width answers differently depending on where the ladder was entered from.
+	public static AggregationLayer LayerForWidth(
+		TimeSpan width,
+		AggregationLayer currentLayer,
+		int targetColumnCount)
+	{
+		var rawCeiling = BoundaryWithHysteresis(
+			LayerCeiling(AggregationLayer.Raw, targetColumnCount), currentLayer == AggregationLayer.Raw);
 		if (width <= rawCeiling)
 		{
 			return AggregationLayer.Raw;
 		}
 
-		var minuteCeiling = BoundaryWithHysteresis(_minuteLayerCeiling, ActiveLayer == AggregationLayer.Minute);
+		var minuteCeiling = BoundaryWithHysteresis(
+			LayerCeiling(AggregationLayer.Minute, targetColumnCount), currentLayer == AggregationLayer.Minute);
 		if (width <= minuteCeiling)
 		{
 			return AggregationLayer.Minute;
 		}
 
-		var hourCeiling = BoundaryWithHysteresis(_hourLayerCeiling, ActiveLayer == AggregationLayer.Hour);
+		var hourCeiling = BoundaryWithHysteresis(
+			LayerCeiling(AggregationLayer.Hour, targetColumnCount), currentLayer == AggregationLayer.Hour);
 		if (width <= hourCeiling)
 		{
 			return AggregationLayer.Hour;
 		}
 
 		return AggregationLayer.Day;
+	}
+
+	// Use the coarsest layer whose point spacing still fits inside one pixel column: a layer is left once the
+	// next coarser layer's spacing fits, so its upper bound is that spacing times the column count.
+	// Precondition: Raw, Minute or Hour. Day tops the ladder and has no ceiling, so `layer + 1` would leave
+	// the enum.
+	private static TimeSpan LayerCeiling(AggregationLayer layer, int targetColumnCount)
+	{
+		var nextCoarser = layer + 1;
+
+		return nextCoarser.ToPointSpacing() * targetColumnCount;
+	}
+
+	private int QuantizeColumnCount(int columns)
+	{
+		var clamped = Math.Clamp(columns, HistoryColumnTarget.MinColumns, HistoryColumnTarget.MaxColumns);
+
+		// Counts are powers of two, so the boundary between two neighbours is their geometric midpoint, a
+		// factor of sqrt(2) from each; the deadband pushes that boundary out by the hysteresis margin.
+		var holdRatio = Math.Sqrt(2.0) * (1.0 + ColumnCountHysteresisFraction);
+		if (clamped >= _targetColumnCount / holdRatio && clamped <= _targetColumnCount * holdRatio)
+		{
+			return _targetColumnCount;
+		}
+
+		var exponent = (int)Math.Round(Math.Log2(clamped));
+
+		return Math.Clamp(1 << exponent, HistoryColumnTarget.MinColumns, HistoryColumnTarget.MaxColumns);
 	}
 
 	private static TimeSpan BoundaryWithHysteresis(TimeSpan ceiling, bool isCurrentLayerBelowCeiling)

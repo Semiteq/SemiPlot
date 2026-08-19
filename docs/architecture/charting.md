@@ -108,9 +108,29 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   `CurrentValue`, and the history-load / realtime-append / fold logic.
 - `Chart/ChartAxisBinder` — applies the `PenScaleModel` output to ScottPlot Y axes
   (`AddLeftAxis`/`AddRightAxis`, shared-group axis assignment, `SetLimitsY`, shared-X pinning).
-- `Chart/ChartNavigationController` — owns the `TrendNavigationModel`, the layer-by-zoom mapping
-  (with a 10% hysteresis band at each ceiling), the live-edge advance; raises `WindowChanged`
-  (`NavigationWindow` = `[From, To]` + `Layer` + `RequiresHistoryRequery`).
+- `Chart/ChartNavigationController` — owns the `TrendNavigationModel`, the layer ladder, the live-edge
+  advance; raises `WindowChanged` (`NavigationWindow` = `[From, To]` + `Layer` +
+  `RequiresHistoryRequery` + `IsColumnCountChange`). A ceiling is derived, not constant:
+  `nextCoarser(layer).ToPointSpacing() × TargetColumnCount`, guarded by a 10% hysteresis band.
+  `TargetColumnCount` is the canvas width in columns, clamped to 256…2048 and quantised to a power of
+  two with its own 10% deadband; it selects the layer only, never the query resolution. **Single
+  writer:** `TrendChartViewModel.ReportDataAreaWidth`, called from `TrendChartView`'s
+  `Plot.RenderManager.RenderFinished` handler — do not call `SetTargetColumnCount` from anywhere else,
+  in the same style as the toolbar's `IsSticky`. That seam carries the `DataRect` of the frame just
+  rasterised; `Plot.LastRender` read after `Refresh()` would still describe the previous frame, so a
+  resize could leave the layer computed for the old canvas with nothing scheduled to correct it.
+  `RenderFinished` fires on Avalonia's render thread, so the report is posted to the UI thread, and only
+  a changed width is posted.
+  A changed *quantised* count re-queries the window even when the layer survives, because it also
+  invalidates the decimation width the visible data was fetched at. The re-query keys on the quantised
+  count while the query resolution follows the unquantised width, so a resize inside the deadband
+  (with 1024 in force: any width from 659 to 1592 px) changes the requested resolution without
+  re-querying. The drawn resolution then lags the canvas by up to one deadband span, `2 × 1.1² ≈ 2.42`,
+  until the next navigation gesture re-queries at the current width.
+- `Chart/HistoryColumnTarget` — pixel width → column count (one per pixel, clamped to 256…2048; a
+  non-positive width has no canvas behind it and is rejected). The unquantised value is what every
+  history query asks the provider to decimate to; `TrendChartViewModel` keeps the last reported one
+  and stands on `MaxColumns` until the first render reports.
 - `Chart/ChartHistoryRequestDebouncer` — the single chokepoint for gesture-driven history re-queries:
   `Throttle` (one trailing request after the gesture goes quiet) → query on the data scheduler →
   `Switch` (latest-wins, drops stale in-flight responses) → apply on the UI scheduler. The startup

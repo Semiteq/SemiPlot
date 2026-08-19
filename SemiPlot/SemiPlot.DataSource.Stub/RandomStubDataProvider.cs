@@ -50,7 +50,7 @@ public sealed class RandomStubDataProvider : IDataProvider
 
 		return Observable
 			.Interval(_realtimeInterval, _scheduler)
-			.Select(tick => (IReadOnlyList<Sample>)SamplesAt(subscribed, subscribedAtUtc, tick + 1));
+			.Select(tick => SamplesAt(subscribed, subscribedAtUtc, tick + 1));
 	}
 
 	public Task<Result<IReadOnlyList<Pen>>> QueryPensAsync()
@@ -79,7 +79,7 @@ public sealed class RandomStubDataProvider : IDataProvider
 				$"Invalid target column count: {targetColumnCount} (must be at least one)."));
 		}
 
-		var interval = layer.ToSampleInterval();
+		var interval = layer.ToPointSpacing();
 		var envelopes = penIds
 			.Where(_pensById.ContainsKey)
 			.Distinct()
@@ -108,6 +108,8 @@ public sealed class RandomStubDataProvider : IDataProvider
 		var timestamps = new List<DateTime>();
 		var values = new List<double?>();
 
+		// Point spacing is a quarter of the layer period, so a coarse layer synthesises four times more
+		// points per unit of time than its period suggests.
 		var tickIndex = 0L;
 		for (var timestamp = fromUtc; timestamp <= toUtc; timestamp += interval)
 		{

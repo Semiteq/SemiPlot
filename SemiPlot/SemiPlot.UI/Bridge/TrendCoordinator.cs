@@ -10,7 +10,6 @@ namespace SemiPlot.UI.Bridge;
 
 public sealed class TrendCoordinator : IDisposable
 {
-	public const int DefaultTargetColumnCount = 1024;
 	private static readonly TimeSpan _defaultBatchWindow = TimeSpan.FromMilliseconds(100);
 	private readonly TimeSpan _batchWindow;
 

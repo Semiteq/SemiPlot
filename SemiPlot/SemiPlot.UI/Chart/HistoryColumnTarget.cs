@@ -7,13 +7,14 @@ public static class HistoryColumnTarget
 	public const int MinColumns = 256;
 	public const int MaxColumns = 2048;
 
-	// Before the first render the data-area width is zero (no DataRect yet); the maximum is requested so
-	// the initial query is not starved of resolution.
+	// A width without a canvas behind it (before the first render, a collapsed pane, a hidden tab) is not a
+	// column count and is filtered by the caller, which keeps the last known width instead.
 	public static int FromDataAreaWidth(double dataAreaWidthPixels)
 	{
 		if (!(dataAreaWidthPixels > 0.0))
 		{
-			return MaxColumns;
+			throw new ArgumentOutOfRangeException(
+				nameof(dataAreaWidthPixels), dataAreaWidthPixels, "Data area width must be positive.");
 		}
 
 		var rounded = (int)Math.Round(dataAreaWidthPixels);

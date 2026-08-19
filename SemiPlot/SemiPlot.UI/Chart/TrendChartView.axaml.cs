@@ -5,12 +5,14 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 
 using ReactiveUI;
 
 using ScottPlot;
 using ScottPlot.Avalonia;
 using ScottPlot.Plottables;
+using ScottPlot.Rendering;
 using ScottPlot.TickGenerators;
 
 using Cursor = Avalonia.Input.Cursor;
@@ -26,6 +28,10 @@ public partial class TrendChartView : UserControl
 	private static readonly Cursor _handCursor = new(StandardCursorType.Hand);
 	private static readonly Cursor _grabbingCursor = new(StandardCursorType.SizeAll);
 
+	// ScottPlot's own constructor seeds the render events with an empty delegate; this restores that state
+	// when the view drops the last handler.
+	private static readonly EventHandler<RenderDetails> _noRenderFinishedHandler = (_, _) => { };
+
 	private readonly CompositeDisposable _disposables = new();
 	private TextBox? _axisBoundEditor;
 	private bool _axisEditEditsMax;
@@ -33,6 +39,10 @@ public partial class TrendChartView : UserControl
 	private VerticalLine? _deltaFirstLine;
 	private VerticalLine? _deltaSecondLine;
 	private Point? _dragOrigin;
+
+	// Render-thread state: read and written by OnPlotRenderFinished, and reset on the UI thread when the
+	// bound plot changes so the first frame of the new plot always reports.
+	private float _lastRenderedDataAreaWidth = float.NaN;
 
 	private AvaPlot? _plotControl;
 	private Border? _readoutBox;
@@ -79,6 +89,31 @@ public partial class TrendChartView : UserControl
 		RepositionCursorOverlay();
 	}
 
+	// The canvas width is reported by the frame that carries it, not read back from Plot.LastRender, which
+	// describes the frame already on screen. The plot draws inside an Avalonia custom draw operation, so
+	// this runs on the render thread and the report is posted back to the UI thread against the view model
+	// the frame was drawn for, not whichever one is bound when the post is dispatched.
+	private void OnPlotRenderFinished(object? sender, RenderDetails renderDetails)
+	{
+		var dataAreaWidth = renderDetails.DataRect.Width;
+		if (dataAreaWidth.Equals(_lastRenderedDataAreaWidth))
+		{
+			return;
+		}
+
+		_lastRenderedDataAreaWidth = dataAreaWidth;
+		var renderedViewModel = _viewModel;
+		Dispatcher.UIThread.Post(() => renderedViewModel?.ReportDataAreaWidth(dataAreaWidth));
+	}
+
+	// ScottPlot exposes its render events as plain delegate properties rather than events, so the removal
+	// has to be written out to keep the empty-delegate contract instead of leaving null behind.
+	private void UnsubscribeRenderFinished(RenderManager renderManager)
+	{
+		renderManager.RenderFinished =
+			(renderManager.RenderFinished - OnPlotRenderFinished) ?? _noRenderFinishedHandler;
+	}
+
 	private void OnDataContextChanged(object? sender, EventArgs eventArgs)
 	{
 		_disposables.Clear();
@@ -90,6 +125,12 @@ public partial class TrendChartView : UserControl
 		}
 
 		_plotControl.Reset(_viewModel.Plot);
+
+		_lastRenderedDataAreaWidth = float.NaN;
+		var renderManager = _viewModel.Plot.RenderManager;
+		renderManager.RenderFinished += OnPlotRenderFinished;
+		_disposables.Add(Disposable.Create(() => UnsubscribeRenderFinished(renderManager)));
+
 		ApplyLocalTimeTicks(_viewModel.Plot);
 		CreateDeltaCursorLines(_viewModel.Plot);
 		ApplyWindow(_viewModel.Navigation.From, _viewModel.Navigation.To);

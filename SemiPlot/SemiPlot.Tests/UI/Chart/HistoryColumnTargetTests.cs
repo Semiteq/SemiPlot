@@ -15,9 +15,11 @@ public sealed class HistoryColumnTargetTests
 	[InlineData(0.0)]
 	[InlineData(-10.0)]
 	[InlineData(double.NaN)]
-	public void FromDataAreaWidth_NoRenderedAreaYet_RequestsMaximumColumns(double width)
+	public void FromDataAreaWidth_NoRenderedAreaYet_Throws(double width)
 	{
-		HistoryColumnTarget.FromDataAreaWidth(width).Should().Be(HistoryColumnTarget.MaxColumns);
+		var act = () => HistoryColumnTarget.FromDataAreaWidth(width);
+
+		act.Should().Throw<ArgumentOutOfRangeException>();
 	}
 
 	[Fact]

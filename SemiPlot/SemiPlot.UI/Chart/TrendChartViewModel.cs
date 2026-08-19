@@ -44,11 +44,16 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	private DateTime? _cursorTime;
 	private IReadOnlyDictionary<long, double?> _cursorValues = new Dictionary<long, double?>();
 	private DeltaReadout? _deltaReadout;
+	private bool _hasDeferredHistoryRequery;
 	// Monotonic stamp assigned to every history request so ApplyHistory can drop a stale window: a slow
 	// query that finishes after a newer one was issued must never overwrite a newer window's result.
 	private long _historyRequestSequence;
 	private bool _isDisposed;
+	private bool _isInitialHistoryInFlight;
 	private long _lastAppliedHistorySequence;
+	// Decimation width of every history query, in columns: the last width the render seam reported. The
+	// maximum stands until the first report so the initial query is not starved of resolution.
+	private int _reportedColumnTarget = HistoryColumnTarget.MaxColumns;
 	private DateTime _windowEnd;
 	private DateTime _windowStart;
 
@@ -174,6 +179,18 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		return _pensById.GetValueOrDefault(penId);
 	}
 
+	// Disposal is tolerated silently because a render can still deliver a width after the window has closed.
+	public void ReportDataAreaWidth(double dataAreaWidthPixels)
+	{
+		if (_isDisposed || !(dataAreaWidthPixels > 0.0))
+		{
+			return;
+		}
+
+		_reportedColumnTarget = HistoryColumnTarget.FromDataAreaWidth(dataAreaWidthPixels);
+		Navigation.SetTargetColumnCount(_reportedColumnTarget);
+	}
+
 	public async Task RequestInitialHistory()
 	{
 		ObjectDisposedException.ThrowIf(_isDisposed, this);
@@ -188,13 +205,16 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 		var layer = Navigation.ActiveLayer;
 		var sequence = NextHistorySequence();
+		_isInitialHistoryInFlight = true;
 
 		try
 		{
 			var result = await _coordinator.QueryHistoryAsync(
-				[.. _pensById.Keys], Navigation.From, Navigation.To, layer, CurrentColumnTarget());
+				[.. _pensById.Keys], Navigation.From, Navigation.To, layer, _reportedColumnTarget);
 			if (result.IsFailed)
 			{
+				ReleaseInitialHistoryGate();
+
 				return;
 			}
 
@@ -203,7 +223,29 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		catch (Exception queryFailure)
 		{
 			LogHistoryQueryFailure(queryFailure);
+			ReleaseInitialHistoryGate();
 		}
+	}
+
+	// Re-issues, at a fresh sequence and for the snapped window, a width report held back while the initial
+	// load was in flight: applying the initial result moves the window onto the archive's last sample, so a
+	// request issued for the un-snapped window would carry a higher sequence and overwrite it.
+	private void ReleaseInitialHistoryGate()
+	{
+		if (!_isInitialHistoryInFlight)
+		{
+			return;
+		}
+
+		_isInitialHistoryInFlight = false;
+
+		if (!_hasDeferredHistoryRequery)
+		{
+			return;
+		}
+
+		_hasDeferredHistoryRequery = false;
+		RequestHistory(Navigation.From, Navigation.To, Navigation.ActiveLayer);
 	}
 
 	private void ScheduleHistoryApplyWhenAlive(TrendHistory history, long sequence)
@@ -420,13 +462,26 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 		if (window.RequiresHistoryRequery)
 		{
-			_historyDebouncer.Request(new HistoryRequest(
-				[.. _pensById.Keys], window.From, window.To, window.Layer, NextHistorySequence(),
-				CurrentColumnTarget()));
+			// A navigation gesture is not held: it is the user's own window choice, and its result already
+			// supersedes the initial one through the sequence guard.
+			if (_isInitialHistoryInFlight && window.IsColumnCountChange)
+			{
+				_hasDeferredHistoryRequery = true;
+			}
+			else
+			{
+				RequestHistory(window.From, window.To, window.Layer);
+			}
 		}
 
 		ApplyAxisModel();
 		RequestRedraw();
+	}
+
+	private void RequestHistory(DateTime fromUtc, DateTime toUtc, AggregationLayer layer)
+	{
+		_historyDebouncer.Request(new HistoryRequest(
+			[.. _pensById.Keys], fromUtc, toUtc, layer, NextHistorySequence(), _reportedColumnTarget));
 	}
 
 	private Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(HistoryRequest request)
@@ -437,11 +492,6 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			request.ToUtc,
 			request.Layer,
 			request.TargetColumnCount);
-	}
-
-	private int CurrentColumnTarget()
-	{
-		return HistoryColumnTarget.FromDataAreaWidth(Plot.LastRender.DataRect.Width);
 	}
 
 	private long NextHistorySequence()
@@ -455,6 +505,8 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	{
 		if (sequence < _lastAppliedHistorySequence)
 		{
+			ReleaseInitialHistoryGate();
+
 			return;
 		}
 
@@ -477,6 +529,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 		ApplyAxisModel();
 		RequestRedraw();
+		ReleaseInitialHistoryGate();
 	}
 
 	private bool UpdateAxisSettings(long penId, Func<PenScaleSettings, PenScaleSettings> update)

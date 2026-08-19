@@ -109,7 +109,7 @@ The blast radius is bounded by the provider seam, which was built for exactly th
 PostgreSQL provider and its DI extension, `App.axaml.cs`, `TrendCoordinator`, `MinimapViewModel`,
 and six test files including `FakeDataProvider`. Adding a second implementation touches none of them
 except the composition root: the PostgreSQL provider, its DI extension and its tests arrived beside
-the stub across the merged slices, and the composition root still resolves the stub — the startup
+the stub across the merged slices, and the composition root resolves the archive provider — the startup
 slice is where it switches.
 
 `AggregationLayer` is referenced from 20 files and no remaining slice changes it: the enum, its
@@ -170,8 +170,9 @@ it.
   message text and never on log output. Internal errors and log strings stay free to change — only
   the public plane is pinned.
 - **Total error-to-state mapping.** The UI maps every public error type to a state, and a coverage
-  test enumerates the public types in `SemiPlot.Core/Data/Errors` by reflection and fails when one
-  has no mapping (added in postgres-wire-up). A new public error type cannot silently leak past the
+  test enumerates the public types in `SemiPlot.Core/Data/Errors` and in `SemiPlot.UI.Startup` by
+  reflection and fails when one has no mapping, with a second test pinning the count so it cannot pass
+  over an empty set (added in postgres-wire-up). A new public error type cannot silently leak past the
   operator, and an internal error cannot silently become public.
 
   A compiler-checked `switch` was the intended form and is not available. `CS8509` fires on any
@@ -397,7 +398,7 @@ it.
 - **PR:** #10 (merged)
 - **Branch:** provider-simplification
 
-### Slice postgres-wire-up — Status: PENDING
+### Slice postgres-wire-up — Status: DONE
 - **Scope:** Make the application read the real archive, with every failure visible. `Program` and
   `App` gain configuration-directory handling and load `PostgresConnectionSettings` at startup; the
   composition root registers `AddPostgresData` by default, with the stub selectable only by an
@@ -452,14 +453,16 @@ it.
 - **Stacking base:** master
 - **Scope guard:** no new SQL, no statement changes, and no provider behaviour change beyond the two
   error-type merges, which necessarily edit `ArchiveExceptionMapper` and `PostgresConnectionLoader`
-  where those two types are constructed. No gap semantics — a `q = 32` break still draws as a step
+  where those two types are constructed. The guard's "no new error types" clause fences the provider's
+  Core SQLSTATE vocabulary; `StartupReadTimedOutError` sits in `SemiPlot.UI.Startup`, is raised by no
+  provider, and answers the bound this slice's own scope requires. No gap semantics — a `q = 32` break still draws as a step
   until postgres-gap-reconstruction. No realtime; `Subscribe` stays empty and the live edge is
   static. No new error types beyond the two merges — the unexpected table shape and the non-empty
   default partition arrive with the closing slice, and the coverage test forces their mapping then. No stub deletion; the flag stays until the closing slice. No framework version changes;
   the Avalonia bump is its own slice.
-- **Plan:** —
-- **PR:** —
-- **Branch:** —
+- **Plan:** docs/plans/completed/20260819-postgres-wire-up.md
+- **PR:** #14 (merged)
+- **Branch:** postgres-wire-up
 
 ### Slice avalonia-12-bump — Status: PENDING
 - **Scope:** Take the UI to Avalonia 12 and both test projects to xunit v3, which `CLAUDE.md`

@@ -93,3 +93,49 @@ Both runtimes the bench needs — a container runtime and the `semibase` binary 
 developer machine. Their absence is captured as a stated reason and turned into a skip, never into a
 pass. `SEMIPLOT_REQUIRE_DB` turns that skip into a failure; the CI `data-tests` job sets it. The
 full variable list is in the root `CLAUDE.md`, section *Gated data tests*.
+
+## The application bench
+
+The gated tests exercise the provider. They cannot exercise the composed application: that needs
+Avalonia and a container at once, and no CI runner provides both — `build-and-test` runs on
+`windows-latest`, which cannot start a Linux container, and `data-tests` on `ubuntu-latest`, which
+cannot build against `SemiPlot.UI`. The application bench fills that gap on a developer machine, and
+its checks are read from the server and the log rather than from a screen, so they run unattended.
+
+```powershell
+docker run -d --name semiplot-bench -e POSTGRES_PASSWORD=<super> -p 55432:5432 postgres:17-alpine
+semibase create -host localhost -port 55432 -database semiplot_bench `
+  -super-password <super> -writer-password <writer> -reader-password <reader>
+dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.ArchiveSeeder.csproj -- `
+  --connection "Host=localhost;Port=55432;Database=semiplot_bench;Username=scada_writer;Password=<writer>" `
+  --admin-connection "Host=localhost;Port=55432;Database=semiplot_bench;Username=postgres;Password=<super>" `
+  --end 2026-08-01T00:00:00 --days 1 --pens 8 --seed 1
+```
+
+The connection file goes to `C:\DISTR\Config\SemiPlot\archive-connection.yaml`, or anywhere
+`--config-dir` names. **Seed the archive to an `--end` well in the past**: an archive whose last
+sample predates the opening window is what distinguishes a chart that seeds its window from the
+extent from one that opens on the wall clock and never reaches the data.
+
+What the server can be asked afterwards, which needs no screen:
+
+| Question | Where the answer is |
+| --- | --- |
+| Did the application reach the archive at all? | `pg_stat_activity` carries `semiplot_reader` connections while it runs |
+| Did it read the catalogue? | `pg_stat_user_tables.idx_scan` on `semiplot_tags` |
+| Did it read real history, and from the seeded span? | `idx_tup_fetch` on the seeded day's partition, `tp<YYYY>m<MM>d<DD>`. A window left on the wall clock fetches nothing, because no partition holds those hours |
+| Did any read fall back to a sequential scan? | `seq_scan` on the same partition, which the `EXPLAIN` guard forbids |
+| Which failure did the operator get? | `C:\DISTR\Logs\SemiPlot\semiplot.log`. A clean start writes nothing at the default `Warning` floor; every startup failure writes its error and a `[FTL]` line |
+
+A startup failure opens a window and waits, so a run under a timeout returns that timeout's own exit
+code rather than the application's. The log line, not the exit code, is what says which failure it
+was.
+
+The failure states are forced from outside the application: stop the container for an unreachable
+server, rename `semiplot_tags` for an unfinished provisioning, change the password in the connection
+file for a refused login, and delete the catalogue rows for an empty catalogue — which is a normal
+start, not a failure, and writes no error at all.
+
+What this bench cannot answer is what the curve looks like: whether a break renders as a break,
+whether the ladder's chosen layer is the right one by eye, and whether the window is legible. Those
+wait for the demo stand.

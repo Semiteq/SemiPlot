@@ -89,7 +89,7 @@ right one, so only a run against a real archive can tell the two apart.
 | Production data source | `RandomStubDataProvider` | `PostgresDataProvider`, selected by configuration; a missing or invalid configuration is a visible error state, never a silent stub |
 | Synthetic stub | composition-root default | project deleted; manual "see something in the UI" runs on a seeded live demo database through the real provider |
 | Failure reporting | two decoupled error planes (SemiStep pattern): nine sealed public types with structured fields in `SemiPlot/SemiPlot.Core/Data/Errors`, internal detail riding `CausedBy` into the log | the same two planes, over a narrower vocabulary, with every public type mapped to a UI state, and a coverage test that fails when one is not |
-| Layer spacing | period ÷ 4 (15 s / 15 min / 6 h) | unchanged; confirmed by eye against a real archive in the live-demo slice |
+| Layer spacing | period ÷ 4 (15 s / 15 min / 6 h) | unchanged; the layer a window width selects and the row counts it returns are asserted against a seeded archive, and how the curve looks at each rung waits for the demo stand |
 | Layer thresholds | derived from `window / targetColumnCount ≥ spacing`, hysteresis retained | unchanged |
 | Wide-window reduction | client-side only | server-side pixel buckets when the layer is denser than the canvas |
 | Gaps | synthetic | reconstructed from `q = 32` / `q = 16`, distinguished from unchanged values |
@@ -464,6 +464,47 @@ it.
 - **PR:** #14 (merged)
 - **Branch:** postgres-wire-up
 
+### Slice ui-render-and-input-guards — Status: PENDING
+- **Scope:** Put instruments under the renderer and the input path before the framework moves, so the
+  bump can be judged by something. Two guards, both automated and both absent today.
+
+  **Structural render assertions, through ScottPlot's own rasteriser.** `Plot.RenderInMemory` and
+  `Plot.GetImage` run on SkiaSharp with no Avalonia in the loop, which the chart tests already use.
+  Build an envelope carrying a `NaN` gap, render it, and assert the gap's horizontal band inside
+  `LastRender.DataRect` holds background pixels only while the bands either side hold line-coloured
+  ones. That is the one automated check that can see a break drawn as a straight line — the failure
+  the roadmap names as the worst — and it guards the behaviour a ScottPlot minor version could change
+  without saying so: how `Scatter` and `FillY` treat `NaN`. The same technique pins the
+  `GetPixel`/`GetCoordinates` roundtrip the cursor and the delta anchor depend on. Sample bands, never
+  compare bytes.
+
+  **Pointer simulation through `Avalonia.Headless`.** Nothing in the repository sends a pointer event
+  through a headless window today; `ChartPressRouter` is tested as a pure function. Show a headless
+  window hosting the chart view, render once so `LastRender.DataRect` is populated, then drive a
+  drag, a wheel and a capture-loss, asserting the navigation window moved, zoomed and left no drag in
+  progress. Same for the minimap. This is the only instrument that exercises Avalonia's own input
+  pipeline, which is where a major version changes capture semantics and event routing.
+
+  These land **before** `avalonia-12-bump` on purpose. Green on Avalonia 11 and carried across the
+  bump unchanged, they assert that the two stacks behave the same. Written inside the bump they would
+  only describe the new one and prove nothing about the move.
+
+  Golden-image comparison is deliberately not here: a two-version bump legitimately changes pixels —
+  font metrics, antialiasing, theme — so a baseline captured before it fails for benign reasons and
+  gets regenerated at the bump, at which point it has verified nothing.
+- **Issue:** none
+- **Blast radius:** tests only. No production file changes.
+- **Risk:** low. The one uncertainty is whether `AvaPlot` hosts inside a headless window; the handlers
+  need layout bounds and a populated `LastRender` rather than on-screen pixels, and both are
+  available headlessly.
+- **Depends on:** postgres-wire-up
+- **Stacking base:** master
+- **Scope guard:** no production code changes, no framework version changes, no new rendering
+  behaviour — these tests describe what ships today.
+- **Plan:** —
+- **PR:** —
+- **Branch:** —
+
 ### Slice avalonia-12-bump — Status: PENDING
 - **Scope:** Take the UI to Avalonia 12 and both test projects to xunit v3, which `CLAUDE.md`
   already names as the intended end state. Seven Avalonia packages move from 11.3.8 to 12.0.x,
@@ -489,10 +530,12 @@ it.
 - **Risk:** medium, concentrated in `ScottPlot.Avalonia` 5.1.59's `AvaPlot` on Avalonia 12 — the one
   piece the sibling repository does not de-risk, since it carries no ScottPlot — and in the
   pointer handling of `TrendChartView` and `MinimapView`.
-- **Depends on:** postgres-wire-up
+- **Depends on:** ui-render-and-input-guards
 - **Stacking base:** master
 - **Scope guard:** no behaviour changes and no new features; a test may change only where the
-  framework forces it. No provider work.
+  framework forces it. No provider work. A test the framework forces to change is a finding to
+  understand rather than a diff to appease — a headless dispatcher whose semantics moved surfaces
+  there first.
 - **Plan:** —
 - **PR:** —
 - **Branch:** —
@@ -542,10 +585,10 @@ it.
   does not.
 
   The demo bench appends to a seeded database on a wall-clock cadence so the live edge has something
-  to follow, the stub project is deleted, and the aggregation ladder gets its eyes-on confirmation
-  against real data — the check the roadmap has deferred since the beginning. The thin end-to-end
-  journeys that need a live archive land here too: a break rendered as a broken line, and a live
-  insert arriving once.
+  to follow, and the stub project is deleted. The thin end-to-end journeys that need a live archive
+  land here too: a break rendered as a broken line, and a live insert arriving once. Whether the
+  ladder's choice looks right to an operator is not settled here — it is the one check that needs the
+  demo stand, and it leaves this roadmap as a named acceptance item rather than a slice.
 - **Issue:** none
 - **Blast radius:** the provider's realtime member, the composition root's provider selection, the
   deleted stub project and every reference to it, plus the new demo tool.
@@ -582,8 +625,16 @@ issue closes automatically; there is no tracking issue to close by hand. The fun
 condition is that the application, pointed at a database seeded by the bench, draws real history,
 follows a live edge moved by the `--follow` demo writer, selects layers by window width, breaks the
 line only where the archive says a break occurred, and `SemiPlot.DataSource.Stub` no longer exists. The
-end-to-end journeys in postgres-live-edge-and-demo assert this on a developer machine; the demo
-stand confirms it by eye.
+end-to-end journeys in postgres-live-edge-and-demo assert this on a developer machine, and the
+application bench in `docs/architecture/bench.md` answers the rest from the server and the log
+without a screen.
+
+**What closes with the roadmap and what does not.** The close condition above is machine-verifiable
+and does not wait for hardware. Three checks do wait, and they are acceptance items for the operator
+rather than slices: whether a break, a rung change and a live edge look right on screen; whether the
+vendor's thinning rule matches what `LayerThinner` assumes, which needs a real SCADA writing; and
+whether the window is legible to someone running a process. The roadmap closes without them, with
+them named.
 
 ## Rejected alternatives
 

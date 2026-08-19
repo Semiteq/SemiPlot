@@ -189,28 +189,73 @@ The archive offers four resolutions; the renderer needs about one point per pixe
 is: **choose the coarsest layer whose point spacing still fits inside one pixel column.**
 
 Point spacing follows from the vendor's budget of four points per period `[FORUM:1032]`, so it is
-one quarter of the period, not the period itself:
+one quarter of the period, not the period itself (`AggregationLayerExtensions.ToPointSpacing`):
 
-| Layer | `l` | Period | Point spacing | Lower bound of window width, 1000 columns |
-| --- | --- | --- | --- | --- |
-| `Raw` | 0 | — | the archiving interval | — |
-| `Minute` | 1 | minute | 15 s | ≈ 4.2 hours |
-| `Hour` | 2 | hour | 15 min | ≈ 10.4 days |
-| `Day` | 3 | day | 6 h | ≈ 250 days |
+| Layer | `l` | Period | Point spacing |
+| --- | --- | --- | --- |
+| `Raw` | 0 | — | the archiving interval |
+| `Minute` | 1 | minute | 15 s |
+| `Hour` | 2 | hour | 15 min |
+| `Day` | 3 | day | 6 h |
 
-Generally, a layer becomes usable once `window / targetColumnCount ≥ spacing`; the thresholds above
-are that inequality solved for 1000 columns.
+A layer becomes usable once `window / targetColumnCount ≥ spacing`.
+`ChartNavigationController` expresses that as an upper bound per layer, which keeps the
+`width <= ceiling` comparison and its hysteresis helper intact:
 
-`AggregationLayerExtensions.ToSampleInterval` currently returns the period rather than the spacing,
-which makes every threshold four times too conservative. It must return the spacing.
+```
+ceiling(layer) = nextCoarser(layer).ToPointSpacing() × TargetColumnCount
+```
 
-Two adjustments the ladder needs:
+Only the *next coarser* layer's spacing enters the comparison, so the raw layer's own spacing never
+participates in layer selection. That is what makes the ladder implementable: the true raw spacing
+is the SCADA's per-variable archiving interval, which the client cannot know. It survives only as
+the stub provider's synthesis step.
 
-- **Hysteresis.** Switch layers on thresholds separated by a margin, so that a window hovering on a
-  boundary does not flip layer on every wheel notch and change the visible line thickness.
-- **Fresh tail.** Coarse layers are flushed on their own cadence, so a window reaching "now" has an
-  empty tail in `l=1/2/3`. The provider fills the tail from `l=0` and concatenates. The seam is the
-  newest timestamp present in the coarse layer.
+**The column count is live, not a fixed reference.** The view reports its data-area width,
+`HistoryColumnTarget.FromDataAreaWidth` maps it to 256…2048 columns — one per pixel; `MaxColumns`
+stands until the first render reports — and `ChartNavigationController.SetTargetColumnCount` clamps
+that and quantises it to the nearest power of two, holding the current count until the reported width
+clears the quantisation boundary by 10%. The quantisation applies to layer selection only: without it
+every pixel of a resize drag would move every ceiling, far outside the hysteresis band, which guards a
+boundary at a fixed count; without the deadband one pixel across a boundary would double or halve
+every ceiling at once. The history query keeps the unquantised count, because that decides resolution
+rather than layer. A changed *quantised* count re-queries the window even when the layer survives it,
+because the visible data was decimated to the previous canvas width.
+
+The two counts diverge inside the deadband, and only the quantised one triggers the re-query. With the
+count held at 1024, every reported width from 659 to 1592 px returns early from
+`SetTargetColumnCount`, so a resize across that range changes the requested resolution — up to 2.4× —
+with no re-query, and the chart keeps drawing the columns fetched at the last queried width. The bound
+is the width span of one deadband, `2 × 1.1² ≈ 2.42`: the drawn resolution can lag the canvas by that
+factor at most, and the next navigation gesture re-queries at the current unquantised count and closes
+the gap.
+
+The ceilings therefore move with the canvas. The three rows below are an example, not constants —
+2048 is the default and the widest canvas, 256 the narrowest:
+
+| Columns | `Raw` ceiling | `Minute` ceiling | `Hour` ceiling |
+| --- | --- | --- | --- |
+| 256 | ≈ 64 minutes | ≈ 2.7 days | ≈ 64 days |
+| 1024 | ≈ 4.3 hours | ≈ 10.7 days | ≈ 256 days |
+| 2048 | ≈ 8.5 hours | ≈ 21.3 days | ≈ 512 days |
+
+`TrendNavigationModel` caps a window at 365 days, so at a quantised count of 2048 the `Day` layer is
+unreachable: its ceiling would start at 512 days. The threshold is the count, not a pixel width — the
+deadband makes the count path-dependent, so 1449 px (the naked quantisation boundary) picks 2048 only
+when the count did not already stand at 1024. Held at 1024, widths up to 1592 px keep an hour ceiling
+of 256 days, and `Day` stays selectable for windows from 282 days to the 365-day cap. At 2048 columns
+the exclusion of `Day` is the ladder's own answer rather than a defect — 365 days over 2048 columns is
+4.3 hours per column, which the day layer's 6 h spacing cannot fill — so the hour layer is the correct
+read there and the decimator folds the surplus.
+
+Adjustments the ladder needs:
+
+- **Hysteresis** — implemented. Layers switch on thresholds separated by a margin, so a window
+  hovering on a boundary does not flip layer on every wheel notch and change the visible line
+  thickness. The column count carries the same guard as a deadband.
+- **Fresh tail** — outstanding, and the provider's job. Coarse layers are flushed on their own
+  cadence, so a window reaching "now" has an empty tail in `l=1/2/3`. The provider fills the tail from
+  `l=0` and concatenates. The seam is the newest timestamp present in the coarse layer.
 
 Correctness of the envelope at every layer rests on the vendor's selection preserving each period's
 extremes `[FORUM:1974]`. That is well supported but not yet measured by us — see the open questions

@@ -192,12 +192,15 @@ and the render budget (§RT-4). The as-built rationale and mechanics:
 - **Never feed raw millions of points to the chart.** A 1080p-wide plot shows ~one point per
   pixel; a month of 10-second data is ~135 raw samples per pixel (MasterSCADA). The data layer
   returns roughly viewport-width points (§DA-5).
-- **Zoom level selects the archive layer** (raw / minute / hour / day): deeper ranges use coarser
-  layers — the layer design in data-integration.md, validated by industry (MasterSCADA layered
-  archive; AVEVA "Cyclic" retrieval). `ChartNavigationController.LayerForWidth` applies a **10%
-  hysteresis band** at each ceiling so a notch-by-notch zoom hovering on the 1 h Raw/Minute boundary
-  does not flip-flop the layer every notch (§DA-3) — which, at the Raw side, appended a far-right raw
-  point that straight-lined across the wide span.
+- **Window width and canvas width together select the archive layer** (raw / minute / hour / day):
+  deeper ranges use coarser layers — the layer design in data-integration.md, validated by industry
+  (MasterSCADA layered archive; AVEVA "Cyclic" retrieval). No ceiling is a constant: it is
+  `nextCoarser(layer).ToPointSpacing() × TargetColumnCount`, so it moves with the canvas.
+  `ChartNavigationController.LayerForWidth` applies a **10% hysteresis band** at each ceiling so a
+  notch-by-notch zoom hovering on a boundary does not flip-flop the layer every notch (§DA-3) —
+  which, at the Raw side, appended a far-right raw point that straight-lined across the wide span.
+  The column count carries **its own deadband** on the same grounds: one quantisation step doubles or
+  halves every ceiling, so a pixel of jitter across a boundary must not move it.
 - **Empty edge sub-spans render as gaps, not straight lines** (§DA-5). When the visible window's
   leading or trailing sub-span has no data, `MinMaxDecimator` anchors a `NaN` column at the window
   edge so the line segments there instead of the chart bridging the empty span with a straight line

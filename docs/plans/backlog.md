@@ -27,10 +27,16 @@ each is a scoped future task.
 
 ## Maintainability
 
-- **`ChartInteractionViewModel` extraction.** `TrendChartViewModel` is ~519 lines (over the 300 soft limit).
+- **`ChartInteractionViewModel` extraction.** `TrendChartViewModel` is ~596 lines (over the 300 soft limit).
   Extract the cursor + delta + drag clusters into a nested interaction sub-VM (mirror the existing
   `Navigation` sub-VM pattern). Deferred during the fix pass as risky public-surface churn with no net saving;
   do it as a focused refactor.
+  The layer-ladder slice (`20260810-layer-ladder-spacing`) added a fourth cluster to the same file —
+  canvas-width tracking (`ReportDataAreaWidth`, `_reportedColumnTarget`) plus the startup request gate
+  (`_isInitialHistoryInFlight`, `_hasDeferredHistoryRequery`, `ReleaseInitialHistoryGate`) — and deferred
+  its extraction as out of scope for a ladder-arithmetic change. The history-lifecycle cluster is the
+  better first cut: `ChartHistoryRequestDebouncer` already owns the latest-wins half of it, so the gate,
+  the sequence counters and `RequestHistory` belong beside it rather than in the view model.
 
 - **~~Latent: coordinator history sequence frozen at 1.~~ Resolved (20260618-post-review-fixes, Task 4).**
   The standalone coordinator history path (`RequestHistory`/`SetLayer`/`HistoryResults`) was removed.

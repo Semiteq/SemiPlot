@@ -224,7 +224,7 @@ public sealed class TrendChartViewModelTests
 	{
 		var (viewModel, scheduler, _, provider) = CreateViewModel();
 		viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
-		await LoadInitialHistory(viewModel, _from, _to, _from.AddDays(-1.0));
+		await LoadInitialHistory(viewModel, _from.AddDays(-1.0), _to);
 		var beforeFrom = viewModel.Navigation.From;
 
 		viewModel.Navigation.PanBy(TimeSpan.FromMinutes(-10.0));
@@ -522,6 +522,141 @@ public sealed class TrendChartViewModelTests
 	}
 
 	[AvaloniaFact]
+	public void ReportedDataAreaWidth_ChangesTheLayerOfAnUnchangedWindow()
+	{
+		var (viewModel, _, _, _) = CreateViewModel();
+		var currentWidth = viewModel.Navigation.To - viewModel.Navigation.From;
+
+		// Roughly four hours: 7 s per column at 2048 columns — finer than the minute layer's 15 s spacing —
+		// but 56 s per column at 256, where the minute layer fills every column.
+		viewModel.Navigation.ZoomAt(TimeSpan.FromHours(4.0) / currentWidth, viewModel.Navigation.To);
+		viewModel.ReportDataAreaWidth(2048.0);
+		viewModel.Navigation.ActiveLayer.Should().Be(AggregationLayer.Raw);
+		var fromBefore = viewModel.Navigation.From;
+		var toBefore = viewModel.Navigation.To;
+
+		viewModel.ReportDataAreaWidth(256.0);
+
+		viewModel.Navigation.ActiveLayer.Should().Be(AggregationLayer.Minute);
+		viewModel.Navigation.From.Should().Be(fromBefore);
+		viewModel.Navigation.To.Should().Be(toBefore);
+	}
+
+	[AvaloniaFact]
+	public async Task PreRenderDataArea_QueriesAtTheMaximumColumnCount()
+	{
+		var (viewModel, _, _, provider) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+
+		viewModel.Navigation.TargetColumnCount.Should().Be(HistoryColumnTarget.MaxColumns);
+		await LoadInitialHistory(viewModel, _from, _to);
+
+		provider.LastQueriedTargetColumnCount.Should().Be(HistoryColumnTarget.MaxColumns);
+	}
+
+	[AvaloniaFact]
+	public async Task ReportedWidth_SetsTheQueryResolutionUnquantized()
+	{
+		var (viewModel, _, _, provider) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+
+		viewModel.ReportDataAreaWidth(700.0);
+		viewModel.Navigation.TargetColumnCount.Should().Be(512);
+
+		await LoadInitialHistory(viewModel, _from, _to);
+
+		provider.LastQueriedTargetColumnCount.Should().Be(700);
+	}
+
+	[AvaloniaFact]
+	public async Task CollapsedCanvas_KeepsTheLastReportedWidth()
+	{
+		var (viewModel, _, _, provider) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+		viewModel.ReportDataAreaWidth(700.0);
+
+		viewModel.ReportDataAreaWidth(0.0);
+
+		viewModel.Navigation.TargetColumnCount.Should().Be(512);
+		await LoadInitialHistory(viewModel, _from, _to);
+		provider.LastQueriedTargetColumnCount.Should().Be(700);
+	}
+
+	[AvaloniaFact]
+	public void ReportedWidthChangingTheLayer_ReQueriesAtTheNewLayerAndColumnCount()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+		var currentWidth = viewModel.Navigation.To - viewModel.Navigation.From;
+
+		// Roughly four hours: the raw layer at 2048 columns, the minute layer at 256.
+		viewModel.Navigation.ZoomAt(TimeSpan.FromHours(4.0) / currentWidth, viewModel.Navigation.To);
+		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		provider.LastQueriedLayer.Should().Be(AggregationLayer.Raw);
+
+		viewModel.ReportDataAreaWidth(256.0);
+		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+
+		provider.LastQueriedLayer.Should().Be(AggregationLayer.Minute);
+		provider.LastQueriedTargetColumnCount.Should().Be(256);
+	}
+
+	[AvaloniaFact]
+	public void WidthReportedBeforeTheInitialHistoryLands_ReQueriesTheSnappedWindow()
+	{
+		// Startup race: the seam reports a width while the initial query is in flight; nothing may be queried
+		// until the snap.
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+		provider.GatedLayer = AggregationLayer.Raw;
+
+		_ = viewModel.RequestInitialHistory();
+
+		viewModel.ReportDataAreaWidth(256.0);
+		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+
+		provider.HistoryQueryCount.Should().Be(1);
+
+		// The archive tail lags wall clock by an hour, so applying the initial result moves the window.
+		var archiveTail = DateTime.UtcNow.AddHours(-1.0);
+		provider.GatedLayer = null;
+		provider.HistoryGate.SetResult(Result.Ok<IReadOnlyList<PenHistoryEnvelope>>(
+		[
+			new PenHistoryEnvelope(
+				1, [archiveTail.AddHours(-1.0), archiveTail], [1.0, 1.0], [1.0, 1.0], [1.0, 1.0])
+		]));
+
+		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+
+		provider.HistoryQueryCount.Should().Be(2);
+		provider.LastQueriedFromUtc.Should().Be(viewModel.Navigation.From);
+		provider.LastQueriedToUtc.Should().Be(viewModel.Navigation.To);
+		provider.LastQueriedTargetColumnCount.Should().Be(256);
+	}
+
+	[AvaloniaFact]
+	public void WidthReportedWhileAnInitialHistoryThatFailsIsInFlight_StillReQueriesOnce()
+	{
+		// The gate must open on the failure path too: a failed initial query never snaps the window, so the
+		// held re-query has to be issued anyway or the canvas keeps the pre-render resolution until the next
+		// gesture.
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+		provider.GatedLayer = AggregationLayer.Raw;
+
+		_ = viewModel.RequestInitialHistory();
+		viewModel.ReportDataAreaWidth(256.0);
+		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+
+		provider.GatedLayer = null;
+		provider.HistoryGate.SetResult(Result.Fail<IReadOnlyList<PenHistoryEnvelope>>("Forced failure."));
+		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+
+		provider.HistoryQueryCount.Should().Be(2);
+		provider.LastQueriedTargetColumnCount.Should().Be(256);
+	}
+
+	[AvaloniaFact]
 	public void DefaultLeftButtonTool_IsPan()
 	{
 		var (viewModel, _, _, _) = CreateViewModel();
@@ -595,7 +730,7 @@ public sealed class TrendChartViewModelTests
 	{
 		var (viewModel, scheduler, _, _) = CreateViewModel();
 		viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
-		await LoadInitialHistory(viewModel, _from, _to, _from.AddDays(-1.0));
+		await LoadInitialHistory(viewModel, _from.AddDays(-1.0), _to);
 		var fromBefore = viewModel.Navigation.From;
 		var toBefore = viewModel.Navigation.To;
 		var widthBefore = toBefore - fromBefore;
@@ -668,7 +803,7 @@ public sealed class TrendChartViewModelTests
 	{
 		// Cross-path latest-wins: the initial query (seq 1) is held in flight while a newer gesture query
 		// (seq 2) loads its window; the released stale result must be dropped by the sequence guard.
-		var (viewModel, scheduler, coordinator, provider) = CreateViewModel();
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
 		viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
 
 		provider.GatedLayer = AggregationLayer.Raw;
@@ -717,15 +852,12 @@ public sealed class TrendChartViewModelTests
 	// Drives the production initial-load path: snap the navigation window to the test's range through the
 	// real first-data extents path, then await the direct QueryHistoryAsync seam. FakeDataProvider returns
 	// Task.FromResult on ImmediateScheduler, so the envelopes load synchronously and deterministically.
-	private static Task LoadInitialHistory(TrendChartViewModel viewModel, DateTime from, DateTime to)
-	{
-		return LoadInitialHistory(viewModel, from, to, from);
-	}
-
-	// firstSample fixes the earliest stored sample (the pan-backward floor): pass a value before `from`
-	// when a test pans into the past.
-	private static Task LoadInitialHistory(TrendChartViewModel viewModel, DateTime from, DateTime to,
-		DateTime firstSample)
+	// firstSample fixes the earliest stored sample (the pan-backward floor): pass a value before the window
+	// start when a test pans into the past.
+	private static Task LoadInitialHistory(
+		TrendChartViewModel viewModel,
+		DateTime firstSample,
+		DateTime to)
 	{
 		viewModel.Navigation.TrackDataExtents(firstSample, to);
 

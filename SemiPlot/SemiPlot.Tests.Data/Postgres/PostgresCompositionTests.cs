@@ -30,8 +30,9 @@ public sealed class PostgresCompositionTests
 		return new PostgresDataProvider(
 			dataSource,
 			new ArchiveTimeConverter(settings.SourceTimeZone),
-			new ArchiveExceptionMapper(settings, () => dataSource.EffectiveStatementTimeout),
+			new ArchiveExceptionMapper(settings),
 			new MissingRelationProbe(dataSource, NullLogger<MissingRelationProbe>.Instance),
+			new StatementTimeoutReader(dataSource, NullLogger<StatementTimeoutReader>.Instance),
 			NullLogger<PostgresDataProvider>.Instance);
 	}
 
@@ -98,6 +99,14 @@ public sealed class PostgresCompositionTests
 	}
 
 	[Fact]
+	public void AddPostgresDataResolvesTheStatementTimeoutReader()
+	{
+		using var services = BuildProvider();
+
+		Assert.NotNull(services.GetRequiredService<StatementTimeoutReader>());
+	}
+
+	[Fact]
 	public void AddPostgresDataResolvesTheTimeConverter()
 	{
 		using var services = BuildProvider();
@@ -128,6 +137,7 @@ public sealed class PostgresCompositionTests
 	[InlineData(typeof(ArchiveDataSource))]
 	[InlineData(typeof(ArchiveExceptionMapper))]
 	[InlineData(typeof(MissingRelationProbe))]
+	[InlineData(typeof(StatementTimeoutReader))]
 	[InlineData(typeof(ArchiveTimeConverter))]
 	[InlineData(typeof(PostgresConnectionSettings))]
 	public void AddPostgresDataRegistersASingleton(Type serviceType)
@@ -159,23 +169,13 @@ public sealed class PostgresCompositionTests
 		Assert.Same(settings, services.GetRequiredService<PostgresConnectionSettings>());
 	}
 
-	// No physical connection has opened, so the bound is unset rather than zero — the two states are told
-	// apart because only the second means the server bounds nothing.
-	[Fact]
-	public void TheEffectiveBoundIsUnsetUntilAPhysicalConnectionOpens()
-	{
-		using var services = BuildProvider();
-
-		Assert.Null(services.GetRequiredService<ArchiveDataSource>().EffectiveStatementTimeout);
-	}
-
 	// The non-null penIds precondition is the interface's, not one member's: RandomStubDataProvider
 	// throws here too, so an empty sequence for a null list would split the two implementations.
 	[Fact]
 	public void SubscribeRejectsANullPenList()
 	{
 		var settings = Settings();
-		using var dataSource = new ArchiveDataSource(settings, NullLogger<ArchiveDataSource>.Instance);
+		using var dataSource = new ArchiveDataSource(settings);
 		var provider = NewProvider(settings, dataSource);
 
 		Assert.Throws<ArgumentNullException>(() => provider.Subscribe(null!));
@@ -185,7 +185,7 @@ public sealed class PostgresCompositionTests
 	public async Task SubscribeCompletesImmediately()
 	{
 		var settings = Settings();
-		using var dataSource = new ArchiveDataSource(settings, NullLogger<ArchiveDataSource>.Instance);
+		using var dataSource = new ArchiveDataSource(settings);
 		var provider = NewProvider(settings, dataSource);
 
 		var samples = await provider.Subscribe([1L]).ToArray();

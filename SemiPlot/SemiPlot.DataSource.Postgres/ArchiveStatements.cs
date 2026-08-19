@@ -50,9 +50,10 @@ internal static class ArchiveStatements
 		""";
 
 	/// <summary>
-	/// The server's effective bound, read once per physical connection. <c>pg_settings.setting</c> is
-	/// text carrying the value in the parameter's base unit — milliseconds for this parameter — so a
-	/// reader role at <c>30s</c> reads back as <c>30000</c> and an unbounded server as <c>0</c>.
+	/// The server's effective bound, read only after a read has already failed with <c>57014</c> and only
+	/// to fill the number that error reports. <c>pg_settings.setting</c> is text carrying the value in the
+	/// parameter's base unit — milliseconds for this parameter — so a reader role at <c>30s</c> reads back
+	/// as <c>30000</c> and an unbounded server as <c>0</c>.
 	/// <c>SHOW statement_timeout</c> returns the unit-suffixed display string <c>30s</c> instead and is
 	/// the wrong query.
 	/// </summary>

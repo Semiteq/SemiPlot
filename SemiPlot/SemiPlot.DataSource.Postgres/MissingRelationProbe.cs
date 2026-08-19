@@ -3,10 +3,11 @@
 namespace SemiPlot.DataSource.Postgres;
 
 /// <summary>
-/// Answers which relation a <c>42P01</c> refers to. PostgreSQL leaves the table-name field empty for
-/// <c>undefined_table</c> — the name appears only in the localizable message text, which a non-English
-/// <c>lc_messages</c> would change — and the extent statement touches two relations, so neither parsing
-/// the message nor assuming an order can tell them apart. A <c>to_regclass</c> lookup over both can.
+/// Answers which relation a <c>42P01</c> refers to. PostgreSQL leaves the structured table-name field
+/// empty for <c>undefined_table</c> — it fills that field for constraint violations, not on this path —
+/// so the name survives only in the message text, which this project does not route on; and the extent
+/// statement touches two relations, so neither reading the message nor assuming an order can tell them
+/// apart. A <c>to_regclass</c> lookup over both can.
 /// <para>
 /// It sits in the read path rather than inside <see cref="ArchiveExceptionMapper"/>: it is a network
 /// round trip, and putting it in the mapper would make the mapper asynchronous, give it a data-source

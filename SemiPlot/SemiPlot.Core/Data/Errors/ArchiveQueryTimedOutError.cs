@@ -10,9 +10,13 @@ namespace SemiPlot.Core.Data.Errors;
 /// is working as configured.
 /// <para>
 /// <see cref="Timeout"/> is the <b>effective</b> <c>statement_timeout</c> the failing session ran
-/// under, read back from that session, not a value SemiPlot configured — SemiPlot sends no
-/// <c>statement_timeout</c> in any form, so the bound is the reader role's and the operator has to be
-/// told the number the server actually applied.
+/// under, not a value SemiPlot configured — SemiPlot sends no <c>statement_timeout</c> in any form, so
+/// the bound is the reader role's and the operator has to be told the number the server actually
+/// applied. <see cref="TimeSpan.Zero"/> means there is no number to report: either the bound could not
+/// be read, or the server bounds nothing and the <c>57014</c> was a cancel rather than an exceeded
+/// bound. Nothing here can tell those two apart, so the message names the SQLSTATE and states that no
+/// bound can be named, rather than naming a mechanism: "a bound of 0 s" is a sentence no operator can
+/// act on, and blaming <c>statement_timeout</c> sends them after a setting that reads <c>0</c>.
 /// </para>
 /// </summary>
 public sealed class ArchiveQueryTimedOutError(string host, int port, string database, TimeSpan timeout)
@@ -28,9 +32,16 @@ public sealed class ArchiveQueryTimedOutError(string host, int port, string data
 
 	private static string Describe(string host, int port, string database, TimeSpan timeout)
 	{
+		var read = FormattableString.Invariant($"The read of archive '{database}' at {host}:{port}");
+
+		if (timeout == TimeSpan.Zero)
+		{
+			return FormattableString.Invariant(
+				$"{read} was ended by the server (SQLSTATE 57014) and no bound can be named.");
+		}
+
 		var seconds = timeout.TotalSeconds;
 
-		return FormattableString.Invariant(
-			$"The read of archive '{database}' at {host}:{port} exceeded its configured bound of {seconds} s.");
+		return FormattableString.Invariant($"{read} exceeded its configured bound of {seconds} s.");
 	}
 }

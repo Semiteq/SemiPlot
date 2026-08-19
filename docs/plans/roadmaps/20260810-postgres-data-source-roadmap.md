@@ -18,6 +18,11 @@ shipped, and that slice keeps `MissingRelationProbe` and the shipped pinning. A 
 that supersedes something written here amends this document in the same pull request — leaving the
 two to disagree is what let a regression be scoped as a return to plan.
 
+**Corrected 2026-08-19** on a compiler fact: the exhaustive-`switch` guard this document
+prescribed cannot exist for an open hierarchy, so the mapping is guarded by a reflection coverage
+test — the form this document had rejected, rejected on reasoning that assumed the compiler form was
+available.
+
 **Re-sliced 2026-08-19** after provider-simplification shipped. The remaining work is four slices
 rather than six: `postgres-startup-and-composition` is split so the application reads the real
 archive one slice from here instead of four, because everything downstream has only ever been
@@ -83,7 +88,7 @@ right one, so only a run against a real archive can tell the two apart.
 | --- | --- | --- |
 | Production data source | `RandomStubDataProvider` | `PostgresDataProvider`, selected by configuration; a missing or invalid configuration is a visible error state, never a silent stub |
 | Synthetic stub | composition-root default | project deleted; manual "see something in the UI" runs on a seeded live demo database through the real provider |
-| Failure reporting | two decoupled error planes (SemiStep pattern): nine sealed public types with structured fields in `SemiPlot/SemiPlot.Core/Data/Errors`, internal detail riding `CausedBy` into the log | the same two planes, over a narrower vocabulary, with every public type mapped to a UI state by one exhaustive `switch` the compiler checks |
+| Failure reporting | two decoupled error planes (SemiStep pattern): nine sealed public types with structured fields in `SemiPlot/SemiPlot.Core/Data/Errors`, internal detail riding `CausedBy` into the log | the same two planes, over a narrower vocabulary, with every public type mapped to a UI state, and a coverage test that fails when one is not |
 | Layer spacing | period ÷ 4 (15 s / 15 min / 6 h) | unchanged; confirmed by eye against a real archive in the live-demo slice |
 | Layer thresholds | derived from `window / targetColumnCount ≥ spacing`, hysteresis retained | unchanged |
 | Wide-window reduction | client-side only | server-side pixel buckets when the layer is denser than the canvas |
@@ -164,12 +169,18 @@ it.
   carrying structured fields; tests assert `result.HasError<T>()` on type and fields, never on
   message text and never on log output. Internal errors and log strings stay free to change — only
   the public plane is pinned.
-- **Exhaustive error-to-state mapping.** The UI maps public error types to states in one `switch`
-  over the error vocabulary, written without a catch-all arm so the compiler reports an unhandled
-  type (added in the composition slice). A new public error type cannot silently leak past the
-  operator, and an internal error cannot silently become public. SemiStep's
-  `CoreErrorLocalizationCoverageTests` gets the same guarantee by reflection at run time; the
-  compiler-checked form costs no test, no reflection, and nothing that grows with the vocabulary.
+- **Total error-to-state mapping.** The UI maps every public error type to a state, and a coverage
+  test enumerates the public types in `SemiPlot.Core/Data/Errors` by reflection and fails when one
+  has no mapping (added in postgres-wire-up). A new public error type cannot silently leak past the
+  operator, and an internal error cannot silently become public.
+
+  A compiler-checked `switch` was the intended form and is not available. `CS8509` fires on any
+  switch expression the compiler cannot prove exhaustive, and over an open hierarchy — `IError` is
+  an interface, and C# has no closed hierarchies — it can never prove it, so a switch handling every
+  type without a catch-all warns anyway and `WarningsAsErrors` would stop the build outright. The
+  contrast is exact over an enum, where a missing member gives `CS8509` and a handled set without a
+  `_` arm gives `CS8524`; over a type hierarchy there is no such pair. SemiStep's
+  `CoreErrorLocalizationCoverageTests` is the shape that works, and this repository adopts it.
 
 ## Slices
 
@@ -276,9 +287,8 @@ it.
     structured fields via a primary constructor and builds its message in the base constructor.
     This surface is the stable contract: the UI maps it to states, tests assert on it, and it grows
     only when a new operator-visible state exists — SemiStep's published rule, "a public error type
-    exists iff a distinct operator sentence exists", enforced there by a build-time reflection
-    coverage test; the composition slice enforces the same rule here through an exhaustive `switch`
-    the compiler checks.
+    exists iff a distinct operator sentence exists", enforced there by a reflection coverage test;
+    postgres-wire-up enforces the same rule here the same way.
   - **Internal plane** — provider-internal failures (Npgsql exceptions, SQLSTATE codes, parse
     details) are free to change and never leak raw across the boundary: they cross only mapped
     into a public type, with the raw detail riding `.CausedBy(...)` into the log — SemiStep's
@@ -397,10 +407,10 @@ it.
   `ConnectionFileInvalidError` as a `ConnectionFileProblem` value, the file format having had one
   version ever; `ArchiveDatabaseMissingError` folds into `ArchiveNotInitialisedError`, both being
   "this server carries no archive to read yet", discriminated by which object is absent. The UI maps
-  every remaining public error type onto a distinct visible state in one exhaustive `switch` with no
-  catch-all arm, so the compiler reports an unhandled type; whether that fails the build or only
-  warns turns on `TreatWarningsAsErrors`, which `SemiPlot/Directory.Build.props` does not set, and
-  making that gate hard is this slice's plan to settle. An empty pen catalogue is not an error:
+  every remaining public error type onto a distinct visible state, and a reflection coverage test
+  over `SemiPlot.Core/Data/Errors` fails when a public type has no mapping. The compiler cannot do
+  this job over an open hierarchy — see Guard strategy — so the test is the gate rather than a
+  fallback for one. An empty pen catalogue is not an error:
   postgres-catalog-and-extent settles it as a success-channel state, so it surfaces as a UI state
   reached through a successful `Result`, pinned by a named test of its own.
 
@@ -445,8 +455,7 @@ it.
   where those two types are constructed. No gap semantics — a `q = 32` break still draws as a step
   until postgres-gap-reconstruction. No realtime; `Subscribe` stays empty and the live edge is
   static. No new error types beyond the two merges — the unexpected table shape and the non-empty
-  default partition arrive with the closing slice, and the exhaustive switch forces their mapping
-  then. No stub deletion; the flag stays until the closing slice. No framework version changes;
+  default partition arrive with the closing slice, and the coverage test forces their mapping then. No stub deletion; the flag stays until the closing slice. No framework version changes;
   the Avalonia bump is its own slice.
 - **Plan:** —
 - **PR:** —

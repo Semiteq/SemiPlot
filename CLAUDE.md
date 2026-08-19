@@ -179,9 +179,11 @@ No abbreviations in names.
 ### Data-source projects
 
 - `IDataProvider` + its DTOs stay in `SemiPlot.Core`; every concrete provider lives in its own
-  `SemiPlot.DataSource.*` project (`SemiPlot.DataSource.Stub` is the current stub, and owns the
-  stub-only `MinMaxDecimator`). Core must not reference a data-source project; real providers slot in
-  as siblings without touching Core.
+  `SemiPlot.DataSource.*` project (`SemiPlot.DataSource.Stub` is the current stub). Core must not
+  reference a data-source project; real providers slot in as siblings without touching Core.
+- `MinMaxDecimator` lives in `SemiPlot.Core/Trends` beside `PenHistoryEnvelope` and is shared by every
+  provider; each provider translates its own rows into the decimator's input vocabulary, which
+  `docs/architecture/charting.md` states.
 - The bench seeder `SemiPlot.Tools.ArchiveSeeder` owns verbatim copies of `SyntheticValueWalk`,
   `SyntheticPenCatalog` and `SyntheticPen` and must not reference `SemiPlot.DataSource.Stub`: the
   stub evolves for UI reasons while the bench stays frozen, a golden-digest test pins its output, and

@@ -201,17 +201,22 @@ and the render budget (§RT-4). The as-built rationale and mechanics:
   which, at the Raw side, appended a far-right raw point that straight-lined across the wide span.
   The column count carries **its own deadband** on the same grounds: one quantisation step doubles or
   halves every ceiling, so a pixel of jitter across a boundary must not move it.
-- **Empty edge sub-spans render as gaps, not straight lines** (§DA-5). When the visible window's
-  leading or trailing sub-span has no data, `MinMaxDecimator` anchors a `NaN` column at the window
-  edge so the line segments there instead of the chart bridging the empty span with a straight line
-  to the live-edge point (the right-side straight-line collapse fix).
+- **Empty edge sub-spans render as gaps, not straight lines** (§DA-5). When the leading or trailing
+  sub-span of the samples it is given has no data, `MinMaxDecimator` (`SemiPlot.Core.Trends`, shared
+  by every provider) anchors a `NaN` column there, so the line segments instead of the chart bridging
+  the empty span with a straight line to the live-edge point (the right-side straight-line collapse
+  fix). The edge it anchors at is the first and last **row**, not the window bound — the decimator
+  never sees the window. The stub reaches the window edge anyway because it synthesises a point per
+  tick across the whole window; the archive provider does not, and slice
+  `postgres-gap-reconstruction` is where its rows learn to carry the break markers that produce the
+  same anchors.
 - **Use a min/max-per-pixel envelope, not plain sampling.** Plain decimation aliases away spikes
   (AVEVA warns of exactly this). Retain min AND max per pixel column so spikes survive (M4:
   min/max/first/last per column → visually lossless; MinMaxLTTB for speed; Power Chart "MinMax").
 - **Aggregation runs PostgreSQL-side** (§DA-2): per the spec the production layer aggregates in the
-  PostgreSQL query rather than streaming raw rows to the client. The current stub synthesizes
-  decimated series in-process; the data layer is structured so an in-process decimator
-  (`MinMaxDecimator`) and a server-side SQL aggregate are interchangeable behind `IDataProvider`.
+  PostgreSQL query rather than streaming raw rows to the client. Both providers fold their samples
+  in-process through `MinMaxDecimator`; the data layer is structured so that decimator and a
+  server-side SQL aggregate are interchangeable behind `IDataProvider`.
 - **Performance budget (§RT-4):** 30 FPS pan/zoom lock; input data ≤ 10 Hz; ≤ 50 simultaneous pens;
   points per pen handed to the chart ≈ viewport width × 2–4.
 

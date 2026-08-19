@@ -2,7 +2,8 @@
 
 namespace SemiPlot.Tests.Data.Postgres;
 
-// Points at an address nothing answers, which is safe because no caller issues a read.
+// Points at an address nothing answers; no test built on it reaches the server. A test that does issue a
+// read is an integration one and takes its settings from the seeded archive instead.
 internal static class ConnectionSettingsFactory
 {
 	public const string Database = "semiplot_dev";

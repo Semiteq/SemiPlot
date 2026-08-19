@@ -58,6 +58,11 @@ public interface IDataProvider
 | `ArchiveExtent` | `FirstUtc`, `LastUtc`, `IsEmpty` | The span of the configured variables, consumed by the minimap (`TM-4`). `ArchiveExtent.Empty` is the no-span form; the two timestamps are meaningful only when `IsEmpty` is false. |
 | `AggregationLayer` | `Raw`, `Minute`, `Hour`, `Day` | Maps one-to-one onto the archive's `l` column. |
 
+`QueryHistoryAsync`'s window is half-open — `fromUtc` inclusive, `toUtc` exclusive — in every
+implementation, so two adjacent windows neither repeat nor drop a sample on the boundary and a
+zero-width window selects nothing. The order of the envelopes it returns is unspecified: a consumer
+keys them by `PenId` and never by position.
+
 The pen catalogue is a query, not a property, because reading it can fail: the server can be
 unreachable, the table can be absent, the read can time out. Like every other read on this interface
 the failure travels as a failed `Result` and never as an exception crossing to the UI thread. The
@@ -132,8 +137,33 @@ WHERE id = ANY(@ids) AND l = @layer AND t >= @from AND t < @to
 ORDER BY id, t;
 ```
 
-Rows are folded into envelopes client-side by the existing min/max decimator, which also inserts the
-`NaN` anchors that break the line at gaps (`DA-5`).
+Rows are folded into envelopes client-side by `MinMaxDecimator` (`SemiPlot.Core.Trends`), one
+envelope per pen. The decimator's `NaN` anchors (`DA-5`) fire on a null `v` and on an empty leading
+or trailing sub-span of the rows it is handed. On the archive path that is not gap rendering yet: a
+vendor break is the *absence* of rows marked by `q`, not a null `v`, and `q` is selected but never
+read, so today a break reaches the chart as one wide step between two real samples. Slice
+`postgres-gap-reconstruction` reads `q` and inserts the anchors. The window bounds are converted
+through `ArchiveTimeConverter.ToArchiveLocal` before binding and each row's `t` through `ToUtc` on
+the way out; a row whose converted timestamp does not exceed the previous kept one for that pen is
+dropped, which is how the assembler keeps the strictly ascending envelope contract across a
+daylight-saving transition — at the cost stated under Time boundary.
+
+In the archive-backed provider a pen with no rows in the window gets no envelope at all rather than
+an empty one, because an envelope per requested pen would force every consumer to tell "no data"
+from "not asked for". The rule is that provider's alone: the synthetic provider generates a point
+per tick, so every requested pen it knows carries an envelope, empty when the window is. That rule
+is **interim**, on two counts.
+
+It reads absence as nothing to draw, while the quality table below reads absence without a preceding
+`q = 32` as a value that did not change, so a pen last written before the window opens has nothing
+to draw where the table promises a horizontal continuation. Slice `postgres-gap-reconstruction`
+revises it.
+
+And no consumer drops a pen that a result omits. `TrendChartViewModel.ApplyHistory` writes the pens
+a result carries and removes none, so an omitted pen keeps the previous window's envelope: on a
+zoom-in the stale columns bracket the new window and the line draws straight across it, while the
+cursor readers and the scale model keep feeding on the stale series. Slice
+`postgres-startup-and-composition`, which wires this provider to the chart, owns that half.
 
 ### History, chosen layer still denser than the canvas
 
@@ -282,8 +312,18 @@ avoids either. At the autumn fall-back both passes over the repeated hour carry 
 values, so the converted sequence repeats an hour. At the spring-forward gap a value inside the gap
 takes the standard-time offset while the value after it takes the daylight one, so an ascending naive
 sequence converts to a *descending* one across the transition. The strictly ascending
-`PenHistoryEnvelope` contract is therefore not the converter's to keep — the component that assembles
-envelopes owns what to do about both.
+`PenHistoryEnvelope` contract is therefore not the converter's to keep.
+
+**The envelope assembler drops what does not ascend, and that decision is made.** `HistoryRowFold`
+keeps a row only when its converted timestamp exceeds the previous kept one for that pen. At the
+spring gap that drops the one or two rows the conversion put out of order. At the autumn fall-back it
+costs a great deal more: both passes over the repeated hour carry identical naive values, so the
+first pass occupies the second pass's instants and every second-pass row that does not advance past
+them is dropped — for an archive written at a steady cadence, the whole repeated hour, for every pen,
+once a year. The surviving hour is also stamped with the second pass's instants, an hour later than
+the rows were taken. Nothing stateless does better, because the archive records no offset to tell the
+two passes apart and the envelope contract admits no repeat. Pinned by
+`HistoryRowFoldTests.TheSecondPassOverTheRepeatedHourIsDropped`.
 
 ## Quality and gaps
 
@@ -321,10 +361,31 @@ Two invariants:
 Batching, the union timeline and the hand-off to the UI scheduler happen above the provider, in
 `TrendCoordinator` (see `charting.md`).
 
+As built, `PostgresDataProvider.Subscribe` returns an empty sequence and slice
+`postgres-realtime-poll` gives it the poll described above. The empty sequence is deliberate:
+`Subscribe` returns an observable and carries no `Result` channel to report a failure through, so a
+sequence that completes without emitting is the only honest answer a provider with no poll can give.
+
 ## Error semantics
 
-Everything on the data path returns `FluentResults`. Exceptions never cross to the UI thread
-(`DA-1`).
+Everything on the data path returns `FluentResults`, caller-argument faults included: an inverted
+window and a target column count below one are failed `Result`s carrying a plain message in every
+implementation of `IDataProvider`, worded the same way in each, so a consumer written against one
+cannot tell it from the other. A pen identifier outside the archive's 32-bit identifier range is a
+failed `Result` in the archive-backed provider, which has that column to overflow; the synthetic
+provider carries no such column and ignores an identifier naming no pen it knows.
+
+Two preconditions leave an implementation as an exception instead, each a defect in the calling code
+rather than a state the archive or the operator can produce: `penIds` is non-null, asserted with
+`ArgumentNullException.ThrowIfNull`, and `layer` is a defined member of `AggregationLayer`, asserted
+with `ArgumentOutOfRangeException`. The null check comes first in every member taking `penIds`,
+`Subscribe` included, which has no `Result` channel to fail through at all. The layer check runs
+after the range and target-count checks, so a call carrying both an inverted window and an undefined
+layer answers with the failed `Result` in every implementation. One more exception crosses on the
+archive path:
+`OperationCanceledException`, which `ArchiveExceptionMapper` rethrows rather than turning into a failed
+`Result`, as the timeout paragraph below states. Nothing else leaves an implementation as an exception,
+so no failure crosses to the UI thread (`DA-1`).
 
 | Situation | Provider result | What the operator sees |
 | --- | --- | --- |
@@ -336,7 +397,7 @@ Everything on the data path returns `FluentResults`. Exceptions never cross to t
 | `trends` does not exist (SCADA never started) | failed `Result`, distinguished from a connection failure | "Archive not initialised" — a normal state on a fresh installation |
 | `semiplot_tags` does not exist (provisioning unfinished) | failed `Result` carrying `ArchiveNotInitialisedError` whose `Table` is `semiplot_tags` | "Archive not initialised" — the remedy is running `semibase create` |
 | `semiplot_tags` present but empty | empty pen list, success | "No variables configured" — commissioning is not finished |
-| Archive present but no rows in the window | success, empty envelopes | Empty chart, no error |
+| Archive present but no rows in the window | success, empty envelope list — no pen has rows, so no pen gets an envelope | Empty chart, no error |
 
 ### Two error planes
 
@@ -388,15 +449,10 @@ cannot route on.
 
 `57014` maps unconditionally to `ArchiveQueryTimedOutError`. The server answers that SQLSTATE both
 for `statement_timeout` and for a client-issued cancel, and the chart cancels in-flight reads when it
-pans, so the two will have to be told apart — but no read on the provider path takes a
-`CancellationToken` yet, and a caller's own cancellation raises `OperationCanceledException`, which
-the mapper rethrows rather than turning into a failed `Result`. Slice `postgres-history-read` is the
-first to hand a token down and owns splitting the two.
-
-One further type, `ProviderNotImplementedError`, exists only while `PostgresDataProvider` is a
-scaffold: its unimplemented members return a failed `Result` carrying it, so a mis-wired composition
-fails loudly instead of drawing an empty chart. Slice `postgres-realtime-poll` implements the last of
-those members and deletes the type with it.
+pans, so the two will have to be told apart — but no member of `IDataProvider` takes a
+`CancellationToken`, so no read on the provider path hands one down, and a caller's own cancellation
+raises `OperationCanceledException`, which the mapper rethrows rather than turning into a failed
+`Result`. The slice that gives the interface tokens owns splitting the two.
 
 ## Configuration
 

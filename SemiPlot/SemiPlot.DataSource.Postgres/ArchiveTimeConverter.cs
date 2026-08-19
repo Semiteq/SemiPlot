@@ -56,8 +56,9 @@ public sealed class ArchiveTimeConverter
 	/// Total by construction: every instant has exactly one local reading. It is not injective, though —
 	/// across the autumn fall-back the repeated hour maps two instants onto one naive value, so a UTC
 	/// window spanning the transition becomes a narrower local window, and a one-hour window over the
-	/// transition itself becomes a zero-width one that selects no rows. Pinned by test; the slice that
-	/// builds history queries owns what to do about it.
+	/// transition itself becomes a zero-width one that selects no rows. Pinned by test and accepted as
+	/// cosmetic, uncompensated, the way <c>data-integration.md</c> accepts the duplicated hour on the
+	/// row side: the collapse costs at most one hour of a window once a year.
 	/// </para>
 	/// </summary>
 	public DateTime ToArchiveLocal(DateTime utc)

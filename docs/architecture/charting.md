@@ -165,7 +165,8 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
 - `TrendNavigationModel` — `[from, to]` window, sticky flag, zoom width; pan / zoom / jump-to-now /
   live-edge advance, clamped 1 s … 1 year, zoom width quantized onto a 1.25 ladder, `From ≥ FirstSample`.
 - `MinMaxDecimator` — samples + target column count → min AND max per column (+ center); NaN-gap anchor
-  at empty leading/trailing edge sub-spans. **Lives in `SemiPlot.DataSource.Stub`** (stub-only caller).
+  at empty leading/trailing edge sub-spans. Shared by every provider: each translates its own rows
+  into the parallel `(timestamp, value?)` vocabulary where a null marks a gap.
 - `MinimapGeometry` — extent + window → strip start/width fractions, and fraction → timestamp.
 - `CursorReadoutModel` — cursor X → per-pen interpolated `Center` value (gaps → no value).
 - `DeltaCursorModel` — two cursor times → `DeltaReadout` (Δt + Δy for the active pen).

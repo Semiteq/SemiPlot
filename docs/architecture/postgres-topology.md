@@ -96,7 +96,7 @@ flowchart TB
         loader["PostgresConnectionLoader<br/>YAML, nine keys"]
     end
 
-    errs["SemiPlot.Core/Data/Errors<br/>ten sealed types"]
+    errs["SemiPlot.Core/Data/Errors<br/>nine sealed types"]
 
     ui --> coord --> iface
     iface -.-> stub
@@ -112,8 +112,9 @@ flowchart TB
 ```
 
 The composition root still resolves the stub; `postgres-startup-and-composition` is the slice that
-switches it. Two of the four provider members are implemented — the pen catalogue and the archive
-extent — and `QueryHistoryAsync` and `Subscribe` follow in later slices.
+switches it. Three of the four provider members are implemented — the pen catalogue, the archive
+extent and the windowed history read. `Subscribe` returns an empty sequence until
+`postgres-realtime-poll` fills it.
 
 ## The four provisioning states, and the fifth
 

@@ -505,7 +505,7 @@ it.
 - **PR:** #17 (merged)
 - **Branch:** ui-render-and-input-guards
 
-### Slice avalonia-12-bump — Status: PENDING
+### Slice avalonia-12-bump — Status: DONE
 - **Scope:** Take the UI to Avalonia 12 and both test projects to xunit v3, which `CLAUDE.md`
   already names as the intended end state. Seven Avalonia packages move from 11.3.8 to 12.0.x,
   `ReactiveUI.Avalonia` follows, `ScottPlot.Avalonia` moves 5.1.57 to 5.1.59 — the release that
@@ -535,10 +535,12 @@ it.
 - **Scope guard:** no behaviour changes and no new features; a test may change only where the
   framework forces it. No provider work. A test the framework forces to change is a finding to
   understand rather than a diff to appease — a headless dispatcher whose semantics moved surfaces
-  there first.
-- **Plan:** —
-- **PR:** —
-- **Branch:** —
+  there first. Two production fixes were in scope after all, because the bump broke what it moved:
+  the wheel handler ScottPlot 5.1.59 started swallowing, and the text shaper `UseSkia` stopped
+  binding.
+- **Plan:** docs/plans/completed/20260820-avalonia-12-bump.md
+- **PR:** #19 (merged)
+- **Branch:** avalonia-12-bump
 
 ### Slice postgres-gap-reconstruction — Status: PENDING
 - **Scope:** Make breaks render correctly on the direct read path. A sample marked as the last before

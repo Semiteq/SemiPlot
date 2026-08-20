@@ -217,9 +217,9 @@ and the render budget (§RT-4). The as-built rationale and mechanics:
   the empty span with a straight line to the live-edge point (the right-side straight-line collapse
   fix). The edge it anchors at is the first and last **row**, not the window bound — the decimator
   never sees the window. The stub reaches the window edge anyway because it synthesises a point per
-  tick across the whole window; the archive provider does not, and slice
-  `postgres-gap-reconstruction` is where its rows learn to carry the break markers that produce the
-  same anchors.
+  tick across the whole window; the archive provider does not, and reaches the same anchors from the
+  break markers instead — `HistoryRowFold` appends a null one tick after a `q = 32` row, and the
+  decimator splits on it (see `data-integration.md`, Quality and gaps).
 - **Use a min/max-per-pixel envelope, not plain sampling.** Plain decimation aliases away spikes
   (AVEVA warns of exactly this). Retain min AND max per pixel column so spikes survive (M4:
   min/max/first/last per column → visually lossless; MinMaxLTTB for speed; Power Chart "MinMax").

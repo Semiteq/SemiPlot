@@ -65,9 +65,41 @@ public sealed class ExplainPlanTests(
 	private static readonly Regex _indexReachedRows = new(
 		"(" + IndexScan + @"|Bitmap Heap Scan on )" + DayPartition);
 
+	// Every scan node naming a day partition, whatever its kind. The partition's own index is
+	// tpYYYYmMMdDD_pkey and the underscore keeps the word boundary from closing after the day, so
+	// "Bitmap Index Scan on tp2026m01d01_pkey" is not counted as a partition read.
+	private static readonly Regex _dayPartitionRead = new(@"\bon " + DayPartition);
+
+	// The seed's backward walk together with the index condition on the line under it, captured so the
+	// bound the planner actually pushed into the index is read rather than inferred. The condition is a
+	// named group because DayPartition carries a group of its own.
+	private static readonly Regex _seedBackwardWalk = new(
+		@"Index Scan Backward using \S+ on " + DayPartition
+			+ @"[^\r\n]*\r?\n\s*Index Cond: \((?<condition>[^\r\n]*)\)");
+
 	// Narrow, so the planner is choosing between an index and a scan of a partition it would have to read
 	// almost whole.
 	private static readonly TimeSpan _explainedWindow = TimeSpan.FromMinutes(2);
+
+	// Far enough into the archive that every explained pen has a row before the window opens, so the seed
+	// branch has something to find. The slice is seeded from its start, so a window opening at that start
+	// is the other case and gets its own test.
+	private static readonly TimeSpan _seedProbeOffset = TimeSpan.FromMinutes(5);
+
+	// The seed's look-back over a two-minute window is its floor of one partition width, so it reaches the
+	// window's own day and the day before it and no further. An unbounded backwards seek would name one
+	// partition per older day instead.
+	//
+	// On this bench the count alone cannot fail: SeederOptions.DefaultDays is 1, so the archive holds a
+	// single day partition and a bounded and an unbounded seek prune to the same set. What actually proves
+	// the bound here is the Assert.Contains("t >=", ...) in the same test, which reads the bound the planner
+	// pushed into the index. The count is the assertion that starts biting on a multi-day archive.
+	private const int MaximumDayPartitionsRead = 2;
+
+	// A pen with no row before the window costs no read of a row-holding partition at all: the look-back
+	// ends exactly on the archive's first partition boundary, so the seed branch prunes to the empty
+	// default partition and the window branch is the plan's only partition read.
+	private const int WindowBranchPartitionReads = 1;
 
 	[Fact]
 	public async Task TheExtentPlanReachesEveryRowHoldingPartitionThroughAnIndex()
@@ -98,7 +130,7 @@ public sealed class ExplainPlanTests(
 	}
 
 	[Fact]
-	public async Task TheWindowedHistoryPlanReachesItsRowsThroughAnIndex()
+	public async Task TheSeededWindowPlanWalksBackToTheSeedWithinItsBound()
 	{
 		postgresContainerFixture.RequireAvailable();
 
@@ -109,28 +141,79 @@ public sealed class ExplainPlanTests(
 		var plan = await ExplainAsync(
 			database.ReaderConnectionString,
 			ArchiveStatements.SparseHistoryWindow,
-			BindWindowParameters,
+			command => BindWindowParametersAt(command, ArchiveTemplate.Slice.Start + _seedProbeOffset),
 			TestContext.Current.CancellationToken);
 
 		Assert.False(
 			_sequentialScanOverRows.IsMatch(plan),
-			"The windowed history statement no longer narrows on the primary key: the plan reads a "
+			"The seeded window statement no longer narrows on the primary key: the plan reads a "
 				+ "row-holding trends partition sequentially, so a two-minute window over two pens walks "
 				+ $"the whole day.{Environment.NewLine}{plan}");
 
 		Assert.True(
 			_indexReachedRows.IsMatch(plan),
-			"The windowed history plan reaches no row-holding trends partition through an index, neither "
+			"The seeded window plan reaches no row-holding trends partition through an index, neither "
 				+ "directly nor through a bitmap, so the read finds its rows by reading rows it does not "
 				+ $"want.{Environment.NewLine}{plan}");
+
+		var seedWalk = _seedBackwardWalk.Match(plan);
+
+		Assert.True(
+			seedWalk.Success,
+			"The seed branch reaches no row-holding trends partition through a backward index scan, so "
+				+ "the row before the window is no longer found by stepping to one index edge."
+				+ $"{Environment.NewLine}{plan}");
+
+		Assert.Contains("t >=", seedWalk.Groups["condition"].Value, StringComparison.Ordinal);
+
+		Assert.True(
+			_dayPartitionRead.Matches(plan).Count <= MaximumDayPartitionsRead,
+			"The seed's backwards seek has lost its lower bound: the plan reads more day partitions than "
+				+ "a look-back of one partition width can reach, which on a longer archive is one probe "
+				+ $"per older day, per pen, on every window change.{Environment.NewLine}{plan}");
+	}
+
+	[Fact]
+	public async Task TheSeededWindowPlanReadsNoOlderPartitionForAPenWithNoPriorRows()
+	{
+		postgresContainerFixture.RequireAvailable();
+
+		var database = seededArchive.Database;
+
+		await AnalyseAsync(database, TestContext.Current.CancellationToken);
+
+		var plan = await ExplainAsync(
+			database.ReaderConnectionString,
+			ArchiveStatements.SparseHistoryWindow,
+			command => BindWindowParametersAt(command, ArchiveTemplate.Slice.Start),
+			TestContext.Current.CancellationToken);
+
+		Assert.False(
+			_sequentialScanOverRows.IsMatch(plan),
+			"The seeded window statement no longer narrows on the primary key at the archive's first "
+				+ $"instant: the plan reads a row-holding trends partition sequentially.{Environment.NewLine}{plan}");
+
+		Assert.True(
+			_indexReachedRows.IsMatch(plan),
+			"The window branch reaches no row-holding trends partition through an index at the archive's "
+				+ $"first instant.{Environment.NewLine}{plan}");
+
+		var partitionReads = _dayPartitionRead.Matches(plan).Count;
+
+		Assert.True(
+			partitionReads == WindowBranchPartitionReads,
+			$"The plan reads {partitionReads} day partitions where the window branch alone accounts for "
+				+ $"{WindowBranchPartitionReads}: the seed's look-back ends on the archive's first "
+				+ "partition boundary, so a pen with no row before the window must cost no read of a "
+				+ $"row-holding partition at all.{Environment.NewLine}{plan}");
 	}
 
 	// Bound through the shipped binder, so the plan is read over the parameters production sends. The
 	// statement's bounds are 'timestamp without time zone', the archive's own naive wall clock, and a UTC
 	// converter leaves the seeder's timestamps unchanged on the way to the parameter.
-	private static void BindWindowParameters(NpgsqlCommand command)
+	private static void BindWindowParametersAt(NpgsqlCommand command, DateTime windowStart)
 	{
-		var from = DateTime.SpecifyKind(ArchiveTemplate.Slice.Start, DateTimeKind.Utc);
+		var from = DateTime.SpecifyKind(windowStart, DateTimeKind.Utc);
 
 		PostgresDataProvider.BindWindow(
 			command,

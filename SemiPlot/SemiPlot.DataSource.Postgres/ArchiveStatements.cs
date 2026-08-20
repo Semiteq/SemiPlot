@@ -38,14 +38,61 @@ internal static class ArchiveStatements
 		""";
 
 	/// <summary>
-	/// <c>@ids</c> binds an array rather than an expanded list so the read keeps
-	/// <c>PRIMARY KEY (id, l, t)</c>, whose leading column is <c>id</c>, instead of reading every partition.
-	/// <c>q</c> is selected for the gap reconstruction that reads it; the fold ignores the column for now.
+	/// A window of one layer, with the left edge seeded so a pen whose last sample predates the window
+	/// still draws. Two branches under one outer <c>ORDER BY id, t</c>: the per-pen seed row, then the
+	/// window rows.
+	/// <para>
+	/// One statement rather than two, because <see cref="HistoryRowFold"/> groups by consecutive
+	/// identifier — a pen arriving in two runs would yield two envelopes for one pen, and no consumer
+	/// rejects that. Under one ordering each pen is still one ascending run.
+	/// </para>
+	/// <para>
+	/// The seed bound is <c>t &lt; @from</c> rather than <c>&lt;=</c>: the window branch already takes
+	/// <c>t &gt;= @from</c>, so an inclusive bound would return a boundary row on both branches.
+	/// </para>
+	/// <para>
+	/// The backwards seek is bounded by the wider of the requested window and one partition width.
+	/// <c>trends</c> is <c>PARTITION BY RANGE (t)</c> with a partition per calendar day and
+	/// <c>PRIMARY KEY (id, l, t)</c> as its only index, so an unbounded <c>ORDER BY t DESC LIMIT 1</c>
+	/// plans as a <c>Limit</c> over a <c>Merge Append</c> of every partition the bound leaves unpruned.
+	/// That node opens and pulls the first tuple from all of them before it can emit one, so the cost is
+	/// one index descent per older partition, per pen, on every window change, whether or not an older
+	/// row is there to be found. The bound is what prunes those partitions away.
+	/// </para>
+	/// <para>
+	/// It scales with the window because the archive's value-unchanged state does
+	/// (docs/architecture/scada-archive.md, the three-state table). A steady variable — a recipe setpoint
+	/// written once at process start — writes nothing for as long as it does not change, and it belongs
+	/// on the chart as a horizontal line at its last recorded value rather than as nothing at all. A
+	/// window zoomed out to a week reaches back a week for that sample; a two-minute window still costs
+	/// the one-day floor and no more. A pen with no row inside the look-back gets no seed and, having no
+	/// window rows either, no envelope: the answer it already got, reached in bounded time.
+	/// </para>
+	/// <para>
+	/// <c>@ids</c> binds an array rather than an expanded list so the read keeps the primary key, whose
+	/// leading column is <c>id</c>, instead of reading every partition. The seed branch unnests the same
+	/// array so each pen's probe carries an equality on that leading column. <c>q</c> is read by the fold
+	/// on every row of both branches, so a seed marking a break opens the window inside one.
+	/// </para>
 	/// </summary>
 	public const string SparseHistoryWindow = """
 		SELECT id, t, v, q
-		FROM trends
-		WHERE id = ANY(@ids) AND l = @layer AND t >= @from AND t < @to
+		FROM (
+		    SELECT seed.id, seed.t, seed.v, seed.q
+		    FROM (SELECT DISTINCT unnest(@ids) AS id) requested
+		    CROSS JOIN LATERAL (
+		        SELECT prior.id, prior.t, prior.v, prior.q
+		        FROM trends prior
+		        WHERE prior.id = requested.id AND prior.l = @layer
+		          AND prior.t < @from AND prior.t >= @from - greatest(@to - @from, interval '1 day')
+		        ORDER BY prior.t DESC
+		        LIMIT 1
+		    ) seed
+		    UNION ALL
+		    SELECT id, t, v, q
+		    FROM trends
+		    WHERE id = ANY(@ids) AND l = @layer AND t >= @from AND t < @to
+		) sample
 		ORDER BY id, t;
 		""";
 

@@ -130,32 +130,67 @@ to draw, and a minimap strip spanning data no pen can render would be a lie.
 
 ```sql
 SELECT id, t, v, q
-FROM trends
-WHERE id = ANY(@ids) AND l = @layer AND t >= @from AND t < @to
+FROM (
+    SELECT seed.id, seed.t, seed.v, seed.q
+    FROM (SELECT DISTINCT unnest(@ids) AS id) requested
+    CROSS JOIN LATERAL (
+        SELECT prior.id, prior.t, prior.v, prior.q
+        FROM trends prior
+        WHERE prior.id = requested.id AND prior.l = @layer
+          AND prior.t < @from AND prior.t >= @from - greatest(@to - @from, interval '1 day')
+        ORDER BY prior.t DESC
+        LIMIT 1
+    ) seed
+    UNION ALL
+    SELECT id, t, v, q
+    FROM trends
+    WHERE id = ANY(@ids) AND l = @layer AND t >= @from AND t < @to
+) sample
 ORDER BY id, t;
 ```
 
-Rows are folded into envelopes client-side by `MinMaxDecimator` (`SemiPlot.Core.Trends`), one
-envelope per pen. The decimator's `NaN` anchors (`DA-5`) fire on a null `v` and on an empty leading
-or trailing sub-span of the rows it is handed. On the archive path that is not gap rendering yet: a
-vendor break is the *absence* of rows marked by `q`, not a null `v`, and `q` is selected but never
-read, so today a break reaches the chart as one wide step between two real samples. Slice
-`postgres-gap-reconstruction` reads `q` and inserts the anchors. The window bounds are converted
+One statement in two branches under one outer `ORDER BY id, t`. The window branch returns the rows
+inside the window. The seed branch returns, per requested pen, the row with the greatest `t`
+**strictly** before the window start, so a pen whose last sample predates the window still draws
+instead of being dropped from the chart. The bound is strict because the window branch already takes
+`t >= @from`, and an inclusive one would return a boundary row on both branches.
+
+The backwards seek is bounded by the wider of the requested window and one partition width. `trends`
+is `PARTITION BY RANGE (t)` with a partition per calendar day and `PRIMARY KEY (id, l, t)` as its
+only index, so an unbounded `ORDER BY t DESC LIMIT 1` plans as a `Limit` over a `Merge Append` of
+every partition the bound leaves unpruned. That node opens and pulls the first tuple from all of them
+before it can emit one, so the cost is one index descent per older partition, per pen, on every
+window change, whether or not an older row is there to be found. The bound is what prunes those
+partitions away. A pen with no row in the window and none inside the look-back gets no seed and no
+envelope. The identifiers are unnested `DISTINCT`, so a caller passing the same pen twice still gets
+one seed row for it.
+
+One statement rather than two, because `HistoryRowFold` groups rows by consecutive identifier. A pen
+arriving in two runs yields two envelopes for one pen, and `TrendChartViewModel.ApplyHistory` keys by
+pen identifier, so one would silently overwrite the other. Under a single outer ordering each pen is
+one ascending run, seed first. What breaks that is the loss of the single total ordering — the outer
+`ORDER BY` removed, replaced by an ordering per branch, or a second statement feeding the same fold —
+rather than a second branch. An `ORDER BY` added inside a `UNION ALL` branch while the outer clause
+stands is inert in PostgreSQL and splits nothing.
+
+Rows are folded into envelopes client-side by `HistoryRowFold` over `MinMaxDecimator`
+(`SemiPlot.Core.Trends`), one envelope per pen. The decimator's `NaN` anchors (`DA-5`) fire on a null
+`v` and on an empty leading or trailing sub-span of the rows it is handed. A vendor break is the
+*absence* of rows marked by `q`, not a null `v`, so the fold reads `q` on every row of both branches
+and supplies the null itself — the mapping is under Quality and gaps. The window bounds are converted
 through `ArchiveTimeConverter.ToArchiveLocal` before binding and each row's `t` through `ToUtc` on
 the way out; a row whose converted timestamp does not exceed the previous kept one for that pen is
 dropped, which is how the assembler keeps the strictly ascending envelope contract across a
 daylight-saving transition — at the cost stated under Time boundary.
 
-In the archive-backed provider a pen with no rows in the window gets no envelope at all rather than
-an empty one, because an envelope per requested pen would force every consumer to tell "no data"
-from "not asked for". The rule is that provider's alone: the synthetic provider generates a point
-per tick, so every requested pen it knows carries an envelope, empty when the window is. That rule
-is **interim**, on two counts.
+In the archive-backed provider a pen with neither a window row nor a seed row gets no envelope at all
+rather than an empty one, because an envelope per requested pen would force every consumer to tell
+"no data" from "not asked for". The rule is that provider's alone: the synthetic provider generates a
+point per tick, so every requested pen it knows carries an envelope, empty when the window is.
 
-It reads absence as nothing to draw, while the quality table below reads absence without a preceding
-`q = 32` as a value that did not change, so a pen last written before the window opens has nothing
-to draw where the table promises a horizontal continuation. Slice `postgres-gap-reconstruction`
-revises it.
+The seed row is what keeps that rule narrow. A pen last written shortly before the window opens
+carries its seed and draws; only a pen the archive holds nothing for within the look-back is
+omitted.
 
 The consumer side is settled. `TrendChartViewModel.ApplyHistory` receives the requested identifiers
 beside the result and calls `DropPensMissingFromHistory`, which clears the curve and the envelope of
@@ -336,6 +371,40 @@ The provider maps the archive's quality marks onto the envelope's gap representa
 The distinction in the last row is the whole reason the marks exist. Treating every row gap as a
 line break would shred a steady signal into fragments; ignoring the marks would draw a straight line
 across hours of missing data.
+
+`HistoryRowFold` is where the mark becomes a null. After appending a row whose `q` is `32` it appends
+one more entry for that pen: the row's **converted** timestamp plus one tick, carrying a null value.
+One tick is four orders of magnitude below the archive's `timestamp(3)` resolution, so no real row
+lands inside it and the series stays strictly ascending, and the tick is added on the UTC side, where
+no daylight-saving boundary reaches it. `MinMaxDecimator` splits its series on that null and emits the
+`NaN` column between the segments, which is the drawn break. The anchor keeps its own column however
+close the tick is: the decimator slices by index inside a non-null segment and appends the gap column
+outside any bucket.
+
+`q = 16` takes no branch. The point is kept like any other and the line resumes at it, because a
+resumption is what the decimator already produces on the far side of a null segment. Anchoring on the
+resumption as well would re-break every restart.
+
+The anchor follows only a row the fold kept, so a `q = 32` row dropped by the strict-ascent guard
+carries no anchor with it.
+
+The seed row is a real archive row and carries its own `q`. A seed marked `32` opens the window inside
+a gap: the anchor is the series' second entry, so the chart draws the last sample before the break and
+then nothing until the window's first row. The anchor comes from the decimator's inter-segment
+`AppendGap`, not from its leading-edge branch — the seed's own value is non-null at index 0, so the
+first non-null segment starts there and the leading-edge branch does not fire.
+
+The look-back that bounds the seed scales with the window, because the archive's value-unchanged state
+does (`scada-archive.md`, the three-state table). A steady variable — a recipe setpoint written once at
+process start — writes nothing for as long as it does not change, and it belongs on the chart as a
+horizontal line at its last recorded value rather than as nothing at all. A window zoomed out to a week
+reaches back a week for that sample; a two-minute window still costs the one-day floor and no more. A
+pen quiet for longer than the wider of the two is still omitted, and zooming out is what reaches it.
+
+The mapping is measured against the vendor's own rows rather than against this repository's model of
+them: `RealArchiveGapTests` drives the fold with intervals, values and quality codes lifted from the
+customer dump, including a 4 min 18 s absence carrying no marker — roughly 2 600 missing polls that
+are not a break.
 
 In the bucketed query the same information survives as `q_first`, `q_last` and `breaks`, and the
 client walks buckets in time order holding one of two states: after a bucket whose `q_last` is 32 it

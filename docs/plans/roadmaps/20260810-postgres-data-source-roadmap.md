@@ -464,7 +464,7 @@ it.
 - **PR:** #14 (merged)
 - **Branch:** postgres-wire-up
 
-### Slice ui-render-and-input-guards — Status: PENDING
+### Slice ui-render-and-input-guards — Status: DONE
 - **Scope:** Put instruments under the renderer and the input path before the framework moves, so the
   bump can be judged by something. Two guards, both automated and both absent today.
 
@@ -501,9 +501,9 @@ it.
 - **Stacking base:** master
 - **Scope guard:** no production code changes, no framework version changes, no new rendering
   behaviour — these tests describe what ships today.
-- **Plan:** —
-- **PR:** —
-- **Branch:** —
+- **Plan:** docs/plans/completed/20260820-ui-render-and-input-guards.md
+- **PR:** #17 (merged)
+- **Branch:** ui-render-and-input-guards
 
 ### Slice avalonia-12-bump — Status: PENDING
 - **Scope:** Take the UI to Avalonia 12 and both test projects to xunit v3, which `CLAUDE.md`

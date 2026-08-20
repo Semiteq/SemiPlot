@@ -12,7 +12,7 @@ multi-pen axis management, scaling, cursors, decimation, and rendering. Compleme
 operator interaction.
 
 > Status: **as-built (MVP implemented).** This spec is realized in `SemiPlot.UI` on Avalonia
-> 11.3.8 + ScottPlot 5; the Decisions log below records the original rationale and is kept for
+> 12.0.5 + ScottPlot 5; the Decisions log below records the original rationale and is kept for
 > history. Source: desired behavior of the MasterSCADA 3 trend window plus user-requested fixes
 > (reference image in the machine docs), cross-checked against mature vendor trend controls
 > (Ignition Power Chart / Easy Chart, AVEVA Trend Client, WinCC, Simple-Scada) and decimation
@@ -22,23 +22,27 @@ operator interaction.
 
 ## Decisions log (2026-06-16)
 
-- **Renderer:** **ScottPlot 5** (MIT, SkiaSharp; `ScottPlot.Avalonia` 5.1.57 on **Avalonia 11.3.8**).
+- **Renderer:** **ScottPlot 5** (MIT, SkiaSharp; `ScottPlot.Avalonia` 5.1.59 on **Avalonia 12.0.5**).
   Chosen over OxyPlot for built-in independent multi-axis. Trends render as a per-pen **`Scatter`
   center line + `FillY` min/max band** over a data-layer-decimated envelope;
   `DataLogger` is cited prior art only, not the implementation pattern (it cannot carry a
   pre-decimated min/max band). Supersedes the uPlot/WebView2 stack in overview.md / charting.md.
-  *As-built reconciliation:* ScottPlot 5.1.57 `Scatter` has **no `OnNaN`/`Gap` property** (a plan
+  *As-built reconciliation:* `Scatter` has **no `OnNaN`/`Gap` property** (a plan
   assumption); gaps are produced by feeding `double.NaN` (the default `Straight` path strategy
   breaks the line at NaN), so the committed gap mechanism is "NaN in Center/Min/Max", not an enum.
-- **UI framework:** **Avalonia 11.3.8 / net10** (binding floor 11.3.8, set by `ReactiveUI.Avalonia`
-  11.3.8). Deliberately diverges from SemiStep's Avalonia 12 because **ScottPlot.Avalonia has no
-  Avalonia 12 build** — SemiStep is mirrored for *patterns*, not versions. *As-built note:*
-  `Avalonia.HarfBuzz` has no 11.3.x package (only 12.x), so it is omitted and there is no explicit
-  `UseHarfBuzz()`; text shaping arrives transitively via `Avalonia.Skia` 11.3.8 → `HarfBuzzSharp`.
-  `AvaloniaScheduler` / `UseReactiveUI` live in namespace `ReactiveUI.Avalonia` on 11.3.8 (NOT
-  `Avalonia.ReactiveUI`). Stack: **ReactiveUI** MVVM
+- **UI framework:** **Avalonia 12.0.5 / net10**, the same pairing `SemiStep` ships
+  (`ReactiveUI.Avalonia` 12.0.3, `ScottPlot.Avalonia` 5.1.59, which itself depends on Avalonia 12.0.0).
+  *As-built note:* `SemiPlot.UI` references `Avalonia.HarfBuzz` 12.0.5 and the builder chain calls
+  `UseHarfBuzz()` between `UseSkia()` and `UseReactiveUI()`. `App.BuildAvaloniaApp` names the platform
+  itself (`UseWin32().UseSkia()`) instead of calling `UsePlatformDetect()`, and Skia carries no text
+  shaper, so without that call `AppBuilder.Setup` throws "No text shaping system configured" before any
+  window exists. The headless platform registers a shaper of its own, so no headless test reaches that
+  path — `SemiPlot.Tests/UI/Startup/AppBuilderCompositionTests` reads the composed builder back instead.
+  `AvaloniaScheduler` / `UseReactiveUI` live in namespace `ReactiveUI.Avalonia` (NOT
+  `Avalonia.ReactiveUI`), and `UseReactiveUI` takes a mandatory `Action<ReactiveUIBuilder>`.
+  Stack: **ReactiveUI** MVVM
   (`ReactiveObject` / `ReactiveCommand` / `AvaloniaScheduler.Instance` = `RxApp.MainThreadScheduler` /
-  `CompositeDisposable`; NOT `RxSchedulers.MainThreadScheduler`, which is 11.4-beta+),
+  `CompositeDisposable`; `RxSchedulers.MainThreadScheduler` also ships in 12.0.3 and is not used),
   **Microsoft.Extensions.DependencyInjection** (extension methods, primary constructors), **Serilog**
   (file, rolling 5 MB / 5 files), **FluentTheme** (light). Rationale for ReactiveUI: the data layer is
   Rx-native and the VMs are derived-state-heavy (sticky, cursor, active-pen) — a fit for
@@ -141,7 +145,13 @@ hover readout/crosshair (§CU-1, §CU-2), T1/T2 delta measurement (§CU-3), and 
 limits via axis-region edit (§AY-3). The mechanics below are the as-built realization.
 
 ScottPlot's built-in mouse processing is disabled (`UserInputProcessor.Disable()`); all gestures
-are routed through `Chart/TrendChartView` onto the navigation controller. The left button is a
+are routed through `Chart/TrendChartView` onto the navigation controller. `Disable()` does not cover
+the wheel: `AvaPlot.OnPointerWheelChanged` ends with `e.Handled = HandleMouseWheelEvent`, outside the
+delta guard and unconditioned on the input processor, and Avalonia runs that class handler before the
+view's instance handler on the same element — so a wheel event arrives already handled and the view
+never sees it. `TrendChartView.InitializeComponent` therefore also sets
+`_plotControl.HandleMouseWheelEvent = false`, which is what keeps wheel zoom working; the view's own
+handler is then the only writer of `Handled` for the wheel. The left button is a
 single tool with an explicit state (`Chart/LeftButtonTool` = `Pan` | `DeltaPlacement`); the active
 tool is sourced from the toolbar delta-mode toggle (`TrendChartViewModel.ActiveLeftButtonTool`),
 so there is one left-button gesture, not overlapping hidden branches.
@@ -272,11 +282,12 @@ and fast navigation across long archives.
 - **ScottPlot 5** (as-built): MIT; SkiaSharp; each distinct-unit pen gets its own `IYAxis`
   (`AddLeftAxis`/`AddRightAxis`), same-unit groups share one axis, non-active axes `IsVisible = false`.
   Trends drawn as `Scatter` + `FillY` band over a data-layer-decimated envelope; NaN segments the
-  line at gaps (no `OnNaN` property in 5.1.57); `DataLogger` is prior art, not the pattern. Shared-X
+  line at gaps (no `OnNaN` property in ScottPlot 5); `DataLogger` is prior art, not the pattern. Shared-X
   invariant: all pens pinned to `plot.Axes.Bottom`.
-- **Avalonia 11.3.8 / net10** (as-built): hosts `ScottPlot.Avalonia` 5.1.57 (ScottPlot has no
-  Avalonia 12 build). Mirrors SemiStep's patterns (ReactiveUI + MS.DI + Serilog + FluentTheme), not
-  its versions. `Avalonia.HarfBuzz` omitted (no 11.3.x build); HarfBuzz arrives via `Avalonia.Skia`.
+- **Avalonia 12.0.5 / net10** (as-built): hosts `ScottPlot.Avalonia` 5.1.59, which depends on Avalonia
+  12.0.0. Mirrors SemiStep's patterns (ReactiveUI + MS.DI + Serilog + FluentTheme) and now its versions
+  too. `Avalonia.HarfBuzz` 12.0.5 is referenced and `UseHarfBuzz()` is called explicitly; Skia carries
+  no text shaper.
 - No qualifying open-source .NET SCADA trend-viewer reference repo exists; built from library
   primitives, with ScottPlot's `DataLogger` demo as the nearest realtime pattern.
 

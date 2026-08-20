@@ -49,6 +49,10 @@ internal sealed class FakeDataProvider : IDataProvider
 
 	// Held tasks for the catalogue and extent reads: a test completes them, or never does, to drive a
 	// caller's own bound on a read that answers nothing.
+	// Every gate on this provider is awaited by production code and completed by the test body, and
+	// several tests assert immediately after SetResult with no scheduler advance. The inline continuation
+	// is what makes that work, so none of these may take TaskCreationOptions.RunContinuationsAsynchronously
+	// — the opposite of the gates in ChartHistoryRequestDebouncerTests, which the test body awaits.
 	public TaskCompletionSource<Result<IReadOnlyList<Pen>>> PensGate { get; } = new();
 
 	public TaskCompletionSource<Result<ArchiveExtent>> ExtentGate { get; } = new();
@@ -65,6 +69,7 @@ internal sealed class FakeDataProvider : IDataProvider
 	// (e.g. an initial Raw load vs. a superseding coarser-layer gesture re-query).
 	public Dictionary<AggregationLayer, double> LayerCenterOverrides { get; } = [];
 
+	// Plain, for the reason stated at PensGate: TrendChartViewModelTests asserts inline after SetResult.
 	public TaskCompletionSource<Result<IReadOnlyList<PenHistoryEnvelope>>> HistoryGate { get; } = new();
 
 	// Pen identifiers the history read answers with no envelope at all, the shape a real provider returns

@@ -62,10 +62,13 @@ public sealed class ChartHistoryRequestDebouncerTests
 	{
 		// A slow first query is in flight when a newer window arrives; Switch must drop its late response
 		// (latest-wins). Real schedulers are used because the guard spans a real async query boundary.
+		// The two gates the test body awaits run their continuations asynchronously, so completing one
+		// from inside a debouncer callback cannot resume this method inline on the callback's thread and
+		// re-enter the Rx pipeline from within its own notification.
 		var firstQueryGate = new TaskCompletionSource();
-		var firstQueryStarted = new TaskCompletionSource();
+		var firstQueryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 		var applied = new List<AggregationLayer>();
-		var secondApplied = new TaskCompletionSource();
+		var secondApplied = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 		var shortWindow = TimeSpan.FromMilliseconds(20);
 
 		using var debouncer = new ChartHistoryRequestDebouncer(
@@ -100,7 +103,7 @@ public sealed class ChartHistoryRequestDebouncerTests
 
 		// Release the stale first query after the newer one was applied; Switch must drop its result.
 		firstQueryGate.SetResult();
-		await Task.Delay(50);
+		await Task.Delay(50, TestContext.Current.CancellationToken);
 
 		applied.Should().ContainSingle();
 		applied[0].Should().Be(AggregationLayer.Hour);

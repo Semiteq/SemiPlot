@@ -90,12 +90,21 @@ public class App : Application
 			.StartWithClassicDesktopLifetime([]);
 	}
 
-	private static AppBuilder BuildAvaloniaApp()
+	// Internal so a test reads the composed builder back and pins the three subsystems the desktop
+	// application cannot start without. The test builder composes UseHeadless, which registers its own
+	// rendering, windowing and shaping, so nothing headless covers this chain.
+	internal static AppBuilder BuildAvaloniaApp()
 	{
 		return AppBuilder.Configure<App>()
 			.UseWin32()
 			.UseSkia()
-			.UseReactiveUI()
+			// Avalonia 12: Skia no longer brings a text shaper with it. Without UseHarfBuzz the desktop
+			// application fails at AppBuilder.Setup with "No text shaping system configured"; the headless
+			// platform supplies its own shaper, so no test reaches this.
+			.UseHarfBuzz()
+			// Avalonia 12: UseReactiveUI takes a mandatory builder callback. Nothing here configures the
+			// ReactiveUI builder, so the callback is empty.
+			.UseReactiveUI(_ => { })
 			.LogToTrace();
 	}
 

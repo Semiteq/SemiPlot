@@ -17,9 +17,9 @@ It must handle two classes of data:
 | Layer            | Choice                                                                 |
 | ---------------- | --------------------------------------------------------------------- |
 | Platform         | .NET 10 (`net10.0-windows`), Windows, C# 14                            |
-| Desktop shell    | Avalonia 11.3.8 (Win32 backend, SkiaSharp render, FluentTheme light)  |
-| Chart renderer   | ScottPlot 5 (`ScottPlot.Avalonia` 5.1.57, MIT, SkiaSharp) — native control |
-| MVVM             | ReactiveUI (`ReactiveUI.Avalonia` 11.3.8)                             |
+| Desktop shell    | Avalonia 12.0.5 (Win32 backend, SkiaSharp render, HarfBuzz shaping, FluentTheme light) |
+| Chart renderer   | ScottPlot 5 (`ScottPlot.Avalonia` 5.1.59, MIT, SkiaSharp) — native control |
+| MVVM             | ReactiveUI (`ReactiveUI.Avalonia` 12.0.3)                             |
 | Backend (in-proc)| .NET data provider abstraction over the data sources                   |
 | Data source      | One read-only PostgreSQL connection to the Simple-Scada archive — history, extent and realtime alike (`data-integration.md`) |
 | Coarse resolutions | The SCADA's own archive layers; nothing of ours runs in or beside the database (`history-read-path-evaluation.md`) |
@@ -27,20 +27,24 @@ It must handle two classes of data:
 
 Constraint: **$0 budget** — only free/OSS components.
 
-> Version note: SemiPlot pins **Avalonia 11.3.x** (binding floor 11.3.8, set by
-> `ReactiveUI.Avalonia` 11.3.8) and `ScottPlot.Avalonia` 5.1.57, which depends on Avalonia 11.3.4.
-> Nothing external blocks the move to Avalonia 12 any more: `ScottPlot.Avalonia` 5.1.59 depends on
-> Avalonia 12.0.0 and `ReactiveUI.Avalonia` publishes 12.1.1 (verified against the NuGet nuspecs on
-> 2026-08-14). What remains is the UI bump itself, which also unblocks the xunit-v3 unification of the
-> two test projects — see the exit path in the root `CLAUDE.md`.
-> `Avalonia.HarfBuzz` has no 11.3.x package on NuGet (only 12.x); HarfBuzz text shaping arrives
-> transitively via `Avalonia.Skia` 11.3.8 → `HarfBuzzSharp`, so no explicit `UseHarfBuzz()` call.
+> Version note: SemiPlot pins **Avalonia 12.0.5** with `ScottPlot.Avalonia` 5.1.59 (which depends on
+> Avalonia 12.0.0) and `ReactiveUI.Avalonia` 12.0.3 — the pairing the sibling repository `SemiStep`
+> already ships. Both test projects sit on `xunit.v3` 3.2.2, so the only thing still separating them is
+> the target framework: `SemiPlot.Tests.Data` stays plain `net10.0` for the Linux CI runner that starts
+> the containers.
+> `SemiPlot.UI` references `Avalonia.HarfBuzz` 12.0.5 and `App.BuildAvaloniaApp` calls `UseHarfBuzz()`
+> between `UseSkia()` and `UseReactiveUI()`. The chain names the platform itself
+> (`UseWin32().UseSkia()`) rather than calling `UsePlatformDetect()`, and Skia brings no text shaper, so
+> without that call `AppBuilder.Setup` throws "No text shaping system configured" before any window
+> exists. The headless platform registers a shaper of its own, which is why no headless test reaches
+> that path; `SemiPlot.Tests/UI/Startup/AppBuilderCompositionTests` reads the composed builder back and
+> pins all three subsystems instead.
 
 ## Components
 
 ```
 +-------------------------------------------------------------+
-|  SemiPlot.UI (Avalonia 11.3 + ScottPlot 5)                 |
+|  SemiPlot.UI (Avalonia 12.0 + ScottPlot 5)                 |
 |                                                             |
 |   App / MainWindow (Grid: toolbar / chart / legend / status)|
 |     ├── TrendChartView ──hosts──► ScottPlot AvaPlot control |

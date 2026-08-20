@@ -73,6 +73,10 @@ public partial class TrendChartView : UserControl
 		if (_plotControl is not null)
 		{
 			_plotControl.UserInputProcessor.Disable();
+			// AvaPlot marks every wheel event handled in its class handler, which would keep
+			// OnPointerWheelChanged below from ever running. Disabling the input processor does not
+			// cover this: the flag is applied after it, unconditionally.
+			_plotControl.HandleMouseWheelEvent = false;
 			_plotControl.Cursor = _handCursor;
 			_plotControl.PointerWheelChanged += OnPointerWheelChanged;
 			_plotControl.PointerPressed += OnPointerPressed;
@@ -169,6 +173,9 @@ public partial class TrendChartView : UserControl
 		_plotControl?.Plot.Axes.SetLimitsX(LocalTimeAxis.ToAxis(from), LocalTimeAxis.ToAxis(to));
 	}
 
+	// The plot control carries HandleMouseWheelEvent = false, so this handler is the only thing marking a
+	// wheel event handled. This early return therefore lets the event bubble to an ancestor — inert while
+	// nothing above the chart scrolls, and the place to look if the chart is ever put in a ScrollViewer.
 	private void OnPointerWheelChanged(object? sender, PointerWheelEventArgs eventArgs)
 	{
 		if (_viewModel is null || _plotControl is null)

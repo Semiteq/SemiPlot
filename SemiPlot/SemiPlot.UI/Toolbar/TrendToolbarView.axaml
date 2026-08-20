@@ -17,11 +17,11 @@
                 Command="{Binding AutoscaleActiveAxisCommand}" />
 
         <TextBox Width="80"
-                 Watermark="Min"
+                 PlaceholderText="Min"
                  Text="{Binding ManualMin}" />
 
         <TextBox Width="80"
-                 Watermark="Max"
+                 PlaceholderText="Max"
                  Text="{Binding ManualMax}" />
 
         <Button Content="Set Limits"

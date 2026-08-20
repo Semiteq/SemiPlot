@@ -3,7 +3,7 @@
 SemiPlot is a trend/chart viewer for an industrial installation (semiconductor plasma
 process tools: ICP / RIE / PECVD). It reads live tags and historical archives from
 Simple-Scada 2 and renders interactive, multi-axis trends.
-Platform: .NET 10, Windows, C# 14. UI: Avalonia 11.3.x desktop (Win32 + Skia) with ReactiveUI
+Platform: .NET 10, Windows, C# 14. UI: Avalonia 12.0.5 desktop (Win32 + Skia + HarfBuzz) with ReactiveUI
 for MVVM and ScottPlot.Avalonia (SkiaSharp) for rendering — no WPF, WebView2, or JS frontend.
 Solution: `SemiPlot.slnx`. All commands run from repository root.
 
@@ -36,24 +36,32 @@ Tests live in two projects, split by target framework rather than by taste.
 
 | Project | Target | Framework | References | Holds |
 | --- | --- | --- | --- | --- |
-| `SemiPlot.Tests` | `net10.0-windows` | xunit v2 + `Avalonia.Headless.XUnit` | `SemiPlot.UI` | Everything touching the UI, plus the renderer-agnostic Core models |
+| `SemiPlot.Tests` | `net10.0-windows` | xunit v3 + `Avalonia.Headless.XUnit` | `SemiPlot.UI` | Everything touching the UI, plus the renderer-agnostic Core models |
 | `SemiPlot.Tests.Data` | `net10.0` | xunit v3 | `SemiPlot.Core`, `SemiPlot.Tools.ArchiveSeeder`, `SemiPlot.DataSource.Postgres` | Bench and data-source tests, pure and container-gated. Never Avalonia, never the UI |
 
 `SemiPlot.Tests` carries `TestAppBuilder.cs` with `[assembly: AvaloniaTestApplication]`. Pure logic
 (decimation, navigation, scale, cursor, delta) uses plain `[Fact]`; tests touching
 ReactiveUI/ScottPlot/Avalonia use `[AvaloniaFact]`/`[AvaloniaTheory]`. The Core model tests build
 against the UI project, so they do not run independently of the UI build — the accepted cost of
-keeping one Avalonia project. `SemiPlot.Tests.Data` stays plain `net10.0` so it runs on a Linux CI
-runner, which a project referencing `SemiPlot.UI` structurally cannot. The two xunit majors coexist
-with no runner setting: `dotnet test` runs each project in its own process.
+keeping one Avalonia project.
 
-**Exit path for the split.** It ends with the Avalonia 11 → 12 bump of the UI, after which
-`SemiPlot.Tests` takes `Avalonia.Headless.XUnit` 12.x and both projects sit on xunit v3. Nothing
-external blocks that any more. Verified against the NuGet nuspecs on 2026-08-14:
-`Avalonia.Headless.XUnit` 11.3.8 (pinned here) depends on `xunit.core` 2.4.0 while 12.0.0 and later
-depend on `xunit.v3.extensibility.core` 3.2.2; `ScottPlot.Avalonia` 5.1.57 (pinned here) and 5.1.58
-depend on `Avalonia` 11.3.4 while 5.1.59 depends on `Avalonia` 12.0.0; `ReactiveUI.Avalonia`
-publishes 12.1.1. What remains is the UI bump itself, which is its own piece of work.
+**Why the split exists.** Both projects are on xunit v3, so the test framework separates nothing:
+`dotnet test` runs each project in its own process only because they are two projects. The one
+reason there are two is the target framework. `SemiPlot.Tests.Data` stays plain `net10.0` because
+the `data-tests` CI job runs on `ubuntu-latest`, the only runner that can start a container, and a
+project referencing `SemiPlot.UI` (`net10.0-windows`) cannot build there. `SemiPlot.Tests` may take
+a project reference on `SemiPlot.Tests.Data` and consume its container harness; the reverse
+reference is the one that cannot exist.
+
+**An xunit v3 test project is an executable.** A test that hangs leaves `SemiPlot.Tests.exe` running
+and locked, and the next build fails with MSB3027/MSB3021 until that process is killed. A plain
+`[Fact]` body also runs with no `SynchronizationContext` — v3 installs one only under the Aggressive
+parallel algorithm — so an `await` on a `TaskCompletionSource` that production code completes
+resumes inline on the completing thread. A test gate awaited by the test body and completed by
+production code therefore takes `TaskCreationOptions.RunContinuationsAsynchronously`; a gate awaited
+by production code and completed by the test body must not, because tests assert on that inline
+resumption. `[AvaloniaFact]` bodies are unaffected: `Avalonia.Headless.XUnit` installs
+`AvaloniaSynchronizationContext`.
 
 ```powershell
 dotnet test SemiPlot.slnx                                                 # full suite, both projects

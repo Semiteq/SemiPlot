@@ -52,8 +52,8 @@ where it and the committed 140-row real-archive slice came from.
 | Area            | Decision                                                                    |
 | --------------- | --------------------------------------------------------------------------- |
 | Platform        | .NET 10 (`net10.0-windows`), Windows, C# 14                                 |
-| Desktop shell   | Avalonia 11.3.8 (Win32 + Skia + FluentTheme), ReactiveUI MVVM               |
-| Chart renderer  | ScottPlot 5 (`ScottPlot.Avalonia` 5.1.57, MIT, SkiaSharp) — native control  |
+| Desktop shell   | Avalonia 12.0.5 (Win32 + Skia + HarfBuzz + FluentTheme), ReactiveUI MVVM    |
+| Chart renderer  | ScottPlot 5 (`ScottPlot.Avalonia` 5.1.59, MIT, SkiaSharp) — native control  |
 | Data source     | One read-only PostgreSQL connection to the Simple-Scada archive (`trends` / `messages`) — history, extent and realtime alike. No application server, no OPC UA client, no local TCP protocol |
 | Wide windows    | The SCADA's own archive layers (`l = 1/2/3`); no summary tables, aggregator service, scheduler or extensions of ours — see `history-read-path-evaluation.md` |
 | Retention       | One depth for all archived data; coarse layers cannot outlive raw data       |

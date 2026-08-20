@@ -2,7 +2,7 @@
 
 ## Renderer: ScottPlot 5
 
-The chart is rendered with **ScottPlot 5** (`ScottPlot.Avalonia` 5.1.57, MIT, SkiaSharp) — a
+The chart is rendered with **ScottPlot 5** (`ScottPlot.Avalonia` 5.1.59, MIT, SkiaSharp) — a
 native Avalonia control (`AvaPlot`), no web view. It was chosen over OxyPlot for built-in
 independent multi-axis; the prior uPlot/WebView2 stack is removed. The surrounding UI (legend,
 toolbar, axes UX, theming) is ours; ScottPlot is only the plotting core.
@@ -19,7 +19,7 @@ Each pen is drawn as **two plottables over a data-layer-decimated min/max envelo
 decimation is unused because the data layer pre-decimates. `DataLogger` is cited prior art only
 (it cannot carry a pre-decimated min/max band), **not** the implementation pattern.
 
-**Gaps via NaN, not an enum.** ScottPlot 5.1.57 `Scatter` has **no `OnNaN`/`Gap` property** (an
+**Gaps via NaN, not an enum.** ScottPlot 5 `Scatter` has **no `OnNaN`/`Gap` property** (an
 earlier plan assumption). Gap segmentation is automatic: the default path strategy
 (`ScottPlot.PathStrategies.Straight`) skips `float.IsNaN` points and breaks the path, so feeding
 `double.NaN` (the envelope's gap marker, also used for `null` realtime samples) produces the gap

@@ -181,6 +181,13 @@ pumps the dispatcher, so hit testing, pointer capture and event routing all run 
 points are window-client coordinates, so a position computed inside a control is translated out of
 that control's space with `TranslatePoint`.
 
+The pump is a loop, not a fixed sequence: `HeadlessWindowExtensions.RunJobsOnImpl` runs jobs and
+forces a render timer tick up to ten times, until nothing is left at
+`DispatcherPriority.MinimumActiveValue`. It does that twice — once before the raw input event and
+once after it — so the phase following an input event renders too, and a single helper call can
+drive up to twenty render ticks. A headless timing difference that appears with no source change
+starts there.
+
 Two things must hold before any coordinate means anything:
 
 1. The window is shown and laid out, so the view has bounds.
@@ -219,9 +226,15 @@ theirs inside the test body.
 ### What the guards do not cover
 
 The Win32 backend — windowing, DPI, real cursor changes, the render-thread interplay — is exercised
-by nothing headless. Visual legibility is not a machine question at all. Both wait for the demo
-stand.
+by nothing headless. Nor is the desktop `AppBuilder` chain: the headless platform supplies its own
+text shaper and its own drawing, so a desktop-only registration the chain is missing passes every
+headless test and fails at `AppBuilder.Setup` in the running application. That failure mode is the
+application bench's, not a guard's. Visual legibility is not a machine question at all, and waits
+for the demo stand.
 
 `ChartGapRenderTests` reaches SkiaSharp through ScottPlot with no Avalonia in the loop, so across a
 rendering-stack bump it guards the ScottPlot half alone; the Avalonia half rests on the two pointer
-guards.
+guards. The halves are not interchangeable, and the ScottPlot 5.1.59 bump shows why: the plot
+control began marking every wheel event handled, which killed wheel zoom in the application and
+moved no pixel the render guard reads. `ChartPointerInputTests` is what failed — its wheel test —
+while both render assertions stayed green.

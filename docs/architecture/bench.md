@@ -136,6 +136,92 @@ server, rename `semiplot_tags` for an unfinished provisioning, change the passwo
 file for a refused login, and delete the catalogue rows for an empty catalogue — which is a normal
 start, not a failure, and writes no error at all.
 
-What this bench cannot answer is what the curve looks like: whether a break renders as a break,
-whether the ladder's chosen layer is the right one by eye, and whether the window is legible. Those
-wait for the demo stand.
+What this bench cannot answer is what the curve looks like: whether the ladder's chosen layer is the
+right one by eye, and whether the window is legible. Those wait for the demo stand. Whether a break
+renders as a break is answered instead by the render guard below, at the rasteriser rather than on a
+screen.
+
+## The headless render and input guards
+
+Three classes in `SemiPlot.Tests` pin the two things a rendering-stack version bump can change
+without announcing it: how a gap is drawn, and how a pointer reaches a handler. They are written to
+survive a version bump unchanged, so a stack that behaves differently after one surfaces as a
+failing test rather than as a screenshot nobody took.
+
+| Class | Drives | Asserts |
+| --- | --- | --- |
+| `UI/Chart/ChartGapRenderTests` | ScottPlot's rasteriser, no Avalonia | a `NaN` column leaves the rendered line broken, and a continuous series leaves no such break |
+| `UI/Chart/ChartPointerInputTests` | headless pointer events into `TrendChartView` | a drag pans the navigation window, a wheel zooms it, a capture loss ends the drag |
+| `UI/Minimap/MinimapPointerInputTests` | headless pointer events into `MinimapView` | a drag on the strip moves the chart's window to each pointer fraction, a move after release moves nothing |
+
+### What the render guard sees
+
+`Plot.GetImage(width, height)` returns a `ScottPlot.Image` whose `GetArrayRGB()` is a
+`byte[row, column, channel]`, channel 0 red, 1 green, 2 blue. `Plot.RenderInMemory(width, height)`
+is that same call with the image dropped, so `Plot.RenderManager.LastRender.Layout.DataRect`
+describes exactly the render the pixels came from — one rasterise, one coordinate system, no second
+render to disagree with it. `Plot.GetPixel(Coordinates)` maps a time to its pixel column. SkiaSharp
+does the drawing with no Avalonia in the loop, so the render guard is a plain `[Fact]` and needs no
+headless application.
+
+Detection is by colour band, never by byte: a column of the data area either carries pen-coloured
+pixels or it does not, and "pen-coloured" is a dominance test across the channels rather than an
+exact RGB match. Antialiasing, font metrics and theme changes move bytes without moving that answer,
+which is what lets the assertion survive a version bump that legitimately moves pixels. A golden
+image does not survive one: it fails for benign reasons and gets regenerated at the bump, at which
+point it has verified nothing about the transition.
+
+### What the pointer guards drive
+
+Headless input is `Avalonia.Headless.HeadlessWindowExtensions` on a `TopLevel`:
+`MouseDown(TopLevel, Point, MouseButton)`, `MouseMove(TopLevel, Point)`,
+`MouseUp(TopLevel, Point, MouseButton)` and `MouseWheel(TopLevel, Point, Vector)`, each with an
+optional trailing `RawInputModifiers`. Each posts a raw input event into the headless window and
+pumps the dispatcher, so hit testing, pointer capture and event routing all run for real. Their
+points are window-client coordinates, so a position computed inside a control is translated out of
+that control's space with `TranslatePoint`.
+
+Two things must hold before any coordinate means anything:
+
+1. The window is shown and laid out, so the view has bounds.
+2. The plot has rendered once, so `LastRender.Layout.DataRect` is populated — the view's
+   pixel-to-time maths reads it through `Plot.GetCoordinates`.
+
+The headless platform draws nothing (`UseHeadlessDrawing`), so that first render is forced through
+ScottPlot with `Plot.RenderInMemory` at the plot control's own size, never through Avalonia.
+
+Capture loss has no headless entry point of its own. `IPointer.Capture(null)` on the pointer taken
+from the pressed event is the path `Pointer.PlatformCaptureLost` itself routes into, and it leaves
+the pointer free, so a follow-up move still hit-tests and can show the drag is gone rather than the
+event swallowed. The guard therefore covers `Capture(null)`, not `PlatformCaptureLost`: a version
+that reroutes `PlatformCaptureLost` away from `Capture(null)` leaves the guard green while the
+platform's own deactivation path regresses.
+
+### A test that builds `TrendChartView` needs a UI scheduler that can defer
+
+`TrendChartViewModel` builds `RedrawRequested` as
+`Sample(33 ms, uiScheduler).ObserveOn(uiScheduler)`, and `TrendChartView` subscribes to it the
+moment a `DataContext` arrives. `Sample` on `ImmediateScheduler.Instance` calls `SchedulePeriodic`,
+which blocks the calling thread forever. The UI scheduler for a test that constructs the view is
+therefore anything except `ImmediateScheduler.Instance`. Two choices work:
+`AvaloniaScheduler.Instance`, which is what `App.InitializeServices` passes in production and what
+the pointer guards pass; and `Microsoft.Reactive.Testing.TestScheduler`, which is what
+`UI/Chart/TrendChartViewTests` passes for both of its schedulers.
+
+**The symptom is a silent hang, not a failure.** The test host prints nothing at all and never
+exits; a hang dump shows the thread parked in `Scheduler.SchedulePeriodicStopwatch.Start` under
+`TrendChartView.OnDataContextChanged`.
+
+Every view model a test builds with `AvaloniaScheduler.Instance` holds a 33 ms periodic dispatcher
+timer until it is disposed, on the dispatcher the whole headless run shares, so the tests dispose
+theirs inside the test body.
+
+### What the guards do not cover
+
+The Win32 backend — windowing, DPI, real cursor changes, the render-thread interplay — is exercised
+by nothing headless. Visual legibility is not a machine question at all. Both wait for the demo
+stand.
+
+`ChartGapRenderTests` reaches SkiaSharp through ScottPlot with no Avalonia in the loop, so across a
+rendering-stack bump it guards the ScottPlot half alone; the Avalonia half rests on the two pointer
+guards.

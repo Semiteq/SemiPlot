@@ -95,10 +95,15 @@ public sealed class PostgresDataProvider : IDataProvider
 	/// A window of one layer for the pens the caller asks for, folded into one envelope per pen that has
 	/// rows. A window holding no rows at all is a successful empty list rather than a failure.
 	/// <para>
-	/// A pen with nothing in the window gets no envelope. That rule is <b>interim</b>:
-	/// <c>postgres-gap-reconstruction</c> revises it with a pre-window seed lookup. The consumer side is
-	/// settled — <c>TrendChartViewModel.ApplyHistory</c> drops a requested pen the result omits, so no pen
-	/// carries the previous window's envelope. See docs/architecture/data-integration.md.
+	/// The left edge is seeded: a pen whose last sample predates the window start is drawn from that
+	/// sample, because <see cref="ArchiveStatements.SparseHistoryWindow"/> returns it on the same round
+	/// trip as the window rows.
+	/// </para>
+	/// <para>
+	/// A pen with no row in the window and none inside that statement's bounded look-back still gets no
+	/// envelope, and the consumer side drops it — <c>TrendChartViewModel.ApplyHistory</c> drops a
+	/// requested pen the result omits, so no pen carries the previous window's envelope. See
+	/// docs/architecture/data-integration.md.
 	/// </para>
 	/// </summary>
 	public async Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(
@@ -255,7 +260,8 @@ public sealed class PostgresDataProvider : IDataProvider
 		return new HistoryRowFold.Row(
 			reader.GetInt32(0),
 			reader.GetDateTime(1),
-			reader.IsDBNull(2) ? null : reader.GetDouble(2));
+			reader.IsDBNull(2) ? null : reader.GetDouble(2),
+			reader.GetInt32(3));
 	}
 
 	// The id column is integer, so it is read with GetInt32 and widened — GetInt64 throws

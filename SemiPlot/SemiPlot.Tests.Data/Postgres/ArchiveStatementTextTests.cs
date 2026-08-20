@@ -35,6 +35,48 @@ public sealed class ArchiveStatementTextTests
 		Assert.Equal(documented, Normalise(statement));
 	}
 
+	// The seeded window statement carries a second pin, a plain literal, beside the fence above. The
+	// roadmap's Guard strategy prescribes a literal for statement text written from here on, and the
+	// seed branch is written from here on; the fence stays because docs/architecture/data-integration.md
+	// is the artifact each remaining slice's brief is assembled from, and an unguarded fence corrupts
+	// that brief while every test stays green. Two failures with two remedies is the intended cost.
+	//
+	// Every line below is load-bearing. `t < @from` is strict because the window branch takes
+	// `t >= @from`, so an inclusive seed bound would return a boundary row on both branches. The
+	// `greatest(@to - @from, interval '1 day')` lower bound is the wider of the requested window and one
+	// partition width: trends is PARTITION BY RANGE (t) by calendar day with PRIMARY KEY (id, l, t) as
+	// its only index, so an unbounded backwards seek plans as a Limit over a Merge Append of every
+	// unpruned partition, which opens and pulls a first tuple from each of them before emitting one —
+	// one index descent per older day, per pen, on every window change, found row or not. It scales with
+	// the window so a pen quiet for days still seeds a week-wide window instead of vanishing from it. The
+	// single outer ORDER BY is what keeps each pen one consecutive ascending run for HistoryRowFold.
+	private const string SeededWindowStatement = """
+		SELECT id, t, v, q
+		FROM (
+		    SELECT seed.id, seed.t, seed.v, seed.q
+		    FROM (SELECT DISTINCT unnest(@ids) AS id) requested
+		    CROSS JOIN LATERAL (
+		        SELECT prior.id, prior.t, prior.v, prior.q
+		        FROM trends prior
+		        WHERE prior.id = requested.id AND prior.l = @layer
+		          AND prior.t < @from AND prior.t >= @from - greatest(@to - @from, interval '1 day')
+		        ORDER BY prior.t DESC
+		        LIMIT 1
+		    ) seed
+		    UNION ALL
+		    SELECT id, t, v, q
+		    FROM trends
+		    WHERE id = ANY(@ids) AND l = @layer AND t >= @from AND t < @to
+		) sample
+		ORDER BY id, t;
+		""";
+
+	[Fact]
+	public void TheSeededWindowStatementMatchesItsLiteralCharacterForCharacter()
+	{
+		Assert.Equal(Normalise(SeededWindowStatement), Normalise(ArchiveStatements.SparseHistoryWindow));
+	}
+
 	// The drift that breaks production is the binder naming a parameter the statement does not.
 	[Fact]
 	public void TheWindowBinderNamesExactlyTheStatementsOwnParameters()

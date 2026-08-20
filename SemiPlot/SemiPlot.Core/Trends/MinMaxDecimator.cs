@@ -48,6 +48,11 @@ public static class MinMaxDecimator
 		return (int)Math.Min(sampleCount, ((long)targetColumnCount * 2) + 4);
 	}
 
+	// One null becomes one gap column here, so a run of adjacent nulls becomes a run of adjacent NaN
+	// columns; the decimated branch below collapses each run into a single anchor instead. The two
+	// branches therefore differ for a caller that can hand over two nulls in a row. No measured input
+	// does, and a second NaN column beside the first draws the same break, so the difference is recorded
+	// rather than removed.
 	private static void AppendPassThrough(
 		EnvelopeBuilder builder,
 		IReadOnlyList<DateTime> timestamps,

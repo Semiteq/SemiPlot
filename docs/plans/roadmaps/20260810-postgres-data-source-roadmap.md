@@ -542,7 +542,7 @@ it.
 - **PR:** #19 (merged)
 - **Branch:** avalonia-12-bump
 
-### Slice postgres-gap-reconstruction — Status: PENDING
+### Slice postgres-gap-reconstruction — Status: DONE
 - **Scope:** Make breaks render correctly on the direct read path. A sample marked as the last before
   a break is followed by a gap anchor; the first sample after a break resumes the line; and a long
   run with no rows that is not preceded by a break marker renders as a horizontal continuation rather
@@ -563,10 +563,12 @@ it.
 - **Depends on:** postgres-history-read
 - **Stacking base:** master
 - **Scope guard:** no changes to the statements themselves beyond what gap data requires; no
-  server-side bucketing; no realtime; no composition changes.
-- **Plan:** —
-- **PR:** —
-- **Branch:** —
+  server-side bucketing; no realtime; no composition changes. The seed arrived as a second branch of
+  the windowed statement rather than a second statement, so the fold keeps one consecutive run per
+  pen by construction.
+- **Plan:** docs/plans/completed/20260820-postgres-gap-reconstruction.md
+- **PR:** #21 (merged)
+- **Branch:** postgres-gap-reconstruction
 
 ### Slice postgres-live-edge-and-demo — Status: PENDING
 - **Scope:** The live edge, the demo bench that exercises it, and the stub's retirement — one piece

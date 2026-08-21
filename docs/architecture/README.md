@@ -28,6 +28,11 @@ implementation plans see `docs/plans/`.
   seeder, the generated waveform, the layer thinning it applies, the container fixture and the
   template-and-clone lifecycle, plus the environment that gates the integration tests.
 
+- [testing-strategy.md](./testing-strategy.md) — what each kind of test owns: the unit /
+  integration / end-to-end distinction drawn on this repository's own files, why the two test
+  projects are two, the ownership map for every piece of the bench, and what pins each kind of
+  dependency.
+
 Data files referenced from the docs above live in [`sql/`](../../sql) — `semiplot_dev.sql`, the
 vendor archive schema the seeder carries as an embedded resource, and `sql/README.md`, which records
 where it and the committed 140-row real-archive slice came from.

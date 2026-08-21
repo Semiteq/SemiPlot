@@ -10,7 +10,6 @@ namespace SemiPlot.DataSource.Postgres.Configuration;
 /// identifier has to be reported against.
 /// </summary>
 public sealed record PostgresConnectionSettings(
-	string FileVersion,
 	string Host,
 	int Port,
 	string Database,
@@ -62,8 +61,8 @@ public sealed record PostgresConnectionSettings(
 	{
 		var invariant = CultureInfo.InvariantCulture;
 
-		return $"{nameof(PostgresConnectionSettings)} {{ {nameof(FileVersion)} = {FileVersion}, "
-			+ $"{nameof(Host)} = {Host}, {nameof(Port)} = {Port.ToString(invariant)}, "
+		return $"{nameof(PostgresConnectionSettings)} {{ {nameof(Host)} = {Host}, "
+			+ $"{nameof(Port)} = {Port.ToString(invariant)}, "
 			+ $"{nameof(Database)} = {Database}, {nameof(Username)} = {Username}, {nameof(Password)} = ***, "
 			+ $"{nameof(SourceTimeZone)} = {SourceTimeZone.Id}, {nameof(PollInterval)} = {PollInterval}, "
 			+ $"{nameof(Schema)} = {Schema} }}";

@@ -15,7 +15,7 @@ namespace SemiPlot.DataSource.Postgres.Configuration;
 /// </summary>
 public static class PostgresConnectionLoader
 {
-	public const string SupportedFileVersion = "1.0";
+	private const string SupportedFileVersion = "1.0";
 
 	private const int LowestPort = 1;
 
@@ -82,7 +82,6 @@ public static class PostgresConnectionLoader
 	private static PostgresConnectionSettings Map(PostgresConnectionDto dto, TimeZoneInfo sourceTimeZone)
 	{
 		return new PostgresConnectionSettings(
-			dto.ConnectionFileVersion!,
 			dto.Host!,
 			dto.Port!.Value,
 			dto.Database!,

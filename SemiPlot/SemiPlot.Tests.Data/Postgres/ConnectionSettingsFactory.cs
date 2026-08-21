@@ -16,7 +16,6 @@ internal static class ConnectionSettingsFactory
 		int port = 1)
 	{
 		return new PostgresConnectionSettings(
-			FileVersion: "1",
 			Host: host,
 			Port: port,
 			Database: Database,

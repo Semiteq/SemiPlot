@@ -19,8 +19,6 @@ public static class ArchiveProviderFactory
 {
 	private const string Schema = "public";
 
-	private const string FileVersion = "1";
-
 	// Non-UTC on purpose. Under UTC an unconverted, a doubly converted and a correctly converted extent
 	// all read the same, so the time boundary would be invisible to every assertion in this folder.
 	public static readonly TimeZoneInfo SourceTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Berlin");
@@ -44,7 +42,6 @@ public static class ArchiveProviderFactory
 		var builder = new NpgsqlConnectionStringBuilder(connectionString);
 
 		return new PostgresConnectionSettings(
-			FileVersion: FileVersion,
 			Host: builder.Host ?? "localhost",
 			Port: builder.Port,
 			Database: builder.Database ?? string.Empty,

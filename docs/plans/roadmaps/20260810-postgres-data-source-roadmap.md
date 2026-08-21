@@ -165,22 +165,23 @@ it.
 - **Statement-text pinning.** Every operational statement lives in one class,
   `SemiPlot/SemiPlot.DataSource.Postgres/ArchiveStatements.cs`, and
   `docs/architecture/data-integration.md` quotes each one in a fenced block under a stable heading.
-  `ArchiveStatementTextTests` reads those fences at run time and asserts constant-equals-fence, so an
-  edit to either side alone fails; binders are pinned against their statement's own parameter names.
-  A literal held in the test file would catch the code half only, and it is the weaker guard rather
-  than the cheaper one: the document is the artifact each slice's brief is assembled from, so a fence
-  that silently stops describing the shipped statement corrupts the next slice's plan while every
-  test stays green.
+  Each operational statement is pinned by a plain literal held in `ArchiveStatementTextTests` and
+  compared character for character against the constant — the pen catalogue, the archive extent and
+  the sparse history window, the three the read path issues; the cold-path diagnostics
+  `EffectiveStatementTimeout` and `RelationProbe` carry no literal. `SparseHistoryWindow` is the
+  only statement taking parameters, and its binder `PostgresDataProvider.BindWindow` is pinned
+  against that statement's own parameter names. That pin catches the code half alone — no test
+  reads the document back, so a quote that stops describing the shipped statement is caught by
+  whoever reads it.
 
-  **This guard is withdrawn in slice harness-and-cold-path-cleanup.** Its reasoning was sound while
-  briefs were assembled from the document by an autonomous run, and it does not survive that run
-  ending: what remains is a test that walks to the repository root, parses markdown with an extractor
-  of its own that carries four tests of itself, and makes editing documentation break the build. The
-  replacement is already the standing rule for statements added from postgres-gap-reconstruction
-  onward — a plain literal in the test file, with binders pinned against their statement's own
-  parameter names. No production code has ever read the document; the fences are compared only by a
-  test. After the withdrawal every operational statement is pinned that one way and the document
-  quotes SQL for a reader without any test reading it back.
+  **Until slice harness-and-cold-path-cleanup the document was the second half of the pin.**
+  `ArchiveStatementTextTests` read those fences at run time and asserted constant-equals-fence, so
+  an edit to either side alone failed. That reasoning held while briefs were assembled from the
+  document by an autonomous run, and it did not survive that run ending: what it cost was a test
+  that walked to the repository root, parsed markdown with an extractor of its own carrying four
+  tests of itself, and made editing documentation break the build. The plain literal that replaced
+  it was already the standing rule for statements added from postgres-gap-reconstruction onward. No
+  production code ever read the document, and the fences were compared only by that one test.
 - **`EXPLAIN` assertions.** Gated integration tests assert the plan's shape for the extent statement,
   the windowed history query and the realtime poll: an index scan under each bounded subquery, and no
   sequential scan of a `trends` partition holding rows. The plan cannot name `tpk` — it is the parent
@@ -683,7 +684,7 @@ it.
 - **Branch:** linux-test-target
 
 ### Slice harness-and-cold-path-cleanup — Status: PENDING
-- **Scope:** Roughly 1,300 lines of apparatus have no consumer, and none of it is in the read path:
+- **Scope:** Roughly 750 lines of apparatus have no consumer, and none of it is in the read path:
   the statements, the fold, the time converter, the provider, the seven error types,
   `ExplainPlanTests` and the real-archive fixture all stay. What is cut sits entirely in the
   machinery around them.
@@ -697,16 +698,21 @@ it.
   What is not accepted is a hardened sweep defending a personal database against a principal
   planting a hostile database name. **The harness's tests of itself** go, leaving one gated smoke
   test as the canary, because a harness fault already reports itself as the stated skip reason of
-  the first gated test in any run. `DatabaseGateTests` is the exception that stays: skip-versus-fail
-  under `SEMIPLOT_REQUIRE_DB` is the mechanism every slice's acceptance evidence rests on, and it is
-  the one harness behaviour worth a test of its own. **The document-fence machinery** goes: the markdown
-  extractor, its four tests of itself and the runtime heading-and-fence comparison against
-  `data-integration.md`. What survives is the property rather than the apparatus — one containment
-  assertion per statement over the raw document, which fails exactly when the document stops
-  carrying the shipped SQL and needs no parser to test. `PenCatalog` and `ArchiveExtent` also gain
-  the plain literal `SparseHistoryWindow` already carries, because those two are the ones the fence
-  alone pins. **`DataErrorTests`'s assertions that constructors assign their own parameters** go,
-  and with them two dead carriers — `StartupData.Settings`, which no production code reads, and
+  the first gated test in any run. `DatabaseGateTests` and `TestEnvironmentTests` are the two
+  exceptions that stay: skip-versus-fail under `SEMIPLOT_REQUIRE_DB` is the mechanism every slice's
+  acceptance evidence rests on, and those two are its halves — one passes the flag as a literal, the
+  other pins the variable-to-bool mapping asserted nowhere else — so keeping one and deleting the
+  other would leave a silently skipped run reporting itself nowhere. **The document-fence
+  machinery** goes whole: the markdown extractor, its four tests of itself and the runtime
+  heading-and-fence comparison against `data-integration.md`. Nothing replaces it over the document.
+  A containment assertion per statement would keep the repository-root walk and would still break
+  the build when someone edits the fenced block — two of the three objections the withdrawal rests
+  on — and it is weaker than what it replaces, passing when a line is added inside the fence and
+  when the SQL sits anywhere in the file rather than under its heading. `PenCatalog` and
+  `ArchiveExtent` gain instead the plain literal `SparseHistoryWindow` already carries, because
+  those two are the ones the fence alone pins, which leaves every operational statement pinned that
+  one way. **`DataErrorTests`'s assertions that constructors assign their own parameters** go, and
+  with them two dead carriers — `StartupData.Settings`, which no production code reads, and
   `PostgresConnectionSettings.FileVersion`, which the loader writes into the settings record and
   nothing reads back.
 

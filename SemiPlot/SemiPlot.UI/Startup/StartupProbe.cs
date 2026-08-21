@@ -60,7 +60,7 @@ public static class StartupProbe
 		{
 			Log.Warning("Starting on the synthetic stub data source, selected by --use-stub");
 
-			return Read(BuildStubServiceProvider(), settings: null, readBound);
+			return Read(BuildStubServiceProvider(), readBound);
 		}
 
 		var settings = PostgresConnectionLoader.Load(Path.Combine(options.ConfigDir, ConnectionFileName));
@@ -70,7 +70,7 @@ public static class StartupProbe
 			return Result.Fail<StartupData>(settings.Errors);
 		}
 
-		return Read(BuildArchiveServiceProvider(settings.Value), settings.Value, readBound);
+		return Read(BuildArchiveServiceProvider(settings.Value), readBound);
 	}
 
 	/// <summary>
@@ -105,10 +105,7 @@ public static class StartupProbe
 	/// operator can do nothing with.
 	/// </para>
 	/// </summary>
-	internal static async Task<Result<StartupData>> ReadAsync(
-		ServiceProvider serviceProvider,
-		TimeSpan readBound,
-		PostgresConnectionSettings? settings = null)
+	internal static async Task<Result<StartupData>> ReadAsync(ServiceProvider serviceProvider, TimeSpan readBound)
 	{
 		try
 		{
@@ -130,7 +127,7 @@ public static class StartupProbe
 				return await FailAsync<StartupData>(serviceProvider, extent.Errors).ConfigureAwait(false);
 			}
 
-			return Result.Ok(new StartupData(serviceProvider, pens.Value, extent.Value, settings));
+			return Result.Ok(new StartupData(serviceProvider, pens.Value, extent.Value));
 		}
 		catch (Exception exception)
 		{
@@ -138,12 +135,9 @@ public static class StartupProbe
 		}
 	}
 
-	private static Result<StartupData> Read(
-		ServiceProvider serviceProvider,
-		PostgresConnectionSettings? settings,
-		TimeSpan readBound)
+	private static Result<StartupData> Read(ServiceProvider serviceProvider, TimeSpan readBound)
 	{
-		return Task.Run(() => ReadAsync(serviceProvider, readBound, settings)).GetAwaiter().GetResult();
+		return Task.Run(() => ReadAsync(serviceProvider, readBound)).GetAwaiter().GetResult();
 	}
 
 	// The bound is the caller's, not the provider's: IDataProvider takes no CancellationToken and does not

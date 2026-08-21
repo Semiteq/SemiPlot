@@ -30,9 +30,9 @@ public sealed class PostgresContainerFixtureTests(PostgresContainerFixture postg
 	}
 
 	// A floor rather than the exact major: SEMIPLOT_TEST_PG may name a site server the bench does not
-	// choose the version of. Fourteen is where the features the bench uses are all present —
-	// `starts_with`, `DROP DATABASE ... WITH (FORCE)` and COPY routing into a partitioned parent.
-	// SemiBase installs 17 on a site, which the container default matches.
+	// choose the version of. The features the bench actually executes bottom out at 13
+	// (`DROP DATABASE ... WITH (FORCE)`); COPY routing into a partitioned parent is 10. Fourteen is a
+	// deliberate margin over that 13, not a requirement any shipped statement makes.
 	[Fact]
 	public async Task TheServerIsPostgresFourteenOrNewer()
 	{

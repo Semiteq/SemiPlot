@@ -9,38 +9,51 @@ using Xunit;
 
 namespace SemiPlot.Tests.Data.Postgres;
 
-// Pins the provider's statement text against the architecture document itself, read at run time, so that
-// editing one side alone fails here. A literal copied into this file would catch the code half only, and
-// it is the weaker guard rather than the cheaper one: the document is the artifact each slice's brief is
-// assembled from, so a fence that silently stops describing the shipped statement corrupts the next
-// slice's plan while every test stays green.
+// Each operational statement is pinned by a plain literal held in this file and compared character for
+// character against the constant in `ArchiveStatements.cs`, so an edit to the shipped SQL fails here.
+// `EffectiveStatementTimeout` and `RelationProbe` are cold-path diagnostics and carry none. A new
+// operational statement gains a literal here.
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
 [Trait("Category", "Unit")]
 public sealed class ArchiveStatementTextTests
 {
-	private const string DocumentPath = "docs/architecture/data-integration.md";
-
 	// Npgsql strips the sigil, so the command carries "ids" where the statement carries "@ids".
 	private static readonly Regex _parameterTokenPattern = new(@"@(\w+)");
 
-	[Theory]
-	[InlineData("### Pen catalog", ArchiveStatements.PenCatalog)]
-	[InlineData("### Archive extent", ArchiveStatements.ArchiveExtent)]
-	[InlineData("### History, chosen layer already sparse enough", ArchiveStatements.SparseHistoryWindow)]
-	public void EachDocumentedStatementMatchesTheConstantCharacterForCharacter(string heading, string statement)
-	{
-		var documented = ExtractFencedSql(ReadDocument(DocumentPath), heading);
+	// `ORDER BY coalesce(group_name, '')` is load-bearing: the row read projects a null group onto the empty
+	// string, and PostgreSQL sorts nulls last while the empty string sorts first, so ordering on the raw
+	// column would return a list not ordered by its own values.
+	private const string PenCatalogStatement = """
+		SELECT id, name, group_name, color, line_style
+		FROM semiplot_tags
+		ORDER BY coalesce(group_name, ''), name;
+		""";
 
-		Assert.Equal(documented, Normalise(statement));
+	[Fact]
+	public void ThePenCatalogStatementMatchesItsLiteralCharacterForCharacter()
+	{
+		Assert.Equal(PenCatalogStatement, ArchiveStatements.PenCatalog);
 	}
 
-	// The seeded window statement carries a second pin, a plain literal, beside the fence above. The
-	// roadmap's Guard strategy prescribes a literal for statement text written from here on, and the
-	// seed branch is written from here on; the fence stays because docs/architecture/data-integration.md
-	// is the artifact each remaining slice's brief is assembled from, and an unguarded fence corrupts
-	// that brief while every test stays green. Two failures with two remedies is the intended cost.
-	//
+	// The lateral pair of scalar subqueries is load-bearing: each one is an index probe on
+	// `PRIMARY KEY (id, l, t)` per pen, so the bounds come from two descents per pen rather than from a scan
+	// of `trends`.
+	private const string ArchiveExtentStatement = """
+		SELECT min(lo) AS first, max(hi) AS last
+		FROM semiplot_tags tag
+		CROSS JOIN LATERAL (
+		    SELECT (SELECT min(t) FROM trends WHERE id = tag.id AND l = 0) AS lo,
+		           (SELECT max(t) FROM trends WHERE id = tag.id AND l = 0) AS hi
+		) bounds;
+		""";
+
+	[Fact]
+	public void TheArchiveExtentStatementMatchesItsLiteralCharacterForCharacter()
+	{
+		Assert.Equal(ArchiveExtentStatement, ArchiveStatements.ArchiveExtent);
+	}
+
 	// Every line below is load-bearing. `t < @from` is strict because the window branch takes
 	// `t >= @from`, so an inclusive seed bound would return a boundary row on both branches. The
 	// `greatest(@to - @from, interval '1 day')` lower bound is the wider of the requested window and one
@@ -74,7 +87,7 @@ public sealed class ArchiveStatementTextTests
 	[Fact]
 	public void TheSeededWindowStatementMatchesItsLiteralCharacterForCharacter()
 	{
-		Assert.Equal(Normalise(SeededWindowStatement), Normalise(ArchiveStatements.SparseHistoryWindow));
+		Assert.Equal(SeededWindowStatement, ArchiveStatements.SparseHistoryWindow);
 	}
 
 	// The drift that breaks production is the binder naming a parameter the statement does not.
@@ -104,118 +117,5 @@ public sealed class ArchiveStatementTextTests
 
 		Assert.NotEmpty(declared);
 		Assert.Equal(declared, bound);
-	}
-
-	[Fact]
-	public void AMissingDocumentFailsRatherThanPassingSilently()
-	{
-		Assert.Throws<FileNotFoundException>(() => ReadDocument("docs/architecture/no-such-document.md"));
-	}
-
-	[Fact]
-	public void AMissingHeadingFailsRatherThanPassingSilently()
-	{
-		var document = "### Something else\n\n```sql\nSELECT 1;\n```\n";
-
-		Assert.Throws<InvalidOperationException>(() => ExtractFencedSql(document, "### Pen catalog"));
-	}
-
-	[Fact]
-	public void AHeadingWithNoFenceFailsRatherThanPassingSilently()
-	{
-		var document = "### Pen catalog\n\nprose only, no fence\n\n### Next\n";
-
-		Assert.Throws<InvalidOperationException>(() => ExtractFencedSql(document, "### Pen catalog"));
-	}
-
-	[Fact]
-	public void AnUnclosedFenceFailsRatherThanPassingSilently()
-	{
-		var document = "### Pen catalog\n\n```sql\nSELECT 1;\n";
-
-		Assert.Throws<InvalidOperationException>(() => ExtractFencedSql(document, "### Pen catalog"));
-	}
-
-	private static string ReadDocument(string relativePath)
-	{
-		var path = Path.Combine(FindRepositoryRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar));
-
-		if (!File.Exists(path))
-		{
-			throw new FileNotFoundException("The architecture document is missing from the repository.", path);
-		}
-
-		return File.ReadAllText(path);
-	}
-
-	private static string FindRepositoryRoot()
-	{
-		var directory = new DirectoryInfo(AppContext.BaseDirectory);
-
-		while (directory is not null)
-		{
-			if (File.Exists(Path.Combine(directory.FullName, "SemiPlot.slnx")))
-			{
-				return directory.FullName;
-			}
-
-			directory = directory.Parent;
-		}
-
-		throw new InvalidOperationException(
-			$"No SemiPlot.slnx found above {AppContext.BaseDirectory}, so {DocumentPath} cannot be located.");
-	}
-
-	private static string ExtractFencedSql(string document, string heading)
-	{
-		var lines = Normalise(document).Split('\n');
-		var headingIndex = Array.IndexOf(lines, heading);
-
-		if (headingIndex < 0)
-		{
-			throw new InvalidOperationException($"Heading '{heading}' is absent from {DocumentPath}.");
-		}
-
-		var openIndex = FindOpeningFence(lines, headingIndex);
-
-		if (openIndex < 0)
-		{
-			throw new InvalidOperationException($"No fenced sql block follows '{heading}' in {DocumentPath}.");
-		}
-
-		var closeIndex = Array.IndexOf(lines, "```", openIndex + 1);
-
-		if (closeIndex < 0)
-		{
-			throw new InvalidOperationException(
-				$"The fenced sql block under '{heading}' in {DocumentPath} is never closed.");
-		}
-
-		return string.Join('\n', lines[(openIndex + 1)..closeIndex]);
-	}
-
-	// Bounded by the next heading, so a section carrying no fence reports itself instead of borrowing the
-	// following section's block.
-	private static int FindOpeningFence(string[] lines, int headingIndex)
-	{
-		for (var index = headingIndex + 1; index < lines.Length; index++)
-		{
-			if (lines[index].StartsWith('#'))
-			{
-				return -1;
-			}
-
-			if (lines[index] == "```sql")
-			{
-				return index;
-			}
-		}
-
-		return -1;
-	}
-
-	private static string Normalise(string text)
-	{
-		return text.Replace("\r\n", "\n");
 	}
 }

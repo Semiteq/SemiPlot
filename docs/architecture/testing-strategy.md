@@ -36,6 +36,7 @@ and built from the commit under test. Its value is diagnosis.
 | Decimation, navigation, scale, cursor geometry | `SemiPlot.Tests/Core/Data/MinMaxDecimatorTests.cs`, `Core/Trends/TrendNavigationModelTests.cs`, `PenScaleModelTests.cs`, `MinimapGeometryTests.cs`, `Chart/CursorReadoutModelTests.cs`, `DeltaCursorModelTests.cs` |
 | The seeder's generation rules | `SemiPlot.Tests.Data/LayerThinnerTests.cs`, `RawLayerGeneratorTests.cs`, `BreakGenerationTests.cs`, `PartitionScriptTests.cs` |
 | Error construction and extent arithmetic | `SemiPlot.Tests.Data/Errors/DataErrorTests.cs`, `Data/ArchiveExtentTests.cs` |
+| The provider's statement text and its binder | `SemiPlot.Tests.Data/Postgres/ArchiveStatementTextTests.cs` |
 | The vendor's observed row shape | `SemiPlot.Tests.Data/Fixtures/RealArchiveFixtureTests.cs` over `Fixtures/real-archive-rows.csv` |
 
 The last row is the one that misleads. A test reading a committed CSV is still a unit test: the file
@@ -44,6 +45,17 @@ boundary.
 
 A unit test must not open a socket, read the wall clock, or depend on anything the machine resolves —
 `PATH`, an installed service, a display. It runs everywhere, ungated.
+
+Statement text is pinned by one plain literal per operational statement, held in
+`ArchiveStatementTextTests.cs` and compared character for character against the constant in
+`ArchiveStatements.cs`. The three pinned are the ones the read path issues — the pen catalogue, the
+archive extent and the sparse history window; `EffectiveStatementTimeout` and `RelationProbe` are
+cold-path diagnostics and carry no literal. `SparseHistoryWindow` is the only statement taking
+parameters, and its binder `PostgresDataProvider.BindWindow` is pinned against that statement's own
+parameter names. Nothing compares the shipped SQL to `data-integration.md`. That document quotes six
+SQL blocks for a reader, of which only these three are shipped statements; the other three belong to
+slices that have not shipped and have no constant to drift from. A drift between a quote and the
+constant it names is caught by whoever reads it rather than by a test.
 
 ## Integration tests
 

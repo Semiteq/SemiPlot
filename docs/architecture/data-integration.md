@@ -604,14 +604,16 @@ archive read left inside it either blocks Avalonia's setup or throws through it.
 2. Otherwise load `<ConfigDir>/archive-connection.yaml` and register `AddPostgresData(settings)`.
 3. Resolve `IDataProvider`, read the pen catalogue, then read the archive extent.
 
-Each step answers with a `Result`. What the sequence carries — the container, the pens, the extent and
-the settings — crosses the Avalonia boundary in a `StartupData` record, so `App.InitializeServices`
-consumes data already read and awaits nothing. A failed step short-circuits, disposes the container,
-and carries its error to `Program`, which maps it through `StartupFailureMapper` and opens
-`ErrorWindow` in place of the main window. The two branches are exclusive by structure: the failure
-branch returns rather than falling through, and both go through one single-start guard, because a
-second `BuildAvaloniaApp()` throws once Avalonia is initialised. A failed archive never produces a
-stub — substituting synthetic data would let an operator read invented numbers as process data.
+Each step answers with a `Result`. What the sequence carries — the container, the pens and the
+extent — crosses the Avalonia boundary in a `StartupData` record, so `App.InitializeServices`
+consumes data already read and awaits nothing. The settings do not travel that way: they reach the
+provider through the DI singleton `AddPostgresData(settings)` registers. A failed step
+short-circuits, disposes the container, and carries its error to `Program`, which maps it through
+`StartupFailureMapper` and opens `ErrorWindow` in place of the main window. The two branches are
+exclusive by structure: the failure branch returns rather than falling through, and both go through
+one single-start guard, because a second `BuildAvaloniaApp()` throws once Avalonia is initialised. A
+failed archive never produces a stub — substituting synthetic data would let an operator read
+invented numbers as process data.
 
 **The startup reads are bounded by the caller, not by a token.** No member of `IDataProvider` takes a
 `CancellationToken`, so the probe wraps each read in `Task.WaitAsync(TimeSpan)` with a 30 s bound: a
@@ -648,13 +650,31 @@ the window. The log path and the argument list are in `overview.md`; the default
 
 ## Keeping this document honest
 
-Documentation that describes SQL drifts from the SQL. Three artifacts prevent that:
+Documentation that describes SQL drifts from the SQL. Nothing in this repository detects that drift
+any more — no test reads this document. What follows narrows how far a drift can spread. Two of the
+three steps are tests; the one that catches a drift in this document is a reader's, and it sits
+inside step 2:
 
-1. All statement text on the application and provider path lives in one class; this document quotes
-   it and names the file. Nothing else on that path issues SQL. The bench seeder and the test projects
-   own SQL of their own by design and are outside the rule.
-2. Unit tests pin the generated statement text and parameter names for every operation, so a change
-   in the code that this document does not describe shows up as a failing test.
+1. All statement text on the application and provider path lives in one class,
+   `ArchiveStatements.cs`. Nothing else on that path issues SQL. The bench seeder and the test
+   projects own SQL of their own by design and are outside the rule. Six SQL blocks stand above, and
+   only three of them are shipped statements with a constant in that class: the pen catalogue, the
+   archive extent and the sparse history window. The bucketed history read, the realtime poll and
+   the gap explanation belong to slices that have not shipped — `postgres-bucketed-read`, dropped,
+   and `postgres-live-edge-and-demo`, pending — and have no constant behind them. They are a design
+   record until their slice lands.
+2. Unit tests pin one plain literal per operational statement, held in
+   `SemiPlot.Tests.Data/Postgres/ArchiveStatementTextTests.cs` and compared character for character
+   against the constant. The three pinned are the ones the read path issues — the pen catalogue, the
+   archive extent and the sparse history window; `EffectiveStatementTimeout` and `RelationProbe` are
+   cold-path diagnostics and carry no literal. `SparseHistoryWindow` is the only statement taking
+   parameters, and its binder `PostgresDataProvider.BindWindow` is pinned against that statement's
+   own parameter names. A change in the code therefore shows up as a failing test. None of it covers
+   this document: nothing checks that the SQL quoted above still matches the constants, so whoever
+   assembles a brief from this document re-reads by hand the three blocks that have a constant —
+   the pen catalogue, the archive extent and the sparse history window — against
+   `ArchiveStatements.cs`. The other three name no constant, so that re-read cannot cover them; they
+   are checked against the code only when the slice that ships them lands.
 3. A gated integration test runs `EXPLAIN` on the extent statement and asserts the plan's shape: an
    index scan under each bounded subquery, and no sequential scan of a `trends` partition holding
    rows. The plan never names `tpk` — it is the parent partitioned index of a

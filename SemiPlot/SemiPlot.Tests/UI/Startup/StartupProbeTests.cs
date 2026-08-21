@@ -201,7 +201,6 @@ public sealed class StartupProbeTests
 
 		result.Value.Pens.Should().NotBeEmpty();
 		result.Value.Extent.IsEmpty.Should().BeFalse();
-		result.Value.Settings.Should().BeNull();
 		container.GetRequiredService<IDataProvider>().Should().NotBeNull();
 	}
 
@@ -227,7 +226,6 @@ public sealed class StartupProbeTests
 	private static PostgresConnectionSettings UnreachableSettings()
 	{
 		return new PostgresConnectionSettings(
-			FileVersion: PostgresConnectionLoader.SupportedFileVersion,
 			Host: "127.0.0.1",
 			Port: 1,
 			Database: "semiplot_dev",

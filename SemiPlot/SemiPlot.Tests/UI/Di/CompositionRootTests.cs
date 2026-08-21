@@ -119,7 +119,6 @@ public sealed class CompositionRootTests
 	private static PostgresConnectionSettings UnreachableSettings()
 	{
 		return new PostgresConnectionSettings(
-			FileVersion: PostgresConnectionLoader.SupportedFileVersion,
 			Host: "127.0.0.1",
 			Port: 1,
 			Database: "semiplot_dev",

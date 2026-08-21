@@ -45,7 +45,6 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 		var result = PostgresConnectionLoader.Load(path);
 
 		Assert.True(result.IsSuccess, Describe(result));
-		Assert.Equal("1.0", result.Value.FileVersion);
 		Assert.Equal("scada-01", result.Value.Host);
 		Assert.Equal(5433, result.Value.Port);
 		Assert.Equal("semiplot_dev", result.Value.Database);

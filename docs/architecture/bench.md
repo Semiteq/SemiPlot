@@ -84,6 +84,10 @@ it replaces that method and nothing else.
   the container is the wrong isolation unit and the database is the right one.
 - One template per run, named after a hash of the seeder's module version, the schema script and the
   slice parameters. A persistent server therefore cannot serve last week's seed to this week's code.
+  Nothing drops a template afterwards: on the container path the server dies with the run; on the
+  `SEMIPLOT_TEST_PG` path a developer removes accumulated `semiplot_bench_*` databases by hand, and
+  `semiplot_clone_*` with them: a run killed between `ArchiveDatabase.CloneAsync` and its disposal
+  leaves a clone behind, and nothing sweeps those either.
 - One clone of that template per test class. Cloning skips the schema apply and the `COPY` entirely.
 - Every read in the gated tests connects as `semiplot_reader`, not as the superuser: a grant that
   never reached the reader fails a test here instead of on commissioning day.

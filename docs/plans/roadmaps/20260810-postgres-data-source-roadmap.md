@@ -31,6 +31,13 @@ to be subtly wrong — gap reconstruction — was being built with nothing on sc
 against. Realtime, the demo bench and the stub's retirement merge into one slice, which is what they
 always were. `postgres-bucketed-read` is dropped pending a measurement.
 
+**Rescoped 2026-08-20** after the infrastructure the bench rests on was re-examined. Four slices
+precede the closing one: the bench provisions from a container rather than a binary found on the
+machine, `SemiPlot.UI` and `SemiPlot.Tests` stop being forbidden to build on Linux, the apparatus
+that accreted around the read path is cut back, and the archive schema moves to the party that
+provisions it. The statement-text fence guard is withdrawn, and the developer environment is settled
+as the one `dotnet test` already raises.
+
 **The planning apparatus scales to the risk the slice declares.** A low-risk slice takes a
 one-page plan and one review round; the full apparatus — a long plan, several review rounds — is for
 slices rated medium or higher. Five review rounds over a slice that corrects two comments is a cost
@@ -47,6 +54,13 @@ the rule that architecture states. The slices below deliver a production provide
 it is developed against, and a live demo bench that retires the synthetic stub. The roadmap closes
 when the application, pointed at a populated database, draws real history, follows the live edge,
 selects archive layers by window width, and the stub project is gone.
+
+Four of the slices below are infrastructure rather than product: the bench provisions from a
+container instead of a binary found on the machine, `SemiPlot.UI` and `SemiPlot.Tests` stop being
+forbidden to build on Linux, the archive schema moves to SemiBase, and the apparatus around the read
+path is cut back. They precede the
+closing slice because its end-to-end journeys need a runner that can hold both a container and the
+UI, and because two of them edit files the closing slice also edits.
 
 **Thesis:** every resolution the trend canvas needs already exists in the vendor's archive, so the
 provider only has to choose a layer, reduce it to the canvas width, and reconstruct gaps — it never
@@ -88,14 +102,14 @@ right one, so only a run against a real archive can tell the two apart.
 | --- | --- | --- |
 | Production data source | `RandomStubDataProvider` | `PostgresDataProvider`, selected by configuration; a missing or invalid configuration is a visible error state, never a silent stub |
 | Synthetic stub | composition-root default | project deleted; manual "see something in the UI" runs on a seeded live demo database through the real provider |
-| Failure reporting | two decoupled error planes (SemiStep pattern): nine sealed public types with structured fields in `SemiPlot/SemiPlot.Core/Data/Errors`, internal detail riding `CausedBy` into the log | the same two planes, over a narrower vocabulary, with every public type mapped to a UI state, and a coverage test that fails when one is not |
+| Failure reporting | two decoupled error planes (SemiStep pattern): nine sealed public types with structured fields in `SemiPlot/SemiPlot.Core/Data/Errors`, internal detail riding `CausedBy` into the log | the same two planes over ten types in `SemiPlot.Core/Data/Errors` plus `StartupReadTimedOutError` in `SemiPlot.UI.Startup`, with every one mapped to a UI state and a reflection coverage test over both namespaces that fails when one is not |
 | Layer spacing | period ÷ 4 (15 s / 15 min / 6 h) | unchanged; the layer a window width selects and the row counts it returns are asserted against a seeded archive, and how the curve looks at each rung waits for the demo stand |
 | Layer thresholds | derived from `window / targetColumnCount ≥ spacing`, hysteresis retained | unchanged |
-| Wide-window reduction | client-side only | server-side pixel buckets when the layer is denser than the canvas |
+| Wide-window reduction | client-side only | unchanged — server-side pixel buckets are the deliverable of the dropped postgres-bucketed-read, re-added only on the measurement that drop names |
 | Gaps | synthetic | reconstructed from `q = 32` / `q = 16`, distinguished from unchanged values |
 | Timestamps | `ArchiveTimeConverter` converts both ways at the provider boundary; no application path reaches it, so the running viewer is UTC throughout | converted from naive local at the provider boundary, UTC above it |
 | Pen catalogue | the provider reads `semiplot_tags`; the application lists the stub's synthetic pens | `semiplot_tags`, filled by hand |
-| Test bench | a populated local database with archive-shaped data, plus DB-free tests over fixture rows | unchanged; later slices develop against it |
+| Test bench | a populated local database with archive-shaped data, plus DB-free tests over fixture rows | the same shape, provisioned by a container that carries its own provisioner rather than by a binary resolved from the machine |
 
 Every architectural choice behind this table is already recorded: `docs/architecture/scada-archive.md`
 for the archive, `data-integration.md` for the contract and the read path, `postgres-instance.md`
@@ -119,10 +133,11 @@ chosen.
 
 The database side is additive only, and the customer's production archive is read-only throughout:
 no slice inserts a row into its `trends` or `messages`, creates an index on them, or attaches a
-trigger. Writing belongs to the bench alone, in a development database of our own —
-`sql/semiplot_dev.sql` creates `public.trends` and its `tpdefault` catch-all there, the seeder fills
-them, and the live-demo slice keeps appending. This repository creates no object in an archive at
-all: `semiplot_tags` is created by `semibase create`, which owns every role, grant and table on that
+trigger. Writing belongs to the bench alone, in a development database of our own. The archive table
+and its `tpdefault` catch-all are created there from the `scada_writer` role — by the seeder today,
+by `semibase create` under its flag once archive-schema-ownership ships — the seeder fills them, and
+the live-demo slice keeps appending. This repository creates no object in an archive at all:
+`semiplot_tags` is created by `semibase create`, which owns every role, grant and table on that
 side.
 
 ## Guard strategy
@@ -148,12 +163,15 @@ it.
   that silently stops describing the shipped statement corrupts the next slice's plan while every
   test stays green.
 
-  That is the mechanism as shipped, and it stays. It does not grow: two operational statements
-  (`RelationProbe`, `EffectiveStatementTimeout`) are already unpinned, both are one line used from
-  one call site, and both are covered behaviourally by gated tests that fail if the statement stops
-  working. A statement a future slice adds is pinned with a plain literal in its test unless the
-  document quotes it for a reader's sake anyway. Reading markdown at run time earns its place for
-  the three statements that carry the read path and buys progressively less for each one after.
+  **This guard is withdrawn in slice harness-and-cold-path-cleanup.** Its reasoning was sound while
+  briefs were assembled from the document by an autonomous run, and it does not survive that run
+  ending: what remains is a test that walks to the repository root, parses markdown with an extractor
+  of its own that carries four tests of itself, and makes editing documentation break the build. The
+  replacement is already the standing rule for statements added from postgres-gap-reconstruction
+  onward — a plain literal in the test file, with binders pinned against their statement's own
+  parameter names. No production code has ever read the document; the fences are compared only by a
+  test. After the withdrawal every operational statement is pinned that one way and the document
+  quotes SQL for a reader without any test reading it back.
 - **`EXPLAIN` assertions.** Gated integration tests assert the plan's shape for the extent statement,
   the windowed history query and the realtime poll: an index scan under each bounded subquery, and no
   sequential scan of a `trends` partition holding rows. The plan cannot name `tpk` — it is the parent
@@ -312,25 +330,24 @@ it.
   `semiplot_tags` — the table itself is created by `semibase create` and populated by the bench
   seeder — mapping the stored line style onto the domain enum. The empty-versus-missing question is
   settled here and the answer splits it: an empty table is a successful read of zero rows, an absent
-  one is a failed `Result` carrying `ArchiveNotInitialisedError` with `Table` naming `semiplot_tags`.
-  No `EmptyTagCatalogError` is added — an empty catalogue is an operator-visible state and not a
-  failure sentence — and `docs/architecture/data-integration.md` carries the settled split.
-  Implement the archive extent using per-variable bounded subqueries, because an unbounded minimum
-  over the whole table cannot use the primary key and scans the entire archive; `ArchiveExtent` gains
-  an explicit empty form, because a fresh archive returns nulls and mapping them onto
-  `default(DateTime)` would hand the minimap an extent beginning in year 0001. A SQLSTATE the mapper
-  does not recognise gets a public type of its own, `ArchiveReadFailedError`, carrying the code, so
-  no internal exception reaches the operator raw. This slice also
-  introduces the single class that owns every SQL statement on the application and provider path,
-  and the discipline that no SQL exists anywhere else on that path. The gated harness — container,
-  provisioning, template cloning, skip policy, traits — is owned by archive-populator and reused here
-  unchanged.
-- **Issue:** none
-- **Blast radius:** the provider, plus four files outside it — `SemiPlot/SemiPlot.Core/Data/ArchiveExtent.cs`,
-  the added `SemiPlot/SemiPlot.Core/Data/Errors/ArchiveReadFailedError.cs` and
-  `SemiPlot/SemiPlot.Core/Trends/PenLineStyle.cs`
-  in Core, and `SemiPlot/SemiPlot.UI/Minimap/MinimapViewModel.cs`, which follows the extent's new
-  empty form. The application still runs on the stub.
+  one is a failed `Result` carrying `ArchiveNotInitialisedError` with `Table` naming
+  `semiplot_tags`. No `EmptyTagCatalogError` is added — an empty catalogue is an operator-visible
+  state and not a failure sentence — and `docs/architecture/data-integration.md` carries the settled
+  split. Implement the archive extent using per-variable bounded subqueries, because an unbounded
+  minimum over the whole table cannot use the primary key and scans the entire archive;
+  `ArchiveExtent` gains an explicit empty form, because a fresh archive returns nulls and mapping
+  them onto `default(DateTime)` would hand the minimap an extent beginning in year 0001. A SQLSTATE
+  the mapper does not recognise gets a public type of its own, `ArchiveReadFailedError`, carrying
+  the code, so no internal exception reaches the operator raw. This slice also introduces the single
+  class that owns every SQL statement on the application and provider path, and the discipline that
+  no SQL exists anywhere else on that path. The gated harness — container, provisioning, template
+  cloning, skip policy, traits — is owned by archive-populator and reused here unchanged. -
+  **Issue:** none - **Blast radius:** the provider, plus four files outside it —
+  `SemiPlot/SemiPlot.Core/Data/ArchiveExtent.cs`, the added
+  `SemiPlot/SemiPlot.Core/Data/Errors/ArchiveReadFailedError.cs` and
+  `SemiPlot/SemiPlot.Core/Trends/PenLineStyle.cs` in Core, and
+  `SemiPlot/SemiPlot.UI/Minimap/MinimapViewModel.cs`, which follows the extent's new empty form. The
+  application still runs on the stub.
 - **Risk:** low-medium — the harness risk moved to archive-populator; what remains is the extent
   query shape.
 - **Depends on:** archive-populator, postgres-provider-scaffold
@@ -453,13 +470,14 @@ it.
 - **Stacking base:** master
 - **Scope guard:** no new SQL, no statement changes, and no provider behaviour change beyond the two
   error-type merges, which necessarily edit `ArchiveExceptionMapper` and `PostgresConnectionLoader`
-  where those two types are constructed. The guard's "no new error types" clause fences the provider's
-  Core SQLSTATE vocabulary; `StartupReadTimedOutError` sits in `SemiPlot.UI.Startup`, is raised by no
-  provider, and answers the bound this slice's own scope requires. No gap semantics — a `q = 32` break still draws as a step
-  until postgres-gap-reconstruction. No realtime; `Subscribe` stays empty and the live edge is
-  static. No new error types beyond the two merges — the unexpected table shape and the non-empty
-  default partition arrive with the closing slice, and the coverage test forces their mapping then. No stub deletion; the flag stays until the closing slice. No framework version changes;
-  the Avalonia bump is its own slice.
+  where those two types are constructed. The guard's "no new error types" clause fences the
+  provider's Core SQLSTATE vocabulary; `StartupReadTimedOutError` sits in `SemiPlot.UI.Startup`, is
+  raised by no provider, and answers the bound this slice's own scope requires. No gap semantics — a
+  `q = 32` break still draws as a step until postgres-gap-reconstruction. No realtime; `Subscribe`
+  stays empty and the live edge is static. No new error types beyond the two merges — the unexpected
+  table shape and the non-empty default partition arrive with the closing slice, and the coverage
+  test forces their mapping then. No stub deletion; the flag stays until the closing slice. No
+  framework version changes; the Avalonia bump is its own slice.
 - **Plan:** docs/plans/completed/20260819-postgres-wire-up.md
 - **PR:** #14 (merged)
 - **Branch:** postgres-wire-up
@@ -570,6 +588,201 @@ it.
 - **PR:** #21 (merged)
 - **Branch:** postgres-gap-reconstruction
 
+### Slice semibase-container-provisioning — Status: PENDING
+- **Scope:** The bench stops resolving a provisioning binary from the machine and provisions from a
+  container image instead. Two images, layered: SemiBase publishes one carrying its own static
+  binary, and a Dockerfile in this repository copies that binary out of it onto the PostgreSQL base
+  image together with a provisioning script. The official PostgreSQL entrypoint runs everything in
+  `/docker-entrypoint-initdb.d/` before the server accepts an external connection, so Testcontainers'
+  ordinary readiness check already waits for provisioning to finish. That is why the bench runs one
+  container and not two: no Docker network, no one-shot wait strategy, no second container to
+  sequence.
+
+  `SemibaseBinary`'s `PATH` search dies with this slice and CI drops its release-download step. The
+  code that spawns the binary as a process does **not** die: the `SEMIPLOT_TEST_PG` path still runs
+  `semibase create` against a server the fixture did not create, and it must, because an init script
+  provisions only the fresh cluster inside its own container and can never reach an external one.
+  `SEMIBASE_EXE` therefore survives as that path's only way to name the binary.
+  `SEMIPLOT_PG_IMAGE` keeps its meaning but moves down a layer: it names the base image the
+  Dockerfile builds from, not the image the fixture starts.
+
+  The SemiBase image tracks `latest` rather than a pinned tag; the PostgreSQL base image the
+  Dockerfile builds from stays whatever `SEMIPLOT_PG_IMAGE` names. Delivered installations update
+  neither service, so every commissioned site is a frozen pair validated once at commissioning that
+  will not change again; the only pair that will ever be newly deployed is the newest `semibase`
+  with the current reader. A pinned tag would spend the bench proving a combination no site will
+  ever receive. The cost is that one unchanged commit can pass today and fail tomorrow, and it is
+  paid by printing the resolved version into the test output so a failure names its own cause.
+- **Issue:** none
+- **Blast radius:** the gated harness's provisioning path, the CI workflow, the environment tables
+  in `CLAUDE.md` and `docs/architecture/bench.md`, and the pinning section of
+  `docs/architecture/testing-strategy.md`, which records the machine-resolved binary as the one gap
+  in the rule.
+- **Risk:** medium — every gated test's provisioning changes at once, and a fault reports as a skip
+  rather than a failure unless `SEMIPLOT_REQUIRE_DB` is set.
+- **Depends on:** independent. One prerequisite lives outside this repository: SemiBase must publish
+  the image. That is a change in that repository, not a slice here.
+- **Stacking base:** master
+- **Scope guard:** no change to what `semibase create` does, no change to the seeder, and no schema
+  pre-creation — that is archive-schema-ownership's, not this slice's.
+- **Plan:** —
+- **PR:** —
+- **Branch:** —
+
+### Slice linux-test-target — Status: PENDING
+- **Scope:** `SemiPlot.UI` and `SemiPlot.Tests` retarget from `net10.0-windows` to `net10.0`, and CI
+  gains an `ubuntu-latest` leg for `SemiPlot.Tests`. The Windows TFM is a leftover of the WPF era
+  that the Avalonia replatform kept by inertia: the only Windows coupling anywhere in the UI and Core
+  is `.UseWin32()` at `SemiPlot/SemiPlot.UI/App.axaml.cs:99` — no P/Invoke, no registry, no
+  Windows-only API. Avalonia's headless platform is cross-platform and the test path never binds
+  Win32; `AppBuilderCompositionTests` reads the builder's initialisers back without initialising a
+  platform, which its own documentation states.
+
+  The application still ships on Windows and keeps `.UseWin32()` and `OutputType=WinExe`. What
+  changes is only that the TFM stops forbidding a Linux build — and that is what gives the
+  end-to-end journeys a home, because `ubuntu-latest` is the only runner that starts a container and
+  a `net10.0-windows` project cannot build there. The Windows leg stays: it proves the suite on the
+  platform the application actually ships on.
+
+  The empirical question this slice answers is whether SkiaSharp's `linux-x64` native assets arrive
+  transitively through `Avalonia.Skia` for `ChartGapRenderTests`. If they do not, one package
+  reference settles it. The slice runs ahead of any test that needs the answer, so the answer arrives
+  before something depends on it.
+- **Issue:** none
+- **Blast radius:** two project files, the CI workflow, `CLAUDE.md`, whose test-split section states
+  the target framework as the one reason the two test projects exist — the reason this slice
+  removes — and the same passage in `docs/architecture/testing-strategy.md`.
+- **Risk:** low to medium, concentrated entirely in native assets on the new runner.
+- **Depends on:** independent
+- **Stacking base:** master
+- **Scope guard:** `.UseWin32()` is not removed, the shipped artifact does not change, no end-to-end
+  test is written here, and the two test projects are not merged — the merge is rejected on reasons
+  this slice does not touch, and correcting the justification `CLAUDE.md` states is the whole of what
+  this slice owes that question.
+- **Plan:** —
+- **PR:** —
+- **Branch:** —
+
+### Slice harness-and-cold-path-cleanup — Status: PENDING
+- **Scope:** Roughly 1,500 lines of apparatus have no consumer, and none of it is in the read path:
+  the statements, the fold, the time converter, the provider, the seven error types,
+  `ExplainPlanTests` and the real-archive fixture all stay. What is cut sits entirely in the
+  machinery around them.
+
+  Five clusters go. **The stale-template sweep** in `ArchiveTemplate` costs more than the state it
+  protects. On the container path — CI and every developer who sets no variable — the server is
+  discarded when the run ends, so the epoch stamp, the hardened sweep query, the clock-skew rule and
+  their tests protect nothing at all. The `SEMIPLOT_TEST_PG` path is the one where templates do
+  accumulate, and this slice accepts that accumulation as a manual cost: a developer who brought
+  their own server drops `semiplot_bench_*` by hand, which `docs/architecture/bench.md` records.
+  What is not accepted is a hardened sweep defending a personal database against a principal
+  planting a hostile database name. **The harness's tests of itself** go, leaving one gated smoke
+  test as the canary, because a harness fault already reports itself as the stated skip reason of
+  the first gated test in any run. **The document-fence machinery** goes with the guard it
+  implements: the markdown extractor, its repository-root walker, its four tests of itself, and the
+  runtime comparison against `data-integration.md`; the statement keeps its literal pin in the test
+  file and the document keeps quoting the SQL for a reader. Three statements — `PenCatalog`,
+  `ArchiveExtent` and `SparseHistoryWindow` — are pinned by fence alone today, so each gains the
+  plain literal that `SeededWindowStatement` already carries; withdrawing the fence without
+  re-pinning them would leave the read path's three statements guarded by nothing. **The two
+  cold-path readers** go — `StatementTimeoutReader` and `MissingRelationProbe` each open a fresh
+  connection to a server that has just failed, and `CLAUDE.md`'s own bar for adding one, that a
+  distinct operator remedy depends on the answer, is met by neither: the timeout remedy sends the
+  operator to `SHOW statement_timeout` whichever way the message reads, and each statement's static
+  fallback already names the right relation. Their two statements go with them:
+  `ArchiveStatements.RelationProbe` and `ArchiveStatements.EffectiveStatementTimeout` have no other
+  caller, and leaving them behind is the dead-carrier shape this slice exists to remove. Deleting
+  the timeout reader narrows one error type rather than leaving a carrier behind:
+  `ArchiveQueryTimedOutError.Timeout` is populated by that reader alone, so the field goes and the
+  message the type already emits when no bound can be named becomes the only message it emits. That
+  narrowing belongs to this slice deliberately: the alternative, a field left permanently
+  `TimeSpan.Zero`, is the very shape the slice exists to remove. **`DataErrorTests`'s assertions
+  that constructors assign their own parameters** go, and with them two dead carriers —
+  `StartupData.Settings`, which no production code reads, and
+  `PostgresConnectionSettings.FileVersion`, read only by the loader that validated it.
+
+  Two things are deliberately left alone. `poll_interval_ms` stays a required field of the operator's
+  file that nothing reads, because the next slice is what reads it. And the guard-ordering parity
+  with the stub — a cross-implementation contract pinned by two tests and a documentation paragraph —
+  is left to die with the stub rather than deleted twice.
+- **Issue:** none
+- **Blast radius:** the gated harness, the statement-text test and the fenced blocks in
+  `data-integration.md`, two provider cold-path types and their plumbing through `MapAsync`, one
+  field of `ArchiveQueryTimedOutError`, two statements in `ArchiveStatements.cs` that serve only
+  those readers, one error-test file, two configuration carriers, `CLAUDE.md`, which prescribes the
+  cold-path-reader pattern and names both deleted types as its canonical examples, and the
+  integration-test inventory in `docs/architecture/testing-strategy.md`.
+- **Risk:** low — deletion only, and what remains is covered by the gated suite that already runs.
+- **Depends on:** independent. It runs after semibase-container-provisioning by choice rather than
+  necessity: the harness's self-tests are what hold the provisioning swap steady while it happens,
+  and they are deleted only once the swap has held. The cost is that `ArchiveTemplate` and those
+  self-tests are edited by both slices.
+- **Stacking base:** master
+- **Scope guard:** the read path, the fold, the three read-path statement texts and `ExplainPlanTests`
+  are not touched — the two statements that serve only the deleted readers are, and they are the only
+  ones. The error vocabulary stays seven types: `ArchiveQueryTimedOutError` loses one field and no
+  type is added or removed. The comment-density pass is not in this slice: it is a
+  different kind of judgment and a different kind of review, and folding it in would hide deletions
+  of behaviour among deletions of prose.
+- **Plan:** —
+- **PR:** —
+- **Branch:** —
+
+### Slice archive-schema-ownership — Status: PENDING
+- **Scope:** The definition of the vendor's archive table moves out of this repository to the party
+  that provisions the instance, and the seeder stops creating it. SemiBase gains a flag on `create`
+  that creates `public.trends` and `tpdefault` **connected as `scada_writer`** — the role matters more
+  than the shape, because the reader's `SELECT` arrives through the default privileges SemiBase sets
+  for that role ahead of time, and a table owned by the superuser would give the bench reader access
+  for a different reason than a site gets it. SemiBase's locked decision that the archive schema is
+  never created there is amended explicitly rather than quietly excepted.
+
+  The move is safe because the shape is fully reproducible: the vendor's table carries no index
+  beyond its primary key, no trigger, no storage parameter, no tablespace, no sequence and no
+  generated column, and is exactly the definition `sql/semiplot_dev.sql` transcribes — which is what
+  retires here `[MEAS:dump-20260805]`.
+
+  On this side the change is not a subtraction. `ArchiveWriter` today **refuses** an archive that
+  already exists, so its precondition inverts: an existing empty `trends` becomes what the seeder
+  expects, an absent one becomes a new failure naming the missing flag, and the refusal keys on rows
+  and day partitions rather than on the table. Its one-transaction guarantee narrows from schema
+  plus partitions plus rows to partitions plus rows, which still leaves a rolled-back run with an
+  empty table and nothing stranded. Day partitions stay the seeder's, created per run. The probe is
+  one shared constant, `ArchiveWriter.ArchiveExistsCommand`, wrapped by three separate private
+  helpers — in the writer, in the fixture's template-reuse decision and in the transaction test — so
+  nothing changes at once and each call site is revisited on its own; missing one is the risk here.
+  `SchemaResourceTests` retires with the resource it pins, and `ArchiveWriterTransactionTests`'s
+  "leaves no archive behind" invariant becomes "leaves no rows and no day partitions behind".
+
+  Because the textual pin retires with the resource, the column check in `semibase verify` is not
+  optional here: it is what replaces it. `verify` asserts the columns the read contract touches —
+  `id`, `l`, `t`, `v`, `q` and their types, and the `tpk` shape — as a warning rather than a refusal,
+  so a vendor upgrade that does not affect readers raises no alarm while an archive that is not what
+  SemiPlot reads is named at commissioning. What guards the reader's bet from here on is behavioural:
+  the gated suite and `ExplainPlanTests` run against the SemiBase-created table, and tracking
+  `latest` means every run validates the newest schema against the current reader — the pair that
+  actually ships.
+
+  The seeder loses its self-sufficiency, and that is stated wherever the bench is documented: every
+  environment that seeds — the container's init, a re-run against `SEMIPLOT_TEST_PG`, the manual
+  two-command bench — must have provisioned with the flag, or the seeder stops with the new error.
+- **Issue:** none
+- **Blast radius:** `ArchiveWriter`'s precondition and transaction boundary, the embedded schema
+  resource and its test, one transaction test's invariant, the fixture's template-reuse probe, the
+  bench recipes in `CLAUDE.md` and `docs/architecture/bench.md`, and the ownership table in
+  `docs/architecture/testing-strategy.md`.
+- **Risk:** medium — the seeder's refusal rule is what keeps a half-filled archive from being read as
+  a whole one, and it is being inverted rather than relaxed.
+- **Depends on:** semibase-container-provisioning for the image that carries the flag, and
+  harness-and-cold-path-cleanup by ordering only, since both edit `ArchiveTemplate`. One prerequisite
+  is outside this repository: SemiBase must ship the flag and the `verify` column check.
+- **Stacking base:** master
+- **Scope guard:** day-partition creation stays with the seeder; no change to the generated data, the
+  thinner or the golden digest; no `verify` behaviour is relied on beyond the warning it prints.
+- **Plan:** —
+- **PR:** —
+- **Branch:** —
+
 ### Slice postgres-live-edge-and-demo — Status: PENDING
 - **Scope:** The live edge, the demo bench that exercises it, and the stub's retirement — one piece
   of work rather than three, because the poll is verified by watching a live archive grow and the
@@ -590,17 +803,37 @@ it.
 
   The demo bench appends to a seeded database on a wall-clock cadence so the live edge has something
   to follow, and the stub project is deleted. The thin end-to-end journeys that need a live archive
-  land here too: a break rendered as a broken line, and a live insert arriving once. Whether the
-  ladder's choice looks right to an operator is not settled here — it is the one check that needs the
-  demo stand, and it leaves this roadmap as a named acceptance item rather than a slice.
+  land here too: a break rendered as a broken line, and a live insert arriving once. They are written
+  in `SemiPlot.Tests` against the harness `SemiPlot.Tests.Data` already owns — that is the reference
+  direction which can exist — and they run for real on the Linux leg, skipping through the existing
+  gate on Windows. No new gating mechanism is needed.
+
+  Neither journey starts a second process. The writer inside a test is a direct `ArchiveWriter` call
+  from the test body, so the test decides when a row lands and when the poll's scheduler advances.
+  Two processes would introduce a race only a timeout could wait on, and a timeout-shaped test
+  flakes. The `--follow` writer serves the human-facing bench, not the journeys.
+
+  The developer environment is not a compose file. `dotnet test` already raises the container,
+  provisions it, seeds it, clones per class and tears all of it down; the persistent bench a human
+  points the application at stays the commands `docs/architecture/bench.md` documents, with
+  `--follow` added as one more. A second orchestration mechanism would duplicate the fixture's
+  wiring, passwords and ordering for an environment that already exists.
+
+  Whether the ladder's choice looks right to an operator is not settled here — it is the one check
+  that needs the demo stand, and it leaves this roadmap as a named acceptance item rather than a
+  slice.
 - **Issue:** none
 - **Blast radius:** the provider's realtime member, the composition root's provider selection, the
   deleted stub project and every reference to it, plus the new demo tool.
 - **Risk:** medium, concentrated in the seam invariant and in poll error handling.
-- **Depends on:** postgres-wire-up, postgres-gap-reconstruction, avalonia-12-bump
+- **Depends on:** postgres-wire-up, postgres-gap-reconstruction, avalonia-12-bump,
+  linux-test-target, semibase-container-provisioning, archive-schema-ownership
 - **Stacking base:** master
-- **Scope guard:** no coordinator batching changes; no bucketing; no new error types beyond the
-  connection-state change the poll needs.
+- **Scope guard:** no coordinator batching changes; no bucketing; no compose file and no second
+  orchestration mechanism for the developer environment. Three error types are expected rather than
+  forbidden: the connection-state change the poll needs, plus the unexpected table shape and the
+  non-empty default partition that postgres-wire-up deferred here — the coverage test forces their
+  mapping. Nothing beyond those three.
 - **Plan:** —
 - **PR:** —
 - **Branch:** —
@@ -628,10 +861,16 @@ Every slice not marked DROPPED has a MERGED PR. No slice owns an issue, so no
 issue closes automatically; there is no tracking issue to close by hand. The functional close
 condition is that the application, pointed at a database seeded by the bench, draws real history,
 follows a live edge moved by the `--follow` demo writer, selects layers by window width, breaks the
-line only where the archive says a break occurred, and `SemiPlot.DataSource.Stub` no longer exists. The
-end-to-end journeys in postgres-live-edge-and-demo assert this on a developer machine, and the
-application bench in `docs/architecture/bench.md` answers the rest from the server and the log
-without a screen.
+line only where the archive says a break occurred, and `SemiPlot.DataSource.Stub` no longer exists.
+The end-to-end journeys in postgres-live-edge-and-demo assert two of those on the Linux CI leg
+rather than only on a developer machine — a break drawn as a broken line, and a live insert arriving
+once from a writer the test itself drives. That the `--follow` writer moves the edge for a human is
+answered by the application bench in `docs/architecture/bench.md`, which reads the rest from the
+server and the log without a screen.
+
+The infrastructure slices carry their own close conditions, each machine-checkable: no test resolves
+an executable from `PATH`, both test projects build and run on `ubuntu-latest`, no test reads a
+documentation file at run time, and this repository carries no archive DDL.
 
 **What closes with the roadmap and what does not.** The close condition above is machine-verifiable
 and does not wait for hardware. Three checks do wait, and they are acceptance items for the operator
@@ -666,6 +905,43 @@ Settled during design — do not relitigate without new facts. The full reasonin
 - A stub fallback in the composition root — removed 2026-08-14: synthetic data silently standing in
   for process data is the worst failure mode for an operator tool. An unreachable database is a
   visible error state.
+- A separate repository, in Go or Python, for the archive generator and the live writer, leaving this
+  repository to contain only reading code — the generator encodes this project's hypothesis about the
+  vendor's thinning rule, and the reader's correctness rests on the same hypothesis. `LayerThinner`
+  and `AggregationLayer.ToPointSpacing` are one model read from two sides, and a gated test already
+  feeds the seeder's rows straight into the provider's fold in one process. Splitting them across
+  repositories and languages turns a single commit into a release dance for a model the roadmap
+  expects to correct, and forfeits those in-process tests. What is not this repository's to define —
+  roles, grants, the shared instance — already left, which is the boundary that matters: each piece
+  lives with the party whose change invalidates it.
+- A docker-compose developer bench — a second orchestration mechanism carrying a second copy of the
+  passwords, the ordering and the idempotency handling, for an environment `dotnet test` already
+  raises and tears down.
+- A registry image consumed as a second one-shot container on a shared Docker network — superseded by
+  layering `semibase` onto the PostgreSQL image, where the official entrypoint sequences provisioning
+  before the port opens. One container, no network, no wait strategy of our own.
+- A checksum-pinned bootstrap script downloading the `semibase` release asset into a developer cache
+  — it satisfies the reasons behind provisioning from a container (identity resolved by the
+  repository, reproducibility, portability) but not the rule, and it is one more mechanism to carry
+  into CI, where a registry pull carries itself.
+- Pinning the `semibase` version the bench provisions with — see slice
+  semibase-container-provisioning: delivered installations update neither service, so a pin proves a
+  pair that no site will ever newly receive.
+- Merging the two test projects once linux-test-target removes the target-framework reason for the
+  split — rejected on three facts that survive the retarget. `SemiPlot.Tests.Data` references only
+  Core, the provider and the seeder, so the data suite and its CI job build and run without Avalonia,
+  ScottPlot and SkiaSharp; that is the suite iterated against a container, and making it drag the UI
+  graph is a daily cost. An xunit v3 project is one executable, so a merge puts the container
+  lifecycle and the Avalonia dispatcher in one process, where a hung UI test wedges the harness too.
+  And the two deliberate splits — the assertion styles, and the provider's `InternalsVisibleTo`
+  naming `SemiPlot.Tests.Data` alone — would both have to be surrendered or rewritten. The split is
+  by dependency graph, not by target framework, and `CLAUDE.md` says the latter and must be
+  corrected.
+- Leaving the archive schema in this repository once SemiBase creates it — rejected: two creators of
+  one table is the state the seeder's own refusal rule exists to prevent, and a transcription pinned
+  by text in one repository while another repository creates the object is the drift that pin was
+  meant to catch. What replaces the textual pin is the column check in `verify` plus the gated suite
+  running against the created table.
 
 ## Open forks for the operator
 
@@ -679,10 +955,11 @@ are safe either way. Two details went into `docs/architecture/scada-archive.md` 
 extreme value repeats the vendor keeps the later row while the bench keeps the earlier one, which
 moves the abscissa and not the envelope, and one selected point is confirmed to be the last row of
 its period. The dump still spans two hours with twelve restarts, so the hour and day layers remain
-untested across their own periods. The design stands regardless: if the rule turns out to differ, the read path stops trusting
-coarse layers for envelopes and the lazy-materialisation alternative above becomes the answer, which
-changes the provider's layer strategy and nothing else. The experiment and its query are recorded at
-the end of `docs/architecture/scada-archive.md` and run when a stand becomes available.
+untested across their own periods. The design stands regardless: if the rule turns out to differ,
+the read path stops trusting coarse layers for envelopes and the lazy-materialisation alternative
+above becomes the answer, which changes the provider's layer strategy and nothing else. The
+experiment and its query are recorded at the end of `docs/architecture/scada-archive.md` and run
+when a stand becomes available.
 
 **Retention depth and disk size are unset.** Both need a measured write rate from a working
 installation, and both are recorded as undecided in `docs/architecture/postgres-instance.md`. The

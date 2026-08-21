@@ -78,8 +78,7 @@ it replaces that method and nothing else.
 
 ## The test bench
 
-`SemiPlot.Tests.Data` is plain `net10.0` on xunit v3, so it runs on a Linux CI runner. It never
-references the UI.
+`SemiPlot.Tests.Data` runs on a Linux CI runner. It never references the UI.
 
 - One server per run. A container start costs seconds while a `CREATE DATABASE` costs under one, so
   the container is the wrong isolation unit and the database is the right one.
@@ -96,11 +95,11 @@ full variable list is in the root `CLAUDE.md`, section *Gated data tests*.
 
 ## The application bench
 
-The gated tests exercise the provider. They cannot exercise the composed application: that needs
-Avalonia and a container at once, and no CI runner provides both — `build-and-test` runs on
-`windows-latest`, which cannot start a Linux container, and `data-tests` on `ubuntu-latest`, which
-cannot build against `SemiPlot.UI`. The application bench fills that gap on a developer machine, and
-its checks are read from the server and the log rather than from a screen, so they run unattended.
+The gated tests exercise the provider. They do not exercise the composed application: that needs
+Avalonia and a container at once, and no CI job does both yet. `ubuntu-latest` hosts both, and
+`postgres-live-edge-and-demo` owns the job. Until that job exists the application bench fills the
+gap on a developer machine, and its checks are read from the server and the log rather than from a
+screen, so they run unattended.
 
 ```powershell
 docker run -d --name semiplot-bench -e POSTGRES_PASSWORD=<super> -p 55432:5432 postgres:17-alpine

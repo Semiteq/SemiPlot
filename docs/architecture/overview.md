@@ -16,7 +16,7 @@ It must handle two classes of data:
 
 | Layer            | Choice                                                                 |
 | ---------------- | --------------------------------------------------------------------- |
-| Platform         | .NET 10 (`net10.0-windows`), Windows, C# 14                            |
+| Platform         | .NET 10 (`net10.0`), ships on Windows, C# 14                           |
 | Desktop shell    | Avalonia 12.0.5 (Win32 backend, SkiaSharp render, HarfBuzz shaping, FluentTheme light) |
 | Chart renderer   | ScottPlot 5 (`ScottPlot.Avalonia` 5.1.59, MIT, SkiaSharp) — native control |
 | MVVM             | ReactiveUI (`ReactiveUI.Avalonia` 12.0.3)                             |
@@ -29,9 +29,8 @@ Constraint: **$0 budget** — only free/OSS components.
 
 > Version note: SemiPlot pins **Avalonia 12.0.5** with `ScottPlot.Avalonia` 5.1.59 (which depends on
 > Avalonia 12.0.0) and `ReactiveUI.Avalonia` 12.0.3 — the pairing the sibling repository `SemiStep`
-> already ships. Both test projects sit on `xunit.v3` 3.2.2, so the only thing still separating them is
-> the target framework: `SemiPlot.Tests.Data` stays plain `net10.0` for the Linux CI runner that starts
-> the containers.
+> already ships. Both test projects sit on `xunit.v3` 3.2.2 and both target plain `net10.0`; what
+> keeps them separate is the dependency graph, not the target framework (`testing-strategy.md`).
 > `SemiPlot.UI` references `Avalonia.HarfBuzz` 12.0.5 and `App.BuildAvaloniaApp` calls `UseHarfBuzz()`
 > between `UseSkia()` and `UseReactiveUI()`. The chain names the platform itself
 > (`UseWin32().UseSkia()`) rather than calling `UsePlatformDetect()`, and Skia brings no text shaper, so
@@ -91,8 +90,10 @@ to the other. There is **no web bridge**: the chart is a native ScottPlot contro
 
 ## Deployment
 
-- Single Windows desktop app, runs on operator PCs next to the SCADA. `net10.0-windows` with
-  the Avalonia Win32 backend is the deliberate Windows-only operator-PC target.
+- Single Windows desktop app, runs on operator PCs next to the SCADA. The projects target plain
+  `net10.0`; `OutputType=WinExe` and the Avalonia Win32 backend are what make the operator PC the
+  deliberate Windows-only target. The plain TFM exists so the test project builds on the Linux CI
+  runner, and changes nothing about where the application ships.
 - Auto-update of the app itself via Velopack if/when needed.
 - Site paths follow the `C:\DISTR\` convention of the sibling SemiStep installation: configuration
   in `C:\DISTR\Config\SemiPlot`, logs in `C:\DISTR\Logs\SemiPlot\`. Neither sits beside the

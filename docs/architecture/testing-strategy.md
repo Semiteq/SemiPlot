@@ -103,12 +103,19 @@ where a hung UI test cannot wedge the harness. Each project keeps its own assert
 (AwesomeAssertions and raw `Assert.` respectively), and `SemiPlot.DataSource.Postgres` names
 `SemiPlot.Tests.Data` alone in `InternalsVisibleTo`.
 
-A second constraint holds while `SemiPlot.Tests` targets `net10.0-windows`: it cannot build on the
-Linux runner that is the only one able to start a container. That constraint is removable and the
-reasons above are not, so the graph is what the split rests on.
+Both projects target plain `net10.0`, so both build on the Linux runner and the target framework
+separates nothing.
 
 `SemiPlot.Tests` may reference `SemiPlot.Tests.Data` and consume its container harness. The reverse
-reference is the one that cannot exist.
+reference would build, and must not exist: it would put Avalonia, ScottPlot and SkiaSharp into the
+data suite and its Linux job.
+
+The split also decides skip-versus-fail per project. `SemiPlot.Tests` holds no gated test — every
+test in it runs on any machine with the SDK — so a skipped test there is a mistake rather than a
+stated absence, and `SemiPlot/SemiPlot.Tests/xunit.runner.json` sets `failSkips` to turn one into a
+failure on both CI legs. `SemiPlot.Tests.Data` keeps its skips: `DatabaseGate` states a reason when
+a runtime is missing, and `SEMIPLOT_REQUIRE_DB` is what a pipeline sets to make that a failure. It
+carries no `xunit.runner.json`, and must not gain one.
 
 ## Ownership
 

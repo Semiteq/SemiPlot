@@ -646,15 +646,22 @@ it.
   a `net10.0-windows` project cannot build there. The Windows leg stays: it proves the suite on the
   platform the application actually ships on.
 
-  The empirical question this slice answers is whether SkiaSharp's `linux-x64` native assets arrive
-  transitively through `Avalonia.Skia` for `ChartGapRenderTests`. If they do not, one package
-  reference settles it. The slice runs ahead of any test that needs the answer, so the answer arrives
-  before something depends on it.
+  No package is missing: `SkiaSharp.NativeAssets.Linux` is already in the dependency graph and
+  `libSkiaSharp.so` is already copied to the output. What Skia additionally needs is an
+  operating-system library, `libfontconfig.so.1`, absent from a bare .NET SDK image. Without it
+  every test that constructs the chart view model fails, not only the one that rasterises, because
+  that constructor builds a `ScottPlot.Plot` and the plot resolves a default typeface through
+  native Skia; with the library present the suite passes whole on Linux. The one question left open
+  is whether the CI runner image provides it, and the first run of the new job settles that: the
+  job ships with no install step and a comment naming the remedy.
 - **Issue:** none
-- **Blast radius:** two project files, the CI workflow, `CLAUDE.md`, whose test-split section states
-  the target framework as the one reason the two test projects exist — the reason this slice
-  removes — and the same passage in `docs/architecture/testing-strategy.md`.
-- **Risk:** low to medium, concentrated entirely in native assets on the new runner.
+- **Blast radius:** two project files, `SemiPlot/.run/Debug.run.xml`, the CI workflow, a new
+  `SemiPlot/SemiPlot.Tests/xunit.runner.json`, `AppBuilderCompositionTests`, and every passage that
+  states the target framework as the one reason the two test projects exist — the reason this slice
+  removes — in `CLAUDE.md` and in `docs/architecture/`: `README.md`, `overview.md`, `bench.md` and
+  `testing-strategy.md`.
+- **Risk:** low to medium, concentrated entirely in the operating-system libraries the runner image
+  provides.
 - **Depends on:** independent
 - **Stacking base:** master
 - **Scope guard:** `.UseWin32()` is not removed, the shipped artifact does not change, no end-to-end

@@ -56,7 +56,7 @@ where it and the committed 140-row real-archive slice came from.
 
 | Area            | Decision                                                                    |
 | --------------- | --------------------------------------------------------------------------- |
-| Platform        | .NET 10 (`net10.0-windows`), Windows, C# 14                                 |
+| Platform        | .NET 10 (`net10.0`), ships on Windows, C# 14                                |
 | Desktop shell   | Avalonia 12.0.5 (Win32 + Skia + HarfBuzz + FluentTheme), ReactiveUI MVVM    |
 | Chart renderer  | ScottPlot 5 (`ScottPlot.Avalonia` 5.1.59, MIT, SkiaSharp) — native control  |
 | Data source     | One read-only PostgreSQL connection to the Simple-Scada archive (`trends` / `messages`) — history, extent and realtime alike. No application server, no OPC UA client, no local TCP protocol |

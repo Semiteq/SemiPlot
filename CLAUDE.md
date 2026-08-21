@@ -32,11 +32,11 @@ produce the same archive. `--admin-connection` is optional and only fills `semip
 
 ## Test
 
-Tests live in two projects, split by target framework rather than by taste.
+Tests live in two projects, split by dependency graph rather than by taste.
 
 | Project | Target | Framework | References | Holds |
 | --- | --- | --- | --- | --- |
-| `SemiPlot.Tests` | `net10.0-windows` | xunit v3 + `Avalonia.Headless.XUnit` | `SemiPlot.UI` | Everything touching the UI, plus the renderer-agnostic Core models |
+| `SemiPlot.Tests` | `net10.0` | xunit v3 + `Avalonia.Headless.XUnit` | `SemiPlot.UI` | Everything touching the UI, plus the renderer-agnostic Core models |
 | `SemiPlot.Tests.Data` | `net10.0` | xunit v3 | `SemiPlot.Core`, `SemiPlot.Tools.ArchiveSeeder`, `SemiPlot.DataSource.Postgres` | Bench and data-source tests, pure and container-gated. Never Avalonia, never the UI |
 
 `SemiPlot.Tests` carries `TestAppBuilder.cs` with `[assembly: AvaloniaTestApplication]`. Pure logic
@@ -45,13 +45,17 @@ ReactiveUI/ScottPlot/Avalonia use `[AvaloniaFact]`/`[AvaloniaTheory]`. The Core 
 against the UI project, so they do not run independently of the UI build — the accepted cost of
 keeping one Avalonia project.
 
-**Why the split exists.** Both projects are on xunit v3, so the test framework separates nothing:
-`dotnet test` runs each project in its own process only because they are two projects. The one
-reason there are two is the target framework. `SemiPlot.Tests.Data` stays plain `net10.0` because
-the `data-tests` CI job runs on `ubuntu-latest`, the only runner that can start a container, and a
-project referencing `SemiPlot.UI` (`net10.0-windows`) cannot build there. `SemiPlot.Tests` may take
-a project reference on `SemiPlot.Tests.Data` and consume its container harness; the reverse
-reference is the one that cannot exist.
+**Why the split exists.** Both projects are on xunit v3 and both target plain `net10.0`, so neither
+the test framework nor the target framework separates them: `dotnet test` runs each in its own
+process only because they are two projects. The reason there are two is the dependency graph.
+`SemiPlot.Tests.Data` references only `SemiPlot.Core`, `SemiPlot.DataSource.Postgres` and
+`SemiPlot.Tools.ArchiveSeeder`, so the data suite and its `data-tests` CI job build and run without
+Avalonia, ScottPlot and SkiaSharp. An xunit v3 test project is one executable, so keeping the two
+apart keeps the container lifecycle and the Avalonia dispatcher in separate processes, where a hung
+UI test cannot wedge the harness. `SemiPlot.DataSource.Postgres` also names `SemiPlot.Tests.Data` as
+the sole assembly in its `InternalsVisibleTo`. `SemiPlot.Tests` may take a project reference on
+`SemiPlot.Tests.Data` and consume its container harness; the reverse reference would build, and must
+not exist — it would drag Avalonia, ScottPlot and SkiaSharp into the data suite and its Linux job.
 
 **An xunit v3 test project is an executable.** A test that hangs leaves `SemiPlot.Tests.exe` running
 and locked, and the next build fails with MSB3027/MSB3021 until that process is killed. A plain
@@ -71,6 +75,15 @@ dotnet test SemiPlot.slnx --filter "Area=Data"
 dotnet test SemiPlot.slnx --filter "Category=Unit"
 dotnet test SemiPlot.slnx --filter "FullyQualifiedName~TestMethodName"
 ```
+
+**`SemiPlot.Tests` runs on both platforms in CI:** `build-and-test` on `windows-latest` and
+`ui-tests-linux` on `ubuntu-latest`. The Linux leg proves two things: `SemiPlot.UI` and
+`SemiPlot.Tests` compile there, and every test passes under the headless platform. A Windows-only
+API fails that leg only once a test executes the call — the compiler reports it as the `CA1416`
+warning and no project turns warnings into errors. A Windows path used as a string does not fail it
+at all, which is why `StartupOptions`' `C:\DISTR\` defaults and the tests asserting on them are
+green there. The skip-versus-fail policy of each suite is in
+`docs/architecture/testing-strategy.md`.
 
 Test traits: `[Trait("Component", "Core|UI")]`, `[Trait("Area", "Data|Bridge|Chart|Di")]`,
 `[Trait("Category", "Unit|Integration")]`. Every test class carries all three; `SemiPlot.Tests.Data`

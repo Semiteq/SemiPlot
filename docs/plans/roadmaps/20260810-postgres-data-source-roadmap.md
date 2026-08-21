@@ -631,7 +631,7 @@ it.
 - **PR:** —
 - **Branch:** —
 
-### Slice linux-test-target — Status: PENDING
+### Slice linux-test-target — Status: DONE
 - **Scope:** `SemiPlot.UI` and `SemiPlot.Tests` retarget from `net10.0-windows` to `net10.0`, and CI
   gains an `ubuntu-latest` leg for `SemiPlot.Tests`. The Windows TFM is a leftover of the WPF era
   that the Avalonia replatform kept by inertia: the only Windows coupling anywhere in the UI and Core
@@ -651,9 +651,10 @@ it.
   operating-system library, `libfontconfig.so.1`, absent from a bare .NET SDK image. Without it
   every test that constructs the chart view model fails, not only the one that rasterises, because
   that constructor builds a `ScottPlot.Plot` and the plot resolves a default typeface through
-  native Skia; with the library present the suite passes whole on Linux. The one question left open
-  is whether the CI runner image provides it, and the first run of the new job settles that: the
-  job ships with no install step and a comment naming the remedy.
+  native Skia; with the library present the suite passes whole on Linux. Whether the CI runner
+  image provides it was the one question the slice could not answer before shipping, and the first
+  run of the new job settled it: `ubuntu-latest` carries the library, so the job needs no install
+  step and keeps only the comment naming the remedy.
 - **Issue:** none
 - **Blast radius:** two project files, `SemiPlot/.run/Debug.run.xml`, the CI workflow, a new
   `SemiPlot/SemiPlot.Tests/xunit.runner.json`, `AppBuilderCompositionTests`, and every passage that
@@ -668,9 +669,9 @@ it.
   test is written here, and the two test projects are not merged — the merge is rejected on reasons
   this slice does not touch, and correcting the justification `CLAUDE.md` states is the whole of what
   this slice owes that question.
-- **Plan:** —
-- **PR:** —
-- **Branch:** —
+- **Plan:** docs/plans/completed/20260821-linux-test-target.md
+- **PR:** #25 (merged)
+- **Branch:** linux-test-target
 
 ### Slice harness-and-cold-path-cleanup — Status: PENDING
 - **Scope:** Roughly 1,500 lines of apparatus have no consumer, and none of it is in the read path:

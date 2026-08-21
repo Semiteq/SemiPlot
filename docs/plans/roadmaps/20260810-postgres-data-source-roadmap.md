@@ -596,7 +596,9 @@ it.
   `/docker-entrypoint-initdb.d/` before the server accepts an external connection, so Testcontainers'
   ordinary readiness check already waits for provisioning to finish. That is why the bench runs one
   container and not two: no Docker network, no one-shot wait strategy, no second container to
-  sequence.
+  sequence. None of this reaches a site: there PostgreSQL is a Windows service, `semibase` is an
+  executable run once at commissioning, and no container exists. The image is a way of pinning what
+  the tests provision with.
 
   `SemibaseBinary`'s `PATH` search dies with this slice and CI drops its release-download step. The
   code that spawns the binary as a process does **not** die: the `SEMIPLOT_TEST_PG` path still runs

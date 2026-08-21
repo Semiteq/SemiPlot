@@ -127,6 +127,12 @@ Two rules follow from the first two rows and are not negotiable, restating
 `data-integration.md`: SemiPlot never writes to vendor objects, and every additive object is prefixed
 `semiplot_`.
 
+A third belongs here rather than there: **containers are the bench and CI, never the product.** On a
+site PostgreSQL is a Windows service installed by `winget`, `semibase` is an executable run once at
+commissioning, and SemiPlot is a desktop application on the operator's PC — no Docker takes part in
+any of it. Where this document and the roadmap reach for an image, they are pinning a dependency of
+the tests, not describing what is delivered.
+
 ## What is pinned, and by what
 
 Three mechanisms pin three kinds of thing, and Docker is one of them rather than the definition of

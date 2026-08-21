@@ -683,7 +683,7 @@ it.
 - **PR:** #25 (merged)
 - **Branch:** linux-test-target
 
-### Slice harness-and-cold-path-cleanup — Status: PENDING
+### Slice harness-and-cold-path-cleanup — Status: DONE
 - **Scope:** Roughly 750 lines of apparatus have no consumer, and none of it is in the read path:
   the statements, the fold, the time converter, the provider, the seven error types,
   `ExplainPlanTests` and the real-archive fixture all stay. What is cut sits entirely in the
@@ -740,9 +740,9 @@ it.
   all seven types with all their fields, and neither cold-path reader is removed here. The
   comment-density pass is not in this slice: it is a different kind of judgment and a different kind
   of review, and folding it in would hide deletions of behaviour among deletions of prose.
-- **Plan:** —
-- **PR:** —
-- **Branch:** —
+- **Plan:** docs/plans/completed/20260821-harness-and-cold-path-cleanup.md
+- **PR:** #28 (merged)
+- **Branch:** harness-and-cold-path-cleanup
 
 ### Slice missing-relation-probe-removal — Status: PENDING
 - **Scope:** `MissingRelationProbe` opens a fresh connection to a server that has just failed in

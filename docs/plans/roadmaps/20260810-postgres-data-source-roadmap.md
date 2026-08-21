@@ -38,6 +38,15 @@ that accreted around the read path is cut back, and the archive schema moves to 
 provisions it. The statement-text fence guard is withdrawn, and the developer environment is settled
 as the one `dotnet test` already raises.
 
+**Corrected 2026-08-21** on two claims this document made about code it had not read closely
+enough. `SparseHistoryWindow` is not fence-pinned — it already carries the plain literal the
+correction prescribes, so two statements need one, not three. And `StatementTimeoutReader` does meet
+the bar `CLAUDE.md` sets for a cold-path reader: the two arms of `StartupFailureMapper`'s timeout
+mapping carry different remedies, one sending the operator to raise the bound or add an index and
+the other to look for a cancelled read. The reader stays; only `MissingRelationProbe`, whose static
+fallbacks are exact, is removed, and it moves to a slice of its own because it changes production
+code while the rest of the cleanup does not.
+
 **The planning apparatus scales to the risk the slice declares.** A low-risk slice takes a
 one-page plan and one review round; the full apparatus — a long plan, several review rounds — is for
 slices rated medium or higher. Five review rounds over a slice that corrects two comments is a cost
@@ -55,10 +64,10 @@ it is developed against, and a live demo bench that retires the synthetic stub. 
 when the application, pointed at a populated database, draws real history, follows the live edge,
 selects archive layers by window width, and the stub project is gone.
 
-Four of the slices below are infrastructure rather than product: the bench provisions from a
+Five of the slices below are infrastructure rather than product: the bench provisions from a
 container instead of a binary found on the machine, `SemiPlot.UI` and `SemiPlot.Tests` stop being
-forbidden to build on Linux, the archive schema moves to SemiBase, and the apparatus around the read
-path is cut back. They precede the
+forbidden to build on Linux, the archive schema moves to SemiBase, the apparatus around the read path
+is cut back, and one cold-path reader whose fallbacks already answer for it is removed. They precede the
 closing slice because its end-to-end journeys need a runner that can hold both a container and the
 UI, and because two of them edit files the closing slice also edits.
 
@@ -674,12 +683,12 @@ it.
 - **Branch:** linux-test-target
 
 ### Slice harness-and-cold-path-cleanup — Status: PENDING
-- **Scope:** Roughly 1,500 lines of apparatus have no consumer, and none of it is in the read path:
+- **Scope:** Roughly 1,300 lines of apparatus have no consumer, and none of it is in the read path:
   the statements, the fold, the time converter, the provider, the seven error types,
   `ExplainPlanTests` and the real-archive fixture all stay. What is cut sits entirely in the
   machinery around them.
 
-  Five clusters go. **The stale-template sweep** in `ArchiveTemplate` costs more than the state it
+  Four clusters go. **The stale-template sweep** in `ArchiveTemplate` costs more than the state it
   protects. On the container path — CI and every developer who sets no variable — the server is
   discarded when the run ends, so the epoch stamp, the hardened sweep query, the clock-skew rule and
   their tests protect nothing at all. The `SEMIPLOT_TEST_PG` path is the one where templates do
@@ -688,52 +697,76 @@ it.
   What is not accepted is a hardened sweep defending a personal database against a principal
   planting a hostile database name. **The harness's tests of itself** go, leaving one gated smoke
   test as the canary, because a harness fault already reports itself as the stated skip reason of
-  the first gated test in any run. **The document-fence machinery** goes with the guard it
-  implements: the markdown extractor, its repository-root walker, its four tests of itself, and the
-  runtime comparison against `data-integration.md`; the statement keeps its literal pin in the test
-  file and the document keeps quoting the SQL for a reader. Three statements — `PenCatalog`,
-  `ArchiveExtent` and `SparseHistoryWindow` — are pinned by fence alone today, so each gains the
-  plain literal that `SeededWindowStatement` already carries; withdrawing the fence without
-  re-pinning them would leave the read path's three statements guarded by nothing. **The two
-  cold-path readers** go — `StatementTimeoutReader` and `MissingRelationProbe` each open a fresh
-  connection to a server that has just failed, and `CLAUDE.md`'s own bar for adding one, that a
-  distinct operator remedy depends on the answer, is met by neither: the timeout remedy sends the
-  operator to `SHOW statement_timeout` whichever way the message reads, and each statement's static
-  fallback already names the right relation. Their two statements go with them:
-  `ArchiveStatements.RelationProbe` and `ArchiveStatements.EffectiveStatementTimeout` have no other
-  caller, and leaving them behind is the dead-carrier shape this slice exists to remove. Deleting
-  the timeout reader narrows one error type rather than leaving a carrier behind:
-  `ArchiveQueryTimedOutError.Timeout` is populated by that reader alone, so the field goes and the
-  message the type already emits when no bound can be named becomes the only message it emits. That
-  narrowing belongs to this slice deliberately: the alternative, a field left permanently
-  `TimeSpan.Zero`, is the very shape the slice exists to remove. **`DataErrorTests`'s assertions
-  that constructors assign their own parameters** go, and with them two dead carriers —
-  `StartupData.Settings`, which no production code reads, and
-  `PostgresConnectionSettings.FileVersion`, read only by the loader that validated it.
+  the first gated test in any run. `DatabaseGateTests` is the exception that stays: skip-versus-fail
+  under `SEMIPLOT_REQUIRE_DB` is the mechanism every slice's acceptance evidence rests on, and it is
+  the one harness behaviour worth a test of its own. **The document-fence machinery** goes: the markdown
+  extractor, its four tests of itself and the runtime heading-and-fence comparison against
+  `data-integration.md`. What survives is the property rather than the apparatus — one containment
+  assertion per statement over the raw document, which fails exactly when the document stops
+  carrying the shipped SQL and needs no parser to test. `PenCatalog` and `ArchiveExtent` also gain
+  the plain literal `SparseHistoryWindow` already carries, because those two are the ones the fence
+  alone pins. **`DataErrorTests`'s assertions that constructors assign their own parameters** go,
+  and with them two dead carriers — `StartupData.Settings`, which no production code reads, and
+  `PostgresConnectionSettings.FileVersion`, which the loader writes into the settings record and
+  nothing reads back.
+
+  Four clusters, not five: the cold-path readers moved out. `StatementTimeoutReader` stays, and
+  `MissingRelationProbe` leaves in `missing-relation-probe-removal` below. This slice changes no
+  production behaviour and no operator-visible message, which is what lets it be reviewed as one
+  deletion.
 
   Two things are deliberately left alone. `poll_interval_ms` stays a required field of the operator's
   file that nothing reads, because the next slice is what reads it. And the guard-ordering parity
   with the stub — a cross-implementation contract pinned by two tests and a documentation paragraph —
   is left to die with the stub rather than deleted twice.
 - **Issue:** none
-- **Blast radius:** the gated harness, the statement-text test and the fenced blocks in
-  `data-integration.md`, two provider cold-path types and their plumbing through `MapAsync`, one
-  field of `ArchiveQueryTimedOutError`, two statements in `ArchiveStatements.cs` that serve only
-  those readers, one error-test file, two configuration carriers, `CLAUDE.md`, which prescribes the
-  cold-path-reader pattern and names both deleted types as its canonical examples, and the
-  integration-test inventory in `docs/architecture/testing-strategy.md`.
+- **Blast radius:** the gated harness, the statement-text test, one error-test file, and two
+  configuration carriers whose removal reaches every construction site of
+  `PostgresConnectionSettings` across three projects.
 - **Risk:** low — deletion only, and what remains is covered by the gated suite that already runs.
 - **Depends on:** independent. It runs after semibase-container-provisioning by choice rather than
   necessity: the harness's self-tests are what hold the provisioning swap steady while it happens,
   and they are deleted only once the swap has held. The cost is that `ArchiveTemplate` and those
   self-tests are edited by both slices.
 - **Stacking base:** master
-- **Scope guard:** the read path, the fold, the three read-path statement texts and `ExplainPlanTests`
-  are not touched — the two statements that serve only the deleted readers are, and they are the only
-  ones. The error vocabulary stays seven types: `ArchiveQueryTimedOutError` loses one field and no
-  type is added or removed. The comment-density pass is not in this slice: it is a
-  different kind of judgment and a different kind of review, and folding it in would hide deletions
-  of behaviour among deletions of prose.
+- **Scope guard:** no production behaviour changes and no operator-visible message changes. The read
+  path, the fold, the statement texts and `ExplainPlanTests` are untouched, the error vocabulary keeps
+  all seven types with all their fields, and neither cold-path reader is removed here. The
+  comment-density pass is not in this slice: it is a different kind of judgment and a different kind
+  of review, and folding it in would hide deletions of behaviour among deletions of prose.
+- **Plan:** —
+- **PR:** —
+- **Branch:** —
+
+### Slice missing-relation-probe-removal — Status: PENDING
+- **Scope:** `MissingRelationProbe` opens a fresh connection to a server that has just failed in
+  order to name the relation behind a `42P01`, and each statement's static fallback already names it:
+  the catalogue statement touches only `semiplot_tags`, the history statement only `trends`, and the
+  extent statement touches both but `StartupProbe` reads the catalogue first, so a `42P01` there can
+  only be `trends`. The probe goes, with `ArchiveStatements.RelationProbe`, the DI registration, the
+  provider field and the `missingRelation` parameter threaded into the exception mapper.
+
+  One consumer sits outside that argument and the slice owns it: the minimap re-queries the archive
+  extent at run time, where the startup ordering does not hold, so a `semiplot_tags` dropped under a
+  live session would be reported as a missing `trends`. Dropping a vendor-adjacent table under a
+  running reader is an operational anomaly rather than a state the product must diagnose, and this
+  slice accepts it by naming it.
+
+  `StatementTimeoutReader` is not touched. It meets the bar: the two arms of the timeout mapping
+  carry different operator remedies, and the arm that names the bound is the common one, since
+  `semibase create` sets a 30 s bound on the reader role.
+- **Issue:** none
+- **Blast radius:** one provider type, one statement, the DI registration, the exception mapper's
+  `missingRelation` parameter, two test files, and the passage in `CLAUDE.md` prescribing the
+  cold-path-reader pattern, which must keep the bar while dropping one of its two examples.
+- **Risk:** low — the fallbacks it replaces are already in place and already correct on every path
+  the application takes.
+- **Depends on:** harness-and-cold-path-cleanup by ordering only, since both edit test files under
+  `SemiPlot.Tests.Data/Postgres`.
+- **Stacking base:** master
+- **Scope guard:** `StatementTimeoutReader`, `ArchiveQueryTimedOutError` and the seven-type error
+  vocabulary are untouched; no per-statement fallback is changed, only the probe that second-guesses
+  it.
 - **Plan:** —
 - **PR:** —
 - **Branch:** —

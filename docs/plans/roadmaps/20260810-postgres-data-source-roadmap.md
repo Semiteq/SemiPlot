@@ -605,7 +605,7 @@ it.
 - **PR:** #21 (merged)
 - **Branch:** postgres-gap-reconstruction
 
-### Slice semibase-container-provisioning — Status: PENDING
+### Slice semibase-container-provisioning — Status: DONE
 - **Scope:** The bench stops resolving a provisioning binary from the machine, and stops carrying the
   vendor's archive DDL. Both follow from one change: SemiBase now ships a container image, and the
   provisioning inside it creates `public.trends` itself.
@@ -664,9 +664,9 @@ it.
 - **Stacking base:** master
 - **Scope guard:** no change to what the provisioning does, no second transcription of the vendor DDL
   on this side, and no shape assertion written to replace the retiring one.
-- **Plan:** —
-- **PR:** —
-- **Branch:** —
+- **Plan:** docs/plans/completed/20260824-semibase-container-provisioning.md
+- **PR:** #31 (merged)
+- **Branch:** semibase-container-provisioning
 
 ### Slice linux-test-target — Status: DONE
 - **Scope:** `SemiPlot.UI` and `SemiPlot.Tests` retarget from `net10.0-windows` to `net10.0`, and CI

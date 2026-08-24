@@ -771,7 +771,7 @@ it.
 - **PR:** #28 (merged)
 - **Branch:** harness-and-cold-path-cleanup
 
-### Slice missing-relation-probe-removal — Status: PENDING
+### Slice missing-relation-probe-removal — Status: DONE
 - **Scope:** `MissingRelationProbe` opens a fresh connection to a server that has just failed in
   order to name the relation behind a `42P01`, and each statement's static fallback already names it:
   the catalogue statement touches only `semiplot_tags`, the history statement only `trends`, and the
@@ -814,9 +814,9 @@ it.
 - **Scope guard:** `StatementTimeoutReader` and `ArchiveQueryTimedOutError` are untouched, the error
   vocabulary stays seven types, and no per-statement fallback is changed — only the probe that
   second-guesses it. The read path, the fold and the bench are not touched.
-- **Plan:** —
-- **PR:** —
-- **Branch:** —
+- **Plan:** docs/plans/completed/20260824-missing-relation-probe-removal.md
+- **PR:** #34 (merged)
+- **Branch:** missing-relation-probe-removal
 
 ### Slice postgres-live-edge-and-demo — Status: PENDING
 - **Scope:** The live edge, the demo bench that exercises it, and the stub's retirement — one piece

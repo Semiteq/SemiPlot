@@ -8,7 +8,7 @@ namespace SemiPlot.Tests.Data.Integration;
 
 // What a seeded archive actually holds, read the way production reads it: every read connects as
 // semiplot_reader rather than as the superuser, so a grant that never reached the reader fails here
-// instead of on commissioning day. `semibase create` sets statement_timeout = 30 s and
+// instead of on commissioning day. `semibase bench` sets statement_timeout = 30 s and
 // idle_in_transaction_session_timeout = 60 s on that role, so a slow query fails with 57014 rather
 // than hanging — TheReaderCarriesTheProductionTimeouts pins it.
 [Collection(ArchiveDatabaseCollection.Name)]

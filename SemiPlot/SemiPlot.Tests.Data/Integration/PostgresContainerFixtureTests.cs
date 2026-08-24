@@ -4,9 +4,9 @@ using Xunit;
 
 namespace SemiPlot.Tests.Data.Integration;
 
-// The gated tests of this slice: they assert that the fixture produced a server the later tasks can
-// provision and seed, and nothing beyond that. Provisioning belongs to the task that runs
-// 'semibase create'.
+// The gated tests of the fixture itself: they assert that it produced a server the suite can seed and
+// clone, and nothing beyond that. That the server arrives already provisioned is asserted by the
+// container's own wait strategy, and by every test that clones the provisioned source.
 [Collection(ArchiveDatabaseCollection.Name)]
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
@@ -45,17 +45,26 @@ public sealed class PostgresContainerFixtureTests(PostgresContainerFixture postg
 		Assert.True(connection.PostgreSqlVersion.Major >= 14);
 	}
 
+	// The bench tracks a moving tag on purpose, so the one thing a run owes its reader is the identity of
+	// the provisioner it ran: that is what separates "SemiBase moved" from "this repository broke" when an
+	// unchanged commit fails tomorrow. What is asserted is that the run resolved an immutable manifest —
+	// a build pinned to the moving tag instead would leave nothing to name.
 	[Fact]
-	public async Task TheResolvedBinaryReportsThePinnedVersion()
+	public void TheContainerPathReportsTheProvisionerItResolved()
 	{
 		postgresContainerFixture.RequireAvailable();
 
-		var reported = await SemibaseProvisioner.RunAsync(
-			postgresContainerFixture.Server.SemibaseExecutable,
-			["version"],
-			cancellationToken: TestContext.Current.CancellationToken);
+		if (postgresContainerFixture.Provisioner is not { } provisioner)
+		{
+			Assert.Skip(
+				$"{TestEnvironment.TestServerVariable} names the server, so the suite resolved no image: "
+					+ $"the provisioner is the binary {TestEnvironment.SemibaseExecutableVariable} points at.");
 
-		Assert.True(reported.IsSuccess, string.Join("; ", reported.Errors.Select(error => error.Message)));
-		Assert.Equal(SemibaseBinary.PinnedVersion, reported.Value.Trim());
+			return;
+		}
+
+		TestContext.Current.TestOutputHelper?.WriteLine(provisioner.Describe());
+
+		Assert.Contains("sha256:", provisioner.Digest, StringComparison.Ordinal);
 	}
 }

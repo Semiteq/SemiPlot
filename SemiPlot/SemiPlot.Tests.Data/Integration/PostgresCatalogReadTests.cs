@@ -26,7 +26,7 @@ public sealed class PostgresCatalogReadTests(
 	SeededArchive seededArchive)
 	: IClassFixture<SeededArchive>
 {
-	// Both nullable columns of SemiBase v0.1.0's semiplot_tags, written the one way the bench seeder
+	// Both nullable columns of SemiBase's semiplot_tags, written the one way the bench seeder
 	// never writes them.
 	private const string NullColumnTagCommand =
 		"""

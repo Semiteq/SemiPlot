@@ -10,8 +10,12 @@ using SemiPlot.Tools.ArchiveSeeder;
 
 namespace SemiPlot.Tests.Data.Integration;
 
-// The seeded database every test class clones, built once per run by `semibase create`, then
-// ArchiveWriter, then TagCatalogWriter.
+// The seeded database every test class clones, built once per run as a clone of the provisioned
+// source, then filled by ArchiveWriter and TagCatalogWriter.
+//
+// It is a clone rather than a provisioning of its own because its name is a per-build digest the image
+// cannot know. CREATE DATABASE ... TEMPLATE carries the table ownership, the relacl and the default
+// privileges across; database CONNECT is not carried, and PUBLIC's default already covers it.
 public static class ArchiveTemplate
 {
 	public const string NamePrefix = "semiplot_bench_";
@@ -28,22 +32,27 @@ public static class ArchiveTemplate
 		SeederOptions.DefaultBreakCount,
 		null);
 
-	// A discriminator over the seeder assembly, the schema script and the Slice options, so a persistent
-	// server cannot serve last week's seed to this week's code.
+	// A discriminator over the seeder assembly and the Slice options, so a persistent server cannot serve
+	// last week's seed to this week's code. Those two are the whole material: the archive table is the
+	// provisioning's, and every row this name has to discriminate is written by the module version and
+	// the options below.
 	public static string Name { get; } = ComputeName();
 
 	public static async Task<Result<string>> BuildAsync(
 		PostgresServer postgresServer,
+		SemaphoreSlim creationGate,
 		CancellationToken cancellationToken = default)
 	{
 		try
 		{
-			var provisioned = await SemibaseProvisioner.CreateAsync(postgresServer, Name, cancellationToken);
-
-			if (provisioned.IsFailed)
+			if (!await ArchiveDatabase.ExistsAsync(postgresServer, Name, cancellationToken))
 			{
-				return Result.Fail<string>($"semibase {SemibaseProvisioner.CreateCommand} failed: "
-					+ string.Join("; ", provisioned.Errors.Select(error => error.Message)));
+				await ArchiveDatabase.CopyAsync(
+					postgresServer,
+					creationGate,
+					SemibaseProvisioner.ProvisionedDatabase,
+					Name,
+					cancellationToken);
 			}
 
 			var seeded = await SeedAsync(postgresServer, cancellationToken);
@@ -65,15 +74,15 @@ public static class ArchiveTemplate
 	}
 
 	// The template is reused when it is already seeded — that is what the discriminator in its name
-	// buys. A database that exists but carries no archive is a crashed earlier run, and semibase create
-	// has just made it usable again, so seeding it is the repair.
+	// buys. A database that exists but carries no row and no day partition is a crashed earlier run, and
+	// the clone left the archive table empty, so seeding it is the repair.
 	private static async Task<Result> SeedAsync(
 		PostgresServer postgresServer,
 		CancellationToken cancellationToken)
 	{
 		var adminConnectionString = postgresServer.AdminConnectionStringFor(Name);
 
-		if (await ArchiveExistsAsync(adminConnectionString, cancellationToken))
+		if (await ArchiveIsSeededAsync(adminConnectionString, cancellationToken))
 		{
 			return Result.Ok();
 		}
@@ -95,7 +104,7 @@ public static class ArchiveTemplate
 		return tags.IsFailed ? Result.Fail(tags.Errors) : Result.Ok();
 	}
 
-	private static async Task<bool> ArchiveExistsAsync(
+	private static async Task<bool> ArchiveIsSeededAsync(
 		string connectionString,
 		CancellationToken cancellationToken)
 	{
@@ -103,7 +112,7 @@ public static class ArchiveTemplate
 
 		await connection.OpenAsync(cancellationToken);
 
-		await using var command = new NpgsqlCommand(ArchiveWriter.ArchiveExistsCommand, connection);
+		await using var command = new NpgsqlCommand(ArchiveWriter.ArchiveIsSeededCommand, connection);
 
 		return await command.ExecuteScalarAsync(cancellationToken) is true;
 	}
@@ -115,7 +124,6 @@ public static class ArchiveTemplate
 		var material = string.Join(
 			'|',
 			generatorVersion.ToString("N"),
-			ArchiveWriter.ReadSchemaScript(),
 			string.Format(
 				CultureInfo.InvariantCulture,
 				"{0}/{1}/{2}/{3}/{4}/{5:O}",

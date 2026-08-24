@@ -2,8 +2,8 @@
 
 namespace SemiPlot.Tests.Data.Integration;
 
-// One database per test class, cloned from the seeded template so the schema apply and the COPY are
-// skipped.
+// One database per test class, cloned from the seeded template so the COPY runs once per run rather
+// than once per class.
 public sealed class ArchiveDatabase(PostgresServer postgresServer, SemaphoreSlim creationGate, string name)
 	: IAsyncDisposable
 {
@@ -27,32 +27,41 @@ public sealed class ArchiveDatabase(PostgresServer postgresServer, SemaphoreSlim
 	{
 		var name = NewName();
 
-		await CreateAsync(
-			postgresServer,
-			creationGate,
-			$"""CREATE DATABASE "{name}" TEMPLATE "{templateDatabase}";""",
-			cancellationToken);
+		await CopyAsync(postgresServer, creationGate, templateDatabase, name, cancellationToken);
 
 		return new ArchiveDatabase(postgresServer, creationGate, name);
 	}
 
-	// template0 rather than the server's own template1, with encoding and locale stated: a test that
-	// asks for an empty database must get the same one on every machine, not whatever locale the
-	// server happens to have been initialised with.
-	public static async Task<ArchiveDatabase> EmptyAsync(
+	// Clones under a stated name and returns nothing to dispose. The seeded template is built this way:
+	// it outlives the run that built it, so a persistent server serves the next run without re-seeding.
+	public static Task CopyAsync(
 		PostgresServer postgresServer,
 		SemaphoreSlim creationGate,
+		string templateDatabase,
+		string name,
 		CancellationToken cancellationToken = default)
 	{
-		var name = NewName();
-
-		await CreateAsync(
+		return CreateAsync(
 			postgresServer,
 			creationGate,
-			$"""CREATE DATABASE "{name}" TEMPLATE template0 ENCODING 'UTF8' LC_COLLATE 'C' LC_CTYPE 'C';""",
+			$"""CREATE DATABASE "{name}" TEMPLATE "{templateDatabase}";""",
 			cancellationToken);
+	}
 
-		return new ArchiveDatabase(postgresServer, creationGate, name);
+	public static async Task<bool> ExistsAsync(
+		PostgresServer postgresServer,
+		string name,
+		CancellationToken cancellationToken = default)
+	{
+		await using var connection = new NpgsqlConnection(postgresServer.AdminConnectionString);
+
+		await connection.OpenAsync(cancellationToken);
+
+		await using var command = new NpgsqlCommand(CountDatabasesCommand, connection);
+
+		command.Parameters.AddWithValue("name", name);
+
+		return await command.ExecuteScalarAsync(cancellationToken) is long and > 0;
 	}
 
 	// A pooled connection counts as a session on the database and makes DROP DATABASE refuse, so the

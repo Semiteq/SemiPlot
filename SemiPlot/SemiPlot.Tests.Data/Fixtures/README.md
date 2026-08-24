@@ -1,45 +1,23 @@
-# `sql/`
+# `Fixtures/`
 
-Data files, not code. `semiplot_dev.sql` is the archive schema the bench writes into; the seeder
-(`SemiPlot.Tools.ArchiveSeeder`) carries it as an embedded resource and applies it as `scada_writer`,
-the way Simple-Scada 2 creates its own tables on a site.
+Provenance for `real-archive-rows.csv`, so a later reader can repeat the extraction. The file is
+data, versioned by git, and the tests over it need no database.
 
-Everything SemiPlot adds of its own — the `scada_writer` and `semiplot_reader` roles, the grants, the
-default-privileges chain and `semiplot_tags` — is created by `semibase create`
-(`github.com/Semiteq/SemiBase`), never here. A second definition in this repository would be the one
-exercised daily while the real one decayed.
+The rows are the vendor's own output, anonymised, and they are the only vendor rows this repository
+holds: `RealArchiveFixtureTests` confronts the thinning hypothesis with them, and
+`RealArchiveGapTests` reads gaps out of them. Nothing here is generated and nothing here is a
+schema — who owns `public.trends` is in `docs/architecture/bench.md`.
 
-## Where `semiplot_dev.sql` came from
+## The customer dump
 
 The customer archive dump is kept outside the repository — a PostgreSQL custom-format dump
 (`pg_dump -Fc`), not readable as text. Its path is a local detail and is not recorded here;
 substitute it for `<path-to-dump>` below.
 
 `pg_restore` is not on `PATH` on a default PostgreSQL install for Windows; call it by its full path,
-for example `C:/Program Files/PostgreSQL/14/bin/pg_restore.exe`. Version 14 rejects the command
-without `-d` or `-f`, so the output file is named explicitly rather than piped:
+for example `C:/Program Files/PostgreSQL/14/bin/pg_restore.exe`.
 
-```sh
-pg_restore --schema-only -f schema-only.sql <path-to-dump>
-```
-
-`schema-only.sql` is a scratch file and is not committed. `semiplot_dev.sql` was written from its
-`public.trends` section with these edits, all of them removals:
-
-| Removed | Reason |
-| --- | --- |
-| `ALTER TABLE ... OWNER TO postgres` | the owner is `scada_writer` here, set by who runs the script |
-| `SET` preamble, `SELECT pg_catalog.set_config`, `\restrict` / `\unrestrict` | `pg_dump` scaffolding, and the backslash forms are `psql` commands that `Npgsql` cannot execute |
-| `public.messages`, its partitions, `mpk` | no slice of the PostgreSQL data source reads messages |
-| `public.realtest_withtimer` | a table from the customer's own testing, not part of the archive |
-| the dated `tp2026m08dNN` partitions and their `ATTACH` statements | day partitions belong to the run being seeded, and the seeder creates them |
-| the per-partition `_pkey` constraints and `ALTER INDEX tpk ATTACH PARTITION` | `pg_dump` renders inherited indexes explicitly; `CREATE TABLE ... PARTITION OF` inherits `tpk` on its own |
-
-The `trends` definition itself is unchanged, column for column, down to `timestamp(3) without time
-zone` and the `smallint` layer. It matches the DDL in `docs/architecture/scada-archive.md`, section
-*Database objects*.
-
-## Where `SemiPlot.Tests.Data/Fixtures/real-archive-rows.csv` came from
+## Where `real-archive-rows.csv` came from
 
 That file is 140 rows of the customer archive, anonymised, committed so the thinning rule can be
 confronted with real vendor output by tests that need no database. The raw extract is never

@@ -9,7 +9,6 @@ on:
       - "SemiPlot/**"
       - "SemiPlot.slnx"
       - "global.json"
-      - "sql/**"
       - "!**.md"
   pull_request:
     paths:
@@ -18,7 +17,6 @@ on:
       - "SemiPlot/**"
       - "SemiPlot.slnx"
       - "global.json"
-      - "sql/**"
       - "!**.md"
 
 concurrency:
@@ -107,22 +105,15 @@ jobs:
         with:
           global-json-file: global.json
 
-      # The pin is a tagged release, not a moving latest, so a change in SemiBase cannot fail this
-      # suite without a version to blame. The published binary means no Go toolchain on the runner.
-      - name: install semibase
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release download v0.1.0 --repo Semiteq/SemiBase \
-            --pattern semibase_0.1.0_linux_amd64 --dir "$RUNNER_TEMP"
-          chmod +x "$RUNNER_TEMP/semibase_0.1.0_linux_amd64"
-          echo "SEMIBASE_EXE=$RUNNER_TEMP/semibase_0.1.0_linux_amd64" >> "$GITHUB_ENV"
-
       - name: restore
         run: dotnet restore SemiPlot/SemiPlot.Tests.Data/SemiPlot.Tests.Data.csproj
 
       - name: build
         run: dotnet build SemiPlot/SemiPlot.Tests.Data/SemiPlot.Tests.Data.csproj -c Release --no-restore
 
+      # The fixture builds the bench image from SemiPlot/SemiPlot.Tests.Data/bench, and the
+      # provisioner rides in as a layer copied from ghcr.io/semiteq/semibase:latest -- a public
+      # package the runner pulls with no login and no token. All this step needs beyond .NET is the
+      # Docker daemon ubuntu-latest already carries.
       - name: test
         run: dotnet test SemiPlot/SemiPlot.Tests.Data/SemiPlot.Tests.Data.csproj -c Release --no-build --logger "console;verbosity=normal"

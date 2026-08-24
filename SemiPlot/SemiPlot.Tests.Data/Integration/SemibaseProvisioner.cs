@@ -6,15 +6,26 @@ using FluentResults;
 
 namespace SemiPlot.Tests.Data.Integration;
 
-// `semibase create` provisions the container the same way it provisions a site: the archive database,
-// scada_writer, semiplot_reader, the grants, the default-privileges chain and semiplot_tags. This
-// repository defines none of them.
+// `semibase bench` provisions a bench the same way `semibase site` provisions a site: the archive
+// database, scada_writer, semiplot_reader, the grants, the default-privileges chain, semiplot_tags and
+// public.trends. This repository defines none of them.
+//
+// The names below are the semibase contract both paths stand on: the container path passes the
+// database name and the two password variables into the image, the SEMIPLOT_TEST_PG path passes them
+// to a binary it spawns here. Spawning is that path's alone — the container is provisioned by the
+// image's own init hook, which runs the same command over the unix socket before the published port
+// opens.
 //
 // Every semibase command checks before it creates, so re-running one against a provisioned server is
 // safe — which is what the SEMIPLOT_TEST_PG path relies on.
 public static class SemibaseProvisioner
 {
-	public const string CreateCommand = "create";
+	public const string BenchCommand = "bench";
+
+	// The one database either path provisions; the fixture passes it into the container. Everything
+	// else this suite needs is a CREATE DATABASE ... TEMPLATE clone of it, because the image cannot
+	// know the seeded template's per-build name.
+	public const string ProvisionedDatabase = "semiplot_provisioned";
 
 	public const string WriterRole = "scada_writer";
 
@@ -30,20 +41,26 @@ public static class SemibaseProvisioner
 
 	private static readonly TimeSpan _runTimeout = TimeSpan.FromMinutes(2);
 
-	public static Task<Result<string>> CreateAsync(
+	public static Task<Result<string>> ProvisionAsync(
 		PostgresServer postgresServer,
-		string database,
 		CancellationToken cancellationToken = default)
 	{
+		if (postgresServer.SemibaseExecutable is not { } executable)
+		{
+			return Task.FromResult(Result.Fail<string>(
+				"no semibase executable was resolved: the container path is provisioned by the image, so only "
+					+ $"the {TestEnvironment.TestServerVariable} path spawns the binary."));
+		}
+
 		string[] arguments =
 		[
-			CreateCommand,
+			BenchCommand,
 			"--host",
 			postgresServer.Host,
 			"--port",
 			postgresServer.Port.ToString(CultureInfo.InvariantCulture),
 			"--database",
-			database,
+			ProvisionedDatabase,
 			"--superuser",
 			postgresServer.Superuser
 		];
@@ -55,10 +72,10 @@ public static class SemibaseProvisioner
 			[ReaderPasswordVariable] = postgresServer.ReaderPassword
 		};
 
-		return RunAsync(postgresServer.SemibaseExecutable, arguments, environment, cancellationToken);
+		return RunAsync(executable, arguments, environment, cancellationToken);
 	}
 
-	public static async Task<Result<string>> RunAsync(
+	private static async Task<Result<string>> RunAsync(
 		string executable,
 		IReadOnlyList<string> arguments,
 		IReadOnlyDictionary<string, string>? environment = null,

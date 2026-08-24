@@ -63,7 +63,8 @@ alternative, which is why it is recorded here as the fallback if D is ever refut
 interactive gesture.
 
 **Option B buys nothing here.** Continuous aggregates read from hypertables, and `trends` is a
-declaratively partitioned table the SCADA creates. It cannot be converted. Timescale would only pay
+declaratively partitioned table SemiBase creates and the SCADA writes into. It cannot be
+converted. Timescale would only pay
 off if we owned ingestion, which we do not.
 
 ## Questions that recurred during the evaluation

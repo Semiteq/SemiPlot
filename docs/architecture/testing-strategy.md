@@ -136,8 +136,8 @@ Each piece lives with the party whose change invalidates it.
 | Piece | Owner | Lives in | Why this boundary |
 | --- | --- | --- | --- |
 | Archive schema, layers, thinning rule | Simple-Scada 2 | the vendor's product; observed in `scada-archive.md` | SemiPlot is a strict read-only consumer. The observation is documented with the consumer because the consumer depends on it, not because anyone here controls it |
-| Instance provisioning: database, roles, grants, default privileges, `semiplot_tags` | SemiBase | `github.com/Semiteq/SemiBase` | the instance is shared by the SCADA, SemiPlot and future readers. The bench must be provisioned by the same implementation a site is, or it stops testing the grant chain |
-| `semibase` artifact formats and versions | SemiBase | its release workflow | the producer owns its artifacts; SemiPlot only names versions |
+| Instance provisioning: database, roles, grants, default privileges, `semiplot_tags`, `public.trends` | SemiBase | `github.com/Semiteq/SemiBase` | the instance is shared by the SCADA, SemiPlot and future readers. The bench must be provisioned by the same implementation a site is, or it stops testing the grant chain. The archive table is in that list because SemiBase creates it: a second definition here would be the one exercised daily while the real one decayed |
+| `semibase` artifact formats and versions | SemiBase | its release workflow and its published image | the producer owns its artifacts; SemiPlot only consumes them |
 | Synthetic data model, including `LayerThinner` — this project's hypothesis about the vendor's thinning rule | SemiPlot | `SemiPlot.Tools.ArchiveSeeder` | the hypothesis couples to the consumer, not the provisioner: if the rule is refuted, the *read path* changes and SemiBase changes nothing. It must version in lock-step with the code that bets on it, which is why the golden digest lives beside it and why the seeder holds verbatim copies rather than referencing another project |
 | Test harness, gate policy | SemiPlot tests | `SemiPlot.Tests.Data/Integration/` | skip-versus-fail is consumer CI policy; no other party can decide it |
 | Developer environment | SemiPlot | `dotnet test` and the bench recipe in `bench.md` | it composes the others' artifacts and defines none of them |
@@ -167,7 +167,29 @@ A dependency resolved from the machine — an executable found on `PATH`, a serv
 installed — is pinned by nothing, and that is the property to avoid. It is a separate property from
 process isolation, and it is the one that matters here.
 
-One dependency does not yet meet the rule: the `semibase` binary is resolved from `SEMIBASE_EXE` or
-`PATH`, so on a developer machine whichever build happens to be installed is the one that
-provisions. CI does not share the gap — it downloads a named release. The row above states the
-target, not the present.
+The rule is that nothing the gated suite stands on may be resolved from the machine. The provisioner
+is a layer of the bench image, copied out of `ghcr.io/semiteq/semibase:latest`, so it arrives with
+the image and nothing searches `PATH`; `bench.md` describes how.
+
+Two exceptions are accepted, and each is a choice rather than an oversight.
+
+**`latest` is a moving tag.** A delivered installation updates neither service, so the only pair
+ever newly deployed is the newest provisioner with the current reader; pinning a digest here would
+test a pair nobody ships. A moving tag buys that only if it moves, and rebuilding the bench image
+does not move it — the Engine's builder takes the provisioner's `FROM` from the local image cache.
+The fixture fetches the tag itself ahead of the build and pins the build to the digest that fetch
+resolved, so the pair every run exercises is the newest one. `bench.md` holds the full statement,
+including how the step degrades where there is no route to the registry.
+
+**`SEMIBASE_EXE` names a binary on the machine.** It is read on the `SEMIPLOT_TEST_PG` path alone,
+where the developer already names the server; naming the executable beside it makes the developer
+the owner of that pairing by construction.
+
+The cost of the moving tag is that one unchanged commit can pass today and fail tomorrow. That
+failure is legible rather than mysterious, in two ways. A provisioning that fails exits the
+container's entrypoint, and Testcontainers' start exception carries the container's own stdout and
+stderr — `error: server version 130023 is below the floor 140000` is what a base image below
+SemiBase's floor produces — which the fixture's unavailable reason then names as a container that
+exited non-zero. And a container run writes the provisioner's digest, with its version where the
+executable reports one, into the test output, so a failure that follows a moved tag names the tag
+it followed.

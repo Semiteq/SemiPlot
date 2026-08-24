@@ -6,8 +6,8 @@ namespace SemiPlot.Tests.Data.Fixtures;
 
 // Rows lifted out of the customer archive dump and anonymised before committing: the two identifiers
 // are synthetic and every timestamp carries one fixed offset, so intervals, values and quality codes
-// are the vendor's own. sql/README.md records the extraction, the offset and how to regenerate the
-// file. Nothing here needs a database — the CSV is the evidence.
+// are the vendor's own. The README beside this file records the extraction, the offset and how to
+// regenerate the file. Nothing here needs a database — the CSV is the evidence.
 public static class RealArchiveFixture
 {
 	// The observed poll interval of the archived project (docs/architecture/scada-archive.md#write-behavior).

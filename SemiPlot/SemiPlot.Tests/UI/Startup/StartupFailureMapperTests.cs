@@ -93,35 +93,55 @@ public sealed class StartupFailureMapperTests
 	}
 
 	[Fact]
-	public void ArchiveNotInitialised_MissingDatabase_SendsTheOperatorToSemibaseCreate()
+	public void ArchiveNotInitialised_MissingDatabase_SendsTheOperatorToSemibaseSite()
 	{
 		var view = StartupFailureMapper.Map(
 			new ArchiveNotInitialisedError("scada-host", 5432, "semiplot", ArchiveObject.Database, null));
 
 		view.Title.Should().Be("The archive is not provisioned");
 		view.Detail.Should().Contain("holds no database 'semiplot'");
-		view.Remedy.Should().Contain("semibase create");
+		view.Remedy.Should().Contain("semibase site");
 	}
 
 	[Fact]
-	public void ArchiveNotInitialised_MissingTrends_SendsTheOperatorToTheScada()
+	public void ArchiveNotInitialised_MissingTrends_SendsTheOperatorToSemibaseSite()
 	{
 		var view = StartupFailureMapper.Map(
 			new ArchiveNotInitialisedError("scada-host", 5432, "semiplot", ArchiveObject.Table, "trends"));
 
 		view.Detail.Should().Contain("holds no table 'trends'");
-		view.Remedy.Should().Contain("Simple-Scada");
-		view.Remedy.Should().NotContain("semibase create");
+		view.Remedy.Should().Contain("trends");
+		view.Remedy.Should().Contain("semibase site");
 	}
 
 	[Fact]
-	public void ArchiveNotInitialised_MissingTagTable_SendsTheOperatorToSemibaseCreate()
+	public void ArchiveNotInitialised_MissingTagTable_SendsTheOperatorToSemibaseSite()
 	{
 		var view = StartupFailureMapper.Map(
 			new ArchiveNotInitialisedError("scada-host", 5432, "semiplot", ArchiveObject.Table, "semiplot_tags"));
 
-		view.Remedy.Should().Contain("SemiBase");
-		view.Remedy.Should().Contain("semibase create");
+		view.Remedy.Should().Contain("semiplot_tags");
+		view.Remedy.Should().Contain("semibase site");
+	}
+
+	// Both tables arrive from the same provisioning run, so the remedy may not branch on which one is
+	// absent. Substituting the table name out of each remedy leaves two strings that must be equal: any
+	// arm switching on the table name makes them differ, whatever the arm says.
+	[Fact]
+	public void ArchiveNotInitialised_TheRemedyDoesNotDependOnWhichTableIsAbsent()
+	{
+		var trendsRemedy = RemedyWithTableNameElided("trends");
+		var tagTableRemedy = RemedyWithTableNameElided("semiplot_tags");
+
+		trendsRemedy.Should().Be(tagTableRemedy);
+	}
+
+	private static string RemedyWithTableNameElided(string table)
+	{
+		var view = StartupFailureMapper.Map(
+			new ArchiveNotInitialisedError("scada-host", 5432, "semiplot", ArchiveObject.Table, table));
+
+		return view.Remedy.Replace(table, "<table>", StringComparison.Ordinal);
 	}
 
 	[Fact]

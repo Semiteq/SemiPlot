@@ -80,10 +80,11 @@ public sealed class PostgresExtentReadTests(
 		Assert.Equal(ArchiveExtent.Empty, result.Value);
 	}
 
-	// The only test that fails when the probe is dropped: this statement's fallback relation is trends, so
-	// a build without the probe would report trends for a database whose semiplot_tags is the absent one.
+	// The extent statement touches both relations and reports its own, so a dropped catalogue is reported
+	// as a missing trends. That name reaches a log line and nothing further, and both tables carry the same
+	// remedy. This is the only coverage of the extent read's 42P01 path.
 	[Fact]
-	public async Task ADroppedCatalogueFailsNamingSemiplotTagsNotTheFallback()
+	public async Task ADroppedCatalogueFailsNamingTheStatementsOwnRelation()
 	{
 		postgresContainerFixture.RequireAvailable();
 
@@ -102,7 +103,7 @@ public sealed class PostgresExtentReadTests(
 		var error = Assert.Single(result.Errors.OfType<ArchiveNotInitialisedError>());
 
 		Assert.Equal(ArchiveObject.Table, error.MissingObject);
-		Assert.Equal("semiplot_tags", error.Table);
+		Assert.Equal("trends", error.Table);
 		Assert.Equal(database.Name, error.Database);
 	}
 

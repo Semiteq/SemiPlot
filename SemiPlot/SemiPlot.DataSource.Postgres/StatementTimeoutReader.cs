@@ -10,10 +10,9 @@ namespace SemiPlot.DataSource.Postgres;
 /// applied. The value is per-site: <c>statement_timeout</c> is a <c>USERSET</c> GUC, SemiPlot sends none,
 /// so the effective bound is the reader role's own and is knowable no other way.
 /// <para>
-/// It sits in the read path rather than inside <see cref="ArchiveExceptionMapper"/>, for the same reason
-/// <see cref="MissingRelationProbe"/> does: it is a network round trip, and putting it in the mapper would
-/// make the mapper asynchronous, give it a data-source dependency and end the unit-testability that keeps
-/// it honest.
+/// It sits in the read path rather than inside <see cref="ArchiveExceptionMapper"/>: it is a network round
+/// trip, and putting it in the mapper would make the mapper asynchronous, give it a data-source dependency
+/// and end the unit-testability that keeps it honest.
 /// </para>
 /// </summary>
 internal sealed class StatementTimeoutReader(ArchiveDataSource dataSource, ILogger<StatementTimeoutReader> logger)

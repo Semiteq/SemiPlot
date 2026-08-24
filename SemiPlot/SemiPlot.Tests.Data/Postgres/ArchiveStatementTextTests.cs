@@ -11,8 +11,8 @@ namespace SemiPlot.Tests.Data.Postgres;
 
 // Each operational statement is pinned by a plain literal held in this file and compared character for
 // character against the constant in `ArchiveStatements.cs`, so an edit to the shipped SQL fails here.
-// `EffectiveStatementTimeout` and `RelationProbe` are cold-path diagnostics and carry none. A new
-// operational statement gains a literal here.
+// `EffectiveStatementTimeout` carries none: it is a cold-path diagnostic that runs only after a read has
+// already failed. A new operational statement gains a literal here.
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
 [Trait("Category", "Unit")]

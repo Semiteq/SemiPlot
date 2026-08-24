@@ -92,7 +92,7 @@ public sealed class StatementTimeoutReadTests(PostgresContainerFixture postgresC
 		Assert.Equal(_bound, timedOut.Timeout);
 	}
 
-	// Role-scoped rather than database-scoped, and that is not a preference: semibase create sets the 30 s
+	// Role-scoped rather than database-scoped, and that is not a preference: semibase bench sets the 30 s
 	// bound on semiplot_reader, and PostgreSQL applies database settings before role settings, so an
 	// ALTER DATABASE ... SET would lose to the role default and the read would never trip. The fixture's admin
 	// connection is the superuser, so the statement is permitted. Neither value is a foreign principal's — the

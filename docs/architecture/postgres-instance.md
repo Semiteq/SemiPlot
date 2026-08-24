@@ -9,8 +9,8 @@ document records only what constrains SemiPlot as a consumer of that instance.
 | --- | --- |
 | Which engine, which version, how it is installed | `Semiteq/SemiBase`: `docs/architecture/overview.md` |
 | Every configuration setting that differs from the PostgreSQL default | `Semiteq/SemiBase`: `docs/architecture/configuration.md` |
-| The provisioning order, and what `semibase config` / `create` / `verify` each do | `Semiteq/SemiBase`: `docs/architecture/overview.md` and `docs/architecture/provisioning.md` |
-| The role definitions, the grants and the default-privileges chain | `Semiteq/SemiBase`: `docs/architecture/provisioning.md` |
+| The provisioning order, and what `semibase site` and `semibase bench` each do | `Semiteq/SemiBase`: `docs/architecture/overview.md` and `docs/architecture/provisioning.md` |
+| The role definitions, the grants, the default-privileges chain and the `trends` DDL | `Semiteq/SemiBase`: `docs/architecture/provisioning.md` |
 | The `semiplot_tags` DDL | `Semiteq/SemiBase`: `sql/semiplot_tags.sql` |
 | The archive schema itself | `scada-archive.md` |
 | The queries SemiPlot issues | `data-integration.md` |
@@ -42,7 +42,7 @@ SemiPlot connects as `semiplot_reader` and as nothing else.
 | `statement_timeout` | 30 s | A read that exceeds it fails with SQLSTATE `57014`. That is a bug in layer selection, not a slow disk — surface it as a typed error instead of retrying |
 | `idle_in_transaction_session_timeout` | 60 s | A transaction held open is killed rather than blocking vacuum on the partitions |
 
-Both timeouts are set on the role by `semibase create` as session defaults, so they apply to every
+Both timeouts are set on the role by `semibase` as session defaults, so they apply to every
 session SemiPlot opens. They are defaults, not enforcement: PostgreSQL classes `statement_timeout` as
 `USERSET`, and a startup option or a plain `SET` overrides a role default from the client side.
 SemiPlot's contract is that it never sends `statement_timeout` in any form, so the value the reader
@@ -58,7 +58,7 @@ acceptable risk: it grants reading process history and nothing more.
 ## `semiplot_tags`
 
 The archive has no mapping from a variable number to a name, so we supply one `[DEC:semiplot-tags]`.
-The table is created by `semibase create` and filled by hand during commissioning. SemiPlot never
+The table is created by `semibase` and filled by hand during commissioning. SemiPlot never
 writes to it.
 
 | Column | Read by SemiPlot | Use |
@@ -74,8 +74,8 @@ The catalogue query is in `data-integration.md`. An absent table and an empty on
 states with their own message, and neither is ever a crash — but they travel in different channels.
 An empty table is a successful read of zero rows, because the database answered correctly and
 nothing is broken. An absent table is a typed failure carrying the table name, because provisioning
-has not finished. Keeping the two apart is what lets the operator be sent to `semibase create` in
-one case and to commissioning in the other.
+has not finished. Keeping the two apart is what lets the operator be sent to the
+provisioner in one case and to commissioning in the other.
 
 If several client versions ever have to coexist against one database, a `semiplot_meta` table
 carrying a schema version is the intended mechanism. It is not needed while a single client version
@@ -87,15 +87,25 @@ Provisioning is a sequence and the client can be started at any point in it. Eac
 normal, carries its own message, and is never a crash:
 
 1. no database — nothing answers at the configured address;
-2. database without `trends` — the SCADA has not run yet;
+2. database without `trends` — provisioning stopped part-way, or the table was removed after it;
 3. `trends` without `semiplot_tags` — provisioning is not finished;
 4. `semiplot_tags` present but empty — commissioning is not finished.
 
 The behaviour for each is specified in `data-integration.md`.
 
+**The second state has moved and the code has not.** SemiBase creates `public.trends` in both
+`semibase site` and `semibase bench`, so on a commissioned site the archive table arrives with the
+database and a missing `trends` is no longer *the SCADA has not run yet*. SemiPlot's own mapping
+still says it is — `StartupFailureMapper`, `MissingRelationProbe` and `ArchiveNotInitialisedError`
+carry the older model, and the slice `missing-relation-probe-removal` is what corrects them. Read
+the list above as the states the client distinguishes, not as what a site's provisioning leaves
+behind.
+
 One operational state belongs beside them: a non-empty `tpdefault` means a daily partition was
-missing at write time. `semibase verify` reports it during commissioning, and SemiPlot treats it as
-the fault signal `scada-archive.md` describes.
+missing at write time. The partition itself arrives with the provisioning and is empty by
+construction, so anything in it is a row the SCADA wrote with no daily partition to take it. It is
+read straight from the database at commissioning, and SemiPlot treats it as the fault signal
+`scada-archive.md` describes.
 
 ## Retention and capacity
 

@@ -11,6 +11,11 @@ public static class ArchiveReadSupport
 
 	public const string DropCatalogCommand = "DROP TABLE public.semiplot_tags;";
 
+	// Provisioning creates public.trends, so "provisioned, catalogue present, archive absent" is
+	// reached by cloning the provisioned source and dropping the table again. Issued as scada_writer,
+	// which owns it.
+	public const string DropTrendsCommand = "DROP TABLE public.trends;";
+
 	// A failed Result's messages, so an assertion failure names the archive state rather than only the
 	// expectation it broke.
 	public static string Describe<T>(Result<T> result)

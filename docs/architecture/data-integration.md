@@ -458,12 +458,17 @@ so no failure crosses to the UI thread (`DA-1`).
 | Connection refused or DNS failure at startup | failed `Result` | `ErrorWindow` titled "No connection to the archive", naming the host and port, with a remedy and one **Close** button — no retry, the operator corrects the cause and starts again |
 | Connection lost mid-session | failed `Result` on the query; realtime tick dropped | Chart keeps the data it has; staleness is visible |
 | Query timeout | failed `Result` | Same as above; the timeout is a configured bound, not an accident |
-| The database does not exist (SQLSTATE `3D000`, the server answers) | failed `Result` carrying `ArchiveNotInitialisedError` whose `MissingObject` is `Database`, distinguished from a connection failure | "Archive not initialised" — the remedy is running `semibase create` |
+| The database does not exist (SQLSTATE `3D000`, the server answers) | failed `Result` carrying `ArchiveNotInitialisedError` whose `MissingObject` is `Database`, distinguished from a connection failure | "Archive not initialised" — the remedy is running `semibase site` |
 | The credentials are refused or a grant is missing (SQLSTATE `28P01`, `28000`, `42501`) | failed `Result`, distinguished from a connection failure | "Archive access denied" — the remedy is the user, password or grants, not the network |
-| `trends` does not exist (SCADA never started) | failed `Result`, distinguished from a connection failure | "Archive not initialised" — a normal state on a fresh installation |
-| `semiplot_tags` does not exist (provisioning unfinished) | failed `Result` carrying `ArchiveNotInitialisedError` whose `MissingObject` is `Table` and whose `Table` is `semiplot_tags` | "Archive not initialised" — the remedy is running `semibase create` |
+| `trends` does not exist (provisioning stopped part-way) | failed `Result`, distinguished from a connection failure | "Archive not initialised" — the remedy is running `semibase site` |
+| `semiplot_tags` does not exist (provisioning unfinished) | failed `Result` carrying `ArchiveNotInitialisedError` whose `MissingObject` is `Table` and whose `Table` is `semiplot_tags` | "Archive not initialised" — the remedy is running `semibase site` |
 | `semiplot_tags` present but empty | empty pen list, success | "No variables configured" — commissioning is not finished |
 | Archive present but no rows in the window | success, empty envelope list — no pen has rows, so no pen gets an envelope | Empty chart, no error |
+
+The `trends` row carries a lag. SemiBase creates that table in both its commands, so a commissioned
+site has it from provisioning; the mapping above still reads its absence as an installation the
+SCADA has not written to yet, and `missing-relation-probe-removal` is the slice that corrects the
+mapper. `postgres-instance.md` holds the full statement.
 
 ### Two error planes
 
@@ -509,7 +514,7 @@ provisioning. `3D000` and `42P01` share `ArchiveNotInitialisedError` and stay ap
 differ only in what to create. On the table case the type carries the table name rather than assuming
 `trends`, because `42P01` is table-agnostic and the remedy follows the table — `trends` is the
 SCADA's, `semiplot_tags` is SemiBase's. On the database case `Table` is null: `3D000` names no
-relation, and the remedy is `semibase create`. `ArchiveReadFailedError` closes the mapping: anything
+relation, and the remedy is `semibase site`. `ArchiveReadFailedError` closes the mapping: anything
 the table above does not name arrives as that type carrying its SQLSTATE, so
 nothing escapes as an exception and nothing crosses as an untyped `Result.Fail(string)` a consumer
 cannot route on.

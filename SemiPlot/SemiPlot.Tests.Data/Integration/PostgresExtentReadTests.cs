@@ -107,19 +107,17 @@ public sealed class PostgresExtentReadTests(
 	}
 
 	[Fact]
-	public async Task AProvisionedButUnseededDatabaseFailsNamingTrends()
+	public async Task ADroppedTrendsTableFailsNamingTrends()
 	{
 		postgresContainerFixture.RequireAvailable();
 
-		await using var database = await postgresContainerFixture.CreateEmptyDatabaseAsync(
+		await using var database = await postgresContainerFixture.CloneProvisionedAsync(
 			TestContext.Current.CancellationToken);
 
-		var provisioned = await SemibaseProvisioner.CreateAsync(
-			postgresContainerFixture.Server,
-			database.Name,
+		await ArchiveDatabase.ExecuteAsync(
+			database.WriterConnectionString,
+			ArchiveReadSupport.DropTrendsCommand,
 			TestContext.Current.CancellationToken);
-
-		Assert.True(provisioned.IsSuccess, string.Join("; ", provisioned.Errors.Select(error => error.Message)));
 
 		var result = await ReadExtentAsync(database.ReaderConnectionString);
 

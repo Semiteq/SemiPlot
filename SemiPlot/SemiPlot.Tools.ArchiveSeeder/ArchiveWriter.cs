@@ -6,32 +6,29 @@ using NpgsqlTypes;
 
 namespace SemiPlot.Tools.ArchiveSeeder;
 
-// Connects as scada_writer and creates the archive tables itself, the way Simple-Scada 2 creates its
-// own tables on a site. That keeps SemiBase's default-privileges chain on a path exercised by every
-// seeded run instead of leaving it to commissioning day.
+// Connects as scada_writer and fills the archive table that provisioning already created, the way
+// Simple-Scada 2 fills its own on a site. That keeps SemiBase's default-privileges chain on a path
+// exercised by every seeded run instead of leaving it to commissioning day.
 public sealed class ArchiveWriter(string connectionString)
 {
-	// The script is a resource rather than a file under sql/: a console binary running out of
-	// Artifacts/bin/ and a test assembly running out of its own output directory have no path to the
-	// repository at runtime.
-	public const string SchemaResourceName = "SemiPlot.Tools.ArchiveSeeder.semiplot_dev.sql";
-
-	// The one probe for "does this database already carry an archive", shared with the test fixture so
-	// that the writer's refusal and the fixture's reuse decision cannot drift apart.
+	// The archive table is provisioning's, not this seeder's, so its presence is a precondition of a
+	// seeding run. Its absence names a database `semibase bench` never touched.
 	public const string ArchiveExistsCommand = "SELECT to_regclass('public.trends') IS NOT NULL;";
 
+	// What a previous seeding run leaves: rows, and the day partitions the run creates before its COPY.
+	// Provisioning creates the table empty and tpdefault with it, so neither of those is evidence of a
+	// seeding run and neither counts here.
+	public const string ArchiveIsSeededCommand = """
+		SELECT EXISTS (SELECT 1 FROM public.trends)
+			OR EXISTS (
+				SELECT 1
+				FROM pg_inherits
+				JOIN pg_class AS partition ON partition.oid = pg_inherits.inhrelid
+				WHERE pg_inherits.inhparent = to_regclass('public.trends')
+					AND partition.relname <> 'tpdefault');
+		""";
+
 	private const string CopyCommand = "COPY public.trends (id, l, t, v, q) FROM STDIN (FORMAT BINARY)";
-
-	public static string ReadSchemaScript()
-	{
-		using var stream = typeof(ArchiveWriter).Assembly.GetManifestResourceStream(SchemaResourceName)
-			?? throw new InvalidOperationException(
-				$"The schema resource '{SchemaResourceName}' is missing from the seeder assembly.");
-
-		using var reader = new StreamReader(stream);
-
-		return reader.ReadToEnd();
-	}
 
 	public async Task<Result<long>> WriteAsync(
 		IEnumerable<ArchiveRow> rows,
@@ -47,18 +44,24 @@ public sealed class ArchiveWriter(string connectionString)
 
 			await connection.OpenAsync(cancellationToken);
 
-			if (await ArchiveExistsAsync(connection, cancellationToken))
+			if (!await ScalarIsTrueAsync(connection, ArchiveExistsCommand, cancellationToken))
 			{
 				return Result.Fail<long>(
-					"public.trends already exists: the seeder writes into an empty archive and never replaces one.");
+					"public.trends does not exist: the archive table is created by provisioning, so run "
+						+ "`semibase bench` against this database before seeding it.");
 			}
 
-			// One transaction over the schema, the partitions and the COPY. A COPY that fails part-way
-			// would otherwise leave public.trends created and partly filled, and every later run would
-			// be refused by the existence check with no recovery but dropping the table by hand.
-			await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+			if (await ScalarIsTrueAsync(connection, ArchiveIsSeededCommand, cancellationToken))
+			{
+				return Result.Fail<long>(
+					"public.trends already carries rows or day partitions: the seeder fills an empty archive "
+						+ "and never adds to one.");
+			}
 
-			await ExecuteAsync(connection, transaction, ReadSchemaScript(), cancellationToken);
+			// One transaction over the partitions and the COPY. A COPY that fails part-way would
+			// otherwise leave the day partitions behind, and every later run would be refused by the
+			// seeded check with no recovery but dropping them by hand.
+			await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
 			foreach (var statement in statements)
 			{
@@ -85,11 +88,12 @@ public sealed class ArchiveWriter(string connectionString)
 		return exception is NpgsqlException or InvalidOperationException or ArgumentException or FormatException;
 	}
 
-	private static async Task<bool> ArchiveExistsAsync(
+	private static async Task<bool> ScalarIsTrueAsync(
 		NpgsqlConnection connection,
+		string statement,
 		CancellationToken cancellationToken)
 	{
-		await using var command = new NpgsqlCommand(ArchiveExistsCommand, connection);
+		await using var command = new NpgsqlCommand(statement, connection);
 
 		return await command.ExecuteScalarAsync(cancellationToken) is true;
 	}

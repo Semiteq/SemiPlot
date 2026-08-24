@@ -5,8 +5,11 @@ namespace SemiPlot.Tests.Data.Integration;
 // The running server the gated tests talk to, whichever path produced it — a started container or the
 // server SEMIPLOT_TEST_PG names. Host and port are kept apart from the connection string because
 // semibase takes them as separate flags.
+//
+// SemibaseExecutable is null on the container path and only there: the image carries its own
+// provisioner, so nothing is resolved from the machine running the suite.
 public sealed record PostgresServer(
-	string SemibaseExecutable,
+	string? SemibaseExecutable,
 	string Host,
 	int Port,
 	string Superuser,

@@ -8,18 +8,23 @@ is remains in `scada-archive.md`; what SemiPlot reads from it remains in `data-i
 
 | Piece | Owner |
 | --- | --- |
-| Database, roles, grants, default-privileges chain, `semiplot_tags` | `semibase create` (`github.com/Semiteq/SemiBase`, pinned `v0.1.0`) |
-| `public.trends`, its daily partitions, the rows | `SemiPlot.Tools.ArchiveSeeder`, connected as `scada_writer` |
+| Database, roles, grants, default-privileges chain, `semiplot_tags`, `public.trends` with `tpdefault` | `semibase bench` (`github.com/Semiteq/SemiBase`), carried in the bench image |
+| The daily partitions and the rows | `SemiPlot.Tools.ArchiveSeeder`, connected as `scada_writer` |
 | Template build, per-class clones, teardown | `SemiPlot.Tests.Data/Integration` |
 
-The seeder creates the archive tables itself rather than having them restored, because that is what
-the SCADA does on a site: it puts SemiBase's default-privileges chain on a path exercised by every
-run instead of leaving it to commissioning day. The schema it applies is `sql/semiplot_dev.sql`,
-carried as an embedded resource — a console binary and a test assembly have no path to the
-repository at runtime.
+The archive table is the provisioner's, not this repository's. `semibase bench` creates it over
+`SET ROLE scada_writer`, so it lands owned exactly as a site's does and SemiBase's
+default-privileges chain sits on a path every seeded run exercises. Nothing here transcribes the
+vendor's DDL: a second definition would be the one exercised daily while the real one decayed.
 
-The seeder never destroys. It refuses a database that already holds `public.trends` and issues no
-`DROP` anywhere. Only the test fixture drops databases, and only ones it created itself.
+The seeder writes into that table the way the SCADA fills its own. It creates the day partitions
+its rows land in and nothing else, so what it applies is a consequence of the slice, not a schema.
+
+The seeder never destroys. An absent `public.trends` is a failure naming the provisioning that did
+not run; a table already carrying rows or day partitions is refused, because those are what a
+previous run leaves. Provisioning creates the table empty and `tpdefault` with it, so neither of
+those is evidence of a seeding and neither counts. The seeder issues no `DROP` anywhere. Only the
+test fixture drops databases, and only ones it created itself.
 
 ## The standard slice
 
@@ -82,20 +87,84 @@ it replaces that method and nothing else.
 
 - One server per run. A container start costs seconds while a `CREATE DATABASE` costs under one, so
   the container is the wrong isolation unit and the database is the right one.
-- One template per run, named after a hash of the seeder's module version, the schema script and the
-  slice parameters. A persistent server therefore cannot serve last week's seed to this week's code.
-  Nothing drops a template afterwards: on the container path the server dies with the run; on the
-  `SEMIPLOT_TEST_PG` path a developer removes accumulated `semiplot_bench_*` databases by hand, and
-  `semiplot_clone_*` with them: a run killed between `ArchiveDatabase.CloneAsync` and its disposal
-  leaves a clone behind, and nothing sweeps those either.
-- One clone of that template per test class. Cloning skips the schema apply and the `COPY` entirely.
+- One provisioned source database per server, `semiplot_provisioned`. Everything else is a
+  `CREATE DATABASE ... TEMPLATE` clone of it, which copies table ownership, `relacl` and
+  `pg_default_acl`; the database-level `CONNECT` is not copied, and `PUBLIC`'s default covers it.
+- One template per run, named after a hash of the seeder's module version and the slice parameters.
+  A persistent server therefore cannot serve last week's seed to this week's code. Nothing drops a
+  template afterwards: on the container path the server dies with the run; on the `SEMIPLOT_TEST_PG`
+  path a developer removes accumulated `semiplot_bench_*` databases by hand, and `semiplot_clone_*`
+  with them: a run killed between `ArchiveDatabase.CloneAsync` and its disposal leaves a clone
+  behind, and nothing sweeps those either.
+- One clone of that template per test class. Cloning skips the `COPY` entirely.
 - Every read in the gated tests connects as `semiplot_reader`, not as the superuser: a grant that
   never reached the reader fails a test here instead of on commissioning day.
 
-Both runtimes the bench needs — a container runtime and the `semibase` binary — are optional on a
-developer machine. Their absence is captured as a stated reason and turned into a skip, never into a
-pass. `SEMIPLOT_REQUIRE_DB` turns that skip into a failure; the CI `data-tests` job sets it. The
-full variable list is in the root `CLAUDE.md`, section *Gated data tests*.
+## Where the provisioning comes from
+
+The provisioner is a layer of the bench image, not a binary on the machine.
+`SemiPlot.Tests.Data/bench/Dockerfile` copies `/semibase` out of `ghcr.io/semiteq/semibase:latest`
+onto the base image `SEMIPLOT_PG_IMAGE` names, and places `provision.sh` in
+`/docker-entrypoint-initdb.d/` with mode 0755. The entrypoint runs it — a mode bit is what
+separates *run* from *source* there — while `initdb` is still in progress, so
+`semibase bench --host /var/run/postgresql --database "$SEMIPLOT_PROVISIONED_DATABASE"` goes over
+the unix socket under local `trust`, before the published port opens. The fixture passes that
+database name in, so `SemibaseProvisioner.ProvisionedDatabase` is the one place it is written.
+`set -e` exits the script on a failed provisioning and the entrypoint, itself under `set -e`,
+aborts with it: the container exits non-zero and no port ever serves an unprovisioned database.
+
+The fixture builds that image in-process from the `bench/` directory copied to the output directory
+— a test assembly has no path to the source tree. The tag carries a digest of the base image, so a
+run under a changed `SEMIPLOT_PG_IMAGE` is never served the build made over the previous base. The
+context is two files and every layer is content-addressed, so a rebuild is a cache lookup.
+
+Readiness is asserted rather than observed once and trusted: the wait strategy runs `psql` inside
+the container against `public.trends` over **TCP**, and the entrypoint's temporary server listens on
+the unix socket only. A container whose provisioning did not complete therefore never becomes ready.
+
+Init scripts run only on an empty `PGDATA`, so this shape provisions a fresh cluster and never a
+reused volume.
+
+The one path that spawns a `semibase` binary is `SEMIPLOT_TEST_PG`, which names a server the
+fixture did not create and cannot put an init script into. It runs the same `bench` command against
+the same `semiplot_provisioned`, so both paths reach one state and no consumer branches on which one
+ran. `SEMIBASE_EXE` is how that binary is named, and it is read on that path alone; nothing searches
+`PATH`. `bench` ends with a real reader `SELECT` and, off a socket host, a real TCP login as
+`semiplot_reader` — so an external server whose `pg_hba.conf` does not admit the reader fails the
+fixture rather than the tests.
+
+The one runtime the bench needs is a container runtime, and it is optional on a developer machine.
+Its absence is captured as a stated reason and turned into a skip, never into a pass.
+`SEMIPLOT_REQUIRE_DB` turns that skip into a failure; the CI `data-tests` job sets it. The full
+variable list is in the root `CLAUDE.md`, section *Gated data tests*.
+
+What the bench bets on is that SemiBase's `latest` stays compatible with this reader. Delivered
+installations update neither service, so the only pair ever newly deployed is the newest provisioner
+with the current reader — which is the pair every run exercises.
+
+That last clause is only true because something fetches the tag, and building the bench image is
+not it. The Engine's builder resolves the provisioner's `FROM` from the local image cache, so a
+rebuild on its own would copy whatever provisioner the machine last happened to hold — for good, on
+a machine that pulled once. `ProvisionerImage` therefore fetches `ghcr.io/semiteq/semibase:latest`
+itself, ahead of the build, and hands the build the digest that fetch resolved —
+`ghcr.io/semiteq/semibase@sha256:…`, as the `PROVISIONER_IMAGE` build argument. The image built is
+then provably the image pulled, rather than two literals that can drift.
+
+It is a separate step rather than `pull` on the build request because the Engine fails a build
+outright when `pull` is set and the registry cannot be reached, even with a usable image already
+cached. Pulled on its own, that case stays recoverable: a machine with no route to the registry runs
+against the image it has, and only a machine with neither route nor image is an unavailable reason.
+A run that fell back that way writes one `[bench]` line to standard error naming the digest it kept
+and why — standard error rather than the test output, because a passing test's output is what a
+console logger drops.
+
+A container run names the provisioner it ran. The fixture asks the started container for
+`/semibase --version` — the bench image carries the binary at that path — and pairs the answer with
+the digest the pull resolved; `TheContainerPathReportsTheProvisionerItResolved` writes the pair into
+the test output, and the digest alone when the executable declines to report a version. The
+`SEMIPLOT_TEST_PG` path writes nothing, because the operator named the binary there and there is
+nothing to resolve. The cost of a moving tag is that one unchanged commit can pass today and fail
+tomorrow, and that report separates *SemiBase moved* from *this repository broke*.
 
 ## The application bench
 
@@ -105,15 +174,34 @@ Avalonia and a container at once, and no CI job does both yet. `ubuntu-latest` h
 gap on a developer machine, and its checks are read from the server and the log rather than from a
 screen, so they run unattended.
 
+It runs the same bench image the gated suite does, so it needs no `semibase` binary either. The
+image provisions `semiplot_provisioned` before the published port opens; the recipe clones that
+database and seeds the clone.
+
+**The clone is not a formality.** `semiplot_provisioned` is the fixed name the fixture treats as its
+pristine source, and every database the gated suite reads is a `TEMPLATE` copy of it. Seeding it by
+hand would leave rows in that source, so pointing `SEMIPLOT_TEST_PG` at this server afterwards would
+hand every gated test a template that already carries rows. Seeding a clone keeps the two uses of
+one server apart.
+
 ```powershell
-docker run -d --name semiplot-bench -e POSTGRES_PASSWORD=<super> -p 55432:5432 postgres:17-alpine
-semibase create -host localhost -port 55432 -database semiplot_bench `
-  -super-password <super> -writer-password <writer> -reader-password <reader>
+docker build -t semiplot-bench:manual SemiPlot/SemiPlot.Tests.Data/bench
+docker run -d --name semiplot-bench -p 55432:5432 `
+  -e POSTGRES_PASSWORD=<super> `
+  -e SEMIBASE_WRITER_PASSWORD=<writer> -e SEMIBASE_READER_PASSWORD=<reader> `
+  -e SEMIPLOT_PROVISIONED_DATABASE=semiplot_provisioned `
+  semiplot-bench:manual
+docker exec semiplot-bench psql --username postgres --dbname postgres `
+  --command "CREATE DATABASE semiplot_app TEMPLATE semiplot_provisioned;"
 dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.ArchiveSeeder.csproj -- `
-  --connection "Host=localhost;Port=55432;Database=semiplot_bench;Username=scada_writer;Password=<writer>" `
-  --admin-connection "Host=localhost;Port=55432;Database=semiplot_bench;Username=postgres;Password=<super>" `
+  --connection "Host=localhost;Port=55432;Database=semiplot_app;Username=scada_writer;Password=<writer>" `
+  --admin-connection "Host=localhost;Port=55432;Database=semiplot_app;Username=postgres;Password=<super>" `
   --end 2026-08-01T00:00:00 --days 1 --pens 8 --seed 1
 ```
+
+`docker logs semiplot-bench` carries the provisioning: a container that reached a serving port ran
+`semibase bench` to completion, because the init script's `set -e` and the entrypoint's own make a
+failed provisioning and a dead container one event.
 
 The connection file goes to `C:\DISTR\Config\SemiPlot\archive-connection.yaml`, or anywhere
 `--config-dir` names. **Seed the archive to an `--end` well in the past**: an archive whose last

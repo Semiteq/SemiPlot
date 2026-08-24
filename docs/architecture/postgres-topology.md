@@ -14,8 +14,8 @@ flowchart TB
         scada["SCADA runtime"]
     end
 
-    subgraph semibase["SemiBase — Go, public, pinned v0.1.0"]
-        prov["semibase create / config / verify"]
+    subgraph semibase["SemiBase — Go, public"]
+        prov["semibase site — a site<br/>semibase bench — the test bench"]
     end
 
     subgraph db["PostgreSQL 17 — 14 is the declared floor"]
@@ -136,9 +136,9 @@ stateDiagram-v2
     Ready: catalogue and rows present
 
     NoServer --> NoDatabase: server started
-    NoDatabase --> NoTrends: semibase create
-    NoTrends --> NoTags: SCADA runs once
-    NoTags --> EmptyTags: semibase create
+    NoDatabase --> NoTrends: provisioning interrupted
+    NoTrends --> NoTags: provisioning completed
+    NoTags --> EmptyTags: provisioning
     EmptyTags --> EmptyArchive: variables configured
     EmptyArchive --> Ready: archiving runs
 
@@ -155,6 +155,11 @@ stateDiagram-v2
     end note
 ```
 
+`semibase site` creates `public.trends` and `semiplot_tags` in one run, so `NoTrends` is not a
+stage a site passes through — it is a provisioning that stopped part-way, or a table removed after
+one. The client still distinguishes the state, and still maps it onto the older *SCADA has not run
+yet* reading; `postgres-instance.md` records that lag and names the slice that closes it.
+
 The split matters and is settled: a **missing** `semiplot_tags` raises `42P01` and is a typed failure
 carrying the table name, while an **empty** one is a successful read of zero rows. Both stay
 distinguishable, which is what SemiBase requires — provisioning skipped versus commissioning
@@ -163,19 +168,22 @@ nothing is broken.
 
 ## The bench
 
-The same provisioning path runs against a container, so a broken grant fails a test rather than
-commissioning day.
+The same provisioner runs against a container, so a broken grant fails a test rather than
+commissioning day. It arrives as a layer of the bench image and runs from the entrypoint's init
+hook, before the published port opens, so nothing is resolved from the machine running the suite.
 
 ```mermaid
 flowchart LR
     tests["SemiPlot.Tests.Data<br/>gated integration tests"]
-    fix["PostgresContainerFixture"]
-    sb["semibase create<br/>pinned v0.1.0 binary"]
+    fix["PostgresContainerFixture<br/>builds the bench image"]
+    sb["semibase bench<br/>init hook, unix socket"]
+    src[("semiplot_provisioned")]
     seed["ArchiveSeeder<br/>deterministic, golden digest"]
     tmpl[("template database")]
     clone[("clone per test class")]
 
-    tests --> fix --> sb --> tmpl
+    tests --> fix --> sb --> src
+    src -- "cloned" --> tmpl
     seed --> tmpl
     tmpl -- "cloned" --> clone
     clone --> tests
@@ -186,5 +194,6 @@ flowchart LR
     style gate fill:none,stroke-dasharray:3 3
 ```
 
-The seeder writes as `scada_writer` and creates the archive tables the way the SCADA does; every read
-in the tests connects as `semiplot_reader`. Nothing in this repository defines a role or a grant.
+The provisioning creates `public.trends` empty; the seeder writes into it as `scada_writer`, the way
+the SCADA writes its own, and adds only the day partitions its rows land in. Every read in the tests
+connects as `semiplot_reader`. Nothing in this repository defines a table, a role or a grant.

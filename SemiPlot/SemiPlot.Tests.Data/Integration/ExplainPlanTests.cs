@@ -40,8 +40,8 @@ public sealed class ExplainPlanTests(
 	private const int ExplainedPenCount = 2;
 
 	// The seeder's day partitions tpYYYYmMMdDD (SemiPlot.Tools.ArchiveSeeder/PartitionScript.cs) are the
-	// ones holding rows. tpdefault is deliberately outside the pattern: it is empty by design
-	// (sql/semiplot_dev.sql), and the planner may legitimately read an empty analysed partition
+	// ones holding rows. tpdefault is deliberately outside the pattern: it arrives empty with the
+	// provisioning and stays that way, and the planner may legitimately read an empty analysed partition
 	// sequentially, so an assertion covering it would fail a correct plan.
 	private const string DayPartition = @"(public\.)?tp\d{4}m\d{2}d\d{2}\b";
 

@@ -294,22 +294,20 @@ public sealed class PostgresHistoryReadTests(
 		Assert.All(result.Value, envelope => Assert.Single(envelope.Timestamps));
 	}
 
-	// The one failure path the read owns: trends absent under a present catalogue, which is the state a
-	// client meets between semibase create and the SCADA's first write.
+	// The one failure path the read owns: trends absent under a present catalogue. Provisioning creates
+	// both, so the state is forced by dropping the table from a clone of the provisioned source.
 	[Fact]
-	public async Task AProvisionedButUnseededDatabaseFailsNamingTrends()
+	public async Task ADroppedTrendsTableFailsNamingTrends()
 	{
 		postgresContainerFixture.RequireAvailable();
 
-		await using var database = await postgresContainerFixture.CreateEmptyDatabaseAsync(
+		await using var database = await postgresContainerFixture.CloneProvisionedAsync(
 			TestContext.Current.CancellationToken);
 
-		var provisioned = await SemibaseProvisioner.CreateAsync(
-			postgresContainerFixture.Server,
-			database.Name,
+		await ArchiveDatabase.ExecuteAsync(
+			database.WriterConnectionString,
+			ArchiveReadSupport.DropTrendsCommand,
 			TestContext.Current.CancellationToken);
-
-		Assert.True(provisioned.IsSuccess, string.Join("; ", provisioned.Errors.Select(error => error.Message)));
 
 		var window = QuietWindow();
 

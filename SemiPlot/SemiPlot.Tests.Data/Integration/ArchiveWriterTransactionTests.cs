@@ -6,8 +6,10 @@ using Xunit;
 
 namespace SemiPlot.Tests.Data.Integration;
 
-// The write goes through the superuser rather than scada_writer: an empty database carries none of
-// semibase's grants, and what is under test here is the transaction, not the privilege chain.
+// The write goes into a clone of the provisioned source, as scada_writer: the writer requires the
+// archive table provisioning creates, and refuses a database that does not carry one. What the
+// transaction owns is everything it creates itself — the day partitions and the rows — so that is
+// what the rollback has to take with it.
 [Collection(ArchiveDatabaseCollection.Name)]
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
@@ -18,8 +20,8 @@ public sealed class ArchiveWriterTransactionTests(PostgresContainerFixture postg
 
 	private static readonly DateTime _end = new(2026, 1, 2, 0, 0, 0, DateTimeKind.Unspecified);
 
-	// The COPY carries one primary key twice, so the server rejects it well after the schema and the
-	// partitions were created — a failure part-way through, forced without a race.
+	// The COPY carries one primary key twice, so the server rejects it well after the day partitions
+	// were created — a failure part-way through, forced without a race.
 	[Fact]
 	public async Task ACopyThatFailsPartWayLeavesNoArchiveBehind()
 	{
@@ -27,19 +29,30 @@ public sealed class ArchiveWriterTransactionTests(PostgresContainerFixture postg
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 
-		await using var database = await postgresContainerFixture.CreateEmptyDatabaseAsync(cancellationToken);
+		await using var database = await postgresContainerFixture.CloneProvisionedAsync(cancellationToken);
 
-		Assert.False(await ArchiveExistsAsync(database.AdminConnectionString, cancellationToken));
+		Assert.True(await ScalarIsTrueAsync(
+			database.AdminConnectionString,
+			ArchiveWriter.ArchiveExistsCommand,
+			cancellationToken));
 
-		var written = await new ArchiveWriter(database.AdminConnectionString)
+		Assert.False(await ScalarIsTrueAsync(
+			database.AdminConnectionString,
+			ArchiveWriter.ArchiveIsSeededCommand,
+			cancellationToken));
+
+		var written = await new ArchiveWriter(database.WriterConnectionString)
 			.WriteAsync(DuplicatingRows(), _start, _end, cancellationToken);
 
 		Assert.True(written.IsFailed);
 		Assert.NotEmpty(written.Errors);
 
 		Assert.False(
-			await ArchiveExistsAsync(database.AdminConnectionString, cancellationToken),
-			"a failed COPY rolled back the schema with it, so public.trends must not exist.");
+			await ScalarIsTrueAsync(
+				database.AdminConnectionString,
+				ArchiveWriter.ArchiveIsSeededCommand,
+				cancellationToken),
+			"a failed COPY rolled back the day partitions with it, so neither a row nor a partition may remain.");
 	}
 
 	private static IReadOnlyList<ArchiveRow> DuplicatingRows()
@@ -61,13 +74,16 @@ public sealed class ArchiveWriterTransactionTests(PostgresContainerFixture postg
 		return rows;
 	}
 
-	private static async Task<bool> ArchiveExistsAsync(string connectionString, CancellationToken cancellationToken)
+	private static async Task<bool> ScalarIsTrueAsync(
+		string connectionString,
+		string statement,
+		CancellationToken cancellationToken)
 	{
 		await using var connection = new NpgsqlConnection(connectionString);
 
 		await connection.OpenAsync(cancellationToken);
 
-		await using var command = new NpgsqlCommand(ArchiveWriter.ArchiveExistsCommand, connection);
+		await using var command = new NpgsqlCommand(statement, connection);
 
 		return await command.ExecuteScalarAsync(cancellationToken) is true;
 	}

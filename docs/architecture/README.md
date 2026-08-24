@@ -33,9 +33,10 @@ implementation plans see `docs/plans/`.
   projects are two, the ownership map for every piece of the bench, and what pins each kind of
   dependency.
 
-Data files referenced from the docs above live in [`sql/`](../../sql) — `semiplot_dev.sql`, the
-vendor archive schema the seeder carries as an embedded resource, and `sql/README.md`, which records
-where it and the committed 140-row real-archive slice came from.
+The one data file referenced from the docs above is the committed 140-row real-archive slice,
+[`SemiPlot.Tests.Data/Fixtures/real-archive-rows.csv`](../../SemiPlot/SemiPlot.Tests.Data/Fixtures).
+The README beside it records where it came from. No archive schema is carried in this repository:
+SemiBase creates `public.trends`, as `bench.md` and `postgres-instance.md` state.
 
 - [trend-feature-spec.md](./trend-feature-spec.md) — canonical requirements + acceptance rubric for
   the trend canvas, derived from MasterSCADA "MasterTrend". The design docs above cross-reference its

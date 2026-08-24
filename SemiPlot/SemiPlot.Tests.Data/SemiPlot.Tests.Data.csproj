@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Docker.DotNet.Enhanced"/>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection"/>
     <PackageReference Include="Microsoft.Extensions.Logging"/>
     <PackageReference Include="Microsoft.NET.Test.Sdk"/>
@@ -20,6 +21,7 @@
 
   <ItemGroup>
     <None Update="Fixtures\real-archive-rows.csv" CopyToOutputDirectory="PreserveNewest"/>
+    <None Update="bench\**" CopyToOutputDirectory="PreserveNewest"/>
   </ItemGroup>
 
   <ItemGroup>

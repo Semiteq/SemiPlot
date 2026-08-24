@@ -16,8 +16,9 @@ dotnet run   --project SemiPlot/SemiPlot.UI/SemiPlot.UI.csproj
 dotnet format SemiPlot.slnx                    # pre-commit hook enforces this
 ```
 
-The bench seeder fills an empty, `semibase create`-provisioned database with a generated archive. It
-refuses a database that already holds `public.trends` and issues no `DROP` anywhere:
+The bench seeder fills a `semibase bench`-provisioned database with a generated archive. The
+provisioning creates `public.trends`, so the seeder requires the table and refuses a database that
+already carries rows or day partitions. It issues no `DROP` anywhere:
 
 ```powershell
 dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.ArchiveSeeder.csproj -- `
@@ -100,21 +101,29 @@ wording** — the message is built in the error's base constructor and stays fre
 
 ### Gated data tests
 
-The integration tests in `SemiPlot.Tests.Data` need a container runtime and the `semibase` binary
-(`github.com/Semiteq/SemiBase`, pinned `v0.1.0`, taken as a release asset — no Go toolchain). Either
-one missing is reported as a skip with a stated reason, never as a pass. Environment carries the
-policy:
+The integration tests in `SemiPlot.Tests.Data` need a container runtime and nothing else. The
+provisioner rides in as an image layer: `SemiPlot.Tests.Data/bench/Dockerfile` copies `/semibase`
+out of `ghcr.io/semiteq/semibase:latest` onto the base image and runs `semibase bench` from
+`/docker-entrypoint-initdb.d/`, over the unix socket, before the published port opens. A missing
+container runtime is reported as a skip with a stated reason, never as a pass. Environment carries
+the policy:
 
 | Variable | Effect | Unset means |
 | --- | --- | --- |
-| `SEMIPLOT_TEST_PG` | Connection string of an existing semibase-provisioned server to use instead of a container; the fixture re-runs `semibase create` against it, which is idempotent | start a container |
-| `SEMIPLOT_PG_IMAGE` | Image tag for that container | `postgres:17-alpine` |
+| `SEMIPLOT_TEST_PG` | Connection string of an existing server to use instead of a container. This is the one path that spawns a `semibase` binary: the fixture runs `semibase bench` against it, which is idempotent | start a container |
+| `SEMIPLOT_PG_IMAGE` | Base image the bench image is built over (`--build-arg BASE_IMAGE`), so it selects the PostgreSQL version | `postgres:17-alpine` |
 | `SEMIPLOT_REQUIRE_DB` | `1` or `true` turns an unavailable runtime from a skip into a failure. The CI `data-tests` job sets it; a developer machine must not | skip with a reason |
-| `SEMIBASE_EXE` | Path to the `semibase` binary | search `PATH` |
-| `SEMIBASE_WRITER_PASSWORD`, `SEMIBASE_READER_PASSWORD` | Role passwords for `semibase create`, read **only** on the `SEMIPLOT_TEST_PG` path — a real server's roles already have passwords. The container path uses fixed dummy passwords of the fixture's own, so a developer needs no variable at all | required on the `SEMIPLOT_TEST_PG` path, unused otherwise |
+| `SEMIBASE_EXE` | Path to a `semibase` binary, v0.3.0 or later. Read **only** on the `SEMIPLOT_TEST_PG` path; nothing searches `PATH` | the `SEMIPLOT_TEST_PG` path fails, naming the unset variable; the container path is unaffected |
+| `SEMIBASE_WRITER_PASSWORD`, `SEMIBASE_READER_PASSWORD` | Role passwords for `semibase bench`, read **only** on the `SEMIPLOT_TEST_PG` path — a real server's roles already have passwords. The container path passes fixed dummy passwords of the fixture's own into the container, so a developer needs no variable at all | required on the `SEMIPLOT_TEST_PG` path, unused otherwise |
 
-`SEMIBASE_SUPER_PASSWORD` is passed to `semibase` by the fixture, taken from the container or from
-the `SEMIPLOT_TEST_PG` connection string; setting it in the shell changes nothing.
+`SEMIBASE_SUPER_PASSWORD` is passed to `semibase` by the fixture, taken from the `SEMIPLOT_TEST_PG`
+connection string; setting it in the shell changes nothing.
+
+Both paths provision one fixed database, `semiplot_provisioned` — neither can know the seeded
+template's per-build name — and everything else the suite needs is a
+`CREATE DATABASE ... TEMPLATE` clone of it. The fixture passes that name into the container and
+gives it to `semibase bench` on the `SEMIPLOT_TEST_PG` path, so both paths reach the same state and
+no consumer carries a branch.
 
 ## Code Style
 
@@ -213,8 +222,9 @@ No abbreviations in names.
 - The bench seeder `SemiPlot.Tools.ArchiveSeeder` owns verbatim copies of `SyntheticValueWalk`,
   `SyntheticPenCatalog` and `SyntheticPen` and must not reference `SemiPlot.DataSource.Stub`: the
   stub evolves for UI reasons while the bench stays frozen, a golden-digest test pins its output, and
-  later slices develop against that output. `sql/semiplot_dev.sql` is an `EmbeddedResource` of that
-  project. Roles, grants and `semiplot_tags` are SemiBase's and are never defined in this repository.
+  later slices develop against that output. `public.trends`, `semiplot_tags`, the two roles and
+  their grants are SemiBase's and are never defined in this repository — the seeder fills the
+  archive table and creates only the day partitions its rows land in.
 - A diagnostic question the exception itself cannot answer is resolved by a cold-path reader: an
   internal sealed type beside the provider that opens a fresh connection on the failure path
   (`MissingRelationProbe` for `42P01`, `StatementTimeoutReader` for `57014`). It runs from

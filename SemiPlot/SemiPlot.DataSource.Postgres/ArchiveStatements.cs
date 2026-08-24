@@ -13,7 +13,7 @@ internal static class ArchiveStatements
 	public const string TagCatalogRelation = "semiplot_tags";
 
 	/// <summary>
-	/// The SCADA's sample table.
+	/// The sample table the SCADA writes rows into.
 	/// </summary>
 	public const string TrendsRelation = "trends";
 
@@ -106,14 +106,5 @@ internal static class ArchiveStatements
 	/// </summary>
 	public const string EffectiveStatementTimeout = """
 		SELECT setting FROM pg_settings WHERE name = 'statement_timeout';
-		""";
-
-	/// <summary>
-	/// Answers which of the two relations a <c>42P01</c> refers to. The names are unqualified, matching
-	/// the reads, so the probe resolves through the same <c>search_path</c> the failing statement did.
-	/// </summary>
-	public const string RelationProbe = """
-		SELECT to_regclass('semiplot_tags') IS NOT NULL AS tags_present,
-		       to_regclass('trends') IS NOT NULL AS trends_present;
 		""";
 }

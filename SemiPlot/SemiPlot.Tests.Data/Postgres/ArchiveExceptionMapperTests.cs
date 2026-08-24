@@ -83,15 +83,6 @@ public sealed class ArchiveExceptionMapperTests
 	}
 
 	[Theory]
-	[InlineData(null)]
-	[InlineData("")]
-	[InlineData("   ")]
-	public void AnUndefinedTableWithNoResolvedRelationIsACallerDefect(string? relation)
-	{
-		Assert.ThrowsAny<ArgumentException>(() => Map(Postgres("42P01"), relation));
-	}
-
-	[Theory]
 	[InlineData("28P01")]
 	[InlineData("28000")]
 	[InlineData("42501")]
@@ -190,11 +181,11 @@ public sealed class ArchiveExceptionMapperTests
 		return new PostgresException("the server said so", "ERROR", "ERROR", sqlState);
 	}
 
-	private static Error Map(Exception exception, string? missingRelation = null, TimeSpan? effectiveBound = null)
+	private static Error Map(Exception exception, string? relation = null, TimeSpan? effectiveBound = null)
 	{
 		var mapper = new ArchiveExceptionMapper(ConnectionSettingsFactory.Create(host: Host, port: Port));
 
-		return mapper.Map(exception, missingRelation, effectiveBound);
+		return mapper.Map(exception, relation, effectiveBound);
 	}
 
 	private static void AssertEndpoint(string host, int port, string database)

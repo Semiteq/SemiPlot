@@ -30,8 +30,9 @@ flowchart TB
         prov2["PostgresDataProvider"]
     end
 
-    scada -- "creates and writes" --> trends
+    scada -- "writes rows" --> trends
     scada -- "creates and writes" --> msgs
+    prov -- "creates, never writes rows" --> trends
     prov -- "creates, never writes rows" --> tags
     prov -- "creates" --> roles
     prov2 -- "SELECT only" --> trends
@@ -119,7 +120,7 @@ Three of the four provider members are implemented — the pen catalogue, the ar
 extent and the windowed history read. `Subscribe` returns an empty sequence until
 `postgres-realtime-poll` fills it.
 
-## The four provisioning states, and the fifth
+## The three provisioning states, and the fourth
 
 A client can start at any point in provisioning, and every state below is normal rather than a crash.
 
@@ -129,20 +130,18 @@ stateDiagram-v2
     [*] --> NoServer
     NoServer: nothing answers
     NoDatabase: server answers, database absent
-    NoTrends: database present, trends absent
-    NoTags: trends present, semiplot_tags absent
+    NoTables: database present, archive tables absent
     EmptyTags: semiplot_tags present but empty
     EmptyArchive: trends present, no rows
     Ready: catalogue and rows present
 
     NoServer --> NoDatabase: server started
-    NoDatabase --> NoTrends: provisioning interrupted
-    NoTrends --> NoTags: provisioning completed
-    NoTags --> EmptyTags: provisioning
+    NoDatabase --> NoTables: provisioning interrupted
+    NoTables --> EmptyTags: provisioning completed
     EmptyTags --> EmptyArchive: variables configured
     EmptyArchive --> Ready: archiving runs
 
-    note right of NoTags
+    note right of NoTables
         typed failures:
         unreachable · database missing
         not initialised, carrying the table
@@ -155,10 +154,11 @@ stateDiagram-v2
     end note
 ```
 
-`semibase site` creates `public.trends` and `semiplot_tags` in one run, so `NoTrends` is not a
+`semibase site` creates `public.trends` and `semiplot_tags` in one run, so `NoTables` is not a
 stage a site passes through — it is a provisioning that stopped part-way, or a table removed after
-one. The client still distinguishes the state, and still maps it onto the older *SCADA has not run
-yet* reading; `postgres-instance.md` records that lag and names the slice that closes it.
+one. Both tables are absent for the same reason and both come back from the same command, so the
+client reports whichever table the failing statement names and sends the operator to `semibase site`
+either way.
 
 The split matters and is settled: a **missing** `semiplot_tags` raises `42P01` and is a typed failure
 carrying the table name, while an **empty** one is a successful read of zero rows. Both stay

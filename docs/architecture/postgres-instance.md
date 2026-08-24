@@ -27,10 +27,10 @@ commissioning day and the copy that has drifted.
   `ArchiveStatements.cs` needs more. The bucketing query `data-integration.md` quotes would read
   `date_bin`, which arrives in 14, if the slice that ships it is ever revived.
 - Reachable on the loopback interface plus the operator network only.
-- The archive database holds the SCADA's `trends` and `messages` plus the one object we add,
-  `semiplot_tags`. Nothing of ours runs inside the database: no summary tables, triggers, functions,
-  scheduled jobs or extensions `[DEC:vendor-layers]`. The reasoning is in
-  `history-read-path-evaluation.md`.
+- The archive database holds `trends`, which the SCADA writes and SemiBase creates, `semiplot_tags`,
+  which is SemiBase's outright, and `messages`, which is the SCADA's outright. Nothing of ours runs
+  inside the database: no summary tables, triggers, functions, scheduled jobs or extensions
+  `[DEC:vendor-layers]`. The reasoning is in `history-read-path-evaluation.md`.
 
 ## The reader role
 
@@ -81,25 +81,22 @@ If several client versions ever have to coexist against one database, a `semiplo
 carrying a schema version is the intended mechanism. It is not needed while a single client version
 is deployed.
 
-## Four states SemiPlot must survive
+## Three states SemiPlot must survive
 
 Provisioning is a sequence and the client can be started at any point in it. Each state below is
 normal, carries its own message, and is never a crash:
 
-1. no database — nothing answers at the configured address;
-2. database without `trends` — provisioning stopped part-way, or the table was removed after it;
-3. `trends` without `semiplot_tags` — provisioning is not finished;
-4. `semiplot_tags` present but empty — commissioning is not finished.
+1. no database — the server answers, but holds no database of that name (`3D000`);
+2. database without the archive tables — provisioning stopped part-way, or a table was removed
+   after it;
+3. `semiplot_tags` present but empty — commissioning is not finished.
 
 The behaviour for each is specified in `data-integration.md`.
 
-**The second state has moved and the code has not.** SemiBase creates `public.trends` in both
-`semibase site` and `semibase bench`, so on a commissioned site the archive table arrives with the
-database and a missing `trends` is no longer *the SCADA has not run yet*. SemiPlot's own mapping
-still says it is — `StartupFailureMapper`, `MissingRelationProbe` and `ArchiveNotInitialisedError`
-carry the older model, and the slice `missing-relation-probe-removal` is what corrects them. Read
-the list above as the states the client distinguishes, not as what a site's provisioning leaves
-behind.
+SemiBase creates `public.trends` and `semiplot_tags` in one run, in both `semibase site` and
+`semibase bench`, so both archive tables arrive with the database. Either one absent is the same
+state — provisioning did not complete — and one command restores both, which is why the second
+state covers the pair rather than ordering them.
 
 One operational state belongs beside them: a non-empty `tpdefault` means a daily partition was
 missing at write time. The partition itself arrives with the provisioning and is empty by

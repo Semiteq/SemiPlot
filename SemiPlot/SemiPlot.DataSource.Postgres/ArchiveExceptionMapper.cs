@@ -14,8 +14,9 @@ namespace SemiPlot.DataSource.Postgres;
 /// the provider boundary. Constructed rather than static because the public types demand values no
 /// exception carries: <c>Host</c>, <c>Port</c> and <c>Database</c> on every <c>Archive*</c> type, the
 /// username on <see cref="ArchiveAccessDeniedError"/>. The effective <c>statement_timeout</c> on
-/// <see cref="ArchiveQueryTimedOutError"/> arrives as a call argument instead, the same way the missing
-/// relation does: reading it is a round trip, and the caller already owns the asynchronous failure path.
+/// <see cref="ArchiveQueryTimedOutError"/> arrives as a call argument instead: reading it is a round trip,
+/// and the caller already owns the asynchronous failure path. The relation a <c>42P01</c> names arrives the
+/// same way, from the read whose own statement touches it.
 /// <para>
 /// Cancellation is not part of the vocabulary. A caller's token cancelling raises
 /// <see cref="OperationCanceledException"/>, which leaves here as it arrived: in .NET a cancelled
@@ -36,11 +37,11 @@ internal sealed class ArchiveExceptionMapper
 	}
 
 	/// <param name="exception">What the read threw.</param>
-	/// <param name="missingRelation">
-	/// The relation a <c>42P01</c> refers to, already resolved by the caller. Required on that path and
-	/// unused on every other: <c>ArchiveNotInitialisedError.Table</c> is what consumers route on once
-	/// its <c>MissingObject</c> says a table is what is absent. Passed explicitly on every call, null
-	/// included, so a new call site cannot omit it by accident.
+	/// <param name="relation">
+	/// The relation the calling statement touches, supplied by the read that failed. Required on the
+	/// <c>42P01</c> path and unused on every other: it fills <c>ArchiveNotInitialisedError.Table</c>, which
+	/// names the absent object in the detail line and carries no remedy of its own. Passed explicitly on
+	/// every call, null included, so a new call site cannot omit it by accident.
 	/// </param>
 	/// <param name="effectiveBound">
 	/// The server's <c>statement_timeout</c>, already resolved by the caller on the <c>57014</c> path and
@@ -50,7 +51,7 @@ internal sealed class ArchiveExceptionMapper
 	/// a second <c>57014</c> entry point that forgot it would silently report no bound, and the compiler
 	/// is what keeps the read and the mapping paired.
 	/// </param>
-	public Error Map(Exception exception, string? missingRelation, TimeSpan? effectiveBound)
+	public Error Map(Exception exception, string? relation, TimeSpan? effectiveBound)
 	{
 		ArgumentNullException.ThrowIfNull(exception);
 
@@ -59,7 +60,7 @@ internal sealed class ArchiveExceptionMapper
 			throw exception;
 		}
 
-		return Classify(exception, missingRelation, effectiveBound).CausedBy(exception);
+		return Classify(exception, relation, effectiveBound).CausedBy(exception);
 	}
 
 	// Everything Npgsql raises that is not a server-delivered error is a connection-level failure: a
@@ -70,20 +71,11 @@ internal sealed class ArchiveExceptionMapper
 		return exception is NpgsqlException or SocketException or TimeoutException;
 	}
 
-	// The provider substitutes its own statement's relation before calling, so an unnamed one here is a
-	// caller defect rather than a state to paper over.
-	private static string RequireRelation(string? missingRelation)
-	{
-		ArgumentException.ThrowIfNullOrWhiteSpace(missingRelation);
-
-		return missingRelation;
-	}
-
-	private Error Classify(Exception exception, string? missingRelation, TimeSpan? effectiveBound)
+	private Error Classify(Exception exception, string? relation, TimeSpan? effectiveBound)
 	{
 		if (exception is PostgresException postgres)
 		{
-			return MapSqlState(postgres, missingRelation, effectiveBound);
+			return MapSqlState(postgres, relation, effectiveBound);
 		}
 
 		if (IsConnectionFailure(exception))
@@ -94,7 +86,7 @@ internal sealed class ArchiveExceptionMapper
 		return new ArchiveReadFailedError(_settings.Host, _settings.Port, _settings.Database, string.Empty);
 	}
 
-	private Error MapSqlState(PostgresException postgres, string? missingRelation, TimeSpan? effectiveBound)
+	private Error MapSqlState(PostgresException postgres, string? relation, TimeSpan? effectiveBound)
 	{
 		var host = _settings.Host;
 		var port = _settings.Port;
@@ -113,7 +105,7 @@ internal sealed class ArchiveExceptionMapper
 				port,
 				database,
 				ArchiveObject.Table,
-				RequireRelation(missingRelation)),
+				relation),
 			PostgresErrorCodes.InvalidPassword
 				or PostgresErrorCodes.InvalidAuthorizationSpecification
 				or PostgresErrorCodes.InsufficientPrivilege

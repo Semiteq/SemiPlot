@@ -116,26 +116,19 @@ public static class StartupFailureMapper
 		return new StartupFailureView("The archive is not provisioned", detail, DescribeMissingObjectRemedy(error));
 	}
 
-	// The remedy follows the absent object, not the state: 3D000 and a missing semiplot_tags both end at
-	// semibase create, while a missing trends is the SCADA's own table and SemiBase never creates it.
+	// The remedy follows the state, never the table name: one provisioning run creates the database and
+	// every table SemiPlot reads, so both states end at the same command. The missing-database state adds
+	// the connection file, because a wrong database name reaches the server and looks the same.
 	private static string DescribeMissingObjectRemedy(ArchiveNotInitialisedError error)
 	{
 		if (error.MissingObject == ArchiveObject.Database)
 		{
-			return "Run 'semibase create' against this server to provision the database, or correct the "
+			return "Run 'semibase site' against this server to provision the database, or correct the "
 				+ "database name in the connection file.";
 		}
 
-		return error.Table switch
-		{
-			"trends" =>
-				"Table 'trends' belongs to Simple-Scada. Run the SCADA against this database once so it "
-				+ "creates its archive; commissioning is unfinished, not provisioning.",
-			"semiplot_tags" =>
-				"Table 'semiplot_tags' belongs to SemiBase. Run 'semibase create' against this database "
-				+ "to finish provisioning.",
-			_ => $"Create table '{error.Table}' in this database; its provisioning is unfinished."
-		};
+		return $"Table '{error.Table}' is created by provisioning. Run 'semibase site' against this "
+			+ "database to finish provisioning it.";
 	}
 
 	private static StartupFailureView MapArchiveQueryTimedOut(ArchiveQueryTimedOutError error)

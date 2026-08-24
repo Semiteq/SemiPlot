@@ -6,8 +6,10 @@ How SemiPlot reads it is in `data-integration.md`; the database instance we ship
 
 ## Scope and ownership
 
-Simple-Scada 2 creates the archive tables, writes them, thins them, creates their partitions and
-deletes old data. SemiPlot is a strict read-only consumer `[DEC:read-only-consumer]`.
+Left to itself, Simple-Scada 2 creates the archive tables, writes them, thins them, creates their
+partitions and deletes old data. This document describes that vendor behaviour; on a SemiPlot site
+`semibase site` creates `public.trends` ahead of the SCADA, which `postgres-instance.md` states.
+SemiPlot is a strict read-only consumer either way `[DEC:read-only-consumer]`.
 
 Consequences that constrain every design decision downstream:
 

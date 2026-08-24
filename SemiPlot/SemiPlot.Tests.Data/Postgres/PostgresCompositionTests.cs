@@ -31,7 +31,6 @@ public sealed class PostgresCompositionTests
 			dataSource,
 			new ArchiveTimeConverter(settings.SourceTimeZone),
 			new ArchiveExceptionMapper(settings),
-			new MissingRelationProbe(dataSource, NullLogger<MissingRelationProbe>.Instance),
 			new StatementTimeoutReader(dataSource, NullLogger<StatementTimeoutReader>.Instance),
 			NullLogger<PostgresDataProvider>.Instance);
 	}
@@ -91,14 +90,6 @@ public sealed class PostgresCompositionTests
 	}
 
 	[Fact]
-	public void AddPostgresDataResolvesTheMissingRelationProbe()
-	{
-		using var services = BuildProvider();
-
-		Assert.NotNull(services.GetRequiredService<MissingRelationProbe>());
-	}
-
-	[Fact]
 	public void AddPostgresDataResolvesTheStatementTimeoutReader()
 	{
 		using var services = BuildProvider();
@@ -136,7 +127,6 @@ public sealed class PostgresCompositionTests
 	[InlineData(typeof(IScheduler))]
 	[InlineData(typeof(ArchiveDataSource))]
 	[InlineData(typeof(ArchiveExceptionMapper))]
-	[InlineData(typeof(MissingRelationProbe))]
 	[InlineData(typeof(StatementTimeoutReader))]
 	[InlineData(typeof(ArchiveTimeConverter))]
 	[InlineData(typeof(PostgresConnectionSettings))]

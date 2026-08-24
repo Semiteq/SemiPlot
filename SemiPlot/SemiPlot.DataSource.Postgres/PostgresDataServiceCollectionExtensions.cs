@@ -22,18 +22,16 @@ public static class PostgresDataServiceCollectionExtensions
 		services.AddSingleton(settings);
 		services.AddSingleton<ArchiveDataSource>();
 		services.AddSingleton(new ArchiveTimeConverter(settings.SourceTimeZone));
-		services.AddSingleton<MissingRelationProbe>();
 		services.AddSingleton<StatementTimeoutReader>();
 		services.AddSingleton(new ArchiveExceptionMapper(settings));
 
-		// A factory rather than type activation: three of the provider's constructor parameters are internal
+		// A factory rather than type activation: two of the provider's constructor parameters are internal
 		// types, so its constructor is internal too and the container's public-constructor lookup would not
 		// find it.
 		services.AddSingleton<IDataProvider>(provider => new PostgresDataProvider(
 			provider.GetRequiredService<ArchiveDataSource>(),
 			provider.GetRequiredService<ArchiveTimeConverter>(),
 			provider.GetRequiredService<ArchiveExceptionMapper>(),
-			provider.GetRequiredService<MissingRelationProbe>(),
 			provider.GetRequiredService<StatementTimeoutReader>(),
 			provider.GetRequiredService<ILogger<PostgresDataProvider>>()));
 

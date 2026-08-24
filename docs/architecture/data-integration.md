@@ -460,15 +460,14 @@ so no failure crosses to the UI thread (`DA-1`).
 | Query timeout | failed `Result` | Same as above; the timeout is a configured bound, not an accident |
 | The database does not exist (SQLSTATE `3D000`, the server answers) | failed `Result` carrying `ArchiveNotInitialisedError` whose `MissingObject` is `Database`, distinguished from a connection failure | "Archive not initialised" — the remedy is running `semibase site` |
 | The credentials are refused or a grant is missing (SQLSTATE `28P01`, `28000`, `42501`) | failed `Result`, distinguished from a connection failure | "Archive access denied" — the remedy is the user, password or grants, not the network |
-| `trends` does not exist (provisioning stopped part-way) | failed `Result`, distinguished from a connection failure | "Archive not initialised" — the remedy is running `semibase site` |
+| `trends` does not exist (provisioning stopped part-way) | failed `Result` carrying `ArchiveNotInitialisedError` whose `MissingObject` is `Table` and whose `Table` is `trends` | "Archive not initialised" — the remedy is running `semibase site` |
 | `semiplot_tags` does not exist (provisioning unfinished) | failed `Result` carrying `ArchiveNotInitialisedError` whose `MissingObject` is `Table` and whose `Table` is `semiplot_tags` | "Archive not initialised" — the remedy is running `semibase site` |
 | `semiplot_tags` present but empty | empty pen list, success | "No variables configured" — commissioning is not finished |
 | Archive present but no rows in the window | success, empty envelope list — no pen has rows, so no pen gets an envelope | Empty chart, no error |
 
-The `trends` row carries a lag. SemiBase creates that table in both its commands, so a commissioned
-site has it from provisioning; the mapping above still reads its absence as an installation the
-SCADA has not written to yet, and `missing-relation-probe-removal` is the slice that corrects the
-mapper. `postgres-instance.md` holds the full statement.
+The two table rows carry the same remedy. SemiBase creates `trends` and `semiplot_tags` in one run,
+so either one absent is a provisioning that did not complete, and the rows differ only in the table
+the detail line names. `postgres-instance.md` holds the full statement.
 
 ### Two error planes
 
@@ -512,12 +511,12 @@ schema error because it sends the operator to a separate remedy: fix the credent
 provisioning. `3D000` and `42P01` share `ArchiveNotInitialisedError` and stay apart inside it on
 `MissingObject`, because both say the same thing — something the read needs was never created — and
 differ only in what to create. On the table case the type carries the table name rather than assuming
-`trends`, because `42P01` is table-agnostic and the remedy follows the table — `trends` is the
-SCADA's, `semiplot_tags` is SemiBase's. On the database case `Table` is null: `3D000` names no
-relation, and the remedy is `semibase site`. `ArchiveReadFailedError` closes the mapping: anything
-the table above does not name arrives as that type carrying its SQLSTATE, so
-nothing escapes as an exception and nothing crosses as an untyped `Result.Fail(string)` a consumer
-cannot route on.
+`trends`, because `42P01` is table-agnostic and the name is what the detail line reports; the remedy
+is `semibase site` for either table, since one provisioning run creates both. On the database case
+`Table` is null: `3D000` names no relation, and the remedy is `semibase site`.
+`ArchiveReadFailedError` closes the mapping: anything the table above does not name arrives as that
+type carrying its SQLSTATE, so nothing escapes as an exception and nothing crosses as an untyped
+`Result.Fail(string)` a consumer cannot route on.
 
 **Seven public types, and every one of them reaches the operator.** `StartupFailureMapper`
 (`SemiPlot.UI/Startup/`) turns each into a title, a detail and a remedy of its own. The totality of
@@ -537,13 +536,13 @@ pans, so the two will have to be told apart — but no member of `IDataProvider`
 raises `OperationCanceledException`, which the mapper rethrows rather than turning into a failed
 `Result`. The slice that gives the interface tokens owns splitting the two.
 
-The bound the error carries is read only once a `57014` has already arrived, on the same
-asynchronous failure path that runs the missing-relation probe, from a fresh connection of the same
-reader role. No successful read pays for it. The number is the one the failing read ran under
-because SemiPlot sends no `statement_timeout` in any form, so every session of that role runs under
-the role default. That holds while the default is static: role and database defaults bind at backend
-start and a pooled physical connection keeps its startup value, so an administrative change to the
-role default mid-run can leave one report one increment stale. A read-back that cannot run reports
+The bound the error carries is read only once a `57014` has already arrived, on an asynchronous
+failure path that runs nothing else, from a fresh connection of the same reader role. No successful
+read pays for it. The number is the one the failing read ran under because SemiPlot sends no
+`statement_timeout` in any form, so every session of that role runs under the role default. That
+holds while the default is static: role and database defaults bind at backend start and a pooled
+physical connection keeps its startup value, so an administrative change to the role default mid-run
+can leave one report one increment stale. A read-back that cannot run reports
 `TimeSpan.Zero`, and so does a server that bounds nothing; the two stay apart in the log and
 collapse in the operator sentence, because neither has a number.
 
@@ -671,8 +670,8 @@ inside step 2:
 2. Unit tests pin one plain literal per operational statement, held in
    `SemiPlot.Tests.Data/Postgres/ArchiveStatementTextTests.cs` and compared character for character
    against the constant. The three pinned are the ones the read path issues — the pen catalogue, the
-   archive extent and the sparse history window; `EffectiveStatementTimeout` and `RelationProbe` are
-   cold-path diagnostics and carry no literal. `SparseHistoryWindow` is the only statement taking
+   archive extent and the sparse history window; `EffectiveStatementTimeout` is a cold-path
+   diagnostic and carries no literal. `SparseHistoryWindow` is the only statement taking
    parameters, and its binder `PostgresDataProvider.BindWindow` is pinned against that statement's
    own parameter names. A change in the code therefore shows up as a failing test. None of it covers
    this document: nothing checks that the SQL quoted above still matches the constants, so whoever
@@ -696,7 +695,8 @@ When a chart is empty, check in this order. Each step distinguishes a different 
 
 1. Is the database reachable at all? A connection failure is reported distinctly from an empty
    archive.
-2. Does `trends` exist? If not, the SCADA project has never run against this database.
+2. Does `trends` exist? If not, provisioning did not complete: `semibase site` creates it and
+   `semiplot_tags` in one run.
 3. `SELECT max(t) FROM trends WHERE id = <one known id> AND l = 0` — if the newest sample is old,
    archiving has stopped and the problem is on the SCADA side, not ours.
 4. Is the pen present in `semiplot_tags`? An unmapped variable cannot be drawn even though its data

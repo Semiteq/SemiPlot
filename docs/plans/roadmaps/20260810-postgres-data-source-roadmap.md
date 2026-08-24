@@ -47,6 +47,14 @@ the other to look for a cancelled read. The reader stays; only `MissingRelationP
 fallbacks are exact, is removed, and it moves to a slice of its own because it changes production
 code while the rest of the cleanup does not.
 
+**Re-sliced 2026-08-24** after SemiBase shipped more than the roadmap asked of it.
+`semibase-container-provisioning` and `archive-schema-ownership` merge into one slice, because they
+stopped being separable: the container's init script provisions the database, that provisioning now
+creates `public.trends`, and the seeder refuses an archive that already exists. Adopting the image
+without inverting the seeder's precondition is not a smaller change, it is a broken bench. The
+column-shape check the schema slice planned for `semibase verify` is gone with the command that would
+have carried it — a tool that creates the table has no shape to verify against.
+
 **The planning apparatus scales to the risk the slice declares.** A low-risk slice takes a
 one-page plan and one review round; the full apparatus — a long plan, several review rounds — is for
 slices rated medium or higher. Five review rounds over a slice that corrects two comments is a cost
@@ -64,10 +72,10 @@ it is developed against, and a live demo bench that retires the synthetic stub. 
 when the application, pointed at a populated database, draws real history, follows the live edge,
 selects archive layers by window width, and the stub project is gone.
 
-Five of the slices below are infrastructure rather than product: the bench provisions from a
-container instead of a binary found on the machine, `SemiPlot.UI` and `SemiPlot.Tests` stop being
-forbidden to build on Linux, the archive schema moves to SemiBase, the apparatus around the read path
-is cut back, and one cold-path reader whose fallbacks already answer for it is removed. They precede the
+Four of the slices below are infrastructure rather than product: the bench provisions from a
+container that carries its own provisioner and its own archive table, `SemiPlot.UI` and
+`SemiPlot.Tests` stop being forbidden to build on Linux, the apparatus around the read path is cut
+back, and one cold-path reader whose fallbacks already answer for it is removed. They precede the
 closing slice because its end-to-end journeys need a runner that can hold both a container and the
 UI, and because two of them edit files the closing slice also edits.
 
@@ -144,10 +152,9 @@ The database side is additive only, and the customer's production archive is rea
 no slice inserts a row into its `trends` or `messages`, creates an index on them, or attaches a
 trigger. Writing belongs to the bench alone, in a development database of our own. The archive table
 and its `tpdefault` catch-all are created there from the `scada_writer` role — by the seeder today,
-by `semibase create` under its flag once archive-schema-ownership ships — the seeder fills them, and
-the live-demo slice keeps appending. This repository creates no object in an archive at all:
-`semiplot_tags` is created by `semibase create`, which owns every role, grant and table on that
-side.
+by `semibase` once semibase-container-provisioning ships — the seeder fills them, and the live-demo
+slice keeps appending. This repository creates no object in an archive at all: `semiplot_tags` and
+the archive table are both `semibase`'s, which owns every role, grant and table on that side.
 
 ## Guard strategy
 
@@ -599,44 +606,64 @@ it.
 - **Branch:** postgres-gap-reconstruction
 
 ### Slice semibase-container-provisioning — Status: PENDING
-- **Scope:** The bench stops resolving a provisioning binary from the machine and provisions from a
-  container image instead. Two images, layered: SemiBase publishes one carrying its own static
-  binary, and a Dockerfile in this repository copies that binary out of it onto the PostgreSQL base
-  image together with a provisioning script. The official PostgreSQL entrypoint runs everything in
-  `/docker-entrypoint-initdb.d/` before the server accepts an external connection, so Testcontainers'
-  ordinary readiness check already waits for provisioning to finish. That is why the bench runs one
-  container and not two: no Docker network, no one-shot wait strategy, no second container to
-  sequence. None of this reaches a site: there PostgreSQL is a Windows service, `semibase` is an
-  executable run once at commissioning, and no container exists. The image is a way of pinning what
-  the tests provision with.
+- **Scope:** The bench stops resolving a provisioning binary from the machine, and stops carrying the
+  vendor's archive DDL. Both follow from one change: SemiBase now ships a container image, and the
+  provisioning inside it creates `public.trends` itself.
 
-  `SemibaseBinary`'s `PATH` search dies with this slice and CI drops its release-download step. The
-  code that spawns the binary as a process does **not** die: the `SEMIPLOT_TEST_PG` path still runs
-  `semibase create` against a server the fixture did not create, and it must, because an init script
-  provisions only the fresh cluster inside its own container and can never reach an external one.
-  `SEMIBASE_EXE` therefore survives as that path's only way to name the binary.
-  `SEMIPLOT_PG_IMAGE` keeps its meaning but moves down a layer: it names the base image the
-  Dockerfile builds from, not the image the fixture starts.
+  A Dockerfile in this repository copies the binary out of `ghcr.io/semiteq/semibase` onto the
+  PostgreSQL base image with a script in `/docker-entrypoint-initdb.d/`. The official entrypoint runs
+  that script against a temporary server started with `listen_addresses` empty, reachable only over
+  the unix socket, and it finishes before the mapped port accepts anything — so Testcontainers'
+  ordinary readiness wait already covers provisioning, and the bench runs one container rather than
+  two with a network between them. None of this reaches a site: there PostgreSQL is a Windows
+  service, `semibase` runs once at commissioning, and no container exists.
 
-  The SemiBase image tracks `latest` rather than a pinned tag; the PostgreSQL base image the
-  Dockerfile builds from stays whatever `SEMIPLOT_PG_IMAGE` names. Delivered installations update
-  neither service, so every commissioned site is a frozen pair validated once at commissioning that
-  will not change again; the only pair that will ever be newly deployed is the newest `semibase`
-  with the current reader. A pinned tag would spend the bench proving a combination no site will
-  ever receive. The cost is that one unchanged commit can pass today and fail tomorrow, and it is
-  paid by printing the resolved version into the test output so a failure names its own cause.
+  **The seeder's precondition inverts, and that is not optional.** `ArchiveWriter` refuses an archive
+  that already exists; after this slice one always does, because the init script created it. An
+  existing empty `trends` becomes what the seeder expects, an absent one becomes a failure naming the
+  provisioning that did not run, and the refusal keys on rows and day partitions rather than on the
+  table. Its one-transaction guarantee narrows from schema plus partitions plus rows to partitions
+  plus rows, which still leaves a rolled-back run with an empty table and nothing stranded. Day
+  partitions stay the seeder's, created per run. `sql/semiplot_dev.sql` retires with
+  `SchemaResourceTests`, and `ArchiveWriterTransactionTests`'s "leaves no archive behind" invariant
+  becomes "leaves no rows and no day partitions behind". The existence probe is one shared constant,
+  `ArchiveWriter.ArchiveExistsCommand`, wrapped by three separate private helpers — in the writer, in
+  the fixture's template-reuse decision, and in the transaction test — so nothing changes at once and
+  each call site is revisited on its own; missing one is the risk here.
+
+  **What replaces the retiring textual pin is behavioural.** The gated suite and `ExplainPlanTests`
+  run against the SemiBase-created table on every run, and tracking `latest` means every run
+  validates the newest provisioning against the current reader — the pair that actually ships. No
+  shape assertion is written on either side: a tool that creates the table has nothing to verify it
+  against, and a second transcription in this repository would be the drift the move exists to kill.
+
+  `SemibaseBinary`'s `PATH` search dies here and CI drops its release-download step. The code that
+  spawns the binary as a process does **not** die: the `SEMIPLOT_TEST_PG` path runs `semibase bench`
+  against a server the fixture did not create, and it must, because an init script provisions only
+  the fresh cluster inside its own container. `SEMIBASE_EXE` survives as that path's only way to name
+  the binary. `SEMIPLOT_PG_IMAGE` keeps its meaning but moves down a layer: it names the base image
+  the Dockerfile builds from, not the image the fixture starts.
+
+  The SemiBase image tracks `latest` rather than a pinned tag. Delivered installations update neither
+  service, so every commissioned site is a frozen pair validated once and never changed again; the
+  only pair that will ever be newly deployed is the newest `semibase` with the current reader. A
+  pinned tag would spend the bench proving a combination no site will receive. The cost is that one
+  unchanged commit can pass today and fail tomorrow, and it is paid by printing the resolved version
+  into the test output so a failure names its own cause.
 - **Issue:** none
-- **Blast radius:** the gated harness's provisioning path, the CI workflow, the environment tables
-  in `CLAUDE.md` and `docs/architecture/bench.md`, and the pinning section of
-  `docs/architecture/testing-strategy.md`, which records the machine-resolved binary as the one gap
-  in the rule.
-- **Risk:** medium — every gated test's provisioning changes at once, and a fault reports as a skip
-  rather than a failure unless `SEMIPLOT_REQUIRE_DB` is set.
-- **Depends on:** independent. One prerequisite lives outside this repository: SemiBase must publish
-  the image. That is a change in that repository, not a slice here.
+- **Blast radius:** the gated harness's provisioning path and its template-reuse probe, the seeder's
+  precondition and transaction boundary, the embedded schema resource and its test, one transaction
+  test's invariant, the CI workflow, and the bench recipes and environment tables in `CLAUDE.md`,
+  `docs/architecture/bench.md` and `docs/architecture/testing-strategy.md`.
+- **Risk:** medium — the seeder's refusal rule is what keeps a half-filled archive from being read as
+  a whole one, and it is being inverted rather than relaxed. Every gated test's provisioning changes
+  at once, and a fault reports as a skip rather than a failure unless `SEMIPLOT_REQUIRE_DB` is set.
+- **Depends on:** independent. Its prerequisite outside this repository has shipped: SemiBase v0.3.0
+  publishes `ghcr.io/semiteq/semibase`, provisions over a unix socket, and creates the archive table
+  from the writer's role in both of its two commands.
 - **Stacking base:** master
-- **Scope guard:** no change to what `semibase create` does, no change to the seeder, and no schema
-  pre-creation — that is archive-schema-ownership's, not this slice's.
+- **Scope guard:** no change to what the provisioning does, no second transcription of the vendor DDL
+  on this side, and no shape assertion written to replace the retiring one.
 - **Plan:** —
 - **PR:** —
 - **Branch:** —
@@ -777,61 +804,6 @@ it.
 - **PR:** —
 - **Branch:** —
 
-### Slice archive-schema-ownership — Status: PENDING
-- **Scope:** The definition of the vendor's archive table moves out of this repository to the party
-  that provisions the instance, and the seeder stops creating it. SemiBase gains a flag on `create`
-  that creates `public.trends` and `tpdefault` **connected as `scada_writer`** — the role matters more
-  than the shape, because the reader's `SELECT` arrives through the default privileges SemiBase sets
-  for that role ahead of time, and a table owned by the superuser would give the bench reader access
-  for a different reason than a site gets it. SemiBase's locked decision that the archive schema is
-  never created there is amended explicitly rather than quietly excepted.
-
-  The move is safe because the shape is fully reproducible: the vendor's table carries no index
-  beyond its primary key, no trigger, no storage parameter, no tablespace, no sequence and no
-  generated column, and is exactly the definition `sql/semiplot_dev.sql` transcribes — which is what
-  retires here `[MEAS:dump-20260805]`.
-
-  On this side the change is not a subtraction. `ArchiveWriter` today **refuses** an archive that
-  already exists, so its precondition inverts: an existing empty `trends` becomes what the seeder
-  expects, an absent one becomes a new failure naming the missing flag, and the refusal keys on rows
-  and day partitions rather than on the table. Its one-transaction guarantee narrows from schema
-  plus partitions plus rows to partitions plus rows, which still leaves a rolled-back run with an
-  empty table and nothing stranded. Day partitions stay the seeder's, created per run. The probe is
-  one shared constant, `ArchiveWriter.ArchiveExistsCommand`, wrapped by three separate private
-  helpers — in the writer, in the fixture's template-reuse decision and in the transaction test — so
-  nothing changes at once and each call site is revisited on its own; missing one is the risk here.
-  `SchemaResourceTests` retires with the resource it pins, and `ArchiveWriterTransactionTests`'s
-  "leaves no archive behind" invariant becomes "leaves no rows and no day partitions behind".
-
-  Because the textual pin retires with the resource, the column check in `semibase verify` is not
-  optional here: it is what replaces it. `verify` asserts the columns the read contract touches —
-  `id`, `l`, `t`, `v`, `q` and their types, and the `tpk` shape — as a warning rather than a refusal,
-  so a vendor upgrade that does not affect readers raises no alarm while an archive that is not what
-  SemiPlot reads is named at commissioning. What guards the reader's bet from here on is behavioural:
-  the gated suite and `ExplainPlanTests` run against the SemiBase-created table, and tracking
-  `latest` means every run validates the newest schema against the current reader — the pair that
-  actually ships.
-
-  The seeder loses its self-sufficiency, and that is stated wherever the bench is documented: every
-  environment that seeds — the container's init, a re-run against `SEMIPLOT_TEST_PG`, the manual
-  two-command bench — must have provisioned with the flag, or the seeder stops with the new error.
-- **Issue:** none
-- **Blast radius:** `ArchiveWriter`'s precondition and transaction boundary, the embedded schema
-  resource and its test, one transaction test's invariant, the fixture's template-reuse probe, the
-  bench recipes in `CLAUDE.md` and `docs/architecture/bench.md`, and the ownership table in
-  `docs/architecture/testing-strategy.md`.
-- **Risk:** medium — the seeder's refusal rule is what keeps a half-filled archive from being read as
-  a whole one, and it is being inverted rather than relaxed.
-- **Depends on:** semibase-container-provisioning for the image that carries the flag, and
-  harness-and-cold-path-cleanup by ordering only, since both edit `ArchiveTemplate`. One prerequisite
-  is outside this repository: SemiBase must ship the flag and the `verify` column check.
-- **Stacking base:** master
-- **Scope guard:** day-partition creation stays with the seeder; no change to the generated data, the
-  thinner or the golden digest; no `verify` behaviour is relied on beyond the warning it prints.
-- **Plan:** —
-- **PR:** —
-- **Branch:** —
-
 ### Slice postgres-live-edge-and-demo — Status: PENDING
 - **Scope:** The live edge, the demo bench that exercises it, and the stub's retirement — one piece
   of work rather than three, because the poll is verified by watching a live archive grow and the
@@ -876,7 +848,7 @@ it.
   deleted stub project and every reference to it, plus the new demo tool.
 - **Risk:** medium, concentrated in the seam invariant and in poll error handling.
 - **Depends on:** postgres-wire-up, postgres-gap-reconstruction, avalonia-12-bump,
-  linux-test-target, semibase-container-provisioning, archive-schema-ownership
+  linux-test-target, semibase-container-provisioning
 - **Stacking base:** master
 - **Scope guard:** no coordinator batching changes; no bucketing; no compose file and no second
   orchestration mechanism for the developer environment. Three error types are expected rather than

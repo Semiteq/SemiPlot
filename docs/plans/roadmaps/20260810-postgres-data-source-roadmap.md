@@ -785,21 +785,35 @@ it.
   running reader is an operational anomaly rather than a state the product must diagnose, and this
   slice accepts it by naming it.
 
+  **The slice also owns the missing-`trends` model itself, which is now false.** SemiBase v0.3.0
+  creates `public.trends` in both `site` and `bench`, so on a commissioned site the table exists
+  from provisioning and its absence no longer means the SCADA has not started yet.
+  `StartupFailureMapper` still says it does and still tells the operator to run `semibase create`,
+  a command v0.3.0 removed; `ArchiveNotInitialisedError` and `MissingRelationProbe` carry the same
+  model. `semibase-container-provisioning` documented that lag and named this slice as what closes
+  it, so the message, the error type's prose and the four-state model in
+  `docs/architecture/postgres-instance.md` and `postgres-topology.md` are corrected here. The probe
+  removal and this correction are one change: both rewrite what a `42P01` means to an operator.
+
   `StatementTimeoutReader` is not touched. It meets the bar: the two arms of the timeout mapping
   carry different operator remedies, and the arm that names the bound is the common one, since
-  `semibase create` sets a 30 s bound on the reader role.
+  `semibase site` sets a 30 s bound on the reader role.
 - **Issue:** none
 - **Blast radius:** one provider type, one statement, the DI registration, the exception mapper's
-  `missingRelation` parameter, two test files, and the passage in `CLAUDE.md` prescribing the
-  cold-path-reader pattern, which must keep the bar while dropping one of its two examples.
-- **Risk:** low — the fallbacks it replaces are already in place and already correct on every path
-  the application takes.
+  `missingRelation` parameter, the startup failure mapper and one error type's operator prose, two
+  test files plus the mapper's own, the four-state model in `postgres-instance.md` and
+  `postgres-topology.md`, and the passage in `CLAUDE.md` prescribing the cold-path-reader pattern,
+  which must keep the bar while dropping one of its two examples.
+- **Risk:** low for the probe removal — the fallbacks it replaces are already in place and already
+  correct on every path the application takes. Medium for the model correction, which changes what a
+  human is told to do when startup fails, and the only reader of that text is an operator standing
+  at a machine that will not start.
 - **Depends on:** harness-and-cold-path-cleanup by ordering only, since both edit test files under
   `SemiPlot.Tests.Data/Postgres`.
 - **Stacking base:** master
-- **Scope guard:** `StatementTimeoutReader`, `ArchiveQueryTimedOutError` and the seven-type error
-  vocabulary are untouched; no per-statement fallback is changed, only the probe that second-guesses
-  it.
+- **Scope guard:** `StatementTimeoutReader` and `ArchiveQueryTimedOutError` are untouched, the error
+  vocabulary stays seven types, and no per-statement fallback is changed — only the probe that
+  second-guesses it. The read path, the fold and the bench are not touched.
 - **Plan:** —
 - **PR:** —
 - **Branch:** —

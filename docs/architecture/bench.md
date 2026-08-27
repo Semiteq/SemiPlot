@@ -232,13 +232,20 @@ pwsh scripts/bench-demo.ps1          # converge the stand
 pwsh scripts/bench-demo.ps1 -Down    # remove it
 ```
 
-**`scripts/bench-demo.ps1` is the recipe, not a copy of one.** It builds the bench image, starts the
-container on port 55432, clones `semiplot_provisioned` into `semiplot_app`, seeds that clone to
-`--end 2026-08-01T00:00:00 --days 1 --pens 8 --seed 1`, and writes the connection file. Each step is
-skipped when it is already done, so the script answers a boot, a failure and a tenth run alike.
-Three steps refuse to repeat themselves regardless — `docker run` rejects a name that exists,
-`CREATE DATABASE` rejects a database that exists, and the seeder rejects an archive that already
-carries rows or day partitions.
+**`scripts/bench-demo.ps1` is the recipe, not a copy of one**, and it splits the stand by lifetime.
+
+The image, the container and `semiplot_seeded` are **converged**: built once, reused after. The
+seeded template is a clone of `semiplot_provisioned` filled to
+`--end 2026-08-01T00:00:00 --days 1 --pens 8 --seed 1`, and nothing ever writes to it, so the
+expensive half of the recipe is paid once per boot rather than once per session.
+
+`semiplot_app` is **recreated on every run**, dropped and re-cloned from the seeded template. The
+demo writer appends to the archive, so a converged database would carry the previous session's live
+rows: its extent would stand a little further from its seed each time, the minimap would widen, and
+the window the chart opens on would differ from the one the last session saw. A bench that drifts is
+a bench whose reading cannot be trusted. A `TEMPLATE` clone copies files rather than replaying the
+seeder, so a pristine archive costs seconds — the same mechanism `ArchiveTemplate` uses to give
+every gated test class its own database.
 
 **The archive is seeded well into the past on purpose.** An archive whose last sample predates the
 opening window is what distinguishes a chart that seeds its window from the extent from one that

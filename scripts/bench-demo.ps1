@@ -1,22 +1,25 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-    Converges the application bench: a container holding a seeded semiplot_app, and a connection
-    file the viewer can read.
+    Raises the application bench: a container, a pristine seeded archive, and a connection file the
+    viewer can read.
 
 .DESCRIPTION
     The canonical recipe for the demo stand. docs/architecture/bench.md points here rather than
     carrying the commands, so the recipe run daily is the recipe documented.
 
-    Every step is skipped when it is already done, so the script is safe to run on every boot and
-    after every failure. Three of the steps refuse to repeat themselves anyway: `docker run` fails
-    on a name that exists, `CREATE DATABASE` fails on a name that exists, and the seeder refuses an
-    archive that already carries rows or day partitions.
+    Two lifetimes, and the split is the point.
 
-    The connection file is the exception: it is rewritten on every run. Its `source_time_zone` must
-    name the zone of the machine the demo writer runs on, because the writer writes that machine's
-    local wall clock. A stale zone shows as a chart that never advances while the log reads rows
-    normally, which is this bench's most expensive failure, so the field is never allowed to age.
+    The image, the container and semiplot_seeded are converged: each is built once and reused, so
+    the expensive half of the recipe is paid once per boot rather than once per session.
+
+    semiplot_app and the connection file are recreated every run. The demo writer appends to the
+    archive, so a converged database would carry the previous session's live rows and its extent
+    would stand a little further from its seed each time — a bench that drifts is a bench whose
+    reading cannot be trusted. A TEMPLATE clone copies files rather than replaying the seeder, so a
+    pristine archive costs seconds. The connection file is rewritten for a related reason: its
+    source_time_zone must name the zone of the machine the demo writer runs on, and a stale zone
+    shows as a chart that never advances while the log reads rows normally.
 
 .PARAMETER Down
     Remove the container and the generated connection file instead of converging them.
@@ -41,6 +44,7 @@ $ConfigDirectory = Join-Path $RepositoryRoot 'SemiPlot/Artifacts/bench-config'
 $ConnectionFile = Join-Path $ConfigDirectory 'archive-connection.yaml'
 $HostPort = 55432
 $Database = 'semiplot_app'
+$SeededTemplate = 'semiplot_seeded'
 $ProvisionedDatabase = 'semiplot_provisioned'
 
 # The container's roles carry the fixture's own fixed passwords, which are public constants in
@@ -190,30 +194,21 @@ while ($true)
 }
 Write-Host "    port $HostPort serves"
 
-Write-Step "Cloning $ProvisionedDatabase into $Database"
-$exists = Invoke-Psql 'postgres' "SELECT 1 FROM pg_database WHERE datname = '$Database';"
+Write-Step "Seeding $SeededTemplate"
+# Seeded once and never written to again, so the expensive half of the recipe is paid once per
+# container. The demo writer appends to the clone below, never here.
+$exists = Invoke-Psql 'postgres' "SELECT 1 FROM pg_database WHERE datname = '$SeededTemplate';"
 if ($exists -eq '1')
 {
-    Write-Skip "$Database already exists"
-}
-else
-{
-    Invoke-Psql 'postgres' "CREATE DATABASE $Database TEMPLATE $ProvisionedDatabase;" | Out-Null
-    Write-Host "    created $Database"
-}
-
-Write-Step 'Seeding the archive'
-# The seeder's own refusal is the authority here; this check only keeps the run quiet and its exit
-# code clean on the second call.
-$rowCount = Invoke-Psql $Database 'SELECT count(*) FROM public.trends;'
-if ([int] $rowCount -gt 0)
-{
+    $rowCount = Invoke-Psql $SeededTemplate 'SELECT count(*) FROM public.trends;'
     Write-Skip "already seeded, $rowCount rows"
 }
 else
 {
-    $writerConnection = "Host=localhost;Port=$HostPort;Database=$Database;Username=scada_writer;Password=$WriterPassword"
-    $adminConnection = "Host=localhost;Port=$HostPort;Database=$Database;Username=postgres;Password=$SuperuserPassword"
+    Invoke-Psql 'postgres' "CREATE DATABASE $SeededTemplate TEMPLATE $ProvisionedDatabase;" | Out-Null
+
+    $writerConnection = "Host=localhost;Port=$HostPort;Database=$SeededTemplate;Username=scada_writer;Password=$WriterPassword"
+    $adminConnection = "Host=localhost;Port=$HostPort;Database=$SeededTemplate;Username=postgres;Password=$SuperuserPassword"
 
     & dotnet run --project (Join-Path $RepositoryRoot 'SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.ArchiveSeeder.csproj') -- `
         --connection $writerConnection `
@@ -224,6 +219,22 @@ else
         throw "The seeder failed with exit code $LASTEXITCODE."
     }
 }
+
+Write-Step "Recreating $Database from $SeededTemplate"
+# Dropped and re-cloned on every run, never converged. The demo writer appends to this database and
+# the viewer's own poll leaves nothing behind, but the appended rows do survive the session: keeping
+# them would stretch the archive's extent a little further from its seed every time, which is the
+# one property this bench must not lose. A TEMPLATE clone copies files rather than replaying the
+# seeder, so a pristine archive costs seconds.
+Invoke-Psql 'postgres' @"
+SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+WHERE datname IN ('$Database', '$SeededTemplate') AND pid <> pg_backend_pid();
+"@ | Out-Null
+Invoke-Psql 'postgres' "DROP DATABASE IF EXISTS $Database;" | Out-Null
+Invoke-Psql 'postgres' "CREATE DATABASE $Database TEMPLATE $SeededTemplate;" | Out-Null
+$rowCount = Invoke-Psql $Database 'SELECT count(*) FROM public.trends;'
+$extent = Invoke-Psql $Database "SELECT coalesce(max(t)::text, 'empty') FROM public.trends;"
+Write-Host "    $rowCount rows, newest $extent"
 
 Write-Step 'Writing the connection file'
 # Rewritten every run, never patched. TimeZoneInfo.FindSystemTimeZoneById resolves this machine's
@@ -245,6 +256,6 @@ Write-Host "    $ConnectionFile, source_time_zone $zone"
 
 Write-Host ''
 Write-Host 'Bench up.' -ForegroundColor Green
-Write-Host "  archive   $Database on localhost:$HostPort, seeded to $SeedEnd"
+Write-Host "  archive   $Database on localhost:$HostPort, a fresh clone seeded to $SeedEnd"
 Write-Host "  config    $ConfigDirectory"
 Write-Host '  next      run the "Live demo" configuration, or "Demo writer" and "Viewer (bench)" apart'

@@ -228,28 +228,47 @@ hand every gated test a template that already carries rows. Seeding a clone keep
 one server apart.
 
 ```powershell
-docker build -t semiplot-bench:manual SemiPlot/SemiPlot.Tests.Data/bench
-docker run -d --name semiplot-bench -p 55432:5432 `
-  -e POSTGRES_PASSWORD=<super> `
-  -e SEMIBASE_WRITER_PASSWORD=<writer> -e SEMIBASE_READER_PASSWORD=<reader> `
-  -e SEMIPLOT_PROVISIONED_DATABASE=semiplot_provisioned `
-  semiplot-bench:manual
-docker exec semiplot-bench psql --username postgres --dbname postgres `
-  --command "CREATE DATABASE semiplot_app TEMPLATE semiplot_provisioned;"
-dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.ArchiveSeeder.csproj -- `
-  --connection "Host=localhost;Port=55432;Database=semiplot_app;Username=scada_writer;Password=<writer>" `
-  --admin-connection "Host=localhost;Port=55432;Database=semiplot_app;Username=postgres;Password=<super>" `
-  --end 2026-08-01T00:00:00 --days 1 --pens 8 --seed 1
+pwsh scripts/bench-demo.ps1          # converge the stand
+pwsh scripts/bench-demo.ps1 -Down    # remove it
 ```
+
+**`scripts/bench-demo.ps1` is the recipe, not a copy of one**, and it splits the stand by lifetime.
+
+The image, the container and `semiplot_seeded` are **converged**: built once, reused after. The
+seeded template is a clone of `semiplot_provisioned` filled to
+`--end 2026-08-01T00:00:00 --days 1 --pens 8 --seed 1`, and nothing ever writes to it, so the
+expensive half of the recipe is paid once per boot rather than once per session.
+
+`semiplot_app` is **recreated on every run**, dropped and re-cloned from the seeded template. The
+demo writer appends to the archive, so a converged database would carry the previous session's live
+rows: its extent would stand a little further from its seed each time, the minimap would widen, and
+the window the chart opens on would differ from the one the last session saw. A bench that drifts is
+a bench whose reading cannot be trusted. A `TEMPLATE` clone copies files rather than replaying the
+seeder, so a pristine archive costs seconds — the same mechanism `ArchiveTemplate` uses to give
+every gated test class its own database.
+
+**The archive is seeded well into the past on purpose.** An archive whose last sample predates the
+opening window is what distinguishes a chart that seeds its window from the extent from one that
+opens on the wall clock and never reaches the data. An archive seeded up to now hides the
+difference.
+
+**The connection file is rewritten on every run**, into `SemiPlot/Artifacts/bench-config/`, which
+git ignores. Its `source_time_zone` carries the identifier of the machine the script ran on, because
+the demo writer writes that machine's local wall clock: a zone naming anywhere else puts the live
+edge one offset from where the viewer looks, and that shows as a chart which never advances while
+the log reads rows normally. Regenerating the field is what makes that state unreachable rather than
+merely documented. The identifier goes in as Windows names it —
+`TimeZoneInfo.FindSystemTimeZoneById` resolves a machine's own identifier on that machine, so no
+IANA conversion stands between the two.
 
 `docker logs semiplot-bench` carries the provisioning: a container that reached a serving port ran
 `semibase bench` to completion, because the init script's `set -e` and the entrypoint's own make a
 failed provisioning and a dead container one event.
 
-The connection file goes to `C:\DISTR\Config\SemiPlot\archive-connection.yaml`, or anywhere
-`--config-dir` names. **Seed the archive to an `--end` well in the past**: an archive whose last
-sample predates the opening window is what distinguishes a chart that seeds its window from the
-extent from one that opens on the wall clock and never reaches the data.
+A site's own installation is the other shape this bench wears: `StartupOptions` defaults the
+connection file and the log to the `C:\DISTR\` tree, which is what a default-paths rehearsal
+exercises. The script stays clear of both, so a rehearsal and a demo share one machine without
+colliding.
 
 What the server can be asked afterwards, which needs no screen:
 
@@ -276,6 +295,31 @@ right one by eye, and whether the window is legible. Those wait for the demo sta
 renders as a break is answered instead by the render guard below, at the rasteriser rather than on a
 screen, and whether the archive's own break survives the whole path to that rasteriser is answered by
 `BreakRenderArchiveJourneyTests`.
+
+### Running it from Rider
+
+`.run/` at the repository root tracks the buttons over the recipe — the root is the directory the
+solution opens at, so it is where Rider looks. Nothing machine-dependent lives in them — the
+container's role passwords are the fixture's own public constants and the port is the documented
+55432, while the one machine-dependent input, the time zone, lives only in the generated connection
+file.
+
+| Configuration | What it does |
+| --- | --- |
+| `Bench up` | Runs the script. Pressed once per boot; a second press is a no-op that reports each skip |
+| `Bench down` | Removes the container and the generated connection file |
+| `Demo writer` | The seeder in `--follow 1` against `semiplot_app` |
+| `Viewer (bench)` | `SemiPlot.UI` with `--config-dir` on the generated file and `--logging-level debug` |
+| `Live demo` | A compound of the last two |
+
+**`Bench up` is not a before-launch task of the compound.** A compound starts its children in
+parallel, so wiring the script into both would run two instances racing the same `docker run`. It
+stays a separate button.
+
+**Stopping the viewer leaves the writer running**, because a compound stops its children
+independently. That is the shape the repeated check wants: restarting the viewer against an edge
+that never stopped moving is the loop, and the writer's `Ctrl+C` path ends between appends rather
+than inside one.
 
 ## The headless render and input guards
 

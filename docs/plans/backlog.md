@@ -6,11 +6,18 @@ each is a scoped future task.
 
 ## Functional / integration
 
-- **Real data provider (accuracy).** The viewer runs on `RandomStubDataProvider` (synthetic walks,
-  `now-7d..now` extent). The production provider is specified in `docs/architecture/data-integration.md`
-  and planned in `docs/plans/roadmaps/20260810-postgres-data-source-roadmap.md`: one read-only
-  PostgreSQL connection serving history, extent and realtime alike. Real archive data is still needed to exercise the decimation and
-  extent paths against production volumes.
+- **Real data provider (accuracy).** The viewer reads the PostgreSQL archive through
+  `PostgresDataProvider` — one read-only connection serving the catalogue, the extent, the history
+  window and the live-edge poll, specified in `docs/architecture/data-integration.md`. What is still
+  missing is a real archive: the decimation and extent paths have been exercised against the seeded
+  bench and against a customer dump, not against production volumes on a running tool.
+
+- **A break that opens at the live edge draws as a held line.** `Sample` carries no null channel, so
+  the realtime poll emits a `q = 32` row as an ordinary sample and cannot reconstruct the gap the way
+  `HistoryRowFold` does from a null value. The line holds at the last value until the next history
+  read covers that span and redraws it as a break. Closing it means giving the realtime seam a way to
+  carry an absence — a nullable sample, or a separate break signal — which is a change to
+  `IDataProvider` and to every consumer of `RealtimeBatch`, so it is its own task.
 
 - **Minimap — further work.** The current strip shows the window position over the extent (visible marker +
   extent labels) but no data preview. Wanted: a richer overview (e.g. a downsampled trace/heat preview of the

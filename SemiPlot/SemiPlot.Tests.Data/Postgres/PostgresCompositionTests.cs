@@ -1,10 +1,10 @@
 ﻿using System.Reactive.Concurrency;
-using System.Reactive.Linq;
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using SemiPlot.Core.Data;
+using SemiPlot.Core.Trends;
 using SemiPlot.DataSource.Postgres;
 using SemiPlot.DataSource.Postgres.Configuration;
 
@@ -19,9 +19,9 @@ public sealed class PostgresCompositionTests
 {
 	private static readonly TimeZoneInfo _sourceZone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Berlin");
 
-	private static PostgresConnectionSettings Settings()
+	private static PostgresConnectionSettings Settings(TimeSpan? pollInterval = null)
 	{
-		return ConnectionSettingsFactory.Create(_sourceZone);
+		return ConnectionSettingsFactory.Create(_sourceZone, pollInterval: pollInterval);
 	}
 
 	// The caller owns the data source, because it holds a connection pool and its idle timer.
@@ -32,6 +32,8 @@ public sealed class PostgresCompositionTests
 			new ArchiveTimeConverter(settings.SourceTimeZone),
 			new ArchiveExceptionMapper(settings),
 			new StatementTimeoutReader(dataSource, NullLogger<StatementTimeoutReader>.Instance),
+			settings,
+			DefaultScheduler.Instance,
 			NullLogger<PostgresDataProvider>.Instance);
 	}
 
@@ -159,8 +161,8 @@ public sealed class PostgresCompositionTests
 		Assert.Same(settings, services.GetRequiredService<PostgresConnectionSettings>());
 	}
 
-	// The non-null penIds precondition is the interface's, not one member's: RandomStubDataProvider
-	// throws here too, so an empty sequence for a null list would split the two implementations.
+	// The non-null penIds precondition is the interface's, not one member's, so it throws here exactly as
+	// the query members do rather than answering a null list with an empty sequence.
 	[Fact]
 	public void SubscribeRejectsANullPenList()
 	{
@@ -171,15 +173,60 @@ public sealed class PostgresCompositionTests
 		Assert.Throws<ArgumentNullException>(() => provider.Subscribe(null!));
 	}
 
+	// A subscription no longer completes, so nothing may await the end of the sequence. The property that
+	// replaces the old completion assertion is that taking a subscription and dropping it at once returns
+	// rather than blocking and leaves no loop running behind it.
+	//
+	// Silence alone would prove nothing here — these settings point at an address nothing answers, so a
+	// leaked loop emits no sample either. What it does emit is a fault: three refused ticks raise
+	// ArchiveConnectionLostError on the provider's own connection stream. The control is a second provider
+	// whose subscription is left running, and the test waits for its fault before reading the dropped one's
+	// silence, so the wait is calibrated by a loop that really is polling rather than by a guessed delay.
+	//
+	// The disposal of a loop already in flight against a live server is
+	// RealtimeSubscriptionTests.DisposingASubscriptionStopsItsPoll; this one guards the composition — a
+	// Subscribe body that started the loop and returned a disposable not wired to it.
 	[Fact]
-	public async Task SubscribeCompletesImmediately()
+	public async Task SubscribingAndDisposingAtOnceDeliversNothingAndStopsThePoll()
+	{
+		var settings = Settings(TimeSpan.FromMilliseconds(10));
+
+		using var droppedDataSource = new ArchiveDataSource(settings);
+		using var runningDataSource = new ArchiveDataSource(settings);
+
+		var dropped = NewProvider(settings, droppedDataSource);
+		var running = NewProvider(settings, runningDataSource);
+
+		var droppedBatches = new List<IReadOnlyList<Sample>>();
+		var droppedStates = new List<ArchiveConnectionState>();
+		var runningFaulted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+		using var droppedWatch = dropped.ConnectionFaults.Subscribe(droppedStates.Add);
+		using var runningWatch = running.ConnectionFaults.Subscribe(_ => runningFaulted.TrySetResult());
+
+		dropped.Subscribe([1L]).Subscribe(droppedBatches.Add).Dispose();
+
+		using var control = running.Subscribe([1L]).Subscribe(_ => { });
+
+		await runningFaulted.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+		// The control needed three ticks to get here, so a loop that survived its own disposal has had the
+		// same three plus this margin. Anything it raised has been recorded by now.
+		await Task.Delay(settings.PollInterval * 10, TestContext.Current.CancellationToken);
+
+		Assert.Empty(droppedBatches);
+		Assert.Empty(droppedStates);
+	}
+
+	// The identifiers narrow to the archive's own int4 column, and Subscribe has no Result channel to report
+	// one that does not fit — so it throws rather than selecting a different variable's rows.
+	[Fact]
+	public void SubscribeRejectsAPenIdentifierTheArchiveColumnCannotCarry()
 	{
 		var settings = Settings();
 		using var dataSource = new ArchiveDataSource(settings);
 		var provider = NewProvider(settings, dataSource);
 
-		var samples = await provider.Subscribe([1L]).ToArray();
-
-		Assert.Empty(samples);
+		Assert.Throws<ArgumentOutOfRangeException>(() => provider.Subscribe([(long)int.MaxValue + 1]));
 	}
 }

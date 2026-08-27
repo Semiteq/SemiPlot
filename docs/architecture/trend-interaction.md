@@ -216,15 +216,15 @@ and the render budget (§RT-4). The as-built rationale and mechanics:
   by every provider) anchors a `NaN` column there, so the line segments instead of the chart bridging
   the empty span with a straight line to the live-edge point (the right-side straight-line collapse
   fix). The edge it anchors at is the first and last **row**, not the window bound — the decimator
-  never sees the window. The stub reaches the window edge anyway because it synthesises a point per
-  tick across the whole window; the archive provider does not, and reaches the same anchors from the
-  break markers instead — `HistoryRowFold` appends a null one tick after a `q = 32` row, and the
-  decimator splits on it (see `data-integration.md`, Quality and gaps).
+  never sees the window. The archive provider does not reach the window edge, because the archive
+  writes a row only when a value changes; it reaches the same anchors from the break markers instead
+  — `HistoryRowFold` appends a null one tick after a `q = 32` row, and the decimator splits on it
+  (see `data-integration.md`, Quality and gaps).
 - **Use a min/max-per-pixel envelope, not plain sampling.** Plain decimation aliases away spikes
   (AVEVA warns of exactly this). Retain min AND max per pixel column so spikes survive (M4:
   min/max/first/last per column → visually lossless; MinMaxLTTB for speed; Power Chart "MinMax").
 - **Aggregation runs PostgreSQL-side** (§DA-2): per the spec the production layer aggregates in the
-  PostgreSQL query rather than streaming raw rows to the client. Both providers fold their samples
+  PostgreSQL query rather than streaming raw rows to the client. The provider folds its rows
   in-process through `MinMaxDecimator`; the data layer is structured so that decimator and a
   server-side SQL aggregate are interchangeable behind `IDataProvider`.
 - **Performance budget (§RT-4):** 30 FPS pan/zoom lock; input data ≤ 10 Hz; ≤ 50 simultaneous pens;
@@ -258,8 +258,9 @@ the **full archive extent** with the current `[From, To]` view window highlighte
 and fast navigation across long archives.
 
 - The extent comes from a new `IDataProvider.QueryArchiveExtentAsync()` seam returning an
-  `ArchiveExtent(FirstUtc, LastUtc)` (data-integration.md). The stub returns a synthetic depth
-  (now − 7 days … now); the real provider will return the true archive bounds.
+  `ArchiveExtent(FirstUtc, LastUtc)` (data-integration.md), which `PostgresDataProvider` answers
+  with the true bounds of the configured variables; an archive with no rows answers
+  `ArchiveExtent.Empty`.
 - `Minimap/MinimapViewModel` reaches the extent through a `TrendCoordinator.QueryArchiveExtentAsync()`
   pass-through (mirroring the `QueryHistoryAsync` seam + UI-scheduler discipline); it never holds the
   `IDataProvider` directly. Extent → strip / window → fractions geometry is pure

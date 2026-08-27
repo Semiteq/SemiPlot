@@ -91,7 +91,7 @@ public static class ArchiveTemplate
 		var rows = rawRows.Concat(LayerThinner.ThinAll(rawRows)).ToArray();
 
 		var written = await new ArchiveWriter(postgresServer.WriterConnectionStringFor(Name))
-			.WriteAsync(rows, Slice.Start, Slice.End, cancellationToken);
+			.WriteAsync(rows, Slice.Start, Slice.End, cancellationToken: cancellationToken);
 
 		if (written.IsFailed)
 		{

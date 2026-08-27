@@ -22,8 +22,9 @@ decimation is unused because the data layer pre-decimates. `DataLogger` is cited
 **Gaps via NaN, not an enum.** ScottPlot 5 `Scatter` has **no `OnNaN`/`Gap` property** (an
 earlier plan assumption). Gap segmentation is automatic: the default path strategy
 (`ScottPlot.PathStrategies.Straight`) skips `float.IsNaN` points and breaks the path, so feeding
-`double.NaN` (the envelope's gap marker, also used for `null` realtime samples) produces the gap
-in the center line and the band at the same X.
+`double.NaN` (the envelope's gap marker, and what `TrendPenState` encodes a null append as) produces
+the gap in the center line and the band at the same X. Every NaN a chart draws comes from the
+history path: `RealtimeBatch` carries `double` values, so the live edge has no null to encode.
 
 **Per-pen stepping.** `Scatter.ConnectStyle` carries the per-pen line style — `StepHorizontal`
 for stepped (discrete/digital tags), `Straight` for interpolated (analog). Mapped from the Core
@@ -136,6 +137,8 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   `Switch` (latest-wins, drops stale in-flight responses) → apply on the UI scheduler. The startup
   initial load bypasses it; the first-snap path stays non-requerying.
 - `Chart/ChartRealtimeApplier` — the append-vs-fold rule per layer for incoming `RealtimeBatch`es.
+  It walks each `PenRealtimeValues` on that pen's own timestamps, never on the batch's union, and
+  hands the union's last timestamp to `ChartNavigationController.OnLiveEdge`.
 - `Chart/ChartCursorReader` / `ChartDeltaCursorReader` — view-side state wrapping the Core cursor
   models, resolving the visible / active pens (`ChartDeltaCursorReader.FormatReadout` formats Δt/Δy).
 - `Chart/ChartHoverReadout` — pure static `BuildContent`: builds the readout string (local timestamp +
@@ -182,11 +185,20 @@ view model:
   `Center`; NaN = gap). The view model awaits it directly for the initial load and routes gesture
   re-queries through `ChartHistoryRequestDebouncer`; both apply via one monotonic-sequence path so the
   latest window wins.
-- **Realtime:** `IObservable<RealtimeBatch>` — a union timeline plus per-pen `double?[]` (`null` =
-  gap), buffered on the data scheduler and observed on the UI scheduler.
+- **Realtime:** `IObservable<RealtimeBatch>` — an ascending union timeline the live edge advances
+  from, plus one `PenRealtimeValues` per pen carrying that pen's **own** timestamps and `double`
+  values; buffered on the data scheduler and observed on the UI scheduler. The values are per pen
+  rather than a column over the union because the archive is per-variable and change-based with a
+  deadband, so one buffer window routinely spans timestamps only one pen sampled. A pen carries no
+  entry at a timestamp it did not sample, and a consumer leaves it alone there. The type is `double`
+  and not `double?`: `Sample` carries a non-nullable value, so the live edge has no representation
+  for a break, and the gap a chart draws is the history path's reconstruction from `q = 32`.
 - **Archive extent:** `QueryArchiveExtentAsync()` returns an `ArchiveExtent(FirstUtc, LastUtc)` —
   the full stored time span. `TrendCoordinator.QueryArchiveExtentAsync()` is a pass-through to the
   provider (mirroring `QueryHistoryAsync`); the minimap consumes it (see trend-interaction.md).
+- **Connection state:** `TrendCoordinator.ConnectionFaults` republishes the provider's own
+  `IObservable<ArchiveConnectionState>` on the UI scheduler. `MainWindowViewModel` binds it once and
+  draws it as a banner row over a chart that keeps its history (see data-integration.md).
 
 These records are ScottPlot's input shape after the view model maps them onto `Coordinates` /
 `FillY` data sources; there is no serialization step.

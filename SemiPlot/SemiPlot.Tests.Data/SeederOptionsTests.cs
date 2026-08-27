@@ -78,6 +78,16 @@ public sealed class SeederOptionsTests
 		AssertFailedWith(parsed, "--layers");
 	}
 
+	// The seeding parser knows nothing of --follow: the entry point routes on it before either parser
+	// runs, so this is what keeps the two option sets from drifting into one.
+	[Fact]
+	public void ParseRejectsFollowAsAnUnknownOption()
+	{
+		var parsed = SeederOptions.Parse(["--connection", Connection, "--end", EndText, "--follow", "1"]);
+
+		AssertFailedWith(parsed, "--follow");
+	}
+
 	[Fact]
 	public void ParseRejectsAPositionalArgument()
 	{

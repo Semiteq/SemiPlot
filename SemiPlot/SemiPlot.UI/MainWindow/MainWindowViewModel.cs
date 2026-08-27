@@ -1,14 +1,23 @@
-﻿using ReactiveUI;
+﻿using System.Reactive.Disposables;
+using System.Reactive.Linq;
 
+using ReactiveUI;
+
+using SemiPlot.Core.Data;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.Legend;
 using SemiPlot.UI.Minimap;
+using SemiPlot.UI.Startup;
 using SemiPlot.UI.Toolbar;
 
 namespace SemiPlot.UI.MainWindow;
 
 public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 {
+	private readonly CompositeDisposable _subscriptions = new();
+
+	private ObservableAsPropertyHelper<string?>? _archiveConnectionMessage;
+	private string? _archiveHealthMessage;
 	private TrendChartViewModel? _chartViewModel;
 	private TrendLegendViewModel? _legendViewModel;
 	private MinimapViewModel? _minimapViewModel;
@@ -25,6 +34,64 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 	/// where nothing is drawn yet and there is nothing to explain.
 	/// </summary>
 	public bool IsCatalogueEmpty => ChartViewModel is not null && PenCount == 0;
+
+	/// <summary>
+	/// What the live-edge poll reports about its own connection: null while the archive answers, and while
+	/// it does not, what <see cref="StartupFailureMapper.Describe"/> makes of the fault — the state plus
+	/// the remedy, rather than the raw <see cref="FluentResults.IError.Message"/>, which names a state the
+	/// operator can do nothing with. Its only writer is the stream
+	/// <see cref="ObserveArchiveConnection"/> binds, so <see cref="ArchiveHealthMessage"/> can neither
+	/// set nor clear it — the two rows are independent facts and are rendered as two rows.
+	/// </summary>
+	public string? ArchiveConnectionMessage => _archiveConnectionMessage?.Value;
+
+	public bool HasArchiveConnectionMessage => ArchiveConnectionMessage is not null;
+
+	/// <summary>
+	/// A warning the startup read carried out of the archive — a fault the operator must act on that
+	/// stopped nothing. Written once at startup and never again, and never by the connection stream.
+	/// </summary>
+	public string? ArchiveHealthMessage
+	{
+		get => _archiveHealthMessage;
+		set
+		{
+			if (_archiveHealthMessage == value)
+			{
+				return;
+			}
+
+			this.RaiseAndSetIfChanged(ref _archiveHealthMessage, value);
+			this.RaisePropertyChanged(nameof(HasArchiveHealthMessage));
+		}
+	}
+
+	public bool HasArchiveHealthMessage => _archiveHealthMessage is not null;
+
+	/// <summary>
+	/// Binds the connection row to the coordinator's republished state stream, which already arrives on
+	/// the UI scheduler. Called once, at startup: a second bind would give the row a second writer, which
+	/// is what the split into two properties exists to prevent.
+	/// </summary>
+	public void ObserveArchiveConnection(IObservable<ArchiveConnectionState> connectionStates)
+	{
+		ArgumentNullException.ThrowIfNull(connectionStates);
+
+		if (_archiveConnectionMessage is not null)
+		{
+			throw new InvalidOperationException(
+				"The archive connection row is already bound. It has one writer, bound once.");
+		}
+
+		_archiveConnectionMessage = connectionStates
+			.Select(state => state.Fault is { } fault ? StartupFailureMapper.Describe(fault) : null)
+			.ToProperty(this, viewModel => viewModel.ArchiveConnectionMessage);
+		_subscriptions.Add(_archiveConnectionMessage);
+
+		_subscriptions.Add(this
+			.WhenAnyValue(viewModel => viewModel.ArchiveConnectionMessage)
+			.Subscribe(_ => this.RaisePropertyChanged(nameof(HasArchiveConnectionMessage))));
+	}
 
 	public TrendChartViewModel? ChartViewModel
 	{
@@ -73,6 +140,7 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 
 	public void Dispose()
 	{
+		_subscriptions.Dispose();
 		_toolbarViewModel?.Dispose();
 		_legendViewModel?.Dispose();
 		_minimapViewModel?.Dispose();

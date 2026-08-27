@@ -81,6 +81,10 @@ public sealed class ExplainPlanTests(
 	// almost whole.
 	private static readonly TimeSpan _explainedWindow = TimeSpan.FromMinutes(2);
 
+	// How far back from the archive's end the explained poll's bound sits. A tick reads what was written
+	// since the previous one, so its span is the poll interval and never a slice of the archive.
+	private static readonly TimeSpan _polledTail = TimeSpan.FromMinutes(1);
+
 	// Far enough into the archive that every explained pen has a row before the window opens, so the seed
 	// branch has something to find. The slice is seeded from its start, so a window opening at that start
 	// is the other case and gets its own test.
@@ -206,6 +210,75 @@ public sealed class ExplainPlanTests(
 				+ $"{WindowBranchPartitionReads}: the seed's look-back ends on the archive's first "
 				+ "partition boundary, so a pen with no row before the window must cost no read of a "
 				+ $"row-holding partition at all.{Environment.NewLine}{plan}");
+	}
+
+	// The poll's own index plan. The variable list is what buys it: PRIMARY KEY (id, l, t) leads with id,
+	// so a tick predicated on time alone would read the current day's partition sequentially on every
+	// tick, which is exactly what the first assertion below catches.
+	[Fact]
+	public async Task ThePollPlanReachesItsRowsThroughAnIndex()
+	{
+		postgresContainerFixture.RequireAvailable();
+
+		var database = seededArchive.Database;
+
+		await AnalyseAsync(database, TestContext.Current.CancellationToken);
+
+		var plan = await ExplainAsync(
+			database.ReaderConnectionString,
+			ArchiveStatements.RealtimePoll,
+			command => RealtimePoll.BindPoll(command, ExplainedPenIds(), PolledFrom()),
+			TestContext.Current.CancellationToken);
+
+		Assert.False(
+			_sequentialScanOverRows.IsMatch(plan),
+			"The realtime poll no longer narrows on the primary key: the plan reads a row-holding trends "
+				+ "partition sequentially, so every tick walks the current day instead of stepping into an "
+				+ $"index.{Environment.NewLine}{plan}");
+
+		Assert.True(
+			_indexReachedRows.IsMatch(plan),
+			"The realtime poll plan reaches no row-holding trends partition through an index, neither "
+				+ "directly nor through a bitmap, so a tick finds its rows by reading rows it does not "
+				+ $"want.{Environment.NewLine}{plan}");
+	}
+
+	// The baseline is held to the strict index-edge form, the same one the extent statement is held to: a
+	// max(t) under id = ANY(...) loses PostgreSQL's min/max transform and starts collecting a partition's
+	// rows, where the lateral scalar subquery steps to one index edge per variable and stops.
+	[Fact]
+	public async Task TheBaselinePlanReachesEachBoundByAnIndexEdge()
+	{
+		postgresContainerFixture.RequireAvailable();
+
+		var database = seededArchive.Database;
+
+		await AnalyseAsync(database, TestContext.Current.CancellationToken);
+
+		var plan = await ExplainAsync(
+			database.ReaderConnectionString,
+			ArchiveStatements.RealtimeBaseline,
+			command => RealtimePoll.BindBaseline(command, ExplainedPenIds()),
+			TestContext.Current.CancellationToken);
+
+		Assert.False(
+			_sequentialScanOverRows.IsMatch(plan),
+			"The baseline statement's per-variable bounded subquery has been lost: the plan reads a "
+				+ "row-holding trends partition sequentially, so establishing a subscription's starting "
+				+ $"point walks the archive.{Environment.NewLine}{plan}");
+
+		Assert.True(
+			_indexEdgeReachedRows.IsMatch(plan),
+			"The baseline plan reaches no row-holding trends partition through an index scan. The lateral "
+				+ "subquery must step to one index edge per variable; a bitmap or a plan without it reads "
+				+ $"rows the bound does not need.{Environment.NewLine}{plan}");
+	}
+
+	// Near the archive's end, which is where a live subscription's bound always sits: the poll reads the
+	// tail written since the previous tick, never a span of the archive.
+	private static DateTime PolledFrom()
+	{
+		return ArchiveTemplate.Slice.End - _polledTail;
 	}
 
 	// Bound through the shipped binder, so the plan is read over the parameters production sends. The

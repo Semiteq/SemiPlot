@@ -4,6 +4,8 @@ using AwesomeAssertions;
 
 using Microsoft.Reactive.Testing;
 
+using SemiPlot.Core.Data;
+using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
 using SemiPlot.UI.Bridge;
 
@@ -37,7 +39,7 @@ public sealed class TrendCoordinatorTests
 	}
 
 	[Fact]
-	public void RealtimeBatch_IsColumnar_WithOneColumnPerPen()
+	public void RealtimeBatch_CarriesOneEntryPerPen()
 	{
 		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: TimeSpan.FromMilliseconds(10));
 		var batches = new List<RealtimeBatch>();
@@ -48,9 +50,29 @@ public sealed class TrendCoordinatorTests
 
 		var batch = batches.Single();
 		batch.Pens.Should().HaveCount(provider.Pens.Count);
-		batch.Pens.Select(column => column.PenId).Should()
+		batch.Pens.Select(values => values.PenId).Should()
 			.BeEquivalentTo(provider.Pens.Select(pen => pen.PenId));
-		batch.Pens.Should().OnlyContain(column => column.Values.Count == batch.Timestamps.Count);
+		batch.Pens.Should().OnlyContain(values => values.Values.Count == values.TimestampsUtc.Count);
+	}
+
+	// The archive is per-variable and change-based, so two pens rarely share a t. Each pen carries the
+	// samples it has and no filler at the timestamps only the other pen sampled — the batch's shared
+	// timestamp list is the union of the two, and is only ever read for the live edge.
+	[Fact]
+	public void RealtimeBatch_KeepsEachPenOnItsOwnTimestamps()
+	{
+		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: TimeSpan.FromMilliseconds(10));
+		provider.StaggerRealtimeTimestamps = true;
+		var batches = new List<RealtimeBatch>();
+		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
+
+		coordinator.Start();
+		scheduler.AdvanceBy(_batchWindow.Ticks);
+
+		var batch = batches.Single();
+		batch.Timestamps.Should().HaveCount(batch.Pens.Sum(values => values.TimestampsUtc.Count));
+		batch.Pens.Should().OnlyContain(values => values.TimestampsUtc.Count * 2 == batch.Timestamps.Count);
+		batch.Pens.SelectMany(values => values.TimestampsUtc).Should().OnlyHaveUniqueItems();
 	}
 
 	[Fact]
@@ -115,8 +137,83 @@ public sealed class TrendCoordinatorTests
 		batches.Should().BeEmpty();
 	}
 
+	// The UI scheduler is the coordinator's own, not the provider's, so a state pushed from the data side is
+	// held until the UI scheduler runs it. A view model binding to this stream therefore never has to marshal.
+	[Fact]
+	public void ConnectionFaults_ReachTheConsumerOnTheUiScheduler()
+	{
+		var uiScheduler = new TestScheduler();
+		var (coordinator, _, provider) = CreateCoordinator(uiScheduler: uiScheduler);
+		using var _unused = coordinator;
+		var states = new List<ArchiveConnectionState>();
+		using var subscription = coordinator.ConnectionFaults.Subscribe(states.Add);
+
+		provider.ReportConnectionState(ArchiveConnectionState.Connected);
+		states.Should().BeEmpty();
+
+		uiScheduler.AdvanceBy(1);
+
+		states.Should().Equal(ArchiveConnectionState.Connected);
+	}
+
+	[Fact]
+	public void ConnectionFaults_CarryTheProvidersFault()
+	{
+		var uiScheduler = new TestScheduler();
+		var (coordinator, _, provider) = CreateCoordinator(uiScheduler: uiScheduler);
+		using var _unused = coordinator;
+		var states = new List<ArchiveConnectionState>();
+		using var subscription = coordinator.ConnectionFaults.Subscribe(states.Add);
+
+		provider.ReportConnectionState(
+			new ArchiveConnectionState(new ArchiveConnectionLostError("bench", 5432, "semiplot_dev", 3)));
+		uiScheduler.AdvanceBy(1);
+
+		states.Should().ContainSingle().Which.IsConnected.Should().BeFalse();
+		states[0].Fault.Should().BeOfType<ArchiveConnectionLostError>()
+			.Which.FailureThreshold.Should().Be(3);
+	}
+
+	[Fact]
+	public void Dispose_StopsForwardingTheProvidersConnectionState()
+	{
+		var uiScheduler = new TestScheduler();
+		var (coordinator, _, provider) = CreateCoordinator(uiScheduler: uiScheduler);
+		var states = new List<ArchiveConnectionState>();
+		using var subscription = coordinator.ConnectionFaults.Subscribe(states.Add);
+
+		coordinator.Dispose();
+		provider.ReportConnectionState(ArchiveConnectionState.Connected);
+		uiScheduler.AdvanceBy(1);
+
+		states.Should().BeEmpty();
+	}
+
+	// The two streams are independent: a fault must not stand in for a batch, and a chart holding history
+	// keeps drawing it while the banner is up.
+	[Fact]
+	public void AConnectionFault_LeavesTheRealtimeBatchesUntouched()
+	{
+		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: TimeSpan.FromMilliseconds(10));
+		using var _unused = coordinator;
+		var batches = new List<RealtimeBatch>();
+		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
+
+		coordinator.Start();
+		scheduler.AdvanceBy(_batchWindow.Ticks);
+
+		provider.ReportConnectionState(
+			new ArchiveConnectionState(new ArchiveConnectionLostError("bench", 5432, "semiplot_dev", 3)));
+
+		batches.Should().HaveCount(1);
+
+		scheduler.AdvanceBy(_batchWindow.Ticks);
+
+		batches.Should().HaveCount(2);
+	}
+
 	private static (TrendCoordinator Coordinator, TestScheduler Scheduler, FakeDataProvider Provider)
-		CreateCoordinator(TimeSpan? realtimeInterval = null)
+		CreateCoordinator(TimeSpan? realtimeInterval = null, IScheduler? uiScheduler = null)
 	{
 		var scheduler = new TestScheduler();
 		var provider = new FakeDataProvider(scheduler, realtimeInterval ?? TimeSpan.FromMilliseconds(10));
@@ -124,7 +221,7 @@ public sealed class TrendCoordinatorTests
 			provider,
 			provider.Pens,
 			scheduler,
-			ImmediateScheduler.Instance,
+			uiScheduler ?? ImmediateScheduler.Instance,
 			_batchWindow);
 
 		return (coordinator, scheduler, provider);

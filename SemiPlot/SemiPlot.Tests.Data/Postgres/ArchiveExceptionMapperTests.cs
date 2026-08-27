@@ -140,6 +140,22 @@ public sealed class ArchiveExceptionMapperTests
 		Assert.Same(exception, thrown);
 	}
 
+	// 42703 is how a trends whose columns have moved reaches this build: a real read names a column the
+	// server cannot resolve. Nothing probes the shape up front, so the server's own message text is the
+	// only thing that can name the column, and the mapper carries it through unchanged.
+	[Fact]
+	public void AnUndefinedColumnMapsToTheShapeUnexpectedErrorCarryingTheServersMessage()
+	{
+		var error = Map(Postgres("42703"));
+
+		var shape = Assert.IsType<ArchiveShapeUnexpectedError>(error);
+		Assert.Equal("the server said so", shape.Detail);
+		Assert.Contains("the server said so", shape.Message, StringComparison.Ordinal);
+		AssertEndpoint(shape.Host, shape.Port, shape.Database);
+	}
+
+	// The unmapped example stays unmapped: adding the 42703 arm must not widen the read-failed arm's
+	// catch-all into anything else the tests already stand on.
 	[Fact]
 	public void AnUnmappedSqlStateProducesAFailedResultCarryingTheReadFailedError()
 	{
@@ -166,6 +182,7 @@ public sealed class ArchiveExceptionMapperTests
 	[InlineData("42P01")]
 	[InlineData("42501")]
 	[InlineData("57014")]
+	[InlineData("42703")]
 	[InlineData("42P07")]
 	public void EveryMappedStateKeepsTheOriginalExceptionAsItsCause(string sqlState)
 	{

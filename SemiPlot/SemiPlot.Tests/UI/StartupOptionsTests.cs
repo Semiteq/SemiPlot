@@ -21,7 +21,6 @@ public sealed class StartupOptionsTests
 		options.ConfigDir.Should().Be(@"C:\DISTR\Config\SemiPlot");
 		options.LogFilePath.Should().Be(@"C:\DISTR\Logs\SemiPlot\semiplot.log");
 		options.LoggingLevel.Should().Be(LogEventLevel.Warning);
-		options.UseStub.Should().BeFalse();
 	}
 
 	[Fact]
@@ -68,23 +67,6 @@ public sealed class StartupOptionsTests
 	}
 
 	[Fact]
-	public void Parse_UseStub_IsValuelessSwitch()
-	{
-		var options = StartupOptions.Parse(["--use-stub", "--config-dir", @"D:\bench\config"]);
-
-		options.UseStub.Should().BeTrue();
-		options.ConfigDir.Should().Be(@"D:\bench\config");
-	}
-
-	[Fact]
-	public void Parse_UseStubLast_IsHonoured()
-	{
-		var options = StartupOptions.Parse(["--use-stub"]);
-
-		options.UseStub.Should().BeTrue();
-	}
-
-	[Fact]
 	public void Parse_ValuedArgumentLastWithNoValue_KeepsDefault()
 	{
 		var options = StartupOptions.Parse(["--config-dir"]);
@@ -95,12 +77,11 @@ public sealed class StartupOptionsTests
 	[Fact]
 	public void Parse_UnknownArgument_IsIgnored()
 	{
-		var options = StartupOptions.Parse(["--nonsense", "value", "--use-stub"]);
+		var options = StartupOptions.Parse(["--nonsense", "value", "--valueless-nonsense"]);
 
 		options.ConfigDir.Should().Be(StartupOptions.DefaultConfigDir);
 		options.LogFilePath.Should().Be(StartupOptions.DefaultLogFilePath);
 		options.LoggingLevel.Should().Be(StartupOptions.DefaultLoggingLevel);
-		options.UseStub.Should().BeTrue();
 	}
 
 	[Fact]
@@ -110,15 +91,13 @@ public sealed class StartupOptionsTests
 		[
 			"--config-dir", @"D:\bench\config",
 			"--log-file", @"D:\bench\semiplot.log",
-			"--logging-level", "debug",
-			"--use-stub"
+			"--logging-level", "debug"
 		]);
 
 		options.Should().Be(
 			new StartupOptions(
 				@"D:\bench\config",
 				@"D:\bench\semiplot.log",
-				LogEventLevel.Debug,
-				UseStub: true));
+				LogEventLevel.Debug));
 	}
 }

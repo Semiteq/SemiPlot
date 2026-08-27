@@ -89,9 +89,10 @@ jobs:
       contents: read
 
     env:
-      # On a pipeline an unavailable container runtime is a failure, never a silent skip. The two
-      # jobs that omit this omit it deliberately: build-and-test runs on a Windows runner, which
-      # cannot host a Linux container, and SemiPlot.Tests has no gated test to require one.
+      # On a pipeline an unavailable container runtime is a failure, never a silent skip. This job and
+      # journey-tests both set it; build-and-test and ui-tests-linux omit it deliberately, because
+      # build-and-test runs on a Windows runner that cannot host a Linux container and SemiPlot.Tests
+      # has no gated test to require one on either leg.
       SEMIPLOT_REQUIRE_DB: "1"
 
     steps:
@@ -117,3 +118,40 @@ jobs:
       # Docker daemon ubuntu-latest already carries.
       - name: test
         run: dotnet test SemiPlot/SemiPlot.Tests.Data/SemiPlot.Tests.Data.csproj -c Release --no-build --logger "console;verbosity=normal"
+
+  journey-tests:
+    name: Journey Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    env:
+      # Every test in SemiPlot.Tests.Journeys is gated on a container runtime, and the project carries
+      # no xunit.runner.json, so a missing runtime skips instead of failing. This is what turns that
+      # skip into a failure on the pipeline.
+      SEMIPLOT_REQUIRE_DB: "1"
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: restore
+        run: dotnet restore SemiPlot/SemiPlot.Tests.Journeys/SemiPlot.Tests.Journeys.csproj
+
+      - name: build
+        run: dotnet build SemiPlot/SemiPlot.Tests.Journeys/SemiPlot.Tests.Journeys.csproj -c Release --no-restore
+
+      # This job carries both halves of the split: the container fixture of SemiPlot.Tests.Data, built
+      # from the bench context copied into this project's output directory, and the headless Avalonia
+      # stack of SemiPlot.UI. The second half relies on the runner image providing libfontconfig.so.1,
+      # which libSkiaSharp.so links against -- see the note on ui-tests-linux. The first needs the
+      # Docker daemon ubuntu-latest already carries and nothing else.
+      - name: test
+        run: dotnet test SemiPlot/SemiPlot.Tests.Journeys/SemiPlot.Tests.Journeys.csproj -c Release --no-build --logger "console;verbosity=normal"

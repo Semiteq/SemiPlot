@@ -90,9 +90,20 @@ public sealed class TrendPenState : ReactiveObject
 		CurrentValue = null;
 	}
 
+	// The pen's own half of the seam invariant. The provider never emits a timestamp at or before its own
+	// last, but it cannot see a history re-query: ApplyHistory reloads every envelope on a navigation
+	// gesture, so history's last point can move past samples the poll already delivered, and the next
+	// emission — only required to be newer than what the poll itself last sent — can land before it.
+	// ScottPlot's Scatter renders this list in order, so such a point draws a segment running backwards
+	// across the plot. It is dropped instead.
 	public void AppendRealtime(DateTime timestampUtc, double? value)
 	{
 		var x = LocalTimeAxis.ToAxis(timestampUtc);
+		if (_centerPoints.Count > 0 && x <= _centerPoints[^1].X)
+		{
+			return;
+		}
+
 		var y = value ?? double.NaN;
 
 		_centerPoints.Add(new Coordinates(x, y));

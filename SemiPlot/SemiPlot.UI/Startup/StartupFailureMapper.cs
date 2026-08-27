@@ -5,10 +5,16 @@ using SemiPlot.Core.Data.Errors;
 namespace SemiPlot.UI.Startup;
 
 /// <summary>
-/// Turns a startup <see cref="IError"/> into the state the operator reads in
-/// <see cref="ErrorWindow"/>. One arm per public error type, each naming a remedy of its own; the
-/// catch-all arm exists because the compiler demands one over an interface, not as a place for a type
+/// Turns an <see cref="IError"/> into the state the operator reads — in <see cref="ErrorWindow"/>, which
+/// lays the three parts out as three blocks, and through <see cref="Describe"/> in the main window's
+/// status rows, which have one line each. One arm per public error type, each naming a remedy of its own;
+/// the catch-all arm exists because the compiler demands one over an interface, not as a place for a type
 /// to land.
+/// <para>
+/// It is the only place a remedy is written. An operator told a state alone — "the live edge stopped
+/// answering" — is told nothing to do about it, so no consumer renders <see cref="IError.Message"/>
+/// directly.
+/// </para>
 /// <para>
 /// The gate against a missing arm is <c>StartupFailureMapperTests</c>, which enumerates the public
 /// error types by reflection and fails when one maps to <see cref="GenericTitle"/>. It cannot be the
@@ -25,6 +31,18 @@ public static class StartupFailureMapper
 	/// </summary>
 	public const string GenericTitle = "Startup failed";
 
+	/// <summary>
+	/// One error as a single line: what happened, then what to do about it. This is what the main
+	/// window's status rows render, where there is no room to lay <see cref="StartupFailureView"/> out
+	/// in three parts. The title is dropped rather than joined — it restates the detail's first clause.
+	/// </summary>
+	public static string Describe(IError error)
+	{
+		var view = Map(error);
+
+		return $"{view.Detail} {view.Remedy}";
+	}
+
 	public static StartupFailureView Map(IError error)
 	{
 		ArgumentNullException.ThrowIfNull(error);
@@ -36,6 +54,10 @@ public static class StartupFailureMapper
 			ArchiveUnreachableError unreachable => MapArchiveUnreachable(unreachable),
 			ArchiveAccessDeniedError denied => MapArchiveAccessDenied(denied),
 			ArchiveNotInitialisedError notInitialised => MapArchiveNotInitialised(notInitialised),
+			ArchiveConnectionLostError connectionLost => MapArchiveConnectionLost(connectionLost),
+			ArchiveShapeUnexpectedError shapeUnexpected => MapArchiveShapeUnexpected(shapeUnexpected),
+			ArchiveDefaultPartitionNotEmptyError defaultPartition => MapArchiveDefaultPartitionNotEmpty(
+				defaultPartition),
 			ArchiveQueryTimedOutError serverTimeout => MapArchiveQueryTimedOut(serverTimeout),
 			ArchiveReadFailedError readFailed => MapArchiveReadFailed(readFailed),
 			StartupReadTimedOutError startupTimeout => MapStartupReadTimedOut(startupTimeout),
@@ -129,6 +151,61 @@ public static class StartupFailureMapper
 
 		return $"Table '{error.Table}' is created by provisioning. Run 'semibase site' against this "
 			+ "database to finish provisioning it.";
+	}
+
+	// This one never opens the error window: a lost live edge arrives on the connection stream long after
+	// startup and is drawn as a banner over a chart that keeps its history. The arm exists because the
+	// mapper is the one place a public error type is turned into words, and the coverage test holds it there.
+	private static StartupFailureView MapArchiveConnectionLost(ArchiveConnectionLostError error)
+	{
+		var edge = FormattableString.Invariant(
+			$"The live edge of '{error.Database}' at {error.Host}:{error.Port}");
+		var failures = FormattableString.Invariant($"{error.FailureThreshold} consecutive failed reads");
+
+		var detail = $"{edge} stopped answering after {failures}. The history already drawn is unaffected.";
+
+		return new StartupFailureView(
+			"The archive stopped answering",
+			detail,
+			"Check that the PostgreSQL server is still running and still reachable from this machine. "
+			+ "SemiPlot keeps polling and clears this by itself once the archive answers again.");
+	}
+
+	// The remedy names the provisioning that owns public.trends and stops there. Nothing here holds the
+	// table's expected shape, so this build cannot say which column is wrong beyond what the server said.
+	private static StartupFailureView MapArchiveShapeUnexpected(ArchiveShapeUnexpectedError error)
+	{
+		var archive = FormattableString.Invariant($"'{error.Database}' at {error.Host}:{error.Port}");
+
+		var detail = $"The archive {archive} holds the tables SemiPlot reads, but not the columns they "
+			+ $"are expected to carry. The server answered: {error.Detail}";
+
+		return new StartupFailureView(
+			"The archive has an unexpected shape",
+			detail,
+			"Table 'public.trends' and its columns are created by provisioning. Run 'semibase site' against "
+			+ "this database to bring it to the shape this build reads, and check that nothing else has "
+			+ "altered the table since.");
+	}
+
+	// Like the lost-connection arm, this one never opens the error window: the startup health check carries
+	// it out beside a successful read and it is drawn as a banner over a working chart. The arm exists
+	// because the mapper is the one place a public error type is turned into words, and the coverage test
+	// enumerates the vocabulary by namespace rather than by which types can reach a window.
+	private static StartupFailureView MapArchiveDefaultPartitionNotEmpty(ArchiveDefaultPartitionNotEmptyError error)
+	{
+		var archive = FormattableString.Invariant($"'{error.Database}' at {error.Host}:{error.Port}");
+
+		var detail = $"The archive {archive} holds rows in '{error.Partition}', the partition that catches "
+			+ "samples whose own day was never created. Those rows are still read, and every read that "
+			+ "cannot skip that partition is slower for them.";
+
+		return new StartupFailureView(
+			"The archive's default partition holds rows",
+			detail,
+			"The rows were written by the SCADA, so the remedy is on that side: find out why the daily "
+			+ "partition was missing at write time, then move those rows into the days they belong to and "
+			+ "leave the default partition empty.");
 	}
 
 	private static StartupFailureView MapArchiveQueryTimedOut(ArchiveQueryTimedOutError error)

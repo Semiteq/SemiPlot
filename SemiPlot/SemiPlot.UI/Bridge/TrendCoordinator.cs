@@ -1,5 +1,6 @@
 ﻿using System.Reactive.Concurrency;
 using System.Reactive.Linq;
+using System.Reactive.Subjects;
 
 using FluentResults;
 
@@ -20,6 +21,13 @@ public sealed class TrendCoordinator : IDisposable
 
 	private IDisposable? _realtimeSubscription;
 
+	// The provider's stream is hot and never terminates, so the coordinator holds its own subscription to it
+	// rather than letting each consumer reach the provider directly: disposal stops the forwarding, and a
+	// consumer of a disposed coordinator hears nothing further.
+	private readonly Subject<ArchiveConnectionState> _connectionFaults = new();
+
+	private readonly IDisposable _connectionSubscription;
+
 	// pens must be dataProvider's own catalogue: the coordinator subscribes to these identifiers without
 	// asking the provider whether it knows them, and a provider silently drops the ones it does not.
 	public TrendCoordinator(
@@ -39,9 +47,19 @@ public sealed class TrendCoordinator : IDisposable
 		_uiScheduler = uiScheduler;
 		_batchWindow = batchWindow ?? _defaultBatchWindow;
 		RealtimeBatches = BuildRealtimeBatches(pens);
+		ConnectionFaults = _connectionFaults.AsObservable();
+		_connectionSubscription = dataProvider.ConnectionFaults
+			.ObserveOn(_uiScheduler)
+			.Subscribe(_connectionFaults.OnNext);
 	}
 
 	public IObservable<RealtimeBatch> RealtimeBatches { get; }
+
+	/// <summary>
+	/// The provider's connection state, republished on the UI scheduler so a view model binds to it directly.
+	/// It neither completes nor faults; disposal stops it instead.
+	/// </summary>
+	public IObservable<ArchiveConnectionState> ConnectionFaults { get; }
 
 	public void Dispose()
 	{
@@ -53,6 +71,7 @@ public sealed class TrendCoordinator : IDisposable
 		_isDisposed = true;
 		_realtimeSubscription?.Dispose();
 		_realtimeSubscription = null;
+		_connectionSubscription.Dispose();
 	}
 
 	public void Start()
@@ -107,29 +126,26 @@ public sealed class TrendCoordinator : IDisposable
 		}
 
 		var timestamps = samples.Select(sample => sample.TimestampUtc).Distinct().OrderBy(time => time).ToArray();
-		var rowOfTimestamp = timestamps
-			.Select((time, index) => (time, index))
-			.ToDictionary(pair => pair.time, pair => pair.index);
 
 		var pens = samples
 			.GroupBy(sample => sample.PenId)
-			.Select(group => new PenRealtimeValues(group.Key, BuildColumn(group, timestamps.Length, rowOfTimestamp)))
+			.Select(BuildPenValues)
 			.ToArray();
 
 		return new RealtimeBatch(timestamps, pens);
 	}
 
-	private static IReadOnlyList<double?> BuildColumn(
-		IEnumerable<Sample> penSamples,
-		int length,
-		IReadOnlyDictionary<DateTime, int> rowOfTimestamp)
+	// A pen carries the samples it actually has and nothing else. The batch's shared timestamp list is the
+	// union of every pen's, so a column over it would need a filler at every timestamp this pen did not
+	// sample — and the only filler a double? column offers is a null, which the chart draws as a break the
+	// archive never recorded.
+	private static PenRealtimeValues BuildPenValues(IGrouping<long, Sample> penSamples)
 	{
-		var column = new double?[length];
-		foreach (var sample in penSamples)
-		{
-			column[rowOfTimestamp[sample.TimestampUtc]] = sample.Value;
-		}
+		var ordered = penSamples.OrderBy(sample => sample.TimestampUtc).ToArray();
 
-		return column;
+		return new PenRealtimeValues(
+			penSamples.Key,
+			Array.ConvertAll(ordered, sample => sample.TimestampUtc),
+			Array.ConvertAll(ordered, sample => sample.Value));
 	}
 }

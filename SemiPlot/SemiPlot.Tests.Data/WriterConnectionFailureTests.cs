@@ -28,7 +28,7 @@ public sealed class WriterConnectionFailureTests
 	public async Task TheArchiveWriterReportsAConnectionItCannotMake(string connectionString)
 	{
 		var written = await new ArchiveWriter(connectionString)
-			.WriteAsync([], _start, _end, TestContext.Current.CancellationToken);
+			.WriteAsync([], _start, _end, cancellationToken: TestContext.Current.CancellationToken);
 
 		Assert.True(written.IsFailed);
 		Assert.NotEmpty(written.Errors);

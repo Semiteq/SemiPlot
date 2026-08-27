@@ -29,8 +29,9 @@ Constraint: **$0 budget** — only free/OSS components.
 
 > Version note: SemiPlot pins **Avalonia 12.0.5** with `ScottPlot.Avalonia` 5.1.59 (which depends on
 > Avalonia 12.0.0) and `ReactiveUI.Avalonia` 12.0.3 — the pairing the sibling repository `SemiStep`
-> already ships. Both test projects sit on `xunit.v3` 3.2.2 and both target plain `net10.0`; what
-> keeps them separate is the dependency graph, not the target framework (`testing-strategy.md`).
+> already ships. All three test projects sit on `xunit.v3` 3.2.2 and all three target plain
+> `net10.0`; what keeps them separate is the dependency graph and the skip policy, not the target
+> framework (`testing-strategy.md`).
 > `SemiPlot.UI` references `Avalonia.HarfBuzz` 12.0.5 and `App.BuildAvaloniaApp` calls `UseHarfBuzz()`
 > between `UseSkia()` and `UseReactiveUI()`. The chain names the platform itself
 > (`UseWin32().UseSkia()`) rather than calling `UsePlatformDetect()`, and Skia brings no text shaper, so
@@ -63,26 +64,26 @@ Constraint: **$0 budget** — only free/OSS components.
               │ implemented by a SemiPlot.DataSource.* project
               ▼
 +-------------------------------------------------------------+
-|  SemiPlot.DataSource.Postgres  (default; read-only SQL)     |
+|  SemiPlot.DataSource.Postgres  (the only one, read-only)    |
 |   - PostgresDataProvider over the Simple-Scada archive      |
-|  SemiPlot.DataSource.Stub  (development, --use-stub only)   |
-|   - RandomStubDataProvider  (emits random data)             |
-|   - synthetic pen/value generators                          |
+|   - history, extent, catalogue and the live-edge poll       |
 +-------------------------------------------------------------+
 ```
 
 The UI never talks to a data source directly; it depends only on `IDataProvider`
 (see [data-integration.md](./data-integration.md)). The composition root resolves the PostgreSQL
-provider; `--use-stub` puts the synthetic one in its place for development, and neither falls back
-to the other. There is **no web bridge**: the chart is a native ScottPlot control, fed in-process by
-`TrendCoordinator` over `IObservable`/awaitable seams.
+provider, which is the only one the application ships; an archive that does not answer opens an error
+window rather than falling back to invented data. There is **no web bridge**: the chart is a native
+ScottPlot control, fed in-process by `TrendCoordinator` over `IObservable`/awaitable seams.
 
 ## Data flow
 
-- **Realtime:** the data provider subscribes to a set of tags → `TrendCoordinator` buffers
-  the samples on the data scheduler into a coalesced `RealtimeBatch` (≤ 10 Hz / 100 ms),
-  crosses to the UI scheduler via `ObserveOn`, and exposes them as `IObservable<RealtimeBatch>`;
-  the chart view model subscribes and appends to the per-pen plottables.
+- **Realtime:** the provider polls the raw layer for the samples written past the last one it saw →
+  `TrendCoordinator` buffers them on the data scheduler into a coalesced `RealtimeBatch`
+  (≤ 10 Hz / 100 ms), crosses to the UI scheduler via `ObserveOn`, and exposes them as
+  `IObservable<RealtimeBatch>`; the chart view model subscribes and appends to the per-pen
+  plottables. The same provider reports its own connection state, which the main window draws as a
+  banner row over the chart.
 - **History:** the chart requests a window → `TrendCoordinator.QueryHistoryAsync` (the single history
   query; the initial load awaits it directly, gesture re-queries go through the debouncer) → provider
   returns one decimated `PenHistoryEnvelope` per pen (ascending `X` + `Min`/`Max`/`Center`) → the view
@@ -92,8 +93,8 @@ to the other. There is **no web bridge**: the chart is a native ScottPlot contro
 
 - Single Windows desktop app, runs on operator PCs next to the SCADA. The projects target plain
   `net10.0`; `OutputType=WinExe` and the Avalonia Win32 backend are what make the operator PC the
-  deliberate Windows-only target. The plain TFM exists so the test project builds on the Linux CI
-  runner, and changes nothing about where the application ships.
+  deliberate Windows-only target. The plain TFM exists so the test projects build on the Linux CI
+  runners, and changes nothing about where the application ships.
 - Auto-update of the app itself via Velopack if/when needed.
 - Site paths follow the `C:\DISTR\` convention of the sibling SemiStep installation: configuration
   in `C:\DISTR\Config\SemiPlot`, logs in `C:\DISTR\Logs\SemiPlot\`. Neither sits beside the
@@ -109,7 +110,6 @@ to the other. There is **no web bridge**: the chart is a native ScottPlot contro
 | `--config-dir <dir>` | Directory holding `archive-connection.yaml` | `C:\DISTR\Config\SemiPlot` |
 | `--log-file <path>` | Log file, rolling 5 MB / 5 files | `C:\DISTR\Logs\SemiPlot\semiplot.log` |
 | `--logging-level <level>` | `verbose` \| `debug` \| `info` (or `information`) \| `warning` \| `error` \| `fatal`, case-insensitive | `warning` |
-| `--use-stub` | Valueless switch selecting `SemiPlot.DataSource.Stub` | off |
 
 An argument the table does not name is ignored, and so is a valued argument given last with nothing
 after it; the default stands in both cases. An unrecognised logging level reads as `warning` and says
@@ -122,9 +122,8 @@ the error window and the fatal catch alike — so a launcher can tell one from t
 
 ## Scope status
 
-The application reads the real archive: the composition root registers `AddPostgresData`, and the
-synthetic stub is reachable only through `--use-stub`. The PostgreSQL provider implements three of
-its four members — the pen catalogue, the archive extent and the windowed history read; `Subscribe`
-returns an empty sequence until `postgres-realtime-poll` fills it, so the chart draws history and no
-live edge. See [data-integration.md](./data-integration.md) for the contract and `docs/plans/` for
-the implementation plan.
+The application reads the real archive and nothing else: the composition root registers
+`AddPostgresData`, and every member of `IDataProvider` is implemented over it — the pen catalogue,
+the archive extent, the windowed history read and the live-edge poll. The chart draws history and
+follows the archive as it grows. See [data-integration.md](./data-integration.md) for the contract
+and `docs/plans/` for the remaining work.

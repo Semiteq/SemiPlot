@@ -90,6 +90,63 @@ public sealed class ArchiveStatementTextTests
 		Assert.Equal(SeededWindowStatement, ArchiveStatements.SparseHistoryWindow);
 	}
 
+	// `id = ANY(@ids)` is load-bearing: PRIMARY KEY (id, l, t) leads with id, so a tick predicated on time
+	// alone cannot use the only index trends has and reads the current day's partition sequentially. The
+	// `>` on @lastSeen is strict, so the row that set the bound is never returned a second time.
+	private const string RealtimePollStatement = """
+		SELECT id, t, v, q
+		FROM trends
+		WHERE id = ANY(@ids) AND l = 0 AND t > @lastSeen
+		ORDER BY t;
+		""";
+
+	[Fact]
+	public void TheRealtimePollStatementMatchesItsLiteralCharacterForCharacter()
+	{
+		Assert.Equal(RealtimePollStatement, ArchiveStatements.RealtimePoll);
+	}
+
+	// The lateral scalar subquery is load-bearing for the same reason the extent statement's pair is: a
+	// plain `max(t) ... WHERE id = ANY(@ids)` loses PostgreSQL's min/max index-edge transform and starts
+	// collecting a partition's rows, where this shape is one index probe on PRIMARY KEY (id, l, t) per
+	// variable. `DISTINCT unnest(@ids)` makes a repeated identifier cost one probe rather than two.
+	private const string RealtimeBaselineStatement = """
+		SELECT max(hi) AS last
+		FROM (SELECT DISTINCT unnest(@ids) AS id) requested
+		CROSS JOIN LATERAL (
+		    SELECT (SELECT max(t) FROM trends WHERE id = requested.id AND l = 0) AS hi
+		) bounds;
+		""";
+
+	[Fact]
+	public void TheRealtimeBaselineStatementMatchesItsLiteralCharacterForCharacter()
+	{
+		Assert.Equal(RealtimeBaselineStatement, ArchiveStatements.RealtimeBaseline);
+	}
+
+	// `ONLY` is load-bearing: without it the read descends into the whole partition tree of `trends` and
+	// answers about the archive instead of about the catch-all, so a healthy archive would report the fault
+	// on every start. `EXISTS` rather than a count, because the answer is a yes or a no and the planner
+	// stops at the first row. The schema qualifier is load-bearing too: the operator goes looking for the
+	// object under the name this statement names.
+	private const string DefaultPartitionOccupancyStatement = """
+		SELECT EXISTS (SELECT 1 FROM ONLY public.tpdefault);
+		""";
+
+	[Fact]
+	public void TheDefaultPartitionOccupancyStatementMatchesItsLiteralCharacterForCharacter()
+	{
+		Assert.Equal(DefaultPartitionOccupancyStatement, ArchiveStatements.DefaultPartitionOccupancy);
+	}
+
+	// The statement names the partition and so does the warning the reader raises. They are two constants,
+	// and an operator sent to an object the read never touched is worse than no warning at all.
+	[Fact]
+	public void TheDefaultPartitionOccupancyStatementReadsTheRelationTheWarningNames()
+	{
+		Assert.Contains(ArchiveStatements.DefaultPartitionRelation, ArchiveStatements.DefaultPartitionOccupancy);
+	}
+
 	// The drift that breaks production is the binder naming a parameter the statement does not.
 	[Fact]
 	public void TheWindowBinderNamesExactlyTheStatementsOwnParameters()
@@ -104,12 +161,37 @@ public sealed class ArchiveStatementTextTests
 			new DateTime(2026, 1, 2, 1, 0, 0, DateTimeKind.Utc),
 			AggregationLayer.Raw);
 
+		AssertBinderNamesTheStatementsOwnParameters(command, ArchiveStatements.SparseHistoryWindow);
+	}
+
+	[Fact]
+	public void ThePollBinderNamesExactlyTheStatementsOwnParameters()
+	{
+		using var command = new NpgsqlCommand(ArchiveStatements.RealtimePoll);
+
+		RealtimePoll.BindPoll(command, [1, 2], new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Unspecified));
+
+		AssertBinderNamesTheStatementsOwnParameters(command, ArchiveStatements.RealtimePoll);
+	}
+
+	[Fact]
+	public void TheBaselineBinderNamesExactlyTheStatementsOwnParameters()
+	{
+		using var command = new NpgsqlCommand(ArchiveStatements.RealtimeBaseline);
+
+		RealtimePoll.BindBaseline(command, [1, 2]);
+
+		AssertBinderNamesTheStatementsOwnParameters(command, ArchiveStatements.RealtimeBaseline);
+	}
+
+	private static void AssertBinderNamesTheStatementsOwnParameters(NpgsqlCommand command, string statement)
+	{
 		var bound = command.Parameters
 			.Select(parameter => parameter.ParameterName)
 			.Order(StringComparer.Ordinal)
 			.ToArray();
 
-		var declared = _parameterTokenPattern.Matches(ArchiveStatements.SparseHistoryWindow)
+		var declared = _parameterTokenPattern.Matches(statement)
 			.Select(match => match.Groups[1].Value)
 			.Distinct(StringComparer.Ordinal)
 			.Order(StringComparer.Ordinal)

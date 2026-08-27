@@ -28,7 +28,9 @@ public sealed class ChartRealtimeApplier(
 				continue;
 			}
 
-			for (var index = 0; index < batch.Timestamps.Count; index++)
+			// The pen's own timestamps, never the batch's union: a timestamp this pen did not sample is
+			// not its gap, and appending it here would draw a break the archive never recorded.
+			for (var index = 0; index < penValues.Values.Count; index++)
 			{
 				if (foldIntoColumn)
 				{
@@ -36,7 +38,7 @@ public sealed class ChartRealtimeApplier(
 				}
 				else
 				{
-					state.AppendRealtime(batch.Timestamps[index], penValues.Values[index]);
+					state.AppendRealtime(penValues.TimestampsUtc[index], penValues.Values[index]);
 				}
 			}
 		}

@@ -10,6 +10,7 @@ is remains in `scada-archive.md`; what SemiPlot reads from it remains in `data-i
 | --- | --- |
 | Database, roles, grants, default-privileges chain, `semiplot_tags`, `public.trends` with `tpdefault` | `semibase bench` (`github.com/Semiteq/SemiBase`), carried in the bench image |
 | The daily partitions and the rows | `SemiPlot.Tools.ArchiveSeeder`, connected as `scada_writer` |
+| The moving live edge of a demo archive | `SemiPlot.Tools.ArchiveSeeder --follow`, connected as `scada_writer` |
 | Template build, per-class clones, teardown | `SemiPlot.Tests.Data/Integration` |
 
 The archive table is the provisioner's, not this repository's. `semibase bench` creates it over
@@ -66,6 +67,46 @@ archive has no code for both. The resume row keeps `16`, and the poll tick 100 m
 the SCADA certainly also recorded — is appended and marked `32`. It is the one row in the archive
 that did not come from the value walk, and it is reachable at ordinary parameters: 60 breaks in a
 day at a mean change interval of 120 s produce it three times.
+
+## The demo writer
+
+`--follow` runs the seeder as a demo writer instead of as a seeder: it appends to an archive somebody
+else seeded, so it plants no break and fills no tag catalogue, and it refuses nothing for the rows
+already there. What it creates is the same thing a seeding run creates and nothing more — the day
+partition each tick's rows land in, through
+`CREATE TABLE IF NOT EXISTS … PARTITION OF public.trends`.
+`public.trends` itself is the provisioner's and a follow run never creates it. What it moves is the
+live edge the viewer's poll follows. Every tick appends the raw rows of the wall-clock span since the
+previous tick and prints how many landed; `Ctrl+C` stops the loop where it waits, never inside an
+append.
+
+The command below writes into `semiplot_app` on port 55432 — the container and the clone that
+**The application bench** below creates. Run that recipe first, or point `--connection` at an
+archive of your own that a seeding run has already filled.
+
+```powershell
+dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.ArchiveSeeder.csproj -- `
+  --connection "Host=localhost;Port=55432;Database=semiplot_app;Username=scada_writer;Password=<writer>" `
+  --follow 1 --pens 8 --seed 1 --change-seconds 5
+```
+
+`--follow` takes the seconds between ticks and is the switch that selects this mode. `--pens`,
+`--seed` and `--change-seconds` mean what they mean in a seeding run — pens taken round-robin from
+the catalogue, the generator seed, and the mean interval between value changes — and default to 8,
+1 and 5.
+
+Three properties decide what it is good for:
+
+- **Layer `0` only.** It appends nothing to the coarse layers, so a window wide enough to select
+  `l=1` or coarser follows the live edge through the fresh tail rather than through new coarse rows.
+- **The machine's local wall clock, with its `Kind` stripped.** The archive column holds the SCADA
+  host's naive local time, so `DateTime.UtcNow` would place the demo's live edge one zone offset from
+  where the viewer, converting through `source_time_zone`, looks for it.
+- **It starts at "now", never at the archive's `max(t)`.** Against a bench seeded weeks into the past
+  the first tick would otherwise write those weeks, and a day partition for each.
+
+`--end`, `--days`, `--break-count` and `--admin-connection` belong to a seeding run and are rejected
+here, with a message saying what a follow run does rather than "Unknown option".
 
 ## Thinning into the coarse layers
 
@@ -168,11 +209,13 @@ tomorrow, and that report separates *SemiBase moved* from *this repository broke
 
 ## The application bench
 
-The gated tests exercise the provider. They do not exercise the composed application: that needs
-Avalonia and a container at once, and no CI job does both yet. `ubuntu-latest` hosts both, and
-`postgres-live-edge-and-demo` owns the job. Until that job exists the application bench fills the
-gap on a developer machine, and its checks are read from the server and the log rather than from a
-screen, so they run unattended.
+The gated tests exercise the provider, and the `journey-tests` job exercises the composed
+application: `ubuntu-latest` hosts Avalonia and a container at once, so `SemiPlot.Tests.Journeys`
+drives `AddPostgresData`, `TrendCoordinator` and `TrendChartViewModel` over a container-backed
+archive and asserts on rendered pixels and on a delivered live sample
+(`testing-strategy.md`, **End-to-end tests**). What those journeys cannot answer is what the chart
+looks like to a person. The application bench is where a human answers that, and its own checks are
+read from the server and the log rather than from a screen, so they run unattended.
 
 It runs the same bench image the gated suite does, so it needs no `semibase` binary either. The
 image provisions `semiplot_provisioned` before the published port opens; the recipe clones that
@@ -217,6 +260,7 @@ What the server can be asked afterwards, which needs no screen:
 | Did it read real history, and from the seeded span? | `idx_tup_fetch` on the seeded day's partition, `tp<YYYY>m<MM>d<DD>`. A window left on the wall clock fetches nothing, because no partition holds those hours |
 | Did any read fall back to a sequential scan? | `seq_scan` on the same partition, which the `EXPLAIN` guard forbids |
 | Which failure did the operator get? | `C:\DISTR\Logs\SemiPlot\semiplot.log`. A clean start writes nothing at the default `Warning` floor; every startup failure writes its error and a `[FTL]` line |
+| Did the live edge reach the chart? | Run `--follow 1` against the same database and watch the chart with **Sticky** on. `pg_stat_user_tables.idx_tup_fetch` on today's partition rises every poll interval; the log at `--logging-level debug` carries one realtime line per tick with the row and sample counts |
 
 A startup failure opens a window and waits, so a run under a timeout returns that timeout's own exit
 code rather than the application's. The log line, not the exit code, is what says which failure it
@@ -230,7 +274,8 @@ start, not a failure, and writes no error at all.
 What this bench cannot answer is what the curve looks like: whether the ladder's chosen layer is the
 right one by eye, and whether the window is legible. Those wait for the demo stand. Whether a break
 renders as a break is answered instead by the render guard below, at the rasteriser rather than on a
-screen.
+screen, and whether the archive's own break survives the whole path to that rasteriser is answered by
+`BreakRenderArchiveJourneyTests`.
 
 ## The headless render and input guards
 

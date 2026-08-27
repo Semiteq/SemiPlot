@@ -110,6 +110,13 @@ internal sealed class ArchiveExceptionMapper
 				or PostgresErrorCodes.InvalidAuthorizationSpecification
 				or PostgresErrorCodes.InsufficientPrivilege
 				=> new ArchiveAccessDeniedError(host, port, database, _settings.Username),
+			// The server's own MessageText names the column it could not resolve, and nothing on this side
+			// knows it: no shape is transcribed here, so the answer is the only source of that name.
+			PostgresErrorCodes.UndefinedColumn => new ArchiveShapeUnexpectedError(
+				host,
+				port,
+				database,
+				postgres.MessageText),
 			PostgresErrorCodes.QueryCanceled => new ArchiveQueryTimedOutError(
 				host,
 				port,

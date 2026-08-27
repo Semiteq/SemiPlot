@@ -291,7 +291,8 @@ screen, and whether the archive's own break survives the whole path to that rast
 
 ### Running it from Rider
 
-`SemiPlot/.run/` tracks the buttons over the recipe. Nothing machine-dependent lives in them — the
+`.run/` at the repository root tracks the buttons over the recipe — the root is the directory the
+solution opens at, so it is where Rider looks. Nothing machine-dependent lives in them — the
 container's role passwords are the fixture's own public constants and the port is the documented
 55432, while the one machine-dependent input, the time zone, lives only in the generated connection
 file.

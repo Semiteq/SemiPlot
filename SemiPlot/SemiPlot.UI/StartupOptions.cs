@@ -5,8 +5,7 @@ namespace SemiPlot.UI;
 public sealed record StartupOptions(
 	string ConfigDir,
 	string LogFilePath,
-	LogEventLevel LoggingLevel,
-	bool UseStub)
+	LogEventLevel LoggingLevel)
 {
 	public const string DefaultConfigDir =
 		@"C:\DISTR\Config\SemiPlot";
@@ -17,14 +16,11 @@ public sealed record StartupOptions(
 	public const LogEventLevel DefaultLoggingLevel =
 		LogEventLevel.Warning;
 
-	public const bool DefaultUseStub = false;
-
 	public static StartupOptions Parse(string[] args)
 	{
 		var configDir = DefaultConfigDir;
 		var logFilePath = DefaultLogFilePath;
 		var logLevel = DefaultLoggingLevel;
-		var useStub = DefaultUseStub;
 
 		for (var i = 0; i < args.Length; i++)
 		{
@@ -41,18 +37,13 @@ public sealed record StartupOptions(
 				case "--logging-level" when i + 1 < args.Length:
 					logLevel = ParseLogLevel(args[++i]);
 					break;
-
-				case "--use-stub":
-					useStub = true;
-					break;
 			}
 		}
 
 		return new StartupOptions(
 			configDir,
 			logFilePath,
-			logLevel,
-			useStub);
+			logLevel);
 	}
 
 	// Parsing runs before CreateLogger, so an unrecognised level cannot be reported through Serilog and

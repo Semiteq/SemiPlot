@@ -91,8 +91,7 @@ public sealed class HistoryArgumentGuardTests
 	}
 
 	// A value outside the closed enum is the same class of caller defect as a null list, so it leaves as an
-	// exception rather than through the Result channel — which is what RandomStubDataProvider does when its
-	// ToPointSpacing meets one.
+	// exception rather than through the Result channel.
 	[Fact]
 	public async Task AnUndefinedAggregationLayerThrows()
 	{
@@ -100,10 +99,9 @@ public sealed class HistoryArgumentGuardTests
 			() => QueryAsync([7L], _fromUtc.AddMinutes(1), TargetColumnCount, (AggregationLayer)99));
 	}
 
-	// Two caller defects at once. RandomStubDataProvider reaches its layer guard only inside
-	// ToPointSpacing, after the range and target checks, so the failed Result wins there; this provider
-	// orders its guards to answer the same way, because a consumer written against one implementation
-	// must not be able to tell it from the other. RandomStubDataProviderTests pins the other half.
+	// Two caller defects at once. The provider orders its guards so the range and target checks answer
+	// first and the failed Result wins over the layer throw, which is what a caller reading the Result
+	// channel depends on.
 	[Fact]
 	public async Task AnInvertedWindowAnswersAheadOfAnUndefinedAggregationLayer()
 	{

@@ -32,10 +32,11 @@ SemiPlot — приложение для просмотра графиков и 
 ## Архитектура
 
 - **Платформа:** .NET 10, C# 14, Windows
-- **Оболочка:** Avalonia 11.3.x (Win32 + Skia) + ReactiveUI
-- **Графика:** ScottPlot.Avalonia 5.1.57 (нативный рендеринг, SkiaSharp)
-- **Данные:** абстракция `IDataProvider`; сейчас — `RandomStubDataProvider`,
-  далее — `PostgresDataProvider` (архив PostgreSQL от Simple-Scada 2, см. документацию)
+- **Оболочка:** Avalonia 12.0.5 (Win32 + Skia + HarfBuzz) + ReactiveUI
+- **Графика:** ScottPlot.Avalonia 5.1.59 (нативный рендеринг, SkiaSharp)
+- **Данные:** абстракция `IDataProvider`; единственная реализация — `PostgresDataProvider`,
+  который читает архив PostgreSQL от Simple-Scada 2: каталог переменных, границы архива,
+  окно истории и опрос живого края (см. документацию)
 
 Подробно — в `docs/architecture/` (overview, charting, trend-interaction, data-integration).
 
@@ -47,7 +48,7 @@ SemiPlot — приложение для просмотра графиков и 
 | --------------- | ------------------------------------------------------------- |
 | ОС              | Windows 10 или Windows 11 (64-bit)                            |
 | Среда сборки    | .NET 10 SDK                                                   |
-| Источник данных | На текущем этапе не требуется (заглушка); далее — SimpleScada |
+| Источник данных | Архив PostgreSQL от Simple-Scada 2, подготовленный SemiBase. Без него приложение открывает окно ошибки вместо графика |
 | Тестовый стенд  | Только для интеграционных тестов: Docker (или иная среда контейнеров). `semibase` приходит слоем образа из `ghcr.io/semiteq/semibase`, ставить его на машину не нужно; без среды контейнеров эти тесты пропускаются |
 
 ---
@@ -65,8 +66,9 @@ dotnet run --project SemiPlot/SemiPlot.UI/SemiPlot.UI.csproj
 dotnet test SemiPlot.slnx
 ```
 
-Интеграционные тесты стенда (`SemiPlot.Tests.Data`, трейт `Category=Integration`) поднимают
-PostgreSQL в контейнере. Образ стенда собирается из `SemiPlot/SemiPlot.Tests.Data/bench/Dockerfile`:
+Интеграционные тесты стенда (`SemiPlot.Tests.Data`, трейт `Category=Integration`) и сквозные
+сценарии (`SemiPlot.Tests.Journeys`, весь проект) поднимают PostgreSQL в контейнере. Образ стенда
+собирается из `SemiPlot/SemiPlot.Tests.Data/bench/Dockerfile`:
 он забирает `/semibase` из `ghcr.io/semiteq/semibase:latest` и выполняет `semibase bench` из
 `/docker-entrypoint-initdb.d/` — до того, как откроется опубликованный порт. Отдельный бинарник
 `semibase` на машине не нужен: `dotnet test SemiPlot.slnx` запускает эти тесты сам.

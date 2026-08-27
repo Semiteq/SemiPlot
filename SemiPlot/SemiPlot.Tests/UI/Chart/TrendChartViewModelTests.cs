@@ -391,6 +391,72 @@ public sealed class TrendChartViewModelTests
 	}
 
 	[AvaloniaFact]
+	public void Realtime_SampleAtOrBeforeTheLastPoint_IsIgnored()
+	{
+		var (viewModel, _, _, _) = CreateViewModel();
+		var state = viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+		var t0 = new DateTime(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
+		state.LoadHistory(new PenHistoryEnvelope(1, [t0, t0.AddMinutes(1.0)], [1.0, 3.0], [5.0, 9.0], [2.0, 6.0]));
+
+		state.AppendRealtime(t0.AddMinutes(1.0), 42.0);
+		state.AppendRealtime(t0, 42.0);
+
+		state.CenterPoints.Should().HaveCount(2);
+		state.BandPoints.Should().HaveCount(2);
+		state.CurrentValue.Should().Be(6.0);
+	}
+
+	[AvaloniaFact]
+	public void Realtime_SampleAfterTheLastPoint_IsAppended()
+	{
+		var (viewModel, _, _, _) = CreateViewModel();
+		var state = viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+		var t0 = new DateTime(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
+		state.LoadHistory(new PenHistoryEnvelope(1, [t0, t0.AddMinutes(1.0)], [1.0, 3.0], [5.0, 9.0], [2.0, 6.0]));
+
+		state.AppendRealtime(t0.AddMinutes(2.0), 42.0);
+
+		state.CenterPoints.Should().HaveCount(3);
+		state.CenterPoints[2].Y.Should().Be(42.0);
+		state.BandPoints.Should().HaveCount(3);
+		state.CurrentValue.Should().Be(42.0);
+	}
+
+	[AvaloniaFact]
+	public void Realtime_AfterLoadHistoryMovesTheSeamBack_AppendsAgainstTheReloadedSeries()
+	{
+		// A history re-query replaces the series, so the guard follows the reloaded last point rather than
+		// the newest sample ever appended.
+		var (viewModel, _, _, _) = CreateViewModel();
+		var state = viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+		var t0 = new DateTime(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
+		state.AppendRealtime(t0.AddMinutes(10.0), 7.0);
+
+		state.LoadHistory(new PenHistoryEnvelope(1, [t0, t0.AddMinutes(1.0)], [1.0, 3.0], [5.0, 9.0], [2.0, 6.0]));
+		state.AppendRealtime(t0.AddMinutes(1.5), 42.0);
+
+		state.CenterPoints.Should().HaveCount(3);
+		state.CenterPoints[2].Y.Should().Be(42.0);
+		state.CurrentValue.Should().Be(42.0);
+	}
+
+	[AvaloniaFact]
+	public void Realtime_AfterClearHistory_AppendsAnyTimestampAgain()
+	{
+		var (viewModel, _, _, _) = CreateViewModel();
+		var state = viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+		var t0 = new DateTime(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
+		state.AppendRealtime(t0.AddMinutes(10.0), 7.0);
+
+		state.ClearHistory();
+		state.AppendRealtime(t0, 42.0);
+
+		state.CenterPoints.Should().ContainSingle();
+		state.CenterPoints[0].Y.Should().Be(42.0);
+		state.CurrentValue.Should().Be(42.0);
+	}
+
+	[AvaloniaFact]
 	public void FoldRealtime_WidensTheBandOfTheCurrentColumn()
 	{
 		var (viewModel, _, _, _) = CreateViewModel();
@@ -464,6 +530,29 @@ public sealed class TrendChartViewModelTests
 		scheduler.AdvanceBy(_batchWindow.Ticks);
 
 		state.CenterPoints.Count.Should().BeGreaterThan(columnsBefore);
+	}
+
+	// The archive is per-variable and change-based, so one buffer window routinely spans timestamps only
+	// one of the pens sampled. A pen that did not sample at a timestamp must be left alone: appending it as
+	// a null there is a break the archive never recorded, and TrendPenState encodes a null as NaN, which is
+	// exactly what MinMaxDecimator's gap column is.
+	[AvaloniaFact]
+	public void Coordinator_RealtimeTimestampsOnlyOnePenSampled_BreakNeitherPen()
+	{
+		var (viewModel, scheduler, coordinator, provider) = CreateViewModel(
+			realtimeInterval: TimeSpan.FromMilliseconds(10));
+		provider.StaggerRealtimeTimestamps = true;
+		var first = viewModel.AddPen(provider.Pens[0]);
+		var second = viewModel.AddPen(provider.Pens[1]);
+		viewModel.Navigation.ActiveLayer.Should().Be(AggregationLayer.Raw);
+
+		coordinator.Start();
+		scheduler.AdvanceBy(_batchWindow.Ticks);
+
+		first.CenterPoints.Should().NotBeEmpty();
+		second.CenterPoints.Should().NotBeEmpty();
+		first.CenterPoints.Should().NotContain(point => double.IsNaN(point.Y));
+		second.CenterPoints.Should().NotContain(point => double.IsNaN(point.Y));
 	}
 
 	[AvaloniaFact]

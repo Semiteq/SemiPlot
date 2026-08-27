@@ -37,6 +37,31 @@ public sealed class SeederEntryPointTests
 		Assert.Contains("Usage:", reported.Error, StringComparison.Ordinal);
 	}
 
+	// --follow in the raw arguments selects the demo writer ahead of either parser, so its rejection has
+	// to arrive with the demo writer's own usage rather than with the seeding one.
+	[Fact]
+	public async Task AFollowRunWithoutACadenceExitsWithOneAndPrintsTheFollowUsage()
+	{
+		var reported = await RunAsync(["--connection", "Host=localhost;Database=archive", "--follow"]);
+
+		Assert.Equal(1, reported.ExitCode);
+		Assert.Contains("requires a value", reported.Error, StringComparison.Ordinal);
+		Assert.Contains("appends layer 0 only", reported.Error, StringComparison.Ordinal);
+	}
+
+	[Fact]
+	public async Task AFollowRunCarryingASeedingOptionExitsWithOneAndPrintsTheFollowUsage()
+	{
+		var reported = await RunAsync([
+			"--connection", "Host=localhost;Database=archive",
+			"--follow", "1",
+			"--end", "2026-01-02T00:00:00"]);
+
+		Assert.Equal(1, reported.ExitCode);
+		Assert.Contains("--end", reported.Error, StringComparison.Ordinal);
+		Assert.Contains("appends layer 0 only", reported.Error, StringComparison.Ordinal);
+	}
+
 	private static async Task<(int ExitCode, string Error)> RunAsync(string[] arguments)
 	{
 		var captured = new StringWriter();

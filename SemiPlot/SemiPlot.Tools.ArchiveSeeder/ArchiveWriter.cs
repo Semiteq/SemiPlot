@@ -30,10 +30,13 @@ public sealed class ArchiveWriter(string connectionString)
 
 	private const string CopyCommand = "COPY public.trends (id, l, t, v, q) FROM STDIN (FORMAT BINARY)";
 
+	// allowExistingRows is what a follow run sets: it skips the seeded refusal and nothing else, so the
+	// archive-table precondition, the single transaction and the COPY stay one path rather than two.
 	public async Task<Result<long>> WriteAsync(
 		IEnumerable<ArchiveRow> rows,
 		DateTime start,
 		DateTime endExclusive,
+		bool allowExistingRows = false,
 		CancellationToken cancellationToken = default)
 	{
 		var statements = PartitionScript.CreateStatements(start, endExclusive);
@@ -51,7 +54,10 @@ public sealed class ArchiveWriter(string connectionString)
 						+ "`semibase bench` against this database before seeding it.");
 			}
 
-			if (await ScalarIsTrueAsync(connection, ArchiveIsSeededCommand, cancellationToken))
+			// A seeding run fills an empty archive in one go, so a half-filled one read as a whole one is
+			// the failure this refusal prevents. An appending run has the opposite contract: it adds to
+			// an archive somebody else already filled.
+			if (!allowExistingRows && await ScalarIsTrueAsync(connection, ArchiveIsSeededCommand, cancellationToken))
 			{
 				return Result.Fail<long>(
 					"public.trends already carries rows or day partitions: the seeder fills an empty archive "

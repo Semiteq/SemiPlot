@@ -18,6 +18,13 @@ internal static class ArchiveStatements
 	public const string TrendsRelation = "trends";
 
 	/// <summary>
+	/// The catch-all partition of <see cref="TrendsRelation"/>, named as
+	/// <see cref="DefaultPartitionOccupancy"/> reads it. Schema-qualified, because it names an object the
+	/// operator goes looking for rather than a relation a bound statement resolves through the search path.
+	/// </summary>
+	public const string DefaultPartitionRelation = "public.tpdefault";
+
+	/// <summary>
 	/// Ordered by the coalesced group rather than by the raw column, because the row read projects a null
 	/// group onto the empty string: PostgreSQL sorts nulls last while the empty string sorts first, so
 	/// ordering on the raw column would return a list not ordered by the values it carries.
@@ -34,6 +41,52 @@ internal static class ArchiveStatements
 		CROSS JOIN LATERAL (
 		    SELECT (SELECT min(t) FROM trends WHERE id = tag.id AND l = 0) AS lo,
 		           (SELECT max(t) FROM trends WHERE id = tag.id AND l = 0) AS hi
+		) bounds;
+		""";
+
+	/// <summary>
+	/// Every raw sample newer than the last one a subscription saw. Issued once per poll tick.
+	/// <para>
+	/// The variable list is mandatory. <c>PRIMARY KEY (id, l, t)</c> is the only index on <c>trends</c>
+	/// and leads with <c>id</c>, so a predicate over time alone cannot use it at all and degenerates into
+	/// a sequential scan of the current day's partition on every tick
+	/// (docs/architecture/scada-archive.md, Reader hazards). <c>@ids</c> binds an array so the read stays
+	/// a bounded range per identifier on that key.
+	/// </para>
+	/// <para>
+	/// <c>t &gt; @lastSeen</c> is strict, so the row that set <c>@lastSeen</c> is never returned twice —
+	/// a repeat would draw a segment running backwards across the plot.
+	/// </para>
+	/// </summary>
+	public const string RealtimePoll = """
+		SELECT id, t, v, q
+		FROM trends
+		WHERE id = ANY(@ids) AND l = 0 AND t > @lastSeen
+		ORDER BY t;
+		""";
+
+	/// <summary>
+	/// The newest raw timestamp across the subscribed variables, read once to establish the point a poll
+	/// starts from. A <c>NULL</c> answer means those variables carry no row yet, which is a content state
+	/// and not a failure.
+	/// <para>
+	/// The lateral shape is load-bearing. <c>max(t)</c> under <c>id = ANY(...)</c> does not get
+	/// PostgreSQL's min/max index-edge transform, so it collects a partition's rows before reducing them;
+	/// each lateral scalar subquery here is one index probe on <c>PRIMARY KEY (id, l, t)</c> per variable
+	/// instead. It is <see cref="ArchiveExtent"/>'s shape over the requested identifiers rather than over
+	/// the whole catalogue.
+	/// </para>
+	/// <para>
+	/// <c>DISTINCT unnest(@ids)</c> is the same de-duplicating source
+	/// <see cref="SparseHistoryWindow"/>'s seed branch uses, so a caller repeating an identifier costs one
+	/// probe rather than two.
+	/// </para>
+	/// </summary>
+	public const string RealtimeBaseline = """
+		SELECT max(hi) AS last
+		FROM (SELECT DISTINCT unnest(@ids) AS id) requested
+		CROSS JOIN LATERAL (
+		    SELECT (SELECT max(t) FROM trends WHERE id = requested.id AND l = 0) AS hi
 		) bounds;
 		""";
 
@@ -94,6 +147,27 @@ internal static class ArchiveStatements
 		    WHERE id = ANY(@ids) AND l = @layer AND t >= @from AND t < @to
 		) sample
 		ORDER BY id, t;
+		""";
+
+	/// <summary>
+	/// Whether the default partition holds any row at all. Issued once, at startup, as a health check.
+	/// <para>
+	/// What makes the answer about the catch-all rather than about the archive is that the relation named is
+	/// the leaf partition itself: naming <c>trends</c> is what would expand into its whole partition tree.
+	/// <c>ONLY</c> blocks that expansion downwards, and <c>tpdefault</c> is a leaf with no children of its
+	/// own, so here it changes no plan — it only starts mattering if the default partition is ever
+	/// partitioned in turn. <c>EXISTS</c> is load-bearing for the same reason a count is not: the answer is
+	/// a yes or a no, and the planner stops the scan at the first row instead of counting a partition that
+	/// is never pruned.
+	/// </para>
+	/// <para>
+	/// It is qualified rather than left to the search path because the partition is not a relation SemiPlot
+	/// reads data from — it is an object named in the fault it reports, and the operator has to find that
+	/// object under exactly that name.
+	/// </para>
+	/// </summary>
+	public const string DefaultPartitionOccupancy = """
+		SELECT EXISTS (SELECT 1 FROM ONLY public.tpdefault);
 		""";
 
 	/// <summary>

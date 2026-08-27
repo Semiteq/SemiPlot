@@ -35,8 +35,10 @@ and built from the commit under test. Its value is diagnosis.
 | --- | --- |
 | Decimation, navigation, scale, cursor geometry | `SemiPlot.Tests/Core/Data/MinMaxDecimatorTests.cs`, `Core/Trends/TrendNavigationModelTests.cs`, `PenScaleModelTests.cs`, `MinimapGeometryTests.cs`, `Chart/CursorReadoutModelTests.cs`, `DeltaCursorModelTests.cs` |
 | The seeder's generation rules | `SemiPlot.Tests.Data/LayerThinnerTests.cs`, `RawLayerGeneratorTests.cs`, `BreakGenerationTests.cs`, `PartitionScriptTests.cs` |
+| The demo writer's own rules and its option grammar | `SemiPlot.Tests.Data/LiveTailGeneratorTests.cs`, `FollowOptionsTests.cs` |
 | Error construction and extent arithmetic | `SemiPlot.Tests.Data/Errors/DataErrorTests.cs`, `Data/ArchiveExtentTests.cs` |
 | The provider's statement text and its binder | `SemiPlot.Tests.Data/Postgres/ArchiveStatementTextTests.cs` |
+| The live edge's own rules, and the fresh tail's bound | `SemiPlot.Tests.Data/Postgres/RealtimePollTests.cs`, `Postgres/FreshTailBoundTests.cs` |
 | The vendor's observed row shape | `SemiPlot.Tests.Data/Fixtures/RealArchiveFixtureTests.cs` over `Fixtures/real-archive-rows.csv` |
 
 The last row is the one that misleads. A test reading a committed CSV is still a unit test: the file
@@ -48,14 +50,17 @@ A unit test must not open a socket, read the wall clock, or depend on anything t
 
 Statement text is pinned by one plain literal per operational statement, held in
 `ArchiveStatementTextTests.cs` and compared character for character against the constant in
-`ArchiveStatements.cs`. The three pinned are the ones the read path issues — the pen catalogue, the
-archive extent and the sparse history window; `EffectiveStatementTimeout` is a cold-path diagnostic
-and carries no literal. `SparseHistoryWindow` is the only statement taking parameters, and its
-binder `PostgresDataProvider.BindWindow` is pinned against that statement's own parameter names.
-Nothing compares the shipped SQL to `data-integration.md`. That document quotes six SQL blocks for a
-reader, of which only these three are shipped statements; the other three belong to slices that have
-not shipped and have no constant to drift from. A drift between a quote and the
-constant it names is caught by whoever reads it rather than by a test.
+`ArchiveStatements.cs`. Six are pinned — the pen catalogue, the archive extent, the sparse history
+window, the realtime poll, the realtime baseline and the default-partition occupancy check;
+`EffectiveStatementTimeout` is a cold-path diagnostic and carries no literal. Three of the six take
+parameters, each through a binder of its own, and each binder is pinned against its statement's own
+parameter names: `PostgresDataProvider.BindWindow`, `RealtimePoll.BindPoll` and
+`RealtimePoll.BindBaseline`.
+Nothing compares the shipped SQL to `data-integration.md`. That document quotes eight SQL blocks for
+a reader, of which six are shipped statements; the other two — the bucketed history read, whose
+slice is dropped, and the gap explanation, which no roadmap slice names — have no constant to drift
+from. A drift between a quote and the constant it names is caught by whoever reads it rather than
+by a test.
 
 ## Integration tests
 
@@ -66,7 +71,8 @@ would encode our own assumption on both sides. The value is contract verificatio
 There are three families — the same category with different foreign parties.
 
 **Against a real PostgreSQL** — `SemiPlot.Tests.Data/Integration/`: `PostgresCatalogReadTests`,
-`PostgresExtentReadTests`, `PostgresHistoryReadTests`, `StatementTimeoutReadTests`,
+`PostgresExtentReadTests`, `PostgresHistoryReadTests`, `RealtimePollReadTests`,
+`RealtimeSubscriptionTests`, `ArchiveHealthReadTests`, `StatementTimeoutReadTests`,
 `ArchiveWriterTransactionTests`, `ExplainPlanTests`. Seams guarded: statement text, type mapping,
 the naive-local-to-UTC conversion, partition pruning, and the grant chain — reads run as
 `semiplot_reader`, so a privilege that never reached the reader fails here instead of at
@@ -91,6 +97,19 @@ at the far end. Its value is an existence proof that parts which each pass their
 connect. Its cost is that a failure names nothing, so they stay few and thin — the seams carry the
 coverage, and the journeys only prove the chain is closed.
 
+`SemiPlot.Tests.Journeys` holds them — four tests in three classes over a container-backed
+archive, each closing a chain whose halves are already proved apart:
+
+| Test | Chain it closes | The seam tests it joins |
+| --- | --- | --- |
+| `ArchiveHarnessSmokeTests` | the seeded template clones across the assembly boundary and answers an extent read through `AddPostgresData` | the harness itself, before a journey depends on it |
+| `BreakRenderArchiveJourneyTests` | a seeded break reaches the canvas: archive → `AddPostgresData` → `TrendCoordinator` → `TrendChartViewModel` → the pixels the rasteriser leaves blank | `PostgresHistoryReadTests` counts the fold's NaN anchor; `ChartGapRenderTests` measures the blank pixels a NaN column leaves |
+| `LiveEdgeArchiveJourneyTests` | two: a row appended while the application runs reaches the chart's live edge and reaches it once; and rows on a variable of its own reach the chart without breaking a pen that has no sample at that timestamp | `RealtimeSubscriptionTests` asserts the first rule over the provider alone; `TrendCoordinatorTests` and `TrendChartViewModelTests` cover the per-variable batch shape above it |
+
+The composed path adds what those seam tests cannot see: the coordinator's buffering and folding,
+the chart view model's applier, the navigation controller. Each can lose a sample or replay one without
+the provider noticing, and the journey is what fails when one does.
+
 Two things in the repository are adjacent to this category without being in it.
 `SemiPlot.Tests/UI/Startup/AppBuilderCompositionTests.cs` and `UI/Di/CompositionRootTests.cs` test
 the production wiring with no real edges; they are composition tests. The application bench in
@@ -104,30 +123,50 @@ and the assertion sits on rows: integration.
 
 ## Where the boundaries between projects fall
 
-`SemiPlot.Tests` holds everything touching the UI plus the renderer-agnostic Core models.
-`SemiPlot.Tests.Data` holds the bench and data-source tests and never references the UI.
+Three projects, and the line between them is the dependency graph rather than the kind of test.
 
-The durable reason for the split is the dependency graph. `SemiPlot.Tests.Data` references only Core,
-the provider and the seeder, so the data suite — the one iterated against a container — builds and
-runs without Avalonia, ScottPlot and SkiaSharp. An xunit v3 test project is one executable, so
+| Project | Holds | References |
+| --- | --- | --- |
+| `SemiPlot.Tests` | everything touching the UI, plus the renderer-agnostic Core models | `SemiPlot.UI` |
+| `SemiPlot.Tests.Data` | the bench and the data-source tests, and never the UI | `SemiPlot.Core`, `SemiPlot.DataSource.Postgres`, `SemiPlot.Tools.ArchiveSeeder` |
+| `SemiPlot.Tests.Journeys` | the end-to-end journeys, which need the UI and a container at once | `SemiPlot.UI`, `SemiPlot.Tests.Data` |
+
+The durable reason for the first line is the dependency graph. `SemiPlot.Tests.Data` references only
+Core, the provider and the seeder, so the data suite — the one iterated against a container — builds
+and runs without Avalonia, ScottPlot and SkiaSharp. An xunit v3 test project is one executable, so
 keeping them apart keeps the container lifecycle and the Avalonia dispatcher in separate processes,
 where a hung UI test cannot wedge the harness. Each project keeps its own assertion style
-(AwesomeAssertions and raw `Assert.` respectively), and `SemiPlot.DataSource.Postgres` names
-`SemiPlot.Tests.Data` alone in `InternalsVisibleTo`.
+(AwesomeAssertions in `SemiPlot.Tests` and `SemiPlot.Tests.Journeys`, raw `Assert.` in
+`SemiPlot.Tests.Data`), and `SemiPlot.DataSource.Postgres` names `SemiPlot.Tests.Data` alone in
+`InternalsVisibleTo`.
 
-Both projects target plain `net10.0`, so both build on the Linux runner and the target framework
+All three target plain `net10.0`, so all three build on the Linux runner and the target framework
 separates nothing.
 
-`SemiPlot.Tests` may reference `SemiPlot.Tests.Data` and consume its container harness. The reverse
-reference would build, and must not exist: it would put Avalonia, ScottPlot and SkiaSharp into the
-data suite and its Linux job.
+The reference direction is one-way. `SemiPlot.Tests` and `SemiPlot.Tests.Journeys` may reference
+`SemiPlot.Tests.Data` and consume its container harness. The reverse reference would build, and must
+not exist: it would put Avalonia, ScottPlot and SkiaSharp into the data suite and its Linux job.
 
 The split also decides skip-versus-fail per project. `SemiPlot.Tests` holds no gated test — every
 test in it runs on any machine with the SDK — so a skipped test there is a mistake rather than a
 stated absence, and `SemiPlot/SemiPlot.Tests/xunit.runner.json` sets `failSkips` to turn one into a
 failure on both CI legs. `SemiPlot.Tests.Data` keeps its skips: `DatabaseGate` states a reason when
 a runtime is missing, and `SEMIPLOT_REQUIRE_DB` is what a pipeline sets to make that a failure. It
-carries no `xunit.runner.json`, and must not gain one.
+carries no `xunit.runner.json`, and must not gain one. `SemiPlot.Tests.Journeys` is gated end to end
+and follows the same policy, so it carries none either.
+
+**That policy is why the journeys are a project rather than a folder.** A journey needs the UI,
+which `SemiPlot.Tests.Data` may not reference, and it is gated on a container runtime, which
+`SemiPlot.Tests` turns into a failure. `failSkips` is a project-wide setting with no per-test scope,
+so a gated journey inside `SemiPlot.Tests` would either fail every machine without a runtime or cost
+that project its skip guard for every ungated test in it. A third project is the shape that keeps
+both properties.
+
+CI gives each project its own job: `build-and-test` on `windows-latest` and `ui-tests-linux` on
+`ubuntu-latest` run `SemiPlot.Tests`, `data-tests` runs `SemiPlot.Tests.Data`, and `journey-tests`
+runs `SemiPlot.Tests.Journeys`, both on `ubuntu-latest`. The two gated jobs set
+`SEMIPLOT_REQUIRE_DB`; the two `SemiPlot.Tests` legs omit it deliberately, because that project has
+no gated test to require a runtime for and the Windows runner cannot host a Linux container.
 
 ## Ownership
 
@@ -138,8 +177,8 @@ Each piece lives with the party whose change invalidates it.
 | Archive schema, layers, thinning rule | Simple-Scada 2 | the vendor's product; observed in `scada-archive.md` | SemiPlot is a strict read-only consumer. The observation is documented with the consumer because the consumer depends on it, not because anyone here controls it |
 | Instance provisioning: database, roles, grants, default privileges, `semiplot_tags`, `public.trends` | SemiBase | `github.com/Semiteq/SemiBase` | the instance is shared by the SCADA, SemiPlot and future readers. The bench must be provisioned by the same implementation a site is, or it stops testing the grant chain. The archive table is in that list because SemiBase creates it: a second definition here would be the one exercised daily while the real one decayed |
 | `semibase` artifact formats and versions | SemiBase | its release workflow and its published image | the producer owns its artifacts; SemiPlot only consumes them |
-| Synthetic data model, including `LayerThinner` — this project's hypothesis about the vendor's thinning rule | SemiPlot | `SemiPlot.Tools.ArchiveSeeder` | the hypothesis couples to the consumer, not the provisioner: if the rule is refuted, the *read path* changes and SemiBase changes nothing. It must version in lock-step with the code that bets on it, which is why the golden digest lives beside it and why the seeder holds verbatim copies rather than referencing another project |
-| Test harness, gate policy | SemiPlot tests | `SemiPlot.Tests.Data/Integration/` | skip-versus-fail is consumer CI policy; no other party can decide it |
+| Synthetic data model, including `LayerThinner` — this project's hypothesis about the vendor's thinning rule | SemiPlot | `SemiPlot.Tools.ArchiveSeeder` | the hypothesis couples to the consumer, not the provisioner: if the rule is refuted, the *read path* changes and SemiBase changes nothing. It must version in lock-step with the code that bets on it, which is why the golden digest lives beside it and why `SyntheticValueWalk`, `SyntheticPenCatalog` and `SyntheticPen` are the seeder's own and are frozen: the digest pins the seeder's output and later slices develop against that output, so a generator shared with anything evolving for its own reasons would break them |
+| Test harness, gate policy | SemiPlot tests | `SemiPlot.Tests.Data/Integration/`, consumed by `SemiPlot.Tests.Journeys` | skip-versus-fail is consumer CI policy; no other party can decide it |
 | Developer environment | SemiPlot | `dotnet test` and the bench recipe in `bench.md` | it composes the others' artifacts and defines none of them |
 
 Two rules follow from the first two rows and are not negotiable, restating

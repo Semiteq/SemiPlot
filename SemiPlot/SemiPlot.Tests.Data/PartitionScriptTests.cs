@@ -36,7 +36,7 @@ public sealed class PartitionScriptTests
 		var statement = PartitionScript.CreateStatement(new DateTime(2026, 1, 1));
 
 		Assert.Equal(
-			"CREATE TABLE public.tp2026m01d01 PARTITION OF public.trends "
+			"CREATE TABLE IF NOT EXISTS public.tp2026m01d01 PARTITION OF public.trends "
 				+ "FOR VALUES FROM ('2026-01-01 00:00:00') TO ('2026-01-02 00:00:00');",
 			statement);
 	}
@@ -47,7 +47,7 @@ public sealed class PartitionScriptTests
 		var statement = PartitionScript.CreateStatement(new DateTime(2026, 1, 31));
 
 		Assert.Equal(
-			"CREATE TABLE public.tp2026m01d31 PARTITION OF public.trends "
+			"CREATE TABLE IF NOT EXISTS public.tp2026m01d31 PARTITION OF public.trends "
 				+ "FOR VALUES FROM ('2026-01-31 00:00:00') TO ('2026-02-01 00:00:00');",
 			statement);
 	}
@@ -58,8 +58,34 @@ public sealed class PartitionScriptTests
 		var statement = PartitionScript.CreateStatement(new DateTime(2026, 12, 31));
 
 		Assert.Equal(
-			"CREATE TABLE public.tp2026m12d31 PARTITION OF public.trends "
+			"CREATE TABLE IF NOT EXISTS public.tp2026m12d31 PARTITION OF public.trends "
 				+ "FOR VALUES FROM ('2026-12-31 00:00:00') TO ('2027-01-01 00:00:00');",
+			statement);
+	}
+
+	// An appending run meets the day partitions an earlier run created, so the statement passes through
+	// one instead of failing on it. A seeding run never meets one: ArchiveWriter's seeded refusal rejects
+	// any non-tpdefault partition before these statements execute.
+	[Fact]
+	public void TheStatementPassesThroughADayThatAlreadyHasItsPartition()
+	{
+		var statement = PartitionScript.CreateStatement(new DateTime(2026, 1, 1));
+
+		Assert.StartsWith("CREATE TABLE IF NOT EXISTS ", statement, StringComparison.Ordinal);
+	}
+
+	// The only parameter is a DateTime, so nothing a caller typed can reach the statement: the name and
+	// both bounds are rendered, and the rendered form is all the statement carries.
+	[Fact]
+	public void TheStatementCarriesOnlyItsRenderedNameAndBounds()
+	{
+		var statement = PartitionScript.CreateStatement(
+			new DateTime(2026, 8, 4, 12, 34, 56, DateTimeKind.Unspecified));
+
+		Assert.Matches(
+			@"^CREATE TABLE IF NOT EXISTS public\.tp\d{4}m\d{2}d\d{2} PARTITION OF public\.trends "
+				+ @"FOR VALUES FROM \('\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'\) "
+				+ @"TO \('\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'\);$",
 			statement);
 	}
 
@@ -123,7 +149,7 @@ public sealed class PartitionScriptTests
 		var statements = PartitionScript.CreateStatements(start, end);
 
 		Assert.Equal(PartitionScript.CoveredDays(start, end).Count, statements.Count);
-		Assert.All(statements, statement => Assert.StartsWith("CREATE TABLE public.tp", statement));
+		Assert.All(statements, statement => Assert.StartsWith("CREATE TABLE IF NOT EXISTS public.tp", statement));
 		Assert.Equal(statements.Count, statements.Distinct(StringComparer.Ordinal).Count());
 	}
 
@@ -147,7 +173,10 @@ public sealed class PartitionScriptTests
 	private static IReadOnlyList<string> StatementNames(IEnumerable<string> statements)
 	{
 		return statements
-			.Select(statement => statement.Split(' ')[2]["public.".Length..])
+			.Select(statement => statement
+				.Split(' ')
+				.First(token => token.StartsWith("public.tp", StringComparison.Ordinal)))
+			.Select(token => token["public.".Length..])
 			.ToArray();
 	}
 }

@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="SemiPlot.Tests"/>
+    <InternalsVisibleTo Include="SemiPlot.Tests.Journeys"/>
   </ItemGroup>
 
   <ItemGroup>
@@ -30,10 +31,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SemiPlot.Core\SemiPlot.Core.csproj"/>
-    <!-- Both data sources, deliberately: the composition root picks one. AddPostgresData is the default;
-         AddData (the stub) is reachable only through the use-stub switch. -->
     <ProjectReference Include="..\SemiPlot.DataSource.Postgres\SemiPlot.DataSource.Postgres.csproj"/>
-    <ProjectReference Include="..\SemiPlot.DataSource.Stub\SemiPlot.DataSource.Stub.csproj"/>
   </ItemGroup>
 
 </Project>

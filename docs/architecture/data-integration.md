@@ -37,6 +37,10 @@ public interface IDataProvider
     // Cold per call: no samples flow until subscribed; the subscriber disposes the returned IDisposable.
     IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<long> penIds);
 
+    // Hot, shared by every subscription and never terminating: it neither completes nor faults,
+    // so a consumer subscribes with an onNext handler alone.
+    IObservable<ArchiveConnectionState> ConnectionFaults { get; }
+
     Task<Result<IReadOnlyList<Pen>>> QueryPensAsync();
 
     Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(
@@ -57,6 +61,7 @@ public interface IDataProvider
 | `PenHistoryEnvelope` | parallel `Timestamps` / `Min` / `Max` / `Center`, strictly ascending, `NaN` marks a gap | One per pen per history query. |
 | `ArchiveExtent` | `FirstUtc`, `LastUtc`, `IsEmpty` | The span of the configured variables, consumed by the minimap (`TM-4`). `ArchiveExtent.Empty` is the no-span form; the two timestamps are meaningful only when `IsEmpty` is false. |
 | `AggregationLayer` | `Raw`, `Minute`, `Hour`, `Day` | Maps one-to-one onto the archive's `l` column. |
+| `ArchiveConnectionState` | `Fault`, `IsConnected` | What the provider reports about its own connection. `Fault` is null while the archive answers and carries the typed error while it does not — **The connection state the poll reports** below. |
 
 `QueryHistoryAsync`'s window is half-open — `fromUtc` inclusive, `toUtc` exclusive — in every
 implementation, so two adjacent windows neither repeat nor drop a sample on the boundary and a
@@ -66,15 +71,17 @@ keys them by `PenId` and never by position.
 The pen catalogue is a query, not a property, because reading it can fail: the server can be
 unreachable, the table can be absent, the read can time out. Like every other read on this interface
 the failure travels as a failed `Result` and never as an exception crossing to the UI thread. The
-error types that name those states are defined with the PostgreSQL provider.
+error types that name those states are defined in `SemiPlot.Core/Data/Errors/`, beside
+`IDataProvider`, so a second provider maps its own failures onto the same vocabulary.
 
 That holds on the startup path too: the pen catalogue is read before any window opens, and a failed
 `Result` there opens an error window naming the state rather than throwing through Avalonia's setup.
 The **Startup** section below states the sequence.
 
-Implementations: `PostgresDataProvider` in `SemiPlot.DataSource.Postgres` (production, and what the
-composition root registers) and `RandomStubDataProvider` in `SemiPlot.DataSource.Stub` (synthetic,
-used by tests, demos and the `--use-stub` switch).
+One implementation: `PostgresDataProvider` in `SemiPlot.DataSource.Postgres`, which the composition
+root registers. A test needing a provider it can steer builds a fake against this interface inside
+the test project; nothing ships a second one, so an operator can never be shown invented numbers as
+process data.
 
 ## Operation to SQL
 
@@ -183,10 +190,9 @@ the way out; a row whose converted timestamp does not exceed the previous kept o
 dropped, which is how the assembler keeps the strictly ascending envelope contract across a
 daylight-saving transition — at the cost stated under Time boundary.
 
-In the archive-backed provider a pen with neither a window row nor a seed row gets no envelope at all
-rather than an empty one, because an envelope per requested pen would force every consumer to tell
-"no data" from "not asked for". The rule is that provider's alone: the synthetic provider generates a
-point per tick, so every requested pen it knows carries an envelope, empty when the window is.
+A pen with neither a window row nor a seed row gets no envelope at all rather than an empty one,
+because an envelope per requested pen would force every consumer to tell "no data" from "not asked
+for".
 
 The seed row is what keeps that rule narrow. A pen last written shortly before the window opens
 carries its seed and draws; only a pen the archive holds nothing for within the look-back is
@@ -232,7 +238,41 @@ ORDER BY t;
 ```
 
 The variable list is mandatory. A poll predicated on time alone cannot use the primary key and
-degenerates into a sequential scan of the current day's partition on every tick.
+degenerates into a sequential scan of the current day's partition on every tick. `t > @lastSeen` is
+strict, so the row that set `@lastSeen` is never returned a second time — a repeat would draw a
+segment running backwards across the plot.
+
+### Realtime baseline
+
+```sql
+SELECT max(hi) AS last
+FROM (SELECT DISTINCT unnest(@ids) AS id) requested
+CROSS JOIN LATERAL (
+    SELECT (SELECT max(t) FROM trends WHERE id = requested.id AND l = 0) AS hi
+) bounds;
+```
+
+The point a poll starts from, read once per subscription. The lateral shape is what makes it one
+index probe per variable on `PRIMARY KEY (id, l, t)`: `max(t)` under `id = ANY(...)` does not get
+PostgreSQL's min/max index-edge transform and collects a partition's rows before reducing them. It is
+the archive-extent statement's shape over the requested identifiers rather than over the whole
+catalogue, and `DISTINCT unnest(@ids)` is the seeded window's own de-duplicating source, so a caller
+repeating an identifier costs one probe rather than two. A `NULL` answer means those variables carry
+no row yet — a content state, not a failure.
+
+### Default-partition occupancy
+
+```sql
+SELECT EXISTS (SELECT 1 FROM ONLY public.tpdefault);
+```
+
+Read once at startup, on a connection of its own, to answer whether samples have been landing in the
+catch-all partition. `ONLY` is load-bearing: without it the read descends into the whole partition
+tree and answers about the archive instead of about the catch-all. `EXISTS` is load-bearing for the
+same reason a count is not — the answer is a yes or a no, and the planner stops at the first row. The
+partition is qualified rather than left to the search path because it is an object named in a warning
+the operator has to find under exactly that name. **Archive health** below states what the answer
+does.
 
 ### Gap explanation
 
@@ -270,8 +310,7 @@ ceiling(layer) = nextCoarser(layer).ToPointSpacing() × TargetColumnCount
 
 Only the *next coarser* layer's spacing enters the comparison, so the raw layer's own spacing never
 participates in layer selection. That is what makes the ladder implementable: the true raw spacing
-is the SCADA's per-variable archiving interval, which the client cannot know. It survives only as
-the stub provider's synthesis step.
+is the SCADA's per-variable archiving interval, which the client cannot know.
 
 **The column count is live, not a fixed reference.** The view reports its data-area width,
 `HistoryColumnTarget.FromDataAreaWidth` maps it to 256…2048 columns — one per pixel; `MaxColumns`
@@ -315,9 +354,21 @@ Adjustments the ladder needs:
 - **Hysteresis** — implemented. Layers switch on thresholds separated by a margin, so a window
   hovering on a boundary does not flip layer on every wheel notch and change the visible line
   thickness. The column count carries the same guard as a deadband.
-- **Fresh tail** — outstanding, and the provider's job. Coarse layers are flushed on their own
-  cadence, so a window reaching "now" has an empty tail in `l=1/2/3`. The provider fills the tail from
-  `l=0` and concatenates. The seam is the newest timestamp present in the coarse layer.
+- **Fresh tail** — implemented, in the provider (`FreshTail`). Coarse layers are flushed on their own
+  cadence, so a window reaching "now" is short of up to one point spacing at its right edge in
+  `l=1/2/3`. The provider reads that edge from `l = 0` and merges it into the coarse rows, per pen and
+  under the one-ascending-run-per-pen ordering the fold requires. Three rules bound it:
+  - **The seam is per pen** — the newest timestamp the coarse read returned for that pen, or the
+    window start when it returned none.
+  - **A layer fresh within one of its own points reads no tail**, so the ordinary case costs no extra
+    round trip. Otherwise the tail starts at the earliest seam, clamped to four point spacings back
+    from the window end. The clamp is a cost bound on one query, not a fault threshold: a coarse layer
+    trailing the raw layer by less than a period is the ordinary case.
+  - **A pen whose own seam precedes the tail's start contributes no tail row.** Its coarse rows stop
+    before the tail begins, so appending tail rows would leave a range no row covers — and a range
+    carrying no null is not a gap, since the fold emits one only from a null value. The hole would
+    draw as a single straight segment across missing time, so such a pen keeps the short right edge
+    it already had.
 
 Correctness of the envelope at every layer rests on the vendor's selection preserving each period's
 extremes `[FORUM:1974]`. That is well supported but not yet measured by us — see the open questions
@@ -413,56 +464,117 @@ continuation of `v_last`.
 
 ## Realtime
 
-`Subscribe` returns a cold observable. On subscription the provider polls the raw layer on the data
-scheduler, advances `lastSeen` to the newest timestamp it received, and emits the new samples
-converted to UTC (`RT-1`). Disposal stops the poll.
+`Subscribe` returns a cold observable: each subscription runs a poll loop of its own on the injected
+data scheduler, at the operator's `poll_interval_ms`, holding a baseline of its own and carrying the
+variable list in every query (`RT-1`). Disposing the subscription cancels the loop's query and its
+wait, so no further statement is issued. Batching, the union timeline and the hand-off to the UI
+scheduler happen above the provider, in `TrendCoordinator` (see `charting.md`).
 
-Two invariants:
+The first tick reads the baseline and emits nothing. There is nothing to bind `@lastSeen` to, and
+both alternatives are wrong: a null bound returns no row and leaves the subscription blind for good,
+an unbounded read pours the whole archive into the chart. Every later tick reads the rows written
+past `lastSeen`, converts them to UTC and emits them. `lastSeen` is the archive's own naive wall
+clock rather than the local machine's, because a clock difference between the two hosts would drop
+or repeat the first seconds of every subscription.
 
-- A query error logs and drops that tick. It never throws on the UI thread and never terminates the
-  observable.
-- The provider never emits a timestamp at or before the last one already delivered, which is what
-  keeps the history-to-realtime seam monotonic (`DA-7`).
+The invariants:
 
-Batching, the union timeline and the hand-off to the UI scheduler happen above the provider, in
-`TrendCoordinator` (see `charting.md`).
+- **The sequence never completes and never faults.** A query error logs, drops that tick's rows and
+  leaves the observable running, so nothing throws on the UI thread and the chart keeps the data it
+  has.
+- **No timestamp is emitted at or before the last one already delivered** (`DA-7`), which keeps the
+  history-to-realtime seam monotonic. `t > @lastSeen` is strict and `lastSeen` only moves forward.
+- **A row whose `v` is null is dropped, and `lastSeen` still advances past it.** `Sample.Value` is
+  non-nullable, so a null has no representation on this seam. Reading it would throw, and the tick's
+  own catch would count that throw as a connection failure.
+- **A `q = 32` row opens no gap here.** It carries a real value and is emitted as an ordinary sample:
+  the gap the history path draws is `HistoryRowFold`'s reconstruction from a null value, and `Sample`
+  carries no null to rebuild it with. A break that opens at the live edge draws as a held line until
+  the next history read covers it.
 
-As built, `PostgresDataProvider.Subscribe` returns an empty sequence and slice
-`postgres-realtime-poll` gives it the poll described above. The empty sequence is deliberate:
-`Subscribe` returns an observable and carries no `Result` channel to report a failure through, so a
-sequence that completes without emitting is the only honest answer a provider with no poll can give.
+### The connection state the poll reports
+
+`ConnectionFaults` is hot, shared by every subscription and never terminating.
+`ArchiveConnectionState` carries the fault: null while the archive answers, the typed error while it
+does not.
+
+- **Every subscription's first successful tick reports `Connected`**, and so does the first success
+  after a raised fault; an ordinary tick in between reports nothing. That first report is the only
+  observable point at which a subscription is known to be armed, which is what a consumer sequences
+  on — and why nothing filters the stream with `DistinctUntilChanged`, which would drop every report
+  after the first.
+- **A fault is raised after three consecutive failed ticks**, not after one. Npgsql opens a fresh
+  physical connection after a reset, so a dropped packet or a recycled pool connection produces
+  exactly one failed tick, and a fault raised on one failure would flap over a healthy archive. The
+  count multiplies the operator's own `poll_interval_ms`: at the 1 s cadence a bench uses, that is a
+  fault within about three seconds. The state carries `ArchiveConnectionLostError`, naming the host,
+  the port, the database and the threshold that raised it.
+- **The fault is raised once per outage, and the number it carries is the threshold rather than a
+  running count.** The poll keeps failing behind a raised fault and reports nothing further until a
+  tick succeeds. Reporting the running total would mean raising on every tick, which is the
+  banner-per-second the single raise exists to prevent, so a fault read ten minutes into an outage
+  still names the number of failures that raised it.
+- **A self-cancelled read is not a failure.** Disposal cancels the in-flight query, and
+  `OperationCanceledException` ends the loop ahead of the mapper rather than counting towards the
+  threshold.
+- **A failed tick reads no effective bound.** `StatementTimeoutReader` costs a connection and a query
+  against a server that has just failed one, and a tick reports a connection state rather than a
+  bound.
+
+`MainWindowViewModel` renders the state as one row of the archive banner over a chart that keeps its
+history: `StartupFailureMapper.Describe(fault)`, which is the detail followed by the remedy, never
+the error's own `Message`. That row has a single writer, the bound stream, so nothing else can set
+or clear it.
+
+### Archive health
+
+`ArchiveHealthReader` runs once on the startup path, after both reads have succeeded, on a connection
+of its own under a 10 s bound. It answers with the warnings it found — zero or more — and never with
+a failure.
+
+One state today: a non-empty `public.tpdefault`, which `scada-archive.md` names as a fault signal. It
+is a warning rather than a startup failure because every read still returns those rows and only
+partition elimination is lost, so refusing to start would hide a readable archive from its operator
+over a planning fault written on the SCADA side. A check that cannot run reports nothing and writes a
+log line: a degraded probe must not become a second failure plane beside the reads that matter, and
+"the archive might be unhealthy, we could not tell" is not a state an operator can act on.
+
+The warnings ride out of startup on `StartupData` and become the banner's second row. The two rows
+are independent facts and have separate writers: the health row is written once at startup, and the
+connection stream can neither set nor clear it.
 
 ## Error semantics
 
 Everything on the data path returns `FluentResults`, caller-argument faults included: an inverted
-window and a target column count below one are failed `Result`s carrying a plain message in every
-implementation of `IDataProvider`, worded the same way in each, so a consumer written against one
-cannot tell it from the other. A pen identifier outside the archive's 32-bit identifier range is a
-failed `Result` in the archive-backed provider, which has that column to overflow; the synthetic
-provider carries no such column and ignores an identifier naming no pen it knows.
+window and a target column count below one are failed `Result`s carrying a plain message. A pen
+identifier outside the archive's 32-bit identifier range is a failed `Result` too — the archive has
+that column to overflow — while an identifier inside the range naming no pen the archive knows
+selects no row and is not a failure.
 
-Two preconditions leave an implementation as an exception instead, each a defect in the calling code
+Two preconditions leave the provider as an exception instead, each a defect in the calling code
 rather than a state the archive or the operator can produce: `penIds` is non-null, asserted with
 `ArgumentNullException.ThrowIfNull`, and `layer` is a defined member of `AggregationLayer`, asserted
 with `ArgumentOutOfRangeException`. The null check comes first in every member taking `penIds`,
 `Subscribe` included, which has no `Result` channel to fail through at all. The layer check runs
 after the range and target-count checks, so a call carrying both an inverted window and an undefined
-layer answers with the failed `Result` in every implementation. One more exception crosses on the
-archive path:
+layer answers with the failed `Result`. One more exception crosses on the archive path:
 `OperationCanceledException`, which `ArchiveExceptionMapper` rethrows rather than turning into a failed
-`Result`, as the timeout paragraph below states. Nothing else leaves an implementation as an exception,
+`Result`, as the timeout paragraph below states. Nothing else leaves the provider as an exception,
 so no failure crosses to the UI thread (`DA-1`).
 
 | Situation | Provider result | What the operator sees |
 | --- | --- | --- |
 | Connection refused or DNS failure at startup | failed `Result` | `ErrorWindow` titled "No connection to the archive", naming the host and port, with a remedy and one **Close** button — no retry, the operator corrects the cause and starts again |
 | Connection lost mid-session | failed `Result` on the query; realtime tick dropped | Chart keeps the data it has; staleness is visible |
+| Three consecutive realtime ticks fail | `ArchiveConnectionLostError` on `ConnectionFaults`; the observable keeps running | A banner row over the chart naming the live edge that stopped answering and the check to make — the server still running and still reachable — cleared by the first tick that succeeds |
+| A column the read needs is absent (SQLSTATE `42703`) | failed `Result` carrying `ArchiveShapeUnexpectedError` with the server's own detail | "The archive has an unexpected shape" — the remedy is running `semibase site`, then finding what altered the table |
+| `public.tpdefault` holds rows | success; `ArchiveDefaultPartitionNotEmptyError` rides out of startup as a health warning | A banner row over a working chart naming the partition, stating that its rows are still read and that reads which cannot skip it are slower — the remedy is on the SCADA side |
 | Query timeout | failed `Result` | Same as above; the timeout is a configured bound, not an accident |
-| The database does not exist (SQLSTATE `3D000`, the server answers) | failed `Result` carrying `ArchiveNotInitialisedError` whose `MissingObject` is `Database`, distinguished from a connection failure | "Archive not initialised" — the remedy is running `semibase site` |
-| The credentials are refused or a grant is missing (SQLSTATE `28P01`, `28000`, `42501`) | failed `Result`, distinguished from a connection failure | "Archive access denied" — the remedy is the user, password or grants, not the network |
-| `trends` does not exist (provisioning stopped part-way) | failed `Result` carrying `ArchiveNotInitialisedError` whose `MissingObject` is `Table` and whose `Table` is `trends` | "Archive not initialised" — the remedy is running `semibase site` |
-| `semiplot_tags` does not exist (provisioning unfinished) | failed `Result` carrying `ArchiveNotInitialisedError` whose `MissingObject` is `Table` and whose `Table` is `semiplot_tags` | "Archive not initialised" — the remedy is running `semibase site` |
-| `semiplot_tags` present but empty | empty pen list, success | "No variables configured" — commissioning is not finished |
+| The database does not exist (SQLSTATE `3D000`, the server answers) | failed `Result` carrying `ArchiveNotInitialisedError` whose `MissingObject` is `Database`, distinguished from a connection failure | "The archive is not provisioned" — the remedy is running `semibase site` |
+| The credentials are refused or a grant is missing (SQLSTATE `28P01`, `28000`, `42501`) | failed `Result`, distinguished from a connection failure | "The archive refused the credentials" — the remedy is the user, password or grants, not the network |
+| `trends` does not exist (provisioning stopped part-way) | failed `Result` carrying `ArchiveNotInitialisedError` whose `MissingObject` is `Table` and whose `Table` is `trends` | "The archive is not provisioned" — the remedy is running `semibase site` |
+| `semiplot_tags` does not exist (provisioning unfinished) | failed `Result` carrying `ArchiveNotInitialisedError` whose `MissingObject` is `Table` and whose `Table` is `semiplot_tags` | "The archive is not provisioned" — the remedy is running `semibase site` |
+| `semiplot_tags` present but empty | empty pen list, success | A row stating the catalogue is empty and naming who fills it — commissioning is not finished |
 | Archive present but no rows in the window | success, empty envelope list — no pen has rows, so no pen gets an envelope | Empty chart, no error |
 
 The two table rows carry the same remedy. SemiBase creates `trends` and `semiplot_tags` in one run,
@@ -476,9 +588,11 @@ the file system or the YAML parser produced — an exception, a SQLSTATE string,
 none of that crosses. At the boundary it is mapped onto one of a small set of sealed public error
 types in `SemiPlot.Core/Data/Errors/`, beside `IDataProvider`, and the original rides
 `.CausedBy(...)` so the log keeps the detail. The internal plane is free to change with the driver;
-the public plane is the contract the UI maps onto states and tests assert against. Messages are built
-in the base constructor and are not part of that contract — they may be reworded without a slice
-noticing.
+the public plane is the contract the UI maps onto states and tests assert against. The contract is
+the type and its fields. Messages are built in the base constructor and reach no operator: every
+consumer renders `StartupFailureMapper`'s words instead — the error window in three parts, the
+banner rows in one line each — so a reworded message moves nothing an operator reads, and tests
+assert on the type and its fields rather than on message text.
 
 The rule that decides whether a type exists:
 
@@ -503,12 +617,19 @@ commissioning unfinished against provisioning unfinished — which is what the p
 | `ArchiveAccessDeniedError` | host, port, database, username | The credentials or the grants are wrong |
 | `ArchiveNotInitialisedError` | host, port, database, missingObject (`Database` \| `Table`), table (null on `Database`) | The server answers but the database, or a table the read needs, does not exist |
 | `ArchiveQueryTimedOutError` | host, port, database, timeout (the effective server `statement_timeout` the failing read ran under, read on the failure path from a session of the same reader role; `TimeSpan.Zero` means there is no bound to report — the read-back could not run, or the server bounds nothing) | The read exceeded its configured bound, or the server ended it and no bound can be named |
+| `ArchiveShapeUnexpectedError` | host, port, database, detail (what the server said) | The tables are there, but not the columns they are expected to carry |
+| `ArchiveConnectionLostError` | host, port, database, failureThreshold (the number of consecutive failed ticks that raised the fault, fixed at the raise — not a running count) | The live edge stopped answering; the history already drawn is unaffected |
+| `ArchiveDefaultPartitionNotEmptyError` | host, port, database, partition | Samples are landing in the partition that catches days nobody created |
 | `ArchiveReadFailedError` | host, port, database, sqlState (empty when the failure carried none) | The archive rejected the read for a reason this build does not recognise |
 
-The two connection-file types are raised by the settings loader. The five `Archive*` types are the
+The two connection-file types are raised by the settings loader. Six `Archive*` types are the
 vocabulary the read path maps its SQLSTATEs onto — `28P01` is a type of its own rather than one
 schema error because it sends the operator to a separate remedy: fix the credentials, not the
-provisioning. `3D000` and `42P01` share `ArchiveNotInitialisedError` and stay apart inside it on
+provisioning, and `42703` is `ArchiveShapeUnexpectedError` rather than a missing relation because
+the tables are there and it is their columns that are wrong.
+The remaining two are raised without a SQLSTATE behind them: `ArchiveConnectionLostError` counts
+failed poll ticks and `ArchiveDefaultPartitionNotEmptyError` reports a successful health read whose
+answer was `true`. `3D000` and `42P01` share `ArchiveNotInitialisedError` and stay apart inside it on
 `MissingObject`, because both say the same thing — something the read needs was never created — and
 differ only in what to create. On the table case the type carries the table name rather than assuming
 `trends`, because `42P01` is table-agnostic and the name is what the detail line reports; the remedy
@@ -518,16 +639,22 @@ is `semibase site` for either table, since one provisioning run creates both. On
 type carrying its SQLSTATE, so nothing escapes as an exception and nothing crosses as an untyped
 `Result.Fail(string)` a consumer cannot route on.
 
-**Seven public types, and every one of them reaches the operator.** `StartupFailureMapper`
-(`SemiPlot.UI/Startup/`) turns each into a title, a detail and a remedy of its own. The totality of
-that map is guarded by a reflection test rather than by the compiler: `CS8509` fires on any switch
-expression whose exhaustiveness cannot be proven, and over an interface it never can be, so a switch
-covering every type still warns and promoting that warning to an error would stop the build. The test
-enumerates the public `IError` types in `SemiPlot.Core.Data.Errors` and in `SemiPlot.UI.Startup`, and
-fails when one of them maps to the catch-all arm. A second test pins the enumeration at eight —
-Core's seven plus the UI-local `StartupReadTimedOutError` — because a coverage test over an empty set
-passes vacuously. Adding a public error type without an arm is therefore a failing test, not a vague
-window.
+**Eleven public types, and every one of them reaches the operator.** `StartupFailureMapper`
+(`SemiPlot.UI/Startup/`) turns each into a title, a detail and a remedy of its own, and it is the
+one place a remedy is written: an operator told a state alone is told nothing to do about it, so no
+consumer renders `IError.Message`. `ErrorWindow` lays the three parts out as three blocks.
+`Describe` joins the detail and the remedy into the single line a banner row has room for and drops
+the title, which restates the detail's first clause. Two types never open the error window — a
+lost live edge and a non-empty default partition are drawn as banner rows over a chart that works
+— and they carry an arm for the remedy, which is the half a banner row cannot do without. The
+totality of that map is guarded by a reflection test rather than
+by the compiler: `CS8509` fires on any switch expression whose exhaustiveness cannot be proven, and
+over an interface it never can be, so a switch covering every type still warns and promoting that
+warning to an error would stop the build. The test enumerates the public `IError` types in
+`SemiPlot.Core.Data.Errors` and in `SemiPlot.UI.Startup`, and fails when one of them maps to the
+catch-all arm. A second test pins the enumeration at eleven — Core's ten plus the UI-local
+`StartupReadTimedOutError` — because a coverage test over an empty set passes vacuously. Adding a
+public error type without an arm is therefore a failing test, not a vague window.
 
 `57014` maps unconditionally to `ArchiveQueryTimedOutError`. The server answers that SQLSTATE both
 for `statement_timeout` and for a client-issued cancel, and the chart cancels in-flight reads when it
@@ -583,7 +710,7 @@ the archive's naive timestamps are read in. The file states no query bound: the 
 Npgsql's implicit 30 s client bound cannot abort a read before the server answers `57014`, and the
 read path stamps its own per-command backstop, a fixed five minutes, on every command it builds.
 That backstop is a fixed bound rather than one derived from a value read at connection time, so it
-is no longer guaranteed above the server's: on a site whose reader role carries a
+is not guaranteed to sit above the server's: on a site whose reader role carries a
 `statement_timeout` above five minutes the client cancel and the server's own cancel race, and a
 slow-but-alive read can be reported as `ArchiveUnreachableError` rather than as
 `ArchiveQueryTimedOutError`. Loading returns a `Result`; a malformed file — unreadable, unparseable,
@@ -603,21 +730,21 @@ archive read left inside it either blocks Avalonia's setup or throws through it.
 `StartupProbe` (`SemiPlot.UI/Startup/StartupProbe.cs`) therefore runs in `Program`, ahead of
 `BuildAvaloniaApp()`, and touches no Avalonia or ReactiveUI type. Its sequence:
 
-1. Under `--use-stub`, register `AddData()` and read no connection file at all, so a development
-   machine holding none still reaches the stub.
-2. Otherwise load `<ConfigDir>/archive-connection.yaml` and register `AddPostgresData(settings)`.
-3. Resolve `IDataProvider`, read the pen catalogue, then read the archive extent.
+1. Load `<ConfigDir>/archive-connection.yaml` and register `AddPostgresData(settings)`.
+2. Resolve `IDataProvider`, read the pen catalogue, then read the archive extent.
+3. Read the archive's health warnings, which end nothing: they run only once both reads have
+   succeeded, so the archive is already known to answer, and they ride out on the success channel.
 
-Each step answers with a `Result`. What the sequence carries — the container, the pens and the
-extent — crosses the Avalonia boundary in a `StartupData` record, so `App.InitializeServices`
-consumes data already read and awaits nothing. The settings do not travel that way: they reach the
+The first two steps answer with a `Result`. What the sequence carries — the container, the pens, the
+extent and the health warnings — crosses the Avalonia boundary in a `StartupData` record, so
+`App.InitializeServices` consumes data already read and awaits nothing. The settings do not travel that way: they reach the
 provider through the DI singleton `AddPostgresData(settings)` registers. A failed step
 short-circuits, disposes the container, and carries its error to `Program`, which maps it through
 `StartupFailureMapper` and opens `ErrorWindow` in place of the main window. The two branches are
 exclusive by structure: the failure branch returns rather than falling through, and both go through
-one single-start guard, because a second `BuildAvaloniaApp()` throws once Avalonia is initialised. A
-failed archive never produces a stub — substituting synthetic data would let an operator read
-invented numbers as process data.
+one single-start guard, because a second `BuildAvaloniaApp()` throws once Avalonia is initialised.
+There is no second data source to fall back to, by design: substituting synthetic data would let an
+operator read invented numbers as process data.
 
 **The startup reads are bounded by the caller, not by a token.** No member of `IDataProvider` takes a
 `CancellationToken`, so the probe wraps each read in `Task.WaitAsync(TimeSpan)` with a 30 s bound: a
@@ -661,32 +788,36 @@ inside step 2:
 
 1. All statement text on the application and provider path lives in one class,
    `ArchiveStatements.cs`. Nothing else on that path issues SQL. The bench seeder and the test
-   projects own SQL of their own by design and are outside the rule. Six SQL blocks stand above, and
-   only three of them are shipped statements with a constant in that class: the pen catalogue, the
-   archive extent and the sparse history window. The bucketed history read, the realtime poll and
-   the gap explanation belong to slices that have not shipped — `postgres-bucketed-read`, dropped,
-   and `postgres-live-edge-and-demo`, pending — and have no constant behind them. They are a design
-   record until their slice lands.
+   projects own SQL of their own by design and are outside the rule. Eight SQL blocks stand above,
+   and six of them are shipped statements with a constant in that class: the pen catalogue, the
+   archive extent, the sparse history window, the realtime poll, the realtime baseline and the
+   default-partition occupancy check. The other two — the bucketed history read and the gap
+   explanation — have no constant behind them: `postgres-bucketed-read` is dropped, and no roadmap
+   slice names the gap explanation. They are a design record until a slice ships them.
+   `ArchiveStatements.cs` carries one constant no block above quotes, `EffectiveStatementTimeout`,
+   which runs only after a read has already failed with `57014`.
 2. Unit tests pin one plain literal per operational statement, held in
    `SemiPlot.Tests.Data/Postgres/ArchiveStatementTextTests.cs` and compared character for character
-   against the constant. The three pinned are the ones the read path issues — the pen catalogue, the
-   archive extent and the sparse history window; `EffectiveStatementTimeout` is a cold-path
-   diagnostic and carries no literal. `SparseHistoryWindow` is the only statement taking
-   parameters, and its binder `PostgresDataProvider.BindWindow` is pinned against that statement's
-   own parameter names. A change in the code therefore shows up as a failing test. None of it covers
-   this document: nothing checks that the SQL quoted above still matches the constants, so whoever
-   assembles a brief from this document re-reads by hand the three blocks that have a constant —
-   the pen catalogue, the archive extent and the sparse history window — against
-   `ArchiveStatements.cs`. The other three name no constant, so that re-read cannot cover them; they
-   are checked against the code only when the slice that ships them lands.
-3. A gated integration test runs `EXPLAIN` on the extent statement and asserts the plan's shape: an
-   index scan under each bounded subquery, and no sequential scan of a `trends` partition holding
-   rows. The plan never names `tpk` — it is the parent partitioned index of a
+   against the constant. Six are pinned — every shipped statement except
+   `EffectiveStatementTimeout`, which is a cold-path diagnostic and carries no literal. Three of the
+   six take parameters, and each binds through a binder of its own pinned against that statement's
+   own parameter names: `PostgresDataProvider.BindWindow` over the sparse history window,
+   `RealtimePoll.BindPoll` over the poll and `RealtimePoll.BindBaseline` over the baseline. A change
+   in the code therefore shows up as a failing test. None of it covers this document: nothing checks
+   that the SQL quoted above still matches the constants, so whoever assembles a brief from this
+   document re-reads by hand the six blocks that have a constant against `ArchiveStatements.cs`. The
+   other two name no constant, so that re-read cannot cover them; they are checked against the code
+   only when the slice that ships them lands.
+3. Gated integration tests run `EXPLAIN` on the extent statement, the sparse history window, the
+   realtime poll and the realtime baseline, and assert each plan's shape: an index scan under each
+   bounded subquery, a seed walk whose backwards bound the planner pushed into the index, no older
+   partition read for a pen with no prior rows, and no sequential scan of a `trends` partition
+   holding rows. The plans never name `tpk` — it is the parent partitioned index of a
    `PARTITION BY RANGE (t)` table and is never scanned, so what `EXPLAIN` prints is each partition's
-   own cloned `<partition>_pkey`. The shape assertion survives partition renaming and still fails the
-   moment a predicate is dropped, which turns an unbounded extent minimum from a warning in prose
-   into an enforced invariant. The windowed history query and the realtime poll carry the same
-   hazards — the missing layer predicate and the missing variable list — and get the same treatment
+   own cloned `<partition>_pkey`. The shape assertions survive partition renaming and still fail the
+   moment a predicate is dropped, which turns the hazards this document states in prose — an
+   unbounded extent minimum, a missing layer predicate, a missing variable list — into enforced
+   invariants. The two statements with no constant carry the same hazards and get the same treatment
    in the slices that implement them.
 
 ## Field triage
@@ -703,5 +834,7 @@ When a chart is empty, check in this order. Each step distinguishes a different 
    exists.
 5. Does the window overlap the data? Compare against the extent, and suspect a `source_time_zone`
    mismatch if the offset looks like a whole number of hours.
-6. Is `tpdefault` non-empty? Rows there indicate the SCADA failed to create a daily partition; they
-   are outside every date range and effectively invisible.
+6. Is `tpdefault` non-empty? Rows there indicate the SCADA failed to create a daily partition. They
+   are **not** a cause of an empty chart: every read still returns them, and what is lost is
+   partition elimination, so reads that cannot skip that partition are slower. Startup reports it as
+   a banner row over a working chart, and the remedy is on the SCADA side.

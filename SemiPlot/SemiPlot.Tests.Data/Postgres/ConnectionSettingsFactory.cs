@@ -10,10 +10,15 @@ internal static class ConnectionSettingsFactory
 
 	public const string Username = "semiplot_reader";
 
+	// The default interval matches the one a bench runs at. A test that has to watch a poll loop in real
+	// time passes a shorter one rather than waiting a second per tick.
+	private static readonly TimeSpan _defaultPollInterval = TimeSpan.FromSeconds(1);
+
 	public static PostgresConnectionSettings Create(
 		TimeZoneInfo? sourceTimeZone = null,
 		string host = "127.0.0.1",
-		int port = 1)
+		int port = 1,
+		TimeSpan? pollInterval = null)
 	{
 		return new PostgresConnectionSettings(
 			Host: host,
@@ -22,7 +27,7 @@ internal static class ConnectionSettingsFactory
 			Username: Username,
 			Password: "unused",
 			SourceTimeZone: sourceTimeZone ?? TimeZoneInfo.Utc,
-			PollInterval: TimeSpan.FromSeconds(1),
+			PollInterval: pollInterval ?? _defaultPollInterval,
 			Schema: "public");
 	}
 }

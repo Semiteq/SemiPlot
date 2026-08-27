@@ -70,6 +70,53 @@ public sealed class PostgresHistoryReadTests(
 
 	private static readonly Lazy<IReadOnlyList<long>> _seededPenIds = new(SelectSeededPenIds);
 
+	// The fresh tail's own archive, written by this class into a clone of the provisioned source. One
+	// calendar day, so the write creates the single partition tp2026m01d01; winter under the source zone,
+	// so every conversion out is an unambiguous fixed offset.
+	private static readonly DateTime _tailDay = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Unspecified);
+
+	private static readonly DateTime _tailWindowFrom = _tailDay.AddHours(10);
+
+	private static readonly DateTime _tailWindowTo = _tailWindowFrom.AddMinutes(5);
+
+	// The raw layer's cadence in that archive. Ten seconds is well under Minute's 15 s point spacing, so
+	// the raw layer really does carry rows the coarse layer cannot.
+	private static readonly TimeSpan _rawStep = TimeSpan.FromSeconds(10);
+
+	// The newest raw row, ten seconds before the window closes: what a Minute-layer window has to reach
+	// once the tail fills it.
+	private static readonly DateTime _newestRawTimestamp = _tailWindowTo - _rawStep;
+
+	// Its coarse rows end exactly at the clamped tail start, so it clears the bound and takes the tail.
+	private const int FreshPenId = 1;
+
+	// Its coarse rows stop three minutes before that bound, so it takes no tail row at all.
+	private const int LaggingPenId = 2;
+
+	// Its coarse layer already carries the newest raw row's own timestamp, so every tail row it is offered
+	// is one the fold has to drop.
+	private const int ReachingPenId = 3;
+
+	private static readonly DateTime _freshSeam = _tailWindowTo.AddMinutes(-1);
+
+	private static readonly DateTime _laggingSeam = _tailWindowFrom.AddMinutes(1);
+
+	private static readonly DateTime[] _freshCoarse =
+	[
+		_tailWindowFrom,
+		_tailWindowFrom.AddMinutes(1),
+		_tailWindowFrom.AddMinutes(2),
+		_tailWindowFrom.AddMinutes(3),
+		_freshSeam
+	];
+
+	private static readonly DateTime[] _laggingCoarse = [_tailWindowFrom, _laggingSeam];
+
+	private static readonly DateTime[] _reachingCoarse = [.. _freshCoarse, _newestRawTimestamp];
+
+	// The archive's own code for the layer the coarse rows below belong to.
+	private const short MinuteLayer = (short)AggregationLayer.Minute;
+
 	[Fact]
 	public async Task AWindowInsideTheFirstRunReadsTheSeedersOwnRows()
 	{
@@ -322,6 +369,101 @@ public sealed class PostgresHistoryReadTests(
 		Assert.Equal(database.Name, error.Database);
 	}
 
+	// The fresh tail, on an archive this class writes rather than on the bench template: the tail's bound is
+	// read off the coarse layer's own newest rows, and the template carries raw rows alone. Every test below
+	// clones the provisioned source and drops it again, so none of them touches SeededArchive, whose
+	// contract is that the class leaves the database as it found it.
+	//
+	// Minute's point spacing is 15 s and its period four of those, so over the five-minute window below the
+	// clamp lands the tail start exactly one minute before the window closes.
+	[Fact]
+	public async Task AMinuteWindowPastTheCoarseLayersNewestRowReachesTheRawLayersNewest()
+	{
+		postgresContainerFixture.RequireAvailable();
+
+		await using var database = await WriteTailArchiveAsync(TestContext.Current.CancellationToken);
+
+		var result = await ReadTailWindowAsync(database, AggregationLayer.Minute);
+
+		Assert.True(result.IsSuccess, ArchiveReadSupport.Describe(result));
+
+		var envelope = Assert.Single(result.Value, candidate => candidate.PenId == FreshPenId);
+
+		// The coarse rows, then every raw row after the pen's own seam. Without the tail the series would
+		// stop at 10:04:00 and the operator would read a value fifty seconds old as the current one.
+		Assert.Equal(
+			ExpectedUtc(_freshCoarse.Concat(RawTimestamps().Where(timestamp => timestamp > _freshSeam))),
+			envelope.Timestamps);
+
+		Assert.Equal(_timeConverter.ToUtc(_newestRawTimestamp), envelope.Timestamps[^1]);
+	}
+
+	// The counterpart: at Raw there is nothing coarser to be short of, so the read is the single one it has
+	// always been and every pen answers with the window's raw rows and nothing else.
+	[Fact]
+	public async Task TheSameWindowAtTheRawLayerIsUnchangedByTheTail()
+	{
+		postgresContainerFixture.RequireAvailable();
+
+		await using var database = await WriteTailArchiveAsync(TestContext.Current.CancellationToken);
+
+		var result = await ReadTailWindowAsync(database, AggregationLayer.Raw);
+
+		Assert.True(result.IsSuccess, ArchiveReadSupport.Describe(result));
+
+		Assert.Equal(new long[] { FreshPenId, LaggingPenId, ReachingPenId }, result.Value.Select(e => e.PenId));
+
+		// Identical across all three pens, including the one whose coarse layer lags: at Raw the coarse
+		// layer takes no part in the answer at all.
+		Assert.All(result.Value, envelope => Assert.Equal(ExpectedUtc(RawTimestamps()), envelope.Timestamps));
+	}
+
+	// The tail rows overlap the coarse rows in time, and one of this pen's raw rows carries the very
+	// timestamp its coarse layer already reached. The fold's ascending check is what drops it, so a
+	// duplicated column here would mean the merge fed the fold two runs for one pen.
+	[Fact]
+	public async Task APenWhoseCoarseRowsReachTheWindowEndGainsNoDuplicate()
+	{
+		postgresContainerFixture.RequireAvailable();
+
+		await using var database = await WriteTailArchiveAsync(TestContext.Current.CancellationToken);
+
+		var result = await ReadTailWindowAsync(database, AggregationLayer.Minute);
+
+		Assert.True(result.IsSuccess, ArchiveReadSupport.Describe(result));
+
+		var envelope = Assert.Single(result.Value, candidate => candidate.PenId == ReachingPenId);
+
+		Assert.Equal(ExpectedUtc(_reachingCoarse), envelope.Timestamps);
+		Assert.Equal(envelope.Timestamps.Distinct(), envelope.Timestamps);
+	}
+
+	// The failure the exclusion exists for. This pen's coarse rows stop three minutes before the tail
+	// starts, so tail rows appended after them would leave a range no row covers — and a range carrying no
+	// null is not a gap: HistoryRowFold opens one only from a null value, so MinMaxDecimator writes no NaN
+	// column and the chart draws one straight interpolated segment across the hole. The pen keeps the short
+	// right edge it already had instead.
+	[Fact]
+	public async Task APenWhoseCoarseRowsStopBeforeTheTailStartGainsNoRowAndNoInterpolatedSpan()
+	{
+		postgresContainerFixture.RequireAvailable();
+
+		await using var database = await WriteTailArchiveAsync(TestContext.Current.CancellationToken);
+
+		var result = await ReadTailWindowAsync(database, AggregationLayer.Minute);
+
+		Assert.True(result.IsSuccess, ArchiveReadSupport.Describe(result));
+
+		var envelope = Assert.Single(result.Value, candidate => candidate.PenId == LaggingPenId);
+
+		Assert.Equal(ExpectedUtc(_laggingCoarse), envelope.Timestamps);
+		Assert.Equal(_timeConverter.ToUtc(_laggingSeam), envelope.Timestamps[^1]);
+
+		// Nothing lands after the seam, so there is no segment spanning the hole — and nothing anchors a
+		// gap either, which is what would have made such a segment readable had one been drawn.
+		Assert.Empty(GapColumnIndices(envelope));
+	}
+
 	// SeedBefore mirrors a bound that lives in SQL, and nothing but this test links the two. It opens no
 	// connection, so it runs wherever the rest of the class skips.
 	[Fact]
@@ -475,6 +617,100 @@ public sealed class PostgresHistoryReadTests(
 			.FirstOrDefault();
 
 		return seed is null ? [] : [seed];
+	}
+
+	// A clone of the provisioned source carrying nothing but the rows below. It is dropped by the caller's
+	// `await using`, so a failed write disposes here rather than leaking a database.
+	private async Task<ArchiveDatabase> WriteTailArchiveAsync(CancellationToken cancellationToken)
+	{
+		var database = await postgresContainerFixture.CloneProvisionedAsync(cancellationToken);
+
+		try
+		{
+			var written = await new ArchiveWriter(database.WriterConnectionString)
+				.WriteAsync(
+					TailArchiveRows(),
+					_tailDay,
+					_tailDay.AddDays(1),
+					cancellationToken: cancellationToken);
+
+			if (written.IsFailed)
+			{
+				throw new InvalidOperationException(
+					"The fresh tail's own archive could not be written: "
+						+ string.Join("; ", written.Errors.Select(error => error.Message)));
+			}
+		}
+		catch
+		{
+			await database.DisposeAsync();
+
+			throw;
+		}
+
+		return database;
+	}
+
+	private static Task<Result<IReadOnlyList<PenHistoryEnvelope>>> ReadTailWindowAsync(
+		ArchiveDatabase database,
+		AggregationLayer layer)
+	{
+		return ReadHistoryAsync(
+			database.ReaderConnectionString,
+			new LocalWindow(_tailWindowFrom, _tailWindowTo),
+			[FreshPenId, LaggingPenId, ReachingPenId],
+			layer);
+	}
+
+	// The raw layer for all three pens plus a coarse layer that ends at a different instant for each.
+	private static IReadOnlyList<ArchiveRow> TailArchiveRows()
+	{
+		var rows = new List<ArchiveRow>();
+
+		foreach (var penId in new[] { FreshPenId, LaggingPenId, ReachingPenId })
+		{
+			rows.AddRange(RawTimestamps().Select(timestamp => new ArchiveRow(
+				penId,
+				ArchiveRow.RawLayer,
+				timestamp,
+				penId,
+				ArchiveRow.OrdinaryQuality)));
+		}
+
+		rows.AddRange(CoarseRows(FreshPenId, _freshCoarse));
+		rows.AddRange(CoarseRows(LaggingPenId, _laggingCoarse));
+		rows.AddRange(CoarseRows(ReachingPenId, _reachingCoarse));
+
+		return rows;
+	}
+
+	private static IEnumerable<ArchiveRow> CoarseRows(int penId, IEnumerable<DateTime> timestamps)
+	{
+		return timestamps.Select(timestamp => new ArchiveRow(
+			penId,
+			MinuteLayer,
+			timestamp,
+			penId,
+			ArchiveRow.OrdinaryQuality));
+	}
+
+	// Every raw timestamp inside the tail window. The first sits on the window's own start, so the
+	// statement's seed branch finds nothing before it and the raw read is the window alone.
+	private static IReadOnlyList<DateTime> RawTimestamps()
+	{
+		var timestamps = new List<DateTime>();
+
+		for (var timestamp = _tailWindowFrom; timestamp < _tailWindowTo; timestamp += _rawStep)
+		{
+			timestamps.Add(timestamp);
+		}
+
+		return timestamps;
+	}
+
+	private static IReadOnlyList<DateTime> ExpectedUtc(IEnumerable<DateTime> archiveLocal)
+	{
+		return archiveLocal.Select(_timeConverter.ToUtc).ToArray();
 	}
 
 	private static IReadOnlyList<ArchiveRow> GenerateSeededRawRows()

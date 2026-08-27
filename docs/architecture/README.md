@@ -29,8 +29,8 @@ implementation plans see `docs/plans/`.
   template-and-clone lifecycle, plus the environment that gates the integration tests.
 
 - [testing-strategy.md](./testing-strategy.md) — what each kind of test owns: the unit /
-  integration / end-to-end distinction drawn on this repository's own files, why the two test
-  projects are two, the ownership map for every piece of the bench, and what pins each kind of
+  integration / end-to-end distinction drawn on this repository's own files, why the three test
+  projects are three, the ownership map for every piece of the bench, and what pins each kind of
   dependency.
 
 The one data file referenced from the docs above is the committed 140-row real-archive slice,

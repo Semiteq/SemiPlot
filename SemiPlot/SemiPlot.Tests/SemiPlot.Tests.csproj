@@ -26,7 +26,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SemiPlot.Core\SemiPlot.Core.csproj"/>
-    <ProjectReference Include="..\SemiPlot.DataSource.Stub\SemiPlot.DataSource.Stub.csproj"/>
     <ProjectReference Include="..\SemiPlot.UI\SemiPlot.UI.csproj"/>
   </ItemGroup>
 

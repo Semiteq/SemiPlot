@@ -1,5 +1,4 @@
 ﻿using System.Globalization;
-using System.Numerics;
 
 using FluentResults;
 
@@ -30,9 +29,6 @@ public sealed record SeederOptions(
 	private const string BreakCountOption = "break-count";
 	private const string EndOption = "end";
 
-	private const string WholeNumber = "a whole number";
-	private const string PlainNumber = "a number";
-
 	private static readonly string[] _knownOptions =
 	[
 		ConnectionOption,
@@ -61,52 +57,17 @@ public sealed record SeederOptions(
 		  --break-count       Breaks placed across the span. Default 4. A break needs up to 10 minutes
 		                      of downtime with 5 minutes of archiving on either side, so a day holds
 		                      at most 72 of them.
+		  --follow            Runs the demo writer instead of seeding: it appends rows on a wall-clock
+		                      cadence and takes options of its own. Pass --follow for those.
 		""";
 
 	public DateTime Start => End - TimeSpan.FromDays(Days);
 
 	public static Result<SeederOptions> Parse(IReadOnlyList<string> arguments)
 	{
-		var values = new Dictionary<string, string>(StringComparer.Ordinal);
+		var tokens = OptionTokens.Read(arguments, _knownOptions);
 
-		for (var index = 0; index < arguments.Count; index++)
-		{
-			var argument = arguments[index];
-
-			if (!argument.StartsWith("--", StringComparison.Ordinal))
-			{
-				return Result.Fail<SeederOptions>($"Unexpected argument '{argument}'.");
-			}
-
-			var name = argument[2..];
-
-			if (Array.IndexOf(_knownOptions, name) < 0)
-			{
-				return Result.Fail<SeederOptions>($"Unknown option '{argument}'.");
-			}
-
-			if (index + 1 >= arguments.Count)
-			{
-				return Result.Fail<SeederOptions>($"Option '{argument}' requires a value.");
-			}
-
-			// A value that is itself an option means the previous one was left without a value; taking
-			// it would report the failure against a later, innocent token.
-			if (arguments[index + 1].StartsWith("--", StringComparison.Ordinal))
-			{
-				return Result.Fail<SeederOptions>(
-					$"Option '{argument}' requires a value, got the option '{arguments[index + 1]}'.");
-			}
-
-			if (!values.TryAdd(name, arguments[index + 1]))
-			{
-				return Result.Fail<SeederOptions>($"Option '{argument}' is specified more than once.");
-			}
-
-			index++;
-		}
-
-		return Build(values);
+		return tokens.IsFailed ? Result.Fail<SeederOptions>(tokens.Errors) : Build(tokens.Value);
 	}
 
 	private static Result<SeederOptions> Build(IReadOnlyDictionary<string, string> values)
@@ -123,12 +84,16 @@ public sealed record SeederOptions(
 		}
 
 		var end = ReadEnd(endText);
-		var days = ReadNumber(values, DaysOption, DefaultDays, NumberStyles.Integer, WholeNumber);
-		var pens = ReadNumber(values, PensOption, DefaultPenCount, NumberStyles.Integer, WholeNumber);
-		var seed = ReadNumber(values, SeedOption, DefaultSeed, NumberStyles.Integer, WholeNumber);
-		var changeSeconds = ReadNumber(
-			values, ChangeSecondsOption, DefaultChangeSeconds, NumberStyles.Float, PlainNumber);
-		var breakCount = ReadNumber(values, BreakCountOption, DefaultBreakCount, NumberStyles.Integer, WholeNumber);
+		var days = OptionTokens.ReadNumber(
+			values, DaysOption, DefaultDays, NumberStyles.Integer, OptionTokens.WholeNumber);
+		var pens = OptionTokens.ReadNumber(
+			values, PensOption, DefaultPenCount, NumberStyles.Integer, OptionTokens.WholeNumber);
+		var seed = OptionTokens.ReadNumber(
+			values, SeedOption, DefaultSeed, NumberStyles.Integer, OptionTokens.WholeNumber);
+		var changeSeconds = OptionTokens.ReadNumber(
+			values, ChangeSecondsOption, DefaultChangeSeconds, NumberStyles.Float, OptionTokens.PlainNumber);
+		var breakCount = OptionTokens.ReadNumber(
+			values, BreakCountOption, DefaultBreakCount, NumberStyles.Integer, OptionTokens.WholeNumber);
 
 		var merged = Result.Merge(end, days, pens, seed, changeSeconds, breakCount);
 
@@ -279,23 +244,5 @@ public sealed record SeederOptions(
 		}
 
 		return Result.Ok(parsed);
-	}
-
-	private static Result<TNumber> ReadNumber<TNumber>(
-		IReadOnlyDictionary<string, string> values,
-		string name,
-		TNumber fallback,
-		NumberStyles styles,
-		string expectation)
-		where TNumber : INumberBase<TNumber>
-	{
-		if (!values.TryGetValue(name, out var text))
-		{
-			return Result.Ok(fallback);
-		}
-
-		return TNumber.TryParse(text, styles, CultureInfo.InvariantCulture, out var parsed)
-			? Result.Ok(parsed)
-			: Result.Fail<TNumber>($"Option '--{name}' expects {expectation}, got '{text}'.");
 	}
 }

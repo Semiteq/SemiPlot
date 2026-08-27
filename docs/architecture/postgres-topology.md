@@ -85,8 +85,7 @@ flowchart TB
     ui["Chart · minimap · toolbar"]
     coord["TrendCoordinator"]
     iface{{"IDataProvider"}}
-    stub["RandomStubDataProvider<br/>--use-stub only"]
-    pg["PostgresDataProvider<br/>registered by default"]
+    pg["PostgresDataProvider<br/>the only implementation"]
 
     subgraph plumbing["SemiPlot.DataSource.Postgres"]
         direction TB
@@ -97,10 +96,9 @@ flowchart TB
         loader["PostgresConnectionLoader<br/>archive-connection.yaml<br/>nine keys"]
     end
 
-    errs["SemiPlot.Core/Data/Errors<br/>seven sealed types"]
+    errs["SemiPlot.Core/Data/Errors<br/>ten sealed types"]
 
     ui --> coord --> iface
-    iface -.-> stub
     iface --> pg
     pg --> stmts
     pg --> ds
@@ -108,17 +106,16 @@ flowchart TB
     pg --> mapper
     loader --> ds
     mapper --> errs
-
-    style stub stroke-dasharray:4 4
 ```
 
-The composition root resolves `PostgresDataProvider`. The stub is reachable only through
-`--use-stub` and is never a fallback from a failed archive: an archive that does not answer opens an
-error window, which `data-integration.md` states under **Startup**. Every one of the seven public
-error types maps to a state in that window, and a reflection coverage test fails when one does not.
-Three of the four provider members are implemented — the pen catalogue, the archive
-extent and the windowed history read. `Subscribe` returns an empty sequence until
-`postgres-realtime-poll` fills it.
+The composition root resolves `PostgresDataProvider`, and there is nothing else to resolve: an
+archive that does not answer opens an error window rather than falling back to invented data, which
+`data-integration.md` states under **Startup**. `StartupFailureMapper` turns each public error type
+into a title, a detail and a remedy — Core's ten plus the UI-local `StartupReadTimedOutError`,
+eleven in all — and a reflection coverage test fails when one has no arm; two of them reach the
+operator as a banner row over a working chart rather than as a window. Every member
+of `IDataProvider` is implemented — the pen catalogue, the archive extent, the windowed history read
+and the live-edge poll.
 
 ## The three provisioning states, and the fourth
 

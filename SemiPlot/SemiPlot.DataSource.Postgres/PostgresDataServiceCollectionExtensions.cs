@@ -10,7 +10,8 @@ namespace SemiPlot.DataSource.Postgres;
 
 public static class PostgresDataServiceCollectionExtensions
 {
-	// Named apart from the stub's AddData so a composition root may reference both projects and pick one.
+	// Named for its own data source rather than a bare AddData, so a composition root referencing several
+	// SemiPlot.DataSource.* projects names the one it registers.
 	public static IServiceCollection AddPostgresData(
 		this IServiceCollection services,
 		PostgresConnectionSettings settings)
@@ -23,6 +24,7 @@ public static class PostgresDataServiceCollectionExtensions
 		services.AddSingleton<ArchiveDataSource>();
 		services.AddSingleton(new ArchiveTimeConverter(settings.SourceTimeZone));
 		services.AddSingleton<StatementTimeoutReader>();
+		services.AddSingleton<ArchiveHealthReader>();
 		services.AddSingleton(new ArchiveExceptionMapper(settings));
 
 		// A factory rather than type activation: two of the provider's constructor parameters are internal
@@ -33,6 +35,8 @@ public static class PostgresDataServiceCollectionExtensions
 			provider.GetRequiredService<ArchiveTimeConverter>(),
 			provider.GetRequiredService<ArchiveExceptionMapper>(),
 			provider.GetRequiredService<StatementTimeoutReader>(),
+			provider.GetRequiredService<PostgresConnectionSettings>(),
+			provider.GetRequiredService<IScheduler>(),
 			provider.GetRequiredService<ILogger<PostgresDataProvider>>()));
 
 		return services;

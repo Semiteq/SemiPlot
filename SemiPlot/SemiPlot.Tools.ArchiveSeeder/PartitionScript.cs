@@ -20,6 +20,11 @@ public static class PartitionScript
 
 	// A range bound is a literal because PostgreSQL binds no placeholder in DDL. Nothing a caller typed
 	// reaches the statement: both the name and the bounds are rendered from a DateTime.
+	//
+	// IF NOT EXISTS serves both callers from one form. An appending run meets the day partitions an
+	// earlier run created and must pass through them; a seeding run never meets one, because
+	// ArchiveWriter's seeded refusal rejects any non-tpdefault partition before these statements
+	// execute. The clause therefore cannot mask an existing partition on the seed path.
 	public static string CreateStatement(DateTime day)
 	{
 		var start = day.Date;
@@ -27,7 +32,7 @@ public static class PartitionScript
 		var lower = start.ToString(BoundFormat, CultureInfo.InvariantCulture);
 		var upper = end.ToString(BoundFormat, CultureInfo.InvariantCulture);
 
-		return $"CREATE TABLE public.{PartitionName(start)} PARTITION OF public.trends "
+		return $"CREATE TABLE IF NOT EXISTS public.{PartitionName(start)} PARTITION OF public.trends "
 			+ $"FOR VALUES FROM ('{lower}') TO ('{upper}');";
 	}
 

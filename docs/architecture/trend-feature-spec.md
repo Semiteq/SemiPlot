@@ -191,7 +191,7 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 **Note.** Closes the most real correctness risk (b)7.
 
 ### DA-8 — Quality and gaps (SHOULD)
-**Definition.** The archive marks a break with `q = 32` on the last sample before it and `q = 16` on the first sample after it; absence of rows without a preceding `q = 32` means the value did not change and the line continues horizontally (`scada-archive.md`). The provider maps a break to a NaN anchor in the envelope along the whole path from PostgreSQL, not only synthetically in the stub. Quality codes outside the good set mark an untrustworthy sample, which is also dropped.
+**Definition.** The archive marks a break with `q = 32` on the last sample before it and `q = 16` on the first sample after it; absence of rows without a preceding `q = 32` means the value did not change and the line continues horizontally (`scada-archive.md`). The provider maps a break to a NaN anchor in the envelope along the whole path from PostgreSQL — from the archive's own `q` column, never from a synthesised marker. Quality codes outside the good set mark an untrustworthy sample, which is also dropped.
 **Acceptance.** DB: a marked break produces a line break, while a long run without rows produces a continuous horizontal line; the readout inside a break is "no data".
 **Note.** Closes gap (b)10.
 

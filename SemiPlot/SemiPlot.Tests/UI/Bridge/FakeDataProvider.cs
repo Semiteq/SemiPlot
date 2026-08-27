@@ -1,5 +1,6 @@
 ﻿using System.Reactive.Concurrency;
 using System.Reactive.Linq;
+using System.Reactive.Subjects;
 
 using FluentResults;
 
@@ -18,6 +19,10 @@ internal sealed class FakeDataProvider : IDataProvider
 	private readonly TimeSpan _realtimeInterval;
 
 	private readonly IScheduler _scheduler;
+
+	// Hot and never completed, like the real provider's. A test pushes into it through ReportConnectionState
+	// instead of waiting for a tick that this fake never runs.
+	private readonly Subject<ArchiveConnectionState> _connectionFaults = new();
 
 	// pens overrides the two-pen default catalogue. An empty list is the commissioned-but-unfilled
 	// semiplot_tags a real server answers with, which is a successful read and not a failure.
@@ -90,6 +95,21 @@ internal sealed class FakeDataProvider : IDataProvider
 
 	public IReadOnlyList<Pen> Pens { get; }
 
+	// Off by default, which puts every pen on one shared timestamp per tick. Set, each pen's sample is
+	// offset by its own position in the subscription, which is what the real archive delivers: it is
+	// per-variable and change-based with a deadband, so two variables rarely carry the same t and one
+	// buffer window routinely spans several distinct ones.
+	public bool StaggerRealtimeTimestamps { get; set; }
+
+	public IObservable<ArchiveConnectionState> ConnectionFaults => _connectionFaults;
+
+	// The seam a test drives the connection banner from: the fake runs no poll, so nothing else would ever
+	// push a state onto the stream.
+	public void ReportConnectionState(ArchiveConnectionState state)
+	{
+		_connectionFaults.OnNext(state);
+	}
+
 	public IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<long> penIds)
 	{
 		var subscribed = penIds.Where(id => Pens.Any(pen => pen.PenId == id)).ToArray();
@@ -97,9 +117,11 @@ internal sealed class FakeDataProvider : IDataProvider
 		return Observable
 			.Interval(_realtimeInterval, _scheduler)
 			.Select(tick => (IReadOnlyList<Sample>)subscribed
-				.Select(id => new Sample(
+				.Select((id, index) => new Sample(
 					id,
-					_realtimeEpoch + TimeSpan.FromTicks(_realtimeInterval.Ticks * (tick + 1)),
+					_realtimeEpoch
+					+ TimeSpan.FromTicks(_realtimeInterval.Ticks * (tick + 1))
+					+ (StaggerRealtimeTimestamps ? TimeSpan.FromMilliseconds(index) : TimeSpan.Zero),
 					id + tick))
 				.ToArray());
 	}

@@ -1,4 +1,6 @@
-﻿using System.Reactive.Linq;
+﻿using System.Reactive.Concurrency;
+using System.Reactive.Linq;
+using System.Reactive.Subjects;
 
 using FluentResults;
 
@@ -11,17 +13,18 @@ using NpgsqlTypes;
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
+using SemiPlot.DataSource.Postgres.Configuration;
 
 namespace SemiPlot.DataSource.Postgres;
 
 /// <summary>
 /// Reads the archive over the pooled <see cref="ArchiveDataSource"/>. <see cref="QueryPensAsync"/> answers
-/// the configured variables, <see cref="QueryArchiveExtentAsync"/> the span they cover and
-/// <see cref="QueryHistoryAsync"/> a window of one layer, all crossing the boundary in UTC. Every failure
-/// leaves through the public error vocabulary — nothing internal crosses
-/// the boundary — and a <c>42P01</c> is mapped against the relation the failing read names, because each
-/// read knows which relations its own statement touches; a <c>57014</c> is given the server's effective
-/// bound by <see cref="StatementTimeoutReader"/>.
+/// the configured variables, <see cref="QueryArchiveExtentAsync"/> the span they cover,
+/// <see cref="QueryHistoryAsync"/> a window of one layer and <see cref="Subscribe"/> the live edge, all
+/// crossing the boundary in UTC. Every failure leaves through the public error vocabulary — nothing
+/// internal crosses the boundary — and a <c>42P01</c> is mapped against the relation the failing read
+/// names, because each read knows which relations its own statement touches; a <c>57014</c> is given the
+/// server's effective bound by <see cref="StatementTimeoutReader"/>.
 /// </summary>
 public sealed class PostgresDataProvider : IDataProvider
 {
@@ -29,7 +32,14 @@ public sealed class PostgresDataProvider : IDataProvider
 	private readonly ArchiveTimeConverter _timeConverter;
 	private readonly ArchiveExceptionMapper _exceptionMapper;
 	private readonly StatementTimeoutReader _statementTimeoutReader;
+	private readonly PostgresConnectionSettings _settings;
+	private readonly IScheduler _scheduler;
 	private readonly ILogger<PostgresDataProvider> _logger;
+
+	// Hot, shared across every subscription and never completed. A subscription's first successful tick
+	// reports Connected on it, which is the only observable point at which that subscription is known to be
+	// armed, and a run of failed ticks reports the fault on it rather than through OnError.
+	private readonly Subject<ArchiveConnectionState> _connectionFaults = new();
 
 	// Internal because two of its parameters are: a public constructor over an internal type is CS0051.
 	internal PostgresDataProvider(
@@ -37,26 +47,52 @@ public sealed class PostgresDataProvider : IDataProvider
 		ArchiveTimeConverter timeConverter,
 		ArchiveExceptionMapper exceptionMapper,
 		StatementTimeoutReader statementTimeoutReader,
+		PostgresConnectionSettings settings,
+		IScheduler scheduler,
 		ILogger<PostgresDataProvider> logger)
 	{
 		ArgumentNullException.ThrowIfNull(dataSource);
 		ArgumentNullException.ThrowIfNull(timeConverter);
 		ArgumentNullException.ThrowIfNull(exceptionMapper);
 		ArgumentNullException.ThrowIfNull(statementTimeoutReader);
+		ArgumentNullException.ThrowIfNull(settings);
+		ArgumentNullException.ThrowIfNull(scheduler);
 		ArgumentNullException.ThrowIfNull(logger);
 
 		_dataSource = dataSource;
 		_timeConverter = timeConverter;
 		_exceptionMapper = exceptionMapper;
 		_statementTimeoutReader = statementTimeoutReader;
+		_settings = settings;
+		_scheduler = scheduler;
 		_logger = logger;
 	}
 
+	/// <summary>
+	/// The connection state of the live edge. Hot, shared by every subscription and never terminating, as
+	/// <see cref="IDataProvider.ConnectionFaults"/> states.
+	/// </summary>
+	public IObservable<ArchiveConnectionState> ConnectionFaults => _connectionFaults;
+
+	/// <summary>
+	/// The live edge of the requested variables. Cold: each subscription starts a poll loop of its own, on
+	/// the injected scheduler and at the operator's <see cref="PostgresConnectionSettings.PollInterval"/>,
+	/// holding a baseline of its own. Disposing the subscription cancels the loop's query and its wait, so
+	/// no further statement is issued.
+	/// <para>
+	/// The sequence never completes and never faults. Its consumer subscribes with an onNext handler alone,
+	/// so an OnError would go unhandled on the UI scheduler; a failing tick therefore emits no sample — the
+	/// consumer keeps the data it has — and says so on <see cref="ConnectionFaults"/> instead.
+	/// </para>
+	/// </summary>
 	public IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<long> penIds)
 	{
 		ArgumentNullException.ThrowIfNull(penIds);
 
-		return Observable.Empty<IReadOnlyList<Sample>>();
+		var subscribedIds = NarrowForSubscription(penIds);
+
+		return Observable.Create<IReadOnlyList<Sample>>(observer => _scheduler.ScheduleAsync(
+			(_, cancellationToken) => PollAsync(subscribedIds, observer, cancellationToken)));
 	}
 
 	/// <summary>
@@ -101,6 +137,11 @@ public sealed class PostgresDataProvider : IDataProvider
 	/// requested pen the result omits, so no pen carries the previous window's envelope. See
 	/// docs/architecture/data-integration.md.
 	/// </para>
+	/// <para>
+	/// The right edge is filled from the raw layer: a coarse layer is flushed on its own cadence, so a
+	/// window reaching the live edge stops short of it. <see cref="FreshTail"/> holds the bound and the
+	/// merge, and states why a pen too far behind that bound keeps its short edge instead.
+	/// </para>
 	/// </summary>
 	public async Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(
 		IReadOnlyList<long> penIds,
@@ -121,10 +162,10 @@ public sealed class PostgresDataProvider : IDataProvider
 			return Result.Fail<IReadOnlyList<PenHistoryEnvelope>>(arguments.Errors);
 		}
 
-		// The layer guard sits behind the Result-returning checks rather than ahead of them, so that a
-		// caller supplying two bad arguments at once gets the same answer here as from
-		// RandomStubDataProvider, which reaches its own layer guard inside ToPointSpacing only after its
-		// range and target checks.
+		// The layer guard sits behind the Result-returning checks rather than ahead of them: a caller
+		// supplying two bad arguments at once is answered by the range and target checks first, so the
+		// failed Result wins over the throw. That ordering is this provider's contract and
+		// AnInvertedWindowAnswersAheadOfAnUndefinedAggregationLayer pins it.
 		if (!Enum.IsDefined(layer))
 		{
 			throw new ArgumentOutOfRangeException(nameof(layer), layer, "Unknown aggregation layer.");
@@ -135,18 +176,13 @@ public sealed class PostgresDataProvider : IDataProvider
 		try
 		{
 			await using var connection = await _dataSource.OpenConnectionAsync().ConfigureAwait(false);
-			await using var command = _dataSource.CreateCommand(ArchiveStatements.SparseHistoryWindow, connection);
 
-			BindWindow(command, _timeConverter, ids, fromUtc, toUtc, layer);
+			var fromLocal = _timeConverter.ToArchiveLocal(fromUtc);
+			var toLocal = _timeConverter.ToArchiveLocal(toUtc);
 
-			await using var reader = await command.ExecuteReaderAsync().ConfigureAwait(false);
+			var rows = await ReadWindowAsync(connection, ids, fromLocal, toLocal, layer).ConfigureAwait(false);
 
-			var rows = new List<HistoryRowFold.Row>();
-
-			while (await reader.ReadAsync().ConfigureAwait(false))
-			{
-				rows.Add(ReadHistoryRow(reader));
-			}
+			rows = await FillFreshTailAsync(connection, ids, fromLocal, toLocal, layer, rows).ConfigureAwait(false);
 
 			return Result.Ok(HistoryRowFold.Fold(rows, _timeConverter, targetColumnCount));
 		}
@@ -187,6 +223,56 @@ public sealed class PostgresDataProvider : IDataProvider
 		}
 	}
 
+	// One loop per subscription, holding a RealtimePoll of its own and therefore a baseline of its own.
+	// Nothing leaves through OnError or OnCompleted: the consumer subscribes with an onNext handler alone,
+	// and a failing tick is a state change on the signal stream rather than a fault on this sequence.
+	private async Task PollAsync(
+		int[] penIds,
+		IObserver<IReadOnlyList<Sample>> observer,
+		CancellationToken cancellationToken)
+	{
+		var poll = new RealtimePoll(
+			_dataSource,
+			_timeConverter,
+			_exceptionMapper,
+			_settings,
+			penIds,
+			_logger);
+
+		try
+		{
+			while (!cancellationToken.IsCancellationRequested)
+			{
+				var tick = await poll.ReadOnceAsync(cancellationToken).ConfigureAwait(false);
+
+				// A disposal landing while the query is in flight delivers nothing further: the subscriber
+				// is gone, and a batch arriving behind its back is a leaked loop by another name.
+				if (cancellationToken.IsCancellationRequested)
+				{
+					return;
+				}
+
+				if (tick.Samples.Count > 0)
+				{
+					observer.OnNext(tick.Samples);
+				}
+
+				if (tick.StateChange is { } state)
+				{
+					_connectionFaults.OnNext(state);
+				}
+
+				await _scheduler.Sleep(_settings.PollInterval, cancellationToken).ConfigureAwait(false);
+			}
+		}
+		catch (OperationCanceledException)
+		{
+			// The subscription was disposed, which is how this loop ends and the only way it does.
+			// RealtimePoll lets this type out ahead of its mapper so a self-cancelled read never counts
+			// towards the fault threshold.
+		}
+	}
+
 	// Internal rather than private so a unit test can bind through this exact path and compare the names it
 	// produces against the statement's own tokens — the drift no fence extractor sees.
 	internal static void BindWindow(
@@ -197,25 +283,90 @@ public sealed class PostgresDataProvider : IDataProvider
 		DateTime toUtc,
 		AggregationLayer layer)
 	{
+		BindLocalWindow(
+			command,
+			penIds,
+			timeConverter.ToArchiveLocal(fromUtc),
+			timeConverter.ToArchiveLocal(toUtc),
+			layer);
+	}
+
+	// The bounds the statement carries are the archive's own naive wall clock, so the tail read — whose
+	// start is computed from timestamps the archive returned — binds them directly rather than converting
+	// out and back, which is neither order-preserving nor injective across a daylight-saving boundary.
+	private static void BindLocalWindow(
+		NpgsqlCommand command,
+		int[] penIds,
+		DateTime fromLocal,
+		DateTime toLocal,
+		AggregationLayer layer)
+	{
 		command.Parameters.Add(new NpgsqlParameter("ids", NpgsqlDbType.Array | NpgsqlDbType.Integer)
 		{
 			Value = penIds
 		});
 		command.Parameters.Add(new NpgsqlParameter("layer", NpgsqlDbType.Smallint) { Value = (short)layer });
-		command.Parameters.Add(new NpgsqlParameter("from", NpgsqlDbType.Timestamp)
-		{
-			Value = timeConverter.ToArchiveLocal(fromUtc)
-		});
-		command.Parameters.Add(new NpgsqlParameter("to", NpgsqlDbType.Timestamp)
-		{
-			Value = timeConverter.ToArchiveLocal(toUtc)
-		});
+		command.Parameters.Add(new NpgsqlParameter("from", NpgsqlDbType.Timestamp) { Value = fromLocal });
+		command.Parameters.Add(new NpgsqlParameter("to", NpgsqlDbType.Timestamp) { Value = toLocal });
 	}
 
-	// The window bounds and the target column count carry the wording RandomStubDataProvider already uses,
-	// so the same input reads the same way whichever implementation answers it. The identifiers narrow to
-	// the integer trends.id holds, and the narrowing is range-tested rather than a silent wrap: an
-	// identifier no int4 column can carry would otherwise select a different pen's rows.
+	// One bind of the windowed statement, on a connection the caller owns so the tail read shares it.
+	private async Task<IReadOnlyList<HistoryRowFold.Row>> ReadWindowAsync(
+		NpgsqlConnection connection,
+		int[] penIds,
+		DateTime fromLocal,
+		DateTime toLocal,
+		AggregationLayer layer)
+	{
+		await using var command = _dataSource.CreateCommand(ArchiveStatements.SparseHistoryWindow, connection);
+
+		BindLocalWindow(command, penIds, fromLocal, toLocal, layer);
+
+		await using var reader = await command.ExecuteReaderAsync().ConfigureAwait(false);
+
+		var rows = new List<HistoryRowFold.Row>();
+
+		while (await reader.ReadAsync().ConfigureAwait(false))
+		{
+			rows.Add(ReadHistoryRow(reader));
+		}
+
+		return rows;
+	}
+
+	// A coarse layer is flushed on its own cadence, so a window reaching the live edge stops up to one
+	// point spacing short of it. The tail is a second bind of the same statement at layer 0 — no statement
+	// of its own, so nothing new is pinned and the existing EXPLAIN guard already covers the shape.
+	private async Task<IReadOnlyList<HistoryRowFold.Row>> FillFreshTailAsync(
+		NpgsqlConnection connection,
+		int[] penIds,
+		DateTime fromLocal,
+		DateTime toLocal,
+		AggregationLayer layer,
+		IReadOnlyList<HistoryRowFold.Row> coarseRows)
+	{
+		// Ahead of the seams, which walk the whole result set: the raw layer is what a tail is read from,
+		// so this is the one read that never pays anything for the tail at all.
+		if (layer == AggregationLayer.Raw)
+		{
+			return coarseRows;
+		}
+
+		var seams = FreshTail.Seams(coarseRows, penIds, fromLocal);
+
+		if (FreshTail.Start(layer, seams, toLocal) is not { } tailStart)
+		{
+			return coarseRows;
+		}
+
+		var tailRows = await ReadWindowAsync(connection, penIds, tailStart, toLocal, AggregationLayer.Raw)
+			.ConfigureAwait(false);
+
+		return FreshTail.Merge(coarseRows, tailRows, seams, tailStart);
+	}
+
+	// The window bounds and the target column count are reported through the Result channel, in the wording
+	// the caller reads back, and so is a pen identifier the archive's own column cannot carry.
 	private static Result<int[]> ValidateArguments(
 		IReadOnlyList<long> penIds,
 		DateTime fromUtc,
@@ -232,6 +383,13 @@ public sealed class PostgresDataProvider : IDataProvider
 			return Result.Fail<int[]>($"Invalid target column count: {targetColumnCount} (must be at least one).");
 		}
 
+		return NarrowIdentifiers(penIds);
+	}
+
+	// The identifiers narrow to the integer trends.id holds, and the narrowing is range-tested rather than a
+	// silent wrap: an identifier no int4 column can carry would otherwise select a different pen's rows.
+	private static Result<int[]> NarrowIdentifiers(IReadOnlyList<long> penIds)
+	{
 		var ids = new int[penIds.Count];
 
 		for (var index = 0; index < penIds.Count; index++)
@@ -248,6 +406,23 @@ public sealed class PostgresDataProvider : IDataProvider
 		}
 
 		return Result.Ok(ids);
+	}
+
+	// Subscribe carries no Result channel, so the one precondition its arguments can fail is thrown rather
+	// than reported. Every identifier the catalogue answers fits the archive's own int4 column, so reaching
+	// this is a caller's error and not an archive state.
+	private static int[] NarrowForSubscription(IReadOnlyList<long> penIds)
+	{
+		var narrowed = NarrowIdentifiers(penIds);
+
+		if (narrowed.IsFailed)
+		{
+			throw new ArgumentOutOfRangeException(
+				nameof(penIds),
+				string.Join("; ", narrowed.Errors.Select(error => error.Message)));
+		}
+
+		return narrowed.Value;
 	}
 
 	// A plain projection of the columns: the fold owns the conversion, so the naive timestamp crosses

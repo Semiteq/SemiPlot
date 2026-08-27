@@ -5,6 +5,8 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 
+using FluentResults;
+
 using Microsoft.Extensions.DependencyInjection;
 
 using ReactiveUI.Avalonia;
@@ -147,10 +149,29 @@ public class App : Application
 		var minimapViewModel = minimapFactory(coordinator, chartViewModel.Navigation, uiScheduler);
 		mainWindowViewModel.MinimapViewModel = minimapViewModel;
 
+		// Before Start, so the first poll tick's state reaches the banner rather than a stream nothing
+		// is listening to yet: the coordinator's republished stream has no replay.
+		mainWindowViewModel.ObserveArchiveConnection(coordinator.ConnectionFaults);
+
+		// The only writer of the health row, and it writes once: the warnings were read before Avalonia
+		// existed and nothing re-reads them. Several warnings are one paragraph rather than several rows —
+		// the row states facts the operator acts on, not a list that grows a scrollbar.
+		mainWindowViewModel.ArchiveHealthMessage = DescribeHealthWarnings(startupData.HealthWarnings);
+
 		coordinator.Start();
 
 		_ = chartViewModel.RequestInitialHistory();
 		_ = minimapViewModel.LoadExtentAsync();
+	}
+
+	// Null for no warning, which is what leaves the row hidden. Each warning goes through the same mapper
+	// the error window uses, so the row states the fault and the remedy rather than the fault alone — a
+	// default partition holding rows is fixed on the SCADA side, and the raw IError.Message never says so.
+	private static string? DescribeHealthWarnings(IReadOnlyList<IError> healthWarnings)
+	{
+		return healthWarnings.Count == 0
+			? null
+			: string.Join(" ", healthWarnings.Select(StartupFailureMapper.Describe));
 	}
 
 	private static void EnsureSingleStart()

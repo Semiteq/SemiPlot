@@ -162,14 +162,19 @@ else
 }
 
 Write-Step 'Waiting for the provisioning to finish'
-# The image provisions over a unix socket before the published port opens, so a server that answers
-# on TCP has already run `semibase bench` to completion. Polling the published port is therefore the
-# whole readiness condition.
+# The image provisions over a unix socket before the published port opens, so a server reachable on
+# TCP has already run `semibase bench` to completion.
+#
+# The probe goes out to host.docker.internal and back through the published port rather than to
+# 127.0.0.1 inside the container, because that is the path the seeder and the viewer take. An
+# in-container probe passes while the port mapping is still settling, which shows up as a seeder
+# that fails once on a freshly created container and succeeds on the next run.
 $deadline = (Get-Date).AddSeconds(120)
 while ($true)
 {
     & docker exec --env "PGPASSWORD=$SuperuserPassword" $ContainerName `
-        psql --username postgres --dbname postgres --host 127.0.0.1 --command 'SELECT 1' 2>&1 | Out-Null
+        psql --username postgres --dbname postgres `
+        --host host.docker.internal --port $HostPort --command 'SELECT 1' 2>&1 | Out-Null
     if ($LASTEXITCODE -eq 0)
     {
         break
@@ -178,12 +183,12 @@ while ($true)
     if ((Get-Date) -gt $deadline)
     {
         Write-Host (& docker logs --tail 40 $ContainerName 2>&1 | Out-String)
-        throw "The container did not serve on TCP within 120 s. Its last log lines are above."
+        throw "Port $HostPort did not serve within 120 s. The container's last log lines are above."
     }
 
     Start-Sleep -Milliseconds 500
 }
-Write-Host '    the published port serves'
+Write-Host "    port $HostPort serves"
 
 Write-Step "Cloning $ProvisionedDatabase into $Database"
 $exists = Invoke-Psql 'postgres' "SELECT 1 FROM pg_database WHERE datname = '$Database';"

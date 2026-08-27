@@ -818,7 +818,7 @@ it.
 - **PR:** #34 (merged)
 - **Branch:** missing-relation-probe-removal
 
-### Slice postgres-live-edge-and-demo — Status: PENDING
+### Slice postgres-live-edge-and-demo — Status: DONE
 - **Scope:** The live edge, the demo bench that exercises it, and the stub's retirement — one piece
   of work rather than three, because the poll is verified by watching a live archive grow and the
   bench that grows it is what replaces the stub.
@@ -869,9 +869,9 @@ it.
   forbidden: the connection-state change the poll needs, plus the unexpected table shape and the
   non-empty default partition that postgres-wire-up deferred here — the coverage test forces their
   mapping. Nothing beyond those three.
-- **Plan:** —
-- **PR:** —
-- **Branch:** —
+- **Plan:** docs/plans/completed/20260824-postgres-live-edge-and-demo.md
+- **PR:** #36 (merged)
+- **Branch:** postgres-live-edge-and-demo
 
 ### Slice postgres-bucketed-read — Status: DROPPED — no measurement justifies it yet
 - **Scope:** Server-side reduction to pixel columns for windows where the chosen layer is still
@@ -904,8 +904,8 @@ answered by the application bench in `docs/architecture/bench.md`, which reads t
 server and the log without a screen.
 
 The infrastructure slices carry their own close conditions, each machine-checkable: no test resolves
-an executable from `PATH`, both test projects build and run on `ubuntu-latest`, no test reads a
-documentation file at run time, and this repository carries no archive DDL.
+an executable from `PATH`, all three test projects build and run on `ubuntu-latest`, no test reads
+a documentation file at run time, and this repository carries no archive DDL.
 
 **What closes with the roadmap and what does not.** The close condition above is machine-verifiable
 and does not wait for hardware. Three checks do wait, and they are acceptance items for the operator
@@ -968,6 +968,8 @@ Settled during design — do not relitigate without new facts. The full reasonin
   ScottPlot and SkiaSharp; that is the suite iterated against a container, and making it drag the UI
   graph is a daily cost. An xunit v3 project is one executable, so a merge puts the container
   lifecycle and the Avalonia dispatcher in one process, where a hung UI test wedges the harness too.
+  The same three facts settled the opposite question in postgres-live-edge-and-demo: a journey needs
+  the UI and a container at once, so it takes a third project rather than merging the two.
   And the two deliberate splits — the assertion styles, and the provider's `InternalsVisibleTo`
   naming `SemiPlot.Tests.Data` alone — would both have to be surrendered or rewritten. The split is
   by dependency graph, not by target framework, and `CLAUDE.md` says the latter and must be

@@ -17,8 +17,9 @@ public static class ArchiveReadSupport
 	public const string DropTrendsCommand = "DROP TABLE public.trends;";
 
 	// A failed Result's messages, so an assertion failure names the archive state rather than only the
-	// expectation it broke.
-	public static string Describe<T>(Result<T> result)
+	// expectation it broke. ResultBase rather than Result<T>, because the guards that answer with a bare
+	// Result report their failures the same way.
+	public static string Describe(ResultBase result)
 	{
 		return string.Join("; ", result.Errors.Select(error => error.Message));
 	}

@@ -18,6 +18,7 @@
     <option name="PROJECT_TFM" value="net10.0" />
     <method v="2">
       <option name="Build" />
+      <option name="RunConfigurationTask" enabled="true" run_configuration_name="Bench up" run_configuration_type="ShConfigurationType" />
     </method>
   </configuration>
 </component>

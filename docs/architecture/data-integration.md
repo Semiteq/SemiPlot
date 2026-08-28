@@ -88,8 +88,10 @@ process data.
 All statement text on the application and provider path lives in one place in
 `SemiPlot.DataSource.Postgres`. No SQL exists anywhere else on that path. Parameters are always
 bound, never interpolated. The bench seeder and the gated test harness own SQL of their own by
-design — the schema resource, the partition DDL, the `COPY`, the catalogue upsert, `CREATE DATABASE`
-and `DROP DATABASE` — and are outside the rule.
+design — the schema resource, the partition DDL, the `COPY`, the catalogue upsert, the follow
+loop's closed-period `INSERT ... SELECT` that thins a closed period into a coarse layer, its
+opening-row `INSERT` whose `LATERAL` probe writes each open period's first raw row,
+`CREATE DATABASE` and `DROP DATABASE` — and are outside the rule.
 
 ### Pen catalog
 

@@ -46,7 +46,7 @@ public sealed class SeederEntryPointTests
 
 		Assert.Equal(1, reported.ExitCode);
 		Assert.Contains("requires a value", reported.Error, StringComparison.Ordinal);
-		Assert.Contains("appends layer 0 only", reported.Error, StringComparison.Ordinal);
+		Assert.Contains("thins them into the coarse layers", reported.Error, StringComparison.Ordinal);
 	}
 
 	[Fact]
@@ -59,7 +59,7 @@ public sealed class SeederEntryPointTests
 
 		Assert.Equal(1, reported.ExitCode);
 		Assert.Contains("--end", reported.Error, StringComparison.Ordinal);
-		Assert.Contains("appends layer 0 only", reported.Error, StringComparison.Ordinal);
+		Assert.Contains("thins them into the coarse layers", reported.Error, StringComparison.Ordinal);
 	}
 
 	private static async Task<(int ExitCode, string Error)> RunAsync(string[] arguments)

@@ -54,6 +54,22 @@ public sealed class LiveTailGeneratorTests
 		Assert.All(rows, row => Assert.InRange(row.Timestamp, from, toExclusive.AddTicks(-1)));
 	}
 
+	// The span is half-open at both ends the same way: closed at the start, open at the end. The tick loop
+	// hands the previous tick's own instant back as the next span's start, and the span before it stopped
+	// short of that instant, so a lattice point landing exactly there belongs to this span and to no other.
+	// It is also why a follow run resuming from the archive's edge advances past that edge before the first
+	// call rather than making this end exclusive — see StaleArchiveGuard.StartFrom.
+	[Fact]
+	public void ARowExactlyAtTheSpanStartBelongsToTheSpan()
+	{
+		var options = Options() with { PenCount = 1, ChangeSeconds = 0.5 };
+		var onTheLattice = _midnight.AddSeconds(9.5);
+
+		var rows = LiveTailGenerator.Generate(options, onTheLattice, onTheLattice.AddSeconds(1));
+
+		Assert.Equal(onTheLattice, rows[0].Timestamp);
+	}
+
 	// The property a follow run stands on: consecutive spans partition the rows rather than overlapping
 	// them, so the second tick's COPY meets none of the first tick's keys.
 	[Fact]

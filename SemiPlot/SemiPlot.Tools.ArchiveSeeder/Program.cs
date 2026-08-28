@@ -75,8 +75,11 @@ public static class Program
 		return 0;
 	}
 
-	// The demo writer. It appends to an archive somebody else seeded, so it creates no table, plants no
-	// break and fills no tag catalogue; what it moves is the live edge the viewer's poll follows.
+	// The demo writer. It appends to an archive somebody else seeded, so it creates no archive table,
+	// plants no break and fills no tag catalogue — only the day partition each tick's rows land in. Each
+	// tick appends the raw rows of the span since the previous one and then thins them into the coarse
+	// layers, so what it moves is every layer's live edge rather than the raw layer's alone, which is what
+	// a wide window's tail reads.
 	private static async Task<int> FollowAsync(FollowOptions options)
 	{
 		using var stopping = new CancellationTokenSource();
@@ -91,11 +94,24 @@ public static class Program
 
 		ReportFollowPlan(options);
 
+		// Read once, before anything is written, and it answers with the max(t) the loop starts from.
+		var freshness = await StaleArchiveGuard.CheckAsync(options.ConnectionString, LocalNow());
+
+		if (freshness.IsFailed)
+		{
+			ReportErrors(freshness);
+
+			return 1;
+		}
+
 		var writer = new ArchiveWriter(options.ConnectionString);
 
-		// The wall clock the loop starts at, never the archive's own max(t): against a bench seeded
-		// weeks into the past the first tick would write those weeks, and a day partition for each.
-		var lastEmitted = LocalNow();
+		// Just past the archive's own newest row, so the first tick continues the fill rather than starting
+		// a second run of rows a hole away from it, and rather than rewriting the edge row a previous
+		// follow run left on the lattice. StaleArchiveGuard has already refused anything further behind the
+		// clock than its MaximumAge, so that first tick spans at most the bound, whatever the bound is set
+		// to.
+		var lastEmitted = StaleArchiveGuard.StartFrom(freshness.Value, LocalNow());
 
 		while (await WaitForTickAsync(options.Interval, stopping.Token))
 		{
@@ -109,7 +125,20 @@ public static class Program
 				return 1;
 			}
 
-			Console.WriteLine($"appended        {appended.Value} rows up to {now:O}");
+			// After the append has committed, never before it: at a cadence longer than a period the
+			// tick's own rows are the closing period's last ones, and a flush ahead of them would pick a
+			// coarse 'last' row the period had not produced yet.
+			var thinned = await CoarseFlush.FlushAsync(options, lastEmitted, now);
+
+			if (thinned.IsFailed)
+			{
+				ReportErrors(thinned);
+
+				return 1;
+			}
+
+			Console.WriteLine(
+				$"appended        {appended.Value} rows, {thinned.Value} coarse, up to {now:O}");
 			lastEmitted = now;
 		}
 

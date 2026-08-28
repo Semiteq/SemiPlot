@@ -76,18 +76,20 @@ already there. What it creates is the same thing a seeding run creates and nothi
 partition each tick's rows land in, through
 `CREATE TABLE IF NOT EXISTS … PARTITION OF public.trends`.
 `public.trends` itself is the provisioner's and a follow run never creates it. What it moves is the
-live edge the viewer's poll follows. Every tick appends the raw rows of the wall-clock span since the
-previous tick and prints how many landed; `Ctrl+C` stops the loop where it waits, never inside an
+live edge the viewer's poll follows. Every tick appends the raw rows of the span since the previous
+tick — the first tick's span opens one millisecond past the archive's own `max(t)` — thins them into
+the coarse layers and prints both counts; `Ctrl+C` stops the loop where it waits, never inside an
 append.
 
 The command below writes into `semiplot_app` on port 55432 — the container and the clone that
 **The application bench** below creates. Run that recipe first, or point `--connection` at an
-archive of your own that a seeding run has already filled.
+archive of your own that a seeding run has already filled up to about now — a fill ending further
+back than five minutes is refused rather than written into.
 
 ```powershell
 dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.ArchiveSeeder.csproj -- `
   --connection "Host=localhost;Port=55432;Database=semiplot_app;Username=scada_writer;Password=<writer>" `
-  --follow 1 --pens 8 --seed 1 --change-seconds 5
+  --follow 1 --pens 8 --seed 1 --change-seconds 0.5
 ```
 
 `--follow` takes the seconds between ticks and is the switch that selects this mode. `--pens`,
@@ -95,15 +97,63 @@ dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.Archiv
 the catalogue, the generator seed, and the mean interval between value changes — and default to 8,
 1 and 5.
 
-Three properties decide what it is good for:
+Four properties decide what it is good for:
 
-- **Layer `0` only.** It appends nothing to the coarse layers, so a window wide enough to select
-  `l=1` or coarser follows the live edge through the fresh tail rather than through new coarse rows.
+- **Every layer, each on its own cadence.** Two statements do the thinning, both issued by the loop
+  on a connection of its own. A closed-period `INSERT ... SELECT` reproduces `LayerThinner`'s
+  selection in SQL and runs once for every period of that layer the tick leaves behind, so at
+  `--follow 1` layer 1 steps once a minute, layer 2 at the hour crossing and layer 3 at the day
+  crossing — and a tick that spans several periods, after a stall or at a cadence above the
+  period, closes each of them rather than only the first. An opening-row
+  `INSERT` runs every tick and writes the open period's first raw row, which the closed flush would
+  select anyway, so it adds nothing to the period's final content and keeps every layer's seam
+  inside the open period, which is what keeps a wide window's tail readable. Both close with
+  `ON CONFLICT DO NOTHING`, so a period's opening row is written once and every later tick inside
+  that period reports 0 coarse rows — that is what stops the coarse layers densifying toward raw,
+  and the writer's own `appended … coarse` line is where a reader checks it. Over a 5-minute run
+  at `--follow 1` the console showed 291 ticks, 285 of them `0 coarse`; the five minute boundaries
+  reported 24, 30, 32, 31 and 29 coarse rows, and one tick inside a period reported 1, being the
+  first tick to give one pen a raw row in that minute.
+- **The seam clears `FreshTail`'s clamp with no margin, by design rather than by luck.** Whenever
+  `--change-seconds` divides the period — 0.5 and 5 both divide a minute — a change row lands on
+  every minute boundary, so a layer-1 period's opening row sits exactly at the period start.
+  Measured at `--change-seconds 5` over the same run, every pen's layer-1 seam offset from its
+  period start was 00:00:00, and the worst distance between the live edge and that seam was
+  **59.9 s**, for all 8 pens in each of the four complete minutes, because the last raw row of a
+  minute is the pre-anchor one `RawLayerGenerator.PollInterval` before the boundary. Inside a
+  boundary tick the raw `COPY` and the coarse `INSERT` commit on
+  separate connections, and between those two commits the live edge has already advanced to the
+  boundary while the seam has not moved: measured, **exactly 60 s**, equal to the clamp. The pen
+  keeps its tail because `FreshTail` compares `seam >= clamped`, non-strictly. Both figures are
+  ceilings rather than constants — a `--change-seconds` value that does not divide the period puts
+  the opening row later and shortens the distance — and no pen was observed dropping out of the
+  tail.
 - **The machine's local wall clock, with its `Kind` stripped.** The archive column holds the SCADA
   host's naive local time, so `DateTime.UtcNow` would place the demo's live edge one zone offset from
   where the viewer, converting through `source_time_zone`, looks for it.
-- **It starts at "now", never at the archive's `max(t)`.** Against a bench seeded weeks into the past
-  the first tick would otherwise write those weeks, and a day partition for each.
+- **It starts one millisecond past the archive's own `max(t)`, which a refusal keeps close to "now".**
+  The first tick therefore continues the fill instead of standing apart from it behind a hole nothing in
+  the archive marks — the absence a raw window draws as one straight interpolated segment across its
+  whole width. What that start costs is the span of the first tick, and against a bench seeded weeks into
+  the past it would be those weeks of rows and a day partition for each. `StaleArchiveGuard` is what
+  bounds it: it reads `max(t)` once, before the first tick, refuses the run when the newest row is more
+  than `StaleArchiveGuard.MaximumAge` — five minutes — behind the clock, naming `scripts/bench-demo.ps1`
+  as the refill, and hands the accepted timestamp back to the loop, so nothing reads `max(t)` twice.
+  An archive holding no rows is accepted and reports no timestamp: there is no edge to continue, and
+  the loop starts at "now". A database provisioning never finished answers the same way and is
+  `ArchiveWriter`'s to report, not this guard's.
+- **Past that row rather than on it, which is what makes a restart of the writer work.** The follow
+  lattice is absolute, so an archive whose newest row a previous follow run wrote carries that row on a
+  point the lattice produces again, and `LiveTailGenerator`'s span start is inclusive — a loop resuming
+  on the edge regenerates that row into a `COPY` that has no conflict handling, and the run dies on its
+  first tick with `23505: duplicate key value violates unique constraint`. Stopping the writer and
+  starting it again is the ordinary case, so the loop advances past the edge before its first tick.
+  A millisecond is the smallest step the archive can tell two rows apart by — `ArchiveRow` truncates
+  every timestamp to one and the column is `timestamp(3)` — so the seam stays inside one change
+  interval. `StaleArchiveGuard.StartFrom` is where that step lives, beside the read that answers with
+  the edge. The span start stays inclusive because the tick loop hands the previous tick's own instant
+  back as the next span's start, and a lattice point landing exactly there belongs to that span and to
+  no other.
 
 `--end`, `--days`, `--break-count` and `--admin-connection` belong to a seeding run and are rejected
 here, with a message saying what a follow run does rather than "Unknown option".
@@ -232,25 +282,82 @@ pwsh scripts/bench-demo.ps1          # converge the stand
 pwsh scripts/bench-demo.ps1 -Down    # remove it
 ```
 
-**`scripts/bench-demo.ps1` is the recipe, not a copy of one**, and it splits the stand by lifetime.
+**`scripts/bench-demo.ps1` is the recipe, not a copy of one**, and every piece of the stand it owns
+is converged. What differs between the pieces is the test each convergence applies.
 
-The image, the container and `semiplot_seeded` are **converged**: built once, reused after. The
-seeded template is a clone of `semiplot_provisioned` filled to
-`--end 2026-08-01T00:00:00 --days 1 --pens 8 --seed 1`, and nothing ever writes to it, so the
-expensive half of the recipe is paid once per boot rather than once per session.
+The image and the container are converged **on existence**: built once, reused after, so the slow
+half of the recipe is paid once per boot rather than once per session.
 
-`semiplot_app` is **recreated on every run**, dropped and re-cloned from the seeded template. The
-demo writer appends to the archive, so a converged database would carry the previous session's live
-rows: its extent would stand a little further from its seed each time, the minimap would widen, and
-the window the chart opens on would differ from the one the last session saw. A bench that drifts is
-a bench whose reading cannot be trusted. A `TEMPLATE` clone copies files rather than replaying the
-seeder, so a pristine archive costs seconds — the same mechanism `ArchiveTemplate` uses to give
-every gated test class its own database.
+`semiplot_app` is converged **on freshness**: the script reads `max(t)` from `public.trends` and
+decides between two paths. When the newest row is within five minutes of the wall clock the archive is live — a demo
+writer is appending to it — and the script keeps it and rewrites only the connection file. When it is
+further back than that, when the archive holds no rows, or when the database is absent, the archive
+is recreated: its backends and the source's are terminated, the database is dropped, cloned from
+`semiplot_provisioned` and filled by the seeder with `--days 1 --pens 8 --seed 1` up to `-SeedEnd`.
+That parameter defaults to the script's own wall clock, and the seeder's `--end` is exclusive, so the
+newest row lands just under the value given. **Stating `-SeedEnd` recreates whatever the archive
+holds.** No `-Reseed` switch stands beside it: both intents that need a recreate — the stale-past
+stand and a pristine reset — are a statement of where the fill ends, and a switch meaning "recreate
+up to the default end" would be a second spelling of `-SeedEnd` with the current instant.
 
-**The archive is seeded well into the past on purpose.** An archive whose last sample predates the
-opening window is what distinguishes a chart that seeds its window from the extent from one that
-opens on the wall clock and never reaches the data. An archive seeded up to now hides the
-difference.
+**Converging the archive is not the cross-session drift an unconditional recreate removed**, because
+stale and live are exactly the two states that argument separates. A stale archive is the previous
+session's, and it is recreated, so the extent still starts where the seed puts it rather than
+stretching a little further from it each time. A live archive is one a demo writer is appending to at
+this moment, and keeping it is the loop working: recreating it would terminate that writer's backend
+and drop the database out from under it.
+
+**Five minutes is the bound**, and `StaleArchiveGuard.MaximumAge` applies the same one from the demo
+writer's side. Its floor is the writer's tick cadence — at `--follow 1` a running writer keeps
+`max(t)` a second or two behind the clock, so five minutes is three hundred ticks of margin and no
+running writer is read as a stopped one — and it must still cover the latency between one instance's
+fill ending and the next instance's read of `max(t)`, which is a `dotnet run` of the seeder. Its
+ceiling is the demo writer's first tick, which starts at the archive's `max(t)`: whatever a kept
+archive is behind the clock is what that tick writes, and five minutes of rows across at most one day
+boundary is what the bound admits. The unchecked recreate it replaces measured a 793.7-minute hole.
+A keep costs about 4 s end to end and writes nothing but the connection file.
+
+**A named mutex, `Global\semiplot-bench`, spans the whole convergence** and is released in a
+`finally`, so a failed run does not wedge the next one. Two instances started at once serialise: the
+loser waits and then finds the image, the container and the archive already converged. That is what
+makes the script safe as a before-launch task of two configurations at once, which is how the stand
+became one button. Measured from a dropped database, two instances started together: the winner
+filled 266520 rows up to its own wall clock, the loser printed its wait, then read that fill end
+12.4 s old and kept it. Both exited 0, and every one of the 266520 `(id, l, t)` keys was distinct —
+one fill, not two.
+
+Seeding a clone on a recreate rather than cloning a filled template costs the fill — around
+266000 rows in a few seconds against a `TEMPLATE` clone's file copy — and two things buy that. The
+demo writer appends to the archive, so a template kept across sessions would carry the previous
+session's live rows: its extent would stand a little further from its seed each time, the minimap
+would widen, and the window the chart opens on would differ from the one the last session saw. A
+bench that drifts is a bench whose reading cannot be trusted. And the fill end moves with the wall
+clock, so a template built once freezes that end at the moment it was built and hands the demo writer
+an archive as stale as itself, which `StaleArchiveGuard` refuses once it is more than five minutes
+back: the stand would come up carrying history and never grow a live row.
+
+The row count is not a constant, so no six-digit figure is reproducible under the default. The raw
+layer holds 229862 rows for a one-day span at these parameters, while the coarse layers follow the
+calendar periods the span covers, and a day-long span ending at an arbitrary instant straddles two
+calendar days and one more calendar hour than one ending at midnight.
+`-SeedEnd 2026-08-01T00:00:00` measured 266372 rows in 3.1 s; two default runs thirteen minutes
+apart measured 266522 in 4.3 s and 266408 in 3.1 s.
+
+**Where the fill ends is a choice `-SeedEnd` makes**, and each choice buys a different reading. The
+default ends the fill at the script's own wall clock, so the archive meets the demo writer's live
+rows without a gap and the stand reads as a continuous installation. An explicit past value —
+`pwsh scripts/bench-demo.ps1 -SeedEnd 2026-08-01T00:00:00` — is the stale-past bench: an archive
+whose last sample predates the opening window is what distinguishes a chart that seeds its window
+from the extent from one that opens on the wall clock and never reaches the data. A fill up to now
+hides that distinction, and the demo writer refuses a past fill outright rather than appending the
+hole into it, so the stale-past reading is a viewer-only one. It is taken from a command line rather
+than from a Rider button, because both buttons converge the stand first and a stale archive is what
+that convergence recreates:
+
+```powershell
+pwsh scripts/bench-demo.ps1 -SeedEnd 2026-08-01T00:00:00
+dotnet run --project SemiPlot/SemiPlot.UI/SemiPlot.UI.csproj -- --config-dir SemiPlot/Artifacts/bench-config
+```
 
 **The connection file is rewritten on every run**, into `SemiPlot/Artifacts/bench-config/`, which
 git ignores. Its `source_time_zone` carries the identifier of the machine the script ran on, because
@@ -276,10 +383,10 @@ What the server can be asked afterwards, which needs no screen:
 | --- | --- |
 | Did the application reach the archive at all? | `pg_stat_activity` carries `semiplot_reader` connections while it runs |
 | Did it read the catalogue? | `pg_stat_user_tables.idx_scan` on `semiplot_tags` |
-| Did it read real history, and from the seeded span? | `idx_tup_fetch` on the seeded day's partition, `tp<YYYY>m<MM>d<DD>`. A window left on the wall clock fetches nothing, because no partition holds those hours |
-| Did any read fall back to a sequential scan? | `seq_scan` on the same partition, which the `EXPLAIN` guard forbids |
+| Did it read real history, and from the seeded span? | `idx_tup_fetch` on the partitions the fill landed in, `tp<YYYY>m<MM>d<DD>` — two of them unless `-SeedEnd` is midnight, since a day-long fill ending at an arbitrary instant straddles two calendar days. Under the stale-past bench a window left on the wall clock fetches nothing, because no partition holds those hours; under the default fill that window lands inside the newest partition and fetches plenty |
+| Did any read fall back to a sequential scan? | `seq_scan` on the same partitions, which the `EXPLAIN` guard forbids |
 | Which failure did the operator get? | `C:\DISTR\Logs\SemiPlot\semiplot.log`. A clean start writes nothing at the default `Warning` floor; every startup failure writes its error and a `[FTL]` line |
-| Did the live edge reach the chart? | Run `--follow 1` against the same database and watch the chart with **Sticky** on. `pg_stat_user_tables.idx_tup_fetch` on today's partition rises every poll interval; the log at `--logging-level debug` carries one realtime line per tick with the row and sample counts |
+| Did the live edge reach the chart? | Run `--follow 1` against the same database and watch the chart with **Sticky** on. The writer moves every layer's seam, not only the raw layer's, so the question is answerable on a wide window too. `pg_stat_user_tables.idx_tup_fetch` on the partitions the window covers rises every poll interval; the log at `--logging-level debug` carries one realtime line per tick with the row and sample counts, and the writer's own line reports the raw and coarse rows it wrote |
 
 A startup failure opens a window and waits, so a run under a timeout returns that timeout's own exit
 code rather than the application's. The log line, not the exit code, is what says which failure it
@@ -306,15 +413,18 @@ file.
 
 | Configuration | What it does |
 | --- | --- |
-| `Bench up` | Runs the script. Pressed once per boot; a second press is a no-op that reports each skip |
+| `Bench up` | Runs the script on its own. Both children below run it first, so this button is for converging the stand without starting anything |
 | `Bench down` | Removes the container and the generated connection file |
-| `Demo writer` | The seeder in `--follow 1` against `semiplot_app` |
-| `Viewer (bench)` | `SemiPlot.UI` with `--config-dir` on the generated file and `--logging-level debug` |
-| `Live demo` | A compound of the last two |
+| `Demo writer` | The seeder in `--follow 1` against `semiplot_app`, with `Bench up` as a before-launch task |
+| `Viewer (bench)` | `SemiPlot.UI` with `--config-dir` on the generated file and `--logging-level debug`, with `Bench up` as a before-launch task |
+| `Live demo` | A compound of the last two: the stand is this one button |
 
-**`Bench up` is not a before-launch task of the compound.** A compound starts its children in
-parallel, so wiring the script into both would run two instances racing the same `docker run`. It
-stays a separate button.
+**`Bench up` is a before-launch task of both compound children, not of the compound.** A compound
+carries no before-launch list of its own, and it starts its children in parallel, so both run the
+script at once. The mutex serialises the two and the freshness check makes the second one find its
+work already done. What that buys is a precondition nothing has to remember: a cold `Live demo`
+converges the stand before either child starts, and restarting only the viewer against a running
+writer finds a live archive, keeps it and returns in seconds.
 
 **Stopping the viewer leaves the writer running**, because a compound stops its children
 independently. That is the shape the repeated check wants: restarting the viewer against an edge

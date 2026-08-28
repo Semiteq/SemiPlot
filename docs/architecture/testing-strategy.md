@@ -35,7 +35,7 @@ and built from the commit under test. Its value is diagnosis.
 | --- | --- |
 | Decimation, navigation, scale, cursor geometry | `SemiPlot.Tests/Core/Data/MinMaxDecimatorTests.cs`, `Core/Trends/TrendNavigationModelTests.cs`, `PenScaleModelTests.cs`, `MinimapGeometryTests.cs`, `Chart/CursorReadoutModelTests.cs`, `DeltaCursorModelTests.cs` |
 | The seeder's generation rules | `SemiPlot.Tests.Data/LayerThinnerTests.cs`, `RawLayerGeneratorTests.cs`, `BreakGenerationTests.cs`, `PartitionScriptTests.cs` |
-| The demo writer's own rules and its option grammar | `SemiPlot.Tests.Data/LiveTailGeneratorTests.cs`, `FollowOptionsTests.cs` |
+| The demo writer's own rules and its option grammar | `SemiPlot.Tests.Data/LiveTailGeneratorTests.cs`, `FollowOptionsTests.cs`. Its coarse flush is not here: the selection is a statement the server executes, so `Integration/CoarseFlushTests.cs` carries it, gated |
 | Error construction and extent arithmetic | `SemiPlot.Tests.Data/Errors/DataErrorTests.cs`, `Data/ArchiveExtentTests.cs` |
 | The provider's statement text and its binder | `SemiPlot.Tests.Data/Postgres/ArchiveStatementTextTests.cs` |
 | The live edge's own rules, and the fresh tail's bound | `SemiPlot.Tests.Data/Postgres/RealtimePollTests.cs`, `Postgres/FreshTailBoundTests.cs` |
@@ -72,8 +72,10 @@ There are three families — the same category with different foreign parties.
 
 **Against a real PostgreSQL** — `SemiPlot.Tests.Data/Integration/`: `PostgresCatalogReadTests`,
 `PostgresExtentReadTests`, `PostgresHistoryReadTests`, `RealtimePollReadTests`,
-`RealtimeSubscriptionTests`, `ArchiveHealthReadTests`, `StatementTimeoutReadTests`,
-`ArchiveWriterTransactionTests`, `ExplainPlanTests`. Seams guarded: statement text, type mapping,
+`RealtimeSubscriptionTests`, `RealtimeEmptyArchiveTests`, `ArchiveHealthReadTests`,
+`StatementTimeoutReadTests`, `ArchiveWriterTransactionTests`, `CoarseFlushTests`,
+`ExplainPlanTests`. Seams guarded: statement text, type mapping, the demo writer's server-side
+thinning against `LayerThinner`'s own selection,
 the naive-local-to-UTC conversion, partition pruning, and the grant chain — reads run as
 `semiplot_reader`, so a privilege that never reached the reader fails here instead of at
 commissioning. The container is the delivery mechanism for a real server, nothing more.

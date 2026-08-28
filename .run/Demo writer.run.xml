@@ -1,7 +1,7 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="Demo writer" type="DotNetProject" factoryName=".NET Project">
     <option name="EXE_PATH" value="$PROJECT_DIR$/SemiPlot/Artifacts/bin/SemiPlot.Tools.ArchiveSeeder/debug/SemiPlot.Tools.ArchiveSeeder.exe" />
-    <option name="PROGRAM_PARAMETERS" value="--connection &quot;Host=localhost;Port=55432;Database=semiplot_app;Username=scada_writer;Password=semibase-container-writer&quot; --follow 1 --pens 8 --seed 1 --change-seconds 5" />
+    <option name="PROGRAM_PARAMETERS" value="--connection &quot;Host=localhost;Port=55432;Database=semiplot_app;Username=scada_writer;Password=semibase-container-writer&quot; --follow 1 --pens 8 --seed 1 --change-seconds 0.5" />
     <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/SemiPlot/Artifacts/bin/SemiPlot.Tools.ArchiveSeeder/debug" />
     <option name="PASS_PARENT_ENVS" value="1" />
     <option name="ENV_FILE_PATHS" value="" />
@@ -18,6 +18,7 @@
     <option name="PROJECT_TFM" value="net10.0" />
     <method v="2">
       <option name="Build" />
+      <option name="RunConfigurationTask" enabled="true" run_configuration_name="Bench up" run_configuration_type="ShConfigurationType" />
     </method>
   </configuration>
 </component>

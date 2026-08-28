@@ -67,8 +67,8 @@ public sealed record FollowOptions(
 		  --seed            Generator seed. Default 1.
 		  --change-seconds  Mean interval between value changes. Default 5.
 
-		A follow run appends layer 0 only and seeds nothing, so --end, --days, --break-count and
-		--admin-connection are rejected here.
+		A follow run appends raw rows and thins them into the coarse layers, and seeds nothing, so
+		--end, --days, --break-count and --admin-connection are rejected here.
 		""";
 
 	// The raw argument list decides the mode, ahead of either parser: a seeding run must reach

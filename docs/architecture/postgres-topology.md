@@ -90,7 +90,7 @@ flowchart TB
     subgraph plumbing["SemiPlot.DataSource.Postgres"]
         direction TB
         stmts["ArchiveStatements<br/>every statement, one place"]
-        ds["ArchiveDataSource<br/>connection · command bound"]
+        ds["NpgsqlDataSource<br/>pooled connections"]
         conv["ArchiveTimeConverter<br/>naive local ⇄ UTC"]
         mapper["ArchiveExceptionMapper<br/>SQLSTATE → typed error"]
         loader["PostgresConnectionLoader<br/>archive-connection.yaml<br/>eight keys"]

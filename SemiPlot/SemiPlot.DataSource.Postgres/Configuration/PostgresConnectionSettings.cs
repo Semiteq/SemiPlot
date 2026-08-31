@@ -28,10 +28,17 @@ public sealed record PostgresConnectionSettings(
 	public const int ConnectTimeoutSeconds = 15;
 
 	/// <summary>
+	/// The client bound on every command, in seconds. The server's own <c>statement_timeout</c> is what
+	/// stops a long read; this stops a read the server is not answering. A tick of the live-edge poll
+	/// overrides it with a shorter bound of its own. On a site whose reader role carries a
+	/// <c>statement_timeout</c> above this, the two cancels race.
+	/// </summary>
+	public const int CommandTimeoutSeconds = 300;
+
+	/// <summary>
 	/// Built through <see cref="NpgsqlConnectionStringBuilder"/> rather than concatenated: a password
 	/// holding ';' or '\'' survives the builder and corrupts a concatenated string silently, which then
 	/// fails as an authentication error pointing at the wrong cause.
-	/// <para><c>CommandTimeout = 0</c> is infinite: Npgsql's implicit 30 s would pre-empt the server's bound.</para>
 	/// </summary>
 	public string ConnectionString
 	{
@@ -45,7 +52,7 @@ public sealed record PostgresConnectionSettings(
 				Username = Username,
 				Password = Password,
 				SearchPath = Schema,
-				CommandTimeout = 0,
+				CommandTimeout = CommandTimeoutSeconds,
 				Timeout = ConnectTimeoutSeconds
 			};
 

@@ -27,7 +27,7 @@ public sealed class RealtimePollTests
 	[Fact]
 	public async Task AFailingTickReportsNoSampleAndNoException()
 	{
-		await using var dataSource = new ArchiveDataSource(ConnectionSettingsFactory.Create());
+		await using var dataSource = NpgsqlDataSource.Create(ConnectionSettingsFactory.Create().ConnectionString);
 
 		var tick = await NewPoll(dataSource).ReadOnceAsync(TestContext.Current.CancellationToken);
 
@@ -39,7 +39,7 @@ public sealed class RealtimePollTests
 	[Fact]
 	public async Task ASingleFailureRaisesNoFault()
 	{
-		await using var dataSource = new ArchiveDataSource(ConnectionSettingsFactory.Create());
+		await using var dataSource = NpgsqlDataSource.Create(ConnectionSettingsFactory.Create().ConnectionString);
 
 		var tick = await NewPoll(dataSource).ReadOnceAsync(TestContext.Current.CancellationToken);
 
@@ -49,7 +49,7 @@ public sealed class RealtimePollTests
 	[Fact]
 	public async Task TheThirdConsecutiveFailureRaisesExactlyOneFault()
 	{
-		await using var dataSource = new ArchiveDataSource(ConnectionSettingsFactory.Create());
+		await using var dataSource = NpgsqlDataSource.Create(ConnectionSettingsFactory.Create().ConnectionString);
 
 		var states = await TickAsync(NewPoll(dataSource), ConsecutiveFailuresBeforeFault);
 
@@ -68,7 +68,7 @@ public sealed class RealtimePollTests
 	{
 		var settings = ConnectionSettingsFactory.Create();
 
-		await using var dataSource = new ArchiveDataSource(settings);
+		await using var dataSource = NpgsqlDataSource.Create(settings.ConnectionString);
 
 		var states = await TickAsync(NewPoll(dataSource), ConsecutiveFailuresBeforeFault);
 
@@ -86,7 +86,7 @@ public sealed class RealtimePollTests
 	[Fact]
 	public async Task AFourthAndFifthConsecutiveFailureRaiseNothingFurther()
 	{
-		await using var dataSource = new ArchiveDataSource(ConnectionSettingsFactory.Create());
+		await using var dataSource = NpgsqlDataSource.Create(ConnectionSettingsFactory.Create().ConnectionString);
 
 		var states = await TickAsync(NewPoll(dataSource), ConsecutiveFailuresBeforeFault + 2);
 
@@ -103,7 +103,7 @@ public sealed class RealtimePollTests
 	[Fact]
 	public async Task NoExceptionEscapesAFailingTick()
 	{
-		await using var dataSource = new ArchiveDataSource(ConnectionSettingsFactory.Create());
+		await using var dataSource = NpgsqlDataSource.Create(ConnectionSettingsFactory.Create().ConnectionString);
 
 		var poll = NewPoll(dataSource);
 
@@ -118,7 +118,7 @@ public sealed class RealtimePollTests
 	[Fact]
 	public async Task AFailingTickLeavesTheBaselineUnread()
 	{
-		await using var dataSource = new ArchiveDataSource(ConnectionSettingsFactory.Create());
+		await using var dataSource = NpgsqlDataSource.Create(ConnectionSettingsFactory.Create().ConnectionString);
 
 		var poll = NewPoll(dataSource);
 
@@ -127,7 +127,7 @@ public sealed class RealtimePollTests
 		Assert.Null(poll.LastSeen);
 	}
 
-	// A tick runs every poll interval, so it must not inherit ArchiveDataSource's five-minute backstop: a
+	// A tick runs every poll interval, so it must not inherit the connection string's five-minute backstop: a
 	// server that accepts connections and then answers nothing would hold each tick for minutes and reach
 	// the fault threshold only after fifteen of them, with a frozen chart and no banner in between.
 	// Restated as literals rather than read off the two types, the way the failure threshold above is.
@@ -139,10 +139,9 @@ public sealed class RealtimePollTests
 		const int tickBoundSeconds = 10;
 		const int dataSourceBackstopSeconds = 300;
 
-		using var dataSource = new ArchiveDataSource(ConnectionSettingsFactory.Create());
 		using var connection = new NpgsqlConnection();
 
-		using var command = RealtimePoll.CreateTickCommand(dataSource, statementText, connection);
+		using var command = RealtimePoll.CreateTickCommand(statementText, connection);
 
 		Assert.Equal(tickBoundSeconds, command.CommandTimeout);
 		Assert.True(command.CommandTimeout < dataSourceBackstopSeconds);
@@ -153,7 +152,7 @@ public sealed class RealtimePollTests
 	{
 		var settings = ConnectionSettingsFactory.Create();
 
-		using var dataSource = new ArchiveDataSource(settings);
+		using var dataSource = NpgsqlDataSource.Create(settings.ConnectionString);
 
 		Assert.Throws<ArgumentNullException>(() => new RealtimePoll(
 			dataSource,
@@ -176,7 +175,7 @@ public sealed class RealtimePollTests
 		return states;
 	}
 
-	private static RealtimePoll NewPoll(ArchiveDataSource dataSource)
+	private static RealtimePoll NewPoll(NpgsqlDataSource dataSource)
 	{
 		var settings = ConnectionSettingsFactory.Create();
 

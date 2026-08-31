@@ -18,7 +18,7 @@ using SemiPlot.DataSource.Postgres.Configuration;
 namespace SemiPlot.DataSource.Postgres;
 
 /// <summary>
-/// Reads the archive over the pooled <see cref="ArchiveDataSource"/>. <see cref="QueryPensAsync"/> answers
+/// Reads the archive over the pooled <see cref="NpgsqlDataSource"/>. <see cref="QueryPensAsync"/> answers
 /// the configured variables, <see cref="QueryArchiveExtentAsync"/> the span they cover,
 /// <see cref="QueryHistoryAsync"/> a window of one layer and <see cref="Subscribe"/> the live edge, all
 /// crossing the boundary in UTC. Every failure leaves through the public error vocabulary — nothing
@@ -27,7 +27,7 @@ namespace SemiPlot.DataSource.Postgres;
 /// </summary>
 public sealed class PostgresDataProvider : IDataProvider
 {
-	private readonly ArchiveDataSource _dataSource;
+	private readonly NpgsqlDataSource _dataSource;
 	private readonly ArchiveTimeConverter _timeConverter;
 	private readonly ArchiveExceptionMapper _exceptionMapper;
 	private readonly PostgresConnectionSettings _settings;
@@ -41,7 +41,7 @@ public sealed class PostgresDataProvider : IDataProvider
 
 	// Internal because two of its parameters are: a public constructor over an internal type is CS0051.
 	internal PostgresDataProvider(
-		ArchiveDataSource dataSource,
+		NpgsqlDataSource dataSource,
 		ArchiveTimeConverter timeConverter,
 		ArchiveExceptionMapper exceptionMapper,
 		PostgresConnectionSettings settings,
@@ -98,7 +98,7 @@ public sealed class PostgresDataProvider : IDataProvider
 		try
 		{
 			await using var connection = await _dataSource.OpenConnectionAsync().ConfigureAwait(false);
-			await using var command = _dataSource.CreateCommand(ArchiveStatements.PenCatalog, connection);
+			await using var command = new NpgsqlCommand(ArchiveStatements.PenCatalog, connection);
 			await using var reader = await command.ExecuteReaderAsync().ConfigureAwait(false);
 
 			var pens = new List<Pen>();
@@ -197,7 +197,7 @@ public sealed class PostgresDataProvider : IDataProvider
 		try
 		{
 			await using var connection = await _dataSource.OpenConnectionAsync().ConfigureAwait(false);
-			await using var command = _dataSource.CreateCommand(ArchiveStatements.ArchiveExtent, connection);
+			await using var command = new NpgsqlCommand(ArchiveStatements.ArchiveExtent, connection);
 			await using var reader = await command.ExecuteReaderAsync().ConfigureAwait(false);
 
 			return Result.Ok(await ReadExtentAsync(reader).ConfigureAwait(false));
@@ -307,7 +307,7 @@ public sealed class PostgresDataProvider : IDataProvider
 		DateTime toLocal,
 		AggregationLayer layer)
 	{
-		await using var command = _dataSource.CreateCommand(ArchiveStatements.SparseHistoryWindow, connection);
+		await using var command = new NpgsqlCommand(ArchiveStatements.SparseHistoryWindow, connection);
 
 		BindLocalWindow(command, penIds, fromLocal, toLocal, layer);
 
@@ -391,7 +391,24 @@ public sealed class PostgresDataProvider : IDataProvider
 			reader.GetString(1),
 			reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
 			reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
-			PenLineStyleReader.Read(reader.GetInt16(4), penId, _logger));
+			ReadLineStyle(reader.GetInt16(4), penId));
+	}
+
+	// The stored value is the member's ordinal. An unrecognised value draws interpolated rather than
+	// failing the read: one malformed row must not hide every other pen.
+	private PenLineStyle ReadLineStyle(short storedValue, int penId)
+	{
+		if (Enum.IsDefined((PenLineStyle)storedValue))
+		{
+			return (PenLineStyle)storedValue;
+		}
+
+		_logger.LogWarning(
+			"Pen {PenId} carries line_style {StoredValue}, which this build does not recognise; it is drawn interpolated.",
+			penId,
+			storedValue);
+
+		return PenLineStyle.Interpolated;
 	}
 
 	// The archive stores naive local wall-clock time, so each bound crosses out through the converter

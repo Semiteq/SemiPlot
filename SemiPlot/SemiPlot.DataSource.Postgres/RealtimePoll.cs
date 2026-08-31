@@ -48,7 +48,7 @@ internal sealed class RealtimePoll
 	// with here. Read for the debug line and nowhere else.
 	private const int LastBeforeBreakQuality = 32;
 
-	// A tick runs every poll_interval_ms and must not inherit ArchiveDataSource's five-minute client
+	// A tick runs every poll_interval_ms and must not inherit the connection string's five-minute client
 	// backstop: a server that accepts connections and then stops answering would hold each tick for
 	// minutes and reach the fault threshold only after fifteen of them, leaving a frozen chart and no
 	// banner in between. Ten seconds is an order of magnitude above the second a bench cadence gives a
@@ -58,7 +58,7 @@ internal sealed class RealtimePoll
 
 	private static readonly IReadOnlyList<Sample> _noSamples = [];
 
-	private readonly ArchiveDataSource _dataSource;
+	private readonly NpgsqlDataSource _dataSource;
 
 	private readonly ArchiveTimeConverter _timeConverter;
 
@@ -84,7 +84,7 @@ internal sealed class RealtimePoll
 	private bool _reportedConnected;
 
 	public RealtimePoll(
-		ArchiveDataSource dataSource,
+		NpgsqlDataSource dataSource,
 		ArchiveTimeConverter timeConverter,
 		ArchiveExceptionMapper exceptionMapper,
 		PostgresConnectionSettings settings,
@@ -143,19 +143,12 @@ internal sealed class RealtimePoll
 		}
 	}
 
-	// Both statements of a tick, carrying the tick's own bound instead of the data source's backstop.
+	// Both statements of a tick, carrying the tick's own bound instead of the connection string's backstop.
 	// Internal so a unit test reads that bound off a command built by the shipped path rather than off the
 	// constant beside it.
-	internal static NpgsqlCommand CreateTickCommand(
-		ArchiveDataSource dataSource,
-		string statementText,
-		NpgsqlConnection connection)
+	internal static NpgsqlCommand CreateTickCommand(string statementText, NpgsqlConnection connection)
 	{
-		var command = dataSource.CreateCommand(statementText, connection);
-
-		command.CommandTimeout = TickCommandTimeoutSeconds;
-
-		return command;
+		return new NpgsqlCommand(statementText, connection) { CommandTimeout = TickCommandTimeoutSeconds };
 	}
 
 	// Internal rather than private so a unit test can bind through this exact path and compare the names
@@ -192,7 +185,7 @@ internal sealed class RealtimePoll
 		NpgsqlConnection connection,
 		CancellationToken cancellationToken)
 	{
-		await using var command = CreateTickCommand(_dataSource, ArchiveStatements.RealtimeBaseline, connection);
+		await using var command = CreateTickCommand(ArchiveStatements.RealtimeBaseline, connection);
 
 		BindBaseline(command, _penIds);
 
@@ -218,7 +211,7 @@ internal sealed class RealtimePoll
 		DateTime lastSeen,
 		CancellationToken cancellationToken)
 	{
-		await using var command = CreateTickCommand(_dataSource, ArchiveStatements.RealtimePoll, connection);
+		await using var command = CreateTickCommand(ArchiveStatements.RealtimePoll, connection);
 
 		BindPoll(command, _penIds, lastSeen);
 

@@ -286,7 +286,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	// The emitted string is asserted alongside the parsed value: the builder answers its own default for
 	// a key the string never carried, so the parsed value alone proves neither absence nor presence.
 	[Fact]
-	public void TheConnectionStringSendsNoStatementTimeoutAndPinsAnInfiniteCommandTimeout()
+	public void TheConnectionStringSendsNoStatementTimeoutAndCarriesTheClientBackstop()
 	{
 		var path = WriteFile(Compose(_validFields));
 
@@ -300,8 +300,8 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 		Assert.DoesNotContain("Options", connectionString, StringComparison.OrdinalIgnoreCase);
 		Assert.DoesNotContain("statement_timeout", connectionString, StringComparison.OrdinalIgnoreCase);
 		Assert.True(string.IsNullOrEmpty(parsed.Options));
-		Assert.Contains("Command Timeout=0", connectionString, StringComparison.Ordinal);
-		Assert.Equal(0, parsed.CommandTimeout);
+		Assert.Contains("Command Timeout=300", connectionString, StringComparison.Ordinal);
+		Assert.Equal(PostgresConnectionSettings.CommandTimeoutSeconds, parsed.CommandTimeout);
 	}
 
 	[Fact]

@@ -55,6 +55,43 @@ each is a scoped future task.
 - **NU1903 advisory.** Transitive `Tmds.DBus.Protocol` 0.21.2 (pulled by Avalonia, unused on the Win32
   target) carries a high-severity NuGet advisory. Track for a transitive bump when Avalonia updates it.
 
-- **Test unification (with the Avalonia 12 bump).** See `CLAUDE.md` — unify `SemiPlot.Core.Tests` (xunit.v3)
-  and `SemiPlot.Tests` (xunit v2 + Avalonia.Headless.XUnit) onto xunit.v3 once Avalonia is bumped to 12.0.x
-  (where `Avalonia.Headless.XUnit` targets xunit.v3; verify `ScottPlot.Avalonia` on 12 first).
+- **~~Test unification (with the Avalonia 12 bump).~~ Resolved.** Avalonia is on 12.0.5 and all three test
+  projects target xunit v3. `SemiPlot.Core.Tests` no longer exists; the suites are now split by dependency
+  graph and skip policy rather than by framework, which `CLAUDE.md` states.
+
+## Test harness and the demo bench
+
+Deferred out of the harness simplification (`completed/20260828-simplify-the-test-harness.md`). None is a
+defect in the shipped tree; each is a scoped follow-up an audit named.
+
+- **The stand and the fixture build the bench image differently.** `scripts/bench-demo.ps1` builds
+  `semiplot-bench:manual` with no build arguments, while `PostgresContainerFixture` builds its own tag with
+  `BASE_IMAGE` and a resolved `PROVISIONER_IMAGE` digest. The stand can therefore run a different provisioner
+  than the tests do, and nothing says so. Either give the script the same two arguments or state in
+  `docs/architecture/bench.md` that the stand deliberately tracks the floating tag.
+
+- **The freshness bound lives in two copies.** `StaleArchiveGuard.MaximumAge` (five minutes) and the script's
+  `$LiveWithin` are held in sync by a comment in each file. Drift fails loud — the writer refuses and names
+  the script — so this is hygiene, not a hazard. It collapses to one owner only if the convergence moves into
+  C#, which was considered and rejected on cost; revisit only alongside that.
+
+- **An unspent cut list, about 200 lines.** An over-engineering audit proposed more than the two cuts taken
+  (the teardown leak audit and the break-marker validator). Still on the table: `ProvisionerResolution` with
+  its staleness reason and version probe, whose whole yield is one stderr line; the outer `Result<T>` layer in
+  `ProvisionerImage`, whose only caller turns a failure straight into an exception; `FollowOptions`'
+  pen-count and change-rate validators, which duplicate `SeederOptions`'; and the `Func<>[]` validator array,
+  which a `Bind` chain expresses without the loop. Each is small and independent — fold one into any nearby
+  edit rather than making a pass of them.
+
+- **The IDE strips a before-launch task from `.run/*.xml`.** It drops a `RunConfigurationTask` it cannot
+  resolve while it reloads the file, and writes the file back without it; the fingerprint is a missing
+  trailing newline, which the IDE's serializer omits and an editor does not. The trigger is an external edit
+  to those files while the project is open. It happened three times during one session. CI now fails the push
+  when either demo child loses the entry, which is a detector rather than a cure — after editing any
+  `.run/*.xml` from outside, run `git diff .run/` once the IDE has synced.
+
+- **`completed/20260828-simplify-the-test-harness.md` describes machinery that was later cut.** Its Task 3
+  checklist and two ➕ notes state that teardown asserts surviving clones and whether the container still
+  answers. That audit was removed before the branch shipped. The file is a point-in-time record and its own
+  convention is that later notes supersede earlier ones, so this is noted rather than rewritten — read the
+  code, not the plan, for what teardown does.

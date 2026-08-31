@@ -3,14 +3,14 @@
 namespace SemiPlot.UI.Chart;
 
 public sealed class ChartCursorReader(
-	IReadOnlyDictionary<long, TrendPenState> pensById,
-	IReadOnlyDictionary<long, PenHistoryEnvelope> envelopesById)
+	IReadOnlyDictionary<int, TrendPenState> pensById,
+	IReadOnlyDictionary<int, PenHistoryEnvelope> envelopesById)
 {
 	private readonly CursorReadoutModel _cursorReadout = new();
-	private readonly IReadOnlyDictionary<long, PenHistoryEnvelope> _envelopesById = envelopesById;
-	private readonly IReadOnlyDictionary<long, TrendPenState> _pensById = pensById;
+	private readonly IReadOnlyDictionary<int, PenHistoryEnvelope> _envelopesById = envelopesById;
+	private readonly IReadOnlyDictionary<int, TrendPenState> _pensById = pensById;
 
-	public IReadOnlyDictionary<long, double?> ReadAt(DateTime cursorTime)
+	public IReadOnlyDictionary<int, double?> ReadAt(DateTime cursorTime)
 	{
 		var visibleEnvelopes = _pensById.Values
 			.Where(state => state.IsVisible && _envelopesById.ContainsKey(state.Pen.PenId))

@@ -79,11 +79,11 @@ internal sealed class FakeDataProvider : IDataProvider
 
 	// Pen identifiers the history read answers with no envelope at all, the shape a real provider returns
 	// for a pen holding no row in the window. A requested pen missing from the result is not an error.
-	public HashSet<long> OmittedPenIds { get; } = [];
+	public HashSet<int> OmittedPenIds { get; } = [];
 
 	public int HistoryQueryCount { get; private set; }
 
-	public IReadOnlyList<long>? LastQueriedPenIds { get; private set; }
+	public IReadOnlyList<int>? LastQueriedPenIds { get; private set; }
 
 	public AggregationLayer? LastQueriedLayer { get; private set; }
 
@@ -110,7 +110,7 @@ internal sealed class FakeDataProvider : IDataProvider
 		_connectionFaults.OnNext(state);
 	}
 
-	public IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<long> penIds)
+	public IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<int> penIds)
 	{
 		var subscribed = penIds.Where(id => Pens.Any(pen => pen.PenId == id)).ToArray();
 
@@ -143,7 +143,7 @@ internal sealed class FakeDataProvider : IDataProvider
 	}
 
 	public Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(
-		IReadOnlyList<long> penIds,
+		IReadOnlyList<int> penIds,
 		DateTime fromUtc,
 		DateTime toUtc,
 		AggregationLayer layer,

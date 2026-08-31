@@ -55,7 +55,7 @@ public sealed class TagCatalogWriter(string adminConnectionString)
 		await using var command = new NpgsqlCommand(UpsertCommand, connection);
 
 		// The archive's own key is an integer, and semiplot_tags.id matches trends.id.
-		command.Parameters.AddWithValue("id", (int)pen.PenId);
+		command.Parameters.AddWithValue("id", pen.PenId);
 		command.Parameters.AddWithValue("name", pen.Name);
 		command.Parameters.AddWithValue("group_name", pen.Group);
 		command.Parameters.AddWithValue("color", pen.Color);

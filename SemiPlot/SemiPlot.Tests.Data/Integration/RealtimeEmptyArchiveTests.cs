@@ -32,7 +32,6 @@ public sealed class RealtimeEmptyArchiveTests(PostgresContainerFixture postgresC
 {
 	private static readonly int[] _subscribedPenIds = [1, 2];
 
-	private static readonly long[] _subscribedPenIdsAsLong = [1L, 2L];
 
 	// One calendar day, so an appended row creates the single partition tp2026m01d01.
 	private static readonly DateTime _day = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Unspecified);
@@ -129,7 +128,7 @@ public sealed class RealtimeEmptyArchiveTests(PostgresContainerFixture postgresC
 			}
 		});
 
-		using var subscription = provider.Subscribe(_subscribedPenIdsAsLong).Subscribe(_ => { });
+		using var subscription = provider.Subscribe(_subscribedPenIds).Subscribe(_ => { });
 
 		await armed.Task;
 	}

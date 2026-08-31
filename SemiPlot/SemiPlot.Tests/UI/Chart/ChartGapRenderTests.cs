@@ -34,7 +34,7 @@ public sealed class ChartGapRenderTests
 {
 	private const int PlotWidth = 800;
 	private const int PlotHeight = 500;
-	private const long PenId = 1L;
+	private const int PenId = 1;
 	private const string PenColorHex = "#ff0000";
 	private const int SampleCount = 600;
 	private const int GapFirstNullIndex = 250;

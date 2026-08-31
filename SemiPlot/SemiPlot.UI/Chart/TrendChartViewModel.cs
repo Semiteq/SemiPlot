@@ -28,21 +28,21 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	private readonly ChartCursorReader _cursorReader;
 	private readonly ChartDeltaCursorReader _deltaCursorReader;
 	private readonly CompositeDisposable _disposables = new();
-	private readonly Dictionary<long, PenHistoryEnvelope> _envelopesById = [];
+	private readonly Dictionary<int, PenHistoryEnvelope> _envelopesById = [];
 	private readonly ChartHistoryRequestDebouncer _historyDebouncer;
 	private readonly ILogger<TrendChartViewModel> _logger;
-	private readonly Dictionary<long, TrendPenState> _pensById = [];
+	private readonly Dictionary<int, TrendPenState> _pensById = [];
 	private readonly ChartRealtimeApplier _realtimeApplier;
 	private readonly Subject<Unit> _redrawRequests = new();
 	private readonly PenScaleModel _scaleModel = new();
 
-	private readonly Dictionary<long, PenScale> _scalesByPenId = [];
-	private readonly Dictionary<long, PenScaleSettings> _settingsById = [];
+	private readonly Dictionary<int, PenScale> _scalesByPenId = [];
+	private readonly Dictionary<int, PenScaleSettings> _settingsById = [];
 	private readonly IScheduler _uiScheduler;
 
-	private long _activePenId;
+	private int _activePenId;
 	private DateTime? _cursorTime;
-	private IReadOnlyDictionary<long, double?> _cursorValues = new Dictionary<long, double?>();
+	private IReadOnlyDictionary<int, double?> _cursorValues = new Dictionary<int, double?>();
 	private DeltaReadout? _deltaReadout;
 	private bool _hasDeferredHistoryRequery;
 	// Monotonic stamp assigned to every history request so ApplyHistory can drop a stale window: a slow
@@ -98,7 +98,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	public Plot Plot { get; } = new();
 
-	public long ActivePenId
+	public int ActivePenId
 	{
 		get => _activePenId;
 		private set => this.RaiseAndSetIfChanged(ref _activePenId, value);
@@ -106,7 +106,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	public ChartNavigationController Navigation { get; } = new();
 
-	public IReadOnlyDictionary<long, PenScaleSettings> ScaleSettings => _settingsById;
+	public IReadOnlyDictionary<int, PenScaleSettings> ScaleSettings => _settingsById;
 
 	public IObservable<Unit> RedrawRequested { get; }
 
@@ -125,7 +125,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		private set => this.RaiseAndSetIfChanged(ref _cursorTime, value);
 	}
 
-	public IReadOnlyDictionary<long, double?> CursorValues
+	public IReadOnlyDictionary<int, double?> CursorValues
 	{
 		get => _cursorValues;
 		private set => this.RaiseAndSetIfChanged(ref _cursorValues, value);
@@ -169,12 +169,12 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		Plot.Dispose();
 	}
 
-	public (double Min, double Max)? ScaleRangeForPen(long penId)
+	public (double Min, double Max)? ScaleRangeForPen(int penId)
 	{
 		return _scalesByPenId.TryGetValue(penId, out var scale) ? (scale.Min, scale.Max) : null;
 	}
 
-	public TrendPenState? FindPen(long penId)
+	public TrendPenState? FindPen(int penId)
 	{
 		return _pensById.GetValueOrDefault(penId);
 	}
@@ -205,7 +205,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 		var layer = Navigation.ActiveLayer;
 		var sequence = NextHistorySequence();
-		IReadOnlyList<long> requestedPenIds = [.. _pensById.Keys];
+		IReadOnlyList<int> requestedPenIds = [.. _pensById.Keys];
 		_isInitialHistoryInFlight = true;
 
 		try
@@ -251,7 +251,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	private void ScheduleHistoryApplyWhenAlive(
 		TrendHistory history,
-		IReadOnlyList<long> requestedPenIds,
+		IReadOnlyList<int> requestedPenIds,
 		long sequence)
 	{
 		var scheduledApply = _uiScheduler.Schedule(() =>
@@ -296,7 +296,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		return state;
 	}
 
-	public bool RemovePen(long penId)
+	public bool RemovePen(int penId)
 	{
 		ObjectDisposedException.ThrowIf(_isDisposed, this);
 
@@ -321,7 +321,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		return true;
 	}
 
-	public bool SetPenVisibility(long penId, bool isVisible)
+	public bool SetPenVisibility(int penId, bool isVisible)
 	{
 		ObjectDisposedException.ThrowIf(_isDisposed, this);
 
@@ -339,7 +339,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		return true;
 	}
 
-	public bool SetActivePen(long penId)
+	public bool SetActivePen(int penId)
 	{
 		ObjectDisposedException.ThrowIf(_isDisposed, this);
 
@@ -388,7 +388,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		ObjectDisposedException.ThrowIf(_isDisposed, this);
 
 		CursorTime = null;
-		CursorValues = new Dictionary<long, double?>();
+		CursorValues = new Dictionary<int, double?>();
 	}
 
 	public void SetDeltaModeEnabled(bool isEnabled)
@@ -415,14 +415,14 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		DeltaReadout = _deltaCursorReader.Measure(_activePenId);
 	}
 
-	public bool AutoscaleAxis(long penId)
+	public bool AutoscaleAxis(int penId)
 	{
 		ObjectDisposedException.ThrowIf(_isDisposed, this);
 
 		return UpdateAxisSettings(penId, settings => settings with { Mode = ScaleMode.Auto });
 	}
 
-	public bool SetAxisLimits(long penId, double min, double max)
+	public bool SetAxisLimits(int penId, double min, double max)
 	{
 		ObjectDisposedException.ThrowIf(_isDisposed, this);
 
@@ -505,7 +505,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	// Latest-window-wins: a result whose request sequence is older than the most recently applied one is
 	// dropped so an older window can never overwrite a newer one.
-	private void ApplyHistory(TrendHistory history, IReadOnlyList<long> requestedPenIds, long sequence)
+	private void ApplyHistory(TrendHistory history, IReadOnlyList<int> requestedPenIds, long sequence)
 	{
 		if (sequence < _lastAppliedHistorySequence)
 		{
@@ -540,7 +540,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	// A requested pen the provider returned no envelope for has no data in this window, so its curve is
 	// cleared. Only the identifiers the request carried are considered: a pen added while the query was in
 	// flight was never asked about, and clearing it would drop a curve the result says nothing about.
-	private void DropPensMissingFromHistory(TrendHistory history, IReadOnlyList<long> requestedPenIds)
+	private void DropPensMissingFromHistory(TrendHistory history, IReadOnlyList<int> requestedPenIds)
 	{
 		var returnedPenIds = history.Pens.Select(envelope => envelope.PenId).ToHashSet();
 
@@ -556,7 +556,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		}
 	}
 
-	private bool UpdateAxisSettings(long penId, Func<PenScaleSettings, PenScaleSettings> update)
+	private bool UpdateAxisSettings(int penId, Func<PenScaleSettings, PenScaleSettings> update)
 	{
 		if (!_settingsById.TryGetValue(penId, out var settings))
 		{

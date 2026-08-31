@@ -5,7 +5,7 @@
 public static class MinMaxDecimator
 {
 	public static PenHistoryEnvelope Decimate(
-		long penId,
+		int penId,
 		IReadOnlyList<DateTime> timestamps,
 		IReadOnlyList<double?> values,
 		int targetColumnCount)
@@ -214,13 +214,13 @@ public static class MinMaxDecimator
 
 	private sealed class EnvelopeBuilder
 	{
-		private readonly long _penId;
+		private readonly int _penId;
 		private readonly List<DateTime> _timestamps;
 		private readonly List<double> _min;
 		private readonly List<double> _max;
 		private readonly List<double> _center;
 
-		public EnvelopeBuilder(long penId, int capacity)
+		public EnvelopeBuilder(int penId, int capacity)
 		{
 			_penId = penId;
 			_timestamps = new List<DateTime>(capacity);

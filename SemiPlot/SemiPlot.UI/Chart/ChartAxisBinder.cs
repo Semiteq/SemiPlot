@@ -29,7 +29,7 @@ public sealed class ChartAxisBinder
 
 	public void Apply(
 		IReadOnlyList<PenScale> scales,
-		IReadOnlyDictionary<long, TrendPenState> pensById)
+		IReadOnlyDictionary<int, TrendPenState> pensById)
 	{
 		ArgumentNullException.ThrowIfNull(scales);
 		ArgumentNullException.ThrowIfNull(pensById);
@@ -69,7 +69,7 @@ public sealed class ChartAxisBinder
 
 	private static void AssignPensToAxis(
 		PenScale scale,
-		IReadOnlyDictionary<long, TrendPenState> pensById,
+		IReadOnlyDictionary<int, TrendPenState> pensById,
 		IYAxis axis)
 	{
 		foreach (var penId in scale.PenIds)

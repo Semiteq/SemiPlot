@@ -2,7 +2,7 @@
 
 public static class SyntheticValueWalk
 {
-	public static double Value(long seed, long penId, long tickIndex, double minValue, double maxValue)
+	public static double Value(long seed, int penId, long tickIndex, double minValue, double maxValue)
 	{
 		var normalized = Normalized(seed, penId, tickIndex);
 
@@ -11,7 +11,7 @@ public static class SyntheticValueWalk
 
 	// Two decorrelated sine waves plus hash jitter, so the signal looks process-like yet stays a
 	// pure function of its inputs.
-	private static double Normalized(long seed, long penId, long tickIndex)
+	private static double Normalized(long seed, int penId, long tickIndex)
 	{
 		var penHash = Hash(seed, penId);
 

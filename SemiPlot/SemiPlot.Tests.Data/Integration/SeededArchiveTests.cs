@@ -146,7 +146,7 @@ public sealed class SeededArchiveTests(PostgresContainerFixture postgresContaine
 		postgresContainerFixture.RequireAvailable();
 
 		var expected = RawLayerGenerator.SelectPens(ArchiveTemplate.Slice.PenCount)
-			.Select(pen => ((int)pen.PenId, pen.Name))
+			.Select(pen => (pen.PenId, pen.Name))
 			.OrderBy(pen => pen.Item1)
 			.ToArray();
 
@@ -198,7 +198,7 @@ public sealed class SeededArchiveTests(PostgresContainerFixture postgresContaine
 		Assert.Equal(pens.Count, second.Value);
 
 		Assert.Equal(
-			renamed.Select(pen => ((int)pen.PenId, pen.Name)).OrderBy(tag => tag.Item1).ToArray(),
+			renamed.Select(pen => (pen.PenId, pen.Name)).OrderBy(tag => tag.Item1).ToArray(),
 			await TagsAsync(database.AdminConnectionString));
 	}
 

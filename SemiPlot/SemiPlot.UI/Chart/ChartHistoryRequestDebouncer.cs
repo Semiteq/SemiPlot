@@ -18,7 +18,7 @@ public sealed class ChartHistoryRequestDebouncer : IDisposable
 
 	public ChartHistoryRequestDebouncer(
 		Func<HistoryRequest, Task<Result<IReadOnlyList<PenHistoryEnvelope>>>> queryAsync,
-		Action<TrendHistory, IReadOnlyList<long>, long> applyHistory,
+		Action<TrendHistory, IReadOnlyList<int>, long> applyHistory,
 		Action<Exception> reportQueryFailure,
 		TimeSpan debounceWindow,
 		IScheduler dataScheduler,

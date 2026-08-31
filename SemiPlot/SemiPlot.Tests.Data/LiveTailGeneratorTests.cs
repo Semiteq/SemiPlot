@@ -132,7 +132,7 @@ public sealed class LiveTailGeneratorTests
 		var rows = LiveTailGenerator.Generate(options, _midnight, _midnight.AddSeconds(30));
 
 		Assert.Equal(
-			RawLayerGenerator.SelectPens(options.PenCount).Select(pen => (int)pen.PenId).Order().ToArray(),
+			RawLayerGenerator.SelectPens(options.PenCount).Select(pen => pen.PenId).Order().ToArray(),
 			rows.Select(row => row.Id).Distinct().Order().ToArray());
 	}
 
@@ -140,7 +140,7 @@ public sealed class LiveTailGeneratorTests
 	public void EveryValueStaysInsideItsPenRange()
 	{
 		var options = Options();
-		var pens = RawLayerGenerator.SelectPens(options.PenCount).ToDictionary(pen => (int)pen.PenId);
+		var pens = RawLayerGenerator.SelectPens(options.PenCount).ToDictionary(pen => pen.PenId);
 		var rows = LiveTailGenerator.Generate(options, _midnight, _midnight.AddSeconds(30));
 
 		Assert.All(rows, row => Assert.InRange(row.Value, pens[row.Id].MinValue, pens[row.Id].MaxValue));

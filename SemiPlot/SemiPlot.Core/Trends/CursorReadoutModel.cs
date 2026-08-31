@@ -2,13 +2,13 @@
 
 public sealed class CursorReadoutModel
 {
-	public IReadOnlyDictionary<long, double?> ReadAt(
+	public IReadOnlyDictionary<int, double?> ReadAt(
 		DateTime cursorTime,
 		IReadOnlyCollection<PenHistoryEnvelope> envelopes)
 	{
 		ArgumentNullException.ThrowIfNull(envelopes);
 
-		var readouts = new Dictionary<long, double?>(envelopes.Count);
+		var readouts = new Dictionary<int, double?>(envelopes.Count);
 
 		foreach (var envelope in envelopes)
 		{

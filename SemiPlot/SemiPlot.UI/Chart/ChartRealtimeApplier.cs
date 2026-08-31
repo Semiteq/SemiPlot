@@ -3,11 +3,11 @@
 namespace SemiPlot.UI.Chart;
 
 public sealed class ChartRealtimeApplier(
-	IReadOnlyDictionary<long, TrendPenState> pensById,
+	IReadOnlyDictionary<int, TrendPenState> pensById,
 	ChartNavigationController navigation)
 {
 	private readonly ChartNavigationController _navigation = navigation;
-	private readonly IReadOnlyDictionary<long, TrendPenState> _pensById = pensById;
+	private readonly IReadOnlyDictionary<int, TrendPenState> _pensById = pensById;
 
 	public void Apply(RealtimeBatch batch, bool foldIntoColumn)
 	{

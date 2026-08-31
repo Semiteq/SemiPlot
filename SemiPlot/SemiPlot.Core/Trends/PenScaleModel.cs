@@ -9,8 +9,8 @@ public sealed class PenScaleModel
 
 	public IReadOnlyList<PenScale> Compute(
 		IReadOnlyList<PenScaleSettings> settings,
-		IReadOnlyDictionary<long, PenHistoryEnvelope> envelopes,
-		long activePenId,
+		IReadOnlyDictionary<int, PenHistoryEnvelope> envelopes,
+		int activePenId,
 		DateTime windowStart,
 		DateTime windowEnd)
 	{
@@ -44,8 +44,8 @@ public sealed class PenScaleModel
 	private static PenScale BuildAxisScale(
 		string axisKey,
 		IReadOnlyList<PenScaleSettings> members,
-		IReadOnlyDictionary<long, PenHistoryEnvelope> envelopes,
-		long activePenId,
+		IReadOnlyDictionary<int, PenHistoryEnvelope> envelopes,
+		int activePenId,
 		DateTime windowStart,
 		DateTime windowEnd)
 	{
@@ -62,7 +62,7 @@ public sealed class PenScaleModel
 
 	private static (double Min, double Max) ComputeRange(
 		IReadOnlyList<PenScaleSettings> members,
-		IReadOnlyDictionary<long, PenHistoryEnvelope> envelopes,
+		IReadOnlyDictionary<int, PenHistoryEnvelope> envelopes,
 		DateTime windowStart,
 		DateTime windowEnd,
 		ScaleMode mode,
@@ -104,7 +104,7 @@ public sealed class PenScaleModel
 
 	private static List<double> CollectValues(
 		IReadOnlyList<PenScaleSettings> members,
-		IReadOnlyDictionary<long, PenHistoryEnvelope> envelopes,
+		IReadOnlyDictionary<int, PenHistoryEnvelope> envelopes,
 		ScaleMode mode,
 		DateTime windowStart,
 		DateTime windowEnd,

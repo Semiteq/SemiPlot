@@ -3,7 +3,7 @@
 namespace SemiPlot.Tools.ArchiveSeeder;
 
 public sealed record SyntheticPen(
-	long PenId,
+	int PenId,
 	string Name,
 	string Group,
 	string Color,

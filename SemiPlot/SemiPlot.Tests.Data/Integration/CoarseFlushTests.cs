@@ -45,7 +45,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 	// The pens the follow loop itself writes, so the opening-row statement probes the same identifiers this
 	// archive carries.
 	private static readonly IReadOnlyList<int> _penIds =
-		RawLayerGenerator.SelectPens(PenCount).Select(pen => (int)pen.PenId).ToArray();
+		RawLayerGenerator.SelectPens(PenCount).Select(pen => pen.PenId).ToArray();
 
 	// One row per pen at each coarse layer: what the first call inside a period writes and what no later
 	// call inside that period repeats.

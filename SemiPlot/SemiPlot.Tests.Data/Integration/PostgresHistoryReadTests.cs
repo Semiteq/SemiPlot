@@ -68,7 +68,7 @@ public sealed class PostgresHistoryReadTests(
 
 	private static readonly Lazy<IReadOnlyList<ArchiveRow>> _seededRawRows = new(GenerateSeededRawRows);
 
-	private static readonly Lazy<IReadOnlyList<long>> _seededPenIds = new(SelectSeededPenIds);
+	private static readonly Lazy<IReadOnlyList<int>> _seededPenIds = new(SelectSeededPenIds);
 
 	// The fresh tail's own archive, written by this class into a clone of the provisioned source. One
 	// calendar day, so the write creates the single partition tp2026m01d01; winter under the source zone,
@@ -411,7 +411,7 @@ public sealed class PostgresHistoryReadTests(
 
 		Assert.True(result.IsSuccess, ArchiveReadSupport.Describe(result));
 
-		Assert.Equal(new long[] { FreshPenId, LaggingPenId, ReachingPenId }, result.Value.Select(e => e.PenId));
+		Assert.Equal(new[] { FreshPenId, LaggingPenId, ReachingPenId }, result.Value.Select(e => e.PenId));
 
 		// Identical across all three pens, including the one whose coarse layer lags: at Raw the coarse
 		// layer takes no part in the answer at all.
@@ -496,7 +496,7 @@ public sealed class PostgresHistoryReadTests(
 	private static async Task<Result<IReadOnlyList<PenHistoryEnvelope>>> ReadHistoryAsync(
 		string connectionString,
 		LocalWindow window,
-		IReadOnlyList<long> penIds,
+		IReadOnlyList<int> penIds,
 		AggregationLayer layer)
 	{
 		await using var services = ArchiveProviderFactory.Build(connectionString);
@@ -573,15 +573,15 @@ public sealed class PostgresHistoryReadTests(
 	// carrying a seed and no window row is present here with the seed alone, which is the read's own
 	// answer: the window opened after that pen's last sample and the pen still draws. A pen with neither
 	// gets no entry and no envelope.
-	private static SortedDictionary<long, IReadOnlyList<ArchiveRow>> SeededRowsIn(LocalWindow window)
+	private static SortedDictionary<int, IReadOnlyList<ArchiveRow>> SeededRowsIn(LocalWindow window)
 	{
-		var rowsByPen = new SortedDictionary<long, IReadOnlyList<ArchiveRow>>();
+		var rowsByPen = new SortedDictionary<int, IReadOnlyList<ArchiveRow>>();
 
 		foreach (var penId in _seededPenIds.Value)
 		{
 			var rows = SeedBefore(penId, window)
 				.Concat(_seededRawRows.Value
-					.Where(row => (long)row.Id == penId
+					.Where(row => row.Id == penId
 						&& row.Timestamp >= window.From
 						&& row.Timestamp < window.To)
 					.OrderBy(row => row.Timestamp))
@@ -607,10 +607,10 @@ public sealed class PostgresHistoryReadTests(
 
 	// The row the statement's seed branch returns: this pen's last row strictly before the window, no
 	// further back than the look-back the statement carries.
-	private static IEnumerable<ArchiveRow> SeedBefore(long penId, LocalWindow window)
+	private static IEnumerable<ArchiveRow> SeedBefore(int penId, LocalWindow window)
 	{
 		var seed = _seededRawRows.Value
-			.Where(row => (long)row.Id == penId
+			.Where(row => row.Id == penId
 				&& row.Timestamp < window.From
 				&& row.Timestamp >= window.From - SeedLookBackFor(window))
 			.OrderByDescending(row => row.Timestamp)
@@ -720,7 +720,7 @@ public sealed class PostgresHistoryReadTests(
 			.ToArray();
 	}
 
-	private static IReadOnlyList<long> SelectSeededPenIds()
+	private static IReadOnlyList<int> SelectSeededPenIds()
 	{
 		return RawLayerGenerator.SelectPens(ArchiveTemplate.Slice.PenCount)
 			.Select(pen => pen.PenId)

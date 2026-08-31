@@ -6,7 +6,7 @@ public static class ChartHoverReadout
 {
 	public static string BuildContent(
 		DateTime cursorTime,
-		IReadOnlyDictionary<long, double?> values,
+		IReadOnlyDictionary<int, double?> values,
 		IReadOnlyCollection<TrendPenState> pens)
 	{
 		ArgumentNullException.ThrowIfNull(values);

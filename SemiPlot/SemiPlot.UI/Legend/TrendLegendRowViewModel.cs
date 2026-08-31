@@ -14,7 +14,7 @@ public sealed class TrendLegendRowViewModel : ReactiveObject, IDisposable
 	private readonly ObservableAsPropertyHelper<double?> _cursorValue;
 
 	private readonly ObservableAsPropertyHelper<bool> _isActive;
-	private readonly long _penId;
+	private readonly int _penId;
 	private readonly TrendPenState _penState;
 	private readonly ObservableAsPropertyHelper<(double Min, double Max)?> _scaleRange;
 	private readonly CompositeDisposable _subscriptions = new();

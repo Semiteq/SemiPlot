@@ -208,7 +208,7 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 	{
 		var rows = pens
 			.Select(pen => new ArchiveRow(
-				(int)pen.PenId,
+				pen.PenId,
 				ArchiveRow.RawLayer,
 				archiveLocal,
 				ValueFor(pen.PenId, tick),
@@ -228,7 +228,7 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 	{
 		var rows = pens
 			.Select((pen, index) => new ArchiveRow(
-				(int)pen.PenId,
+				pen.PenId,
 				ArchiveRow.RawLayer,
 				baseLocal.AddSeconds(index + 1),
 				ValueFor(pen.PenId, tick),
@@ -254,7 +254,7 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 
 	// Distinct per variable and per write, so a batch carrying the right timestamp with somebody else's
 	// value still fails.
-	private static double ValueFor(long penId, int tick)
+	private static double ValueFor(int penId, int tick)
 	{
 		return penId + (tick * 0.25);
 	}

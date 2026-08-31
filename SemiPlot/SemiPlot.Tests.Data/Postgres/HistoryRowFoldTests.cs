@@ -61,7 +61,7 @@ public sealed class HistoryRowFoldTests
 
 		var envelope = Assert.Single(HistoryRowFold.Fold(rows, _utcConverter, TargetColumnCount));
 
-		Assert.Equal(7L, envelope.PenId);
+		Assert.Equal(7, envelope.PenId);
 		Assert.Equal([Utc(10, 0), Utc(10, 1), Utc(10, 2)], envelope.Timestamps);
 		Assert.All(envelope.Timestamps, timestamp => Assert.Equal(DateTimeKind.Utc, timestamp.Kind));
 		Assert.Equal([1.0, 2.0, 3.0], envelope.Min);
@@ -157,7 +157,7 @@ public sealed class HistoryRowFoldTests
 
 		var envelopes = HistoryRowFold.Fold(rows, _utcConverter, TargetColumnCount);
 
-		Assert.Equal([3L, 9L], envelopes.Select(envelope => envelope.PenId));
+		Assert.Equal([3, 9], envelopes.Select(envelope => envelope.PenId));
 	}
 
 	[Fact]
@@ -385,7 +385,7 @@ public sealed class HistoryRowFoldTests
 
 		var envelope = Assert.Single(HistoryRowFold.Fold(rows, _utcConverter, TargetColumnCount));
 
-		Assert.Equal(7L, envelope.PenId);
+		Assert.Equal(7, envelope.PenId);
 		Assert.Equal(Utc(9, 55), envelope.Timestamps[0]);
 		Assert.Equal(1.0, envelope.Center[0]);
 		Assert.Equal([Utc(9, 55), Utc(10, 0), Utc(10, 1)], envelope.Timestamps);
@@ -408,7 +408,7 @@ public sealed class HistoryRowFoldTests
 		var envelopes = HistoryRowFold.Fold(rows, _utcConverter, TargetColumnCount);
 
 		Assert.Equal(2, envelopes.Count);
-		Assert.Equal([3L, 9L], envelopes.Select(envelope => envelope.PenId));
+		Assert.Equal([3, 9], envelopes.Select(envelope => envelope.PenId));
 		Assert.Equal([Utc(9, 50), Utc(10, 0)], envelopes[0].Timestamps);
 		Assert.Equal([Utc(9, 40), Utc(10, 0)], envelopes[1].Timestamps);
 		Assert.Equal([1.0, 2.0], envelopes[0].Center);

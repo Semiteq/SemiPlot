@@ -18,7 +18,7 @@ internal static class HistoryRowFold
 	/// One row of the windowed read; a null <c>Value</c> is a gap. <c>Quality</c> is the archive's
 	/// <c>q</c> column, carried on every row; <c>32</c> marks the last sample before a break.
 	/// </summary>
-	public readonly record struct Row(long PenId, DateTime ArchiveLocal, double? Value, int Quality);
+	public readonly record struct Row(int PenId, DateTime ArchiveLocal, double? Value, int Quality);
 
 	/// <summary>
 	/// Unenforced precondition: <paramref name="rows"/> arrive in the order

@@ -16,7 +16,7 @@ namespace SemiPlot.DataSource.Postgres;
 /// </summary>
 internal static class PenLineStyleReader
 {
-	public static PenLineStyle Read(short storedValue, long penId, ILogger logger)
+	public static PenLineStyle Read(short storedValue, int penId, ILogger logger)
 	{
 		switch (storedValue)
 		{

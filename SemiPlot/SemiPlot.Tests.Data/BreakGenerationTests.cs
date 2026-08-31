@@ -196,7 +196,7 @@ public sealed class BreakGenerationTests
 	public void BothMarkerRowsCarryRealValues()
 	{
 		var options = Options();
-		var pens = RawLayerGenerator.SelectPens(options.PenCount).ToDictionary(pen => (int)pen.PenId);
+		var pens = RawLayerGenerator.SelectPens(options.PenCount).ToDictionary(pen => pen.PenId);
 
 		foreach (var row in RawLayerGenerator.Generate(options))
 		{

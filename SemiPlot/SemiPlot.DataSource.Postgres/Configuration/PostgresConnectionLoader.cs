@@ -31,8 +31,7 @@ public static class PostgresConnectionLoader
 	{
 		if (string.IsNullOrWhiteSpace(filePath))
 		{
-			return Result.Fail<PostgresConnectionSettings>(
-				new ConnectionFileError(filePath, ConnectionFileProblem.NotFound));
+			return Fail<PostgresConnectionSettings>(filePath, ConnectionFileProblem.NotFound);
 		}
 
 		var read = Read(filePath);
@@ -93,16 +92,12 @@ public static class PostgresConnectionLoader
 		}
 		catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
 		{
-			return Result.Fail<PostgresConnectionDto>(
-				new ConnectionFileError(filePath, ConnectionFileProblem.NotFound)
-					.CausedBy(new ExceptionalError(exception)));
+			return Fail<PostgresConnectionDto>(filePath, ConnectionFileProblem.NotFound, cause: exception);
 		}
 		catch (Exception exception)
 		{
-			return Result.Fail<PostgresConnectionDto>(
-				new ConnectionFileError(
-						filePath, ConnectionFileProblem.Unreadable, "the file cannot be opened for reading")
-					.CausedBy(new ExceptionalError(exception)));
+			return Fail<PostgresConnectionDto>(
+				filePath, ConnectionFileProblem.Unreadable, "the file cannot be opened for reading", exception);
 		}
 
 		try
@@ -110,16 +105,14 @@ public static class PostgresConnectionLoader
 			var dto = _deserializer.Deserialize<PostgresConnectionDto?>(content);
 
 			return dto is null
-				? Result.Fail<PostgresConnectionDto>(
-					new ConnectionFileError(
-						filePath, ConnectionFileProblem.Unparseable, "the file carries no configuration"))
+				? Fail<PostgresConnectionDto>(
+					filePath, ConnectionFileProblem.Unparseable, "the file carries no configuration")
 				: Result.Ok(dto);
 		}
 		catch (Exception exception)
 		{
-			return Result.Fail<PostgresConnectionDto>(
-				new ConnectionFileError(filePath, ConnectionFileProblem.Unparseable, "the file is not valid YAML")
-					.CausedBy(new ExceptionalError(exception)));
+			return Fail<PostgresConnectionDto>(
+				filePath, ConnectionFileProblem.Unparseable, "the file is not valid YAML", exception);
 		}
 	}
 
@@ -135,17 +128,27 @@ public static class PostgresConnectionLoader
 			("schema", dto.Schema)
 		];
 
-		(string Name, int? Value)[] numbers =
-		[
-			(PortKey, dto.Port),
-			(PollIntervalKey, dto.PollIntervalMs)
-		];
+		var missing = new List<string>();
 
-		var missing = texts.Where(pair => string.IsNullOrWhiteSpace(pair.Value)).Select(pair => pair.Name)
-			.Concat(numbers.Where(pair => pair.Value is null).Select(pair => pair.Name))
-			.ToArray();
+		foreach (var (name, value) in texts)
+		{
+			if (string.IsNullOrWhiteSpace(value))
+			{
+				missing.Add(name);
+			}
+		}
 
-		return missing.Length == 0
+		if (dto.Port is null)
+		{
+			missing.Add(PortKey);
+		}
+
+		if (dto.PollIntervalMs is null)
+		{
+			missing.Add(PollIntervalKey);
+		}
+
+		return missing.Count == 0
 			? Result.Ok()
 			: Invalid(filePath, ConnectionFileProblem.MissingField, missing, "absent or blank");
 	}
@@ -180,13 +183,25 @@ public static class PostgresConnectionLoader
 		}
 		catch (Exception exception) when (exception is TimeZoneNotFoundException or InvalidTimeZoneException)
 		{
-			return Result.Fail<TimeZoneInfo>(
-				new ConnectionFileError(
-						filePath,
-						ConnectionFileProblem.UnknownTimeZone,
-						$"'{identifier}' is not a time zone this machine knows")
-					.CausedBy(new ExceptionalError(exception)));
+			return Fail<TimeZoneInfo>(
+				filePath,
+				ConnectionFileProblem.UnknownTimeZone,
+				$"'{identifier}' is not a time zone this machine knows",
+				exception);
 		}
+	}
+
+	private static Result<TValue> Fail<TValue>(
+		string filePath,
+		ConnectionFileProblem kind,
+		string? reason = null,
+		Exception? cause = null)
+	{
+		var error = reason is null
+			? new ConnectionFileError(filePath, kind)
+			: new ConnectionFileError(filePath, kind, reason);
+
+		return Result.Fail<TValue>(cause is null ? error : error.CausedBy(new ExceptionalError(cause)));
 	}
 
 	private static Result Invalid(

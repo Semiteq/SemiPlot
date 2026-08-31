@@ -1,4 +1,4 @@
-# Complexity Cut
+﻿# Complexity Cut
 
 ## Overview
 
@@ -620,9 +620,11 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 - Modify: `docs/architecture/data-integration.md` (delete "Keeping this document honest"; the SQL lives in `ArchiveStatements.cs`, the document keeps the operation-to-statement table and the hazards), `docs/architecture/bench.md`, `docs/architecture/testing-strategy.md`, `CLAUDE.md`
 
 - [ ] run `/planning:comment-audit` over the four production projects and the harness; apply the kill-list: one line per non-obvious invariant and a bare `docs/architecture/<file>.md#<anchor>` reference where a document holds the reasoning; delete polemics, commit hashes, process notes and restatements of the document
-- [ ] compress `data-integration.md`: remove the quoted SQL blocks in favour of the constant names, remove "Keeping this document honest", keep responsibility zones, the layer ladder, the time boundary, quality and gaps, the error table, configuration and startup
-- [ ] compress `bench.md` to what a developer needs to run and extend the bench
-- [ ] trim `CLAUDE.md` "Test" and "Data-source projects" sections to the statements still true after slices 1 to 8
+- [x] compress `data-integration.md`: remove the quoted SQL blocks in favour of the constant names, remove "Keeping this document honest", keep responsibility zones, the layer ladder, the time boundary, quality and gaps, the error table, configuration and startup
+- [x] compress `bench.md` to what a developer needs to run and extend the bench
+- [x] trim `CLAUDE.md` "Test" and "Data-source projects" sections to the statements still true after slices 1 to 8
+- [x] ➕ resolve the operator's `//wtf` marks: `PostgresConnectionLoader` gets one `Fail` helper and plain loops in place of the LINQ chain; `PostgresDataServiceCollectionExtensions` and `StartupProbe` lose their ceremonial `ThrowIfNull` guards; `StartupProbe` collapses to one `Run` with an optional bound, `Build` and the sync `Read` wrapper inlined, internal-member docs cut to a line; `Program` keeps the `using var` disposal with a one-line note
+- [ ] ➕ sweep the four production projects and the harness for the same classes repo-wide: ceremonial null guards on first-party-only APIs, single-caller indirection methods, multi-paragraph XML docs on internal members, repeated error-construction boilerplate
 - [ ] `dotnet build SemiPlot.slnx`; `dotnet test SemiPlot.slnx` - must pass before task 25
 
 ### Task 25: Verify acceptance criteria

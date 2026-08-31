@@ -12,46 +12,19 @@ namespace SemiPlot.UI.Startup;
 
 /// <summary>
 /// The startup sequence that runs in <see cref="Program"/>, before Avalonia is configured: load the
-/// connection file, build the container, resolve <see cref="IDataProvider"/>, read the pen catalogue and
-/// the archive extent. Nothing here touches an Avalonia or a ReactiveUI type, which is what lets the
-/// whole sequence be driven from a test.
-/// <para>
-/// It exists because <c>AfterSetup</c> takes a synchronous delegate: a read left inside it either blocks
-/// Avalonia's setup or throws through it. Running the reads first turns a failing archive into a
-/// <see cref="Result"/> the caller branches on.
-/// </para>
+/// connection file, build the container, read the pen catalogue and the archive extent.
 /// </summary>
 public static class StartupProbe
 {
-	/// <summary>
-	/// The connection file's name inside <see cref="StartupOptions.ConfigDir"/>. The directory is
-	/// correctable with <c>--config-dir</c>; the file name is not.
-	/// </summary>
+	/// <summary>The connection file's name inside <see cref="StartupOptions.ConfigDir"/>.</summary>
 	public const string ConnectionFileName = "archive-connection.yaml";
 
-	/// <summary>
-	/// How long each startup read may take before startup stops waiting for it. Short on purpose: a
-	/// server that accepts TCP and answers nothing must not hold the splash-free startup for the
-	/// provider's five-minute backstop.
-	/// <para>
-	/// It must stay above <see cref="PostgresConnectionSettings.ConnectTimeoutSeconds"/>, which is the
-	/// invariant <c>DefaultReadBound_StaysAboveTheConnectTimeout</c> pins. An unreachable host — a
-	/// wrong address, a host that is down, a firewall that drops — fails inside the connect attempt, and
-	/// only a bound above that attempt lets its <c>ArchiveFault.Unreachable</c> reach the operator. Equal
-	/// values race, and the operator then reads "the connection was accepted", the opposite of the truth.
-	/// </para>
-	/// </summary>
+	// Must stay above PostgresConnectionSettings.ConnectTimeoutSeconds, or an unreachable host reads as
+	// an accepted connection that timed out.
 	public static readonly TimeSpan DefaultReadBound = TimeSpan.FromSeconds(30);
 
-	public static Result<StartupData> Run(StartupOptions options)
+	public static Result<StartupData> Run(StartupOptions options, TimeSpan? readBound = null)
 	{
-		return Run(options, DefaultReadBound);
-	}
-
-	public static Result<StartupData> Run(StartupOptions options, TimeSpan readBound)
-	{
-		ArgumentNullException.ThrowIfNull(options);
-
 		var settings = PostgresConnectionLoader.Load(Path.Combine(options.ConfigDir, ConnectionFileName));
 
 		if (settings.IsFailed)
@@ -59,32 +32,24 @@ public static class StartupProbe
 			return Result.Fail<StartupData>(settings.Errors);
 		}
 
-		return Read(BuildArchiveServiceProvider(settings.Value), readBound);
+		var serviceProvider = BuildArchiveServiceProvider(settings.Value);
+
+		return Task.Run(() => ReadAsync(serviceProvider, readBound ?? DefaultReadBound)).GetAwaiter().GetResult();
 	}
 
-	/// <summary>
-	/// The container the archive path runs on. Internal so a composition test builds exactly what
-	/// <see cref="Run(StartupOptions, TimeSpan)"/> builds, rather than a look-alike.
-	/// </summary>
+	/// <summary>The container the archive path runs on.</summary>
 	internal static ServiceProvider BuildArchiveServiceProvider(PostgresConnectionSettings settings)
 	{
-		ArgumentNullException.ThrowIfNull(settings);
+		var services = new ServiceCollection().AddPostgresData(settings).AddUi();
 
-		return Build(services => services.AddPostgresData(settings));
+		services.AddLogging(builder => builder.AddSerilog(Log.Logger, dispose: false));
+
+		return services.BuildServiceProvider();
 	}
 
 	/// <summary>
-	/// Reads the catalogue and the extent from an already-built container, disposing that container when
-	/// either read fails so a failed startup leaves nothing running. Separate from
-	/// <see cref="Run(StartupOptions, TimeSpan)"/> so a test can hand in a container holding its own
-	/// <see cref="IDataProvider"/>.
-	/// <para>
-	/// A throw is a failed <see cref="Result"/> here, not an escape: resolving
-	/// <see cref="IDataProvider"/> constructs the data source and can throw, and a cancelled read leaves
-	/// the provider as an <see cref="OperationCanceledException"/> by design. Either one propagating
-	/// would end the process with no window and no disposed container, which is the one outcome the
-	/// operator can do nothing with.
-	/// </para>
+	/// Reads the catalogue and the extent from an already-built container. A failed read or a throw is a
+	/// failed <see cref="Result"/> with the container disposed, so a failed startup leaves nothing running.
 	/// </summary>
 	internal static async Task<Result<StartupData>> ReadAsync(ServiceProvider serviceProvider, TimeSpan readBound)
 	{
@@ -116,14 +81,8 @@ public static class StartupProbe
 		}
 	}
 
-	private static Result<StartupData> Read(ServiceProvider serviceProvider, TimeSpan readBound)
-	{
-		return Task.Run(() => ReadAsync(serviceProvider, readBound)).GetAwaiter().GetResult();
-	}
-
-	// The bound is the caller's, not the provider's: IDataProvider takes no CancellationToken and does not
-	// gain one here. So WaitAsync abandons the WAIT, not the QUERY — the read keeps running on its pooled
-	// connection until the provider's own backstop ends it, and startup proceeds without it.
+	// WaitAsync abandons the wait, not the query: IDataProvider takes no CancellationToken, so the read
+	// keeps running until the provider's own backstop ends it, and startup proceeds without it.
 	private static async Task<Result<TValue>> ReadBoundedAsync<TValue>(
 		Task<Result<TValue>> read,
 		TimeSpan bound,
@@ -155,9 +114,8 @@ public static class StartupProbe
 		return failure;
 	}
 
-	// The exception keeps its stack in the log line and reaches the operator as an ExceptionalError, which
-	// StartupFailureMapper turns into a window naming the exception type. FluentResults owns that type, so
-	// the vocabulary the coverage test enumerates is unchanged.
+	// The exception keeps its stack in the log line and reaches the operator through the mapper's
+	// ExceptionalError arm.
 	private static async Task<Result<StartupData>> FailAsync(ServiceProvider serviceProvider, Exception exception)
 	{
 		Log.Error(exception, "Startup failed before either read produced a result");
@@ -165,14 +123,5 @@ public static class StartupProbe
 		await serviceProvider.DisposeAsync().ConfigureAwait(false);
 
 		return Result.Fail<StartupData>(new ExceptionalError(exception.Message, exception));
-	}
-
-	private static ServiceProvider Build(Func<IServiceCollection, IServiceCollection> addDataSource)
-	{
-		var services = addDataSource(new ServiceCollection()).AddUi();
-
-		services.AddLogging(builder => builder.AddSerilog(Log.Logger, dispose: false));
-
-		return services.BuildServiceProvider();
 	}
 }

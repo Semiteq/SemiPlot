@@ -9,10 +9,7 @@ using Xunit;
 
 namespace SemiPlot.Tests.Data.Postgres;
 
-// Each operational statement is pinned by a plain literal held in this file and compared character for
-// character against the constant in `ArchiveStatements.cs`, so an edit to the shipped SQL fails here.
-// `EffectiveStatementTimeout` carries none: it is a cold-path diagnostic that runs only after a read has
-// already failed. A new operational statement gains a literal here.
+// Why each clause is written the way it is lives on the constant itself, in `ArchiveStatements.cs`.
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
 [Trait("Category", "Unit")]
@@ -21,122 +18,68 @@ public sealed class ArchiveStatementTextTests
 	// Npgsql strips the sigil, so the command carries "ids" where the statement carries "@ids".
 	private static readonly Regex _parameterTokenPattern = new(@"@(\w+)");
 
-	// `ORDER BY coalesce(group_name, '')` is load-bearing: the row read projects a null group onto the empty
-	// string, and PostgreSQL sorts nulls last while the empty string sorts first, so ordering on the raw
-	// column would return a list not ordered by its own values.
-	private const string PenCatalogStatement = """
-		SELECT id, name, group_name, color, line_style
-		FROM semiplot_tags
-		ORDER BY coalesce(group_name, ''), name;
-		""";
-
+	// HistoryRowFold groups by consecutive identifier and needs one ascending run per pen. Only the
+	// single outer ordering guarantees it: ExplainPlanTests asserts no ordering at all, and an index
+	// scan's order matches by accident.
 	[Fact]
-	public void ThePenCatalogStatementMatchesItsLiteralCharacterForCharacter()
+	public void TheSeededWindowEndsWithOneOuterOrdering()
 	{
-		Assert.Equal(PenCatalogStatement, ArchiveStatements.PenCatalog);
+		Assert.EndsWith("ORDER BY id, t;", ArchiveStatements.SparseHistoryWindow, StringComparison.Ordinal);
 	}
 
-	// The lateral pair of scalar subqueries is load-bearing: each one is an index probe on
-	// `PRIMARY KEY (id, l, t)` per pen, so the bounds come from two descents per pen rather than from a scan
-	// of `trends`.
-	private const string ArchiveExtentStatement = """
-		SELECT min(lo) AS first, max(hi) AS last
-		FROM semiplot_tags tag
-		CROSS JOIN LATERAL (
-		    SELECT (SELECT min(t) FROM trends WHERE id = tag.id AND l = 0) AS lo,
-		           (SELECT max(t) FROM trends WHERE id = tag.id AND l = 0) AS hi
-		) bounds;
-		""";
-
+	// The window branch takes `t >= @from`, so an inclusive seed bound returns the boundary row on both
+	// branches.
 	[Fact]
-	public void TheArchiveExtentStatementMatchesItsLiteralCharacterForCharacter()
+	public void TheSeededWindowsSeamBoundIsStrict()
 	{
-		Assert.Equal(ArchiveExtentStatement, ArchiveStatements.ArchiveExtent);
+		Assert.Contains("prior.t < @from", ArchiveStatements.SparseHistoryWindow, StringComparison.Ordinal);
 	}
 
-	// Every line below is load-bearing. `t < @from` is strict because the window branch takes
-	// `t >= @from`, so an inclusive seed bound would return a boundary row on both branches. The
-	// `greatest(@to - @from, interval '1 day')` lower bound is the wider of the requested window and one
-	// partition width: trends is PARTITION BY RANGE (t) by calendar day with PRIMARY KEY (id, l, t) as
-	// its only index, so an unbounded backwards seek plans as a Limit over a Merge Append of every
-	// unpruned partition, which opens and pulls a first tuple from each of them before emitting one —
-	// one index descent per older day, per pen, on every window change, found row or not. It scales with
-	// the window so a pen quiet for days still seeds a week-wide window instead of vanishing from it. The
-	// single outer ORDER BY is what keeps each pen one consecutive ascending run for HistoryRowFold.
-	private const string SeededWindowStatement = """
-		SELECT id, t, v, q
-		FROM (
-		    SELECT seed.id, seed.t, seed.v, seed.q
-		    FROM (SELECT DISTINCT unnest(@ids) AS id) requested
-		    CROSS JOIN LATERAL (
-		        SELECT prior.id, prior.t, prior.v, prior.q
-		        FROM trends prior
-		        WHERE prior.id = requested.id AND prior.l = @layer
-		          AND prior.t < @from AND prior.t >= @from - greatest(@to - @from, interval '1 day')
-		        ORDER BY prior.t DESC
-		        LIMIT 1
-		    ) seed
-		    UNION ALL
-		    SELECT id, t, v, q
-		    FROM trends
-		    WHERE id = ANY(@ids) AND l = @layer AND t >= @from AND t < @to
-		) sample
-		ORDER BY id, t;
-		""";
-
+	// The backwards seek is bounded by the wider of the requested window and one partition width. Drop
+	// the floor and a pen quiet for days vanishes from the window instead of drawing at its last value.
 	[Fact]
-	public void TheSeededWindowStatementMatchesItsLiteralCharacterForCharacter()
+	public void TheSeededWindowsSeedBoundKeepsItsOneDayFloor()
 	{
-		Assert.Equal(SeededWindowStatement, ArchiveStatements.SparseHistoryWindow);
+		Assert.Contains(
+			"greatest(@to - @from, interval '1 day')",
+			ArchiveStatements.SparseHistoryWindow,
+			StringComparison.Ordinal);
 	}
 
-	// `id = ANY(@ids)` is load-bearing: PRIMARY KEY (id, l, t) leads with id, so a tick predicated on time
-	// alone cannot use the only index trends has and reads the current day's partition sequentially. The
-	// `>` on @lastSeen is strict, so the row that set the bound is never returned a second time.
-	private const string RealtimePollStatement = """
-		SELECT id, t, v, q
-		FROM trends
-		WHERE id = ANY(@ids) AND l = 0 AND t > @lastSeen
-		ORDER BY t;
-		""";
-
+	// A poll feeds the live edge, which draws raw samples. Without the layer filter the same tick also
+	// returns the coarse rows LayerThinner writes for the same instants, and the fold reads them as
+	// further samples of the same pen.
 	[Fact]
-	public void TheRealtimePollStatementMatchesItsLiteralCharacterForCharacter()
+	public void ThePollReadsTheRawLayerAlone()
 	{
-		Assert.Equal(RealtimePollStatement, ArchiveStatements.RealtimePoll);
+		Assert.Contains("AND l = 0", ArchiveStatements.RealtimePoll, StringComparison.Ordinal);
 	}
 
-	// The lateral scalar subquery is load-bearing for the same reason the extent statement's pair is: a
-	// plain `max(t) ... WHERE id = ANY(@ids)` loses PostgreSQL's min/max index-edge transform and starts
-	// collecting a partition's rows, where this shape is one index probe on PRIMARY KEY (id, l, t) per
-	// variable. `DISTINCT unnest(@ids)` makes a repeated identifier cost one probe rather than two.
-	private const string RealtimeBaselineStatement = """
-		SELECT max(hi) AS last
-		FROM (SELECT DISTINCT unnest(@ids) AS id) requested
-		CROSS JOIN LATERAL (
-		    SELECT (SELECT max(t) FROM trends WHERE id = requested.id AND l = 0) AS hi
-		) bounds;
-		""";
-
+	// HistoryRowFold takes one ascending run per pen, and a poll returns every subscribed pen in one
+	// result. The index scan behind the poll happens to yield ascending time per identifier, so the loss
+	// of this ordering shows up only once the planner picks another path.
 	[Fact]
-	public void TheRealtimeBaselineStatementMatchesItsLiteralCharacterForCharacter()
+	public void ThePollEndsWithItsAscendingTimeOrdering()
 	{
-		Assert.Equal(RealtimeBaselineStatement, ArchiveStatements.RealtimeBaseline);
+		Assert.EndsWith("ORDER BY t;", ArchiveStatements.RealtimePoll, StringComparison.Ordinal);
 	}
 
-	// `ONLY` is load-bearing: without it the read descends into the whole partition tree of `trends` and
-	// answers about the archive instead of about the catch-all, so a healthy archive would report the fault
-	// on every start. `EXISTS` rather than a count, because the answer is a yes or a no and the planner
-	// stops at the first row. The schema qualifier is load-bearing too: the operator goes looking for the
-	// object under the name this statement names.
-	private const string DefaultPartitionOccupancyStatement = """
-		SELECT EXISTS (SELECT 1 FROM ONLY public.tpdefault);
-		""";
-
+	// The baseline is the instant the first poll starts from, so it has to be the newest *raw* row. Read
+	// across every layer it would answer with a coarse timestamp, and the poll's strict `t > @lastSeen`
+	// would then skip the raw samples already written under it.
 	[Fact]
-	public void TheDefaultPartitionOccupancyStatementMatchesItsLiteralCharacterForCharacter()
+	public void TheBaselineTakesItsMaximumFromTheRawLayerAlone()
 	{
-		Assert.Equal(DefaultPartitionOccupancyStatement, ArchiveStatements.DefaultPartitionOccupancy);
+		Assert.Contains("AND l = 0", ArchiveStatements.RealtimeBaseline, StringComparison.Ordinal);
+	}
+
+	// A caller may hand the same identifier twice — nothing upstream deduplicates a pen list. Without
+	// DISTINCT the lateral join runs once per copy and the baseline carries one row per copy, which the
+	// fold reads as a second pen.
+	[Fact]
+	public void TheBaselineDeduplicatesTheRequestedIdentifiers()
+	{
+		Assert.Contains("DISTINCT unnest(@ids)", ArchiveStatements.RealtimeBaseline, StringComparison.Ordinal);
 	}
 
 	// The statement names the partition and so does the warning the reader raises. They are two constants,
@@ -144,7 +87,10 @@ public sealed class ArchiveStatementTextTests
 	[Fact]
 	public void TheDefaultPartitionOccupancyStatementReadsTheRelationTheWarningNames()
 	{
-		Assert.Contains(ArchiveStatements.DefaultPartitionRelation, ArchiveStatements.DefaultPartitionOccupancy);
+		Assert.Contains(
+			ArchiveStatements.DefaultPartitionRelation,
+			ArchiveStatements.DefaultPartitionOccupancy,
+			StringComparison.Ordinal);
 	}
 
 	// The drift that breaks production is the binder naming a parameter the statement does not.

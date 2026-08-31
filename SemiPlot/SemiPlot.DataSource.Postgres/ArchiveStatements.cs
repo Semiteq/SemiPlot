@@ -35,6 +35,15 @@ internal static class ArchiveStatements
 		ORDER BY coalesce(group_name, ''), name;
 		""";
 
+	/// <summary>
+	/// The oldest and newest raw timestamps across the whole catalogue, read once to bound the chart.
+	/// <para>
+	/// The lateral pair of scalar subqueries is load-bearing. Each one is an index probe on
+	/// <c>PRIMARY KEY (id, l, t)</c> for one variable, so the pair of bounds costs two index descents per
+	/// variable rather than a scan of <c>trends</c>: a bare <c>min(t)</c>/<c>max(t)</c> over the table
+	/// loses PostgreSQL's min/max index-edge transform once the aggregate is not the whole query.
+	/// </para>
+	/// </summary>
 	public const string ArchiveExtent = """
 		SELECT min(lo) AS first, max(hi) AS last
 		FROM semiplot_tags tag

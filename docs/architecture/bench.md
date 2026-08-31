@@ -11,7 +11,7 @@ is remains in `scada-archive.md`; what SemiPlot reads from it remains in `data-i
 | Database, roles, grants, default-privileges chain, `semiplot_tags`, `public.trends` with `tpdefault` | `semibase bench` (`github.com/Semiteq/SemiBase`), carried in the bench image |
 | The daily partitions and the rows | `SemiPlot.Tools.ArchiveSeeder`, connected as `scada_writer` |
 | The moving live edge of a demo archive | `SemiPlot.Tools.ArchiveSeeder --follow`, connected as `scada_writer` |
-| Template build, per-class clones, teardown | `SemiPlot.Tests.Data/Integration` |
+| Template build, the clones, teardown | `SemiPlot.Tests.Data/Integration` |
 
 The archive table is the provisioner's, not this repository's. `semibase bench` creates it over
 `SET ROLE scada_writer`, so it lands owned exactly as a site's does and SemiBase's
@@ -29,25 +29,50 @@ test fixture drops databases, and only ones it created itself.
 
 ## The standard slice
 
-One day, 8 pens, seed 1, mean change interval 5 s, 4 breaks, exclusive end `2026-01-02T00:00:00`.
+One day, 8 pens, seed 1, change interval 5 s, 4 breaks, exclusive end `2026-01-02T00:00:00`.
 The end is fixed rather than floating, so two runs of the same seed produce the same archive. Its
-raw layer is 229 862 rows, pinned by a golden digest in `RawLayerGeneratorTests`; a deliberate
-waveform change updates that constant in the same commit.
+raw layer is 271 984 rows, pinned by a golden digest in `RawLayerGeneratorTests`; a deliberate
+waveform change updates that constant in the same commit. All four layers together are 314 845 rows,
+landing in one day partition.
 
 Pens are taken round-robin across the catalogue's groups rather than as the first N, so a slice
 spans more than one group and more than one value range.
+
+**What a smaller slice would buy, and what it would cost.** The planner floor is **509 rows in 4
+`relpages`, and it is a knife edge**: 494 rows in the same 4 pages already loses the poll statement's
+index plan to the sequential scan `ExplainPlanTests` rejects. Two content tests bind far above that
+floor and are what actually sets the size —
+`PostgresHistoryReadTests.TheMinuteLayerReturnsFewerColumnsThanRawOverTheSameWindow`, which needs the
+raw layer denser than the minute layer inside its window, and
+`StatementTimeoutReadTests.TimedOutReadReportsTheServersOwnBound`, which forces a `57014` by reading
+the whole seeded day at raw inside a 50 ms bound. The saving is small either way: the seeder wrote a
+slice of this order over a published port in about a second, and a slice a thirty-seventh of its size
+took 0.45 s. Both floors were measured before the generator merge, which only widened the margin —
+the merged lattice is denser than the walk it replaced.
 
 ## What the generator emits
 
 Layer `0` only; the coarse layers are derived from it.
 
-- Each pen walks a sequence of segments — idle, step, ramp, spike. Only a segment produces rows, so
-  cost follows output instead of the 100 ms poll grid.
+- **One lattice, written by the seeding run and by the demo writer alike.** A change sits at
+  `index * intervalTicks` measured from absolute tick zero, where the interval is `--change-seconds`
+  rounded to whole milliseconds — an exact interval, not a mean — and its value is
+  `SyntheticValueWalk.Value(seed, penId, index, min, max)`, a pure function of its inputs. A row's
+  value therefore depends on no row before it, and a follow run resuming at the archive edge
+  continues the lattice the seeding wrote instead of approximating it. `RawLayerGenerator` and
+  `LiveTailGenerator` both emit through `RawLayerGenerator.AppendWindow`; a seeding run walks the
+  lattice run by run between the breaks, a follow run span by span.
 - A change carries its pre-anchor: the previous value one poll interval earlier, then the new value
   at the change tick. That is the vendor's two-rows-per-change shape, so linear interpolation
-  between a pair is exact.
+  between a pair is exact. A change interval no wider than the poll interval leaves no room for the
+  anchor and carries none.
 - Timestamps carry whole milliseconds only, matching `timestamp(3)`, so an in-memory uniqueness
   check means what `PRIMARY KEY (id, l, t)` means.
+- **The lattice carries no per-pen phase**, so every pen changes at the same instants. That is a
+  consequence of one lattice for both generators, and it is kept deliberately: a per-pen offset would
+  re-pin the golden digest and move every expectation computed against the seeded archive. A defect
+  that only shows when two pens carry distinct timestamps is therefore not exercised by this bench
+  and needs a test that builds its own rows.
 - Three quality codes and no others: `0`, `16`, `32`. No bad-quality code was observed in the
   measured dump, so inventing one would be fiction.
 
@@ -55,6 +80,11 @@ Layer `0` only; the coarse layers are derived from it.
 
 A break is the SCADA project stopped: no rows anywhere in the interval, the last row before it
 marked `32` and the first row after it `16`. Breaks hit every pen at the same instants.
+
+The lattice is absolute, so a break boundary is not a point the lattice is drawn at. The resume row
+is the first lattice point at or after the break's end — within one change interval of it, which is
+the range `BreakGenerationTests.EachMarkerPairBoundsOneBreakWindow` asserts — and it carries no
+pre-anchor, because the plant moved while archiving was stopped.
 
 Each break takes an equal slot of the span, lasts 3 to 10 minutes and leaves at least 5 minutes of
 archiving on either side — so two breaks never meet, and every break empties at least one whole
@@ -65,8 +95,21 @@ that number rather than letting `BreakPlan.Create` throw.
 A run holding a single row between two breaks would have to carry `32` and `16` at once, and the
 archive has no code for both. The resume row keeps `16`, and the poll tick 100 ms after it — which
 the SCADA certainly also recorded — is appended and marked `32`. It is the one row in the archive
-that did not come from the value walk, and it is reachable at ordinary parameters: 60 breaks in a
-day at a mean change interval of 120 s produce it three times.
+that did not come from the value walk, and it is reachable at ordinary parameters: at a change
+interval of 600 s, 40 breaks in a day produce it 3 times, 50 breaks 5 times, 55 breaks 7 times and
+60 breaks 15 times, all four pinned by
+`RawLayerGeneratorTests.ASingleRowRunBetweenTwoBreaksGetsASynthesisedStopRow`.
+
+A run holding no lattice point at all carries neither marker and breaks the alternation. **The tight
+run is the first or the last**, not one between two breaks: those two are guaranteed only
+`BreakPlan.MinimumRun`, five minutes, while a run between two breaks is at least twice that. So the
+bound is not a flat rule on `--change-seconds` — 600 s over 60 breaks is fine and is pinned above,
+while the same 600 s over 20 breaks is not, because the last run falls under it. The pair is
+rejected rather than emitted: `SeederOptions.Validate` fails with the reason, which `Program` prints
+above `SeederOptions.Usage`, and `RawLayerGenerator.Generate` throws behind it — both from
+`RawLayerGenerator.DescribeUnmarkableRun`,
+which also refuses a single-change run with no room for the synthesised stop row. At the standard
+slice's 5 s interval neither case is anywhere near.
 
 ## The demo writer
 
@@ -94,7 +137,7 @@ dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.Archiv
 
 `--follow` takes the seconds between ticks and is the switch that selects this mode. `--pens`,
 `--seed` and `--change-seconds` mean what they mean in a seeding run — pens taken round-robin from
-the catalogue, the generator seed, and the mean interval between value changes — and default to 8,
+the catalogue, the generator seed, and the exact interval between value changes — and default to 8,
 1 and 5.
 
 Four properties decide what it is good for:
@@ -181,15 +224,39 @@ it replaces that method and nothing else.
 - One provisioned source database per server, `semiplot_provisioned`. Everything else is a
   `CREATE DATABASE ... TEMPLATE` clone of it, which copies table ownership, `relacl` and
   `pg_default_acl`; the database-level `CONNECT` is not copied, and `PUBLIC`'s default covers it.
-- One template per run, named after a hash of the seeder's module version and the slice parameters.
-  A persistent server therefore cannot serve last week's seed to this week's code. Nothing drops a
-  template afterwards: on the container path the server dies with the run; on the `SEMIPLOT_TEST_PG`
-  path a developer removes accumulated `semiplot_bench_*` databases by hand, and `semiplot_clone_*`
-  with them: a run killed between `ArchiveDatabase.CloneAsync` and its disposal leaves a clone
-  behind, and nothing sweeps those either.
-- One clone of that template per test class. Cloning skips the `COPY` entirely.
+- One template per run, `semiplot_bench`. The name is a constant rather than a digest because a fresh
+  container guarantees the database does not already exist, so nothing checks and nothing repairs.
+  Nothing drops the template afterwards either: the server dies with the run. Every
+  `semiplot_clone_*` is dropped by the test that made it, and any that is not dies with the
+  container along with the template.
+- One clone per consumer, of one of the two sources, and the consumer decides both. `CloneSource`
+  names the source: a class that reads the seeded rows clones `semiplot_bench` and so skips the
+  `COPY` entirely, while a class that writes its own rows clones `semiplot_provisioned` and starts
+  from an empty `public.trends`. Seven of the eight clone-owning classes take the provisioned source;
+  `SeededArchive` and `LiveEdgeArchiveJourneyTests` take the template. The holder decides the grain:
+  the `SeededArchive` class fixture gives a whole class one clone, while a class deriving from
+  `ClonedArchiveTest` gets one per test method, because xunit constructs a test class once per test
+  method.
 - Every read in the gated tests connects as `semiplot_reader`, not as the superuser: a grant that
   never reached the reader fails a test here instead of on commissioning day.
+
+**The container is the only path, and it is disposable.** There is no branch for a server the run
+did not start, nothing is reused between runs, and nothing the run creates survives it: the built
+image carries the label `semiplot.bench=1` and is built with clean-up on, the container and its
+volume die with the session, and the databases die with the container.
+`PostgresContainerFixture.DisposeAsync` disposes the container and does nothing else. Disposability
+rests on `WithCleanUp(true)` and the resource reaper, not on a teardown assertion: with the container
+destroyed at the end of every run, a clone that outlived its own test dies with the server it lives
+in, so there is nothing left for a teardown check to find.
+`PostgresContainerFixtureTests.TheBuiltBenchImageIsLabelledForTheReaperAndForThisRepository` is the
+tripwire on that — a revert to `WithCleanUp(false)` drops the reaper's label and fails it while
+passing every other test in the suite.
+
+**What a run deliberately does not clean up: the images it pulled.**
+`ghcr.io/semiteq/semibase:latest` and the base image stay on the machine, because the resource reaper
+labels what Testcontainers creates and not what the registry served. That is the intended split — a
+pulled image is a cache and re-pulling it every run would put the registry on the critical path,
+while a built image is this run's own and goes with it.
 
 ## Where the provisioning comes from
 
@@ -200,29 +267,36 @@ onto the base image `SEMIPLOT_PG_IMAGE` names, and places `provision.sh` in
 separates *run* from *source* there — while `initdb` is still in progress, so
 `semibase bench --host /var/run/postgresql --database "$SEMIPLOT_PROVISIONED_DATABASE"` goes over
 the unix socket under local `trust`, before the published port opens. The fixture passes that
-database name in, so `SemibaseProvisioner.ProvisionedDatabase` is the one place it is written.
+database name in, so `BenchNames.ProvisionedDatabase` is the one place it is written.
 `set -e` exits the script on a failed provisioning and the entrypoint, itself under `set -e`,
 aborts with it: the container exits non-zero and no port ever serves an unprovisioned database.
 
 The fixture builds that image in-process from the `bench/` directory copied to the output directory
 — a test assembly has no path to the source tree. The tag carries a digest of the base image, so a
 run under a changed `SEMIPLOT_PG_IMAGE` is never served the build made over the previous base. The
-context is two files and every layer is content-addressed, so a rebuild is a cache lookup.
+image is built with clean-up on and carries the label `semiplot.bench=1`, so the resource reaper
+deletes it with the session and a run leaves no dangling image behind. Every run therefore rebuilds,
+for the plain reason that the previous run deleted what it would have been served;
+`PostgresContainerFixtureTests.TheBuiltBenchImageIsLabelledForTheReaperAndForThisRepository` asserts
+both labels on the built image, which is the only visible trace of the clean-up call. Disposability
+is the requirement here; build time is not.
 
 Readiness is asserted rather than observed once and trusted: the wait strategy runs `psql` inside
 the container against `public.trends` over **TCP**, and the entrypoint's temporary server listens on
 the unix socket only. A container whose provisioning did not complete therefore never becomes ready.
 
+**Both waits are bounded at two minutes**, from one field, `PostgresContainerFixture._startupBound`,
+so they cannot drift apart: the registry fetch, which had no deadline of any kind before, and the
+readiness wait, whose default would otherwise be Testcontainers' own one hour. A bench that never
+comes up is then a stated skip inside two minutes rather than a hung `SemiPlot.Tests.Data.exe` that
+locks the next build. The two bounds surface differently on purpose — readiness raises
+`TimeoutException` while the pull's bound is converted inside `ProvisionerImage.ResolveAsync` into
+the failure it already returns — because the fixture's one catch excludes
+`OperationCanceledException`, and a bound escaping as that type would fail the whole collection
+instead of skipping it.
+
 Init scripts run only on an empty `PGDATA`, so this shape provisions a fresh cluster and never a
 reused volume.
-
-The one path that spawns a `semibase` binary is `SEMIPLOT_TEST_PG`, which names a server the
-fixture did not create and cannot put an init script into. It runs the same `bench` command against
-the same `semiplot_provisioned`, so both paths reach one state and no consumer branches on which one
-ran. `SEMIBASE_EXE` is how that binary is named, and it is read on that path alone; nothing searches
-`PATH`. `bench` ends with a real reader `SELECT` and, off a socket host, a real TCP login as
-`semiplot_reader` — so an external server whose `pg_hba.conf` does not admit the reader fails the
-fixture rather than the tests.
 
 The one runtime the bench needs is a container runtime, and it is optional on a developer machine.
 Its absence is captured as a stated reason and turned into a skip, never into a pass.
@@ -252,9 +326,8 @@ console logger drops.
 A container run names the provisioner it ran. The fixture asks the started container for
 `/semibase --version` — the bench image carries the binary at that path — and pairs the answer with
 the digest the pull resolved; `TheContainerPathReportsTheProvisionerItResolved` writes the pair into
-the test output, and the digest alone when the executable declines to report a version. The
-`SEMIPLOT_TEST_PG` path writes nothing, because the operator named the binary there and there is
-nothing to resolve. The cost of a moving tag is that one unchanged commit can pass today and fail
+the test output, and the digest alone when the executable declines to report a version. The cost of a
+moving tag is that one unchanged commit can pass today and fail
 tomorrow, and that report separates *SemiBase moved* from *this repository broke*.
 
 ## The application bench
@@ -271,11 +344,11 @@ It runs the same bench image the gated suite does, so it needs no `semibase` bin
 image provisions `semiplot_provisioned` before the published port opens; the recipe clones that
 database and seeds the clone.
 
-**The clone is not a formality.** `semiplot_provisioned` is the fixed name the fixture treats as its
-pristine source, and every database the gated suite reads is a `TEMPLATE` copy of it. Seeding it by
-hand would leave rows in that source, so pointing `SEMIPLOT_TEST_PG` at this server afterwards would
-hand every gated test a template that already carries rows. Seeding a clone keeps the two uses of
-one server apart.
+**The clone is not a formality.** The seeder refuses a database that already carries rows or day
+partitions, and every recreate of the stand's database uses `semiplot_provisioned` as its `TEMPLATE`
+source. Seeding that source by hand would leave rows in it and make the stand a one-shot: the next
+convergence, and every convergence at a different slice, would then need the container rebuilt from
+the image. Seeding a clone keeps the source pristine, so a reseed is a drop and a recreate.
 
 ```powershell
 pwsh scripts/bench-demo.ps1          # converge the stand
@@ -286,7 +359,10 @@ pwsh scripts/bench-demo.ps1 -Down    # remove it
 is converged. What differs between the pieces is the test each convergence applies.
 
 The image and the container are converged **on existence**: built once, reused after, so the slow
-half of the recipe is paid once per boot rather than once per session.
+half of the recipe is paid once per boot rather than once per session. That is the deliberate
+opposite of the test bench above, and for the opposite reason: the gated suite is a batch that must
+leave a machine as it found it, while the stand is something a person comes back to between
+sessions. `-Down` is how it goes away.
 
 `semiplot_app` is converged **on freshness**: the script reads `max(t)` from `public.trends` and
 decides between two paths. When the newest row is within five minutes of the wall clock the archive is live — a demo
@@ -321,13 +397,14 @@ A keep costs about 4 s end to end and writes nothing but the connection file.
 `finally`, so a failed run does not wedge the next one. Two instances started at once serialise: the
 loser waits and then finds the image, the container and the archive already converged. That is what
 makes the script safe as a before-launch task of two configurations at once, which is how the stand
-became one button. Measured from a dropped database, two instances started together: the winner
-filled 266520 rows up to its own wall clock, the loser printed its wait, then read that fill end
-12.4 s old and kept it. Both exited 0, and every one of the 266520 `(id, l, t)` keys was distinct —
-one fill, not two.
+became one button. Measured from a dropped database, before the generator merge, two instances
+started together: the winner filled a whole day up to its own wall clock — 266520 rows at the
+density of the time, around 315000 at today's — the loser printed its wait, then read that fill end
+12.4 s old and kept it. Both exited 0, and every one of the winner's `(id, l, t)` keys was
+distinct — one fill, not two.
 
 Seeding a clone on a recreate rather than cloning a filled template costs the fill — around
-266000 rows in a few seconds against a `TEMPLATE` clone's file copy — and two things buy that. The
+315000 rows in a few seconds against a `TEMPLATE` clone's file copy — and two things buy that. The
 demo writer appends to the archive, so a template kept across sessions would carry the previous
 session's live rows: its extent would stand a little further from its seed each time, the minimap
 would widen, and the window the chart opens on would differ from the one the last session saw. A
@@ -337,11 +414,11 @@ an archive as stale as itself, which `StaleArchiveGuard` refuses once it is more
 back: the stand would come up carrying history and never grow a live row.
 
 The row count is not a constant, so no six-digit figure is reproducible under the default. The raw
-layer holds 229862 rows for a one-day span at these parameters, while the coarse layers follow the
+layer holds 271984 rows for a one-day span at these parameters, while the coarse layers follow the
 calendar periods the span covers, and a day-long span ending at an arbitrary instant straddles two
-calendar days and one more calendar hour than one ending at midnight.
-`-SeedEnd 2026-08-01T00:00:00` measured 266372 rows in 3.1 s; two default runs thirteen minutes
-apart measured 266522 in 4.3 s and 266408 in 3.1 s.
+calendar days and one more calendar hour than one ending at midnight. A midnight end is 314845 rows
+across the four layers — the standard slice's own figure — and a default run lands a few hundred
+either side of it, in a few seconds.
 
 **Where the fill ends is a choice `-SeedEnd` makes**, and each choice buys a different reading. The
 default ends the fill at the script's own wall clock, so the archive meets the demo writer's live

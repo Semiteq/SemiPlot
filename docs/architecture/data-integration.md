@@ -798,18 +798,21 @@ inside step 2:
    slice names the gap explanation. They are a design record until a slice ships them.
    `ArchiveStatements.cs` carries one constant no block above quotes, `EffectiveStatementTimeout`,
    which runs only after a read has already failed with `57014`.
-2. Unit tests pin one plain literal per operational statement, held in
-   `SemiPlot.Tests.Data/Postgres/ArchiveStatementTextTests.cs` and compared character for character
-   against the constant. Six are pinned — every shipped statement except
-   `EffectiveStatementTimeout`, which is a cold-path diagnostic and carries no literal. Three of the
-   six take parameters, and each binds through a binder of its own pinned against that statement's
-   own parameter names: `PostgresDataProvider.BindWindow` over the sparse history window,
+2. Unit tests pin the shipped statements clause by clause, in
+   `SemiPlot.Tests.Data/Postgres/ArchiveStatementTextTests.cs` against the constants: one assertion
+   per guarantee whose loss nothing else catches without a container — the sparse history window's
+   outer ordering, its strict seam bound and its one-day seed floor, the realtime poll's raw-layer
+   filter and its time ordering, the realtime baseline's raw-layer filter and its de-duplicated
+   identifiers, and the default-partition occupancy check reading the relation its warning names.
+   `EffectiveStatementTimeout` is a cold-path diagnostic and carries no pin. Three statements take
+   parameters, and each binds through a binder of its own pinned against that statement's own
+   parameter names: `PostgresDataProvider.BindWindow` over the sparse history window,
    `RealtimePoll.BindPoll` over the poll and `RealtimePoll.BindBaseline` over the baseline. A change
-   in the code therefore shows up as a failing test. None of it covers this document: nothing checks
-   that the SQL quoted above still matches the constants, so whoever assembles a brief from this
-   document re-reads by hand the six blocks that have a constant against `ArchiveStatements.cs`. The
-   other two name no constant, so that re-read cannot cover them; they are checked against the code
-   only when the slice that ships them lands.
+   to a pinned clause therefore shows up as a failing test, while a reformatting does not. None of
+   it covers this document: nothing checks that the SQL quoted above still matches the constants, so
+   whoever assembles a brief from this document re-reads by hand the six blocks that have a constant
+   against `ArchiveStatements.cs`. The other two name no constant, so that re-read cannot cover
+   them; they are checked against the code only when the slice that ships them lands.
 3. Gated integration tests run `EXPLAIN` on the extent statement, the sparse history window, the
    realtime poll and the realtime baseline, and assert each plan's shape: an index scan under each
    bounded subquery, a seed walk whose backwards bound the planner pushed into the index, no older

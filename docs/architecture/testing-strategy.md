@@ -48,14 +48,17 @@ boundary.
 A unit test must not open a socket, read the wall clock, or depend on anything the machine resolves —
 `PATH`, an installed service, a display. It runs everywhere, ungated.
 
-Statement text is pinned by one plain literal per operational statement, held in
-`ArchiveStatementTextTests.cs` and compared character for character against the constant in
-`ArchiveStatements.cs`. Six are pinned — the pen catalogue, the archive extent, the sparse history
-window, the realtime poll, the realtime baseline and the default-partition occupancy check;
-`EffectiveStatementTimeout` is a cold-path diagnostic and carries no literal. Three of the six take
-parameters, each through a binder of its own, and each binder is pinned against its statement's own
-parameter names: `PostgresDataProvider.BindWindow`, `RealtimePoll.BindPoll` and
-`RealtimePoll.BindBaseline`.
+Statement text is pinned clause by clause, in `ArchiveStatementTextTests.cs` against the constants in
+`ArchiveStatements.cs`: one assertion per guarantee whose loss nothing else catches without a
+container. Those are the sparse history window's outer `ORDER BY id, t`, its strict seam bound and
+its one-day seed floor; the realtime poll's `l = 0` filter and its `ORDER BY t`; the realtime
+baseline's `l = 0` filter and its `DISTINCT unnest(@ids)`; and the default-partition occupancy check
+reading the relation its warning names. A whole-statement literal per constant was pinned before and
+named no guarantee: it failed on a reformatting and passed on a dropped clause it had been updated
+for. Three statements take parameters, each through a binder of its own, and each binder is pinned
+against its statement's own parameter names: `PostgresDataProvider.BindWindow`,
+`RealtimePoll.BindPoll` and `RealtimePoll.BindBaseline`. `EffectiveStatementTimeout` is a cold-path
+diagnostic and carries no pin.
 Nothing compares the shipped SQL to `data-integration.md`. That document quotes eight SQL blocks for
 a reader, of which six are shipped statements; the other two — the bucketed history read, whose
 slice is dropped, and the gap explanation, which no roadmap slice names — have no constant to drift
@@ -204,6 +207,13 @@ correctness.
 | Third-party libraries | NuGet versions in `Directory.Packages.props`, the SDK in `global.json` |
 | Dependencies with an independent release cycle — PostgreSQL, `semibase` | a container image |
 
+A fourth mechanism pins this repository's own output rather than a dependency:
+`RawLayerGeneratorTests.TheStandardSliceMatchesItsGoldenDigest` holds a row count and a SHA-256 over
+the standard slice's rows. It is not a guard against change; it is what makes a change deliberate.
+Merging the seeding generator and the demo writer onto one lattice moved both constants, so both
+were re-pinned in that commit — 271984 rows where the stateful walk produced 229862 — and any later
+move of either without an intended waveform change is a defect.
+
 A dependency resolved from the machine — an executable found on `PATH`, a service that happens to be
 installed — is pinned by nothing, and that is the property to avoid. It is a separate property from
 process isolation, and it is the one that matters here.
@@ -212,7 +222,7 @@ The rule is that nothing the gated suite stands on may be resolved from the mach
 is a layer of the bench image, copied out of `ghcr.io/semiteq/semibase:latest`, so it arrives with
 the image and nothing searches `PATH`; `bench.md` describes how.
 
-Two exceptions are accepted, and each is a choice rather than an oversight.
+One exception is accepted, and it is a choice rather than an oversight.
 
 **`latest` is a moving tag.** A delivered installation updates neither service, so the only pair
 ever newly deployed is the newest provisioner with the current reader; pinning a digest here would
@@ -221,10 +231,6 @@ does not move it — the Engine's builder takes the provisioner's `FROM` from th
 The fixture fetches the tag itself ahead of the build and pins the build to the digest that fetch
 resolved, so the pair every run exercises is the newest one. `bench.md` holds the full statement,
 including how the step degrades where there is no route to the registry.
-
-**`SEMIBASE_EXE` names a binary on the machine.** It is read on the `SEMIPLOT_TEST_PG` path alone,
-where the developer already names the server; naming the executable beside it makes the developer
-the owner of that pairing by construction.
 
 The cost of the moving tag is that one unchanged commit can pass today and fail tomorrow. That
 failure is legible rather than mysterious, in two ways. A provisioning that fails exits the

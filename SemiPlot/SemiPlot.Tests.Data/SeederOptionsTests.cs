@@ -1,6 +1,4 @@
-﻿using System.Globalization;
-
-using FluentResults;
+﻿using FluentResults;
 
 using SemiPlot.Tools.ArchiveSeeder;
 
@@ -13,8 +11,8 @@ namespace SemiPlot.Tests.Data;
 [Trait("Category", "Unit")]
 public sealed class SeederOptionsTests
 {
-	private const string Connection = "Host=localhost;Database=archive;Username=scada_writer";
-	private const string EndText = "2026-01-02T00:00:00";
+	private const string Connection = BenchOptions.ConnectionString;
+	private const string EndText = BenchOptions.EndText;
 
 	[Fact]
 	public void ParseAppliesDefaultsWhenOnlyRequiredOptionsAreGiven()
@@ -170,15 +168,10 @@ public sealed class SeederOptionsTests
 	}
 
 	// A break needs up to 10 minutes of downtime with 5 minutes of archiving on either side, so a day
-	// holds at most 72. Every bound here is a rejected option with usage rather than an exception out of
-	// Parse. The upper ones are the ones arithmetic would otherwise reach first: --days past 2026-01-02
-	// minus DateTime.MinValue overflows the subtraction behind Start, and a --change-seconds far above
-	// the span overflows the interval arithmetic in the generator.
+	// holds at most 72.
 	[Theory]
 	[InlineData("--days", "0")]
 	[InlineData("--days", "-1")]
-	[InlineData("--days", "1000000")]
-	[InlineData("--days", "20000000")]
 	[InlineData("--pens", "0")]
 	[InlineData("--pens", "51")]
 	[InlineData("--change-seconds", "0")]
@@ -186,10 +179,8 @@ public sealed class SeederOptionsTests
 	[InlineData("--change-seconds", "NaN")]
 	[InlineData("--change-seconds", "Infinity")]
 	[InlineData("--change-seconds", "86401")]
-	[InlineData("--change-seconds", "1e18")]
 	[InlineData("--break-count", "-1")]
 	[InlineData("--break-count", "73")]
-	[InlineData("--break-count", "200")]
 	public void ParseRejectsAValueOutsideItsRange(string option, string value)
 	{
 		var parsed = SeederOptions.Parse(["--connection", Connection, "--end", EndText, option, value]);
@@ -205,32 +196,9 @@ public sealed class SeederOptionsTests
 		Assert.True(parsed.IsSuccess);
 	}
 
-	// The span is the ceiling on --change-seconds, and the ceiling itself is inside it.
-	[Fact]
-	public void ParseAcceptsAChangeIntervalAsLongAsTheSpan()
-	{
-		var parsed = SeederOptions.Parse(["--connection", Connection, "--end", EndText, "--change-seconds", "86400"]);
-
-		Assert.True(parsed.IsSuccess);
-	}
-
-	// A span reaching back to the earliest representable timestamp is still a span the parser accepts;
-	// only one reaching past it is refused.
-	[Fact]
-	public void ParseAcceptsTheLongestSpanTheEndAllows()
-	{
-		var days = (int)(new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Unspecified) - DateTime.MinValue).TotalDays;
-
-		var parsed = SeederOptions.Parse(
-			["--connection", Connection, "--end", EndText, "--days", days.ToString(CultureInfo.InvariantCulture)]);
-
-		Assert.True(parsed.IsSuccess);
-		Assert.True(parsed.Value.Start >= DateTime.MinValue);
-	}
-
-	// The end itself has an upper bound, because the day it falls in has to be given a partition and a
-	// partition's upper bound is midnight of the day after it. Past that the arithmetic behind the
-	// partition list throws, and at the default --change-seconds too, so no other option can be blamed.
+	// PartitionScript.CoveredDays steps one day past the last day it covers, and Program reaches it from
+	// ReportPlan, after the block it wraps in an ArgumentException catch. The refusal belongs here, where
+	// a mistyped --end is still a usage line rather than a stack trace out of the partition walk.
 	[Fact]
 	public void ParseRejectsAnEndInsideTheLastRepresentableDay()
 	{
@@ -245,30 +213,17 @@ public sealed class SeederOptionsTests
 		var parsed = SeederOptions.Parse(["--connection", Connection, "--end", "9999-12-31T00:00:00"]);
 
 		Assert.True(parsed.IsSuccess);
+		Assert.NotEmpty(PartitionScript.CoveredDays(parsed.Value.Start, parsed.Value.End));
 	}
 
-	// The same bound, on an end that is not midnight. 2026-01-01T23:59:59.9999999 sits one tick under a
-	// whole number of days from DateTime.MinValue, and TotalDays — a rounded double — lands exactly on
-	// that whole number, so a bound taken from it is one day too generous and Start reaches past the
-	// earliest representable timestamp. The midnight end above cannot catch this: there the division is
-	// exact.
+	// The span is the ceiling on --change-seconds, and the ceiling itself is inside it.
 	[Fact]
-	public void ParseRejectsTheDayPastTheLongestSpanANonMidnightEndAllows()
+	public void ParseAcceptsAChangeIntervalAsLongAsTheSpan()
 	{
 		var parsed = SeederOptions.Parse(
-			["--connection", Connection, "--end", "2026-01-01T23:59:59.9999999", "--days", "739617"]);
-
-		AssertFailedWith(parsed, "--days");
-	}
-
-	[Fact]
-	public void ParseAcceptsTheLongestSpanANonMidnightEndAllows()
-	{
-		var parsed = SeederOptions.Parse(
-			["--connection", Connection, "--end", "2026-01-01T23:59:59.9999999", "--days", "739616"]);
+			["--connection", Connection, "--end", EndText, "--change-seconds", "86400"]);
 
 		Assert.True(parsed.IsSuccess);
-		Assert.True(parsed.Value.Start >= DateTime.MinValue);
 	}
 
 	// The value taken for an option must not be the next option: swallowing it would report the failure

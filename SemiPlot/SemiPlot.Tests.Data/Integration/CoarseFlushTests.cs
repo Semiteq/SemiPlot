@@ -13,8 +13,7 @@ namespace SemiPlot.Tests.Data.Integration;
 // case here is gated.
 //
 // Every case writes, so none of them may take SeededArchive, whose contract is that the class leaves the
-// database as it found it. xunit constructs a test class once per test method, so the clone built in
-// InitializeAsync belongs to exactly one test and is dropped with it.
+// database as it found it.
 //
 // Each assertion is scoped to one layer and to one period's own bounds, because the two statements write
 // into different periods: the closed flush into the period a pair of instants leaves, the opening row into
@@ -23,7 +22,8 @@ namespace SemiPlot.Tests.Data.Integration;
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
 [Trait("Category", "Integration")]
-public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerFixture) : IAsyncLifetime
+public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerFixture)
+	: ClonedArchiveTest(postgresContainerFixture, CloneSource.Provisioned)
 {
 	private const int PenCount = 3;
 
@@ -71,38 +71,17 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 
 	private static readonly IReadOnlyList<ArchiveRow> _rawRows = BuildRawRows();
 
-	private ArchiveDatabase? _archiveDatabase;
-
-	private ArchiveDatabase Database =>
-		_archiveDatabase ?? throw new InvalidOperationException(
-			postgresContainerFixture.UnavailableReason ?? "The archive was used before it was cloned.");
-
-	public async ValueTask InitializeAsync()
+	protected override async ValueTask SeedAsync()
 	{
-		if (!postgresContainerFixture.IsAvailable)
-		{
-			return;
-		}
-
-		_archiveDatabase = await postgresContainerFixture.CloneProvisionedAsync();
-
 		var written = await Writer().WriteAsync(_rawRows, _rawStart, _rawEndExclusive);
 
 		Assert.True(written.IsSuccess, ArchiveReadSupport.Describe(written));
 	}
 
-	public async ValueTask DisposeAsync()
-	{
-		if (_archiveDatabase is not null)
-		{
-			await _archiveDatabase.DisposeAsync();
-		}
-	}
-
 	[Fact]
 	public async Task TheClosedMinuteCarriesExactlyTheRowsTheThinnerSelects()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var minute = _day.AddHours(23).AddMinutes(10);
@@ -120,7 +99,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 	[Fact]
 	public async Task TheSecondFlushOfOnePeriodInsertsNothingAndLeavesItAsItWas()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var minute = _day.AddHours(23).AddMinutes(10);
@@ -147,7 +126,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 	[Fact]
 	public async Task AMarkerRowReachesEveryCoarseLayer()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var previousTick = _markerInstant.AddSeconds(15);
@@ -177,7 +156,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 	[Fact]
 	public async Task APairInsideOneMinuteClosesNoPeriodAtAnyLayer()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var minute = _day.AddHours(23).AddMinutes(10);
@@ -202,7 +181,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 	[Fact]
 	public async Task APairCrossingAnHourClosesTheMinuteAndTheHourAndNotTheDay()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var hour = _day.AddHours(22);
@@ -232,7 +211,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 	[Fact]
 	public async Task AFlushOverAPeriodTheSeederAlreadyThinnedAddsNoDuplicate()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var minute = _day.AddHours(23).AddMinutes(10);
@@ -262,7 +241,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 	[Fact]
 	public async Task ACallInsideAPeriodOpensEveryLayerWithItsFirstRawRow()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var minute = _day.AddHours(23).AddMinutes(10);
@@ -281,7 +260,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 	[Fact]
 	public async Task RepeatedCallsInsideOnePeriodDoNotDensifyTheCoarseLayers()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var minute = _day.AddHours(23).AddMinutes(10);
@@ -304,7 +283,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 	[Fact]
 	public async Task ACallSpanningSeveralPeriodsClosesEveryOneOfThem()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var firstMinute = _day.AddHours(23).AddMinutes(10);
@@ -338,7 +317,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 	[Fact]
 	public async Task ANullValuedRawRowIsNotSelectedAsAPeriodsMaximum()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var minute = _day.AddHours(23).AddMinutes(10);
@@ -368,7 +347,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 	[Fact]
 	public async Task ClosingAPeriodOpenedEarlierLeavesTheRowsTheThinnerSelectsAndNoDuplicate()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var minute = _day.AddHours(23).AddMinutes(10);
@@ -397,7 +376,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 	[Fact]
 	public async Task APeriodWithNoRawRowsYetWritesNothingAndReportsSuccess()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var afterTheArchive = _rawEndExclusive.AddSeconds(30);
@@ -426,11 +405,6 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 				ExpectedOpening(layer, periodStart),
 				await ReadPeriodAsync(layer, periodStart, cancellationToken));
 		}
-	}
-
-	private ArchiveWriter Writer()
-	{
-		return new ArchiveWriter(Database.WriterConnectionString);
 	}
 
 	// The follow options the demo writer runs with, minus the cadence, which no flush reads.

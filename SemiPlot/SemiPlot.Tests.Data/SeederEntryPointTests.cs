@@ -22,27 +22,12 @@ public sealed class SeederEntryPointTests
 		Assert.Contains("Usage:", reported.Error, StringComparison.Ordinal);
 	}
 
-	// A break count the span cannot hold is a rejected option with usage, not an
-	// ArgumentOutOfRangeException out of BreakPlan.Create reaching the operator as a stack trace.
-	[Fact]
-	public async Task ABreakCountLargerThanTheSpanHoldsIsRejectedWithTheUsage()
-	{
-		var reported = await RunAsync([
-			"--connection", "Host=localhost;Database=archive",
-			"--end", "2026-01-02T00:00:00",
-			"--break-count", "200"]);
-
-		Assert.Equal(1, reported.ExitCode);
-		Assert.Contains("--break-count", reported.Error, StringComparison.Ordinal);
-		Assert.Contains("Usage:", reported.Error, StringComparison.Ordinal);
-	}
-
 	// --follow in the raw arguments selects the demo writer ahead of either parser, so its rejection has
 	// to arrive with the demo writer's own usage rather than with the seeding one.
 	[Fact]
 	public async Task AFollowRunWithoutACadenceExitsWithOneAndPrintsTheFollowUsage()
 	{
-		var reported = await RunAsync(["--connection", "Host=localhost;Database=archive", "--follow"]);
+		var reported = await RunAsync(["--connection", BenchOptions.ConnectionString, "--follow"]);
 
 		Assert.Equal(1, reported.ExitCode);
 		Assert.Contains("requires a value", reported.Error, StringComparison.Ordinal);
@@ -53,13 +38,26 @@ public sealed class SeederEntryPointTests
 	public async Task AFollowRunCarryingASeedingOptionExitsWithOneAndPrintsTheFollowUsage()
 	{
 		var reported = await RunAsync([
-			"--connection", "Host=localhost;Database=archive",
+			"--connection", BenchOptions.ConnectionString,
 			"--follow", "1",
-			"--end", "2026-01-02T00:00:00"]);
+			"--end", BenchOptions.EndText]);
 
 		Assert.Equal(1, reported.ExitCode);
 		Assert.Contains("--end", reported.Error, StringComparison.Ordinal);
 		Assert.Contains("thins them into the coarse layers", reported.Error, StringComparison.Ordinal);
+	}
+
+	// A day count no span can hold underflows SeederOptions.Start inside Validate, before any check can
+	// return a Result. The entry point catches the class rather than the input: an operator who mistyped
+	// a number gets the usage block, not a stack trace.
+	[Fact]
+	public async Task ADayCountTheSpanCannotHoldExitsWithOneAndPrintsTheUsage()
+	{
+		var reported = await RunAsync(
+			["--connection", BenchOptions.ConnectionString, "--end", BenchOptions.EndText, "--days", "1000000"]);
+
+		Assert.Equal(1, reported.ExitCode);
+		Assert.Contains("Usage:", reported.Error, StringComparison.Ordinal);
 	}
 
 	private static async Task<(int ExitCode, string Error)> RunAsync(string[] arguments)

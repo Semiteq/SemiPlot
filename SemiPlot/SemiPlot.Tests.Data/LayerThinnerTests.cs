@@ -1,5 +1,6 @@
 ﻿using System.Globalization;
 
+using SemiPlot.Tests.Data.Integration;
 using SemiPlot.Tools.ArchiveSeeder;
 
 using Xunit;
@@ -13,6 +14,10 @@ namespace SemiPlot.Tests.Data;
 [Trait("Category", "Unit")]
 public sealed class LayerThinnerTests
 {
+	// The measured volume of the standard slice across all four layers, 271984 raw plus the coarse rows
+	// the thinner selects from them.
+	private const int StandardSliceLayeredRowCount = 314845;
+
 	private const int Budget = 4;
 
 	private static readonly DateTime _base = new(2026, 1, 2, 10, 0, 0, DateTimeKind.Unspecified);
@@ -110,6 +115,21 @@ public sealed class LayerThinnerTests
 		Assert.Equal(LayerThinner.CoarseLayers.Order(), byLayer.Keys.Order());
 		Assert.True(byLayer[LayerThinner.MinuteLayer] > byLayer[LayerThinner.HourLayer]);
 		Assert.True(byLayer[LayerThinner.HourLayer] > byLayer[LayerThinner.DayLayer]);
+	}
+
+	// A slice falling under this number would move the gated expectations — the index plans, the
+	// statement-timeout bound and the minute-layer density test — with nothing here failing first.
+	[Fact]
+	public void TheStandardSliceFillsFourLayersAtOrAboveTheMeasuredVolume()
+	{
+		var raw = RawLayerGenerator.Generate(ArchiveTemplate.Slice);
+		var coarse = LayerThinner.ThinAll(raw);
+		var total = raw.Count + coarse.Count;
+
+		Assert.Equal(LayerThinner.CoarseLayers.Order(), coarse.Select(row => row.Layer).Distinct().Order());
+		Assert.True(
+			total >= StandardSliceLayeredRowCount,
+			$"the standard slice holds {total} rows across its four layers");
 	}
 
 	// A gap boundary has to survive thinning, or a broken line renders as a straight one at any zoom

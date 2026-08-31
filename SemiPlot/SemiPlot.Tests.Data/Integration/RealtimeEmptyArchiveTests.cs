@@ -27,7 +27,8 @@ namespace SemiPlot.Tests.Data.Integration;
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
 [Trait("Category", "Integration")]
-public sealed class RealtimeEmptyArchiveTests(PostgresContainerFixture postgresContainerFixture) : IAsyncLifetime
+public sealed class RealtimeEmptyArchiveTests(PostgresContainerFixture postgresContainerFixture)
+	: ClonedArchiveTest(postgresContainerFixture, CloneSource.Provisioned)
 {
 	private static readonly int[] _subscribedPenIds = [1, 2];
 
@@ -38,32 +39,10 @@ public sealed class RealtimeEmptyArchiveTests(PostgresContainerFixture postgresC
 
 	private static readonly ArchiveTimeConverter _timeConverter = new(ArchiveProviderFactory.SourceTimeZone);
 
-	private ArchiveDatabase? _archiveDatabase;
-
-	private ArchiveDatabase Database =>
-		_archiveDatabase ?? throw new InvalidOperationException(
-			postgresContainerFixture.UnavailableReason ?? "The archive was used before it was cloned.");
-
-	public async ValueTask InitializeAsync()
-	{
-		if (postgresContainerFixture.IsAvailable)
-		{
-			_archiveDatabase = await postgresContainerFixture.CloneProvisionedAsync();
-		}
-	}
-
-	public async ValueTask DisposeAsync()
-	{
-		if (_archiveDatabase is not null)
-		{
-			await _archiveDatabase.DisposeAsync();
-		}
-	}
-
 	[Fact]
 	public async Task TheBaselineOverAnArchiveWithNoRowStillArmsTheSubscription()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
 
@@ -79,7 +58,7 @@ public sealed class RealtimeEmptyArchiveTests(PostgresContainerFixture postgresC
 	[Fact]
 	public async Task TheBaselineBranchRepeatsUntilTheArchiveCarriesARow()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 
@@ -104,7 +83,7 @@ public sealed class RealtimeEmptyArchiveTests(PostgresContainerFixture postgresC
 	[Fact]
 	public async Task TheFirstEverRowBecomesTheBaselineAndTheNextOneIsDelivered()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var first = _day.AddMinutes(1);
@@ -135,7 +114,7 @@ public sealed class RealtimeEmptyArchiveTests(PostgresContainerFixture postgresC
 	[Fact]
 	public async Task ASubscriptionOverAnArchiveWithNoRowReportsConnected()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
 

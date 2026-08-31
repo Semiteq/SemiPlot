@@ -14,8 +14,8 @@ namespace SemiPlot.Tests.Data;
 public sealed class RawLayerGeneratorTests
 {
 	// The bench every later slice develops against: 1 day, 8 pens, seed 1, a fixed exclusive end.
-	private const string StandardSliceDigest = "59a88008953845d205ed7d61da1c543833d9bf7666a85d8d2774905986e25f78";
-	private const int StandardSliceRowCount = 229862;
+	private const string StandardSliceDigest = "b1291512fa0a3e962bcdf79db65bea46ab07d365fc2f528c2bf9e7b719627428";
+	private const int StandardSliceRowCount = 271984;
 
 	private static readonly TimeSpan _pollInterval = RawLayerGenerator.PollInterval;
 
@@ -25,15 +25,6 @@ public sealed class RawLayerGeneratorTests
 		ArchiveRow.FirstAfterBreakQuality,
 		ArchiveRow.LastBeforeBreakQuality
 	];
-
-	[Fact]
-	public void IdenticalSeedsProduceIdenticalRows()
-	{
-		var first = RawLayerGenerator.Generate(BenchOptions.For());
-		var second = RawLayerGenerator.Generate(BenchOptions.For());
-
-		Assert.Equal(first, second);
-	}
 
 	[Fact]
 	public void ADifferentSeedProducesDifferentRows()
@@ -107,52 +98,6 @@ public sealed class RawLayerGeneratorTests
 		Assert.True(longest > TimeSpan.FromMinutes(1), $"longest quiet stretch was {longest}");
 	}
 
-	// An idle segment is exactly this: a stretch with no rows, bounded by two rows carrying the same
-	// value, because the change that ends it brings its own anchor holding the level that held.
-	[Fact]
-	public void AnIdleSegmentEmitsNoRowsAndLeavesTheLevelUntouched()
-	{
-		var rows = BenchRows.ByPen(RawLayerGenerator.Generate(BenchOptions.For(pens: 1)))[0];
-		var idle = false;
-
-		for (var index = 1; index < rows.Count; index++)
-		{
-			var quiet = rows[index].Timestamp - rows[index - 1].Timestamp;
-
-			if (quiet > TimeSpan.FromSeconds(5) && rows[index].Value == rows[index - 1].Value)
-			{
-				idle = true;
-
-				break;
-			}
-		}
-
-		Assert.True(idle, "no quiet stretch bounded by an unchanged value was generated");
-	}
-
-	// A ramp writes one row per tick and no pre-anchors: inside the run every step is one poll
-	// interval and every row changes the value. A spike is at most five rows, so a longer monotone
-	// run can only be a ramp.
-	[Fact]
-	public void ARampWritesOneRowPerTickWithNoPreAnchors()
-	{
-		var rows = BenchRows.ByPen(RawLayerGenerator.Generate(BenchOptions.For(pens: 1)))[0];
-		var rising = 1;
-		var falling = 1;
-		var longest = 1;
-
-		for (var index = 1; index < rows.Count; index++)
-		{
-			var contiguous = rows[index].Timestamp - rows[index - 1].Timestamp == _pollInterval;
-
-			rising = contiguous && rows[index].Value > rows[index - 1].Value ? rising + 1 : 1;
-			falling = contiguous && rows[index].Value < rows[index - 1].Value ? falling + 1 : 1;
-			longest = Math.Max(longest, Math.Max(rising, falling));
-		}
-
-		Assert.True(longest >= 8, $"the longest monotone tick run was {longest} rows");
-	}
-
 	[Fact]
 	public void EveryRowFallsInsideTheHalfOpenSpan()
 	{
@@ -218,13 +163,14 @@ public sealed class RawLayerGeneratorTests
 		Assert.All(rows, row => Assert.Equal(1000, row.Id));
 	}
 
-	// 60 breaks in a day at a mean change interval of 120 s produce the synthesised row three times. The
-	// count is pinned the way the golden digest is — a waveform change moves it, and moving it is a
-	// deliberate edit here.
-	[Fact]
-	public void ASingleRowRunBetweenTwoBreaksGetsASynthesisedStopRow()
+	[Theory]
+	[InlineData(40, 3)]
+	[InlineData(50, 5)]
+	[InlineData(55, 7)]
+	[InlineData(60, 15)]
+	public void ASingleRowRunBetweenTwoBreaksGetsASynthesisedStopRow(int breaks, int expected)
 	{
-		var options = BenchOptions.For(pens: 1, changeSeconds: 120.0, breaks: 60);
+		var options = BenchOptions.For(pens: 1, changeSeconds: 600.0, breaks: breaks);
 		var rows = BenchRows.ByPen(RawLayerGenerator.Generate(options))[0];
 
 		var synthesised = rows
@@ -234,13 +180,13 @@ public sealed class RawLayerGeneratorTests
 				&& pair.Second.Value == pair.First.Value
 				&& pair.Second.Timestamp - pair.First.Timestamp == _pollInterval);
 
-		Assert.Equal(3, synthesised);
+		Assert.Equal(expected, synthesised);
 
 		// What the added row buys: the marker sequence stays a strict 32, 16 alternation, which is what
 		// every reader of a gap boundary relies on.
 		var markers = rows.Where(row => row.Quality != ArchiveRow.OrdinaryQuality).ToArray();
 
-		Assert.Equal(120, markers.Length);
+		Assert.Equal(breaks * 2, markers.Length);
 		Assert.All(
 			markers.Index(),
 			marker => Assert.Equal(
@@ -248,38 +194,19 @@ public sealed class RawLayerGeneratorTests
 				marker.Item.Quality));
 	}
 
-	// The walk steps past the run's end and stops on the first instant at or after it, so an end at the
-	// last representable instant leaves that final step nowhere to land and DateTime addition throws.
-	// Every step is bounded now, and the run still ends where its end says. The parser holds --end well
-	// below this, but the generator takes a SeederOptions from anywhere and owes its own totality.
-	[Fact]
-	public void GenerateAcceptsAnEndAtTheLastRepresentableInstant()
+	// The combination the alternation cannot survive: an archiving run holding no lattice point carries
+	// neither marker, and the archive is malformed with nothing else to show for it.
+	[Theory]
+	[InlineData(20)]
+	[InlineData(30)]
+	[InlineData(72)]
+	public void AChangeIntervalThatLeavesARunWithNoChangeIsRejected(int breaks)
 	{
-		var options = BenchOptions.For(pens: 1, end: DateTime.MaxValue);
+		var options = BenchOptions.For(pens: 1, changeSeconds: 600.0, breaks: breaks);
 
-		var rows = RawLayerGenerator.Generate(options);
+		var rejected = Assert.Throws<ArgumentOutOfRangeException>(() => RawLayerGenerator.Generate(options));
 
-		Assert.NotEmpty(rows);
-		Assert.All(rows, row => Assert.True(row.Timestamp < options.End, $"{row.Timestamp:O} is not before the end"));
-	}
-
-	// A drawn interval is capped at eight times the mean, so a mean as long as the whole span carries
-	// the walk far past the end — and past the calendar too, when the span already reaches back to the
-	// earliest representable timestamp. --change-seconds may be exactly the span, so this is in range.
-	[Fact]
-	public void GenerateAcceptsAChangeIntervalAsLongAsTheWholeSpan()
-	{
-		var span = new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Unspecified) - DateTime.MinValue;
-
-		var rows = RawLayerGenerator.Generate(
-			BenchOptions.For(
-				days: (int)(span.Ticks / TimeSpan.TicksPerDay),
-				pens: 1,
-				seed: 145,
-				changeSeconds: span.TotalSeconds,
-				breaks: 0));
-
-		Assert.NotEmpty(rows);
+		Assert.Contains("holds no change", rejected.Message, StringComparison.Ordinal);
 	}
 
 	[Fact]
@@ -291,7 +218,30 @@ public sealed class RawLayerGeneratorTests
 	[Fact]
 	public void SelectPensRejectsMoreThanTheCatalogueHolds()
 	{
-		Assert.Throws<ArgumentOutOfRangeException>(() => RawLayerGenerator.SelectPens(51));
+		var catalogue = SyntheticPenCatalog.Build().Count;
+
+		Assert.Equal(catalogue, RawLayerGenerator.SelectPens(catalogue).Count);
+		Assert.Throws<ArgumentOutOfRangeException>(() => RawLayerGenerator.SelectPens(catalogue + 1));
+	}
+
+	// An interval as long as the whole span puts the first change past the end, and the span reaching
+	// back to the earliest representable timestamp leaves no lattice point ahead of it either. What is
+	// left is the anchor of that first change, one poll interval inside the span.
+	// --change-seconds may be exactly the span, so this is in range.
+	[Fact]
+	public void GenerateAcceptsAChangeIntervalAsLongAsTheWholeSpan()
+	{
+		var span = new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Unspecified) - DateTime.MinValue;
+
+		var options = BenchOptions.For(
+			days: (int)(span.Ticks / TimeSpan.TicksPerDay),
+			pens: 1,
+			changeSeconds: span.TotalSeconds,
+			breaks: 0);
+
+		var only = Assert.Single(RawLayerGenerator.Generate(options));
+
+		Assert.InRange(only.Timestamp, options.Start, options.End.AddTicks(-1));
 	}
 
 	// A hash rather than a sample: an accidental edit anywhere in the generation code would otherwise

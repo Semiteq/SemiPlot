@@ -176,13 +176,14 @@ flowchart LR
     sb["semibase bench<br/>init hook, unix socket"]
     src[("semiplot_provisioned")]
     seed["ArchiveSeeder<br/>deterministic, golden digest"]
-    tmpl[("template database")]
-    clone[("clone per test class")]
+    tmpl[("semiplot_bench<br/>seeded template")]
+    clone[("clone per test method<br/>or per test class")]
 
     tests --> fix --> sb --> src
     src -- "cloned" --> tmpl
     seed --> tmpl
-    tmpl -- "cloned" --> clone
+    tmpl -- "cloned, to read the seeded rows" --> clone
+    src -- "cloned, to write its own rows" --> clone
     clone --> tests
 
     gate["DatabaseGate<br/>no runtime → skip with a reason<br/>SEMIPLOT_REQUIRE_DB=1 → fail"]

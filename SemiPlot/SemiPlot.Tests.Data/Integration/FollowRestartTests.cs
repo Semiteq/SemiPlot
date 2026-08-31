@@ -21,7 +21,8 @@ namespace SemiPlot.Tests.Data.Integration;
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
 [Trait("Category", "Integration")]
-public sealed class FollowRestartTests(PostgresContainerFixture postgresContainerFixture) : IAsyncLifetime
+public sealed class FollowRestartTests(PostgresContainerFixture postgresContainerFixture)
+	: ClonedArchiveTest(postgresContainerFixture, CloneSource.Provisioned)
 {
 	private const int PenCount = 3;
 
@@ -41,24 +42,11 @@ public sealed class FollowRestartTests(PostgresContainerFixture postgresContaine
 	private static readonly IReadOnlyList<ArchiveRow> _firstRunRows =
 		LiveTailGenerator.Generate(Options(), _firstRunStart, _firstRunStop);
 
-	private ArchiveDatabase? _archiveDatabase;
-
-	private ArchiveDatabase Database =>
-		_archiveDatabase ?? throw new InvalidOperationException(
-			postgresContainerFixture.UnavailableReason ?? "The archive was used before it was cloned.");
-
 	// The newest row the first run left, which is the row the second run must not write again.
 	private static DateTime Edge => _firstRunRows.Max(row => row.Timestamp);
 
-	public async ValueTask InitializeAsync()
+	protected override async ValueTask SeedAsync()
 	{
-		if (!postgresContainerFixture.IsAvailable)
-		{
-			return;
-		}
-
-		_archiveDatabase = await postgresContainerFixture.CloneProvisionedAsync();
-
 		var written = await Writer().WriteAsync(
 			_firstRunRows,
 			_firstRunStart,
@@ -69,21 +57,13 @@ public sealed class FollowRestartTests(PostgresContainerFixture postgresContaine
 		Assert.True(written.IsSuccess, ArchiveReadSupport.Describe(written));
 	}
 
-	public async ValueTask DisposeAsync()
-	{
-		if (_archiveDatabase is not null)
-		{
-			await _archiveDatabase.DisposeAsync();
-		}
-	}
-
 	// The regression. A resume on the edge itself regenerates the row sitting there and the COPY fails with
 	// 23505 on the first tick, which from a run configuration looks like the writer vanishing rather than
 	// reporting anything.
 	[Fact]
 	public async Task ARestartOnALatticeAlignedEdgeAppendsWithoutADuplicateKey()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 
@@ -111,7 +91,7 @@ public sealed class FollowRestartTests(PostgresContainerFixture postgresContaine
 	[Fact]
 	public async Task TheFirstRowAfterTheRestartIsWithinOneChangeIntervalOfTheEdge()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var secondRunRows = await ResumeAsync(TestContext.Current.CancellationToken);
 
@@ -162,10 +142,5 @@ public sealed class FollowRestartTests(PostgresContainerFixture postgresContaine
 		await using var command = new NpgsqlCommand(_countRawRowsCommand, connection);
 
 		return (long)(await command.ExecuteScalarAsync(cancellationToken))!;
-	}
-
-	private ArchiveWriter Writer()
-	{
-		return new ArchiveWriter(Database.WriterConnectionString);
 	}
 }

@@ -31,6 +31,15 @@ public static class SyntheticValueWalk
 		return Math.Clamp((combined + 1.0) / 2.0, 0.0, 1.0);
 	}
 
+	// A uniform draw on [0, 1) from the same mixing function the jitter above uses. Value is a sum of
+	// sines and sits near the middle of its range far more often than at either edge, so a caller that
+	// needs a coordinate spread evenly over a stated range — a break's duration, its offset — takes
+	// this one instead.
+	internal static double Fraction(long seed, long coordinate)
+	{
+		return ToUnitInterval(Hash(seed, coordinate));
+	}
+
 	private static double ToUnitInterval(ulong hash)
 	{
 		return (hash >> 11) / (double)(1UL << 53);

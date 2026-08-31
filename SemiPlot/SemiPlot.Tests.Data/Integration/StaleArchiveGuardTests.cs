@@ -14,38 +14,17 @@ namespace SemiPlot.Tests.Data.Integration;
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
 [Trait("Category", "Integration")]
-public sealed class StaleArchiveGuardTests(PostgresContainerFixture postgresContainerFixture) : IAsyncLifetime
+public sealed class StaleArchiveGuardTests(PostgresContainerFixture postgresContainerFixture)
+	: ClonedArchiveTest(postgresContainerFixture, CloneSource.Provisioned)
 {
 	private const int PenId = 1;
-
-	private ArchiveDatabase? _archiveDatabase;
-
-	private ArchiveDatabase Database =>
-		_archiveDatabase ?? throw new InvalidOperationException(
-			postgresContainerFixture.UnavailableReason ?? "The archive was used before it was cloned.");
-
-	public async ValueTask InitializeAsync()
-	{
-		if (postgresContainerFixture.IsAvailable)
-		{
-			_archiveDatabase = await postgresContainerFixture.CloneProvisionedAsync();
-		}
-	}
-
-	public async ValueTask DisposeAsync()
-	{
-		if (_archiveDatabase is not null)
-		{
-			await _archiveDatabase.DisposeAsync();
-		}
-	}
 
 	// The state the operator reached: a fill from the previous day under a writer started today. The
 	// refusal names the script that refills, because that is the whole remedy.
 	[Fact]
 	public async Task AnArchiveOlderThanTheBoundIsRefusedAndNamesTheScript()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var newest = Now().AddMinutes(-793.7);
 
@@ -66,7 +45,7 @@ public sealed class StaleArchiveGuardTests(PostgresContainerFixture postgresCont
 	[Fact]
 	public async Task AnEmptyArchiveIsAcceptedAndReportsNoNewestRow()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var outcome = await StaleArchiveGuard.CheckAsync(
 			Database.WriterConnectionString, Now(), TestContext.Current.CancellationToken);
@@ -82,7 +61,7 @@ public sealed class StaleArchiveGuardTests(PostgresContainerFixture postgresCont
 	[Fact]
 	public async Task AnArchiveWithRowsReportsItsNewestRow()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var newest = ToMillisecond(Now().AddSeconds(-30));
 
@@ -102,7 +81,7 @@ public sealed class StaleArchiveGuardTests(PostgresContainerFixture postgresCont
 	[Fact]
 	public async Task AnArchiveAWriterIsKeepingLiveIsAccepted()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var newest = Now().AddSeconds(-2);
 
@@ -136,7 +115,7 @@ public sealed class StaleArchiveGuardTests(PostgresContainerFixture postgresCont
 				new ArchiveRow(PenId, ArchiveRow.RawLayer, timestamp, 1.0, ArchiveRow.OrdinaryQuality))
 			.ToArray();
 
-		var written = await new ArchiveWriter(Database.WriterConnectionString).WriteAsync(
+		var written = await Writer().WriteAsync(
 			rows,
 			timestamps.Min(),
 			timestamps.Max().AddSeconds(1),

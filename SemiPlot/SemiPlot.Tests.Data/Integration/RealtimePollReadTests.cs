@@ -16,8 +16,7 @@ using Xunit;
 namespace SemiPlot.Tests.Data.Integration;
 
 // Every test here appends rows, so none of them may take SeededArchive, whose contract is that the class
-// leaves the database as it found it. xunit constructs a test class once per test method, so the clone
-// built in InitializeAsync belongs to exactly one test and is dropped with it.
+// leaves the database as it found it.
 //
 // The archive is written by this class rather than cloned from the bench template: a poll is asserted
 // against a handful of rows at timestamps the test chose, and the template's own last timestamp is
@@ -26,7 +25,8 @@ namespace SemiPlot.Tests.Data.Integration;
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
 [Trait("Category", "Integration")]
-public sealed class RealtimePollReadTests(PostgresContainerFixture postgresContainerFixture) : IAsyncLifetime
+public sealed class RealtimePollReadTests(PostgresContainerFixture postgresContainerFixture)
+	: ClonedArchiveTest(postgresContainerFixture, CloneSource.Provisioned)
 {
 	// A strict subset of the seeded identifiers, so a tick that ignored @ids would fail.
 	private static readonly int[] _subscribedPenIds = [1, 2];
@@ -57,38 +57,11 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 		INSERT INTO public.trends (id, l, t, v, q) VALUES (@id, 0, @t, @v, @q);
 		""";
 
-	private ArchiveDatabase? _archiveDatabase;
-
-	private ArchiveDatabase Database =>
-		_archiveDatabase ?? throw new InvalidOperationException(
-			postgresContainerFixture.UnavailableReason ?? "The archive was used before it was written.");
-
-	public async ValueTask InitializeAsync()
+	protected override async ValueTask SeedAsync()
 	{
-		if (!postgresContainerFixture.IsAvailable)
-		{
-			return;
-		}
+		var written = await Writer().WriteAsync(SeededRows(), _day, _nextDay);
 
-		_archiveDatabase = await postgresContainerFixture.CloneProvisionedAsync();
-
-		var written = await new ArchiveWriter(_archiveDatabase.WriterConnectionString)
-			.WriteAsync(SeededRows(), _day, _nextDay);
-
-		if (written.IsFailed)
-		{
-			throw new InvalidOperationException(
-				"The poll's own archive could not be written: "
-				+ string.Join("; ", written.Errors.Select(error => error.Message)));
-		}
-	}
-
-	public async ValueTask DisposeAsync()
-	{
-		if (_archiveDatabase is not null)
-		{
-			await _archiveDatabase.DisposeAsync();
-		}
+		Assert.True(written.IsSuccess, ArchiveReadSupport.Describe(written));
 	}
 
 	// The armed point every later consumer sequences on. It emits nothing: a first tick that emitted rows
@@ -96,7 +69,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 	[Fact]
 	public async Task TheFirstTickEmitsNoSampleAndReportsTheSubscriptionArmed()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
 
@@ -109,7 +82,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 	[Fact]
 	public async Task TheFirstTickTakesItsBaselineFromTheArchivesOwnNewestRow()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
 
@@ -123,7 +96,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 	[Fact]
 	public async Task ATickAfterAnAppendedRowEmitsExactlyThatRow()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var appended = _seededLast.AddSeconds(1);
@@ -150,7 +123,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 	[Fact]
 	public async Task ATickWithNothingNewEmitsNothing()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 
@@ -171,7 +144,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 	[Fact]
 	public async Task ATickIgnoresARowOfAnUnsubscribedVariable()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 
@@ -198,7 +171,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 	[Fact]
 	public async Task ARowCarryingANullValueEmitsNoSampleReportsNoFaultAndStillAdvancesTheLastSeen()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var appended = _seededLast.AddSeconds(1);
@@ -223,7 +196,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 	[Fact]
 	public async Task ARowMarkingTheLastSampleBeforeABreakEmitsAnOrdinarySample()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var appended = _seededLast.AddSeconds(1);
@@ -251,7 +224,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 	[Fact]
 	public async Task TheLastSeenNeverMovesBackwardsAcrossTicks()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var first = _seededLast.AddSeconds(1);
@@ -292,7 +265,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 	[Fact]
 	public async Task TheFirstSuccessAfterARaisedFaultReportsConnectedExactlyOnce()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 

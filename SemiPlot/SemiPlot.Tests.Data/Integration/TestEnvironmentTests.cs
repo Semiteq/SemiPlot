@@ -14,14 +14,10 @@ public sealed class TestEnvironmentTests
 {
 	[Theory]
 	[InlineData("1", true)]
-	[InlineData("true", true)]
-	[InlineData("TRUE", true)]
-	[InlineData("  true  ", true)]
-	[InlineData("0", false)]
-	[InlineData("", false)]
+	[InlineData("  TRUE  ", true)]
+	[InlineData(null, false)]
 	[InlineData("   ", false)]
 	[InlineData("yes", false)]
-	[InlineData(null, false)]
 	public void TheRequireDatabaseVariableDecidesTheAvailabilityPolicy(string? value, bool required)
 	{
 		var previous = Environment.GetEnvironmentVariable(TestEnvironment.RequireDatabaseVariable);
@@ -35,6 +31,28 @@ public sealed class TestEnvironmentTests
 		finally
 		{
 			Environment.SetEnvironmentVariable(TestEnvironment.RequireDatabaseVariable, previous);
+		}
+	}
+
+	// The same Read governs the image, and there the blank rejection is what stops a run being pointed at
+	// an empty image name: the fallback has to be the default rather than "".
+	[Theory]
+	[InlineData(null, TestEnvironment.DefaultImage)]
+	[InlineData("   ", TestEnvironment.DefaultImage)]
+	[InlineData("  postgres:16-alpine  ", "postgres:16-alpine")]
+	public void TheImageVariableSelectsTheBaseImageAndFallsBackToTheDefault(string? value, string expected)
+	{
+		var previous = Environment.GetEnvironmentVariable(TestEnvironment.ImageVariable);
+
+		try
+		{
+			Environment.SetEnvironmentVariable(TestEnvironment.ImageVariable, value);
+
+			Assert.Equal(expected, TestEnvironment.Image);
+		}
+		finally
+		{
+			Environment.SetEnvironmentVariable(TestEnvironment.ImageVariable, previous);
 		}
 	}
 }

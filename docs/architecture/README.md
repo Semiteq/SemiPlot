@@ -12,9 +12,9 @@ implementation plans see `docs/plans/`.
 - [trend-interaction.md](./trend-interaction.md) — behavior spec: time navigation, sticky scroll,
   axis management, cursors, decimation, rendering; the locked decisions log.
 - [data-integration.md](./data-integration.md) — the contract between SemiPlot and the archive
-  database: responsibility zones, the `IDataProvider` surface, the exact SQL issued per operation,
-  layer selection, the time boundary, gap mapping, error semantics, the startup path and field
-  triage.
+  database: responsibility zones, the `IDataProvider` surface, the statement each operation issues
+  and what it must keep, layer selection, the time boundary, gap mapping, error semantics, the
+  startup path and field triage.
 - [scada-archive.md](./scada-archive.md) — the Simple-Scada 2 archive as it exists: tables and
   columns, archive layers, quality marks and gaps, write and retention behaviour, reader hazards,
   and what remains unverified.
@@ -24,9 +24,9 @@ implementation plans see `docs/plans/`.
   definitions are owned by SemiBase (`github.com/Semiteq/SemiBase`) and cross-referenced there.
 - [sources.md](./sources.md) — citation convention and the registry every factual claim resolves
   against: vendor manual pages, vendor forum topics, our own measurements, our own decisions.
-- [bench.md](./bench.md) — the seeded PostgreSQL bench the data-source slices develop against: the
-  seeder, the generated waveform, the layer thinning it applies, the container fixture and the
-  template-and-clone lifecycle, plus the environment that gates the integration tests.
+- [bench.md](./bench.md) — the seeded PostgreSQL bench: the seeder and the demo writer, the lattice
+  they share, the layer thinning, the container fixture and its template-and-clone lifecycle, the
+  application bench recipe, and the headless render and input guards.
 
 - [testing-strategy.md](./testing-strategy.md) — what each kind of test owns: the unit /
   integration / end-to-end distinction drawn on this repository's own files, why the three test

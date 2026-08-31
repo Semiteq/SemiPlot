@@ -581,10 +581,10 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 
 ### Task 21: Slice 7 close
 
-- [ ] `dotnet format SemiPlot.slnx`; `git log origin/master..HEAD --oneline` shows only slice-7 commits
-- [ ] `dotnet test SemiPlot.slnx` with Docker running - green
+- [x] `dotnet format SemiPlot.slnx`; `git log origin/master..HEAD --oneline` shows only slice-7 commits
+- [x] `dotnet test SemiPlot.slnx` with Docker running - green
 - [ ] manual: run `scripts/bench-demo.ps1`, stop it, start it again four minutes later; the chart shows one continuous line across the restart and the seeder log reports no `23505`
-- [ ] open the pull request; after merge, `git switch master && git pull --ff-only`
+- [x] open the pull request; after merge, `git switch master && git pull --ff-only` (#49)
 
 ### Slice 8 — `harness-provisioner`
 
@@ -603,13 +603,13 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 - [x] delete the harness self-tests; rewrite the tripwire without `Docker.DotNet`
 - [x] remove the package from the project and the central versions
 - [x] state in `bench.md` and `testing-strategy.md` that the tag moves on purpose and how the pull degrades without a registry route
-- [ ] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests.Data` and `SemiPlot.Tests.Journeys` - must pass before task 23
+- [x] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests.Data` and `SemiPlot.Tests.Journeys` - must pass before task 23
 
 ### Task 23: Slice 8 close
 
-- [ ] `dotnet format SemiPlot.slnx`; `git log origin/master..HEAD --oneline` shows only slice-8 commits
-- [ ] `dotnet test SemiPlot.slnx` with Docker running - green
-- [ ] open the pull request; after merge, `git switch master && git pull --ff-only`
+- [x] `dotnet format SemiPlot.slnx`; `git log origin/master..HEAD --oneline` shows only slice-8 commits
+- [x] `dotnet test SemiPlot.slnx` with Docker running - green
+- [x] open the pull request; after merge, `git switch master && git pull --ff-only` (#50)
 
 ### Slice 9 — `comment-audit`
 
@@ -654,5 +654,5 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 
 - `scripts/bench-demo.ps1` is the only consumer of the seeder command line; its invocations are kept
   compatible by design and verified in task 18.
-- The pinned provisioner digest in `bench/Dockerfile` needs a manual bump when SemiBase publishes a
-  release that changes `semibase bench`.
+- The bench follows `ghcr.io/semiteq/semibase:latest`; a SemiBase release that changes
+  `semibase bench` reaches the next run through the fixture's `docker pull`.

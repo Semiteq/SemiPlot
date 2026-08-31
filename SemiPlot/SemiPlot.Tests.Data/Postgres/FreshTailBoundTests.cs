@@ -224,7 +224,7 @@ public sealed class FreshTailBoundTests
 		var merged = FreshTail.Merge(coarse, tail, seams, seam);
 
 		Assert.Equal(
-			new long[] { _penIds[0], _penIds[0], _penIds[0], _penIds[1], _penIds[1] },
+			new[] { _penIds[0], _penIds[0], _penIds[0], _penIds[1], _penIds[1] },
 			merged.Select(row => row.PenId));
 		Assert.Equal(
 			new[] { seam, seam.AddSeconds(10), seam.AddSeconds(20), seam, seam.AddSeconds(10) },
@@ -241,10 +241,10 @@ public sealed class FreshTailBoundTests
 
 		var merged = FreshTail.Merge([Row(_penIds[1], _windowStart)], tail, seams, _windowStart);
 
-		Assert.Equal(new long[] { _penIds[0], _penIds[1] }, merged.Select(row => row.PenId));
+		Assert.Equal(new[] { _penIds[0], _penIds[1] }, merged.Select(row => row.PenId));
 	}
 
-	private static Dictionary<long, DateTime> SeamsAt(DateTime archiveLocal)
+	private static Dictionary<int, DateTime> SeamsAt(DateTime archiveLocal)
 	{
 		return FreshTail.Seams(
 			_penIds.Select(penId => Row(penId, archiveLocal)).ToArray(),
@@ -252,7 +252,7 @@ public sealed class FreshTailBoundTests
 			_windowStart);
 	}
 
-	private static HistoryRowFold.Row Row(long penId, DateTime archiveLocal)
+	private static HistoryRowFold.Row Row(int penId, DateTime archiveLocal)
 	{
 		return new HistoryRowFold.Row(penId, archiveLocal, penId, ArchiveRow.OrdinaryQuality);
 	}

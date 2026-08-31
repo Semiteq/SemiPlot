@@ -222,7 +222,7 @@ public static class RawLayerGenerator
 
 	private static ArchiveRow Row(SyntheticPen pen, long ticks, double value)
 	{
-		return new ArchiveRow((int)pen.PenId, ArchiveRow.RawLayer, new DateTime(ticks), value,
+		return new ArchiveRow(pen.PenId, ArchiveRow.RawLayer, new DateTime(ticks), value,
 			ArchiveRow.OrdinaryQuality);
 	}
 }

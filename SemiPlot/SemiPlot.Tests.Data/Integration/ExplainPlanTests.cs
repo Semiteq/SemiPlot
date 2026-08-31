@@ -301,7 +301,7 @@ public sealed class ExplainPlanTests(
 	{
 		return RawLayerGenerator.SelectPens(ArchiveTemplate.Slice.PenCount)
 			.Take(ExplainedPenCount)
-			.Select(pen => (int)pen.PenId)
+			.Select(pen => pen.PenId)
 			.ToArray();
 	}
 

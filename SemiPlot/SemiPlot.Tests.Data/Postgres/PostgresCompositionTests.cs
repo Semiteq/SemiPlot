@@ -194,9 +194,9 @@ public sealed class PostgresCompositionTests
 		using var droppedWatch = dropped.ConnectionFaults.Subscribe(droppedStates.Add);
 		using var runningWatch = running.ConnectionFaults.Subscribe(_ => runningFaulted.TrySetResult());
 
-		dropped.Subscribe([1L]).Subscribe(droppedBatches.Add).Dispose();
+		dropped.Subscribe([1]).Subscribe(droppedBatches.Add).Dispose();
 
-		using var control = running.Subscribe([1L]).Subscribe(_ => { });
+		using var control = running.Subscribe([1]).Subscribe(_ => { });
 
 		await runningFaulted.Task.WaitAsync(TestContext.Current.CancellationToken);
 
@@ -206,17 +206,5 @@ public sealed class PostgresCompositionTests
 
 		Assert.Empty(droppedBatches);
 		Assert.Empty(droppedStates);
-	}
-
-	// The identifiers narrow to the archive's own int4 column, and Subscribe has no Result channel to report
-	// one that does not fit — so it throws rather than selecting a different variable's rows.
-	[Fact]
-	public void SubscribeRejectsAPenIdentifierTheArchiveColumnCannotCarry()
-	{
-		var settings = Settings();
-		using var dataSource = new ArchiveDataSource(settings);
-		var provider = NewProvider(settings, dataSource);
-
-		Assert.Throws<ArgumentOutOfRangeException>(() => provider.Subscribe([(long)int.MaxValue + 1]));
 	}
 }

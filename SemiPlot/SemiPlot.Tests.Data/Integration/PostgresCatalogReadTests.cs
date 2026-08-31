@@ -167,7 +167,7 @@ public sealed class PostgresCatalogReadTests(
 
 	private static IReadOnlyList<(int Id, short LineStyle)> ReadLineStyles(IEnumerable<Pen> pens)
 	{
-		return pens.Select(pen => (Id: (int)pen.PenId, LineStyle: (short)pen.LineStyle))
+		return pens.Select(pen => (Id: pen.PenId, LineStyle: (short)pen.LineStyle))
 			.OrderBy(entry => entry.Id)
 			.ToArray();
 	}

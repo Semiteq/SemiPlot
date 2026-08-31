@@ -35,7 +35,7 @@ public static class SyntheticPenCatalog
 		List<SyntheticPen> pens,
 		string group,
 		int count,
-		long idBase,
+		int idBase,
 		string namePrefix,
 		double minValue,
 		double maxValue,
@@ -51,7 +51,7 @@ public static class SyntheticPenCatalog
 		}
 	}
 
-	private static void AddGasLines(List<SyntheticPen> pens, int count, long idBase)
+	private static void AddGasLines(List<SyntheticPen> pens, int count, int idBase)
 	{
 		for (var index = 0; index < count; index++)
 		{
@@ -74,7 +74,7 @@ public static class SyntheticPenCatalog
 	}
 
 	// Golden-ratio hue walk spreads pen colors so adjacent ids stay visually distinct.
-	private static string ColorFor(long penId)
+	private static string ColorFor(int penId)
 	{
 		const double goldenRatioConjugate = 0.618033988749895;
 		var hue = (penId * goldenRatioConjugate) % 1.0;

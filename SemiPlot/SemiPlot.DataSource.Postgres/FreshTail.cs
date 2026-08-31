@@ -19,12 +19,12 @@ internal static class FreshTail
 	/// when it returned none. The rows arrive <c>ORDER BY id, t</c>, so the last row of a pen's run is its
 	/// newest and the running assignment below ends on it.
 	/// </summary>
-	public static Dictionary<long, DateTime> Seams(
+	public static Dictionary<int, DateTime> Seams(
 		IReadOnlyList<HistoryRowFold.Row> coarseRows,
 		IReadOnlyList<int> penIds,
 		DateTime windowStartLocal)
 	{
-		var seams = new Dictionary<long, DateTime>(penIds.Count);
+		var seams = new Dictionary<int, DateTime>(penIds.Count);
 
 		foreach (var penId in penIds)
 		{
@@ -59,7 +59,7 @@ internal static class FreshTail
 	/// </summary>
 	public static DateTime? Start(
 		AggregationLayer layer,
-		IReadOnlyDictionary<long, DateTime> seams,
+		IReadOnlyDictionary<int, DateTime> seams,
 		DateTime windowEndLocal)
 	{
 		// Raw is what the tail is read from, so there is nothing coarser for it to be short of.
@@ -86,7 +86,7 @@ internal static class FreshTail
 
 	// The result is at or after the clamp by construction, which is what keeps the cost bound.
 	private static DateTime? EarliestSeamReachingTheClamp(
-		IReadOnlyDictionary<long, DateTime> seams,
+		IReadOnlyDictionary<int, DateTime> seams,
 		DateTime clampedLocal)
 	{
 		DateTime? earliest = null;
@@ -119,7 +119,7 @@ internal static class FreshTail
 	public static IReadOnlyList<HistoryRowFold.Row> Merge(
 		IReadOnlyList<HistoryRowFold.Row> coarseRows,
 		IReadOnlyList<HistoryRowFold.Row> tailRows,
-		IReadOnlyDictionary<long, DateTime> seams,
+		IReadOnlyDictionary<int, DateTime> seams,
 		DateTime tailStartLocal)
 	{
 		var merged = new List<HistoryRowFold.Row>(coarseRows.Count + tailRows.Count);
@@ -153,7 +153,7 @@ internal static class FreshTail
 	}
 
 	// Both lists arrive on ascending identifiers, so the smaller head is the next whole run.
-	private static long NextPenId(
+	private static int NextPenId(
 		IReadOnlyList<HistoryRowFold.Row> coarseRows,
 		int coarseIndex,
 		IReadOnlyList<HistoryRowFold.Row> tailRows,

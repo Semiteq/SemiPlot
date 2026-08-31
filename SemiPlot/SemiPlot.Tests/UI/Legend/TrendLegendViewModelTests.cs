@@ -125,7 +125,7 @@ public sealed class TrendLegendViewModelTests
 		return chart.RequestInitialHistory();
 	}
 
-	private static TrendLegendRowViewModel SingleRow(TrendLegendViewModel legend, long penId)
+	private static TrendLegendRowViewModel SingleRow(TrendLegendViewModel legend, int penId)
 	{
 		return legend.Groups
 			.SelectMany(group => group.Rows)

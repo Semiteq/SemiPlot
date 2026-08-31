@@ -80,11 +80,11 @@ public sealed class PostgresDataProvider : IDataProvider
 	/// consumer keeps the data it has — and says so on <see cref="ConnectionFaults"/> instead.
 	/// </para>
 	/// </summary>
-	public IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<long> penIds)
+	public IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<int> penIds)
 	{
 		ArgumentNullException.ThrowIfNull(penIds);
 
-		var subscribedIds = NarrowForSubscription(penIds);
+		var subscribedIds = penIds.ToArray();
 
 		return Observable.Create<IReadOnlyList<Sample>>(observer =>
 			_scheduler.ScheduleAsync((_, cancellationToken) => PollAsync(subscribedIds, observer, cancellationToken)));
@@ -137,7 +137,7 @@ public sealed class PostgresDataProvider : IDataProvider
 	/// </para>
 	/// </summary>
 	public async Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(
-		IReadOnlyList<long> penIds,
+		IReadOnlyList<int> penIds,
 		DateTime fromUtc,
 		DateTime toUtc,
 		AggregationLayer layer,
@@ -148,7 +148,7 @@ public sealed class PostgresDataProvider : IDataProvider
 		// The target guard turns a fault that would otherwise be intermittent into a deterministic one —
 		// the decimator is only reached when a pen has rows, so a target below one succeeds on an empty
 		// window and fails on a full one.
-		var arguments = ValidateArguments(penIds, fromUtc, toUtc, targetColumnCount);
+		var arguments = ValidateArguments(fromUtc, toUtc, targetColumnCount);
 
 		if (arguments.IsFailed)
 		{
@@ -164,7 +164,7 @@ public sealed class PostgresDataProvider : IDataProvider
 			throw new ArgumentOutOfRangeException(nameof(layer), layer, "Unknown aggregation layer.");
 		}
 
-		var ids = arguments.Value;
+		var ids = penIds.ToArray();
 
 		try
 		{
@@ -355,63 +355,20 @@ public sealed class PostgresDataProvider : IDataProvider
 	}
 
 	// The window bounds and the target column count are reported through the Result channel, in the wording
-	// the caller reads back, and so is a pen identifier the archive's own column cannot carry.
-	private static Result<int[]> ValidateArguments(
-		IReadOnlyList<long> penIds,
-		DateTime fromUtc,
-		DateTime toUtc,
-		int targetColumnCount)
+	// the caller reads back.
+	private static Result ValidateArguments(DateTime fromUtc, DateTime toUtc, int targetColumnCount)
 	{
 		if (fromUtc > toUtc)
 		{
-			return Result.Fail<int[]>($"Invalid range: fromUtc ({fromUtc:O}) is after toUtc ({toUtc:O}).");
+			return Result.Fail($"Invalid range: fromUtc ({fromUtc:O}) is after toUtc ({toUtc:O}).");
 		}
 
 		if (targetColumnCount < 1)
 		{
-			return Result.Fail<int[]>($"Invalid target column count: {targetColumnCount} (must be at least one).");
+			return Result.Fail($"Invalid target column count: {targetColumnCount} (must be at least one).");
 		}
 
-		return NarrowIdentifiers(penIds);
-	}
-
-	// The identifiers narrow to the integer trends.id holds, and the narrowing is range-tested rather than a
-	// silent wrap: an identifier no int4 column can carry would otherwise select a different pen's rows.
-	private static Result<int[]> NarrowIdentifiers(IReadOnlyList<long> penIds)
-	{
-		var ids = new int[penIds.Count];
-
-		for (var index = 0; index < penIds.Count; index++)
-		{
-			var penId = penIds[index];
-
-			if (penId is < int.MinValue or > int.MaxValue)
-			{
-				return Result.Fail<int[]>(
-					$"Invalid pen identifier: {penId} (must fit the archive's 32-bit identifier column).");
-			}
-
-			ids[index] = (int)penId;
-		}
-
-		return Result.Ok(ids);
-	}
-
-	// Subscribe carries no Result channel, so the one precondition its arguments can fail is thrown rather
-	// than reported. Every identifier the catalogue answers fits the archive's own int4 column, so reaching
-	// this is a caller's error and not an archive state.
-	private static int[] NarrowForSubscription(IReadOnlyList<long> penIds)
-	{
-		var narrowed = NarrowIdentifiers(penIds);
-
-		if (narrowed.IsFailed)
-		{
-			throw new ArgumentOutOfRangeException(
-				nameof(penIds),
-				string.Join("; ", narrowed.Errors.Select(error => error.Message)));
-		}
-
-		return narrowed.Value;
+		return Result.Ok();
 	}
 
 	// A plain projection of the columns: the fold owns the conversion, so the naive timestamp crosses
@@ -425,11 +382,9 @@ public sealed class PostgresDataProvider : IDataProvider
 			reader.GetInt32(3));
 	}
 
-	// The id column is integer, so it is read with GetInt32 and widened — GetInt64 throws
-	// InvalidCastException on an int4.
 	private Pen ReadPen(NpgsqlDataReader reader)
 	{
-		var penId = (long)reader.GetInt32(0);
+		var penId = reader.GetInt32(0);
 
 		return new Pen(
 			penId,

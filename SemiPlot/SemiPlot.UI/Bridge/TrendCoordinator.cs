@@ -82,7 +82,7 @@ public sealed class TrendCoordinator : IDisposable
 	}
 
 	public Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(
-		IReadOnlyList<long> penIds,
+		IReadOnlyList<int> penIds,
 		DateTime fromUtc,
 		DateTime toUtc,
 		AggregationLayer layer,
@@ -139,7 +139,7 @@ public sealed class TrendCoordinator : IDisposable
 	// union of every pen's, so a column over it would need a filler at every timestamp this pen did not
 	// sample — and the only filler a double? column offers is a null, which the chart draws as a break the
 	// archive never recorded.
-	private static PenRealtimeValues BuildPenValues(IGrouping<long, Sample> penSamples)
+	private static PenRealtimeValues BuildPenValues(IGrouping<int, Sample> penSamples)
 	{
 		var ordered = penSamples.OrderBy(sample => sample.TimestampUtc).ToArray();
 

@@ -3,12 +3,12 @@
 namespace SemiPlot.UI.Chart;
 
 public sealed class ChartDeltaCursorReader(
-	IReadOnlyDictionary<long, PenHistoryEnvelope> envelopesById)
+	IReadOnlyDictionary<int, PenHistoryEnvelope> envelopesById)
 {
 	private static readonly PenHistoryEnvelope _emptyEnvelope = new(0, [], [], [], []);
 
 	private readonly DeltaCursorModel _deltaCursor = new();
-	private readonly IReadOnlyDictionary<long, PenHistoryEnvelope> _envelopesById = envelopesById;
+	private readonly IReadOnlyDictionary<int, PenHistoryEnvelope> _envelopesById = envelopesById;
 
 	public bool IsEnabled { get; private set; }
 
@@ -27,7 +27,7 @@ public sealed class ChartDeltaCursorReader(
 		_deltaCursor.Place(cursorTime);
 	}
 
-	public DeltaReadout? Measure(long activePenId)
+	public DeltaReadout? Measure(int activePenId)
 	{
 		// The `with` only swaps PenId on the already-valid empty envelope, so the column/ordering
 		// invariants the constructor enforces still hold (empty columns are valid).

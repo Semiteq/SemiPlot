@@ -119,7 +119,7 @@ public sealed class CursorReadoutModelTests
 		readouts[3].Should().BeNull();
 	}
 
-	private static PenHistoryEnvelope Envelope(long penId, params (DateTime Time, double Center)[] columns)
+	private static PenHistoryEnvelope Envelope(int penId, params (DateTime Time, double Center)[] columns)
 	{
 		var timestamps = new DateTime[columns.Length];
 		var min = new double[columns.Length];

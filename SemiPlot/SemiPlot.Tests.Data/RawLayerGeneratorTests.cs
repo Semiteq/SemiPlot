@@ -124,7 +124,7 @@ public sealed class RawLayerGeneratorTests
 	[Fact]
 	public void EveryValueStaysInsideItsPenRange()
 	{
-		var pens = RawLayerGenerator.SelectPens(8).ToDictionary(pen => (int)pen.PenId);
+		var pens = RawLayerGenerator.SelectPens(8).ToDictionary(pen => pen.PenId);
 
 		foreach (var row in RawLayerGenerator.Generate(BenchOptions.For()))
 		{
@@ -151,7 +151,7 @@ public sealed class RawLayerGeneratorTests
 		Assert.Equal(
 			new[] { "Heaters", "Dampers", "Gas lines", "Pressures", "Powers", "Heaters" },
 			pens.Select(pen => pen.Group));
-		Assert.Equal(new long[] { 1000, 2000, 3000, 4000, 5000, 1001 }, pens.Select(pen => pen.PenId));
+		Assert.Equal(new[] { 1000, 2000, 3000, 4000, 5000, 1001 }, pens.Select(pen => pen.PenId));
 	}
 
 	[Fact]

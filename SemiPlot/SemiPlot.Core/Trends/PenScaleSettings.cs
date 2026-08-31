@@ -1,7 +1,7 @@
 ﻿namespace SemiPlot.Core.Trends;
 
 public sealed record PenScaleSettings(
-	long PenId,
+	int PenId,
 	string AxisKey,
 	ScaleMode Mode = ScaleMode.Auto,
 	bool IsVisible = true,

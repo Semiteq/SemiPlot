@@ -25,7 +25,7 @@ public sealed class HistoryArgumentGuardTests
 	private static readonly DateTime _fromUtc = new(2026, 6, 15, 10, 0, 0, DateTimeKind.Utc);
 
 	private static async Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryAsync(
-		IReadOnlyList<long> penIds,
+		IReadOnlyList<int> penIds,
 		DateTime toUtc,
 		int targetColumnCount,
 		AggregationLayer layer = AggregationLayer.Raw)
@@ -51,7 +51,7 @@ public sealed class HistoryArgumentGuardTests
 	{
 		var toUtc = _fromUtc.AddMinutes(-1);
 
-		var result = await QueryAsync([7L], toUtc, TargetColumnCount);
+		var result = await QueryAsync([7], toUtc, TargetColumnCount);
 
 		Assert.Equal(
 			$"Invalid range: fromUtc ({_fromUtc:O}) is after toUtc ({toUtc:O}).",
@@ -63,23 +63,10 @@ public sealed class HistoryArgumentGuardTests
 	[InlineData(-1)]
 	public async Task ATargetColumnCountBelowOneFails(int targetColumnCount)
 	{
-		var result = await QueryAsync([7L], _fromUtc.AddMinutes(1), targetColumnCount);
+		var result = await QueryAsync([7], _fromUtc.AddMinutes(1), targetColumnCount);
 
 		Assert.Equal(
 			$"Invalid target column count: {targetColumnCount} (must be at least one).",
-			SingleMessage(result));
-	}
-
-	// Both ends are covered: a silent wrap would map either onto a different pen.
-	[Theory]
-	[InlineData((long)int.MaxValue + 1)]
-	[InlineData((long)int.MinValue - 1)]
-	public async Task APenIdentifierOutsideTheArchivesIntegerRangeFails(long penId)
-	{
-		var result = await QueryAsync([7L, penId], _fromUtc.AddMinutes(1), TargetColumnCount);
-
-		Assert.Equal(
-			$"Invalid pen identifier: {penId} (must fit the archive's 32-bit identifier column).",
 			SingleMessage(result));
 	}
 
@@ -96,7 +83,7 @@ public sealed class HistoryArgumentGuardTests
 	public async Task AnUndefinedAggregationLayerThrows()
 	{
 		await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
-			() => QueryAsync([7L], _fromUtc.AddMinutes(1), TargetColumnCount, (AggregationLayer)99));
+			() => QueryAsync([7], _fromUtc.AddMinutes(1), TargetColumnCount, (AggregationLayer)99));
 	}
 
 	// Two caller defects at once. The provider orders its guards so the range and target checks answer
@@ -107,7 +94,7 @@ public sealed class HistoryArgumentGuardTests
 	{
 		var toUtc = _fromUtc.AddMinutes(-1);
 
-		var result = await QueryAsync([7L], toUtc, TargetColumnCount, (AggregationLayer)99);
+		var result = await QueryAsync([7], toUtc, TargetColumnCount, (AggregationLayer)99);
 
 		Assert.Equal(
 			$"Invalid range: fromUtc ({_fromUtc:O}) is after toUtc ({toUtc:O}).",
@@ -117,7 +104,7 @@ public sealed class HistoryArgumentGuardTests
 	[Fact]
 	public async Task ATargetColumnCountBelowOneAnswersAheadOfAnUndefinedAggregationLayer()
 	{
-		var result = await QueryAsync([7L], _fromUtc.AddMinutes(1), 0, (AggregationLayer)99);
+		var result = await QueryAsync([7], _fromUtc.AddMinutes(1), 0, (AggregationLayer)99);
 
 		Assert.Equal(
 			"Invalid target column count: 0 (must be at least one).",

@@ -364,19 +364,19 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 - Modify: `SemiPlot/SemiPlot.Tests.Data/Errors/DataErrorTests.cs`, `Postgres/ArchiveExceptionMapperTests.cs`, `Postgres/PostgresConnectionLoaderTests.cs:22,104-124,151`, and every `OfType<Archive*Error>` / `IsType<Archive*Error>` assertion in `SemiPlot.Tests.Data/Integration/*` and `SemiPlot.Tests.Journeys/*`
 - Modify: `docs/architecture/data-integration.md` "Error semantics" (one table row per `ArchiveFault` member) and `:617,697`; `scripts/bench-demo.ps1:406`
 
-- [ ] add the two records and the enum with the members and `Detail` contents listed under Technical Details
-- [ ] rewrite `ArchiveExceptionMapper.MapSqlState` as a switch producing `ArchiveError`; `RealtimePoll.Fail` raises `ArchiveFault.ConnectionLost`
-- [ ] rewrite `PostgresConnectionLoader` to return `ConnectionFileError` for every failure, `NotFound` included, with no version field or check
-- [ ] rewrite `StartupFailureMapper.Map` as one switch over `ArchiveFault` and one over `ConnectionFileProblem`, keeping every existing title, detail and remedy text
-- [ ] rewrite the coverage test to enumerate both enums and assert no member yields `GenericTitle`
-- [ ] update every test asserting on an error type to assert on `Kind` and `Detail`; delete the version tests
-- [ ] rewrite the error table in `data-integration.md`; remove the key from the two example files
-- [ ] `dotnet build SemiPlot.slnx`; `dotnet test` on all three projects - must pass before task 4
+- [x] add the two records and the enum with the members and `Detail` contents listed under Technical Details
+- [x] rewrite `ArchiveExceptionMapper.MapSqlState` as a switch producing `ArchiveError`; `RealtimePoll.Fail` raises `ArchiveFault.ConnectionLost`
+- [x] rewrite `PostgresConnectionLoader` to return `ConnectionFileError` for every failure, `NotFound` included, with no version field or check
+- [x] rewrite `StartupFailureMapper.Map` as one switch over `ArchiveFault` and one over `ConnectionFileProblem`, keeping every existing title, detail and remedy text
+- [x] rewrite the coverage test to enumerate both enums and assert no member yields `GenericTitle`
+- [x] update every test asserting on an error type to assert on `Kind` and `Detail`; delete the version tests
+- [x] rewrite the error table in `data-integration.md`; remove the key from the two example files
+- [x] `dotnet build SemiPlot.slnx`; `dotnet test` on all three projects - must pass before task 4
 
 ### Task 4: Slice 1 close
 
-- [ ] `dotnet format SemiPlot.slnx`; `git log origin/master..HEAD --oneline` shows only slice-1 commits
-- [ ] `dotnet test SemiPlot.slnx` with Docker running - green
+- [x] `dotnet format SemiPlot.slnx`; `git log origin/master..HEAD --oneline` shows only slice-1 commits
+- [x] `dotnet test SemiPlot.slnx` with Docker running - green
 - [ ] manual: start `SemiPlot.UI` with no connection file, then with a wrong password, then with the container stopped; each error window shows the same title, detail and remedy wording as `StartupFailureMapperTests` pins
 - [ ] open the pull request; after merge, `git switch master && git pull --ff-only`
 
@@ -392,10 +392,10 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 - Modify: `SemiPlot/SemiPlot.Tools.ArchiveSeeder/CoarseFlush.cs:96`, `SyntheticPen` and the eleven `(int)pen.PenId` test sites listed in Context
 - Modify: `SemiPlot/SemiPlot.Tests.Data/Postgres/HistoryArgumentGuardTests.cs:77` (delete the identifier-range cases; range and target cases stay)
 
-- [ ] change every pen identifier to `int` across Core, provider, UI, seeder and tests
-- [ ] delete the narrowing methods and their `Result<int[]>` string failures
-- [ ] remove the casts in tests and the identifier-range test cases
-- [ ] `dotnet build SemiPlot.slnx`; `dotnet test` on all three projects - must pass before task 6
+- [x] change every pen identifier to `int` across Core, provider, UI, seeder and tests
+- [x] delete the narrowing methods and their `Result<int[]>` string failures
+- [x] remove the casts in tests and the identifier-range test cases
+- [x] `dotnet build SemiPlot.slnx`; `dotnet test` on all three projects - must pass before task 6
 
 ### Task 6: Slice 2 close
 

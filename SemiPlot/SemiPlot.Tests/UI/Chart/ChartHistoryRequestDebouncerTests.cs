@@ -138,7 +138,7 @@ public sealed class ChartHistoryRequestDebouncerTests
 	{
 		// Without them the consumer cannot tell a pen the provider omitted from one it was never asked for.
 		var scheduler = new TestScheduler();
-		IReadOnlyList<long>? appliedPenIds = null;
+		IReadOnlyList<int>? appliedPenIds = null;
 		using var debouncer = new ChartHistoryRequestDebouncer(
 			request => Task.FromResult(Ok(request)),
 			(_, requestedPenIds, _) => appliedPenIds = requestedPenIds,
@@ -148,10 +148,10 @@ public sealed class ChartHistoryRequestDebouncerTests
 			ImmediateScheduler.Instance);
 
 		debouncer.Request(new HistoryRequest(
-			[4L, 7L], _from, _to, AggregationLayer.Raw, 3L, HistoryColumnTarget.MaxColumns));
+			[4, 7], _from, _to, AggregationLayer.Raw, 3L, HistoryColumnTarget.MaxColumns));
 		scheduler.AdvanceBy(_debounceWindow.Ticks + 1);
 
-		appliedPenIds.Should().Equal(4L, 7L);
+		appliedPenIds.Should().Equal(4, 7);
 	}
 
 	private static Result<IReadOnlyList<PenHistoryEnvelope>> Ok(HistoryRequest request)

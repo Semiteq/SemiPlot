@@ -11,7 +11,7 @@ namespace SemiPlot.Tests.Core.Data;
 [Trait("Category", "Unit")]
 public sealed class MinMaxDecimatorTests
 {
-	private const long PenId = 42;
+	private const int PenId = 42;
 
 	private static readonly DateTime _origin = new(2026, 6, 15, 0, 0, 0, DateTimeKind.Utc);
 

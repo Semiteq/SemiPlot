@@ -20,7 +20,7 @@ public sealed class ChartHoverReadoutTests
 	public void BuildContent_ShowsEveryVisiblePenValueAtCursorPlusTimestamp()
 	{
 		var pens = new[] { CreatePen(1, "Pen 1"), CreatePen(2, "Pen 2") };
-		var values = new Dictionary<long, double?> { [1] = 2.0, [2] = 20.0 };
+		var values = new Dictionary<int, double?> { [1] = 2.0, [2] = 20.0 };
 
 		var content = ChartHoverReadout.BuildContent(_cursor, values, pens);
 
@@ -32,7 +32,7 @@ public sealed class ChartHoverReadoutTests
 	public void BuildContent_PenWithGapAtCursor_RendersDashForThatPen()
 	{
 		var pens = new[] { CreatePen(1, "Pen 1"), CreatePen(2, "Pen 2") };
-		var values = new Dictionary<long, double?> { [1] = 2.0, [2] = null };
+		var values = new Dictionary<int, double?> { [1] = 2.0, [2] = null };
 
 		var content = ChartHoverReadout.BuildContent(_cursor, values, pens);
 
@@ -47,7 +47,7 @@ public sealed class ChartHoverReadoutTests
 		var hidden = CreatePen(2, "Pen 2");
 		hidden.IsVisible = false;
 		var pens = new[] { visible, hidden };
-		var values = new Dictionary<long, double?> { [1] = 2.0, [2] = 20.0 };
+		var values = new Dictionary<int, double?> { [1] = 2.0, [2] = 20.0 };
 
 		var content = ChartHoverReadout.BuildContent(_cursor, values, pens);
 
@@ -58,7 +58,7 @@ public sealed class ChartHoverReadoutTests
 	[Fact]
 	public void BuildContent_NoPens_RendersTimestampOnly()
 	{
-		var values = new Dictionary<long, double?>();
+		var values = new Dictionary<int, double?>();
 
 		var content = ChartHoverReadout.BuildContent(_cursor, values, Array.Empty<TrendPenState>());
 
@@ -73,7 +73,7 @@ public sealed class ChartHoverReadoutTests
 		first.IsVisible = false;
 		second.IsVisible = false;
 		var pens = new[] { first, second };
-		var values = new Dictionary<long, double?> { [1] = 2.0, [2] = 20.0 };
+		var values = new Dictionary<int, double?> { [1] = 2.0, [2] = 20.0 };
 
 		var content = ChartHoverReadout.BuildContent(_cursor, values, pens);
 
@@ -84,7 +84,7 @@ public sealed class ChartHoverReadoutTests
 	public void BuildContent_PenMissingFromValues_RendersDash()
 	{
 		var pens = new[] { CreatePen(1, "Pen 1") };
-		var values = new Dictionary<long, double?>();
+		var values = new Dictionary<int, double?>();
 
 		var content = ChartHoverReadout.BuildContent(_cursor, values, pens);
 
@@ -96,7 +96,7 @@ public sealed class ChartHoverReadoutTests
 		return cursorUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
 	}
 
-	private static TrendPenState CreatePen(long projectVarId, string name)
+	private static TrendPenState CreatePen(int projectVarId, string name)
 	{
 		var plot = new Plot();
 		var centerPoints = new List<Coordinates>();

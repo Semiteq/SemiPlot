@@ -3,7 +3,7 @@
 public sealed record PenHistoryEnvelope
 {
 	public PenHistoryEnvelope(
-		long penId,
+		int penId,
 		IReadOnlyList<DateTime> timestamps,
 		IReadOnlyList<double> min,
 		IReadOnlyList<double> max,
@@ -39,7 +39,7 @@ public sealed record PenHistoryEnvelope
 		Center = center;
 	}
 
-	public long PenId { get; init; }
+	public int PenId { get; init; }
 
 	public IReadOnlyList<DateTime> Timestamps { get; init; }
 

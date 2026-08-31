@@ -16,6 +16,6 @@
 /// </para>
 /// </summary>
 public sealed record PenRealtimeValues(
-	long PenId,
+	int PenId,
 	IReadOnlyList<DateTime> TimestampsUtc,
 	IReadOnlyList<double> Values);

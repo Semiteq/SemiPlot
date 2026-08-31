@@ -93,7 +93,7 @@ public static class CoarseFlush
 			// The identifiers the follow loop itself writes. scada_writer holds no privilege on
 			// semiplot_tags, so the pens are taken from the generator rather than from a catalogue read.
 			var penIds = RawLayerGenerator.SelectPens(options.PenCount)
-				.Select(pen => (int)pen.PenId)
+				.Select(pen => pen.PenId)
 				.ToArray();
 
 			foreach (var layer in LayerThinner.CoarseLayers)

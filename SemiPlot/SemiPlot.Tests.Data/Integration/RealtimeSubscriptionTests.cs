@@ -27,7 +27,7 @@ namespace SemiPlot.Tests.Data.Integration;
 public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresContainerFixture)
 	: ClonedArchiveTest(postgresContainerFixture, CloneSource.Provisioned)
 {
-	private static readonly long[] _subscribedPenIds = [1L, 2L];
+	private static readonly int[] _subscribedPenIds = [1, 2];
 
 	// One calendar day, so the write creates the single partition tp2026m01d01 and every appended row falls
 	// inside it. Winter under Europe/Berlin, so the conversion out is an unambiguous +1 h.
@@ -189,7 +189,7 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 
 		command.Parameters.Add(new NpgsqlParameter("id", NpgsqlDbType.Integer)
 		{
-			Value = (int)_subscribedPenIds[0]
+			Value = _subscribedPenIds[0]
 		});
 		command.Parameters.Add(new NpgsqlParameter("t", NpgsqlDbType.Timestamp) { Value = archiveLocal });
 		command.Parameters.Add(new NpgsqlParameter("v", NpgsqlDbType.Double) { Value = value });
@@ -208,10 +208,8 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 
 		foreach (var penId in _subscribedPenIds)
 		{
-			var id = (int)penId;
-
-			rows.Add(new ArchiveRow(id, ArchiveRow.RawLayer, _day, id, ArchiveRow.OrdinaryQuality));
-			rows.Add(new ArchiveRow(id, ArchiveRow.RawLayer, _seededLast, id, ArchiveRow.OrdinaryQuality));
+			rows.Add(new ArchiveRow(penId, ArchiveRow.RawLayer, _day, penId, ArchiveRow.OrdinaryQuality));
+			rows.Add(new ArchiveRow(penId, ArchiveRow.RawLayer, _seededLast, penId, ArchiveRow.OrdinaryQuality));
 		}
 
 		return rows;

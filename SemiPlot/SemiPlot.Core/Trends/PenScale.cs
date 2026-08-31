@@ -2,7 +2,7 @@
 
 public sealed record PenScale(
 	string AxisKey,
-	IReadOnlyList<long> PenIds,
+	IReadOnlyList<int> PenIds,
 	double Min,
 	double Max,
 	ScaleMode Mode,

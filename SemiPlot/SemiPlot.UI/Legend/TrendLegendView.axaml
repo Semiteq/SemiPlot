@@ -9,10 +9,6 @@
              x:Class="SemiPlot.UI.Legend.TrendLegendView"
              x:DataType="legend:TrendLegendViewModel">
 
-    <UserControl.Resources>
-        <legend:HexColorToBrushConverter x:Key="HexColorToBrush" />
-    </UserControl.Resources>
-
     <ScrollViewer>
         <ItemsControl ItemsSource="{Binding Groups}">
             <ItemsControl.ItemTemplate>
@@ -44,11 +40,11 @@
                                                     Height="12"
                                                     Margin="0,0,6,0"
                                                     VerticalAlignment="Center"
-                                                    Background="{Binding ColorHex, Converter={StaticResource HexColorToBrush}}" />
+                                                    Background="{Binding ColorHex, Converter={x:Static legend:LegendConverters.HexToBrush}}" />
 
                                             <TextBlock Grid.Column="2"
                                                        Text="{Binding Name}"
-                                                       FontWeight="{Binding IsActive, Converter={x:Static legend:ActiveToWeightConverter.Instance}}"
+                                                       FontWeight="{Binding IsActive, Converter={x:Static legend:LegendConverters.ActiveToWeight}}"
                                                        VerticalAlignment="Center" />
 
                                             <TextBlock Grid.Column="3"

@@ -47,7 +47,7 @@ public sealed record StartupOptions(
 	}
 
 	// Parsing runs before CreateLogger, so an unrecognised level cannot be reported through Serilog and
-	// goes to the standard error stream instead — the same route EnsureLogDirExists takes. Silence here
+	// goes to the standard error stream instead. Silence here
 	// would leave an operator who mistyped the level reading Warning-level logs and no reason why.
 	private static LogEventLevel ParseLogLevel(string value)
 	{

@@ -234,7 +234,7 @@ and the render budget (§RT-4). The as-built rationale and mechanics:
 - **Gap / bad-quality rendering** (trend-feature-spec.md §DA-8): nulls and quality (archive `q`
   column) render as visible gaps, not interpolated across.
 - **Stepped vs interpolated lines** (§PN-5): configurable per pen (stepped for discrete/digital
-  tags like valve on/off; interpolated for analog). Mapped to the renderer via `PenLineStyleMap`.
+  tags like valve on/off; interpolated for analog). Mapped to the renderer in `TrendPenState`.
 
 ## Time handling
 

@@ -30,7 +30,7 @@ public sealed class TrendPenState : ReactiveObject
 		CenterLine = centerLine;
 		Band = band;
 		_centerPoints = centerPoints;
-		CenterLine.ConnectStyle = PenLineStyleMap.ToConnectStyle(pen.LineStyle);
+		CenterLine.ConnectStyle = pen.LineStyle == PenLineStyle.Stepped ? ConnectStyle.StepHorizontal : ConnectStyle.Straight;
 	}
 
 	public Pen Pen { get; }

@@ -2,9 +2,7 @@
 
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Shapes;
 using Avalonia.Input;
-using Avalonia.Markup.Xaml;
 
 using ReactiveUI;
 
@@ -17,32 +15,16 @@ public partial class MinimapView : UserControl
 	private const double LabelEdgePadding = 4.0;
 
 	private readonly CompositeDisposable _disposables = new();
-	private Rectangle? _baseline;
-	private TextBlock? _extentLastLabel;
 	private bool _isDragging;
-	private Canvas? _stripCanvas;
-	private Border? _windowHighlight;
 
 	public MinimapView()
 	{
 		InitializeComponent();
-	}
 
-	private void InitializeComponent()
-	{
-		AvaloniaXamlLoader.Load(this);
-		_stripCanvas = this.FindControl<Canvas>("StripCanvas");
-		_windowHighlight = this.FindControl<Border>("WindowHighlight");
-		_baseline = this.FindControl<Rectangle>("Baseline");
-		_extentLastLabel = this.FindControl<TextBlock>("ExtentLastLabel");
-
-		if (_stripCanvas is not null)
-		{
-			_stripCanvas.PointerPressed += OnPointerPressed;
-			_stripCanvas.PointerMoved += OnPointerMoved;
-			_stripCanvas.PointerReleased += OnPointerReleased;
-			_stripCanvas.PointerCaptureLost += OnPointerCaptureLost;
-		}
+		StripCanvas.PointerPressed += OnPointerPressed;
+		StripCanvas.PointerMoved += OnPointerMoved;
+		StripCanvas.PointerReleased += OnPointerReleased;
+		StripCanvas.PointerCaptureLost += OnPointerCaptureLost;
 
 		this.GetObservable(BoundsProperty).Subscribe(_ => UpdateStrip());
 
@@ -68,61 +50,51 @@ public partial class MinimapView : UserControl
 
 	private void UpdateStrip()
 	{
-		if (_stripCanvas is null || _windowHighlight is null || DataContext is not MinimapViewModel viewModel)
+		if (DataContext is not MinimapViewModel viewModel)
 		{
 			return;
 		}
 
-		var width = _stripCanvas.Bounds.Width;
-		var height = _stripCanvas.Bounds.Height;
+		var width = StripCanvas.Bounds.Width;
+		var height = StripCanvas.Bounds.Height;
 
 		LayoutBaseline(width, height);
 		LayoutEndLabel(width, height);
 
 		if (!viewModel.HasExtent)
 		{
-			_windowHighlight.IsVisible = false;
+			WindowHighlight.IsVisible = false;
 
 			return;
 		}
 
-		_windowHighlight.IsVisible = true;
-		Canvas.SetLeft(_windowHighlight, viewModel.WindowStartFraction * width);
-		_windowHighlight.Width = Math.Max(MinimumHighlightWidth, viewModel.WindowWidthFraction * width);
-		_windowHighlight.Height = height;
+		WindowHighlight.IsVisible = true;
+		Canvas.SetLeft(WindowHighlight, viewModel.WindowStartFraction * width);
+		WindowHighlight.Width = Math.Max(MinimumHighlightWidth, viewModel.WindowWidthFraction * width);
+		WindowHighlight.Height = height;
 	}
 
 	private void LayoutBaseline(double width, double height)
 	{
-		if (_baseline is null)
-		{
-			return;
-		}
-
-		_baseline.Width = width;
-		Canvas.SetTop(_baseline, height / 2.0);
+		Baseline.Width = width;
+		Canvas.SetTop(Baseline, height / 2.0);
 	}
 
 	private void LayoutEndLabel(double width, double height)
 	{
-		if (_extentLastLabel is null)
-		{
-			return;
-		}
-
-		_extentLastLabel.Measure(new Size(width, height));
-		Canvas.SetLeft(_extentLastLabel, width - _extentLastLabel.DesiredSize.Width - LabelEdgePadding);
+		ExtentLastLabel.Measure(new Size(width, height));
+		Canvas.SetLeft(ExtentLastLabel, width - ExtentLastLabel.DesiredSize.Width - LabelEdgePadding);
 	}
 
 	private void OnPointerPressed(object? sender, PointerPressedEventArgs args)
 	{
-		if (_stripCanvas is null || !args.GetCurrentPoint(_stripCanvas).Properties.IsLeftButtonPressed)
+		if (!args.GetCurrentPoint(StripCanvas).Properties.IsLeftButtonPressed)
 		{
 			return;
 		}
 
 		_isDragging = true;
-		args.Pointer.Capture(_stripCanvas);
+		args.Pointer.Capture(StripCanvas);
 		NavigateToPointer(args);
 		args.Handled = true;
 	}
@@ -154,18 +126,18 @@ public partial class MinimapView : UserControl
 
 	private void NavigateToPointer(PointerEventArgs args)
 	{
-		if (_stripCanvas is null || DataContext is not MinimapViewModel viewModel)
+		if (DataContext is not MinimapViewModel viewModel)
 		{
 			return;
 		}
 
-		var width = _stripCanvas.Bounds.Width;
+		var width = StripCanvas.Bounds.Width;
 		if (width <= 0.0)
 		{
 			return;
 		}
 
-		var fraction = args.GetPosition(_stripCanvas).X / width;
+		var fraction = args.GetPosition(StripCanvas).X / width;
 		viewModel.NavigateToFraction(fraction);
 	}
 }

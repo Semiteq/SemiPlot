@@ -28,7 +28,7 @@ history path: `RealtimeBatch` carries `double` values, so the live edge has no n
 
 **Per-pen stepping.** `Scatter.ConnectStyle` carries the per-pen line style — `StepHorizontal`
 for stepped (discrete/digital tags), `Straight` for interpolated (analog). Mapped from the Core
-`PenLineStyle` enum by `Chart/PenLineStyleMap`.
+`PenLineStyle` enum in `Chart/TrendPenState`.
 
 **Realtime append / live-edge join.** `TrendPenState` owns one pen's `Scatter` + `FillY` plus the
 backing buffers. The center `Scatter` wraps a `List<Coordinates>` by reference so appends are live;
@@ -152,7 +152,7 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   from the toolbar delta toggle.
 - `Chart/ChartAxisRegion` + `ChartAxisEdit` — Y-axis click-region hit-test (panel band, upper/lower
   split, pixel→value with Y inversion) and the seed-untouched-bound helper for inline range edits.
-- `Chart/LocalTimeAxis` + `PenLineStyleMap` — UTC↔local-OADate conversion at every render boundary;
+- `Chart/LocalTimeAxis` — UTC↔local-OADate conversion at every render boundary;
   `PenLineStyle` → `Scatter.ConnectStyle`.
 - `Toolbar/TrendToolbarView` + `TrendToolbarViewModel` — autoscale, set-limits, layer selector,
   jump-to-now, sticky toggle, delta-mode toggle + inline Δt/Δy readout (ReactiveUI commands).

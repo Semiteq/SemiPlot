@@ -102,7 +102,7 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 **Acceptance.** UI: toggling visibility in the legend removes/restores the pen and its band; the flag is synchronized between the legend and the chart without looping (guard).
 
 ### PN-5 — Color and line style (MUST)
-**Definition.** A pen's color and line style: interpolated (a straight line between points) and stepped (Stepped). Style is mapped to the render via `PenLineStyleMap`.
+**Definition.** A pen's color and line style: interpolated (a straight line between points) and stepped (Stepped). Style is mapped to the render in `TrendPenState`.
 **Acceptance.** UI: changing the color recolors the line; Stepped draws steps, Interpolated draws straight segments.
 
 ### PN-6 — Active pen (MUST)

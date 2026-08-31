@@ -4,19 +4,16 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 
 using ReactiveUI;
 
 using ScottPlot;
-using ScottPlot.Avalonia;
 using ScottPlot.Plottables;
 using ScottPlot.Rendering;
 using ScottPlot.TickGenerators;
 
 using Cursor = Avalonia.Input.Cursor;
-using Line = Avalonia.Controls.Shapes.Line;
 
 namespace SemiPlot.UI.Chart;
 
@@ -33,9 +30,7 @@ public partial class TrendChartView : UserControl
 	private static readonly EventHandler<RenderDetails> _noRenderFinishedHandler = (_, _) => { };
 
 	private readonly CompositeDisposable _disposables = new();
-	private TextBox? _axisBoundEditor;
 	private bool _axisEditEditsMax;
-	private Line? _crosshairLine;
 	private VerticalLine? _deltaFirstLine;
 	private VerticalLine? _deltaSecondLine;
 	private Point? _dragOrigin;
@@ -44,48 +39,29 @@ public partial class TrendChartView : UserControl
 	// bound plot changes so the first frame of the new plot always reports.
 	private float _lastRenderedDataAreaWidth = float.NaN;
 
-	private AvaPlot? _plotControl;
-	private Border? _readoutBox;
-	private TextBlock? _readoutText;
 	private TrendChartViewModel? _viewModel;
 
 	public TrendChartView()
 	{
 		InitializeComponent();
 		DataContextChanged += OnDataContextChanged;
-	}
 
-	private void InitializeComponent()
-	{
-		AvaloniaXamlLoader.Load(this);
-		_plotControl = this.FindControl<AvaPlot>("Plot");
-		_axisBoundEditor = this.FindControl<TextBox>("AxisBoundEditor");
-		_crosshairLine = this.FindControl<Line>("CrosshairLine");
-		_readoutBox = this.FindControl<Border>("ReadoutBox");
-		_readoutText = this.FindControl<TextBlock>("ReadoutText");
+		AxisBoundEditor.KeyDown += OnAxisBoundEditorKeyDown;
+		AxisBoundEditor.LostFocus += OnAxisBoundEditorLostFocus;
 
-		if (_axisBoundEditor is not null)
-		{
-			_axisBoundEditor.KeyDown += OnAxisBoundEditorKeyDown;
-			_axisBoundEditor.LostFocus += OnAxisBoundEditorLostFocus;
-		}
-
-		if (_plotControl is not null)
-		{
-			_plotControl.UserInputProcessor.Disable();
-			// AvaPlot marks every wheel event handled in its class handler, which would keep
-			// OnPointerWheelChanged below from ever running. Disabling the input processor does not
-			// cover this: the flag is applied after it, unconditionally.
-			_plotControl.HandleMouseWheelEvent = false;
-			_plotControl.Cursor = _handCursor;
-			_plotControl.PointerWheelChanged += OnPointerWheelChanged;
-			_plotControl.PointerPressed += OnPointerPressed;
-			_plotControl.PointerMoved += OnPointerMoved;
-			_plotControl.PointerReleased += OnPointerReleased;
-			_plotControl.PointerCaptureLost += OnPointerCaptureLost;
-			_plotControl.PointerExited += OnPointerExited;
-			_plotControl.SizeChanged += OnPlotSizeChanged;
-		}
+		PlotControl.UserInputProcessor.Disable();
+		// AvaPlot marks every wheel event handled in its class handler, which would keep
+		// OnPointerWheelChanged below from ever running. Disabling the input processor does not
+		// cover this: the flag is applied after it, unconditionally.
+		PlotControl.HandleMouseWheelEvent = false;
+		PlotControl.Cursor = _handCursor;
+		PlotControl.PointerWheelChanged += OnPointerWheelChanged;
+		PlotControl.PointerPressed += OnPointerPressed;
+		PlotControl.PointerMoved += OnPointerMoved;
+		PlotControl.PointerReleased += OnPointerReleased;
+		PlotControl.PointerCaptureLost += OnPointerCaptureLost;
+		PlotControl.PointerExited += OnPointerExited;
+		PlotControl.SizeChanged += OnPlotSizeChanged;
 	}
 
 	private void OnPlotSizeChanged(object? sender, SizeChangedEventArgs eventArgs)
@@ -123,12 +99,12 @@ public partial class TrendChartView : UserControl
 		_disposables.Clear();
 		_viewModel = DataContext as TrendChartViewModel;
 
-		if (_viewModel is null || _plotControl is null)
+		if (_viewModel is null)
 		{
 			return;
 		}
 
-		_plotControl.Reset(_viewModel.Plot);
+		PlotControl.Reset(_viewModel.Plot);
 
 		_lastRenderedDataAreaWidth = float.NaN;
 		var renderManager = _viewModel.Plot.RenderManager;
@@ -150,7 +126,7 @@ public partial class TrendChartView : UserControl
 		_disposables.Add(_viewModel.RedrawRequested
 			.Subscribe(_ =>
 			{
-				_plotControl.Refresh();
+				PlotControl.Refresh();
 				RepositionCursorOverlay();
 			}));
 	}
@@ -170,7 +146,7 @@ public partial class TrendChartView : UserControl
 
 	private void ApplyWindow(DateTime from, DateTime to)
 	{
-		_plotControl?.Plot.Axes.SetLimitsX(LocalTimeAxis.ToAxis(from), LocalTimeAxis.ToAxis(to));
+		PlotControl.Plot.Axes.SetLimitsX(LocalTimeAxis.ToAxis(from), LocalTimeAxis.ToAxis(to));
 	}
 
 	// The plot control carries HandleMouseWheelEvent = false, so this handler is the only thing marking a
@@ -178,12 +154,12 @@ public partial class TrendChartView : UserControl
 	// nothing above the chart scrolls, and the place to look if the chart is ever put in a ScrollViewer.
 	private void OnPointerWheelChanged(object? sender, PointerWheelEventArgs eventArgs)
 	{
-		if (_viewModel is null || _plotControl is null)
+		if (_viewModel is null)
 		{
 			return;
 		}
 
-		var anchor = AnchorAt(eventArgs.GetPosition(_plotControl));
+		var anchor = AnchorAt(eventArgs.GetPosition(PlotControl));
 		var factor = eventArgs.Delta.Y > 0 ? ZoomInFactor : ZoomOutFactor;
 		_viewModel.Navigation.ZoomAt(factor, anchor);
 		eventArgs.Handled = true;
@@ -191,13 +167,12 @@ public partial class TrendChartView : UserControl
 
 	private void OnPointerPressed(object? sender, PointerPressedEventArgs eventArgs)
 	{
-		if (_viewModel is null || _plotControl is null
-							   || !eventArgs.GetCurrentPoint(_plotControl).Properties.IsLeftButtonPressed)
+		if (_viewModel is null || !eventArgs.GetCurrentPoint(PlotControl).Properties.IsLeftButtonPressed)
 		{
 			return;
 		}
 
-		var position = eventArgs.GetPosition(_plotControl);
+		var position = eventArgs.GetPosition(PlotControl);
 		var region = ResolveAxisRegion(position);
 		var action = ChartPressRouter.Route(region is not null, eventArgs.ClickCount, _viewModel.ActiveLeftButtonTool);
 
@@ -219,7 +194,7 @@ public partial class TrendChartView : UserControl
 			case ChartPressAction.PlaceDeltaCursor:
 				_viewModel.PlaceDeltaCursor(AnchorAt(position));
 				UpdateDeltaCursorLines();
-				_plotControl.Refresh();
+				PlotControl.Refresh();
 
 				break;
 
@@ -237,7 +212,7 @@ public partial class TrendChartView : UserControl
 			return null;
 		}
 
-		if (ChartAxisRegion.TryCreate(_plotControl!.Plot, axis) is not { } region
+		if (ChartAxisRegion.TryCreate(PlotControl.Plot, axis) is not { } region
 			|| !region.Contains((float)position.X, (float)position.Y))
 		{
 			return null;
@@ -254,24 +229,16 @@ public partial class TrendChartView : UserControl
 
 	private void ShowAxisBoundEditor(Point position, double seedValue)
 	{
-		if (_axisBoundEditor is null)
-		{
-			return;
-		}
-
-		_axisBoundEditor.Text = seedValue.ToString("0.###");
-		_axisBoundEditor.Margin = new Thickness(position.X, position.Y, 0.0, 0.0);
-		_axisBoundEditor.IsVisible = true;
-		_axisBoundEditor.Focus();
-		_axisBoundEditor.SelectAll();
+		AxisBoundEditor.Text = seedValue.ToString("0.###");
+		AxisBoundEditor.Margin = new Thickness(position.X, position.Y, 0.0, 0.0);
+		AxisBoundEditor.IsVisible = true;
+		AxisBoundEditor.Focus();
+		AxisBoundEditor.SelectAll();
 	}
 
 	private void HideAxisBoundEditor()
 	{
-		if (_axisBoundEditor is not null)
-		{
-			_axisBoundEditor.IsVisible = false;
-		}
+		AxisBoundEditor.IsVisible = false;
 	}
 
 	private void OnAxisBoundEditorKeyDown(object? sender, KeyEventArgs eventArgs)
@@ -298,12 +265,12 @@ public partial class TrendChartView : UserControl
 
 	private void CommitAxisBoundEditor()
 	{
-		if (_viewModel is null || _axisBoundEditor is null)
+		if (_viewModel is null)
 		{
 			return;
 		}
 
-		if (double.TryParse(_axisBoundEditor.Text, out var typedBound)
+		if (double.TryParse(AxisBoundEditor.Text, out var typedBound)
 			&& _viewModel.ScaleRangeForPen(_viewModel.ActivePenId) is { } currentRange)
 		{
 			var (min, max) = ChartAxisEdit.SeedManualLimits(typedBound, _axisEditEditsMax, currentRange);
@@ -315,23 +282,23 @@ public partial class TrendChartView : UserControl
 
 	private void BeginPan(PointerPressedEventArgs eventArgs)
 	{
-		_dragOrigin = eventArgs.GetPosition(_plotControl!);
+		_dragOrigin = eventArgs.GetPosition(PlotControl);
 		_viewModel!.BeginDrag();
-		_plotControl!.Cursor = _grabbingCursor;
-		eventArgs.Pointer.Capture(_plotControl);
+		PlotControl.Cursor = _grabbingCursor;
+		eventArgs.Pointer.Capture(PlotControl);
 
 		HideCursorOverlay();
-		_plotControl.Refresh();
+		PlotControl.Refresh();
 	}
 
 	private void OnPointerMoved(object? sender, PointerEventArgs eventArgs)
 	{
-		if (_viewModel is null || _plotControl is null)
+		if (_viewModel is null)
 		{
 			return;
 		}
 
-		var current = eventArgs.GetPosition(_plotControl);
+		var current = eventArgs.GetPosition(PlotControl);
 
 		if (_dragOrigin is { } origin)
 		{
@@ -372,11 +339,7 @@ public partial class TrendChartView : UserControl
 	{
 		_dragOrigin = null;
 		_viewModel?.EndDrag();
-
-		if (_plotControl is not null)
-		{
-			_plotControl.Cursor = _handCursor;
-		}
+		PlotControl.Cursor = _handCursor;
 	}
 
 	private void OnPointerExited(object? sender, PointerEventArgs eventArgs)
@@ -435,7 +398,7 @@ public partial class TrendChartView : UserControl
 
 	private void RepositionCursorOverlay()
 	{
-		if (_viewModel is null || _plotControl is null)
+		if (_viewModel is null)
 		{
 			HideCursorOverlay();
 
@@ -450,12 +413,12 @@ public partial class TrendChartView : UserControl
 			return;
 		}
 
-		var dataRect = _plotControl.Plot.LastRender.DataRect;
-		var cursorPixelX = _plotControl.Plot.GetPixel(new Coordinates(LocalTimeAxis.ToAxis(cursorTime), 0.0)).X;
+		var dataRect = PlotControl.Plot.LastRender.DataRect;
+		var cursorPixelX = PlotControl.Plot.GetPixel(new Coordinates(LocalTimeAxis.ToAxis(cursorTime), 0.0)).X;
 		var placement = ChartCursorOverlay.Project(
 			cursorPixelX,
 			new DataRectPixels(dataRect.Left, dataRect.Right, dataRect.Top, dataRect.Bottom),
-			_plotControl.Plot.ScaleFactor);
+			PlotControl.Plot.ScaleFactor);
 
 		ApplyOverlayPlacement(placement, cursorTime);
 	}
@@ -469,38 +432,25 @@ public partial class TrendChartView : UserControl
 			return;
 		}
 
-		if (_crosshairLine is not null)
-		{
-			_crosshairLine.StartPoint = new Point(placement.LineX, placement.LineTop);
-			_crosshairLine.EndPoint = new Point(placement.LineX, placement.LineBottom);
-			_crosshairLine.IsVisible = true;
-		}
+		CrosshairLine.StartPoint = new Point(placement.LineX, placement.LineTop);
+		CrosshairLine.EndPoint = new Point(placement.LineX, placement.LineBottom);
+		CrosshairLine.IsVisible = true;
 
-		if (_readoutBox is not null && _readoutText is not null)
-		{
-			_readoutText.Text = ChartHoverReadout.BuildContent(cursorTime, _viewModel!.CursorValues, _viewModel.Pens);
-			Canvas.SetLeft(_readoutBox, placement.LineX);
-			Canvas.SetTop(_readoutBox, placement.LineTop);
-			_readoutBox.IsVisible = true;
-		}
+		ReadoutText.Text = ChartHoverReadout.BuildContent(cursorTime, _viewModel!.CursorValues, _viewModel.Pens);
+		Canvas.SetLeft(ReadoutBox, placement.LineX);
+		Canvas.SetTop(ReadoutBox, placement.LineTop);
+		ReadoutBox.IsVisible = true;
 	}
 
 	private void HideCursorOverlay()
 	{
-		if (_crosshairLine is not null)
-		{
-			_crosshairLine.IsVisible = false;
-		}
-
-		if (_readoutBox is not null)
-		{
-			_readoutBox.IsVisible = false;
-		}
+		CrosshairLine.IsVisible = false;
+		ReadoutBox.IsVisible = false;
 	}
 
 	private DateTime AnchorAt(Point position)
 	{
-		var x = _plotControl!.Plot.GetCoordinates(new Pixel((float)position.X, (float)position.Y)).X;
+		var x = PlotControl.Plot.GetCoordinates(new Pixel((float)position.X, (float)position.Y)).X;
 
 		return LocalTimeAxis.FromAxis(x);
 	}

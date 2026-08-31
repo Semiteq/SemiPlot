@@ -462,10 +462,10 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 
 ### Task 11: Slice 4 close
 
-- [ ] `dotnet format SemiPlot.slnx`; `git log origin/master..HEAD --oneline` shows only slice-4 commits
-- [ ] `dotnet test SemiPlot.slnx` with Docker running - green
-- [ ] manual against `scripts/bench-demo.ps1`: 1. chart opens on the archive's last hour; 2. resizing the window during the first second does not leave a stale window; 3. pan and zoom re-query; 4. sticky follow advances without re-query
-- [ ] open the pull request; after merge, `git switch master && git pull --ff-only`
+- [x] `dotnet format SemiPlot.slnx`; `git log origin/master..HEAD --oneline` shows only slice-4 commits
+- [x] `dotnet test SemiPlot.slnx` with Docker running - green
+- [x] manual against `scripts/bench-demo.ps1`: 1. chart opens on the archive's last hour; 2. resizing the window during the first second does not leave a stale window; 3. pan and zoom re-query; 4. sticky follow advances without re-query
+- [x] open the pull request; after merge, `git switch master && git pull --ff-only`
 
 ### Slice 5 — `ui-platform-duplicates`
 
@@ -475,8 +475,8 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 - Modify: the six `.axaml.cs` files listed in Context (delete hand-written `InitializeComponent`, replace `FindControl<T>("X")` with the generated `X` fields; `App.axaml.cs:34` keeps `AvaloniaXamlLoader.Load(this)` in `Initialize()`)
 - Modify: the matching `.axaml` files (`Name="..."` becomes `x:Name="..."` where a field is needed)
 
-- [ ] remove the hand-written `InitializeComponent` bodies and the `FindControl` lookups; the build proves the generated members exist (ASSUMPTION: Avalonia 12 generates `InitializeComponent` and `x:Name` fields for partial code-behind classes; if the build shows otherwise, keep the hand-written form and mark this checkbox ⚠️)
-- [ ] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests` - must pass before task 13
+- [x] remove the hand-written `InitializeComponent` bodies and the `FindControl` lookups; the build proves the generated members exist (Avalonia 12 generates `InitializeComponent` and the named-control fields for partial code-behind classes; the build confirmed it)
+- [x] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests` - must pass before task 13
 
 ### Task 13: Direct view-model construction behind `AddUi()`
 
@@ -485,9 +485,9 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 - Modify: `SemiPlot/SemiPlot.UI/App.axaml.cs:118-165` (`new TrendChartViewModel(coordinator, dataScheduler, uiScheduler, serviceProvider.GetRequiredService<ILogger<TrendChartViewModel>>())`, same for `MinimapViewModel`)
 - Modify: `SemiPlot/SemiPlot.Tests/UI/Di/*.cs`, `SemiPlot/SemiPlot.Tests/UI/Startup/StartupProbeTests.cs:197,275`, `EmptyCatalogueStartupTests.cs:93` (they resolve or assert the factories)
 
-- [ ] delete the two `Func<...>` registrations; construct the two view models in `InitializeServices`
-- [ ] update the DI and startup tests to the new construction
-- [ ] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests` - must pass before task 14
+- [x] delete the two `Func<...>` registrations; construct the two view models in `InitializeServices`
+- [x] update the DI and startup tests to the new construction
+- [x] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests` - must pass before task 14
 
 ### Task 14: Single-use wrappers and platform duplicates
 
@@ -496,10 +496,10 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 - Modify: `SemiPlot/SemiPlot.UI/Chart/TrendPenState.cs` (the switch moves in), `SemiPlot/SemiPlot.UI/Legend/TrendLegendViewModel.cs` (`record Group(string Name, IReadOnlyList<TrendLegendRowViewModel> Rows)`), `TrendLegendView.axaml` (`FuncValueConverter` resources), `SemiPlot/SemiPlot.Tests/UI/Legend/TrendLegendViewModelTests.cs`
 - Modify: `SemiPlot/SemiPlot.UI/Program.cs:89,105-125` (delete `EnsureLogDirExists`; the file sink creates the directory), `SemiPlot/SemiPlot.UI/Startup/StartupProbe.cs:163,173-181` (delete `ObserveAbandoned`), `SemiPlot/SemiPlot.Core/Trends/MinimapGeometry.cs:31` (`Math.Clamp`), `SemiPlot/SemiPlot.UI/Bridge/TrendCoordinator.cs:113-114`
 
-- [ ] fold `PenLineStyleMap` into `TrendPenState`; replace the group view model with a record; replace the two converter classes with `FuncValueConverter` resources
-- [ ] delete `EnsureLogDirExists`, `ObserveAbandoned`, `Clamp01` and the null filter
-- [ ] update `TrendLegendViewModelTests` to the record
-- [ ] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests` - must pass before task 15
+- [x] fold `PenLineStyleMap` into `TrendPenState`; replace the group view model with a record; replace the two converter classes with `FuncValueConverter` resources
+- [x] delete `EnsureLogDirExists`, `ObserveAbandoned`, `Clamp01` and the null filter
+- [x] update `TrendLegendViewModelTests` to the record
+- [x] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests` - must pass before task 15
 
 ### Task 15: Slice 5 close
 

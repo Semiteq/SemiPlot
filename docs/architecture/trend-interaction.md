@@ -114,10 +114,9 @@ as-built mechanics that realize them:
   trailing request after the gesture goes quiet, the query runs on the data scheduler, and `Switch`
   drops any still-in-flight query when a newer window arrives (latest-wins, so a stale response never
   overwrites the current window). Per-zoom redraws are coalesced through the 30 FPS `Sample(33 ms)`
-  redraw seam, not an inline refresh. The startup `RequestInitialHistory` awaits `QueryHistoryAsync`
-  directly (bypassing the debounce, fires once promptly) and applies through the same
-  monotonic-sequence counter as every gesture re-query, so the initial load and gestures share one
-  latest-wins history path; the first-snap `TrackDataExtents` path stays non-requerying (single initial load).
+  redraw seam, not an inline refresh. The startup `RequestInitialHistory` is an ordinary request on
+  that path, so the initial load and gestures share one latest-wins history path; the first-snap
+  `TrackDataExtents` path stays non-requerying (single initial load).
 - **Axis scaling gestures (as-built):** double-click an axis = autoscale (§AY-4); entering min/max =
   fixed manual limits (§AY-3); the same actions are duplicated in a toolbar. Autoscale modes are
   `auto`, `manual`, and `autoscale-to-window` (§AY-3 … §AY-5); the logarithmic axis is an axis

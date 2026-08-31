@@ -85,9 +85,9 @@ ScottPlot control, fed in-process by `TrendCoordinator` over `IObservable`/await
   plottables. The same provider reports its own connection state, which the main window draws as a
   banner row over the chart.
 - **History:** the chart requests a window → `TrendCoordinator.QueryHistoryAsync` (the single history
-  query; the initial load awaits it directly, gesture re-queries go through the debouncer) → provider
+  query, reached through the debouncer by the initial load and every gesture alike) → provider
   returns one decimated `PenHistoryEnvelope` per pen (ascending `X` + `Min`/`Max`/`Center`) → the view
-  model applies the result through one monotonic-sequence path (latest window wins) into the plot.
+  model applies the result into the plot; `Switch` in the debouncer is what makes the latest window win.
 
 ## Deployment
 

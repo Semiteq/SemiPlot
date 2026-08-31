@@ -38,7 +38,7 @@ public sealed class ChartHistoryRequestDebouncerTests
 					.Return(Ok(request))
 					.ToTask();
 			},
-			(_, _, _) => { },
+			(_, _) => { },
 			_ => { },
 			_debounceWindow,
 			scheduler,
@@ -82,10 +82,10 @@ public sealed class ChartHistoryRequestDebouncerTests
 
 				return Ok(request);
 			},
-			(history, _, _) =>
+			(request, _) =>
 			{
-				applied.Add(history.Layer);
-				if (history.Layer == AggregationLayer.Hour)
+				applied.Add(request.Layer);
+				if (request.Layer == AggregationLayer.Hour)
 				{
 					secondApplied.TrySetResult();
 				}
@@ -117,7 +117,7 @@ public sealed class ChartHistoryRequestDebouncerTests
 		var appliedLayers = new List<AggregationLayer>();
 		using var debouncer = new ChartHistoryRequestDebouncer(
 			_ => throw new InvalidOperationException("query failed"),
-			(history, _, _) => appliedLayers.Add(history.Layer),
+			(request, _) => appliedLayers.Add(request.Layer),
 			reportedFailures.Add,
 			_debounceWindow,
 			scheduler,
@@ -141,14 +141,14 @@ public sealed class ChartHistoryRequestDebouncerTests
 		IReadOnlyList<int>? appliedPenIds = null;
 		using var debouncer = new ChartHistoryRequestDebouncer(
 			request => Task.FromResult(Ok(request)),
-			(_, requestedPenIds, _) => appliedPenIds = requestedPenIds,
+			(request, _) => appliedPenIds = request.PenIds,
 			_ => { },
 			_debounceWindow,
 			scheduler,
 			ImmediateScheduler.Instance);
 
 		debouncer.Request(new HistoryRequest(
-			[4, 7], _from, _to, AggregationLayer.Raw, 3L, HistoryColumnTarget.MaxColumns));
+			[4, 7], _from, _to, AggregationLayer.Raw, HistoryColumnTarget.MaxColumns));
 		scheduler.AdvanceBy(_debounceWindow.Ticks + 1);
 
 		appliedPenIds.Should().Equal(4, 7);
@@ -162,6 +162,6 @@ public sealed class ChartHistoryRequestDebouncerTests
 
 	private static HistoryRequest RequestForLayer(AggregationLayer layer)
 	{
-		return new HistoryRequest([1], _from, _to, layer, 0L, HistoryColumnTarget.MaxColumns);
+		return new HistoryRequest([1], _from, _to, layer, HistoryColumnTarget.MaxColumns);
 	}
 }

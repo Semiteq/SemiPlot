@@ -152,7 +152,7 @@ public class App : Application
 
 		coordinator.Start();
 
-		_ = chartViewModel.RequestInitialHistory();
+		chartViewModel.RequestInitialHistory();
 		_ = minimapViewModel.LoadExtentAsync();
 	}
 

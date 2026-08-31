@@ -57,10 +57,7 @@ public sealed class ChartNavigationController
 
 		_targetColumnCount = quantized;
 		ActiveLayer = LayerForCurrentWidth();
-		WindowChanged?.Invoke(
-			this,
-			new NavigationWindow(
-				_navigation.From, _navigation.To, ActiveLayer, IsColumnCountChange: true));
+		WindowChanged?.Invoke(this, new NavigationWindow(_navigation.From, _navigation.To, ActiveLayer));
 	}
 
 	/// <summary>

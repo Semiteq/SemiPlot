@@ -31,7 +31,6 @@ public sealed class PostgresCompositionTests
 			dataSource,
 			new ArchiveTimeConverter(settings.SourceTimeZone),
 			new ArchiveExceptionMapper(settings),
-			new StatementTimeoutReader(dataSource, NullLogger<StatementTimeoutReader>.Instance),
 			settings,
 			DefaultScheduler.Instance,
 			NullLogger<PostgresDataProvider>.Instance);
@@ -92,14 +91,6 @@ public sealed class PostgresCompositionTests
 	}
 
 	[Fact]
-	public void AddPostgresDataResolvesTheStatementTimeoutReader()
-	{
-		using var services = BuildProvider();
-
-		Assert.NotNull(services.GetRequiredService<StatementTimeoutReader>());
-	}
-
-	[Fact]
 	public void AddPostgresDataResolvesTheTimeConverter()
 	{
 		using var services = BuildProvider();
@@ -129,7 +120,6 @@ public sealed class PostgresCompositionTests
 	[InlineData(typeof(IScheduler))]
 	[InlineData(typeof(ArchiveDataSource))]
 	[InlineData(typeof(ArchiveExceptionMapper))]
-	[InlineData(typeof(StatementTimeoutReader))]
 	[InlineData(typeof(ArchiveTimeConverter))]
 	[InlineData(typeof(PostgresConnectionSettings))]
 	public void AddPostgresDataRegistersASingleton(Type serviceType)

@@ -57,8 +57,7 @@ reading the relation its warning names. A whole-statement literal per constant w
 named no guarantee: it failed on a reformatting and passed on a dropped clause it had been updated
 for. Three statements take parameters, each through a binder of its own, and each binder is pinned
 against its statement's own parameter names: `PostgresDataProvider.BindWindow`,
-`RealtimePoll.BindPoll` and `RealtimePoll.BindBaseline`. `EffectiveStatementTimeout` is a cold-path
-diagnostic and carries no pin.
+`RealtimePoll.BindPoll` and `RealtimePoll.BindBaseline`.
 Nothing compares the shipped SQL to `data-integration.md`. That document quotes eight SQL blocks for
 a reader, of which six are shipped statements; the other two — the bucketed history read, whose
 slice is dropped, and the gap explanation, which no roadmap slice names — have no constant to drift
@@ -76,7 +75,7 @@ There are three families — the same category with different foreign parties.
 **Against a real PostgreSQL** — `SemiPlot.Tests.Data/Integration/`: `PostgresCatalogReadTests`,
 `PostgresExtentReadTests`, `PostgresHistoryReadTests`, `RealtimePollReadTests`,
 `RealtimeSubscriptionTests`, `RealtimeEmptyArchiveTests`,
-`StatementTimeoutReadTests`, `ArchiveWriterTransactionTests`, `CoarseFlushTests`,
+`ArchiveWriterTransactionTests`, `CoarseFlushTests`,
 `ExplainPlanTests`. Seams guarded: statement text, type mapping, the demo writer's server-side
 thinning against `LayerThinner`'s own selection,
 the naive-local-to-UTC conversion, partition pruning, and the grant chain — reads run as

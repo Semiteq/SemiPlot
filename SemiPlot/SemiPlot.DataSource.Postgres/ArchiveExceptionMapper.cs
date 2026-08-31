@@ -13,10 +13,8 @@ namespace SemiPlot.DataSource.Postgres;
 /// Translates everything a read can throw into the public error vocabulary, so nothing internal crosses
 /// the provider boundary. Constructed rather than static because the public types demand values no
 /// exception carries: <c>Host</c>, <c>Port</c> and <c>Database</c> on every <c>Archive*</c> type, the
-/// username on <see cref="ArchiveAccessDeniedError"/>. The effective <c>statement_timeout</c> on
-/// <see cref="ArchiveQueryTimedOutError"/> arrives as a call argument instead: reading it is a round trip,
-/// and the caller already owns the asynchronous failure path. The relation a <c>42P01</c> names arrives the
-/// same way, from the read whose own statement touches it.
+/// username on <see cref="ArchiveAccessDeniedError"/>. The relation a <c>42P01</c> names arrives as a
+/// call argument, from the read whose own statement touches it.
 /// <para>
 /// Cancellation is not part of the vocabulary. A caller's token cancelling raises
 /// <see cref="OperationCanceledException"/>, which leaves here as it arrived: in .NET a cancelled
@@ -40,18 +38,10 @@ internal sealed class ArchiveExceptionMapper
 	/// <param name="relation">
 	/// The relation the calling statement touches, supplied by the read that failed. Required on the
 	/// <c>42P01</c> path and unused on every other: it fills <c>ArchiveNotInitialisedError.Table</c>, which
-	/// names the absent object in the detail line and carries no remedy of its own. Passed explicitly on
-	/// every call, null included, so a new call site cannot omit it by accident.
+	/// names the absent object in the detail line. Passed explicitly on every call, null included, so a
+	/// new call site cannot omit it by accident.
 	/// </param>
-	/// <param name="effectiveBound">
-	/// The server's <c>statement_timeout</c>, already resolved by the caller on the <c>57014</c> path and
-	/// null on every other. Null means there is no bound to report — either it could not be read or the
-	/// server bounds nothing — and reaches <c>ArchiveQueryTimedOutError.Timeout</c> as
-	/// <see cref="TimeSpan.Zero"/>, which is the same thing that type already says. It carries no default:
-	/// a second <c>57014</c> entry point that forgot it would silently report no bound, and the compiler
-	/// is what keeps the read and the mapping paired.
-	/// </param>
-	public Error Map(Exception exception, string? relation, TimeSpan? effectiveBound)
+	public Error Map(Exception exception, string? relation)
 	{
 		ArgumentNullException.ThrowIfNull(exception);
 
@@ -60,7 +50,7 @@ internal sealed class ArchiveExceptionMapper
 			throw exception;
 		}
 
-		return Classify(exception, relation, effectiveBound).CausedBy(exception);
+		return Classify(exception, relation).CausedBy(exception);
 	}
 
 	// Everything Npgsql raises that is not a server-delivered error is a connection-level failure: a
@@ -71,11 +61,11 @@ internal sealed class ArchiveExceptionMapper
 		return exception is NpgsqlException or SocketException or TimeoutException;
 	}
 
-	private Error Classify(Exception exception, string? relation, TimeSpan? effectiveBound)
+	private Error Classify(Exception exception, string? relation)
 	{
 		if (exception is PostgresException postgres)
 		{
-			return MapSqlState(postgres, relation, effectiveBound);
+			return MapSqlState(postgres, relation);
 		}
 
 		if (IsConnectionFailure(exception))
@@ -86,7 +76,7 @@ internal sealed class ArchiveExceptionMapper
 		return new ArchiveReadFailedError(_settings.Host, _settings.Port, _settings.Database, string.Empty);
 	}
 
-	private Error MapSqlState(PostgresException postgres, string? relation, TimeSpan? effectiveBound)
+	private Error MapSqlState(PostgresException postgres, string? relation)
 	{
 		var host = _settings.Host;
 		var port = _settings.Port;
@@ -117,11 +107,7 @@ internal sealed class ArchiveExceptionMapper
 				port,
 				database,
 				postgres.MessageText),
-			PostgresErrorCodes.QueryCanceled => new ArchiveQueryTimedOutError(
-				host,
-				port,
-				database,
-				effectiveBound ?? TimeSpan.Zero),
+			PostgresErrorCodes.QueryCanceled => new ArchiveQueryTimedOutError(host, port, database),
 			_ => new ArchiveReadFailedError(host, port, database, postgres.SqlState)
 		};
 	}

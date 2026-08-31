@@ -505,10 +505,6 @@ does not.
 - **A self-cancelled read is not a failure.** Disposal cancels the in-flight query, and
   `OperationCanceledException` ends the loop ahead of the mapper rather than counting towards the
   threshold.
-- **A failed tick reads no effective bound.** `StatementTimeoutReader` costs a connection and a query
-  against a server that has just failed one, and a tick reports a connection state rather than a
-  bound.
-
 `MainWindowViewModel` renders the state as one row of the archive banner over a chart that keeps its
 history: `StartupFailureMapper.Describe(fault)`, which is the detail followed by the remedy, never
 the error's own `Message`. That row has a single writer, the bound stream, so nothing else can set
@@ -586,7 +582,7 @@ commissioning unfinished against provisioning unfinished — which is what the p
 | `ArchiveUnreachableError` | host, port, database | No connection to the archive |
 | `ArchiveAccessDeniedError` | host, port, database, username | The credentials or the grants are wrong |
 | `ArchiveNotInitialisedError` | host, port, database, missingObject (`Database` \| `Table`), table (null on `Database`) | The server answers but the database, or a table the read needs, does not exist |
-| `ArchiveQueryTimedOutError` | host, port, database, timeout (the effective server `statement_timeout` the failing read ran under, read on the failure path from a session of the same reader role; `TimeSpan.Zero` means there is no bound to report — the read-back could not run, or the server bounds nothing) | The read exceeded its configured bound, or the server ended it and no bound can be named |
+| `ArchiveQueryTimedOutError` | host, port, database | The server ended the read (SQLSTATE `57014`): its `statement_timeout` passed or an administrator cancelled it |
 | `ArchiveShapeUnexpectedError` | host, port, database, detail (what the server said) | The tables are there, but not the columns they are expected to carry |
 | `ArchiveConnectionLostError` | host, port, database, failureThreshold (the number of consecutive failed ticks that raised the fault, fixed at the raise — not a running count) | The live edge stopped answering; the history already drawn is unaffected |
 | `ArchiveReadFailedError` | host, port, database, sqlState (empty when the failure carried none) | The archive rejected the read for a reason this build does not recognise |
@@ -631,26 +627,8 @@ pans, so the two will have to be told apart — but no member of `IDataProvider`
 raises `OperationCanceledException`, which the mapper rethrows rather than turning into a failed
 `Result`. The slice that gives the interface tokens owns splitting the two.
 
-The bound the error carries is read only once a `57014` has already arrived, on an asynchronous
-failure path that runs nothing else, from a fresh connection of the same reader role. No successful
-read pays for it. The number is the one the failing read ran under because SemiPlot sends no
-`statement_timeout` in any form, so every session of that role runs under the role default. That
-holds while the default is static: role and database defaults bind at backend start and a pooled
-physical connection keeps its startup value, so an administrative change to the role default mid-run
-can leave one report one increment stale. A read-back that cannot run reports
-`TimeSpan.Zero`, and so does a server that bounds nothing; the two stay apart in the log and
-collapse in the operator sentence, because neither has a number.
-
-**A shipped limitation: the read-back runs under the bound that just fired.** It opens a session of
-the same reader role, so a `statement_timeout` smaller than the read-back itself cuts the read-back
-too and the error falls to the no-number wording. The read-back materialises `pg_show_all_settings()`
-and measures 4.246 ms cold and 1.6 to 1.8 ms warm on a `postgres:17-alpine` container, so the
-limitation bites only at a bound of a few milliseconds. That is the misconfigured-tiny-bound site
-where the number would be most diagnostic, and it is accepted rather than solved. It is no ground an
-eager read at connection time held either: that read ran the same `pg_settings` query under the same
-role on every physical connection open and let its failure out, so a bound below it failed the
-connection open itself, left the cached value unset and reported the same absent number. The lazy
-read costs no successful connection a round trip, and the log carries the reader's own failure.
+The error carries no bound: `statement_timeout` is the reader role's own setting and the remedy names
+it without a number.
 
 ## Configuration
 
@@ -754,27 +732,23 @@ inside step 2:
 
 1. All statement text on the application and provider path lives in one class,
    `ArchiveStatements.cs`. Nothing else on that path issues SQL. The bench seeder and the test
-   projects own SQL of their own by design and are outside the rule. Eight SQL blocks stand above,
-   and six of them are shipped statements with a constant in that class: the pen catalogue, the
-   archive extent, the sparse history window, the realtime poll, the realtime baseline and the
-   default-partition occupancy check. The other two — the bucketed history read and the gap
+   projects own SQL of their own by design and are outside the rule. Seven SQL blocks stand above,
+   and five of them are shipped statements with a constant in that class: the pen catalogue, the
+   archive extent, the sparse history window, the realtime poll and the realtime baseline. The other two — the bucketed history read and the gap
    explanation — have no constant behind them: `postgres-bucketed-read` is dropped, and no roadmap
    slice names the gap explanation. They are a design record until a slice ships them.
-   `ArchiveStatements.cs` carries one constant no block above quotes, `EffectiveStatementTimeout`,
-   which runs only after a read has already failed with `57014`.
 2. Unit tests pin the shipped statements clause by clause, in
    `SemiPlot.Tests.Data/Postgres/ArchiveStatementTextTests.cs` against the constants: one assertion
    per guarantee whose loss nothing else catches without a container — the sparse history window's
    outer ordering, its strict seam bound and its one-day seed floor, the realtime poll's raw-layer
    filter and its time ordering, the realtime baseline's raw-layer filter and its de-duplicated
-   identifiers, and the default-partition occupancy check reading the relation its warning names.
-   `EffectiveStatementTimeout` is a cold-path diagnostic and carries no pin. Three statements take
+   identifiers. Three statements take
    parameters, and each binds through a binder of its own pinned against that statement's own
    parameter names: `PostgresDataProvider.BindWindow` over the sparse history window,
    `RealtimePoll.BindPoll` over the poll and `RealtimePoll.BindBaseline` over the baseline. A change
    to a pinned clause therefore shows up as a failing test, while a reformatting does not. None of
    it covers this document: nothing checks that the SQL quoted above still matches the constants, so
-   whoever assembles a brief from this document re-reads by hand the six blocks that have a constant
+   whoever assembles a brief from this document re-reads by hand the five blocks that have a constant
    against `ArchiveStatements.cs`. The other two name no constant, so that re-read cannot cover
    them; they are checked against the code only when the slice that ships them lands.
 3. Gated integration tests run `EXPLAIN` on the extent statement, the sparse history window, the

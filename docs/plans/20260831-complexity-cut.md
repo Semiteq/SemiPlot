@@ -320,12 +320,12 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 - Modify: `SemiPlot/SemiPlot.Tests.Data/Postgres/ArchiveStatementTextTests.cs:88-92`
 - Modify: `docs/architecture/data-integration.md` (sections "Default-partition occupancy", "Archive health", the error table row)
 
-- [ ] delete the reader, the error type, the statement constants and the DI registration
-- [ ] remove `HealthWarnings` from `StartupData` and `ReadHealthWarningsAsync` from `StartupProbe`
-- [ ] remove `ArchiveHealthMessage` / `HasArchiveHealthMessage` and the health row from the main window
-- [ ] delete the two test classes named above; trim the banner and probe tests to the connection row
-- [ ] remove the two document sections and the table row
-- [ ] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests` and `SemiPlot.Tests.Data` - must pass before task 2
+- [x] delete the reader, the error type, the statement constants and the DI registration
+- [x] remove `HealthWarnings` from `StartupData` and `ReadHealthWarningsAsync` from `StartupProbe`
+- [x] remove `ArchiveHealthMessage` / `HasArchiveHealthMessage` and the health row from the main window
+- [x] delete the two test classes named above; trim the banner and probe tests to the connection row
+- [x] remove the two document sections and the table row
+- [x] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests` and `SemiPlot.Tests.Data` - must pass before task 2
 
 ### Task 2: Delete `StatementTimeoutReader`
 

@@ -265,13 +265,9 @@ No abbreviations in names.
   `public.trends`, `semiplot_tags`, the two roles and their grants are SemiBase's and are never
   defined in this repository — the seeder fills the archive table and creates only the day
   partitions its rows land in.
-- A diagnostic question the exception itself cannot answer is resolved by a cold-path reader: an
-  internal sealed type beside the provider that opens a fresh connection on the failure path
-  (`StatementTimeoutReader` for `57014`). It runs from `PostgresDataProvider.MapAsync`, never from
-  `ArchiveExceptionMapper`, which stays synchronous, pure and unit-testable. Add one only when a
-  distinct operator remedy depends on the answer — an extra round trip against a server that has
-  just failed buys nothing otherwise, and a `42P01` needs none, because both tables end at the same
-  remedy. Each read supplies the one relation its statement touches, which the detail line names.
+- The provider runs no cold-path reader: a failed read is mapped by `ArchiveExceptionMapper`, which
+  stays synchronous, pure and unit-testable, and nothing opens a second connection to enrich the
+  error. Each read supplies the one relation its statement touches, which the detail line names.
 
 ---
 

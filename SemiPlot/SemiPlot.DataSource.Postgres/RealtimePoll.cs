@@ -301,11 +301,8 @@ internal sealed class RealtimePoll
 
 	private ArchiveConnectionState? Fail(Exception exception)
 	{
-		// Both statements touch one relation, so a 42P01 here can only mean trends. The server's
-		// effective statement_timeout is deliberately not read: that cold-path reader costs a connection
-		// and a query per failed tick against a server that has just failed one, and a tick reports a
-		// connection state rather than a bound.
-		var error = _exceptionMapper.Map(exception, ArchiveStatements.TrendsRelation, effectiveBound: null);
+		// Both statements touch one relation, so a 42P01 here can only mean trends.
+		var error = _exceptionMapper.Map(exception, ArchiveStatements.TrendsRelation);
 
 		_consecutiveFailures++;
 

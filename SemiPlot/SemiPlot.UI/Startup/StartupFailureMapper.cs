@@ -190,19 +190,12 @@ public static class StartupFailureMapper
 	{
 		var read = FormattableString.Invariant($"The read of '{error.Database}' at {error.Host}:{error.Port}");
 
-		var noBound = error.Timeout == TimeSpan.Zero;
-
-		var detail = noBound
-			? $"{read} was ended by the server (SQLSTATE 57014), which named no bound."
-			: FormattableString.Invariant($"{read} passed the server's bound of {error.Timeout.TotalSeconds} s.");
-
-		var remedy = noBound
-			? "Check whether an administrator cancelled the read, and read statement_timeout for the "
-			  + "reader role on the server — the answer carried no number to report."
-			: "Raise statement_timeout for the reader role, or narrow the window SemiPlot opens on. A "
-			  + "read this slow usually means the archive lacks an index on its time column.";
-
-		return new StartupFailureView("The archive ended the read", detail, remedy);
+		return new StartupFailureView(
+			"The archive ended the read",
+			$"{read} was ended by the server (SQLSTATE 57014).",
+			"Check statement_timeout for the reader role on the server and raise it, or narrow the window "
+			+ "SemiPlot opens on; if the bound is not the cause, check whether an administrator cancelled the "
+			+ "read.");
 	}
 
 	private static StartupFailureView MapArchiveReadFailed(ArchiveReadFailedError error)

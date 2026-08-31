@@ -145,25 +145,13 @@ public sealed class StartupFailureMapperTests
 	}
 
 	[Fact]
-	public void ArchiveQueryTimedOut_WithABound_NamesIt()
+	public void ArchiveQueryTimedOut_NamesTheSqlStateAndTheReaderRolesBound()
 	{
-		var view = StartupFailureMapper.Map(
-			new ArchiveQueryTimedOutError("scada-host", 5432, "semiplot", TimeSpan.FromSeconds(30)));
+		var view = StartupFailureMapper.Map(new ArchiveQueryTimedOutError("scada-host", 5432, "semiplot"));
 
 		view.Title.Should().Be("The archive ended the read");
-		view.Detail.Should().Contain("30 s");
-		view.Remedy.Should().Contain("statement_timeout");
-	}
-
-	[Fact]
-	public void ArchiveQueryTimedOut_WithoutABound_DoesNotInventOne()
-	{
-		var view = StartupFailureMapper.Map(
-			new ArchiveQueryTimedOutError("scada-host", 5432, "semiplot", TimeSpan.Zero));
-
-		view.Detail.Should().Contain("57014");
-		view.Detail.Should().NotContain("0 s");
-		view.Remedy.Should().Contain("cancelled");
+		view.Detail.Should().Contain("scada-host:5432").And.Contain("57014");
+		view.Remedy.Should().Contain("statement_timeout").And.Contain("cancelled");
 	}
 
 	[Fact]

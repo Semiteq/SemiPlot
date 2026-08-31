@@ -25,8 +25,6 @@ public sealed class ArchiveExceptionMapperTests
 	private const string Database = ConnectionSettingsFactory.Database;
 	private const string Username = ConnectionSettingsFactory.Username;
 
-	private static readonly TimeSpan _effectiveBound = TimeSpan.FromSeconds(30);
-
 	[Fact]
 	public void ASocketFailureMapsToTheUnreachableError()
 	{
@@ -96,38 +94,11 @@ public sealed class ArchiveExceptionMapperTests
 	}
 
 	[Fact]
-	public void AServerCancelMapsToTheTimedOutErrorCarryingTheBoundTheCallerResolved()
-	{
-		var error = Map(Postgres("57014"), effectiveBound: _effectiveBound);
-
-		var timedOut = Assert.IsType<ArchiveQueryTimedOutError>(error);
-		Assert.Equal(_effectiveBound, timedOut.Timeout);
-		AssertEndpoint(timedOut.Host, timedOut.Port, timedOut.Database);
-	}
-
-	// The caller passes null when the bound could not be read, which is the reader's own failure answer.
-	// This pins that the mapper still produces a usable error rather than a null reference.
-	[Fact]
-	public void AServerCancelWithAnUnreadableBoundReportsAZeroBoundRatherThanThrowing()
+	public void AServerCancelMapsToTheTimedOutError()
 	{
 		var timedOut = Assert.IsType<ArchiveQueryTimedOutError>(Map(Postgres("57014")));
 
-		Assert.Equal(TimeSpan.Zero, timedOut.Timeout);
 		AssertEndpoint(timedOut.Host, timedOut.Port, timedOut.Database);
-	}
-
-	// The one place the wording itself is the property under test. A zero bound covers two states the code
-	// cannot tell apart — the bound could not be read, or the server bounds nothing — so the sentence names
-	// the SQLSTATE and no number. It must not name statement_timeout: on the second state that setting reads
-	// 0, and blaming it sends the operator after a setting that is working as configured.
-	[Fact]
-	public void AServerCancelWithAnUnreadableBoundNamesTheSqlStateWithoutANumber()
-	{
-		var timedOut = Assert.IsType<ArchiveQueryTimedOutError>(Map(Postgres("57014")));
-
-		Assert.Contains("57014", timedOut.Message, StringComparison.Ordinal);
-		Assert.DoesNotContain("bound of 0", timedOut.Message, StringComparison.Ordinal);
-		Assert.DoesNotContain("statement_timeout", timedOut.Message, StringComparison.Ordinal);
 	}
 
 	[Fact]
@@ -198,11 +169,11 @@ public sealed class ArchiveExceptionMapperTests
 		return new PostgresException("the server said so", "ERROR", "ERROR", sqlState);
 	}
 
-	private static Error Map(Exception exception, string? relation = null, TimeSpan? effectiveBound = null)
+	private static Error Map(Exception exception, string? relation = null)
 	{
 		var mapper = new ArchiveExceptionMapper(ConnectionSettingsFactory.Create(host: Host, port: Port));
 
-		return mapper.Map(exception, relation, effectiveBound);
+		return mapper.Map(exception, relation);
 	}
 
 	private static void AssertEndpoint(string host, int port, string database)

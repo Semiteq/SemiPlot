@@ -23,15 +23,13 @@ namespace SemiPlot.DataSource.Postgres;
 /// <see cref="QueryHistoryAsync"/> a window of one layer and <see cref="Subscribe"/> the live edge, all
 /// crossing the boundary in UTC. Every failure leaves through the public error vocabulary — nothing
 /// internal crosses the boundary — and a <c>42P01</c> is mapped against the relation the failing read
-/// names, because each read knows which relations its own statement touches; a <c>57014</c> is given the
-/// server's effective bound by <see cref="StatementTimeoutReader"/>.
+/// names, because each read knows which relations its own statement touches.
 /// </summary>
 public sealed class PostgresDataProvider : IDataProvider
 {
 	private readonly ArchiveDataSource _dataSource;
 	private readonly ArchiveTimeConverter _timeConverter;
 	private readonly ArchiveExceptionMapper _exceptionMapper;
-	private readonly StatementTimeoutReader _statementTimeoutReader;
 	private readonly PostgresConnectionSettings _settings;
 	private readonly IScheduler _scheduler;
 	private readonly ILogger<PostgresDataProvider> _logger;
@@ -46,7 +44,6 @@ public sealed class PostgresDataProvider : IDataProvider
 		ArchiveDataSource dataSource,
 		ArchiveTimeConverter timeConverter,
 		ArchiveExceptionMapper exceptionMapper,
-		StatementTimeoutReader statementTimeoutReader,
 		PostgresConnectionSettings settings,
 		IScheduler scheduler,
 		ILogger<PostgresDataProvider> logger)
@@ -54,7 +51,6 @@ public sealed class PostgresDataProvider : IDataProvider
 		ArgumentNullException.ThrowIfNull(dataSource);
 		ArgumentNullException.ThrowIfNull(timeConverter);
 		ArgumentNullException.ThrowIfNull(exceptionMapper);
-		ArgumentNullException.ThrowIfNull(statementTimeoutReader);
 		ArgumentNullException.ThrowIfNull(settings);
 		ArgumentNullException.ThrowIfNull(scheduler);
 		ArgumentNullException.ThrowIfNull(logger);
@@ -62,7 +58,6 @@ public sealed class PostgresDataProvider : IDataProvider
 		_dataSource = dataSource;
 		_timeConverter = timeConverter;
 		_exceptionMapper = exceptionMapper;
-		_statementTimeoutReader = statementTimeoutReader;
 		_settings = settings;
 		_scheduler = scheduler;
 		_logger = logger;
@@ -91,8 +86,8 @@ public sealed class PostgresDataProvider : IDataProvider
 
 		var subscribedIds = NarrowForSubscription(penIds);
 
-		return Observable.Create<IReadOnlyList<Sample>>(observer => _scheduler.ScheduleAsync(
-			(_, cancellationToken) => PollAsync(subscribedIds, observer, cancellationToken)));
+		return Observable.Create<IReadOnlyList<Sample>>(observer =>
+			_scheduler.ScheduleAsync((_, cancellationToken) => PollAsync(subscribedIds, observer, cancellationToken)));
 	}
 
 	/// <summary>
@@ -117,9 +112,7 @@ public sealed class PostgresDataProvider : IDataProvider
 		}
 		catch (Exception exception)
 		{
-			var error = await MapAsync(exception, ArchiveStatements.TagCatalogRelation).ConfigureAwait(false);
-
-			return Result.Fail<IReadOnlyList<Pen>>(error);
+			return Result.Fail<IReadOnlyList<Pen>>(Map(exception, ArchiveStatements.TagCatalogRelation));
 		}
 	}
 
@@ -189,9 +182,7 @@ public sealed class PostgresDataProvider : IDataProvider
 		catch (Exception exception)
 		{
 			// The statement touches one relation, so a 42P01 here can only mean trends.
-			var error = await MapAsync(exception, ArchiveStatements.TrendsRelation).ConfigureAwait(false);
-
-			return Result.Fail<IReadOnlyList<PenHistoryEnvelope>>(error);
+			return Result.Fail<IReadOnlyList<PenHistoryEnvelope>>(Map(exception, ArchiveStatements.TrendsRelation));
 		}
 	}
 
@@ -217,9 +208,7 @@ public sealed class PostgresDataProvider : IDataProvider
 			// read runs first, so a missing semiplot_tags fails there and never reaches here. A catalogue
 			// dropped under a live session is reported as a missing trends, which reaches a log line only
 			// and sends the operator to the same remedy either table needs.
-			var error = await MapAsync(exception, ArchiveStatements.TrendsRelation).ConfigureAwait(false);
-
-			return Result.Fail<ArchiveExtent>(error);
+			return Result.Fail<ArchiveExtent>(Map(exception, ArchiveStatements.TrendsRelation));
 		}
 	}
 
@@ -469,26 +458,11 @@ public sealed class PostgresDataProvider : IDataProvider
 			_timeConverter.ToUtc(reader.GetDateTime(1)));
 	}
 
-	// The relation the failing read names fills ArchiveNotInitialisedError.Table, which the detail line
-	// names and which can never be empty on the 42P01 path this method takes: each read knows the relation
-	// its own statement touches, so nothing is asked of the server to learn it. The statement-timeout read
-	// is a different shape and runs on 57014 only: it costs a connection and a query against a server
-	// that has already failed one, so no other path pays for it.
-	private async Task<Error> MapAsync(Exception exception, string relation)
+	// The relation the failing read names fills ArchiveNotInitialisedError.Table on the 42P01 path: each
+	// read knows the relation its own statement touches, so nothing is asked of the server to learn it.
+	private Error Map(Exception exception, string relation)
 	{
-		if (exception is PostgresException { SqlState: PostgresErrorCodes.UndefinedTable })
-		{
-			return _exceptionMapper.Map(exception, relation, effectiveBound: null);
-		}
-
-		if (exception is PostgresException { SqlState: PostgresErrorCodes.QueryCanceled })
-		{
-			var effectiveBound = await _statementTimeoutReader.ReadEffectiveBoundAsync().ConfigureAwait(false);
-
-			return _exceptionMapper.Map(exception, relation: null, effectiveBound);
-		}
-
-		var error = _exceptionMapper.Map(exception, relation: null, effectiveBound: null);
+		var error = _exceptionMapper.Map(exception, relation);
 
 		// A read that fails with no server answer behind it — a null reference or a bad cast inside the row
 		// read — is a fault in this code, and ArchiveReadFailedError alone dresses it as a server state. It

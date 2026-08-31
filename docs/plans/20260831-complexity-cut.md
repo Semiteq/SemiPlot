@@ -236,8 +236,12 @@ Key decisions:
 - **Generator invariants replace the golden digest.** Determinism (two `Generate` runs with the same
   options are sequence-equal), lattice alignment, marker pairing and per-pen row counts are pinned; the
   waveform itself is not. `CLAUDE.md` and `bench.md` are rewritten to say so.
-- **The provisioner is pinned by digest in the Dockerfile.** `ARG PROVISIONER_IMAGE` defaults to
-  `ghcr.io/semiteq/semibase@sha256:<digest>`; a bump is a one-line commit. The readiness wait and the
+- **The provisioner stays on `latest`, pulled through the docker CLI.** A delivered installation
+  updates only the provisioner, so the pair worth testing is the newest `semibase` with the current
+  reader; a digest pin would test a pair nobody ships. `DockerCli.PullProvisionerAsync` runs
+  `docker pull ghcr.io/semiteq/semibase:latest` ahead of the build and tolerates a failed pull with one
+  stderr line, which replaces the `Docker.DotNet` resolver, the resolution record and the
+  `--version` exec. The readiness wait and the
   SHA-256 image tag stay: the first names a provisioning failure, the second keys the built image to a
   base reference that may be registry-qualified.
 - **`_creationGate` stays.** One `SemaphoreSlim` line is cheaper than a convention a future gated class
@@ -584,20 +588,21 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 
 ### Slice 8 — `harness-provisioner`
 
-### Task 22: Provisioner pinned by digest; Docker Engine API out of the harness
+### Task 22: Provisioner pulled through the docker CLI; Docker Engine API out of the harness
 
 **Files:**
-- Modify: `SemiPlot/SemiPlot.Tests.Data/bench/Dockerfile:12` (`ARG PROVISIONER_IMAGE=ghcr.io/semiteq/semibase@sha256:<digest read with docker buildx imagetools inspect at implementation time>`)
+- Create: `SemiPlot/SemiPlot.Tests.Data/Integration/DockerCli.cs` (`PullProvisionerAsync`, `InspectImageLabelsAsync` over `Process`)
+- Modify: `SemiPlot/SemiPlot.Tests.Data/bench/Dockerfile:12` (`ARG PROVISIONER_IMAGE=ghcr.io/semiteq/semibase:latest` stays; the comment names the pull)
 - Delete: `SemiPlot/SemiPlot.Tests.Data/Integration/ProvisionerImage.cs`, `ProvisionerResolution.cs`, `TestEnvironmentTests.cs`, `DatabaseGateTests.cs`
 - Modify: `SemiPlot/SemiPlot.Tests.Data/Integration/PostgresContainerFixture.cs:39,62,70,131-144,172-213` (no pull, no digest argument, no `--version` exec; the wait strategy at `:160-163` and the image tag at `:240` stay)
 - Modify: `SemiPlot/SemiPlot.Tests.Data/Integration/PostgresContainerFixtureTests.cs:1,89-110` (delete the provisioner and digest tests; the reaper-label tripwire stays and reads labels through `docker image inspect` via `Process`)
 - Modify: `SemiPlot/SemiPlot.Tests.Data/SemiPlot.Tests.Data.csproj:9`, `SemiPlot/Directory.Packages.props:17`
 - Modify: `.github/workflows/ci.yml:149` comment, `docs/architecture/bench.md:256-320`, `docs/architecture/testing-strategy.md:222-233`, `CLAUDE.md:124`
 
-- [ ] pin the digest in the Dockerfile; delete the resolver, the resolution record and the exec
-- [ ] delete the harness self-tests; rewrite the tripwire without `Docker.DotNet`
-- [ ] remove the package from the project and the central versions
-- [ ] state in `bench.md` and `CLAUDE.md` that the provisioner is pinned by digest and bumped by hand
+- [x] pull `latest` through `docker pull` ahead of the build; delete the resolver, the resolution record and the exec
+- [x] delete the harness self-tests; rewrite the tripwire without `Docker.DotNet`
+- [x] remove the package from the project and the central versions
+- [x] state in `bench.md` and `testing-strategy.md` that the tag moves on purpose and how the pull degrades without a registry route
 - [ ] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests.Data` and `SemiPlot.Tests.Journeys` - must pass before task 23
 
 ### Task 23: Slice 8 close

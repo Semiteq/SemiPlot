@@ -22,16 +22,7 @@ public sealed class ArchiveTimeConverter
 	/// <see cref="DateTime.Kind"/> of the input is ignored: an archive value is wall-clock time whatever
 	/// the caller stamped on it.
 	/// <para>
-	/// Total by construction: a skipped local time — the hour that does not exist at the spring-forward
-	/// transition — takes <see cref="TimeZoneInfo.BaseUtcOffset"/> instead of throwing, which places it
-	/// deterministically just past the gap. That is the zone's standard-time offset for every zone whose
-	/// daylight saving is positive; a zone modelled with negative daylight saving, such as
-	/// <c>Europe/Dublin</c> under tzdata, resolves a skipped hour to a different instant than the same
-	/// zone read from the Windows registry, and no zone of that shape is in use here. An ambiguous local
-	/// time needs no branch, because standard time is already what
-	/// <see cref="TimeZoneInfo.ConvertTimeToUtc(DateTime, TimeZoneInfo)"/> resolves it to. A misconfigured
-	/// or changed source zone puts real archive rows inside the gap, and a throw there would cross the
-	/// provider boundary mid-query where no public error type fits.
+	/// A skipped local time resolves via <see cref="TimeZoneInfo.BaseUtcOffset"/> instead of throwing.
 	/// </para>
 	/// <para>Ordering across the transitions: docs/architecture/data-integration.md, Time boundary.</para>
 	/// </summary>
@@ -53,12 +44,8 @@ public sealed class ArchiveTimeConverter
 	/// window bound is an instant whatever the caller stamped on it, so a <c>Local</c> or
 	/// <c>Unspecified</c> value is read as UTC rather than converted from the machine's own zone.
 	/// <para>
-	/// Total by construction: every instant has exactly one local reading. It is not injective, though —
-	/// across the autumn fall-back the repeated hour maps two instants onto one naive value, so a UTC
-	/// window spanning the transition becomes a narrower local window, and a one-hour window over the
-	/// transition itself becomes a zero-width one that selects no rows. Pinned by test and accepted as
-	/// cosmetic, uncompensated, the way <c>data-integration.md</c> accepts the duplicated hour on the
-	/// row side: the collapse costs at most one hour of a window once a year.
+	/// Not injective across the autumn fall-back: a window over the transition narrows
+	/// (docs/architecture/data-integration.md, Time boundary).
 	/// </para>
 	/// </summary>
 	public DateTime ToArchiveLocal(DateTime utc)

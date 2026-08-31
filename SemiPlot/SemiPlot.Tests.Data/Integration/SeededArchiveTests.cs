@@ -8,9 +8,7 @@ namespace SemiPlot.Tests.Data.Integration;
 
 // What a seeded archive actually holds, read the way production reads it: every read connects as
 // semiplot_reader rather than as the superuser, so a grant that never reached the reader fails here
-// instead of on commissioning day. `semibase bench` sets statement_timeout = 30 s and
-// idle_in_transaction_session_timeout = 60 s on that role, so a slow query fails with 57014 rather
-// than hanging — TheReaderCarriesTheProductionTimeouts pins it.
+// instead of on commissioning day.
 [Collection(ArchiveDatabaseCollection.Name)]
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
@@ -24,8 +22,7 @@ public sealed class SeededArchiveTests(PostgresContainerFixture postgresContaine
 		"INSERT INTO public.trends (id, l, t, v, q) VALUES (@id, @l, @t, @v, @q);";
 
 	// The rows the template was seeded with. Generating them again is what the counts in the database
-	// are compared against, so the comparison covers the generator, the COPY and the partition routing
-	// in one assertion.
+	// are compared against, so the comparison covers the generator, the COPY and the partition routing.
 	private static readonly Lazy<IReadOnlyList<(short Layer, long Rows)>> _generated = new(GenerateLayerCounts);
 
 	[Fact]
@@ -174,10 +171,8 @@ public sealed class SeededArchiveTests(PostgresContainerFixture postgresContaine
 		return tags;
 	}
 
-	// The upsert is what makes a template rebuild idempotent, and nothing else reaches its ON CONFLICT
-	// branch: ArchiveTemplate returns early when public.trends exists, and the container path always
-	// starts from a fresh database. A second write has to update the rows rather than double them or
-	// fail on the key. It runs against a clone of its own, since it rewrites what it wrote.
+	// The upsert is what makes a template rebuild idempotent.
+	// It runs against a clone of its own, since it rewrites what it wrote.
 	[Fact]
 	public async Task WritingTheTagCatalogueTwiceUpdatesTheRowsInPlace()
 	{
@@ -200,8 +195,7 @@ public sealed class SeededArchiveTests(PostgresContainerFixture postgresContaine
 			await TagsAsync(database.AdminConnectionString));
 	}
 
-	// The "never destroys" guarantee, asserted three times in the plan and verifiable only here: the
-	// seeder run through its own entry point, against a database that already carries an archive.
+	// The seeder through its own entry point, against a database that already carries an archive.
 	[Fact]
 	public async Task TheSeederRefusesToWriteIntoASeededDatabase()
 	{

@@ -26,16 +26,13 @@ public sealed class PostgresHistoryReadTests(
 {
 	// Above the row count of every window this class reads, so MinMaxDecimator passes each row through one
 	// column of its own and the envelopes compare against raw rows rather than against a second decimator
-	// run. AssertMatchesSeededRows checks it per pen, so a denser bench says so instead of quietly turning
-	// the comparison into a tautology.
+	// run.
 	private const int TargetColumnCount = 4096;
 
 	// A strict subset of the seeded pens, so a read that ignored the pen list would fail.
 	private const int RequestedPenCount = 3;
 
-	// The length of every window here that is not built around a break. Two minutes fits well inside an
-	// archiving run — BreakPlan.MinimumRun keeps every run at least five minutes long — and spans some
-	// 1 200 polls at the seeder's 100 ms interval, so the window is mostly row absence.
+	// Inside one archiving run: BreakPlan.MinimumRun is five minutes.
 	private static readonly TimeSpan _quietWindowLength = TimeSpan.FromMinutes(2);
 
 	// Archiving of at least this length surrounds every break, so a margin of one MinimumRun on each side
@@ -43,15 +40,11 @@ public sealed class PostgresHistoryReadTests(
 	private static readonly TimeSpan _breakMargin = BreakPlan.MinimumRun;
 
 	// How far into the first archiving run the steady window opens, and how far past the archive's end the
-	// seed-only window opens. Both are well inside the statement's look-back floor of one partition width,
-	// so a seed row exists in each case, and one minute plus the two-minute window still closes before
-	// BreakPlan.MinimumRun puts the first break marker in reach.
+	// seed-only window opens. Both are well inside the statement's look-back floor of one partition width.
 	private static readonly TimeSpan _windowOffset = TimeSpan.FromMinutes(1);
 
 	// The floor of the bound ArchiveStatements.SparseHistoryWindow puts on its backwards seek: one
-	// partition width, widened to the requested window when that is wider. SeedLookBackFor computes it the
-	// way the statement does, and TheExpectedSeedLookBackIsTheStatementsOwn pins the pairing, so widening
-	// the SQL bound without widening this one fails here rather than leaving the expectation stale.
+	// partition width, widened to the requested window when that is wider.
 	private static readonly TimeSpan _seedLookBackFloor = TimeSpan.FromDays(1);
 
 	// The clause that carries that bound. Held as a literal so the pin reads as the statement does.
@@ -132,8 +125,6 @@ public sealed class PostgresHistoryReadTests(
 		Assert.Equal(ArchiveTemplate.Slice.PenCount, result.Value.Count);
 	}
 
-	// The pen list is not decoration: a read that ignored it would answer with every seeded pen and pass
-	// every other test in this class, all of which ask for all eight.
 	[Fact]
 	public async Task OnlyTheRequestedPensComeBack()
 	{
@@ -156,8 +147,7 @@ public sealed class PostgresHistoryReadTests(
 		Assert.Equal(requested, result.Value.Select(envelope => envelope.PenId));
 	}
 
-	// Likewise the layer: a read that bound layer 0 whatever it was asked for would return the raw rows
-	// here, and the minute layer holds at most four of them per pen per minute plus the break markers.
+	// The minute layer holds at most four rows per pen per minute plus the break markers.
 	[Fact]
 	public async Task TheMinuteLayerReturnsFewerColumnsThanRawOverTheSameWindow()
 	{
@@ -210,10 +200,7 @@ public sealed class PostgresHistoryReadTests(
 	}
 
 	// A break writes no rows at all, and the fold turns the q = 32 row bounding it into one NaN anchor a
-	// tick later. Counting the anchors rather than finding one is the whole instrument: a read that
-	// anchored on every row absence, and one that anchored on the q = 16 resumption as well, both leave a
-	// NaN in this window and only the count separates them from the right answer. This is the only place
-	// the count runs against a real PostgreSQL rather than against rows handed to the fold directly.
+	// tick later. Counting the anchors rather than finding one is the whole instrument.
 	[Fact]
 	public async Task AWindowStraddlingTheFirstBreakCarriesExactlyOneGapColumn()
 	{
@@ -235,9 +222,7 @@ public sealed class PostgresHistoryReadTests(
 		{
 			var rows = expected[envelope.PenId];
 
-			// One column per row plus the anchor: this is what says the rows pass through the decimator
-			// one column each, so the index arithmetic below reads real neighbours, and it is the counted
-			// form of "exactly one column was added".
+			// One column per row plus the anchor.
 			Assert.Equal(rows.Count + 1, envelope.Timestamps.Count);
 
 			var anchor = Assert.Single(GapColumnIndices(envelope));
@@ -264,8 +249,7 @@ public sealed class PostgresHistoryReadTests(
 
 	// The counterpart, and the one that says an anchor is a marker's doing rather than an absence's. The
 	// archive polls every 100 ms and writes only on change, so a two-minute window inside an archiving run
-	// is mostly absence — around 1 200 polls against a few dozen rows. A read treating absence as a break
-	// passes the straddling test and shreds this one.
+	// is mostly absence.
 	[Fact]
 	public async Task AWindowInsideASteadyStretchCarriesNoGapColumn()
 	{
@@ -289,10 +273,7 @@ public sealed class PostgresHistoryReadTests(
 		Assert.True(anchors == 0, $"A steady stretch produced {anchors} gap columns across the eight pens.");
 	}
 
-	// Evidence 5. The window opens after every pen's last sample, so the window branch of the statement
-	// returns nothing and only the seed branch answers. Before the seed branch this read was a successful
-	// empty list, and the consumer side dropped every pen from the chart — correct for a pen with no data,
-	// wrong for a pen with data the window simply does not reach.
+	// Only the seed branch answers here.
 	[Fact]
 	public async Task AWindowOpeningAfterEveryPensLastSampleStillReturnsThePens()
 	{
@@ -318,8 +299,7 @@ public sealed class PostgresHistoryReadTests(
 
 	// The look-back scales with the window, and this is the read that needs it: a pen silent for longer
 	// than one partition width — a recipe setpoint written once at process start is the case — seeds a
-	// window wide enough to reach back to it instead of being dropped from the chart. Against a bound
-	// fixed at the floor this window finds nothing on either branch and every pen vanishes.
+	// window wide enough to reach back to it instead of being dropped from the chart.
 	[Fact]
 	public async Task AWindowWiderThanTheLookBackFloorSeeksBackAsFarAsItAsks()
 	{
@@ -369,11 +349,6 @@ public sealed class PostgresHistoryReadTests(
 		Assert.Equal(database.Name, error.Database);
 	}
 
-	// The fresh tail, on an archive this class writes rather than on the bench template: the tail's bound is
-	// read off the coarse layer's own newest rows, and the template carries raw rows alone. Every test below
-	// clones the provisioned source and drops it again, so none of them touches SeededArchive, whose
-	// contract is that the class leaves the database as it found it.
-	//
 	// Minute's point spacing is 15 s and its period four of those, so over the five-minute window below the
 	// clamp lands the tail start exactly one minute before the window closes.
 	[Fact]
@@ -398,8 +373,6 @@ public sealed class PostgresHistoryReadTests(
 		Assert.Equal(_timeConverter.ToUtc(_newestRawTimestamp), envelope.Timestamps[^1]);
 	}
 
-	// The counterpart: at Raw there is nothing coarser to be short of, so the read is the single one it has
-	// always been and every pen answers with the window's raw rows and nothing else.
 	[Fact]
 	public async Task TheSameWindowAtTheRawLayerIsUnchangedByTheTail()
 	{
@@ -419,8 +392,7 @@ public sealed class PostgresHistoryReadTests(
 	}
 
 	// The tail rows overlap the coarse rows in time, and one of this pen's raw rows carries the very
-	// timestamp its coarse layer already reached. The fold's ascending check is what drops it, so a
-	// duplicated column here would mean the merge fed the fold two runs for one pen.
+	// timestamp its coarse layer already reached. The fold's ascending check is what drops it.
 	[Fact]
 	public async Task APenWhoseCoarseRowsReachTheWindowEndGainsNoDuplicate()
 	{
@@ -438,11 +410,7 @@ public sealed class PostgresHistoryReadTests(
 		Assert.Equal(envelope.Timestamps.Distinct(), envelope.Timestamps);
 	}
 
-	// The failure the exclusion exists for. This pen's coarse rows stop three minutes before the tail
-	// starts, so tail rows appended after them would leave a range no row covers — and a range carrying no
-	// null is not a gap: HistoryRowFold opens one only from a null value, so MinMaxDecimator writes no NaN
-	// column and the chart draws one straight interpolated segment across the hole. The pen keeps the short
-	// right edge it already had instead.
+	// The lagging pen keeps its short right edge and gains no interpolated span.
 	[Fact]
 	public async Task APenWhoseCoarseRowsStopBeforeTheTailStartGainsNoRowAndNoInterpolatedSpan()
 	{
@@ -501,9 +469,7 @@ public sealed class PostgresHistoryReadTests(
 	{
 		await using var services = ArchiveProviderFactory.Build(connectionString);
 
-		// The bounds cross the boundary in UTC, so they go in as the instants the archive's own naive
-		// values stand for; the provider converts them back on the way to the statement. Every window here
-		// sits in January, where the source zone holds one offset, so that round trip is exact.
+		// January under the source zone: one offset, so the round trip is exact.
 		return await services.GetRequiredService<IDataProvider>().QueryHistoryAsync(
 			penIds,
 			_timeConverter.ToUtc(window.From),
@@ -570,9 +536,7 @@ public sealed class PostgresHistoryReadTests(
 	}
 
 	// Each pen's rows inside the window, led by the row the statement's seed branch finds before it. A pen
-	// carrying a seed and no window row is present here with the seed alone, which is the read's own
-	// answer: the window opened after that pen's last sample and the pen still draws. A pen with neither
-	// gets no entry and no envelope.
+	// carrying a seed and no window row is present here with the seed alone.
 	private static SortedDictionary<int, IReadOnlyList<ArchiveRow>> SeededRowsIn(LocalWindow window)
 	{
 		var rowsByPen = new SortedDictionary<int, IReadOnlyList<ArchiveRow>>();

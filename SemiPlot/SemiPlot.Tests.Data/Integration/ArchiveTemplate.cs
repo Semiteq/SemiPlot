@@ -5,17 +5,11 @@ namespace SemiPlot.Tests.Data.Integration;
 // The seeded database the classes that read the seeded rows clone, built once per run as a clone of the
 // provisioned source, then filled by ArchiveWriter and TagCatalogWriter. A class that writes its own rows
 // clones the provisioned source instead — CloneSource names which.
-//
-// It is a clone rather than a provisioning of its own because the image provisions one fixed database
-// and this one is a second. CREATE DATABASE ... TEMPLATE carries the table ownership, the relacl and
-// the default privileges across; database CONNECT is not carried, and PUBLIC's default already covers
-// it.
 public static class ArchiveTemplate
 {
 	public const string Name = "semiplot_bench";
 
-	// The standard slice the whole roadmap develops against. --end is fixed rather than floating, so
-	// two runs of the same seed produce the same archive.
+	// The standard slice the whole roadmap develops against.
 	public static readonly SeederOptions Slice = new(
 		string.Empty,
 		new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Unspecified),

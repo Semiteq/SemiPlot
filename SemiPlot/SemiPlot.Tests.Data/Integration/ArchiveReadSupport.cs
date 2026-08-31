@@ -2,11 +2,8 @@
 
 namespace SemiPlot.Tests.Data.Integration;
 
-// What both gated read-test classes share beyond the provider itself.
 public static class ArchiveReadSupport
 {
-	// Both read-test classes drive the catalogue through these two states, so they live here rather than in
-	// whichever file happened to need them first.
 	public const string EmptyCatalogCommand = "DELETE FROM public.semiplot_tags;";
 
 	public const string DropCatalogCommand = "DROP TABLE public.semiplot_tags;";

@@ -1,9 +1,8 @@
 ﻿namespace SemiPlot.DataSource.Postgres.Configuration;
 
 /// <summary>
-/// What the file looks like: every member nullable so an absent field reaches the loader as a state to
-/// report rather than as a silent default. The YAML key of each member is its name in the underscored
-/// convention the loader's deserializer applies, so <c>PollIntervalMs</c> reads <c>poll_interval_ms</c>.
+/// Every member nullable so an absent field reaches the loader as a state to report; YAML keys follow
+/// the underscored convention (<c>PollIntervalMs</c> reads <c>poll_interval_ms</c>).
 /// </summary>
 internal sealed class PostgresConnectionDto
 {

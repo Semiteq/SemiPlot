@@ -153,9 +153,6 @@ public static class PostgresConnectionLoader
 			: Invalid(filePath, ConnectionFileProblem.MissingField, missing, "absent or blank");
 	}
 
-	// A port of 0 and a negative interval parse as integers and then detonate downstream — the Npgsql
-	// builder rejects a port outside 1..65535 on assignment, and a non-positive interval becomes a
-	// TimeSpan nothing checks.
 	private static Result ValidateRanges(string filePath, PostgresConnectionDto dto)
 	{
 		var outOfRange = new List<string>();

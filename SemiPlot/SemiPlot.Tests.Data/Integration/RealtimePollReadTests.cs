@@ -15,9 +15,6 @@ using Xunit;
 
 namespace SemiPlot.Tests.Data.Integration;
 
-// Every test here appends rows, so none of them may take SeededArchive, whose contract is that the class
-// leaves the database as it found it.
-//
 // The archive is written by this class rather than cloned from the bench template: a poll is asserted
 // against a handful of rows at timestamps the test chose, and the template's own last timestamp is
 // whatever the generator happened to produce.
@@ -62,8 +59,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 		await Writer().WriteAsync(SeededRows(), _day, _nextDay);
 	}
 
-	// The armed point every later consumer sequences on. It emits nothing: a first tick that emitted rows
-	// would have to emit every row since the archive began.
+	// It emits nothing: a first tick that emitted rows would have to emit every row since the archive began.
 	[Fact]
 	public async Task TheFirstTickEmitsNoSampleAndReportsTheSubscriptionArmed()
 	{
@@ -137,8 +133,6 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 		Assert.Null(tick.StateChange);
 	}
 
-	// A row belonging to a variable nobody subscribed to must not reach the chart, which is what the
-	// @ids predicate is for beyond its index plan.
 	[Fact]
 	public async Task ATickIgnoresARowOfAnUnsubscribedVariable()
 	{
@@ -163,9 +157,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 		Assert.Empty(tick.Samples);
 	}
 
-	// Sample.Value is non-nullable, so the row is dropped rather than emitted — and dropped rather than
-	// thrown on, which the tick's own catch would have counted as a connection failure. lastSeen still
-	// advances past it, or the poll would re-read the same null row on every later tick.
+	// lastSeen still advances past it, or the poll would re-read the same null row on every later tick.
 	[Fact]
 	public async Task ARowCarryingANullValueEmitsNoSampleReportsNoFaultAndStillAdvancesTheLastSeen()
 	{
@@ -188,9 +180,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 		Assert.Equal(appended, poll.LastSeen);
 	}
 
-	// The archive's break mark carries a real value (docs/architecture/scada-archive.md, Quality and
-	// gaps), so it is an ordinary sample here. The gap the history path draws around it is
-	// HistoryRowFold's reconstruction, and Sample carries no null to rebuild it with on this seam.
+	// The archive's break mark carries a real value (docs/architecture/scada-archive.md, Quality and gaps).
 	[Fact]
 	public async Task ARowMarkingTheLastSampleBeforeABreakEmitsAnOrdinarySample()
 	{
@@ -217,8 +207,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 		Assert.Equal(_timeConverter.ToUtc(appended), sample.TimestampUtc);
 	}
 
-	// The seam TrendPenState.AppendRealtime stands on: a timestamp at or before the previous one draws a
-	// segment running backwards across the plot, so the bound the next tick binds may only move forward.
+	// The bound the next tick binds may only move forward.
 	[Fact]
 	public async Task TheLastSeenNeverMovesBackwardsAcrossTicks()
 	{
@@ -250,16 +239,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 		Assert.Equal(new DateTime?[] { _seededLast, first, first, second }, seen);
 	}
 
-	// The clearing arm, which no other test reaches: RealtimePollTests can only fail, because it points at
-	// an address nothing answers, and every other test in this class can only succeed. The failures are
-	// made by taking public.trends out from under the poll's own statements and putting it back — a rename
-	// rather than a stopped server, because the container is shared with every other gated class.
-	//
-	// Whatever the underlying failure is, three of them in a row raise ArchiveFault.ConnectionLost: the tick
-	// reports a connection state and the mapped error only reaches the log line. The tick after the last
-	// one is what this test exists for — and the tick after that, which must report nothing, because a
-	// second Connected there would mean the raised flag was never cleared and the banner would stay on
-	// screen for the rest of the session.
+	// Renamed rather than dropped: the container is shared. The tick after recovery must report nothing.
 	[Fact]
 	public async Task TheFirstSuccessAfterARaisedFaultReportsConnectedExactlyOnce()
 	{

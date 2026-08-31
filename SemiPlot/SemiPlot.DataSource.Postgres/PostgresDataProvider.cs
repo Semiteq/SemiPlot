@@ -21,9 +21,7 @@ namespace SemiPlot.DataSource.Postgres;
 /// Reads the archive over the pooled <see cref="NpgsqlDataSource"/>. <see cref="QueryPensAsync"/> answers
 /// the configured variables, <see cref="QueryArchiveExtentAsync"/> the span they cover,
 /// <see cref="QueryHistoryAsync"/> a window of one layer and <see cref="Subscribe"/> the live edge, all
-/// crossing the boundary in UTC. Every failure leaves through the public error vocabulary — nothing
-/// internal crosses the boundary — and a <c>42P01</c> is mapped against the relation the failing read
-/// names, because each read knows which relations its own statement touches.
+/// crossing the boundary in UTC.
 /// </summary>
 public sealed class PostgresDataProvider : IDataProvider
 {
@@ -34,12 +32,8 @@ public sealed class PostgresDataProvider : IDataProvider
 	private readonly IScheduler _scheduler;
 	private readonly ILogger<PostgresDataProvider> _logger;
 
-	// Hot, shared across every subscription and never completed. A subscription's first successful tick
-	// reports Connected on it, which is the only observable point at which that subscription is known to be
-	// armed, and a run of failed ticks reports the fault on it rather than through OnError.
 	private readonly Subject<ArchiveConnectionState> _connectionFaults = new();
 
-	// Internal because two of its parameters are: a public constructor over an internal type is CS0051.
 	internal PostgresDataProvider(
 		NpgsqlDataSource dataSource,
 		ArchiveTimeConverter timeConverter,
@@ -48,13 +42,6 @@ public sealed class PostgresDataProvider : IDataProvider
 		IScheduler scheduler,
 		ILogger<PostgresDataProvider> logger)
 	{
-		ArgumentNullException.ThrowIfNull(dataSource);
-		ArgumentNullException.ThrowIfNull(timeConverter);
-		ArgumentNullException.ThrowIfNull(exceptionMapper);
-		ArgumentNullException.ThrowIfNull(settings);
-		ArgumentNullException.ThrowIfNull(scheduler);
-		ArgumentNullException.ThrowIfNull(logger);
-
 		_dataSource = dataSource;
 		_timeConverter = timeConverter;
 		_exceptionMapper = exceptionMapper;
@@ -74,11 +61,6 @@ public sealed class PostgresDataProvider : IDataProvider
 	/// the injected scheduler and at the operator's <see cref="PostgresConnectionSettings.PollInterval"/>,
 	/// holding a baseline of its own. Disposing the subscription cancels the loop's query and its wait, so
 	/// no further statement is issued.
-	/// <para>
-	/// The sequence never completes and never faults. Its consumer subscribes with an onNext handler alone,
-	/// so an OnError would go unhandled on the UI scheduler; a failing tick therefore emits no sample — the
-	/// consumer keeps the data it has — and says so on <see cref="ConnectionFaults"/> instead.
-	/// </para>
 	/// </summary>
 	public IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<int> penIds)
 	{
@@ -119,22 +101,6 @@ public sealed class PostgresDataProvider : IDataProvider
 	/// <summary>
 	/// A window of one layer for the pens the caller asks for, folded into one envelope per pen that has
 	/// rows. A window holding no rows at all is a successful empty list rather than a failure.
-	/// <para>
-	/// The left edge is seeded: a pen whose last sample predates the window start is drawn from that
-	/// sample, because <see cref="ArchiveStatements.SparseHistoryWindow"/> returns it on the same round
-	/// trip as the window rows.
-	/// </para>
-	/// <para>
-	/// A pen with no row in the window and none inside that statement's bounded look-back still gets no
-	/// envelope, and the consumer side drops it — <c>TrendChartViewModel.ApplyHistory</c> drops a
-	/// requested pen the result omits, so no pen carries the previous window's envelope. See
-	/// docs/architecture/data-integration.md.
-	/// </para>
-	/// <para>
-	/// The right edge is filled from the raw layer: a coarse layer is flushed on its own cadence, so a
-	/// window reaching the live edge stops short of it. <see cref="FreshTail"/> holds the bound and the
-	/// merge, and states why a pen too far behind that bound keeps its short edge instead.
-	/// </para>
 	/// </summary>
 	public async Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(
 		IReadOnlyList<int> penIds,
@@ -145,9 +111,6 @@ public sealed class PostgresDataProvider : IDataProvider
 	{
 		ArgumentNullException.ThrowIfNull(penIds);
 
-		// The target guard turns a fault that would otherwise be intermittent into a deterministic one —
-		// the decimator is only reached when a pen has rows, so a target below one succeeds on an empty
-		// window and fails on a full one.
 		var arguments = ValidateArguments(fromUtc, toUtc, targetColumnCount);
 
 		if (arguments.IsFailed)
@@ -155,10 +118,7 @@ public sealed class PostgresDataProvider : IDataProvider
 			return Result.Fail<IReadOnlyList<PenHistoryEnvelope>>(arguments.Errors);
 		}
 
-		// The layer guard sits behind the Result-returning checks rather than ahead of them: a caller
-		// supplying two bad arguments at once is answered by the range and target checks first, so the
-		// failed Result wins over the throw. That ordering is this provider's contract and
-		// AnInvertedWindowAnswersAheadOfAnUndefinedAggregationLayer pins it.
+		// Behind the Result checks on purpose: a failed Result wins over the throw.
 		if (!Enum.IsDefined(layer))
 		{
 			throw new ArgumentOutOfRangeException(nameof(layer), layer, "Unknown aggregation layer.");
@@ -181,7 +141,6 @@ public sealed class PostgresDataProvider : IDataProvider
 		}
 		catch (Exception exception)
 		{
-			// The statement touches one relation, so a 42P01 here can only mean trends.
 			return Result.Fail<IReadOnlyList<PenHistoryEnvelope>>(Map(exception, ArchiveStatements.TrendsRelation));
 		}
 	}
@@ -204,17 +163,11 @@ public sealed class PostgresDataProvider : IDataProvider
 		}
 		catch (Exception exception)
 		{
-			// trends rather than semiplot_tags: this statement touches both, and at startup the catalogue
-			// read runs first, so a missing semiplot_tags fails there and never reaches here. A catalogue
-			// dropped under a live session is reported as a missing trends, which reaches a log line only
-			// and sends the operator to the same remedy either table needs.
+			// trends on purpose: the startup catalogue read already reports a missing semiplot_tags.
 			return Result.Fail<ArchiveExtent>(Map(exception, ArchiveStatements.TrendsRelation));
 		}
 	}
 
-	// One loop per subscription, holding a RealtimePoll of its own and therefore a baseline of its own.
-	// Nothing leaves through OnError or OnCompleted: the consumer subscribes with an onNext handler alone,
-	// and a failing tick is a state change on the signal stream rather than a fault on this sequence.
 	private async Task PollAsync(
 		int[] penIds,
 		IObserver<IReadOnlyList<Sample>> observer,
@@ -256,14 +209,10 @@ public sealed class PostgresDataProvider : IDataProvider
 		}
 		catch (OperationCanceledException)
 		{
-			// The subscription was disposed, which is how this loop ends and the only way it does.
-			// RealtimePoll lets this type out ahead of its mapper so a self-cancelled read never counts
-			// towards the fault threshold.
+			// Disposal ends the loop.
 		}
 	}
 
-	// Internal rather than private so a unit test can bind through this exact path and compare the names it
-	// produces against the statement's own tokens — the drift no fence extractor sees.
 	internal static void BindWindow(
 		NpgsqlCommand command,
 		ArchiveTimeConverter timeConverter,
@@ -280,9 +229,7 @@ public sealed class PostgresDataProvider : IDataProvider
 			layer);
 	}
 
-	// The bounds the statement carries are the archive's own naive wall clock, so the tail read — whose
-	// start is computed from timestamps the archive returned — binds them directly rather than converting
-	// out and back, which is neither order-preserving nor injective across a daylight-saving boundary.
+	// Bound on the archive's own wall clock: a UTC round trip is not injective across DST.
 	private static void BindLocalWindow(
 		NpgsqlCommand command,
 		int[] penIds,
@@ -299,7 +246,6 @@ public sealed class PostgresDataProvider : IDataProvider
 		command.Parameters.Add(new NpgsqlParameter("to", NpgsqlDbType.Timestamp) { Value = toLocal });
 	}
 
-	// One bind of the windowed statement, on a connection the caller owns so the tail read shares it.
 	private async Task<IReadOnlyList<HistoryRowFold.Row>> ReadWindowAsync(
 		NpgsqlConnection connection,
 		int[] penIds,
@@ -323,9 +269,6 @@ public sealed class PostgresDataProvider : IDataProvider
 		return rows;
 	}
 
-	// A coarse layer is flushed on its own cadence, so a window reaching the live edge stops up to one
-	// point spacing short of it. The tail is a second bind of the same statement at layer 0 — no statement
-	// of its own, so nothing new is pinned and the existing EXPLAIN guard already covers the shape.
 	private async Task<IReadOnlyList<HistoryRowFold.Row>> FillFreshTailAsync(
 		NpgsqlConnection connection,
 		int[] penIds,
@@ -334,8 +277,6 @@ public sealed class PostgresDataProvider : IDataProvider
 		AggregationLayer layer,
 		IReadOnlyList<HistoryRowFold.Row> coarseRows)
 	{
-		// Ahead of the seams, which walk the whole result set: the raw layer is what a tail is read from,
-		// so this is the one read that never pays anything for the tail at all.
 		if (layer == AggregationLayer.Raw)
 		{
 			return coarseRows;
@@ -354,8 +295,6 @@ public sealed class PostgresDataProvider : IDataProvider
 		return FreshTail.Merge(coarseRows, tailRows, seams, tailStart);
 	}
 
-	// The window bounds and the target column count are reported through the Result channel, in the wording
-	// the caller reads back.
 	private static Result ValidateArguments(DateTime fromUtc, DateTime toUtc, int targetColumnCount)
 	{
 		if (fromUtc > toUtc)
@@ -371,8 +310,6 @@ public sealed class PostgresDataProvider : IDataProvider
 		return Result.Ok();
 	}
 
-	// A plain projection of the columns: the fold owns the conversion, so the naive timestamp crosses
-	// unchanged.
 	private static HistoryRowFold.Row ReadHistoryRow(NpgsqlDataReader reader)
 	{
 		return new HistoryRowFold.Row(
@@ -411,8 +348,6 @@ public sealed class PostgresDataProvider : IDataProvider
 		return PenLineStyle.Interpolated;
 	}
 
-	// The archive stores naive local wall-clock time, so each bound crosses out through the converter
-	// exactly once.
 	private async Task<ArchiveExtent> ReadExtentAsync(NpgsqlDataReader reader)
 	{
 		if (!await reader.ReadAsync().ConfigureAwait(false))
@@ -430,15 +365,11 @@ public sealed class PostgresDataProvider : IDataProvider
 			_timeConverter.ToUtc(reader.GetDateTime(1)));
 	}
 
-	// The relation the failing read names fills the 42P01 detail: each read knows the relation its own
-	// statement touches, so nothing is asked of the server to learn it.
 	private Error Map(Exception exception, string relation)
 	{
 		var error = _exceptionMapper.Map(exception, relation);
 
-		// A read that fails with no server answer behind it — a null reference or a bad cast inside the row
-		// read — is a fault in this code, and the typed error alone dresses it as a server state. It still
-		// crosses typed, because nothing may escape the boundary; the log is where it stays visible.
+		// An empty-detail ReadFailed is a fault in this code, so it is logged.
 		if (error is ArchiveError { Kind: ArchiveFault.ReadFailed, Detail.Length: 0 })
 		{
 			_logger.LogError(exception, "The archive read failed with an exception the provider did not expect.");

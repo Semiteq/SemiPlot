@@ -10,15 +10,8 @@ using Xunit;
 
 namespace SemiPlot.Tests.Data.Integration;
 
-// One server per test run. A container start costs seconds while a CREATE DATABASE costs under a
-// second, so the container is the wrong isolation unit and the database is the right one.
-//
-// The container provisions itself: the image built from bench/ carries the provisioner and runs it
-// from the entrypoint's init hook, so nothing is resolved from the machine running the suite.
-//
-// Initialisation never throws. The runtime it needs is optional on a developer machine, so its
-// absence is captured as a reason and handed to DatabaseGate, which skips or fails according to
-// SEMIPLOT_REQUIRE_DB.
+// One server per test run; the database is the isolation unit, not the container.
+// docs/architecture/bench.md#the-test-bench
 public sealed class PostgresContainerFixture : IAsyncLifetime
 {
 	// Scopes the built image to this repository; pulled images carry no label and stay.
@@ -67,9 +60,7 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 		return ArchiveDatabase.CloneAsync(Server, _creationGate, ArchiveTemplate.Name, cancellationToken);
 	}
 
-	// A database carrying the roles, the grants and an empty public.trends, and no seeded row. The clone
-	// is how a test reaches that state: provisioning it a second time would spawn a binary the container
-	// path deliberately does not have.
+	// A database carrying the roles, the grants and an empty public.trends, and no seeded row.
 	public Task<ArchiveDatabase> CloneProvisionedAsync(CancellationToken cancellationToken = default)
 	{
 		return ArchiveDatabase.CloneAsync(
@@ -151,9 +142,7 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 		return new PostgresServer(container.Hostname, container.GetMappedPublicPort(PostgresPort));
 	}
 
-	// The readiness gate is the provisioned table, not the server: a container whose init script failed
-	// never becomes ready, and one still inside initdb answers on the unix socket only, so the query
-	// goes over TCP to exclude the entrypoint's temporary server.
+	// The query goes over TCP, to exclude the entrypoint's temporary unix-socket server.
 	private static string[] ProvisionedWaitCommand()
 	{
 		return

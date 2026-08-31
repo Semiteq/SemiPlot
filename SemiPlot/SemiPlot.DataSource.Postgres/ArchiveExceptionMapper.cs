@@ -10,14 +10,9 @@ using SemiPlot.DataSource.Postgres.Configuration;
 namespace SemiPlot.DataSource.Postgres;
 
 /// <summary>
-/// Translates everything a read can throw into an <see cref="ArchiveError"/>, so nothing internal crosses
-/// the provider boundary. The relation a <c>42P01</c> names arrives as a call argument, from the read whose
-/// own statement touches it.
-/// <para>
-/// Cancellation is not part of the vocabulary: a caller's <see cref="OperationCanceledException"/> leaves
-/// here as it arrived. The server's own <c>57014</c> is a different thing and maps to
-/// <see cref="ArchiveFault.QueryTimedOut"/>.
-/// </para>
+/// Translates everything a read can throw into an <see cref="ArchiveError"/>; a caller's
+/// <see cref="OperationCanceledException"/> leaves as it arrived, while the server's own <c>57014</c>
+/// maps to <see cref="ArchiveFault.QueryTimedOut"/>.
 /// </summary>
 internal sealed class ArchiveExceptionMapper
 {
@@ -25,20 +20,15 @@ internal sealed class ArchiveExceptionMapper
 
 	public ArchiveExceptionMapper(PostgresConnectionSettings settings)
 	{
-		ArgumentNullException.ThrowIfNull(settings);
-
 		_settings = settings;
 	}
 
 	/// <param name="exception">What the read threw.</param>
 	/// <param name="relation">
-	/// The relation the calling statement touches. Read on the <c>42P01</c> path and unused on every other;
-	/// passed explicitly on every call, null included, so a new call site cannot omit it by accident.
+	/// The relation the calling statement touches. Read on the <c>42P01</c> path only.
 	/// </param>
 	public Error Map(Exception exception, string? relation)
 	{
-		ArgumentNullException.ThrowIfNull(exception);
-
 		if (exception is OperationCanceledException)
 		{
 			throw exception;

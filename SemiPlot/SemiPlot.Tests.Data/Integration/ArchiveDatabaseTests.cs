@@ -6,8 +6,7 @@ namespace SemiPlot.Tests.Data.Integration;
 
 // The template-and-clone lifecycle. What each test proves reaches back through the whole chain: a
 // container came up already provisioned by its own image, the template cloned that source,
-// ArchiveWriter seeded it as scada_writer, and a clone carried the result. What the rows themselves
-// are is asserted by SeededArchiveTests.
+// ArchiveWriter seeded it as scada_writer, and a clone carried the result.
 [Collection(ArchiveDatabaseCollection.Name)]
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]

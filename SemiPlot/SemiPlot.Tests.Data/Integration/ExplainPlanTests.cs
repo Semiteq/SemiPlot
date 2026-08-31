@@ -39,10 +39,7 @@ public sealed class ExplainPlanTests(
 	// caller asks for the pens it draws, never for every configured variable.
 	private const int ExplainedPenCount = 2;
 
-	// The seeder's day partitions tpYYYYmMMdDD (SemiPlot.Tools.ArchiveSeeder/PartitionScript.cs) are the
-	// ones holding rows. tpdefault is deliberately outside the pattern: it arrives empty with the
-	// provisioning and stays that way, and the planner may legitimately read an empty analysed partition
-	// sequentially, so an assertion covering it would fail a correct plan.
+	// tpdefault is outside the pattern: empty and analysed, a Seq Scan on it is a correct plan.
 	private const string DayPartition = @"(public\.)?tp\d{4}m\d{2}d\d{2}\b";
 
 	private static readonly Regex _sequentialScanOverRows = new(@"Seq Scan on " + DayPartition);
@@ -52,16 +49,10 @@ public sealed class ExplainPlanTests(
 	// reaches its edge through.
 	private const string IndexScan = @"Index (Only )?Scan( Backward)? using \S+ on ";
 
-	// The extent statement is held to the strict form. Its per-variable subqueries reach a bound by
-	// stepping to one index edge and stopping, which is an index scan and nothing else; a bitmap here would
-	// mean the plan gave that up and started collecting a day partition's rows before reducing them, the
-	// regression this assertion exists to catch.
+	// Strict form: a bitmap here means the plan collects rows before reducing them.
 	private static readonly Regex _indexEdgeReachedRows = new(IndexScan + DayPartition);
 
-	// The windowed read is held to the looser form, because it reads a range rather than an edge and a
-	// Bitmap Heap Scan is by construction driven by a Bitmap Index Scan. Either way the rows are found
-	// through an index rather than by reading rows nobody wants, and which of the two the planner picks
-	// over a two-minute window is its own decision.
+	// Looser form: a range read may legitimately go through a Bitmap Heap Scan.
 	private static readonly Regex _indexReachedRows = new(
 		"(" + IndexScan + @"|Bitmap Heap Scan on )" + DayPartition);
 
@@ -86,18 +77,12 @@ public sealed class ExplainPlanTests(
 	private static readonly TimeSpan _polledTail = TimeSpan.FromMinutes(1);
 
 	// Far enough into the archive that every explained pen has a row before the window opens, so the seed
-	// branch has something to find. The slice is seeded from its start, so a window opening at that start
-	// is the other case and gets its own test.
+	// branch has something to find.
 	private static readonly TimeSpan _seedProbeOffset = TimeSpan.FromMinutes(5);
 
 	// The seed's look-back over a two-minute window is its floor of one partition width, so it reaches the
 	// window's own day and the day before it and no further. An unbounded backwards seek would name one
 	// partition per older day instead.
-	//
-	// On this bench the count alone cannot fail: SeederOptions.DefaultDays is 1, so the archive holds a
-	// single day partition and a bounded and an unbounded seek prune to the same set. What actually proves
-	// the bound here is the Assert.Contains("t >=", ...) in the same test, which reads the bound the planner
-	// pushed into the index. The count is the assertion that starts biting on a multi-day archive.
 	private const int MaximumDayPartitionsRead = 2;
 
 	// A pen with no row before the window costs no read of a row-holding partition at all: the look-back
@@ -212,9 +197,7 @@ public sealed class ExplainPlanTests(
 				+ $"row-holding partition at all.{Environment.NewLine}{plan}");
 	}
 
-	// The poll's own index plan. The variable list is what buys it: PRIMARY KEY (id, l, t) leads with id,
-	// so a tick predicated on time alone would read the current day's partition sequentially on every
-	// tick, which is exactly what the first assertion below catches.
+	// The poll's own index plan.
 	[Fact]
 	public async Task ThePollPlanReachesItsRowsThroughAnIndex()
 	{
@@ -243,9 +226,7 @@ public sealed class ExplainPlanTests(
 				+ $"want.{Environment.NewLine}{plan}");
 	}
 
-	// The baseline is held to the strict index-edge form, the same one the extent statement is held to: a
-	// max(t) under id = ANY(...) loses PostgreSQL's min/max transform and starts collecting a partition's
-	// rows, where the lateral scalar subquery steps to one index edge per variable and stops.
+	// The baseline is held to the strict index-edge form, the same one the extent statement is held to.
 	[Fact]
 	public async Task TheBaselinePlanReachesEachBoundByAnIndexEdge()
 	{
@@ -281,9 +262,7 @@ public sealed class ExplainPlanTests(
 		return ArchiveTemplate.Slice.End - _polledTail;
 	}
 
-	// Bound through the shipped binder, so the plan is read over the parameters production sends. The
-	// statement's bounds are 'timestamp without time zone', the archive's own naive wall clock, and a UTC
-	// converter leaves the seeder's timestamps unchanged on the way to the parameter.
+	// Bound through the shipped binder, over a UTC converter so the seeder's timestamps pass unchanged.
 	private static void BindWindowParametersAt(NpgsqlCommand command, DateTime windowStart)
 	{
 		var from = DateTime.SpecifyKind(windowStart, DateTimeKind.Utc);

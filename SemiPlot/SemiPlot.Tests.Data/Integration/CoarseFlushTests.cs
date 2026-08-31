@@ -8,13 +8,6 @@ using Xunit;
 
 namespace SemiPlot.Tests.Data.Integration;
 
-// The flush is a statement the server executes, so what is worth asserting is not its text but that it
-// selects exactly what LayerThinner.Thin selects. Only a database can assert that, which is why every
-// case here is gated.
-//
-// Every case writes, so none of them may take SeededArchive, whose contract is that the class leaves the
-// database as it found it.
-//
 // Each assertion is scoped to one layer and to one period's own bounds, because the two statements write
 // into different periods: the closed flush into the period a pair of instants leaves, the opening row into
 // the period it lands in. A count over the whole table would confuse the two.
@@ -113,8 +106,6 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 		Assert.Equal(afterFirst, await ReadPeriodAsync(LayerThinner.MinuteLayer, minute, cancellationToken));
 	}
 
-	// A marker row is additional to the four a period is thinned to and is copied into every layer, so the
-	// pair below closes the minute, the hour and the day the marker sits in at once.
 	[Fact]
 	public async Task AMarkerRowReachesEveryCoarseLayer()
 	{
@@ -216,10 +207,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 		Assert.Equal(expected, await ReadPeriodAsync(LayerThinner.MinuteLayer, minute, cancellationToken));
 	}
 
-	// The opening row is what keeps a coarse seam inside the period the live edge sits in, which is what
-	// clears FreshTail's one-period clamp. The day layer is the case worth reading: the period opens at
-	// midnight while its first raw row lands at 22:59, and the row written is that first row, not the
-	// period start.
+	// The day layer is the case worth reading: the period opens at midnight, its first raw row lands at 22:59.
 	[Fact]
 	public async Task ACallInsideAPeriodOpensEveryLayerWithItsFirstRawRow()
 	{
@@ -235,8 +223,6 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 		await AssertOnlyTheOpeningRowsAsync(minute.AddSeconds(40), cancellationToken);
 	}
 
-	// Only the period's first row is written early, because only it is already final. Writing the running
-	// last row instead would add one row per pen per tick and leave the coarse layer as dense as raw.
 	[Fact]
 	public async Task RepeatedCallsInsideOnePeriodDoNotDensifyTheCoarseLayers()
 	{
@@ -255,9 +241,6 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 		await AssertOnlyTheOpeningRowsAsync(minute.AddSeconds(10), cancellationToken);
 	}
 
-	// A tick can span many periods: --follow accepts a cadence up to FollowOptions.MaximumSeconds, and a
-	// host suspend stretches any cadence past a minute. The raw layer refills across the whole jump, so a
-	// flush closing only the first period would leave the ones behind it holding nothing.
 	[Fact]
 	public async Task ACallSpanningSeveralPeriodsClosesEveryOneOfThem()
 	{
@@ -286,10 +269,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 		await AssertOnlyTheOpeningRowsAsync(now, cancellationToken);
 	}
 
-	// trends.v is nullable while ArchiveRow.Value is not, so LayerThinner never sees a NULL and can never
-	// select one. ORDER BY v DESC NULLS LAST is what holds the statement to the same selection: under
-	// PostgreSQL's default NULLS FIRST a NULL-valued raw row would be the period's maximum. ArchiveWriter
-	// cannot write such a row, so it goes in over the admin connection.
+	// ArchiveWriter cannot write a NULL, so it goes in over the admin connection.
 	[Fact]
 	public async Task ANullValuedRawRowIsNotSelectedAsAPeriodsMaximum()
 	{
@@ -316,8 +296,6 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 			await ReadPeriodAsync(LayerThinner.MinuteLayer, minute, cancellationToken));
 	}
 
-	// The opening row is one of the four the closed flush selects, so closing the period afterwards adds
-	// the other three and leaves the period holding exactly what LayerThinner.Thin produces for it.
 	[Fact]
 	public async Task ClosingAPeriodOpenedEarlierLeavesTheRowsTheThinnerSelectsAndNoDuplicate()
 	{
@@ -341,8 +319,6 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 			await ReadPeriodAsync(LayerThinner.MinuteLayer, minute, cancellationToken));
 	}
 
-	// A period the raw layer has not reached yet leaves the LATERAL with no row, and the CROSS JOIN drops
-	// the pen rather than failing the call.
 	[Fact]
 	public async Task APeriodWithNoRawRowsYetWritesNothingAndReportsSuccess()
 	{

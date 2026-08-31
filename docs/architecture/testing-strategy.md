@@ -226,15 +226,14 @@ One exception is accepted, and it is a choice rather than an oversight.
 ever newly deployed is the newest provisioner with the current reader; pinning a digest here would
 test a pair nobody ships. A moving tag buys that only if it moves, and rebuilding the bench image
 does not move it — the Engine's builder takes the provisioner's `FROM` from the local image cache.
-The fixture fetches the tag itself ahead of the build and pins the build to the digest that fetch
-resolved, so the pair every run exercises is the newest one. `bench.md` holds the full statement,
-including how the step degrades where there is no route to the registry.
+The fixture runs `docker pull` on the tag ahead of the build, so the pair every run exercises is the
+newest one. `bench.md` holds the full statement, including how the step degrades where there is no
+route to the registry.
 
 The cost of the moving tag is that one unchanged commit can pass today and fail tomorrow. That
 failure is legible rather than mysterious, in two ways. A provisioning that fails exits the
 container's entrypoint, and Testcontainers' start exception carries the container's own stdout and
 stderr — `error: server version 130023 is below the floor 140000` is what a base image below
 SemiBase's floor produces — which the fixture's unavailable reason then names as a container that
-exited non-zero. And a container run writes the provisioner's digest, with its version where the
-executable reports one, into the test output, so a failure that follows a moved tag names the tag
-it followed.
+exited non-zero. And the provisioner a run built over is the one `docker image inspect` names for
+the tag on that machine, so a failure that follows a moved tag can be tied to the digest it moved to.

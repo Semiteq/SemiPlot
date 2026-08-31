@@ -274,14 +274,12 @@ the container against `public.trends` over **TCP**, and the entrypoint's tempora
 the unix socket only. A container whose provisioning did not complete therefore never becomes ready.
 
 **Both waits are bounded at two minutes**, from one field, `PostgresContainerFixture._startupBound`,
-so they cannot drift apart: the registry fetch, which had no deadline of any kind before, and the
-readiness wait, whose default would otherwise be Testcontainers' own one hour. A bench that never
-comes up is then a stated skip inside two minutes rather than a hung `SemiPlot.Tests.Data.exe` that
-locks the next build. The two bounds surface differently on purpose — readiness raises
-`TimeoutException` while the pull's bound is converted inside `ProvisionerImage.ResolveAsync` into
-the failure it already returns — because the fixture's one catch excludes
-`OperationCanceledException`, and a bound escaping as that type would fail the whole collection
-instead of skipping it.
+so they cannot drift apart: the registry pull and the readiness wait, whose default would otherwise
+be Testcontainers' own one hour. A bench that never comes up is then a stated skip inside two
+minutes rather than a hung `SemiPlot.Tests.Data.exe` that locks the next build. Readiness raises
+`TimeoutException`; a pull that runs out of its bound is a failed pull, which the next paragraph
+covers. Neither escapes as `OperationCanceledException`, which the fixture's one catch excludes and
+which would fail the whole collection instead of skipping it.
 
 Init scripts run only on an empty `PGDATA`, so this shape provisions a fresh cluster and never a
 reused volume.
@@ -298,25 +296,21 @@ with the current reader — which is the pair every run exercises.
 That last clause is only true because something fetches the tag, and building the bench image is
 not it. The Engine's builder resolves the provisioner's `FROM` from the local image cache, so a
 rebuild on its own would copy whatever provisioner the machine last happened to hold — for good, on
-a machine that pulled once. `ProvisionerImage` therefore fetches `ghcr.io/semiteq/semibase:latest`
-itself, ahead of the build, and hands the build the digest that fetch resolved —
-`ghcr.io/semiteq/semibase@sha256:…`, as the `PROVISIONER_IMAGE` build argument. The image built is
-then provably the image pulled, rather than two literals that can drift.
+a machine that pulled once. The fixture therefore runs `docker pull ghcr.io/semiteq/semibase:latest`
+ahead of the build (`DockerCli.PullProvisionerAsync`), so the cache the builder reads holds the
+newest tag.
 
 It is a separate step rather than `pull` on the build request because the Engine fails a build
 outright when `pull` is set and the registry cannot be reached, even with a usable image already
-cached. Pulled on its own, that case stays recoverable: a machine with no route to the registry runs
-against the image it has, and only a machine with neither route nor image is an unavailable reason.
-A run that fell back that way writes one `[bench]` line to standard error naming the digest it kept
-and why — standard error rather than the test output, because a passing test's output is what a
-console logger drops.
+cached. Pulled on its own, that case stays recoverable: a machine with no route to the registry, or
+with no `docker` CLI on `PATH`, runs against the image it has, and only a machine with neither route
+nor image is an unavailable reason — the build reports the missing `FROM`. A run that fell back that
+way writes one `[bench]` line to standard error saying why — standard error rather than the test
+output, because a passing test's output is what a console logger drops.
 
-A container run names the provisioner it ran. The fixture asks the started container for
-`/semibase --version` — the bench image carries the binary at that path — and pairs the answer with
-the digest the pull resolved; `TheContainerPathReportsTheProvisionerItResolved` writes the pair into
-the test output, and the digest alone when the executable declines to report a version. The cost of a
-moving tag is that one unchanged commit can pass today and fail
-tomorrow, and that report separates *SemiBase moved* from *this repository broke*.
+The cost of a moving tag is that one unchanged commit can pass today and fail tomorrow. When it
+does, `docker image inspect ghcr.io/semiteq/semibase:latest` names the digest the run built over,
+and `docker run --rm ghcr.io/semiteq/semibase:latest --version` its version.
 
 ## The application bench
 

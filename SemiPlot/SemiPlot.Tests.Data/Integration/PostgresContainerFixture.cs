@@ -3,7 +3,6 @@ using System.Security.Cryptography;
 using System.Text;
 
 using DotNet.Testcontainers.Builders;
-using DotNet.Testcontainers.Containers;
 
 using Testcontainers.PostgreSql;
 
@@ -17,13 +16,12 @@ namespace SemiPlot.Tests.Data.Integration;
 // The container provisions itself: the image built from bench/ carries the provisioner and runs it
 // from the entrypoint's init hook, so nothing is resolved from the machine running the suite.
 //
-// Initialisation never throws. The runtimes it needs are optional on a developer machine, so their
+// Initialisation never throws. The runtime it needs is optional on a developer machine, so its
 // absence is captured as a reason and handed to DatabaseGate, which skips or fails according to
 // SEMIPLOT_REQUIRE_DB.
 public sealed class PostgresContainerFixture : IAsyncLifetime
 {
-	// Scopes the built image to this repository, so a count of dangling bench images does not also count
-	// the moving semibase:latest tag this bench tracks on purpose.
+	// Scopes the built image to this repository; pulled images carry no label and stay.
 	public const string BenchLabel = "semiplot.bench";
 
 	public const string BenchLabelValue = "1";
@@ -36,8 +34,6 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 
 	private const string BaseImageArgument = "BASE_IMAGE";
 
-	private const string ProvisionerImageArgument = "PROVISIONER_IMAGE";
-
 	private const string ProvisionedDatabaseVariable = "SEMIPLOT_PROVISIONED_DATABASE";
 
 	private const string BenchImageRepository = "semiplot-bench";
@@ -46,8 +42,7 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 	// else, and a TCP login to the base image is password-authenticated.
 	private const string PasswordVariable = "PGPASSWORD";
 
-	// One bound for the registry pull and for readiness, so a broken bench is a stated reason inside two
-	// minutes on every path instead of an await that hangs the test executable and locks the next build.
+	// Bounds the pull and the readiness wait: a bench that never comes up is a stated skip, not a hung executable.
 	private static readonly TimeSpan _startupBound = TimeSpan.FromMinutes(2);
 
 	// CREATE DATABASE ... TEMPLATE fails while another session holds the source, so a clone must never
@@ -59,17 +54,9 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 
 	private PostgresServer? _postgresServer;
 
-	private ProvisionerResolution? _provisionerResolution;
-
 	public string? UnavailableReason { get; private set; }
 
 	public bool IsAvailable => UnavailableReason is null;
-
-	// The provisioner this run's databases came from, so a `latest` that fails tomorrow on an unchanged
-	// commit can be told apart from a change in this repository.
-	internal ProvisionerResolution Provisioner =>
-		_provisionerResolution ?? throw new InvalidOperationException(
-			UnavailableReason ?? "The fixture was used before it was initialised.");
 
 	public PostgresServer Server =>
 		_postgresServer ?? throw new InvalidOperationException(
@@ -126,22 +113,14 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 
 	private async Task<PostgresServer> StartContainerAsync()
 	{
-		// Ahead of the build, and the build takes the digest it resolved rather than the tag:
-		// `docs/architecture/bench.md` states why.
-		var provisioner = await ProvisionerImage.ResolveAsync(_startupBound);
-
-		if (provisioner.IsFailed)
-		{
-			throw new InvalidOperationException(provisioner.Errors[0].Message);
-		}
-
-		WarnIfStale(provisioner.Value);
+		// Ahead of the build, so the tag the Dockerfile's FROM names is the newest one the registry serves;
+		// `docs/architecture/bench.md` states why the tag moves on purpose.
+		await DockerCli.PullProvisionerAsync(_startupBound);
 
 		var image = new ImageFromDockerfileBuilder()
 			.WithName(BenchImageFor(TestEnvironment.Image))
 			.WithDockerfileDirectory(Path.Combine(AppContext.BaseDirectory, BenchContextDirectory))
 			.WithBuildArgument(BaseImageArgument, TestEnvironment.Image)
-			.WithBuildArgument(ProvisionerImageArgument, provisioner.Value.Digest)
 			.WithLabel(BenchLabel, BenchLabelValue)
 			.WithDeleteIfExists(false)
 			.WithCleanUp(true)
@@ -169,47 +148,7 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 
 		await container.StartAsync();
 
-		_provisionerResolution = await DescribeProvisionerAsync(container, provisioner.Value);
-
 		return new PostgresServer(container.Hostname, container.GetMappedPublicPort(PostgresPort));
-	}
-
-	// Asked of the container that actually provisioned this run's databases, rather than of the registry:
-	// the binary it carries is the one that ran. The digest identifies the same image and is already in
-	// hand, so an executable that declines to report a version costs the run nothing.
-	private static async Task<ProvisionerResolution> DescribeProvisionerAsync(
-		IContainer container,
-		ProvisionerResolution resolution)
-	{
-		try
-		{
-			var reported = await container.ExecAsync(
-				[ProvisionerImage.ExecutablePath, ProvisionerImage.VersionArgument]);
-
-			if (reported.ExitCode == 0 && reported.Stdout.Trim() is { Length: > 0 } version)
-			{
-				return resolution with { Version = version };
-			}
-		}
-		catch (Exception exception) when (exception is not OperationCanceledException)
-		{
-			// The digest already names the image; the version string is only its legible form.
-		}
-
-		return resolution;
-	}
-
-	// Standard error rather than the test output: a stale provisioner is not a failure, and a passing
-	// test's output is what a console logger drops. The process's own stderr reaches the CI log
-	// whatever the outcome of every test is.
-	private static void WarnIfStale(ProvisionerResolution resolution)
-	{
-		if (resolution.StalenessReason is null)
-		{
-			return;
-		}
-
-		Console.Error.WriteLine($"[bench] {resolution.Describe()}");
 	}
 
 	// The readiness gate is the provisioned table, not the server: a container whose init script failed

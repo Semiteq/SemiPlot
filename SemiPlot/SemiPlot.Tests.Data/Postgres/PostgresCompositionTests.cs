@@ -3,6 +3,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
+using Npgsql;
+
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
 using SemiPlot.DataSource.Postgres;
@@ -25,7 +27,7 @@ public sealed class PostgresCompositionTests
 	}
 
 	// The caller owns the data source, because it holds a connection pool and its idle timer.
-	private static PostgresDataProvider NewProvider(PostgresConnectionSettings settings, ArchiveDataSource dataSource)
+	private static PostgresDataProvider NewProvider(PostgresConnectionSettings settings, NpgsqlDataSource dataSource)
 	{
 		return new PostgresDataProvider(
 			dataSource,
@@ -66,7 +68,7 @@ public sealed class PostgresCompositionTests
 	{
 		using var services = BuildProvider();
 
-		Assert.NotNull(services.GetRequiredService<ArchiveDataSource>());
+		Assert.NotNull(services.GetRequiredService<NpgsqlDataSource>());
 	}
 
 	// The data source is a DI singleton, and ServiceProvider.Dispose() throws for an instantiated
@@ -77,7 +79,7 @@ public sealed class PostgresCompositionTests
 	{
 		var services = BuildProvider();
 
-		_ = services.GetRequiredService<ArchiveDataSource>();
+		_ = services.GetRequiredService<NpgsqlDataSource>();
 
 		services.Dispose();
 	}
@@ -118,7 +120,7 @@ public sealed class PostgresCompositionTests
 	[Theory]
 	[InlineData(typeof(IDataProvider))]
 	[InlineData(typeof(IScheduler))]
-	[InlineData(typeof(ArchiveDataSource))]
+	[InlineData(typeof(NpgsqlDataSource))]
 	[InlineData(typeof(ArchiveExceptionMapper))]
 	[InlineData(typeof(ArchiveTimeConverter))]
 	[InlineData(typeof(PostgresConnectionSettings))]
@@ -157,7 +159,7 @@ public sealed class PostgresCompositionTests
 	public void SubscribeRejectsANullPenList()
 	{
 		var settings = Settings();
-		using var dataSource = new ArchiveDataSource(settings);
+		using var dataSource = NpgsqlDataSource.Create(settings.ConnectionString);
 		var provider = NewProvider(settings, dataSource);
 
 		Assert.Throws<ArgumentNullException>(() => provider.Subscribe(null!));
@@ -181,8 +183,8 @@ public sealed class PostgresCompositionTests
 	{
 		var settings = Settings(TimeSpan.FromMilliseconds(10));
 
-		using var droppedDataSource = new ArchiveDataSource(settings);
-		using var runningDataSource = new ArchiveDataSource(settings);
+		using var droppedDataSource = NpgsqlDataSource.Create(settings.ConnectionString);
+		using var runningDataSource = NpgsqlDataSource.Create(settings.ConnectionString);
 
 		var dropped = NewProvider(settings, droppedDataSource);
 		var running = NewProvider(settings, runningDataSource);

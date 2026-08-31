@@ -639,11 +639,9 @@ schema: public
 `source_time_zone` takes an IANA identifier, which .NET resolves on Windows as well, and is the zone
 the archive's naive timestamps are read in. The file states no query bound: the bound belongs to the
 `semiplot_reader` role and SemiBase owns it (`postgres-instance.md`), and SemiPlot sends no
-`statement_timeout` in any form. The connection string therefore carries `Command Timeout=0` so
-Npgsql's implicit 30 s client bound cannot abort a read before the server answers `57014`, and the
-read path stamps its own per-command backstop, a fixed five minutes, on every command it builds.
-That backstop is a fixed bound rather than one derived from a value read at connection time, so it
-is not guaranteed to sit above the server's: on a site whose reader role carries a
+`statement_timeout` in any form. The connection string carries `Command Timeout=300`, a fixed client
+backstop that stops a read the server is not answering; the live-edge poll overrides it with a 10 s
+bound of its own on every tick. The backstop is not guaranteed to sit above the server's: on a site whose reader role carries a
 `statement_timeout` above five minutes the client cancel and the server's own cancel race, and a
 slow-but-alive read can be reported as `ArchiveFault.Unreachable` rather than as
 `ArchiveFault.QueryTimedOut`. Loading returns a `Result`; a malformed file — unreadable, unparseable,

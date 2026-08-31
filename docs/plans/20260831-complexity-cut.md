@@ -399,9 +399,9 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 
 ### Task 6: Slice 2 close
 
-- [ ] `dotnet format SemiPlot.slnx`; `git log origin/master..HEAD --oneline` shows only slice-2 commits
-- [ ] `dotnet test SemiPlot.slnx` with Docker running - green
-- [ ] open the pull request; after merge, `git switch master && git pull --ff-only`
+- [x] `dotnet format SemiPlot.slnx`; `git log origin/master..HEAD --oneline` shows only slice-2 commits
+- [x] `dotnet test SemiPlot.slnx` with Docker running - green
+- [x] open the pull request; after merge, `git switch master && git pull --ff-only`
 
 ### Slice 3 — `provider-wrappers`
 
@@ -415,11 +415,11 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 - Modify: `SemiPlot/SemiPlot.Tests/UI/Startup/StartupProbeTests.cs:71`, `SemiPlot/SemiPlot.Tests.Data/Postgres/PostgresCompositionTests.cs`, `RealtimePollTests.cs`, `Integration/RealtimeEmptyArchiveTests.cs:140`, `RealtimePollReadTests.cs:325`
 - Modify: `docs/architecture/postgres-topology.md:93`
 
-- [ ] move the 300 s bound into the connection string and delete the wrapper
-- [ ] pass `NpgsqlDataSource` into the provider and the poll; keep the 10 s tick bound on the command
-- [ ] add one test in `PostgresCompositionTests` reading `CommandTimeout` off the settings' connection string
-- [ ] update the test sites and the topology diagram
-- [ ] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests` and `SemiPlot.Tests.Data` - must pass before task 8
+- [x] move the 300 s bound into the connection string and delete the wrapper
+- [x] pass `NpgsqlDataSource` into the provider and the poll; keep the 10 s tick bound on the command
+- [x] add one test in `PostgresCompositionTests` reading `CommandTimeout` off the settings' connection string
+- [x] update the test sites and the topology diagram
+- [x] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests` and `SemiPlot.Tests.Data` - must pass before task 8
 
 ### Task 8: Inline `PenLineStyleReader` and drop dead package references
 
@@ -429,10 +429,10 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 - Modify: `SemiPlot/SemiPlot.Core/SemiPlot.Core.csproj:5-6`
 - Modify: `SemiPlot/SemiPlot.Tests.Data/Integration/PostgresCatalogReadTests.cs` (the unknown-value case moves here if not already covered)
 
-- [ ] replace the reader with an `Enum.IsDefined` check in `ReadPen`
-- [ ] remove the two unused `PackageReference`s from `SemiPlot.Core.csproj`
-- [ ] move or drop the reader's test cases as stated
-- [ ] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests.Data` - must pass before task 9
+- [x] replace the reader with an `Enum.IsDefined` check in `ReadPen`
+- [x] remove the two unused `PackageReference`s from `SemiPlot.Core.csproj`
+- [x] move or drop the reader's test cases as stated
+- [x] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests.Data` - must pass before task 9
 
 ### Task 9: Slice 3 close
 

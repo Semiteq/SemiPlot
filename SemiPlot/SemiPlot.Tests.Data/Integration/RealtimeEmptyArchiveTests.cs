@@ -136,7 +136,7 @@ public sealed class RealtimeEmptyArchiveTests(PostgresContainerFixture postgresC
 	private RealtimePoll NewPoll(IServiceProvider services)
 	{
 		return new RealtimePoll(
-			services.GetRequiredService<ArchiveDataSource>(),
+			services.GetRequiredService<NpgsqlDataSource>(),
 			services.GetRequiredService<ArchiveTimeConverter>(),
 			services.GetRequiredService<ArchiveExceptionMapper>(),
 			services.GetRequiredService<PostgresConnectionSettings>(),

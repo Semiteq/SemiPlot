@@ -2,8 +2,6 @@
 
   <ItemGroup>
     <PackageReference Include="FluentResults"/>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions"/>
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"/>
     <PackageReference Include="System.Reactive"/>
   </ItemGroup>
 

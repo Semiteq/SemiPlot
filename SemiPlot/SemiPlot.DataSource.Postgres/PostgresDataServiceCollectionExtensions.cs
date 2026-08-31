@@ -3,6 +3,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
+using Npgsql;
+
 using SemiPlot.Core.Data;
 using SemiPlot.DataSource.Postgres.Configuration;
 
@@ -21,7 +23,7 @@ public static class PostgresDataServiceCollectionExtensions
 
 		services.AddSingleton<IScheduler>(DefaultScheduler.Instance);
 		services.AddSingleton(settings);
-		services.AddSingleton<ArchiveDataSource>();
+		services.AddSingleton(_ => NpgsqlDataSource.Create(settings.ConnectionString));
 		services.AddSingleton(new ArchiveTimeConverter(settings.SourceTimeZone));
 		services.AddSingleton(new ArchiveExceptionMapper(settings));
 
@@ -29,7 +31,7 @@ public static class PostgresDataServiceCollectionExtensions
 		// types, so its constructor is internal too and the container's public-constructor lookup would not
 		// find it.
 		services.AddSingleton<IDataProvider>(provider => new PostgresDataProvider(
-			provider.GetRequiredService<ArchiveDataSource>(),
+			provider.GetRequiredService<NpgsqlDataSource>(),
 			provider.GetRequiredService<ArchiveTimeConverter>(),
 			provider.GetRequiredService<ArchiveExceptionMapper>(),
 			provider.GetRequiredService<PostgresConnectionSettings>(),

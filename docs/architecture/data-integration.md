@@ -262,20 +262,6 @@ catalogue, and `DISTINCT unnest(@ids)` is the seeded window's own de-duplicating
 repeating an identifier costs one probe rather than two. A `NULL` answer means those variables carry
 no row yet — a content state, not a failure.
 
-### Default-partition occupancy
-
-```sql
-SELECT EXISTS (SELECT 1 FROM ONLY public.tpdefault);
-```
-
-Read once at startup, on a connection of its own, to answer whether samples have been landing in the
-catch-all partition. `ONLY` is load-bearing: without it the read descends into the whole partition
-tree and answers about the archive instead of about the catch-all. `EXISTS` is load-bearing for the
-same reason a count is not — the answer is a yes or a no, and the planner stops at the first row. The
-partition is qualified rather than left to the search path because it is an object named in a warning
-the operator has to find under exactly that name. **Archive health** below states what the answer
-does.
-
 ### Gap explanation
 
 ```sql
@@ -528,23 +514,6 @@ history: `StartupFailureMapper.Describe(fault)`, which is the detail followed by
 the error's own `Message`. That row has a single writer, the bound stream, so nothing else can set
 or clear it.
 
-### Archive health
-
-`ArchiveHealthReader` runs once on the startup path, after both reads have succeeded, on a connection
-of its own under a 10 s bound. It answers with the warnings it found — zero or more — and never with
-a failure.
-
-One state today: a non-empty `public.tpdefault`, which `scada-archive.md` names as a fault signal. It
-is a warning rather than a startup failure because every read still returns those rows and only
-partition elimination is lost, so refusing to start would hide a readable archive from its operator
-over a planning fault written on the SCADA side. A check that cannot run reports nothing and writes a
-log line: a degraded probe must not become a second failure plane beside the reads that matter, and
-"the archive might be unhealthy, we could not tell" is not a state an operator can act on.
-
-The warnings ride out of startup on `StartupData` and become the banner's second row. The two rows
-are independent facts and have separate writers: the health row is written once at startup, and the
-connection stream can neither set nor clear it.
-
 ## Error semantics
 
 Everything on the data path returns `FluentResults`, caller-argument faults included: an inverted
@@ -570,7 +539,6 @@ so no failure crosses to the UI thread (`DA-1`).
 | Connection lost mid-session | failed `Result` on the query; realtime tick dropped | Chart keeps the data it has; staleness is visible |
 | Three consecutive realtime ticks fail | `ArchiveConnectionLostError` on `ConnectionFaults`; the observable keeps running | A banner row over the chart naming the live edge that stopped answering and the check to make — the server still running and still reachable — cleared by the first tick that succeeds |
 | A column the read needs is absent (SQLSTATE `42703`) | failed `Result` carrying `ArchiveShapeUnexpectedError` with the server's own detail | "The archive has an unexpected shape" — the remedy is running `semibase site`, then finding what altered the table |
-| `public.tpdefault` holds rows | success; `ArchiveDefaultPartitionNotEmptyError` rides out of startup as a health warning | A banner row over a working chart naming the partition, stating that its rows are still read and that reads which cannot skip it are slower — the remedy is on the SCADA side |
 | Query timeout | failed `Result` | Same as above; the timeout is a configured bound, not an accident |
 | The database does not exist (SQLSTATE `3D000`, the server answers) | failed `Result` carrying `ArchiveNotInitialisedError` whose `MissingObject` is `Database`, distinguished from a connection failure | "The archive is not provisioned" — the remedy is running `semibase site` |
 | The credentials are refused or a grant is missing (SQLSTATE `28P01`, `28000`, `42501`) | failed `Result`, distinguished from a connection failure | "The archive refused the credentials" — the remedy is the user, password or grants, not the network |
@@ -621,7 +589,6 @@ commissioning unfinished against provisioning unfinished — which is what the p
 | `ArchiveQueryTimedOutError` | host, port, database, timeout (the effective server `statement_timeout` the failing read ran under, read on the failure path from a session of the same reader role; `TimeSpan.Zero` means there is no bound to report — the read-back could not run, or the server bounds nothing) | The read exceeded its configured bound, or the server ended it and no bound can be named |
 | `ArchiveShapeUnexpectedError` | host, port, database, detail (what the server said) | The tables are there, but not the columns they are expected to carry |
 | `ArchiveConnectionLostError` | host, port, database, failureThreshold (the number of consecutive failed ticks that raised the fault, fixed at the raise — not a running count) | The live edge stopped answering; the history already drawn is unaffected |
-| `ArchiveDefaultPartitionNotEmptyError` | host, port, database, partition | Samples are landing in the partition that catches days nobody created |
 | `ArchiveReadFailedError` | host, port, database, sqlState (empty when the failure carried none) | The archive rejected the read for a reason this build does not recognise |
 
 The two connection-file types are raised by the settings loader. Six `Archive*` types are the
@@ -629,9 +596,8 @@ vocabulary the read path maps its SQLSTATEs onto — `28P01` is a type of its ow
 schema error because it sends the operator to a separate remedy: fix the credentials, not the
 provisioning, and `42703` is `ArchiveShapeUnexpectedError` rather than a missing relation because
 the tables are there and it is their columns that are wrong.
-The remaining two are raised without a SQLSTATE behind them: `ArchiveConnectionLostError` counts
-failed poll ticks and `ArchiveDefaultPartitionNotEmptyError` reports a successful health read whose
-answer was `true`. `3D000` and `42P01` share `ArchiveNotInitialisedError` and stay apart inside it on
+The remaining one is raised without a SQLSTATE behind it: `ArchiveConnectionLostError` counts
+failed poll ticks. `3D000` and `42P01` share `ArchiveNotInitialisedError` and stay apart inside it on
 `MissingObject`, because both say the same thing — something the read needs was never created — and
 differ only in what to create. On the table case the type carries the table name rather than assuming
 `trends`, because `42P01` is table-agnostic and the name is what the detail line reports; the remedy
@@ -646,9 +612,9 @@ type carrying its SQLSTATE, so nothing escapes as an exception and nothing cross
 one place a remedy is written: an operator told a state alone is told nothing to do about it, so no
 consumer renders `IError.Message`. `ErrorWindow` lays the three parts out as three blocks.
 `Describe` joins the detail and the remedy into the single line a banner row has room for and drops
-the title, which restates the detail's first clause. Two types never open the error window — a
-lost live edge and a non-empty default partition are drawn as banner rows over a chart that works
-— and they carry an arm for the remedy, which is the half a banner row cannot do without. The
+the title, which restates the detail's first clause. One type never opens the error window — a
+lost live edge is drawn as a banner row over a chart that works — and it carries an arm for the
+remedy, which is the half a banner row cannot do without. The
 totality of that map is guarded by a reflection test rather than
 by the compiler: `CS8509` fires on any switch expression whose exhaustiveness cannot be proven, and
 over an interface it never can be, so a switch covering every type still warns and promoting that
@@ -734,11 +700,9 @@ archive read left inside it either blocks Avalonia's setup or throws through it.
 
 1. Load `<ConfigDir>/archive-connection.yaml` and register `AddPostgresData(settings)`.
 2. Resolve `IDataProvider`, read the pen catalogue, then read the archive extent.
-3. Read the archive's health warnings, which end nothing: they run only once both reads have
-   succeeded, so the archive is already known to answer, and they ride out on the success channel.
 
-The first two steps answer with a `Result`. What the sequence carries — the container, the pens, the
-extent and the health warnings — crosses the Avalonia boundary in a `StartupData` record, so
+Both reads answer with a `Result`. What the sequence carries — the container, the pens and the
+extent — crosses the Avalonia boundary in a `StartupData` record, so
 `App.InitializeServices` consumes data already read and awaits nothing. The settings do not travel that way: they reach the
 provider through the DI singleton `AddPostgresData(settings)` registers. A failed step
 short-circuits, disposes the container, and carries its error to `Program`, which maps it through
@@ -841,5 +805,5 @@ When a chart is empty, check in this order. Each step distinguishes a different 
    mismatch if the offset looks like a whole number of hours.
 6. Is `tpdefault` non-empty? Rows there indicate the SCADA failed to create a daily partition. They
    are **not** a cause of an empty chart: every read still returns them, and what is lost is
-   partition elimination, so reads that cannot skip that partition are slower. Startup reports it as
-   a banner row over a working chart, and the remedy is on the SCADA side.
+   partition elimination, so reads that cannot skip that partition are slower. The remedy is on the
+   SCADA side.

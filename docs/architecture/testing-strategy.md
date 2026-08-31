@@ -75,7 +75,7 @@ There are three families — the same category with different foreign parties.
 
 **Against a real PostgreSQL** — `SemiPlot.Tests.Data/Integration/`: `PostgresCatalogReadTests`,
 `PostgresExtentReadTests`, `PostgresHistoryReadTests`, `RealtimePollReadTests`,
-`RealtimeSubscriptionTests`, `RealtimeEmptyArchiveTests`, `ArchiveHealthReadTests`,
+`RealtimeSubscriptionTests`, `RealtimeEmptyArchiveTests`,
 `StatementTimeoutReadTests`, `ArchiveWriterTransactionTests`, `CoarseFlushTests`,
 `ExplainPlanTests`. Seams guarded: statement text, type mapping, the demo writer's server-side
 thinning against `LayerThinner`'s own selection,

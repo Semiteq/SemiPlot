@@ -18,22 +18,15 @@ internal static class ArchiveStatements
 	public const string TrendsRelation = "trends";
 
 	/// <summary>
-	/// The catch-all partition of <see cref="TrendsRelation"/>, named as
-	/// <see cref="DefaultPartitionOccupancy"/> reads it. Schema-qualified, because it names an object the
-	/// operator goes looking for rather than a relation a bound statement resolves through the search path.
-	/// </summary>
-	public const string DefaultPartitionRelation = "public.tpdefault";
-
-	/// <summary>
 	/// Ordered by the coalesced group rather than by the raw column, because the row read projects a null
 	/// group onto the empty string: PostgreSQL sorts nulls last while the empty string sorts first, so
 	/// ordering on the raw column would return a list not ordered by the values it carries.
 	/// </summary>
 	public const string PenCatalog = """
-		SELECT id, name, group_name, color, line_style
-		FROM semiplot_tags
-		ORDER BY coalesce(group_name, ''), name;
-		""";
+	                                 SELECT id, name, group_name, color, line_style
+	                                 FROM semiplot_tags
+	                                 ORDER BY coalesce(group_name, ''), name;
+	                                 """;
 
 	/// <summary>
 	/// The oldest and newest raw timestamps across the whole catalogue, read once to bound the chart.
@@ -45,13 +38,13 @@ internal static class ArchiveStatements
 	/// </para>
 	/// </summary>
 	public const string ArchiveExtent = """
-		SELECT min(lo) AS first, max(hi) AS last
-		FROM semiplot_tags tag
-		CROSS JOIN LATERAL (
-		    SELECT (SELECT min(t) FROM trends WHERE id = tag.id AND l = 0) AS lo,
-		           (SELECT max(t) FROM trends WHERE id = tag.id AND l = 0) AS hi
-		) bounds;
-		""";
+	                                    SELECT min(lo) AS first, max(hi) AS last
+	                                    FROM semiplot_tags tag
+	                                    CROSS JOIN LATERAL (
+	                                        SELECT (SELECT min(t) FROM trends WHERE id = tag.id AND l = 0) AS lo,
+	                                               (SELECT max(t) FROM trends WHERE id = tag.id AND l = 0) AS hi
+	                                    ) bounds;
+	                                    """;
 
 	/// <summary>
 	/// Every raw sample newer than the last one a subscription saw. Issued once per poll tick.
@@ -68,11 +61,11 @@ internal static class ArchiveStatements
 	/// </para>
 	/// </summary>
 	public const string RealtimePoll = """
-		SELECT id, t, v, q
-		FROM trends
-		WHERE id = ANY(@ids) AND l = 0 AND t > @lastSeen
-		ORDER BY t;
-		""";
+	                                   SELECT id, t, v, q
+	                                   FROM trends
+	                                   WHERE id = ANY(@ids) AND l = 0 AND t > @lastSeen
+	                                   ORDER BY t;
+	                                   """;
 
 	/// <summary>
 	/// The newest raw timestamp across the subscribed variables, read once to establish the point a poll
@@ -92,12 +85,12 @@ internal static class ArchiveStatements
 	/// </para>
 	/// </summary>
 	public const string RealtimeBaseline = """
-		SELECT max(hi) AS last
-		FROM (SELECT DISTINCT unnest(@ids) AS id) requested
-		CROSS JOIN LATERAL (
-		    SELECT (SELECT max(t) FROM trends WHERE id = requested.id AND l = 0) AS hi
-		) bounds;
-		""";
+	                                       SELECT max(hi) AS last
+	                                       FROM (SELECT DISTINCT unnest(@ids) AS id) requested
+	                                       CROSS JOIN LATERAL (
+	                                           SELECT (SELECT max(t) FROM trends WHERE id = requested.id AND l = 0) AS hi
+	                                       ) bounds;
+	                                       """;
 
 	/// <summary>
 	/// A window of one layer, with the left edge seeded so a pen whose last sample predates the window
@@ -138,46 +131,25 @@ internal static class ArchiveStatements
 	/// </para>
 	/// </summary>
 	public const string SparseHistoryWindow = """
-		SELECT id, t, v, q
-		FROM (
-		    SELECT seed.id, seed.t, seed.v, seed.q
-		    FROM (SELECT DISTINCT unnest(@ids) AS id) requested
-		    CROSS JOIN LATERAL (
-		        SELECT prior.id, prior.t, prior.v, prior.q
-		        FROM trends prior
-		        WHERE prior.id = requested.id AND prior.l = @layer
-		          AND prior.t < @from AND prior.t >= @from - greatest(@to - @from, interval '1 day')
-		        ORDER BY prior.t DESC
-		        LIMIT 1
-		    ) seed
-		    UNION ALL
-		    SELECT id, t, v, q
-		    FROM trends
-		    WHERE id = ANY(@ids) AND l = @layer AND t >= @from AND t < @to
-		) sample
-		ORDER BY id, t;
-		""";
-
-	/// <summary>
-	/// Whether the default partition holds any row at all. Issued once, at startup, as a health check.
-	/// <para>
-	/// What makes the answer about the catch-all rather than about the archive is that the relation named is
-	/// the leaf partition itself: naming <c>trends</c> is what would expand into its whole partition tree.
-	/// <c>ONLY</c> blocks that expansion downwards, and <c>tpdefault</c> is a leaf with no children of its
-	/// own, so here it changes no plan — it only starts mattering if the default partition is ever
-	/// partitioned in turn. <c>EXISTS</c> is load-bearing for the same reason a count is not: the answer is
-	/// a yes or a no, and the planner stops the scan at the first row instead of counting a partition that
-	/// is never pruned.
-	/// </para>
-	/// <para>
-	/// It is qualified rather than left to the search path because the partition is not a relation SemiPlot
-	/// reads data from — it is an object named in the fault it reports, and the operator has to find that
-	/// object under exactly that name.
-	/// </para>
-	/// </summary>
-	public const string DefaultPartitionOccupancy = """
-		SELECT EXISTS (SELECT 1 FROM ONLY public.tpdefault);
-		""";
+	                                          SELECT id, t, v, q
+	                                          FROM (
+	                                              SELECT seed.id, seed.t, seed.v, seed.q
+	                                              FROM (SELECT DISTINCT unnest(@ids) AS id) requested
+	                                              CROSS JOIN LATERAL (
+	                                                  SELECT prior.id, prior.t, prior.v, prior.q
+	                                                  FROM trends prior
+	                                                  WHERE prior.id = requested.id AND prior.l = @layer
+	                                                    AND prior.t < @from AND prior.t >= @from - greatest(@to - @from, interval '1 day')
+	                                                  ORDER BY prior.t DESC
+	                                                  LIMIT 1
+	                                              ) seed
+	                                              UNION ALL
+	                                              SELECT id, t, v, q
+	                                              FROM trends
+	                                              WHERE id = ANY(@ids) AND l = @layer AND t >= @from AND t < @to
+	                                          ) sample
+	                                          ORDER BY id, t;
+	                                          """;
 
 	/// <summary>
 	/// The server's effective bound, read only after a read has already failed with <c>57014</c> and only
@@ -188,6 +160,6 @@ internal static class ArchiveStatements
 	/// the wrong query.
 	/// </summary>
 	public const string EffectiveStatementTimeout = """
-		SELECT setting FROM pg_settings WHERE name = 'statement_timeout';
-		""";
+	                                                SELECT setting FROM pg_settings WHERE name = 'statement_timeout';
+	                                                """;
 }

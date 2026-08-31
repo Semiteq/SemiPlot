@@ -56,8 +56,6 @@ public static class StartupFailureMapper
 			ArchiveNotInitialisedError notInitialised => MapArchiveNotInitialised(notInitialised),
 			ArchiveConnectionLostError connectionLost => MapArchiveConnectionLost(connectionLost),
 			ArchiveShapeUnexpectedError shapeUnexpected => MapArchiveShapeUnexpected(shapeUnexpected),
-			ArchiveDefaultPartitionNotEmptyError defaultPartition => MapArchiveDefaultPartitionNotEmpty(
-				defaultPartition),
 			ArchiveQueryTimedOutError serverTimeout => MapArchiveQueryTimedOut(serverTimeout),
 			ArchiveReadFailedError readFailed => MapArchiveReadFailed(readFailed),
 			StartupReadTimedOutError startupTimeout => MapStartupReadTimedOut(startupTimeout),
@@ -146,11 +144,11 @@ public static class StartupFailureMapper
 		if (error.MissingObject == ArchiveObject.Database)
 		{
 			return "Run 'semibase site' against this server to provision the database, or correct the "
-				+ "database name in the connection file.";
+				   + "database name in the connection file.";
 		}
 
 		return $"Table '{error.Table}' is created by provisioning. Run 'semibase site' against this "
-			+ "database to finish provisioning it.";
+			   + "database to finish provisioning it.";
 	}
 
 	// This one never opens the error window: a lost live edge arrives on the connection stream long after
@@ -178,7 +176,7 @@ public static class StartupFailureMapper
 		var archive = FormattableString.Invariant($"'{error.Database}' at {error.Host}:{error.Port}");
 
 		var detail = $"The archive {archive} holds the tables SemiPlot reads, but not the columns they "
-			+ $"are expected to carry. The server answered: {error.Detail}";
+					 + $"are expected to carry. The server answered: {error.Detail}";
 
 		return new StartupFailureView(
 			"The archive has an unexpected shape",
@@ -186,26 +184,6 @@ public static class StartupFailureMapper
 			"Table 'public.trends' and its columns are created by provisioning. Run 'semibase site' against "
 			+ "this database to bring it to the shape this build reads, and check that nothing else has "
 			+ "altered the table since.");
-	}
-
-	// Like the lost-connection arm, this one never opens the error window: the startup health check carries
-	// it out beside a successful read and it is drawn as a banner over a working chart. The arm exists
-	// because the mapper is the one place a public error type is turned into words, and the coverage test
-	// enumerates the vocabulary by namespace rather than by which types can reach a window.
-	private static StartupFailureView MapArchiveDefaultPartitionNotEmpty(ArchiveDefaultPartitionNotEmptyError error)
-	{
-		var archive = FormattableString.Invariant($"'{error.Database}' at {error.Host}:{error.Port}");
-
-		var detail = $"The archive {archive} holds rows in '{error.Partition}', the partition that catches "
-			+ "samples whose own day was never created. Those rows are still read, and every read that "
-			+ "cannot skip that partition is slower for them.";
-
-		return new StartupFailureView(
-			"The archive's default partition holds rows",
-			detail,
-			"The rows were written by the SCADA, so the remedy is on that side: find out why the daily "
-			+ "partition was missing at write time, then move those rows into the days they belong to and "
-			+ "leave the default partition empty.");
 	}
 
 	private static StartupFailureView MapArchiveQueryTimedOut(ArchiveQueryTimedOutError error)
@@ -220,9 +198,9 @@ public static class StartupFailureMapper
 
 		var remedy = noBound
 			? "Check whether an administrator cancelled the read, and read statement_timeout for the "
-				+ "reader role on the server — the answer carried no number to report."
+			  + "reader role on the server — the answer carried no number to report."
 			: "Raise statement_timeout for the reader role, or narrow the window SemiPlot opens on. A "
-				+ "read this slow usually means the archive lacks an index on its time column.";
+			  + "read this slow usually means the archive lacks an index on its time column.";
 
 		return new StartupFailureView("The archive ended the read", detail, remedy);
 	}
@@ -238,9 +216,9 @@ public static class StartupFailureMapper
 
 		var remedy = named
 			? $"This build has no named handling for SQLSTATE {error.SqlState}. Find the matching entry "
-				+ "in the PostgreSQL server log and report it with the SemiPlot log file."
+			  + "in the PostgreSQL server log and report it with the SemiPlot log file."
 			: "The failure came from the client side. Report the SemiPlot log file, which carries the "
-				+ "exception this build could not name.";
+			  + "exception this build could not name.";
 
 		return new StartupFailureView("The archive rejected the read", detail, remedy);
 	}

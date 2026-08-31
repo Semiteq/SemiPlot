@@ -24,7 +24,6 @@ public static class PostgresDataServiceCollectionExtensions
 		services.AddSingleton<ArchiveDataSource>();
 		services.AddSingleton(new ArchiveTimeConverter(settings.SourceTimeZone));
 		services.AddSingleton<StatementTimeoutReader>();
-		services.AddSingleton<ArchiveHealthReader>();
 		services.AddSingleton(new ArchiveExceptionMapper(settings));
 
 		// A factory rather than type activation: two of the provider's constructor parameters are internal

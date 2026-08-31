@@ -17,7 +17,6 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 	private readonly CompositeDisposable _subscriptions = new();
 
 	private ObservableAsPropertyHelper<string?>? _archiveConnectionMessage;
-	private string? _archiveHealthMessage;
 	private TrendChartViewModel? _chartViewModel;
 	private TrendLegendViewModel? _legendViewModel;
 	private MinimapViewModel? _minimapViewModel;
@@ -39,39 +38,16 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 	/// What the live-edge poll reports about its own connection: null while the archive answers, and while
 	/// it does not, what <see cref="StartupFailureMapper.Describe"/> makes of the fault — the state plus
 	/// the remedy, rather than the raw <see cref="FluentResults.IError.Message"/>, which names a state the
-	/// operator can do nothing with. Its only writer is the stream
-	/// <see cref="ObserveArchiveConnection"/> binds, so <see cref="ArchiveHealthMessage"/> can neither
-	/// set nor clear it — the two rows are independent facts and are rendered as two rows.
+	/// operator can do nothing with. Its only writer is the stream <see cref="ObserveArchiveConnection"/>
+	/// binds.
 	/// </summary>
 	public string? ArchiveConnectionMessage => _archiveConnectionMessage?.Value;
 
 	public bool HasArchiveConnectionMessage => ArchiveConnectionMessage is not null;
 
 	/// <summary>
-	/// A warning the startup read carried out of the archive — a fault the operator must act on that
-	/// stopped nothing. Written once at startup and never again, and never by the connection stream.
-	/// </summary>
-	public string? ArchiveHealthMessage
-	{
-		get => _archiveHealthMessage;
-		set
-		{
-			if (_archiveHealthMessage == value)
-			{
-				return;
-			}
-
-			this.RaiseAndSetIfChanged(ref _archiveHealthMessage, value);
-			this.RaisePropertyChanged(nameof(HasArchiveHealthMessage));
-		}
-	}
-
-	public bool HasArchiveHealthMessage => _archiveHealthMessage is not null;
-
-	/// <summary>
 	/// Binds the connection row to the coordinator's republished state stream, which already arrives on
-	/// the UI scheduler. Called once, at startup: a second bind would give the row a second writer, which
-	/// is what the split into two properties exists to prevent.
+	/// the UI scheduler. Called once, at startup: a second bind would give the row a second writer.
 	/// </summary>
 	public void ObserveArchiveConnection(IObservable<ArchiveConnectionState> connectionStates)
 	{

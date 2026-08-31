@@ -39,8 +39,8 @@ public sealed class StartupFailureMapperTests
 	public void ErrorTypeEnumeration_CoversBothNamespaces()
 	{
 		// A coverage test over an empty set passes vacuously. This pins that the reflection actually finds
-		// the vocabulary, Core's ten types and the UI-local one.
-		_errorTypes.Should().HaveCount(11);
+		// the vocabulary, Core's nine types and the UI-local one.
+		_errorTypes.Should().HaveCount(10);
 		_errorTypes.Should().Contain(typeof(ArchiveReadFailedError)).And.Contain(typeof(StartupReadTimedOutError));
 	}
 
@@ -224,23 +224,6 @@ public sealed class StartupFailureMapperTests
 		view.Title.Should().Be("The archive has an unexpected shape");
 		view.Detail.Should().Contain("scada-host:5432").And.Contain("column \"v\" does not exist");
 		view.Remedy.Should().Contain("public.trends").And.Contain("semibase site");
-	}
-
-	// It never reaches a window: the health check carries it out beside a successful read and the banner
-	// draws it over a working chart. The arm is here because the coverage test enumerates the vocabulary by
-	// namespace, and a type with no arm would reach the operator through the catch-all instead.
-	[Fact]
-	public void ArchiveDefaultPartitionNotEmpty_NamesThePartitionAndSendsTheOperatorToTheScada()
-	{
-		var view = StartupFailureMapper.Map(new ArchiveDefaultPartitionNotEmptyError(
-			"scada-host",
-			5432,
-			"semiplot",
-			"public.tpdefault"));
-
-		view.Title.Should().Be("The archive's default partition holds rows");
-		view.Detail.Should().Contain("scada-host:5432").And.Contain("public.tpdefault");
-		view.Remedy.Should().Contain("SCADA");
 	}
 
 	// The exception arm is what stops a throw on the startup path — a data source that cannot be built, a

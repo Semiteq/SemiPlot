@@ -49,10 +49,9 @@ internal sealed class RealtimePoll
 	// A tick runs every poll_interval_ms and must not inherit ArchiveDataSource's five-minute client
 	// backstop: a server that accepts connections and then stops answering would hold each tick for
 	// minutes and reach the fault threshold only after fifteen of them, leaving a frozen chart and no
-	// banner in between. Ten seconds is the bound ArchiveHealthReader already carries for the same reason
-	// — an order of magnitude above the second a bench cadence gives a tick, and low enough that three
-	// stalled ticks raise the fault inside half a minute. The connect attempt keeps its own separate
-	// bound, PostgresConnectionSettings.ConnectTimeoutSeconds.
+	// banner in between. Ten seconds is an order of magnitude above the second a bench cadence gives a
+	// tick, and low enough that three stalled ticks raise the fault inside half a minute. The connect
+	// attempt keeps its own separate bound, PostgresConnectionSettings.ConnectTimeoutSeconds.
 	private const int TickCommandTimeoutSeconds = 10;
 
 	private static readonly IReadOnlyList<Sample> _noSamples = [];
@@ -201,7 +200,8 @@ internal sealed class RealtimePoll
 		{
 			Advance(baseline);
 
-			_logger.LogDebug("The realtime baseline for {PenCount} variables is {Baseline:O}.", _penIds.Length, baseline);
+			_logger.LogDebug("The realtime baseline for {PenCount} variables is {Baseline:O}.", _penIds.Length,
+				baseline);
 		}
 		else
 		{

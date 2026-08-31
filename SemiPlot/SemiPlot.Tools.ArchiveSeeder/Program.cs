@@ -11,29 +11,59 @@ public static class Program
 			: await RunSeedAsync(arguments);
 	}
 
+	// The try covers the parse and the in-memory generation and stops there. A value inside its own
+	// option's range can still be one the arithmetic downstream cannot hold — --days 1000000 underflows
+	// SeederOptions.Start before any check reads it — and the operator typed a command line either way,
+	// so that is a usage block rather than a stack trace. An ArgumentException out of the writer is not:
+	// the server answered, and printing the usage block would blame the options for it.
 	private static async Task<int> RunSeedAsync(string[] arguments)
 	{
-		var parsed = SeederOptions.Parse(arguments);
+		SeederOptions options;
+		ArchiveRow[] rows;
 
-		return parsed.IsFailed
-			? ReportRejection(parsed, SeederOptions.Usage)
-			: await SeedAsync(parsed.Value);
+		try
+		{
+			var parsed = SeederOptions.Parse(arguments);
+
+			if (parsed.IsFailed)
+			{
+				return ReportRejection(parsed, SeederOptions.Usage);
+			}
+
+			options = parsed.Value;
+
+			var rawRows = RawLayerGenerator.Generate(options);
+
+			rows = [.. rawRows, .. LayerThinner.ThinAll(rawRows)];
+		}
+		catch (ArgumentException exception)
+		{
+			return ReportUsage(exception, SeederOptions.Usage);
+		}
+
+		return await SeedAsync(options, rows);
 	}
 
 	private static async Task<int> RunFollowAsync(string[] arguments)
 	{
-		var parsed = FollowOptions.Parse(arguments);
+		Result<FollowOptions> parsed;
+
+		try
+		{
+			parsed = FollowOptions.Parse(arguments);
+		}
+		catch (ArgumentException exception)
+		{
+			return ReportUsage(exception, FollowOptions.Usage);
+		}
 
 		return parsed.IsFailed
 			? ReportRejection(parsed, FollowOptions.Usage)
 			: await FollowAsync(parsed.Value);
 	}
 
-	private static async Task<int> SeedAsync(SeederOptions options)
+	private static async Task<int> SeedAsync(SeederOptions options, ArchiveRow[] rows)
 	{
-		var rawRows = RawLayerGenerator.Generate(options);
-		var rows = rawRows.Concat(LayerThinner.ThinAll(rawRows)).ToArray();
-
 		ReportPlan(options, rows);
 
 		var written = await new ArchiveWriter(options.ConnectionString)
@@ -207,6 +237,15 @@ public static class Program
 		{
 			Console.WriteLine($"layer {layer.Key} rows    {layer.Count()}");
 		}
+	}
+
+	private static int ReportUsage(Exception exception, string usage)
+	{
+		Console.Error.WriteLine(exception.Message);
+		Console.Error.WriteLine();
+		Console.Error.WriteLine(usage);
+
+		return 1;
 	}
 
 	private static int ReportRejection(ResultBase result, string usage)

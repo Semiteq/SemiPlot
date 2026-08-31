@@ -31,8 +31,6 @@ public sealed class ArchiveDatabaseTests(PostgresContainerFixture postgresContai
 		Assert.True(tags > 0, $"the clone holds {tags} tag rows.");
 	}
 
-	// Disposal drops what the fixture created and nothing else, which is the only place in this suite
-	// where a database is dropped at all.
 	[Fact]
 	public async Task TheDatabaseIsGoneAfterDisposal()
 	{

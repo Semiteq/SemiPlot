@@ -8,7 +8,7 @@
 #
 # The database name and the two role passwords come from the container environment,
 # which the entrypoint passes through unchanged. SEMIPLOT_PROVISIONED_DATABASE is
-# written in C# as SemibaseProvisioner.ProvisionedDatabase; semibase fails on its own
+# written in C# as BenchNames.ProvisionedDatabase; semibase fails on its own
 # when either password is missing on a fresh cluster.
 #
 # No --expected-major: the base image is an argument, and SemiBase enforces its own

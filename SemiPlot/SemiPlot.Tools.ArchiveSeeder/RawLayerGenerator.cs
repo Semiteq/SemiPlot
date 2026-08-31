@@ -4,24 +4,6 @@ public static class RawLayerGenerator
 {
 	public static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(100);
 
-	private const double IdleShare = 0.47;
-	private const double StepShare = 0.40;
-	private const double RampShare = 0.05;
-
-	private const double MinimumRampSeconds = 0.4;
-	private const double MaximumRampSeconds = 1.5;
-	private const int MinimumSpikeTicks = 2;
-	private const int SpikeTicksExclusiveMaximum = 5;
-	private const double IntervalCapFactor = 8.0;
-
-	private enum SegmentKind
-	{
-		Idle,
-		Step,
-		Ramp,
-		Spike
-	}
-
 	public static IReadOnlyList<ArchiveRow> Generate(SeederOptions options)
 	{
 		ArgumentOutOfRangeException.ThrowIfLessThan(options.Days, 1);
@@ -29,10 +11,16 @@ public static class RawLayerGenerator
 
 		var rows = new List<ArchiveRow>();
 		var breaks = BreakPlan.Create(options);
+		var intervalTicks = ChangeIntervalTicks(options.ChangeSeconds);
+
+		if (DescribeUnmarkableRun(breaks, intervalTicks) is { } unmarkable)
+		{
+			throw new ArgumentOutOfRangeException(nameof(options), options.ChangeSeconds, unmarkable);
+		}
 
 		foreach (var pen in SelectPens(options.PenCount))
 		{
-			AppendPen(rows, pen, options, breaks);
+			AppendPen(rows, pen, options.Seed, intervalTicks, breaks);
 		}
 
 		return rows;
@@ -69,72 +57,101 @@ public static class RawLayerGenerator
 		return selected;
 	}
 
-	private static void AppendPen(List<ArchiveRow> rows, SyntheticPen pen, SeederOptions options, BreakPlan breaks)
+	// The one lattice both generators write on: docs/architecture/bench.md#what-the-generator-emits.
+	internal static void AppendWindow(
+		List<ArchiveRow> rows,
+		SyntheticPen pen,
+		long seed,
+		long intervalTicks,
+		long fromTicks,
+		long toExclusiveTicks,
+		bool resumedAfterBreak,
+		bool breakFollows)
 	{
-		var random = new SeededRandom(options.Seed, pen.PenId);
-		var trace = new PenTrace(rows, (int)pen.PenId, PollInterval);
+		var anchorOffset = PollInterval.Ticks;
 
-		trace.RestingLevel = LevelFor(options.Seed, pen, trace.NextSegment());
+		var carriesAnchor = intervalTicks > anchorOffset;
 
+		// The plant kept moving while archiving was stopped, so the first change of a resumed run opens
+		// on a level of its own — which is what makes the q = 16 row a change row with no pre-anchor.
+		var dropsAnchor = resumedAfterBreak;
+
+		for (var index = FirstIndex(fromTicks, intervalTicks); ; index++)
+		{
+			var changeTicks = index * intervalTicks;
+			var anchorTicks = changeTicks - anchorOffset;
+
+			// A change past the window's end still hands its anchor to the window, which is what keeps two
+			// adjacent spans of a follow run from leaving a hole at the seam. A window a break closes has no
+			// such successor: the anchor would be a row repeating the previous value with no change behind
+			// it, and MarkRunBoundaries would put the q = 32 marker on it rather than on a real change.
+			if (anchorTicks >= toExclusiveTicks || (breakFollows && changeTicks >= toExclusiveTicks))
+			{
+				return;
+			}
+
+			if (carriesAnchor && !dropsAnchor && anchorTicks >= fromTicks)
+			{
+				rows.Add(Row(pen, anchorTicks, ValueAt(seed, pen, index - 1)));
+			}
+
+			if (changeTicks >= fromTicks && changeTicks < toExclusiveTicks)
+			{
+				rows.Add(Row(pen, changeTicks, ValueAt(seed, pen, index)));
+
+				dropsAnchor = false;
+			}
+		}
+	}
+
+	// Whole milliseconds only: the column keeps three decimal places, so an interval that survives the
+	// rounding is one the primary key can distinguish.
+	internal static long ChangeIntervalTicks(double changeSeconds)
+	{
+		var milliseconds = Math.Max(1.0, Math.Round(changeSeconds * 1000.0));
+
+		return (long)milliseconds * TimeSpan.TicksPerMillisecond;
+	}
+
+	private static void AppendPen(
+		List<ArchiveRow> rows,
+		SyntheticPen pen,
+		long seed,
+		long intervalTicks,
+		BreakPlan breaks)
+	{
 		for (var runIndex = 0; runIndex < breaks.Runs.Count; runIndex++)
 		{
 			var run = breaks.Runs[runIndex];
 			var firstIndex = rows.Count;
+			var resumed = runIndex > 0;
+			var breakFollows = runIndex < breaks.Runs.Count - 1;
 
-			// The plant kept moving while archiving was stopped, so a resumed run opens on a level of
-			// its own — which is what makes the q = 16 row a change row with no pre-anchor.
-			if (runIndex > 0)
-			{
-				trace.RestingLevel = LevelFor(options.Seed, pen, trace.NextSegment());
-			}
+			AppendWindow(
+				rows,
+				pen,
+				seed,
+				intervalTicks,
+				fromTicks: run.Start.Ticks,
+				toExclusiveTicks: run.End.Ticks,
+				resumedAfterBreak: resumed,
+				breakFollows: breakFollows);
 
-			trace.StartRun(run.Start);
-
-			AppendRun(trace, pen, options, random, run.End);
-
-			MarkRunBoundaries(rows, firstIndex, runIndex > 0, runIndex < breaks.Runs.Count - 1);
-		}
-	}
-
-	private static void AppendRun(
-		PenTrace trace,
-		SyntheticPen pen,
-		SeederOptions options,
-		SeededRandom random,
-		DateTime end)
-	{
-		var cursor = trace.LastTimestamp;
-
-		while (cursor < end)
-		{
-			var kind = NextKind(random);
-			var target = LevelFor(options.Seed, pen, trace.NextSegment());
-
-			if (kind == SegmentKind.Idle)
-			{
-				cursor = Advance(cursor, NextInterval(random, options.ChangeSeconds));
-
-				continue;
-			}
-
-			var instant = ChangeInstant(
-				Advance(cursor, NextInterval(random, options.ChangeSeconds)),
-				trace.LastTimestamp);
-
-			if (instant >= end)
-			{
-				break;
-			}
-
-			Emit(trace, kind, instant, target, random, end);
-			cursor = trace.LastTimestamp;
+			MarkRunBoundaries(rows, firstIndex, resumed, breakFollows);
 		}
 	}
 
 	// A run holding a single row between two breaks would have to carry both codes at once, which the
-	// archive has no code for; it gets the poll tick it certainly also recorded.
+	// archive has no code for; it gets the poll tick it certainly also recorded. The empty run this
+	// returns on is the one with no break on either side — Generate refuses every other kind ahead of
+	// the walk, through DescribeUnmarkableRun.
 	private static void MarkRunBoundaries(List<ArchiveRow> rows, int firstIndex, bool resumed, bool breakFollows)
 	{
+		if (firstIndex == rows.Count)
+		{
+			return;
+		}
+
 		if (resumed)
 		{
 			rows[firstIndex] = rows[firstIndex] with { Quality = ArchiveRow.FirstAfterBreakQuality };
@@ -149,7 +166,7 @@ public static class RawLayerGenerator
 		{
 			var only = rows[firstIndex];
 
-			rows.Add(only with { Timestamp = Advance(only.Timestamp, PollInterval) });
+			rows.Add(only with { Timestamp = only.Timestamp + PollInterval });
 		}
 
 		var lastIndex = rows.Count - 1;
@@ -157,135 +174,55 @@ public static class RawLayerGenerator
 		rows[lastIndex] = rows[lastIndex] with { Quality = ArchiveRow.LastBeforeBreakQuality };
 	}
 
-	// Segment boundaries fall at arbitrary millisecond offsets — the archive's timestamps sit on no
-	// global lattice — but a 100 ms poll cannot report two changes closer together than one interval.
-	private static DateTime ChangeInstant(DateTime drawn, DateTime lastTimestamp)
+	internal static string? DescribeUnmarkableRun(BreakPlan breaks, long intervalTicks)
 	{
-		var earliest = Advance(lastTimestamp, PollInterval);
-
-		return drawn < earliest ? earliest : drawn;
-	}
-
-	// The step that ends a walk may land outside the run, but not outside the calendar, which is where
-	// DateTime addition throws. Saturating at the last representable instant leaves it at or after every
-	// end, so every loop reading it still stops.
-	private static DateTime Advance(DateTime from, TimeSpan step)
-	{
-		return step < DateTime.MaxValue - from ? from + step : DateTime.MaxValue;
-	}
-
-	private static void Emit(
-		PenTrace trace,
-		SegmentKind kind,
-		DateTime instant,
-		double target,
-		SeededRandom random,
-		DateTime end)
-	{
-		trace.RestingLevel = kind switch
+		for (var runIndex = 0; runIndex < breaks.Runs.Count; runIndex++)
 		{
-			SegmentKind.Step => EmitStep(trace, instant, target),
-			SegmentKind.Ramp => EmitRamp(trace, instant, trace.RestingLevel, target, random, end),
-			_ => EmitSpike(trace, instant, trace.RestingLevel, target, random, end)
-		};
-	}
+			var run = breaks.Runs[runIndex];
+			var resumed = runIndex > 0;
+			var breakFollows = runIndex < breaks.Runs.Count - 1;
 
-	private static double EmitStep(PenTrace trace, DateTime instant, double target)
-	{
-		trace.Change(instant, target);
-
-		return target;
-	}
-
-	private static double EmitRamp(
-		PenTrace trace,
-		DateTime instant,
-		double from,
-		double to,
-		SeededRandom random,
-		DateTime end)
-	{
-		var seconds = MinimumRampSeconds + random.NextDouble() * (MaximumRampSeconds - MinimumRampSeconds);
-		var ticks = (int)Math.Round(seconds / PollInterval.TotalSeconds);
-		var reached = from;
-
-		for (var tick = 1; tick <= ticks; tick++)
-		{
-			var at = Advance(instant, PollInterval * (tick - 1));
-
-			if (at >= end)
+			if (!resumed && !breakFollows)
 			{
-				break;
+				continue;
 			}
 
-			reached = from + (to - from) * (tick / (double)ticks);
-			trace.Change(at, reached);
-		}
+			var changeTicks = FirstIndex(run.Start.Ticks, intervalTicks) * intervalTicks;
 
-		return reached;
-	}
-
-	private static double EmitSpike(
-		PenTrace trace,
-		DateTime instant,
-		double level,
-		double peak,
-		SeededRandom random,
-		DateTime end)
-	{
-		var ticks = random.NextInt32(MinimumSpikeTicks, SpikeTicksExclusiveMaximum);
-
-		for (var tick = 0; tick < ticks; tick++)
-		{
-			var at = Advance(instant, PollInterval * tick);
-
-			if (at >= end)
+			if (changeTicks >= run.End.Ticks)
 			{
-				return level;
+				return $"the archiving run {run.Start:O} to {run.End:O} holds no change, so the break it bounds "
+					+ "gets no marker pair.";
 			}
 
-			trace.Change(at, level + (peak - level) * ((ticks - tick) / (double)ticks));
+			var holdsOneChange = changeTicks + intervalTicks >= run.End.Ticks;
+
+			if (resumed && breakFollows && holdsOneChange
+				&& changeTicks + PollInterval.Ticks >= run.End.Ticks)
+			{
+				return $"the archiving run {run.Start:O} to {run.End:O} holds a single change with no room for "
+					+ "the stop row synthesised one poll interval after it.";
+			}
 		}
 
-		var back = Advance(instant, PollInterval * ticks);
-
-		if (back < end)
-		{
-			trace.Change(back, level);
-		}
-
-		return level;
+		return null;
 	}
 
-	private static SegmentKind NextKind(SeededRandom random)
+	// Index 0 is skipped because its anchor would sit one poll interval before absolute tick zero, on a
+	// value index of -1 the lattice does not reach.
+	private static long FirstIndex(long fromTicks, long intervalTicks)
 	{
-		var draw = random.NextDouble();
-
-		if (draw < IdleShare)
-		{
-			return SegmentKind.Idle;
-		}
-
-		if (draw < IdleShare + StepShare)
-		{
-			return SegmentKind.Step;
-		}
-
-		return draw < IdleShare + StepShare + RampShare ? SegmentKind.Ramp : SegmentKind.Spike;
+		return Math.Max(1L, (fromTicks + intervalTicks - 1) / intervalTicks);
 	}
 
-	// Whole milliseconds only: the column keeps three decimal places, and an interval that survives
-	// rounding is one the primary key can distinguish.
-	private static TimeSpan NextInterval(SeededRandom random, double changeSeconds)
+	private static double ValueAt(long seed, SyntheticPen pen, long index)
 	{
-		var seconds = Math.Min(random.NextExponential(changeSeconds), changeSeconds * IntervalCapFactor);
-		var milliseconds = Math.Max(PollInterval.TotalMilliseconds, Math.Round(seconds * 1000.0));
-
-		return TimeSpan.FromMilliseconds(milliseconds);
+		return SyntheticValueWalk.Value(seed, pen.PenId, index, pen.MinValue, pen.MaxValue);
 	}
 
-	private static double LevelFor(long seed, SyntheticPen pen, int segmentIndex)
+	private static ArchiveRow Row(SyntheticPen pen, long ticks, double value)
 	{
-		return SyntheticValueWalk.Value(seed, pen.PenId, segmentIndex, pen.MinValue, pen.MaxValue);
+		return new ArchiveRow((int)pen.PenId, ArchiveRow.RawLayer, new DateTime(ticks), value,
+			ArchiveRow.OrdinaryQuality);
 	}
 }

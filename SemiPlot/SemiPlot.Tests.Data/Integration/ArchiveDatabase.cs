@@ -2,8 +2,6 @@
 
 namespace SemiPlot.Tests.Data.Integration;
 
-// One database per test class, cloned from the seeded template so the COPY runs once per run rather
-// than once per class.
 public sealed class ArchiveDatabase(PostgresServer postgresServer, SemaphoreSlim creationGate, string name)
 	: IAsyncDisposable
 {
@@ -33,7 +31,7 @@ public sealed class ArchiveDatabase(PostgresServer postgresServer, SemaphoreSlim
 	}
 
 	// Clones under a stated name and returns nothing to dispose. The seeded template is built this way:
-	// it outlives the run that built it, so a persistent server serves the next run without re-seeding.
+	// it is named by a constant and dies with the container, so nothing has to drop it by name.
 	public static Task CopyAsync(
 		PostgresServer postgresServer,
 		SemaphoreSlim creationGate,
@@ -46,22 +44,6 @@ public sealed class ArchiveDatabase(PostgresServer postgresServer, SemaphoreSlim
 			creationGate,
 			$"""CREATE DATABASE "{name}" TEMPLATE "{templateDatabase}";""",
 			cancellationToken);
-	}
-
-	public static async Task<bool> ExistsAsync(
-		PostgresServer postgresServer,
-		string name,
-		CancellationToken cancellationToken = default)
-	{
-		await using var connection = new NpgsqlConnection(postgresServer.AdminConnectionString);
-
-		await connection.OpenAsync(cancellationToken);
-
-		await using var command = new NpgsqlCommand(CountDatabasesCommand, connection);
-
-		command.Parameters.AddWithValue("name", name);
-
-		return await command.ExecuteScalarAsync(cancellationToken) is long and > 0;
 	}
 
 	// A pooled connection counts as a session on the database and makes DROP DATABASE refuse, so the

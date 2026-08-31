@@ -26,8 +26,8 @@ namespace SemiPlot.Tests.Journeys;
 // controller, each of which can lose a sample or replay one without the provider noticing.
 //
 // This class appends, so it never takes SeededArchive, whose contract is that the class leaves the database
-// as it found it. xunit constructs a test class once per test method, so the clone built in InitializeAsync
-// belongs to exactly one test and is dropped with it.
+// as it found it. It clones the seeded template rather than the provisioned source, because the chart it
+// drives is opened over seeded history.
 //
 // Nothing here waits on a timeout. Every synchronisation point is an awaited emission or an awaited write:
 // the Connected state a subscription's first successful tick reports, then a batch that has been delivered.
@@ -40,36 +40,14 @@ namespace SemiPlot.Tests.Journeys;
 [Trait("Area", "Chart")]
 [Trait("Category", "Integration")]
 public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgresContainerFixture)
-	: IAsyncLifetime
+	: ClonedArchiveTest(postgresContainerFixture, CloneSource.Template)
 {
 	private static readonly ArchiveTimeConverter _timeConverter = new(ArchiveProviderFactory.SourceTimeZone);
-
-	private ArchiveDatabase? _archiveDatabase;
-
-	private ArchiveDatabase Database =>
-		_archiveDatabase ?? throw new InvalidOperationException(
-			postgresContainerFixture.UnavailableReason ?? "The archive was used before it was cloned.");
-
-	public async ValueTask InitializeAsync()
-	{
-		if (postgresContainerFixture.IsAvailable)
-		{
-			_archiveDatabase = await postgresContainerFixture.CloneTemplateAsync();
-		}
-	}
-
-	public async ValueTask DisposeAsync()
-	{
-		if (_archiveDatabase is not null)
-		{
-			await _archiveDatabase.DisposeAsync();
-		}
-	}
 
 	[AvaloniaFact]
 	public async Task ARowWrittenAfterStartupReachesTheChartOnceAndMovesItsLiveEdge()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		await using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
 		var dataProvider = services.GetRequiredService<IDataProvider>();
@@ -165,7 +143,7 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 	[AvaloniaFact]
 	public async Task RowsOnAVariableOfTheirOwnReachTheChartWithoutBreakingAnyPen()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		await using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
 		var dataProvider = services.GetRequiredService<IDataProvider>();
@@ -237,7 +215,7 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 				ArchiveRow.OrdinaryQuality))
 			.ToArray();
 
-		var written = await new ArchiveWriter(Database.WriterConnectionString)
+		var written = await Writer()
 			.WriteAsync(rows, archiveLocal, archiveLocal.AddSeconds(1), allowExistingRows: true);
 
 		written.IsSuccess.Should().BeTrue(string.Join("; ", written.Errors.Select(error => error.Message)));
@@ -257,7 +235,7 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 				ArchiveRow.OrdinaryQuality))
 			.ToArray();
 
-		var written = await new ArchiveWriter(Database.WriterConnectionString).WriteAsync(
+		var written = await Writer().WriteAsync(
 			rows,
 			baseLocal.AddSeconds(1),
 			baseLocal.AddSeconds(pens.Count + 1),

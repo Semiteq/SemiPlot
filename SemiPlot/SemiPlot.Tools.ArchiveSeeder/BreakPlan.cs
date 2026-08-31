@@ -13,9 +13,6 @@ public sealed class BreakPlan
 	// Archiving on either side of a break, which also keeps two breaks from touching.
 	public static readonly TimeSpan MinimumRun = TimeSpan.FromMinutes(5);
 
-	// Distinct from every pen identifier, so break placement draws from its own stream.
-	private const long BreakStream = -1;
-
 	private BreakPlan(IReadOnlyList<Window> breaks, DateTime start, DateTime end)
 	{
 		Breaks = breaks;
@@ -65,15 +62,20 @@ public sealed class BreakPlan
 	// them meet — a stop and a start that overlap is not a shape the archive can hold.
 	private static IReadOnlyList<Window> BuildWindows(long seed, DateTime start, TimeSpan slot, int count)
 	{
-		var random = new SeededRandom(seed, BreakStream);
 		var windows = new List<Window>(count);
 
 		for (var index = 0; index < count; index++)
 		{
-			var drawn = MinimumDuration + (MaximumDuration - MinimumDuration) * random.NextDouble();
+			// Two draws per break, so two coordinates. They run below zero, clear of the pen identifiers
+			// the same hash carries — the catalogue starts at 1000 — so break placement and pen values
+			// never read the same point.
+			var durationFraction = SyntheticValueWalk.Fraction(seed, -1 - (2 * index));
+			var offsetFraction = SyntheticValueWalk.Fraction(seed, -2 - (2 * index));
+
+			var drawn = MinimumDuration + (MaximumDuration - MinimumDuration) * durationFraction;
 			var duration = WholeMilliseconds(drawn);
 			var headroom = slot - duration - MinimumRun - MinimumRun;
-			var offset = WholeMilliseconds(headroom * random.NextDouble());
+			var offset = WholeMilliseconds(headroom * offsetFraction);
 			var breakStart = ArchiveRow.TruncateToMilliseconds(start + slot * index + MinimumRun + offset);
 
 			windows.Add(new Window(breakStart, ArchiveRow.TruncateToMilliseconds(breakStart + duration)));
@@ -98,8 +100,9 @@ public sealed class BreakPlan
 		return runs;
 	}
 
-	// Break boundaries carry the same resolution as the rows they bound, so that a marker row sits
-	// exactly on the boundary rather than a fraction of a millisecond away from it.
+	// Break boundaries carry the same resolution as the rows they bound. The resume row is the first
+	// lattice point at or after a break's end rather than the end itself, so what the truncation buys is
+	// an exact tick comparison between a boundary and a row instead of one across sub-millisecond dust.
 	private static TimeSpan WholeMilliseconds(TimeSpan value)
 	{
 		return TimeSpan.FromMilliseconds(Math.Round(value.TotalMilliseconds));

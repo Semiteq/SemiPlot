@@ -53,7 +53,7 @@ public sealed record SeederOptions(
 		  --days              Whole days covered, ending at --end. Default 1.
 		  --pens              Pens taken round-robin from the catalogue. Default 8.
 		  --seed              Generator seed. Default 1.
-		  --change-seconds    Mean interval between value changes. Default 5.
+		  --change-seconds    Interval between value changes. Default 5.
 		  --break-count       Breaks placed across the span. Default 4. A break needs up to 10 minutes
 		                      of downtime with 5 minutes of archiving on either side, so a day holds
 		                      at most 72 of them.
@@ -116,8 +116,7 @@ public sealed record SeederOptions(
 				adminConnection));
 	}
 
-	// Ordered rather than merged: every check after the span reads Start, and a span that reaches past
-	// the earliest representable timestamp throws out of the subtraction behind it.
+	// Ordered rather than merged: every check after the span reads Start, so the span is settled first.
 	private static Result<SeederOptions> Validate(SeederOptions options)
 	{
 		Func<SeederOptions, Result>[] checks =
@@ -136,31 +135,21 @@ public sealed record SeederOptions(
 		return Result.Ok(options);
 	}
 
-	// A partition's upper bound is midnight of the day after the day it covers, which the last
-	// representable day has not got.
+	// The --end ceiling is the partition walk, not the span: PartitionScript.CoveredDays steps a day past
+	// the last day it covers, so an --end inside 9999-12-31 overflows DateTime there — after the plan
+	// header has already printed, and outside the ArgumentException block Program wraps the parse in.
 	private static Result ValidateSpan(SeederOptions options)
 	{
-		var latestEnd = DateTime.MaxValue.Date;
-
-		if (options.End > latestEnd)
-		{
-			return Result.Fail($"Option '--end' must not exceed {latestEnd:O}, got {options.End:O}.");
-		}
-
 		if (options.Days < 1)
 		{
 			return Result.Fail($"Option '--days' must be at least 1, got {options.Days}.");
 		}
 
-		// Integer division on the ticks rather than TotalDays: TotalDays is a rounded double, and a
-		// quotient a hair under a whole day rounds up to it, raising the bound by a day and putting Start
-		// back past DateTime.MinValue.
-		var latestDays = (int)((options.End - DateTime.MinValue).Ticks / TimeSpan.TicksPerDay);
-
-		if (options.Days > latestDays)
+		if (options.End > DateTime.MaxValue.Date)
 		{
 			return Result.Fail(
-				$"Option '--days' must not exceed {latestDays} for an end of {options.End:O}, got {options.Days}.");
+				$"Option '--end' must not fall inside {DateTime.MaxValue.Date:yyyy-MM-dd}, the last "
+					+ $"representable day, got {options.End:O}: its day partitions cannot be walked.");
 		}
 
 		return Result.Ok();
@@ -185,8 +174,8 @@ public sealed record SeederOptions(
 	}
 
 	// NaN fails every comparison, so a bare `<= 0` check lets it through, and Infinity survives it too
-	// and overflows the interval arithmetic. The span is the ceiling above: a mean interval longer than
-	// the whole run produces no change at all.
+	// and overflows the interval arithmetic. The span is the ceiling above: an interval longer than the
+	// whole run produces no change at all.
 	private static Result ValidateChangeRate(SeederOptions options)
 	{
 		if (!double.IsFinite(options.ChangeSeconds) || options.ChangeSeconds <= 0.0)

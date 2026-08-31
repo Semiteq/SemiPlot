@@ -4,11 +4,6 @@ using System.Text;
 
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
-using DotNet.Testcontainers.Images;
-
-using FluentResults;
-
-using Npgsql;
 
 using Testcontainers.PostgreSql;
 
@@ -19,28 +14,19 @@ namespace SemiPlot.Tests.Data.Integration;
 // One server per test run. A container start costs seconds while a CREATE DATABASE costs under a
 // second, so the container is the wrong isolation unit and the database is the right one.
 //
-// The container path provisions itself: the image built from bench/ carries the provisioner and runs
-// it from the entrypoint's init hook, so nothing is resolved from the machine running the suite. Only
-// the SEMIPLOT_TEST_PG path needs a semibase binary, and it resolves one in its own branch.
+// The container provisions itself: the image built from bench/ carries the provisioner and runs it
+// from the entrypoint's init hook, so nothing is resolved from the machine running the suite.
 //
 // Initialisation never throws. The runtimes it needs are optional on a developer machine, so their
 // absence is captured as a reason and handed to DatabaseGate, which skips or fails according to
 // SEMIPLOT_REQUIRE_DB.
 public sealed class PostgresContainerFixture : IAsyncLifetime
 {
-	public const string SuperuserName = "postgres";
+	// Scopes the built image to this repository, so a count of dangling bench images does not also count
+	// the moving semibase:latest tag this bench tracks on purpose.
+	public const string BenchLabel = "semiplot.bench";
 
-	// The container is ephemeral and holds no secret, and a developer must not need environment
-	// variables to run the suite, so the container path carries fixed dummy passwords. Only the
-	// SEMIPLOT_TEST_PG path reads real ones: the superuser's from the connection string, the two role
-	// passwords from SEMIBASE_WRITER_PASSWORD and SEMIBASE_READER_PASSWORD.
-	public const string ContainerSuperuserPassword = "semibase-container-superuser";
-
-	public const string ContainerWriterPassword = "semibase-container-writer";
-
-	public const string ContainerReaderPassword = "semibase-container-reader";
-
-	public const string MaintenanceDatabase = "postgres";
+	public const string BenchLabelValue = "1";
 
 	private const ushort PostgresPort = 5432;
 
@@ -52,8 +38,6 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 
 	private const string ProvisionerImageArgument = "PROVISIONER_IMAGE";
 
-	// The provisioned database name travels into the container rather than being transcribed in
-	// provision.sh, so SemibaseProvisioner.ProvisionedDatabase stays the one place it is written.
 	private const string ProvisionedDatabaseVariable = "SEMIPLOT_PROVISIONED_DATABASE";
 
 	private const string BenchImageRepository = "semiplot-bench";
@@ -61,6 +45,10 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 	// The wait strategy's psql runs as an exec, which inherits the container environment and nothing
 	// else, and a TCP login to the base image is password-authenticated.
 	private const string PasswordVariable = "PGPASSWORD";
+
+	// One bound for the registry pull and for readiness, so a broken bench is a stated reason inside two
+	// minutes on every path instead of an await that hangs the test executable and locks the next build.
+	private static readonly TimeSpan _startupBound = TimeSpan.FromMinutes(2);
 
 	// CREATE DATABASE ... TEMPLATE fails while another session holds the source, so a clone must never
 	// overlap another clone or a drop. Never disposed: disposing it here would race the clone disposals
@@ -71,28 +59,25 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 
 	private PostgresServer? _postgresServer;
 
-	private string? _templateDatabase;
+	private ProvisionerResolution? _provisionerResolution;
 
 	public string? UnavailableReason { get; private set; }
 
 	public bool IsAvailable => UnavailableReason is null;
 
 	// The provisioner this run's databases came from, so a `latest` that fails tomorrow on an unchanged
-	// commit can be told apart from a change in this repository. Null on the SEMIPLOT_TEST_PG path,
-	// where the operator named the binary and there is nothing left to resolve.
-	internal ProvisionerResolution? Provisioner { get; private set; }
+	// commit can be told apart from a change in this repository.
+	internal ProvisionerResolution Provisioner =>
+		_provisionerResolution ?? throw new InvalidOperationException(
+			UnavailableReason ?? "The fixture was used before it was initialised.");
 
 	public PostgresServer Server =>
 		_postgresServer ?? throw new InvalidOperationException(
 			UnavailableReason ?? "The fixture was used before it was initialised.");
 
-	public string TemplateDatabase =>
-		_templateDatabase ?? throw new InvalidOperationException(
-			UnavailableReason ?? "The fixture was used before it was initialised.");
-
 	public Task<ArchiveDatabase> CloneTemplateAsync(CancellationToken cancellationToken = default)
 	{
-		return ArchiveDatabase.CloneAsync(Server, _creationGate, TemplateDatabase, cancellationToken);
+		return ArchiveDatabase.CloneAsync(Server, _creationGate, ArchiveTemplate.Name, cancellationToken);
 	}
 
 	// A database carrying the roles, the grants and an empty public.trends, and no seeded row. The clone
@@ -103,7 +88,7 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 		return ArchiveDatabase.CloneAsync(
 			Server,
 			_creationGate,
-			SemibaseProvisioner.ProvisionedDatabase,
+			BenchNames.ProvisionedDatabase,
 			cancellationToken);
 	}
 
@@ -112,30 +97,23 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 		DatabaseGate.Require(UnavailableReason, TestEnvironment.DatabaseRequired);
 	}
 
+	// OperationCanceledException is the one exclusion, because a cancelled run is the caller's outcome
+	// and not an unavailable runtime.
 	public async ValueTask InitializeAsync()
 	{
-		var server = TestEnvironment.TestServerConnectionString is { } connectionString
-			? await UseExistingServerAsync(connectionString)
-			: await StartContainerAsync();
-
-		if (server.IsFailed)
+		try
 		{
-			UnavailableReason = server.Errors[0].Message;
+			_postgresServer = await StartContainerAsync();
 
-			return;
+			await ArchiveTemplate.BuildAsync(_postgresServer, _creationGate);
 		}
-
-		var template = await ArchiveTemplate.BuildAsync(server.Value, _creationGate);
-
-		if (template.IsFailed)
+		catch (Exception exception) when (exception is not OperationCanceledException)
 		{
-			UnavailableReason = template.Errors[0].Message;
+			_postgresServer = null;
 
-			return;
+			UnavailableReason =
+				$"no container runtime started a bench image over {TestEnvironment.Image}: {exception.Message}";
 		}
-
-		_postgresServer = server.Value;
-		_templateDatabase = template.Value;
 	}
 
 	public async ValueTask DisposeAsync()
@@ -146,70 +124,54 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 		}
 	}
 
-	// Testcontainers reports a missing or unreachable runtime through several exception types, and the
-	// distinction does not matter here: any failure to build or to start is the same unavailable reason.
-	// A provisioning that fails lands here too — the init script's `set -e` exits the container, so the
-	// wait strategy never sees a ready server.
-	private async Task<Result<PostgresServer>> StartContainerAsync()
+	private async Task<PostgresServer> StartContainerAsync()
 	{
-		try
+		// Ahead of the build, and the build takes the digest it resolved rather than the tag:
+		// `docs/architecture/bench.md` states why.
+		var provisioner = await ProvisionerImage.ResolveAsync(_startupBound);
+
+		if (provisioner.IsFailed)
 		{
-			// Ahead of the build, and the build takes the digest it resolved rather than the tag:
-			// `docs/architecture/bench.md` states why.
-			var provisioner = await ProvisionerImage.ResolveAsync();
-
-			if (provisioner.IsFailed)
-			{
-				return Result.Fail<PostgresServer>(
-					$"no container runtime started a bench image over {TestEnvironment.Image}: "
-						+ provisioner.Errors[0].Message);
-			}
-
-			WarnIfStale(provisioner.Value);
-
-			var image = new ImageFromDockerfileBuilder()
-				.WithName(BenchImageFor(TestEnvironment.Image))
-				.WithDockerfileDirectory(Path.Combine(AppContext.BaseDirectory, BenchContextDirectory))
-				.WithBuildArgument(BaseImageArgument, TestEnvironment.Image)
-				.WithBuildArgument(ProvisionerImageArgument, provisioner.Value.Digest)
-				.WithDeleteIfExists(false)
-				.WithCleanUp(false)
-				.Build();
-
-			await image.CreateAsync();
-
-			var container = new PostgreSqlBuilder(image)
-				.WithUsername(SuperuserName)
-				.WithPassword(ContainerSuperuserPassword)
-				.WithDatabase(MaintenanceDatabase)
-				.WithEnvironment(SemibaseProvisioner.WriterPasswordVariable, ContainerWriterPassword)
-				.WithEnvironment(SemibaseProvisioner.ReaderPasswordVariable, ContainerReaderPassword)
-				.WithEnvironment(PasswordVariable, ContainerSuperuserPassword)
-				.WithEnvironment(ProvisionedDatabaseVariable, SemibaseProvisioner.ProvisionedDatabase)
-				.WithWaitStrategy(Wait.ForUnixContainer().UntilCommandIsCompleted(ProvisionedWaitCommand()))
-				.Build();
-
-			await container.StartAsync();
-
-			_postgreSqlContainer = container;
-			Provisioner = await DescribeProvisionerAsync(container, provisioner.Value);
-
-			return Result.Ok(
-				new PostgresServer(
-					null,
-					container.Hostname,
-					container.GetMappedPublicPort(PostgresPort),
-					SuperuserName,
-					ContainerSuperuserPassword,
-					MaintenanceDatabase,
-					ContainerWriterPassword,
-					ContainerReaderPassword));
+			throw new InvalidOperationException(provisioner.Errors[0].Message);
 		}
-		catch (Exception exception) when (exception is not OperationCanceledException)
-		{
-			return Result.Fail<PostgresServer>(
-				$"no container runtime started a bench image over {TestEnvironment.Image}: {exception.Message}");
-		}
+
+		WarnIfStale(provisioner.Value);
+
+		var image = new ImageFromDockerfileBuilder()
+			.WithName(BenchImageFor(TestEnvironment.Image))
+			.WithDockerfileDirectory(Path.Combine(AppContext.BaseDirectory, BenchContextDirectory))
+			.WithBuildArgument(BaseImageArgument, TestEnvironment.Image)
+			.WithBuildArgument(ProvisionerImageArgument, provisioner.Value.Digest)
+			.WithLabel(BenchLabel, BenchLabelValue)
+			.WithDeleteIfExists(false)
+			.WithCleanUp(true)
+			.Build();
+
+		await image.CreateAsync();
+
+		var container = new PostgreSqlBuilder(image)
+			.WithUsername(BenchNames.SuperuserName)
+			.WithPassword(BenchNames.SuperuserPassword)
+			.WithDatabase(BenchNames.MaintenanceDatabase)
+			.WithEnvironment(BenchNames.WriterPasswordVariable, BenchNames.WriterPassword)
+			.WithEnvironment(BenchNames.ReaderPasswordVariable, BenchNames.ReaderPassword)
+			.WithEnvironment(PasswordVariable, BenchNames.SuperuserPassword)
+			.WithEnvironment(ProvisionedDatabaseVariable, BenchNames.ProvisionedDatabase)
+			.WithWaitStrategy(
+				Wait.ForUnixContainer().UntilCommandIsCompleted(
+					ProvisionedWaitCommand(),
+					options => options.WithTimeout(_startupBound)))
+			.Build();
+
+		// Before the start, not after it: a container that comes up and never becomes ready fails the wait
+		// strategy, and an assignment past that point would leave DisposeAsync with nothing to dispose.
+		_postgreSqlContainer = container;
+
+		await container.StartAsync();
+
+		_provisionerResolution = await DescribeProvisionerAsync(container, provisioner.Value);
+
+		return new PostgresServer(container.Hostname, container.GetMappedPublicPort(PostgresPort));
 	}
 
 	// Asked of the container that actually provisioned this run's databases, rather than of the registry:
@@ -263,9 +225,9 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 			"--port",
 			PostgresPort.ToString(CultureInfo.InvariantCulture),
 			"--username",
-			SuperuserName,
+			BenchNames.SuperuserName,
 			"--dbname",
-			SemibaseProvisioner.ProvisionedDatabase,
+			BenchNames.ProvisionedDatabase,
 			"--tuples-only",
 			"--no-align",
 			"--command",
@@ -274,82 +236,11 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 	}
 
 	// The tag carries a digest of the base image, so a run under a changed SEMIPLOT_PG_IMAGE is never
-	// served the build made over the previous base. Layers stay cached either way, which is what keeps
-	// the rebuild under two seconds.
-	private static string BenchImageFor(string baseImage)
+	// served the build made over the previous base.
+	internal static string BenchImageFor(string baseImage)
 	{
 		var digest = SHA256.HashData(Encoding.UTF8.GetBytes(baseImage));
 
 		return $"{BenchImageRepository}:{Convert.ToHexStringLower(digest)[..12]}";
-	}
-
-	// The named server must itself be semibase-provisioned; this path only confirms it answers, since a
-	// server that refuses a connection is as unavailable as a missing container runtime. The fixture
-	// still runs `semibase bench` against it, which is idempotent, so it needs a resolved binary, the
-	// superuser password in the connection string and the two role passwords in the environment — a real
-	// server carries real roles, and inventing passwords for them would change them.
-	//
-	// The binary is resolved here rather than in InitializeAsync: this is the only path that spawns one,
-	// and resolving it earlier would make a machine without semibase skip the container path too.
-	private static async Task<Result<PostgresServer>> UseExistingServerAsync(string connectionString)
-	{
-		var semibase = SemibaseBinary.Resolve();
-
-		if (semibase.IsFailed)
-		{
-			return Result.Fail<PostgresServer>(semibase.Errors[0].Message);
-		}
-
-		if (TestEnvironment.WriterPassword is not { } writerPassword
-			|| TestEnvironment.ReaderPassword is not { } readerPassword)
-		{
-			return Result.Fail<PostgresServer>(
-				$"{TestEnvironment.TestServerVariable} names a real server, so "
-					+ $"{SemibaseProvisioner.WriterPasswordVariable} and "
-					+ $"{SemibaseProvisioner.ReaderPasswordVariable} must carry its role passwords.");
-		}
-
-		NpgsqlConnectionStringBuilder builder;
-
-		try
-		{
-			builder = new NpgsqlConnectionStringBuilder(connectionString);
-		}
-		catch (Exception exception) when (exception is ArgumentException or FormatException)
-		{
-			return Result.Fail<PostgresServer>(
-				$"{TestEnvironment.TestServerVariable} is not a connection string: {exception.Message}");
-		}
-
-		try
-		{
-			await using var connection = new NpgsqlConnection(connectionString);
-
-			await connection.OpenAsync();
-		}
-		catch (Exception exception) when (exception is not OperationCanceledException)
-		{
-			return Result.Fail<PostgresServer>(
-				$"{TestEnvironment.TestServerVariable} names a server that refused a connection: {exception.Message}");
-		}
-
-		var server = new PostgresServer(
-			semibase.Value,
-			builder.Host ?? "localhost",
-			builder.Port,
-			builder.Username ?? SuperuserName,
-			builder.Password ?? string.Empty,
-			builder.Database ?? MaintenanceDatabase,
-			writerPassword,
-			readerPassword);
-
-		var provisioned = await SemibaseProvisioner.ProvisionAsync(server);
-
-		return provisioned.IsFailed
-			? Result.Fail<PostgresServer>(
-				$"semibase {SemibaseProvisioner.BenchCommand} failed against "
-					+ $"{TestEnvironment.TestServerVariable}: "
-					+ string.Join("; ", provisioned.Errors.Select(error => error.Message)))
-			: Result.Ok(server);
 	}
 }

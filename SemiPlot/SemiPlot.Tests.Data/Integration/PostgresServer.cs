@@ -2,37 +2,35 @@
 
 namespace SemiPlot.Tests.Data.Integration;
 
-// The running server the gated tests talk to, whichever path produced it — a started container or the
-// server SEMIPLOT_TEST_PG names. Host and port are kept apart from the connection string because
-// semibase takes them as separate flags.
-//
-// SemibaseExecutable is null on the container path and only there: the image carries its own
-// provisioner, so nothing is resolved from the machine running the suite.
-public sealed record PostgresServer(
-	string? SemibaseExecutable,
-	string Host,
-	int Port,
-	string Superuser,
-	string SuperuserPassword,
-	string MaintenanceDatabase,
-	string WriterPassword,
-	string ReaderPassword)
+// Where the run's own container answers, and nothing else: the roles, their passwords and the
+// maintenance database are BenchNames' fixed dummies, which the fixture passes into the container.
+// Carrying them as parameters would let a caller state a credential the container was never given.
+public sealed record PostgresServer(string Host, int Port)
 {
-	public string AdminConnectionString => AdminConnectionStringFor(MaintenanceDatabase);
+	public string AdminConnectionString => AdminConnectionStringFor(BenchNames.MaintenanceDatabase);
 
 	public string AdminConnectionStringFor(string database)
 	{
-		return ConnectionStringFor(database, Superuser, SuperuserPassword);
+		return ConnectionStringFor(
+			database,
+			BenchNames.SuperuserName,
+			BenchNames.SuperuserPassword);
 	}
 
 	public string WriterConnectionStringFor(string database)
 	{
-		return ConnectionStringFor(database, SemibaseProvisioner.WriterRole, WriterPassword);
+		return ConnectionStringFor(
+			database,
+			BenchNames.WriterRole,
+			BenchNames.WriterPassword);
 	}
 
 	public string ReaderConnectionStringFor(string database)
 	{
-		return ConnectionStringFor(database, SemibaseProvisioner.ReaderRole, ReaderPassword);
+		return ConnectionStringFor(
+			database,
+			BenchNames.ReaderRole,
+			BenchNames.ReaderPassword);
 	}
 
 	private string ConnectionStringFor(string database, string user, string password)

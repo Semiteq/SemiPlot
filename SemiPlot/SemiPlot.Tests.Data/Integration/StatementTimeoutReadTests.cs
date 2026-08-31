@@ -101,7 +101,7 @@ public sealed class StatementTimeoutReadTests(PostgresContainerFixture postgresC
 	{
 		return FormattableString.Invariant(
 			$"""
-			ALTER ROLE "{SemibaseProvisioner.ReaderRole}" IN DATABASE "{database}"
+			ALTER ROLE "{BenchNames.ReaderRole}" IN DATABASE "{database}"
 			  SET statement_timeout = '{BoundMilliseconds}ms';
 			""");
 	}
@@ -111,9 +111,9 @@ public sealed class StatementTimeoutReadTests(PostgresContainerFixture postgresC
 	{
 		await using var services = ArchiveProviderFactory.Build(connectionString);
 
-		// The whole generated span, raw layer, every seeded pen: 229 862 rows, which is what carries the read
-		// to 327 to 548 ms, six to eleven times above the bound. The extent read is far too fast to trip it
-		// reliably.
+		// The whole generated span, raw layer, every seeded pen: 271 984 rows, the count
+		// RawLayerGeneratorTests pins as the standard slice's. The extent read is far too fast to trip the
+		// bound reliably.
 		return await services.GetRequiredService<IDataProvider>().QueryHistoryAsync(
 			_seededPenIds.Value,
 			_timeConverter.ToUtc(ArchiveTemplate.Slice.Start),

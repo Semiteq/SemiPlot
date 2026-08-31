@@ -17,7 +17,7 @@ public sealed record FollowOptions(
 	double ChangeSeconds)
 {
 	// A follow run states no span of its own, so the ceiling a seeding run takes from its span is a
-	// literal here. A mean change interval longer than a day emits nothing anyway, and a value far
+	// literal here. A change interval longer than a day emits nothing anyway, and a value far
 	// above it overflows the tick arithmetic behind the generator.
 	public const double MaximumSeconds = 86400.0;
 
@@ -65,7 +65,7 @@ public sealed record FollowOptions(
 		                    archive's live edge keeps moving. Required.
 		  --pens            Pens taken round-robin from the catalogue. Default 8.
 		  --seed            Generator seed. Default 1.
-		  --change-seconds  Mean interval between value changes. Default 5.
+		  --change-seconds  Interval between value changes. Default 5.
 
 		A follow run appends raw rows and thins them into the coarse layers, and seeds nothing, so
 		--end, --days, --break-count and --admin-connection are rejected here.

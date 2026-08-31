@@ -135,13 +135,32 @@ public sealed class BreakGenerationTests
 		}
 	}
 
-	// The break itself is the gap: the stop row is the last before it and the resume row the first
-	// after it, so the two markers of a pair bound exactly one break window.
+	// The assertion admits no exception because none of these rows reaches the one case that has one. A
+	// run holding a single change gets a synthesised stop row one poll interval after it, off the lattice
+	// by construction; every interval here is seconds against runs of minutes, so no run holds one. That
+	// case is pinned by ASingleRowRunBetweenTwoBreaksGetsASynthesisedStopRow, and a row added here with a
+	// change interval wide enough to reach it would turn this test red rather than extend it.
+	[Theory]
+	[InlineData(5.0, 60)]
+	[InlineData(1.0, 60)]
+	[InlineData(1.0, 72)]
+	public void EveryStopRowSitsOnTheChangeLattice(double changeSeconds, int breaks)
+	{
+		var options = BenchOptions.For(pens: 1, changeSeconds: changeSeconds, breaks: breaks);
+		var interval = TimeSpan.FromSeconds(changeSeconds);
+		var rows = RawLayerGenerator.Generate(options);
+
+		Assert.All(
+			rows.Where(row => row.Quality == ArchiveRow.LastBeforeBreakQuality),
+			row => Assert.Equal(0, row.Timestamp.Ticks % interval.Ticks));
+	}
+
 	[Fact]
 	public void EachMarkerPairBoundsOneBreakWindow()
 	{
 		var options = Options();
 		var plan = BreakPlan.Create(options);
+		var interval = TimeSpan.FromSeconds(options.ChangeSeconds);
 
 		foreach (var pen in BenchRows.ByPen(RawLayerGenerator.Generate(options)))
 		{
@@ -150,7 +169,10 @@ public sealed class BreakGenerationTests
 			for (var index = 0; index < plan.Breaks.Count; index++)
 			{
 				Assert.True(markers[index * 2].Timestamp < plan.Breaks[index].Start);
-				Assert.Equal(plan.Breaks[index].End, markers[(index * 2) + 1].Timestamp);
+				Assert.InRange(
+					markers[(index * 2) + 1].Timestamp,
+					plan.Breaks[index].End,
+					plan.Breaks[index].End + interval);
 			}
 		}
 	}

@@ -12,14 +12,13 @@ namespace SemiPlot.Tests.Data.Integration;
 // what the rollback has to take with it.
 //
 // Every test here writes, so none of them may take SeededArchive, whose contract is that the class
-// leaves the database as it found it. xunit constructs a test class once per test method, so the clone
-// built in InitializeAsync belongs to exactly one test and is dropped with it.
+// leaves the database as it found it.
 [Collection(ArchiveDatabaseCollection.Name)]
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
 [Trait("Category", "Integration")]
 public sealed class ArchiveWriterTransactionTests(PostgresContainerFixture postgresContainerFixture)
-	: IAsyncLifetime
+	: ClonedArchiveTest(postgresContainerFixture, CloneSource.Provisioned)
 {
 	private static readonly DateTime _start = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Unspecified);
 
@@ -47,36 +46,12 @@ public sealed class ArchiveWriterTransactionTests(PostgresContainerFixture postg
 		ORDER BY partition.relname;
 		""";
 
-	private ArchiveDatabase? _archiveDatabase;
-
-	private ArchiveDatabase Database =>
-		_archiveDatabase ?? throw new InvalidOperationException(
-			postgresContainerFixture.UnavailableReason ?? "The archive was used before it was cloned.");
-
-	public async ValueTask InitializeAsync()
-	{
-		if (!postgresContainerFixture.IsAvailable)
-		{
-			return;
-		}
-
-		_archiveDatabase = await postgresContainerFixture.CloneProvisionedAsync();
-	}
-
-	public async ValueTask DisposeAsync()
-	{
-		if (_archiveDatabase is not null)
-		{
-			await _archiveDatabase.DisposeAsync();
-		}
-	}
-
 	// The COPY carries one primary key twice, so the server rejects it well after the day partitions
 	// were created — a failure part-way through, forced without a race.
 	[Fact]
 	public async Task ACopyThatFailsPartWayLeavesNoArchiveBehind()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 
@@ -100,11 +75,11 @@ public sealed class ArchiveWriterTransactionTests(PostgresContainerFixture postg
 	[Fact]
 	public async Task TheAppendingRunWritesWhereTheSeedingRunIsRefused()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 
-		var seeded = await SeedAsync(cancellationToken);
+		var seeded = await WriteSeedRowsAsync(cancellationToken);
 
 		var refused = await Writer()
 			.WriteAsync(OrdinaryRows(_start, AppendedPenId), _start, _end, cancellationToken: cancellationToken);
@@ -132,11 +107,11 @@ public sealed class ArchiveWriterTransactionTests(PostgresContainerFixture postg
 	[Fact]
 	public async Task TheAppendingRunCreatesOnlyTheDaysItsRowsNeed()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 
-		await SeedAsync(cancellationToken);
+		await WriteSeedRowsAsync(cancellationToken);
 
 		var appended = await Writer().WriteAsync(
 			OrdinaryRows(_laterDay, SeededPenId),
@@ -156,11 +131,11 @@ public sealed class ArchiveWriterTransactionTests(PostgresContainerFixture postg
 	[Fact]
 	public async Task AnAppendingCopyThatFailsPartWayLeavesTheArchiveAsItWas()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 
-		var seeded = await SeedAsync(cancellationToken);
+		var seeded = await WriteSeedRowsAsync(cancellationToken);
 
 		var appended = await Writer().WriteAsync(
 			DuplicatingRows(_laterDay, SeededPenId),
@@ -177,12 +152,7 @@ public sealed class ArchiveWriterTransactionTests(PostgresContainerFixture postg
 			await PartitionNamesAsync(cancellationToken));
 	}
 
-	private ArchiveWriter Writer()
-	{
-		return new ArchiveWriter(Database.WriterConnectionString);
-	}
-
-	private async Task<long> SeedAsync(CancellationToken cancellationToken)
+	private async Task<long> WriteSeedRowsAsync(CancellationToken cancellationToken)
 	{
 		var written = await Writer()
 			.WriteAsync(OrdinaryRows(_start, SeededPenId), _start, _end, cancellationToken: cancellationToken);

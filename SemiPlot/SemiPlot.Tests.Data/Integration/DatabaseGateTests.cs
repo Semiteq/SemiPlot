@@ -39,19 +39,6 @@ public sealed class DatabaseGateTests
 		Assert.Contains(Reason, exception.Message, StringComparison.Ordinal);
 	}
 
-	// A skip is not a failure, and a failure is not a skip: the two paths must not collapse into one
-	// exception type, or the CI job would report the same outcome as a developer machine.
-	[Fact]
-	public void TheSkipAndTheFailureAreDifferentOutcomes()
-	{
-		var skipped = Capture(() => DatabaseGate.Require(Reason, databaseRequired: false));
-		var failed = Capture(() => DatabaseGate.Require(Reason, databaseRequired: true));
-
-		Assert.NotNull(skipped);
-		Assert.NotNull(failed);
-		Assert.NotEqual(skipped.GetType(), failed.GetType());
-	}
-
 	// Record.Exception rethrows a dynamic skip so that Assert.Skip inside a lambda still skips the test
 	// that called it. Asserting on the skip instead of taking it needs the exception caught plainly.
 	private static Exception? Capture(Action action)

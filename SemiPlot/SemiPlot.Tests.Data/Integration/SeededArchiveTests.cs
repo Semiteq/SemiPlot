@@ -103,7 +103,7 @@ public sealed class SeededArchiveTests(PostgresContainerFixture postgresContaine
 		postgresContainerFixture.RequireAvailable();
 
 		Assert.Equal(
-			SemibaseProvisioner.ReaderRole,
+			BenchNames.ReaderRole,
 			await ReaderScalarAsync<string>("SELECT current_user;"));
 
 		Assert.True(await ReaderScalarAsync<bool>("SELECT has_table_privilege('public.trends', 'SELECT');"));

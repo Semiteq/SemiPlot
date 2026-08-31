@@ -7,8 +7,6 @@ using FluentResults;
 
 namespace SemiPlot.Tests.Data.Integration;
 
-// Fetches the image the bench image copies its provisioner out of, and resolves the digest the build
-// is then pinned to. Why the fetch is a step of its own is in `docs/architecture/bench.md`.
 internal static class ProvisionerImage
 {
 	public const string Repository = "ghcr.io/semiteq/semibase";
@@ -26,7 +24,11 @@ internal static class ProvisionerImage
 	// Moves the tag, then names the manifest it landed on. `latest` moves under an unchanged commit, so
 	// a run that fails tomorrow has to be able to name the provisioner it ran, and the build has to be
 	// pinned to the manifest this step resolved rather than to the tag.
+	//
+	// The bound is applied here rather than by the caller, so a timeout never escapes as
+	// OperationCanceledException.
 	public static async Task<Result<ProvisionerResolution>> ResolveAsync(
+		TimeSpan bound,
 		CancellationToken cancellationToken = default)
 	{
 		// Null when no endpoint provider is both applicable and reachable — a machine with no container
@@ -38,21 +40,36 @@ internal static class ProvisionerImage
 				"no Docker endpoint answered, so the provisioner image cannot be fetched.");
 		}
 
-		using var client = endpoint.GetDockerClientBuilder().Build();
+		using var bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-		var pull = await PullAsync(client, cancellationToken);
-		var resolved = await DescribeAsync(client, cancellationToken);
+		bounded.CancelAfter(bound);
 
-		if (resolved.IsFailed)
+		try
 		{
-			// A pull that failed and left nothing behind is the failure worth reporting. The inspect only
-			// says the cache is empty, which is that failure's consequence rather than its cause.
-			return Result.Fail<ProvisionerResolution>(
-				pull.IsFailed ? pull.Errors[0].Message : resolved.Errors[0].Message);
-		}
+			using var client = endpoint.GetDockerClientBuilder().Build();
 
-		return Result.Ok(
-			new ProvisionerResolution(resolved.Value, pull.IsSuccess ? null : pull.Errors[0].Message));
+			var pull = await PullAsync(client, bounded.Token);
+			var resolved = await DescribeAsync(client, bounded.Token);
+
+			if (resolved.IsFailed)
+			{
+				// A pull that failed and left nothing behind is the failure worth reporting. The inspect only
+				// says the cache is empty, which is that failure's consequence rather than its cause.
+				return Result.Fail<ProvisionerResolution>(
+					pull.IsFailed ? pull.Errors[0].Message : resolved.Errors[0].Message);
+			}
+
+			return Result.Ok(
+				new ProvisionerResolution(resolved.Value, pull.IsSuccess ? null : pull.Errors[0].Message));
+		}
+		// The linked source fired on its own timer, so the caller's token is still unset and the bound
+		// becomes a stated reason; a caller who really cancelled sets that token and the exception
+		// propagates as before.
+		catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+		{
+			return Result.Fail<ProvisionerResolution>(
+				$"'{Reference}' did not resolve within {bound}; the registry or the daemon is not answering.");
+		}
 	}
 
 	private static async Task<Result> PullAsync(IDockerClient client, CancellationToken cancellationToken)
@@ -88,7 +105,7 @@ internal static class ProvisionerImage
 			// The repository digest names the manifest the registry served, which is what identifies one
 			// provisioner against another and what the build takes as its `FROM`. The local id stands in for
 			// an image that carries no digest, and the builder resolves that too.
-			return Result.Ok(image.RepoDigests?.FirstOrDefault() ?? image.ID);
+			return Result.Ok(image.RepoDigests is { Count: > 0 } digests ? digests[0] : image.ID);
 		}
 		catch (Exception exception) when (exception is not OperationCanceledException)
 		{

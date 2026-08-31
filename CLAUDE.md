@@ -70,13 +70,15 @@ one gated test there would either fail every machine without a runtime or cost t
 guard. `SemiPlot.Tests.Journeys` therefore carries no `xunit.runner.json`, and must not gain one.
 
 **An xunit v3 test project is an executable.** A test that hangs leaves `SemiPlot.Tests.exe` running
-and locked, and the next build fails with MSB3027/MSB3021 until that process is killed. A plain
-`[Fact]` body also runs with no `SynchronizationContext` — v3 installs one only under the Aggressive
-parallel algorithm — so an `await` on a `TaskCompletionSource` that production code completes
-resumes inline on the completing thread. A test gate awaited by the test body and completed by
-production code therefore takes `TaskCreationOptions.RunContinuationsAsynchronously`; a gate awaited
-by production code and completed by the test body must not, because tests assert on that inline
-resumption. `[AvaloniaFact]` bodies are unaffected: `Avalonia.Headless.XUnit` installs
+and locked, and the next build fails with MSB3027/MSB3021 until that process is killed. The
+container half of that is bounded: the registry fetch and the readiness wait both stop after two
+minutes, so a bench that never comes up is a stated skip rather than a wedged process. Everything
+else is not. A plain `[Fact]` body also runs with no `SynchronizationContext` — v3 installs one only
+under the Aggressive parallel algorithm — so an `await` on a `TaskCompletionSource` that production
+code completes resumes inline on the completing thread. A test gate awaited by the test body and
+completed by production code therefore takes `TaskCreationOptions.RunContinuationsAsynchronously`; a
+gate awaited by production code and completed by the test body must not, because tests assert on
+that inline resumption. `[AvaloniaFact]` bodies are unaffected: `Avalonia.Headless.XUnit` installs
 `AvaloniaSynchronizationContext`.
 
 ```powershell
@@ -126,20 +128,32 @@ the policy:
 
 | Variable | Effect | Unset means |
 | --- | --- | --- |
-| `SEMIPLOT_TEST_PG` | Connection string of an existing server to use instead of a container. This is the one path that spawns a `semibase` binary: the fixture runs `semibase bench` against it, which is idempotent | start a container |
 | `SEMIPLOT_PG_IMAGE` | Base image the bench image is built over (`--build-arg BASE_IMAGE`), so it selects the PostgreSQL version | `postgres:17-alpine` |
 | `SEMIPLOT_REQUIRE_DB` | `1` or `true` turns an unavailable runtime from a skip into a failure. The CI `data-tests` job sets it; a developer machine must not | skip with a reason |
-| `SEMIBASE_EXE` | Path to a `semibase` binary, v0.3.0 or later. Read **only** on the `SEMIPLOT_TEST_PG` path; nothing searches `PATH` | the `SEMIPLOT_TEST_PG` path fails, naming the unset variable; the container path is unaffected |
-| `SEMIBASE_WRITER_PASSWORD`, `SEMIBASE_READER_PASSWORD` | Role passwords for `semibase bench`, read **only** on the `SEMIPLOT_TEST_PG` path — a real server's roles already have passwords. The container path passes fixed dummy passwords of the fixture's own into the container, so a developer needs no variable at all | required on the `SEMIPLOT_TEST_PG` path, unused otherwise |
 
-`SEMIBASE_SUPER_PASSWORD` is passed to `semibase` by the fixture, taken from the `SEMIPLOT_TEST_PG`
-connection string; setting it in the shell changes nothing.
+There is one path and it is the container. The suite never spawns a `semibase` binary and reads no
+role password from the environment: the container carries fixed dummy passwords of the fixture's own,
+so a developer needs no variable at all.
 
-Both paths provision one fixed database, `semiplot_provisioned` — neither can know the seeded
-template's per-build name — and everything else the suite needs is a
-`CREATE DATABASE ... TEMPLATE` clone of it. The fixture passes that name into the container and
-gives it to `semibase bench` on the `SEMIPLOT_TEST_PG` path, so both paths reach the same state and
-no consumer carries a branch.
+**A run leaves nothing behind.** It raises the harness, tests, and kills everything it made — the
+built image, the container, the template and every clone. That rests on `WithCleanUp(true)` and the
+resource reaper: the fixture's teardown only disposes the container, and everything the run created
+lives inside it. `TheBuiltBenchImageIsLabelledForTheReaperAndForThisRepository` is the tripwire on
+the reaper's label. The images the run *pulled* stay, on purpose. `docs/architecture/bench.md` holds
+the full statement.
+
+The container provisions one fixed database, `semiplot_provisioned`, before the published port opens;
+the fixture passes that name in, so no consumer carries a branch. Everything else the suite needs is
+a `CREATE DATABASE ... TEMPLATE` clone made inside the running container, of one of two sources.
+The seeded template `semiplot_bench` is itself a clone of the provisioned source, filled once per
+run; `CloneSource` names which of the two a test class clones. `SeededArchive` and
+`LiveEdgeArchiveJourneyTests` take the template, because they read the seeded rows. The seven
+writing classes — `ArchiveWriterTransactionTests`, `CoarseFlushTests`, `FollowRestartTests`,
+`RealtimeEmptyArchiveTests`, `RealtimePollReadTests`, `RealtimeSubscriptionTests` and
+`StaleArchiveGuardTests` — take `CloneSource.Provisioned` and write their own rows into an empty
+`public.trends`. The grain differs with the holder: the `SeededArchive` class fixture gives one clone
+to a whole class, while `ClonedArchiveTest` gives one per test method, since xunit constructs a test
+class once per test method.
 
 ## Code Style
 
@@ -242,9 +256,15 @@ No abbreviations in names.
 - The bench seeder `SemiPlot.Tools.ArchiveSeeder` owns `SyntheticValueWalk`, `SyntheticPenCatalog`
   and `SyntheticPen`, and they stay frozen: a golden-digest test pins the seeder's output and later
   slices develop against that output, so a generator shared with anything that evolves for its own
-  reasons would break them. `public.trends`, `semiplot_tags`, the two roles and
-  their grants are SemiBase's and are never defined in this repository — the seeder fills the
-  archive table and creates only the day partitions its rows land in.
+  reasons would break them. **One lattice serves both generators.** A change sits at
+  `index * intervalTicks` from absolute tick zero and both `RawLayerGenerator` (run by run between
+  the breaks) and `LiveTailGenerator` (span by span) emit through `RawLayerGenerator.AppendWindow`.
+  Do not split them again: two lattices is what produced the primary-key collision in `f91889d` and
+  the seam hole in `caa935f`, and `SemiPlot.Tests.Data/SharedLatticeTests.cs` is the test that goes
+  red if they are. `docs/architecture/bench.md` states what the shape guarantees.
+  `public.trends`, `semiplot_tags`, the two roles and their grants are SemiBase's and are never
+  defined in this repository — the seeder fills the archive table and creates only the day
+  partitions its rows land in.
 - A diagnostic question the exception itself cannot answer is resolved by a cold-path reader: an
   internal sealed type beside the provider that opens a fresh connection on the failure path
   (`StatementTimeoutReader` for `57014`). It runs from `PostgresDataProvider.MapAsync`, never from

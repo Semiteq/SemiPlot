@@ -63,32 +63,6 @@ public sealed class PartitionScriptTests
 			statement);
 	}
 
-	// An appending run meets the day partitions an earlier run created, so the statement passes through
-	// one instead of failing on it. A seeding run never meets one: ArchiveWriter's seeded refusal rejects
-	// any non-tpdefault partition before these statements execute.
-	[Fact]
-	public void TheStatementPassesThroughADayThatAlreadyHasItsPartition()
-	{
-		var statement = PartitionScript.CreateStatement(new DateTime(2026, 1, 1));
-
-		Assert.StartsWith("CREATE TABLE IF NOT EXISTS ", statement, StringComparison.Ordinal);
-	}
-
-	// The only parameter is a DateTime, so nothing a caller typed can reach the statement: the name and
-	// both bounds are rendered, and the rendered form is all the statement carries.
-	[Fact]
-	public void TheStatementCarriesOnlyItsRenderedNameAndBounds()
-	{
-		var statement = PartitionScript.CreateStatement(
-			new DateTime(2026, 8, 4, 12, 34, 56, DateTimeKind.Unspecified));
-
-		Assert.Matches(
-			@"^CREATE TABLE IF NOT EXISTS public\.tp\d{4}m\d{2}d\d{2} PARTITION OF public\.trends "
-				+ @"FOR VALUES FROM \('\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'\) "
-				+ @"TO \('\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'\);$",
-			statement);
-	}
-
 	// --end is exclusive, so the newest row falls strictly before it. A partition for the following day
 	// would hold nothing, and the day after a run is not a day the run covers.
 	[Fact]

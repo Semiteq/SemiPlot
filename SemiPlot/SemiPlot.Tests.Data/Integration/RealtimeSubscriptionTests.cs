@@ -14,8 +14,7 @@ using Xunit;
 namespace SemiPlot.Tests.Data.Integration;
 
 // Both tests append rows, so neither may take SeededArchive, whose contract is that the class leaves the
-// database as it found it. xunit constructs a test class once per test method, so the clone built in
-// InitializeAsync belongs to exactly one test and is dropped with it.
+// database as it found it.
 //
 // Nothing here waits on a timeout. Every synchronisation point is an awaited emission: the Connected signal
 // the subscription's first successful tick reports, or a batch that has been delivered. A subscription can
@@ -25,7 +24,8 @@ namespace SemiPlot.Tests.Data.Integration;
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
 [Trait("Category", "Integration")]
-public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresContainerFixture) : IAsyncLifetime
+public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresContainerFixture)
+	: ClonedArchiveTest(postgresContainerFixture, CloneSource.Provisioned)
 {
 	private static readonly long[] _subscribedPenIds = [1L, 2L];
 
@@ -45,38 +45,11 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 		INSERT INTO public.trends (id, l, t, v, q) VALUES (@id, 0, @t, @v, @q);
 		""";
 
-	private ArchiveDatabase? _archiveDatabase;
-
-	private ArchiveDatabase Database =>
-		_archiveDatabase ?? throw new InvalidOperationException(
-			postgresContainerFixture.UnavailableReason ?? "The archive was used before it was written.");
-
-	public async ValueTask InitializeAsync()
+	protected override async ValueTask SeedAsync()
 	{
-		if (!postgresContainerFixture.IsAvailable)
-		{
-			return;
-		}
+		var written = await Writer().WriteAsync(SeededRows(), _day, _nextDay);
 
-		_archiveDatabase = await postgresContainerFixture.CloneProvisionedAsync();
-
-		var written = await new ArchiveWriter(_archiveDatabase.WriterConnectionString)
-			.WriteAsync(SeededRows(), _day, _nextDay);
-
-		if (written.IsFailed)
-		{
-			throw new InvalidOperationException(
-				"The subscription's own archive could not be written: "
-				+ string.Join("; ", written.Errors.Select(error => error.Message)));
-		}
-	}
-
-	public async ValueTask DisposeAsync()
-	{
-		if (_archiveDatabase is not null)
-		{
-			await _archiveDatabase.DisposeAsync();
-		}
+		Assert.True(written.IsSuccess, ArchiveReadSupport.Describe(written));
 	}
 
 	// TrendCoordinator publishes the batches through RefCount, which disposes the upstream when the last
@@ -86,7 +59,7 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 	[Fact]
 	public async Task DisposingASubscriptionStopsItsPoll()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 
@@ -130,7 +103,7 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 	[Fact]
 	public async Task TwoSubscriptionsEachKeepTheirOwnLastSeen()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var beforeTheSecondSubscription = _seededLast.AddSeconds(1);
@@ -177,7 +150,7 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 	[Fact]
 	public async Task EverySubscriptionReportsConnectedOnItsOwnFirstTick()
 	{
-		postgresContainerFixture.RequireAvailable();
+		Fixture.RequireAvailable();
 
 		using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
 

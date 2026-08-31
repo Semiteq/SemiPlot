@@ -254,9 +254,9 @@ No abbreviations in names.
   provider; each provider translates its own rows into the decimator's input vocabulary, which
   `docs/architecture/charting.md` states.
 - The bench seeder `SemiPlot.Tools.ArchiveSeeder` owns `SyntheticValueWalk`, `SyntheticPenCatalog`
-  and `SyntheticPen`, and they stay frozen: a golden-digest test pins the seeder's output and later
-  slices develop against that output, so a generator shared with anything that evolves for its own
-  reasons would break them. **One lattice serves both generators.** A change sits at
+  and `SyntheticPen`. `RawLayerGeneratorTests` pins the generator by determinism and invariants —
+  the absolute lattice, the break holes, the row-pair shape — not by a digest, so the waveform may
+  change and the shape may not. **One lattice serves both generators.** A change sits at
   `index * intervalTicks` from absolute tick zero and both `RawLayerGenerator` (run by run between
   the breaks) and `LiveTailGenerator` (span by span) emit through `RawLayerGenerator.AppendWindow`.
   Do not split them again: two lattices is what produced the primary-key collision in `f91889d` and

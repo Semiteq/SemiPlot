@@ -175,7 +175,7 @@ flowchart LR
     fix["PostgresContainerFixture<br/>builds the bench image"]
     sb["semibase bench<br/>init hook, unix socket"]
     src[("semiplot_provisioned")]
-    seed["ArchiveSeeder<br/>deterministic, golden digest"]
+    seed["ArchiveSeeder<br/>deterministic, invariant-tested"]
     tmpl[("semiplot_bench<br/>seeded template")]
     clone[("clone per test method<br/>or per test class")]
 

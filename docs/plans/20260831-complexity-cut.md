@@ -539,10 +539,10 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 
 ### Task 18: Slice 6 close
 
-- [ ] `dotnet format SemiPlot.slnx`; `git log origin/master..HEAD --oneline` shows only slice-6 commits
-- [ ] `dotnet test SemiPlot.slnx` with Docker running - green
+- [x] `dotnet format SemiPlot.slnx`; `git log origin/master..HEAD --oneline` shows only slice-6 commits
+- [x] `dotnet test SemiPlot.slnx` with Docker running - green
 - [ ] manual: `scripts/bench-demo.ps1` end to end, seeder invoked by it unchanged; the `CLAUDE.md` "Build" invocation runs
-- [ ] open the pull request; after merge, `git switch master && git pull --ff-only`
+- [x] open the pull request; after merge, `git switch master && git pull --ff-only` (#48)
 
 ### Slice 7 — `seeder-generator`
 
@@ -554,10 +554,10 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 - Modify: `SemiPlot/SemiPlot.Tests.Data/LiveTailGeneratorTests.cs:61`, `SharedLatticeTests.cs:36,61`, `Integration/FollowRestartTests.cs:122-129` (restart at the edge; assert no hole and no duplicate on both sides), `Integration/StaleArchiveGuardTests.cs` (drop the `StartFrom` cases)
 - Modify: `docs/architecture/bench.md:196`
 
-- [ ] change `LiveTailGenerator.Generate` to take the edge as an exclusive bound and start at the next lattice index
-- [ ] delete `StartFrom`; `Program.FollowAsync` passes the edge
-- [ ] rewrite `FollowRestartTests` and `SharedLatticeTests` for the new start; both keep asserting one continuous lattice across the restart
-- [ ] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests.Data` - must pass before task 20
+- [x] change `LiveTailGenerator.Generate` to take the edge as an exclusive bound: the window is `after < t <= to`, closed at its end so the row on a tick's own instant belongs to exactly one tick; the exclusive start is `after.Ticks + 1` inside the generator, since a start at the next lattice index would drop the anchor of the first change when the edge is a change row
+- [x] delete `StartFrom`; `Program.FollowAsync` passes the edge
+- [x] rewrite `FollowRestartTests` and `SharedLatticeTests` for the new start; both keep asserting one continuous lattice across the restart
+- [x] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests.Data` - must pass before task 20
 
 ### Task 20: Generator invariants replace the golden digest; short runs rejected
 
@@ -568,12 +568,12 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 - Delete: `SemiPlot/SemiPlot.Tests.Data/SyntheticPenCatalogColorTests.cs`; `SyntheticPenCatalog.HsvToHex` becomes eight colour literals
 - Modify: `docs/architecture/bench.md:34-35,71-75,96-111,417`, `docs/architecture/testing-strategy.md:210-215`, `docs/architecture/postgres-topology.md` (digest mention), `CLAUDE.md` data-source bullet ("they stay frozen: a golden-digest test pins the seeder's output")
 
-- [ ] add the invariant tests: same options twice yields sequence-equal rows; every timestamp is `index * intervalTicks` from tick zero; every `q = 32` is followed by a `q = 16` for the same pen; row count per pen equals the lattice count minus the break holes
-- [ ] delete the digest test, the row-count constant and the `F6` formatting helper
-- [ ] reject short runs in `BreakPlan`; delete the synthesised stop row and `DescribeUnmarkableRun`; update `BreakGenerationTests`
-- [ ] replace `HsvToHex` with literals and delete its test
-- [ ] rewrite the `CLAUDE.md` bullet to state that the generators are pinned by invariants and determinism; update the three documents
-- [ ] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests.Data` - must pass before task 21
+- [x] add the invariant tests: same options twice yields sequence-equal rows; every timestamp is `index * intervalTicks` from tick zero; the marker alternation stays in `BreakGenerationTests.MarkersComeInOrderedStopThenResumePairs`; a plan with breaks equals the no-break lattice minus the break windows and the two anchors each break strands (`BreaksCutTheirWindowsOutOfTheLatticeAndLeaveNoOtherHole`), row for row rather than by count
+- [x] delete the digest test, the row-count constant and the `F6` formatting helper
+- [x] reject short runs — `RawLayerGenerator.RequireTwoChangesPerRun`, beside the lattice arithmetic it needs, rather than in `BreakPlan`; delete the synthesised stop row and `DescribeUnmarkableRun`; update `BreakGenerationTests`
+- [x] replace `HsvToHex` with literals (a twelve-colour palette by catalogue position; `TheStandardSliceGivesEveryPenItsOwnColour` pins the eight standard pens distinct) and delete its test
+- [x] rewrite the `CLAUDE.md` bullet to state that the generators are pinned by invariants and determinism; update the three documents
+- [x] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests.Data` - must pass before task 21
 
 ### Task 21: Slice 7 close
 

@@ -6,8 +6,8 @@ namespace SemiPlot.Tests.Data;
 
 // The guarantee merging the two generators buys: a seeding run and a follow run write on one lattice by
 // construction rather than by agreement. Nothing else compares the two — LiveTailGeneratorTests reads the
-// follow path alone, FollowRestartTests follows on both sides of the restart, and the golden digest pins
-// the seeding path — so re-splitting them leaves every suite green until a seeded archive is followed and
+// follow path alone, FollowRestartTests follows on both sides of the restart, and RawLayerGeneratorTests
+// reads the seeding path alone — so re-splitting them leaves every suite green until a seeded archive is followed and
 // the COPY meets a key it already holds. That is the collision f91889d fixed and the seam hole caa935f
 // fixed, and this is where a second lattice goes red.
 [Trait("Component", "Core")]
@@ -38,11 +38,14 @@ public sealed class SharedLatticeTests
 
 	private static readonly TimeSpan _changeInterval = TimeSpan.FromSeconds(ChangeSeconds);
 
+	// The seeding span is closed at its start and open at its end, the follow window the other way round;
+	// one tick back on both bounds is the exact conversion, since every row is a whole millisecond.
 	[Fact]
 	public void ASeedingRunAndAFollowTickEmitTheSameRowsOverTheSameSpan()
 	{
 		var seeded = RawLayerGenerator.Generate(_seeding);
-		var followed = LiveTailGenerator.Generate(_following, _seeding.Start, _seeding.End);
+		var followed = LiveTailGenerator.Generate(
+			_following, _seeding.Start.AddTicks(-1), _seeding.End.AddTicks(-1));
 
 		Assert.NotEmpty(seeded);
 		Assert.Equal(seeded, followed);
@@ -57,8 +60,7 @@ public sealed class SharedLatticeTests
 		var seeded = RawLayerGenerator.Generate(_seeding);
 		var edges = seeded.GroupBy(row => row.Id).ToDictionary(pen => pen.Key, pen => pen.Max(row => row.Timestamp));
 
-		var followed = LiveTailGenerator.Generate(
-			_following, StaleArchiveGuard.StartFrom(edges.Values.Max(), _restartClock), _restartClock);
+		var followed = LiveTailGenerator.Generate(_following, edges.Values.Max(), _restartClock);
 
 		Assert.NotEmpty(followed);
 

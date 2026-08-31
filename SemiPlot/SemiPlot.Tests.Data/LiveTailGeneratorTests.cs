@@ -5,7 +5,7 @@ using Xunit;
 namespace SemiPlot.Tests.Data;
 
 // One follow tick's rows. The property that carries the whole design is that a row belongs to exactly
-// one span: a follow run keeps no state between ticks, and PRIMARY KEY (id, l, t) refuses a second copy
+// one window: a follow run keeps no state between ticks, and PRIMARY KEY (id, l, t) refuses a second copy
 // of a row an earlier tick already wrote.
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
@@ -29,8 +29,8 @@ public sealed class LiveTailGeneratorTests
 	[Fact]
 	public void TimestampsAscendStrictlyPerPenOnWholeMilliseconds()
 	{
-		var from = _midnight.AddMilliseconds(137.0);
-		var rows = LiveTailGenerator.Generate(Options(), from, from.AddSeconds(30));
+		var after = _midnight.AddMilliseconds(137.0);
+		var rows = LiveTailGenerator.Generate(Options(), after, after.AddSeconds(30));
 
 		Assert.All(rows, row => Assert.Equal(0L, row.Timestamp.Ticks % TimeSpan.TicksPerMillisecond));
 
@@ -44,36 +44,48 @@ public sealed class LiveTailGeneratorTests
 	}
 
 	[Fact]
-	public void EveryRowFallsInsideItsOwnSpan()
+	public void EveryRowFallsInsideItsOwnWindow()
 	{
-		var from = _midnight.AddMilliseconds(137.0);
-		var toExclusive = from.AddSeconds(30);
+		var after = _midnight.AddMilliseconds(137.0);
+		var to = after.AddSeconds(30);
 
-		var rows = LiveTailGenerator.Generate(Options(), from, toExclusive);
+		var rows = LiveTailGenerator.Generate(Options(), after, to);
 
-		Assert.All(rows, row => Assert.InRange(row.Timestamp, from, toExclusive.AddTicks(-1)));
+		Assert.All(rows, row => Assert.InRange(row.Timestamp, after.AddTicks(1), to));
 	}
 
-	// The span is half-open at both ends the same way: closed at the start, open at the end. The tick loop
-	// hands the previous tick's own instant back as the next span's start, and the span before it stopped
-	// short of that instant, so a lattice point landing exactly there belongs to this span and to no other.
-	// It is also why a follow run resuming from the archive's edge advances past that edge before the first
-	// call rather than making this end exclusive — see StaleArchiveGuard.StartFrom.
+	// The window is open at its start: `after` is an instant the archive already accounts for — the newest
+	// row a stopped run left, which a restart hands in, or the previous tick's own instant, whose rows that
+	// tick wrote — so a lattice point sitting exactly there is never written twice.
 	[Fact]
-	public void ARowExactlyAtTheSpanStartBelongsToTheSpan()
+	public void ARowExactlyAtTheWindowStartIsNotEmitted()
 	{
 		var options = Options() with { PenCount = 1, ChangeSeconds = 0.5 };
 		var onTheLattice = _midnight.AddSeconds(9.5);
 
 		var rows = LiveTailGenerator.Generate(options, onTheLattice, onTheLattice.AddSeconds(1));
 
-		Assert.Equal(onTheLattice, rows[0].Timestamp);
+		Assert.DoesNotContain(rows, row => row.Timestamp == onTheLattice);
+		Assert.Equal(onTheLattice.AddMilliseconds(400.0), rows[0].Timestamp);
 	}
 
-	// The property a follow run stands on: consecutive spans partition the rows rather than overlapping
+	// The window is closed at its end, so the row a tick's own instant lands on belongs to that tick, and
+	// the next tick, which starts after that instant, leaves it alone.
+	[Fact]
+	public void ARowExactlyAtTheWindowEndIsEmitted()
+	{
+		var options = Options() with { PenCount = 1, ChangeSeconds = 0.5 };
+		var onTheLattice = _midnight.AddSeconds(9.5);
+
+		var rows = LiveTailGenerator.Generate(options, onTheLattice.AddSeconds(-1), onTheLattice);
+
+		Assert.Equal(onTheLattice, rows[^1].Timestamp);
+	}
+
+	// The property a follow run stands on: consecutive windows partition the rows rather than overlapping
 	// them, so the second tick's COPY meets none of the first tick's keys.
 	[Fact]
-	public void TwoConsecutiveSpansShareNoRow()
+	public void TwoConsecutiveWindowsShareNoRow()
 	{
 		var first = _midnight.AddMilliseconds(137.0);
 		var second = first.AddSeconds(7);
@@ -92,8 +104,8 @@ public sealed class LiveTailGeneratorTests
 	}
 
 	// The vendor's two-rows-per-change shape: the previous value one poll interval before the change,
-	// then the new value at the change tick. The very first change of a follow run has no anchor of its
-	// own, because that row belongs to the span before the run started.
+	// then the new value at the change tick. The change sitting on `after` itself is the archive's already;
+	// what the window opens with is that change's successor's anchor, carrying the value the edge row holds.
 	[Fact]
 	public void AChangeCarriesThePreviousValueOnePollIntervalAhead()
 	{
@@ -102,27 +114,27 @@ public sealed class LiveTailGeneratorTests
 
 		DateTime[] expected =
 		[
-			_midnight,
 			_midnight.AddMilliseconds(900.0),
 			_midnight.AddSeconds(1),
-			_midnight.AddMilliseconds(1900.0)
+			_midnight.AddMilliseconds(1900.0),
+			_midnight.AddSeconds(2)
 		];
 
 		Assert.Equal(expected, rows.Select(row => row.Timestamp).ToArray());
 
-		Assert.Equal(rows[0].Value, rows[1].Value);
-		Assert.Equal(rows[2].Value, rows[3].Value);
-		Assert.NotEqual(rows[1].Value, rows[2].Value);
+		Assert.Equal(rows[1].Value, rows[2].Value);
+		Assert.NotEqual(rows[0].Value, rows[1].Value);
+		Assert.NotEqual(rows[2].Value, rows[3].Value);
 	}
 
 	[Fact]
-	public void TheSameSpanGeneratesTheSameRowsTwice()
+	public void TheSameWindowGeneratesTheSameRowsTwice()
 	{
-		var toExclusive = _midnight.AddSeconds(20);
+		var to = _midnight.AddSeconds(20);
 
 		Assert.Equal(
-			LiveTailGenerator.Generate(Options(), _midnight, toExclusive),
-			LiveTailGenerator.Generate(Options(), _midnight, toExclusive));
+			LiveTailGenerator.Generate(Options(), _midnight, to),
+			LiveTailGenerator.Generate(Options(), _midnight, to));
 	}
 
 	[Fact]
@@ -149,7 +161,7 @@ public sealed class LiveTailGeneratorTests
 	[Theory]
 	[InlineData(0)]
 	[InlineData(-5)]
-	public void ASpanThatDoesNotAdvanceEmitsNothing(int seconds)
+	public void AWindowThatDoesNotAdvanceEmitsNothing(int seconds)
 	{
 		Assert.Empty(LiveTailGenerator.Generate(Options(), _midnight, _midnight.AddSeconds(seconds)));
 	}
@@ -164,11 +176,11 @@ public sealed class LiveTailGeneratorTests
 
 		DateTime[] expected =
 		[
-			_midnight,
 			_midnight.AddMilliseconds(100.0),
 			_midnight.AddMilliseconds(200.0),
 			_midnight.AddMilliseconds(300.0),
-			_midnight.AddMilliseconds(400.0)
+			_midnight.AddMilliseconds(400.0),
+			_midnight.AddMilliseconds(500.0)
 		];
 
 		Assert.Equal(expected, rows.Select(row => row.Timestamp).ToArray());

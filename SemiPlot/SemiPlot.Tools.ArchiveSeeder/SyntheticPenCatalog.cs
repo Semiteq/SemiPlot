@@ -10,6 +10,15 @@ public static class SyntheticPenCatalog
 	private const string PressuresGroup = "Pressures";
 	private const string PowersGroup = "Powers";
 
+	// Taken in catalogue order. Twelve is what keeps the standard slice's eight round-robin pens — catalogue
+	// positions 0, 1, 16, 17, 32, 33, 42 and 46 — on eight distinct colours, and every colour carries the
+	// chroma the break-render journey probes for.
+	private static readonly string[] _palette =
+	[
+		"#4E79A7", "#F28E2B", "#E15759", "#76B7B2", "#59A14F", "#EDC948",
+		"#B07AA1", "#FF9DA7", "#9C755F", "#17BECF", "#D62728", "#9467BD"
+	];
+
 	public static IReadOnlyList<SyntheticPen> Build()
 	{
 		var pens = new List<SyntheticPen>();
@@ -45,7 +54,7 @@ public static class SyntheticPenCatalog
 		{
 			var penId = idBase + index;
 			var name = $"{namePrefix} {index + 1:00}";
-			var color = ColorFor(penId);
+			var color = _palette[pens.Count % _palette.Length];
 
 			pens.Add(new SyntheticPen(penId, name, group, color, minValue, maxValue, lineStyle));
 		}
@@ -57,7 +66,7 @@ public static class SyntheticPenCatalog
 		{
 			var penId = idBase + index;
 			var name = $"Gas line {index + 1:00}";
-			var color = ColorFor(penId);
+			var color = _palette[pens.Count % _palette.Length];
 			var (rangeMin, rangeMax) = GasLineRange(index);
 
 			pens.Add(new SyntheticPen(penId, name, GasLinesGroup, color, rangeMin, rangeMax));
@@ -71,42 +80,5 @@ public static class SyntheticPenCatalog
 		var min = index * 2.0;
 
 		return (min, min + span);
-	}
-
-	// Golden-ratio hue walk spreads pen colors so adjacent ids stay visually distinct.
-	private static string ColorFor(int penId)
-	{
-		const double goldenRatioConjugate = 0.618033988749895;
-		var hue = (penId * goldenRatioConjugate) % 1.0;
-
-		return HsvToHex(hue, saturation: 0.65, value: 0.85);
-	}
-
-	private static string HsvToHex(double hue, double saturation, double value)
-	{
-		var sector = hue * 6.0;
-		var sectorIndex = (int)Math.Floor(sector) % 6;
-		var fractional = sector - Math.Floor(sector);
-
-		var p = value * (1.0 - saturation);
-		var q = value * (1.0 - saturation * fractional);
-		var t = value * (1.0 - saturation * (1.0 - fractional));
-
-		var (red, green, blue) = sectorIndex switch
-		{
-			0 => (value, t, p),
-			1 => (q, value, p),
-			2 => (p, value, t),
-			3 => (p, q, value),
-			4 => (t, p, value),
-			_ => (value, p, q)
-		};
-
-		return $"#{ToByte(red):X2}{ToByte(green):X2}{ToByte(blue):X2}";
-	}
-
-	private static int ToByte(double channel)
-	{
-		return (int)Math.Round(Math.Clamp(channel, 0.0, 1.0) * 255.0);
 	}
 }

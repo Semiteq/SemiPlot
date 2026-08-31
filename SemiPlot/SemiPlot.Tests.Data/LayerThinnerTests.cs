@@ -14,8 +14,8 @@ namespace SemiPlot.Tests.Data;
 [Trait("Category", "Unit")]
 public sealed class LayerThinnerTests
 {
-	// The measured volume of the standard slice across all four layers, 271984 raw plus the coarse rows
-	// the thinner selects from them.
+	// The measured volume of the standard slice across all four layers, raw plus the coarse rows the
+	// thinner selects from them. A floor, not a pin: a waveform change that keeps the volume moves nothing.
 	private const int StandardSliceLayeredRowCount = 314845;
 
 	private const int Budget = 4;

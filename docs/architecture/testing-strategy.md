@@ -181,7 +181,7 @@ Each piece lives with the party whose change invalidates it.
 | Archive schema, layers, thinning rule | Simple-Scada 2 | the vendor's product; observed in `scada-archive.md` | SemiPlot is a strict read-only consumer. The observation is documented with the consumer because the consumer depends on it, not because anyone here controls it |
 | Instance provisioning: database, roles, grants, default privileges, `semiplot_tags`, `public.trends` | SemiBase | `github.com/Semiteq/SemiBase` | the instance is shared by the SCADA, SemiPlot and future readers. The bench must be provisioned by the same implementation a site is, or it stops testing the grant chain. The archive table is in that list because SemiBase creates it: a second definition here would be the one exercised daily while the real one decayed |
 | `semibase` artifact formats and versions | SemiBase | its release workflow and its published image | the producer owns its artifacts; SemiPlot only consumes them |
-| Synthetic data model, including `LayerThinner` — this project's hypothesis about the vendor's thinning rule | SemiPlot | `SemiPlot.Tools.ArchiveSeeder` | the hypothesis couples to the consumer, not the provisioner: if the rule is refuted, the *read path* changes and SemiBase changes nothing. It must version in lock-step with the code that bets on it, which is why the golden digest lives beside it and why `SyntheticValueWalk`, `SyntheticPenCatalog` and `SyntheticPen` are the seeder's own and are frozen: the digest pins the seeder's output and later slices develop against that output, so a generator shared with anything evolving for its own reasons would break them |
+| Synthetic data model, including `LayerThinner` — this project's hypothesis about the vendor's thinning rule | SemiPlot | `SemiPlot.Tools.ArchiveSeeder` | the hypothesis couples to the consumer, not the provisioner: if the rule is refuted, the *read path* changes and SemiBase changes nothing. It must version in lock-step with the code that bets on it, which is why `RawLayerGeneratorTests` lives beside it and why `SyntheticValueWalk`, `SyntheticPenCatalog` and `SyntheticPen` are the seeder's own: the tests pin the generator's shape and later slices develop against its output, so a generator shared with anything evolving for its own reasons would break them |
 | Test harness, gate policy | SemiPlot tests | `SemiPlot.Tests.Data/Integration/`, consumed by `SemiPlot.Tests.Journeys` | skip-versus-fail is consumer CI policy; no other party can decide it |
 | Developer environment | SemiPlot | `dotnet test` and the bench recipe in `bench.md` | it composes the others' artifacts and defines none of them |
 
@@ -206,12 +206,11 @@ correctness.
 | Third-party libraries | NuGet versions in `Directory.Packages.props`, the SDK in `global.json` |
 | Dependencies with an independent release cycle — PostgreSQL, `semibase` | a container image |
 
-A fourth mechanism pins this repository's own output rather than a dependency:
-`RawLayerGeneratorTests.TheStandardSliceMatchesItsGoldenDigest` holds a row count and a SHA-256 over
-the standard slice's rows. It is not a guard against change; it is what makes a change deliberate.
-Merging the seeding generator and the demo writer onto one lattice moved both constants, so both
-were re-pinned in that commit — 271984 rows where the stateful walk produced 229862 — and any later
-move of either without an intended waveform change is a defect.
+This repository's own generator output is pinned by properties rather than by a digest:
+`RawLayerGeneratorTests` asserts that the same options generate the same rows twice, that every row
+sits on the absolute lattice, that a plan with breaks is the continuous lattice with the break
+windows cut out, and that every change row follows its anchor by one poll interval. A deliberate
+waveform change moves none of them; a change that breaks one is the defect the suite exists for.
 
 A dependency resolved from the machine — an executable found on `PATH`, a service that happens to be
 installed — is pinned by nothing, and that is the property to avoid. It is a separate property from

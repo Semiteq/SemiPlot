@@ -1,9 +1,7 @@
 ﻿namespace SemiPlot.Tools.ArchiveSeeder;
 
 // A coarse layer is not an aggregate: it holds verbatim copies of raw rows, up to four per period,
-// selected by magnitude (docs/architecture/scada-archive.md#layers). Every layer is computed against
-// the raw rows rather than against the layer below it, which is what makes l=3 ⊆ l=2 ⊆ l=1 ⊆ l=0 fall
-// out on its own — a day's extremum is also the extremum of the hour and the minute holding it.
+// selected by magnitude (docs/architecture/scada-archive.md#layers).
 public static class LayerThinner
 {
 	public const short MinuteLayer = 1;
@@ -13,8 +11,7 @@ public static class LayerThinner
 	public static readonly IReadOnlyList<short> CoarseLayers = [MinuteLayer, HourLayer, DayLayer];
 
 	// The one place calendar alignment lives. Whether the vendor thins on calendar periods or on flush
-	// windows is the first open question of docs/architecture/scada-archive.md#not-established, so the
-	// experiment that settles it replaces this method and nothing else.
+	// windows is the first open question of docs/architecture/scada-archive.md#not-established.
 	public static DateTime PeriodStart(DateTime timestamp, short layer)
 	{
 		var period = layer switch
@@ -53,9 +50,8 @@ public static class LayerThinner
 		return CoarseLayers.SelectMany(layer => Thin(rawRows, layer)).ToArray();
 	}
 
-	// Resolving a tie on value to the earliest row diverges from the vendor's measured later-row choice
-	// without moving any extreme value, so envelopes are unaffected, and it stays until the
-	// calendar-versus-flush-window question at docs/architecture/scada-archive.md#not-established is settled.
+	// Ties resolve to the earliest row; the vendor keeps the later one.
+	// docs/architecture/scada-archive.md#not-established
 	private static void AppendPeriod(List<ArchiveRow> thinned, IReadOnlyList<ArchiveRow> period, short layer)
 	{
 		var selected = new SortedDictionary<DateTime, ArchiveRow>();
@@ -66,8 +62,7 @@ public static class LayerThinner
 		Take(selected, period.MaxBy(row => row.Value)!);
 
 		// Marker rows are copied into every layer regardless of selection, so a gap boundary survives
-		// thinning (docs/architecture/scada-archive.md#quality-and-gaps). They are additional to the four, which is
-		// why a period bounding a break can hold more rows than the budget.
+		// thinning (docs/architecture/scada-archive.md#quality-and-gaps). They are additional to the four.
 		foreach (var marker in period.Where(row => row.Quality != ArchiveRow.OrdinaryQuality))
 		{
 			Take(selected, marker);

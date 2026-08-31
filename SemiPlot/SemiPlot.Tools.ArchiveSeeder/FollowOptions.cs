@@ -8,8 +8,6 @@ public sealed record FollowOptions(
 	long Seed,
 	double ChangeSeconds)
 {
-	// A follow run states no span of its own, so the ceiling a seeding run takes from its span is a
-	// literal here. A change interval longer than a day emits nothing anyway, and a value far above it
-	// overflows the tick arithmetic behind the generator.
+	// A change interval above one day emits nothing and far above it overflows the tick arithmetic.
 	public const double MaximumSeconds = 86400.0;
 }

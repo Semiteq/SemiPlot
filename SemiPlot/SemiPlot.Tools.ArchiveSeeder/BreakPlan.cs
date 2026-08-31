@@ -100,9 +100,7 @@ public sealed class BreakPlan
 		return runs;
 	}
 
-	// Break boundaries carry the same resolution as the rows they bound. The resume row is the first
-	// lattice point at or after a break's end rather than the end itself, so what the truncation buys is
-	// an exact tick comparison between a boundary and a row instead of one across sub-millisecond dust.
+	// Break boundaries carry the rows' millisecond resolution so boundary and row compare exactly.
 	private static TimeSpan WholeMilliseconds(TimeSpan value)
 	{
 		return TimeSpan.FromMilliseconds(Math.Round(value.TotalMilliseconds));

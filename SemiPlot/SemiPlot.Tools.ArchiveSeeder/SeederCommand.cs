@@ -149,9 +149,6 @@ public static class SeederCommand
 		return root;
 	}
 
-	// Invariant culture rather than the machine's: a decimal comma or a thousands separator would otherwise
-	// parse on one operator's machine and fail on the next. The range rule sits beside the parse so a value
-	// is checked exactly once, where it came from.
 	private static int ParseWholeNumber(ArgumentResult result, string name, int minimum, int maximum)
 	{
 		var text = result.Tokens[^1].Value;
@@ -250,8 +247,7 @@ public static class SeederCommand
 		return parsed;
 	}
 
-	// The two modes disagree about which options exist and about the ceilings the span sets, and nothing
-	// else. Both are decided here, after the parse, so no value is read off an option that failed to parse.
+	// Both modes are decided here, after the parse, so no value is read off an option that failed to parse.
 	private static SeederRun Interpret(ParseResult parsed)
 	{
 		var errors = parsed.Errors.Select(error => error.Message).ToList();

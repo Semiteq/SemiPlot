@@ -4,17 +4,11 @@ using Npgsql;
 
 namespace SemiPlot.Tools.ArchiveSeeder;
 
-// What bounds the first tick of Program.FollowAsync. The loop continues from max(t), so the appended
-// rows continue the fill instead of standing apart from it behind a hole nothing in the archive marks;
-// the price of that start is the span of the first tick, which against an archive filled weeks ago would
-// be those weeks of rows and a day partition for each. Refusing an archive further behind the clock
-// than MaximumAge is what holds that span inside the bound.
+// Bounds the first tick of Program.FollowAsync: an archive further behind the clock than MaximumAge is refused.
+// docs/architecture/bench.md#the-demo-writer
 public static class StaleArchiveGuard
 {
-	// The same bound scripts/bench-demo.ps1 uses to decide that an archive is live and needs no refill.
-	// Its floor is the tick cadence: a running writer keeps max(t) within a second or two of the clock, so
-	// five minutes refuses no live archive. Its ceiling is the first tick, which writes whatever an accepted
-	// archive is behind the clock.
+	// The same bound scripts/bench-demo.ps1 applies; keep the two equal.
 	public static readonly TimeSpan MaximumAge = TimeSpan.FromMinutes(5);
 
 	// to_regclass keeps a database provisioning never touched out of this read: it answers NULL exactly as
@@ -41,8 +35,7 @@ public static class StaleArchiveGuard
 
 		await using var command = new NpgsqlCommand(NewestCommand, connection);
 
-		// An archive with no rows carries nothing a hole could be torn in, so it is accepted rather than
-		// refused, and DBNull is what it and an unprovisioned database both answer.
+		// An empty archive is accepted: nothing a hole could be torn in.
 		if (await command.ExecuteScalarAsync(cancellationToken) is not DateTime newest)
 		{
 			return null;

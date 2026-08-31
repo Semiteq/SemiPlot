@@ -53,11 +53,7 @@ public static class Program
 		return 0;
 	}
 
-	// The demo writer. It appends to an archive somebody else seeded, so it creates no archive table,
-	// plants no break and fills no tag catalogue — only the day partition each tick's rows land in. Each
-	// tick appends the raw rows of the span since the previous one and then thins them into the coarse
-	// layers, so what it moves is every layer's live edge rather than the raw layer's alone, which is what
-	// a wide window's tail reads.
+	// The demo writer: each tick appends the span since the previous tick and thins it into the coarse layers.
 	private static async Task<int> FollowAsync(FollowOptions options)
 	{
 		using var stopping = new CancellationTokenSource();
@@ -77,10 +73,7 @@ public static class Program
 
 		var writer = new ArchiveWriter(options.ConnectionString);
 
-		// The window a tick writes is open at its start, so the edge row itself is never written twice — a
-		// previous follow run left it on the lattice this run walks again — and StaleArchiveGuard has already
-		// bounded how far behind the clock that edge may sit. An empty archive has no edge, and the clock
-		// stands in.
+		// Open at the edge: the edge row already sits on the lattice this run walks again.
 		var edge = newest ?? LocalNow();
 
 		while (await WaitForTickAsync(options.Interval, stopping.Token))
@@ -103,8 +96,7 @@ public static class Program
 	}
 
 	// The archive column is 'timestamp(3) without time zone' holding the SCADA host's naive local time
-	// (docs/architecture/scada-archive.md#time-semantics), so the follow edge is this machine's local
-	// clock with its Kind stripped.
+	// (docs/architecture/scada-archive.md#time-semantics).
 	private static DateTime LocalNow()
 	{
 		return DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified);

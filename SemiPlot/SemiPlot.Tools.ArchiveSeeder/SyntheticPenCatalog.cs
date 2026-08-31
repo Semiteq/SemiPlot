@@ -10,9 +10,7 @@ public static class SyntheticPenCatalog
 	private const string PressuresGroup = "Pressures";
 	private const string PowersGroup = "Powers";
 
-	// Taken in catalogue order. Twelve is what keeps the standard slice's eight round-robin pens — catalogue
-	// positions 0, 1, 16, 17, 32, 33, 42 and 46 — on eight distinct colours, and every colour carries the
-	// chroma the break-render journey probes for.
+	// Twelve keeps the standard slice's eight round-robin pens on distinct colours.
 	private static readonly string[] _palette =
 	[
 		"#4E79A7", "#F28E2B", "#E15759", "#76B7B2", "#59A14F", "#EDC948",

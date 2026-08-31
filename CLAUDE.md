@@ -29,7 +29,7 @@ dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.Archiv
 
 `--connection` and `--end` are required; `--end` carries no time zone, so two runs of the same seed
 produce the same archive. `--admin-connection` is optional and only fills `semiplot_tags`, which
-`scada_writer` holds no privilege on. Run it with no arguments for the full option list.
+`scada_writer` holds no privilege on. Run it with `--help` for the option list.
 
 ## Test
 

@@ -47,9 +47,7 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 
 	protected override async ValueTask SeedAsync()
 	{
-		var written = await Writer().WriteAsync(SeededRows(), _day, _nextDay);
-
-		Assert.True(written.IsSuccess, ArchiveReadSupport.Describe(written));
+		await Writer().WriteAsync(SeededRows(), _day, _nextDay);
 	}
 
 	// TrendCoordinator publishes the batches through RefCount, which disposes the upstream when the last

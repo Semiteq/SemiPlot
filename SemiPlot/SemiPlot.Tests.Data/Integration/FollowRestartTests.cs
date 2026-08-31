@@ -47,14 +47,12 @@ public sealed class FollowRestartTests(PostgresContainerFixture postgresContaine
 
 	protected override async ValueTask SeedAsync()
 	{
-		var written = await Writer().WriteAsync(
+		await Writer().WriteAsync(
 			_firstRunRows,
 			_firstRunStart,
 			_firstRunStop,
 			allowExistingRows: true,
 			TestContext.Current.CancellationToken);
-
-		Assert.True(written.IsSuccess, ArchiveReadSupport.Describe(written));
 	}
 
 	// The regression. A resume on the edge itself regenerates the row sitting there and the COPY fails with
@@ -72,14 +70,13 @@ public sealed class FollowRestartTests(PostgresContainerFixture postgresContaine
 			row => row.Timestamp == Edge);
 
 		var secondRunRows = await ResumeAsync(cancellationToken);
-		var appended = await Writer().WriteAsync(
+		await Writer().WriteAsync(
 			secondRunRows,
 			secondRunRows.Min(row => row.Timestamp),
 			_restartClock,
 			allowExistingRows: true,
 			cancellationToken);
 
-		Assert.True(appended.IsSuccess, ArchiveReadSupport.Describe(appended));
 		Assert.Equal(
 			(long)(_firstRunRows.Count + secondRunRows.Count),
 			await CountRawRowsAsync(cancellationToken));
@@ -121,12 +118,10 @@ public sealed class FollowRestartTests(PostgresContainerFixture postgresContaine
 	{
 		var freshness = await StaleArchiveGuard.CheckAsync(
 			Database.WriterConnectionString, _restartClock, cancellationToken);
-
-		Assert.True(freshness.IsSuccess, ArchiveReadSupport.Describe(freshness));
-		Assert.Equal(Edge, freshness.Value);
+		Assert.Equal(Edge, freshness);
 
 		var rows = LiveTailGenerator.Generate(
-			Options(), StaleArchiveGuard.StartFrom(freshness.Value, _restartClock), _restartClock);
+			Options(), StaleArchiveGuard.StartFrom(freshness, _restartClock), _restartClock);
 
 		Assert.NotEmpty(rows);
 

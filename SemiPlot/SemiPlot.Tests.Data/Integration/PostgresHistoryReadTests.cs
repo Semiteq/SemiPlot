@@ -627,19 +627,13 @@ public sealed class PostgresHistoryReadTests(
 
 		try
 		{
-			var written = await new ArchiveWriter(database.WriterConnectionString)
+			await new ArchiveWriter(database.WriterConnectionString)
 				.WriteAsync(
 					TailArchiveRows(),
 					_tailDay,
 					_tailDay.AddDays(1),
 					cancellationToken: cancellationToken);
 
-			if (written.IsFailed)
-			{
-				throw new InvalidOperationException(
-					"The fresh tail's own archive could not be written: "
-						+ string.Join("; ", written.Errors.Select(error => error.Message)));
-			}
 		}
 		catch
 		{

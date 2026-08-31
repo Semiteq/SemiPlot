@@ -73,9 +73,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 
 	protected override async ValueTask SeedAsync()
 	{
-		var written = await Writer().WriteAsync(_rawRows, _rawStart, _rawEndExclusive);
-
-		Assert.True(written.IsSuccess, ArchiveReadSupport.Describe(written));
+		await Writer().WriteAsync(_rawRows, _rawStart, _rawEndExclusive);
 	}
 
 	[Fact]
@@ -91,8 +89,6 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 
 		var flushed = await CoarseFlush.FlushAsync(
 			Options(), minute.AddSeconds(30), minute.AddSeconds(65), cancellationToken);
-
-		Assert.True(flushed.IsSuccess, ArchiveReadSupport.Describe(flushed));
 		Assert.Equal(expected, await ReadPeriodAsync(LayerThinner.MinuteLayer, minute, cancellationToken));
 	}
 
@@ -108,16 +104,12 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 
 		var first = await CoarseFlush.FlushAsync(Options(), previousTick, now, cancellationToken);
 
-		Assert.True(first.IsSuccess, ArchiveReadSupport.Describe(first));
-
 		var afterFirst = await ReadPeriodAsync(LayerThinner.MinuteLayer, minute, cancellationToken);
 
 		Assert.NotEmpty(afterFirst);
 
 		var second = await CoarseFlush.FlushAsync(Options(), previousTick, now, cancellationToken);
-
-		Assert.True(second.IsSuccess, ArchiveReadSupport.Describe(second));
-		Assert.Equal(0L, second.Value);
+		Assert.Equal(0L, second);
 		Assert.Equal(afterFirst, await ReadPeriodAsync(LayerThinner.MinuteLayer, minute, cancellationToken));
 	}
 
@@ -133,8 +125,6 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 		var now = _day.AddDays(1).AddSeconds(5);
 
 		var flushed = await CoarseFlush.FlushAsync(Options(), previousTick, now, cancellationToken);
-
-		Assert.True(flushed.IsSuccess, ArchiveReadSupport.Describe(flushed));
 
 		foreach (var layer in LayerThinner.CoarseLayers)
 		{
@@ -165,8 +155,6 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 		var flushed = await CoarseFlush.FlushAsync(
 			Options(), minute.AddSeconds(20), now, cancellationToken);
 
-		Assert.True(flushed.IsSuccess, ArchiveReadSupport.Describe(flushed));
-
 		Assert.Empty(
 			await ReadPeriodAsync(LayerThinner.MinuteLayer, minute.AddMinutes(-1), cancellationToken));
 
@@ -190,8 +178,6 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 
 		var flushed = await CoarseFlush.FlushAsync(
 			Options(), minute.AddSeconds(40), now, cancellationToken);
-
-		Assert.True(flushed.IsSuccess, ArchiveReadSupport.Describe(flushed));
 
 		Assert.Equal(
 			ExpectedThin(LayerThinner.MinuteLayer, minute),
@@ -225,12 +211,8 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 			allowExistingRows: true,
 			cancellationToken);
 
-		Assert.True(written.IsSuccess, ArchiveReadSupport.Describe(written));
-
 		var flushed = await CoarseFlush.FlushAsync(
 			Options(), minute.AddSeconds(30), minute.AddSeconds(65), cancellationToken);
-
-		Assert.True(flushed.IsSuccess, ArchiveReadSupport.Describe(flushed));
 		Assert.Equal(expected, await ReadPeriodAsync(LayerThinner.MinuteLayer, minute, cancellationToken));
 	}
 
@@ -248,9 +230,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 
 		var flushed = await CoarseFlush.FlushAsync(
 			Options(), minute.AddSeconds(10), minute.AddSeconds(40), cancellationToken);
-
-		Assert.True(flushed.IsSuccess, ArchiveReadSupport.Describe(flushed));
-		Assert.Equal(_openingRowsPerPeriod, flushed.Value);
+		Assert.Equal(_openingRowsPerPeriod, flushed);
 
 		await AssertOnlyTheOpeningRowsAsync(minute.AddSeconds(40), cancellationToken);
 	}
@@ -269,9 +249,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 		{
 			var flushed = await CoarseFlush.FlushAsync(
 				Options(), minute.AddSeconds(call), minute.AddSeconds(call + 1), cancellationToken);
-
-			Assert.True(flushed.IsSuccess, ArchiveReadSupport.Describe(flushed));
-			Assert.Equal(call == 0 ? _openingRowsPerPeriod : 0L, flushed.Value);
+			Assert.Equal(call == 0 ? _openingRowsPerPeriod : 0L, flushed);
 		}
 
 		await AssertOnlyTheOpeningRowsAsync(minute.AddSeconds(10), cancellationToken);
@@ -291,8 +269,6 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 
 		var flushed = await CoarseFlush.FlushAsync(
 			Options(), firstMinute.AddSeconds(30), now, cancellationToken);
-
-		Assert.True(flushed.IsSuccess, ArchiveReadSupport.Describe(flushed));
 
 		for (var offset = 0; offset < 4; offset++)
 		{
@@ -331,8 +307,6 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 		var flushed = await CoarseFlush.FlushAsync(
 			Options(), minute.AddSeconds(30), minute.AddSeconds(65), cancellationToken);
 
-		Assert.True(flushed.IsSuccess, ArchiveReadSupport.Describe(flushed));
-
 		Assert.Equal(
 			0L,
 			await CountCoarseRowsAtAsync(LayerThinner.MinuteLayer, _penIds[0], nullInstant, cancellationToken));
@@ -355,16 +329,12 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 		var opened = await CoarseFlush.FlushAsync(
 			Options(), minute.AddSeconds(10), minute.AddSeconds(40), cancellationToken);
 
-		Assert.True(opened.IsSuccess, ArchiveReadSupport.Describe(opened));
-
 		Assert.Equal(
 			ExpectedOpening(LayerThinner.MinuteLayer, minute),
 			await ReadPeriodAsync(LayerThinner.MinuteLayer, minute, cancellationToken));
 
 		var closed = await CoarseFlush.FlushAsync(
 			Options(), minute.AddSeconds(50), minute.AddSeconds(65), cancellationToken);
-
-		Assert.True(closed.IsSuccess, ArchiveReadSupport.Describe(closed));
 
 		Assert.Equal(
 			ExpectedThin(LayerThinner.MinuteLayer, minute),
@@ -383,9 +353,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 
 		var flushed = await CoarseFlush.FlushAsync(
 			Options(), _rawEndExclusive.AddSeconds(10), afterTheArchive, cancellationToken);
-
-		Assert.True(flushed.IsSuccess, ArchiveReadSupport.Describe(flushed));
-		Assert.Equal(0L, flushed.Value);
+		Assert.Equal(0L, flushed);
 
 		foreach (var layer in LayerThinner.CoarseLayers)
 		{

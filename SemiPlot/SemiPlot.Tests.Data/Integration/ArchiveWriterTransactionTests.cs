@@ -59,11 +59,8 @@ public sealed class ArchiveWriterTransactionTests(PostgresContainerFixture postg
 
 		Assert.False(await ScalarIsTrueAsync(ArchiveWriter.ArchiveIsSeededCommand, cancellationToken));
 
-		var written = await Writer()
-			.WriteAsync(DuplicatingRows(_start, SeededPenId), _start, _end, cancellationToken: cancellationToken);
-
-		Assert.True(written.IsFailed);
-		Assert.NotEmpty(written.Errors);
+		await Assert.ThrowsAnyAsync<NpgsqlException>(() => Writer()
+			.WriteAsync(DuplicatingRows(_start, SeededPenId), _start, _end, cancellationToken: cancellationToken));
 
 		Assert.False(
 			await ScalarIsTrueAsync(ArchiveWriter.ArchiveIsSeededCommand, cancellationToken),
@@ -81,13 +78,10 @@ public sealed class ArchiveWriterTransactionTests(PostgresContainerFixture postg
 
 		var seeded = await WriteSeedRowsAsync(cancellationToken);
 
-		var refused = await Writer()
-			.WriteAsync(OrdinaryRows(_start, AppendedPenId), _start, _end, cancellationToken: cancellationToken);
+		var refused = await Assert.ThrowsAsync<SeederException>(() => Writer()
+			.WriteAsync(OrdinaryRows(_start, AppendedPenId), _start, _end, cancellationToken: cancellationToken));
 
-		Assert.True(refused.IsFailed);
-		Assert.Contains(
-			refused.Errors,
-			error => error.Message.Contains("already carries rows", StringComparison.Ordinal));
+		Assert.Contains("already carries rows", refused.Message, StringComparison.Ordinal);
 
 		var appended = await Writer().WriteAsync(
 			OrdinaryRows(_start, AppendedPenId),
@@ -95,10 +89,8 @@ public sealed class ArchiveWriterTransactionTests(PostgresContainerFixture postg
 			_end,
 			allowExistingRows: true,
 			cancellationToken);
-
-		Assert.True(appended.IsSuccess);
-		Assert.Equal(seeded, appended.Value);
-		Assert.Equal(seeded + appended.Value, await CountRowsAsync(cancellationToken));
+		Assert.Equal(seeded, appended);
+		Assert.Equal(seeded + appended, await CountRowsAsync(cancellationToken));
 		Assert.Equal(
 			[PartitionScript.PartitionName(_start), DefaultPartition],
 			await PartitionNamesAsync(cancellationToken));
@@ -119,8 +111,6 @@ public sealed class ArchiveWriterTransactionTests(PostgresContainerFixture postg
 			_laterDay.AddDays(1),
 			allowExistingRows: true,
 			cancellationToken);
-
-		Assert.True(appended.IsSuccess);
 		Assert.Equal(
 			[PartitionScript.PartitionName(_start), PartitionScript.PartitionName(_laterDay), DefaultPartition],
 			await PartitionNamesAsync(cancellationToken));
@@ -137,15 +127,12 @@ public sealed class ArchiveWriterTransactionTests(PostgresContainerFixture postg
 
 		var seeded = await WriteSeedRowsAsync(cancellationToken);
 
-		var appended = await Writer().WriteAsync(
+		await Assert.ThrowsAnyAsync<NpgsqlException>(() => Writer().WriteAsync(
 			DuplicatingRows(_laterDay, SeededPenId),
 			_laterDay,
 			_laterDay.AddDays(1),
 			allowExistingRows: true,
-			cancellationToken);
-
-		Assert.True(appended.IsFailed);
-		Assert.NotEmpty(appended.Errors);
+			cancellationToken));
 		Assert.Equal(seeded, await CountRowsAsync(cancellationToken));
 		Assert.Equal(
 			[PartitionScript.PartitionName(_start), DefaultPartition],
@@ -157,9 +144,7 @@ public sealed class ArchiveWriterTransactionTests(PostgresContainerFixture postg
 		var written = await Writer()
 			.WriteAsync(OrdinaryRows(_start, SeededPenId), _start, _end, cancellationToken: cancellationToken);
 
-		Assert.True(written.IsSuccess);
-
-		return written.Value;
+		return written;
 	}
 
 	private static IReadOnlyList<ArchiveRow> OrdinaryRows(DateTime day, int penId)

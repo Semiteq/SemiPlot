@@ -1,6 +1,4 @@
-﻿using FluentResults;
-
-using Npgsql;
+﻿using Npgsql;
 
 namespace SemiPlot.Tools.ArchiveSeeder;
 
@@ -20,31 +18,25 @@ public sealed class TagCatalogWriter(string adminConnectionString)
 			line_style = EXCLUDED.line_style;
 		""";
 
-	public async Task<Result<int>> WriteAsync(
-		IEnumerable<SyntheticPen> pens,
-		CancellationToken cancellationToken = default)
+	/// <summary>
+	/// The number of pens written. A connection that cannot be made or a rejected statement throws.
+	/// </summary>
+	public async Task<int> WriteAsync(IEnumerable<SyntheticPen> pens, CancellationToken cancellationToken = default)
 	{
-		try
+		await using var connection = new NpgsqlConnection(adminConnectionString);
+
+		await connection.OpenAsync(cancellationToken);
+
+		var written = 0;
+
+		foreach (var pen in pens)
 		{
-			await using var connection = new NpgsqlConnection(adminConnectionString);
+			await UpsertAsync(connection, pen, cancellationToken);
 
-			await connection.OpenAsync(cancellationToken);
-
-			var written = 0;
-
-			foreach (var pen in pens)
-			{
-				await UpsertAsync(connection, pen, cancellationToken);
-
-				written++;
-			}
-
-			return Result.Ok(written);
+			written++;
 		}
-		catch (Exception exception) when (ArchiveWriter.IsReportable(exception))
-		{
-			return Result.Fail<int>(new ExceptionalError(exception.Message, exception));
-		}
+
+		return written;
 	}
 
 	private static async Task UpsertAsync(
@@ -54,7 +46,6 @@ public sealed class TagCatalogWriter(string adminConnectionString)
 	{
 		await using var command = new NpgsqlCommand(UpsertCommand, connection);
 
-		// The archive's own key is an integer, and semiplot_tags.id matches trends.id.
 		command.Parameters.AddWithValue("id", pen.PenId);
 		command.Parameters.AddWithValue("name", pen.Name);
 		command.Parameters.AddWithValue("group_name", pen.Group);

@@ -30,13 +30,10 @@ public sealed class StaleArchiveGuardTests(PostgresContainerFixture postgresCont
 
 		await WriteRowsAsync(newest);
 
-		var outcome = await StaleArchiveGuard.CheckAsync(
-			Database.WriterConnectionString, Now(), TestContext.Current.CancellationToken);
+		var refused = await Assert.ThrowsAsync<SeederException>(() => StaleArchiveGuard.CheckAsync(
+			Database.WriterConnectionString, Now(), TestContext.Current.CancellationToken));
 
-		Assert.True(outcome.IsFailed);
-		Assert.Contains(
-			outcome.Errors,
-			error => error.Message.Contains("scripts/bench-demo.ps1", StringComparison.Ordinal));
+		Assert.Contains("scripts/bench-demo.ps1", refused.Message, StringComparison.Ordinal);
 	}
 
 	// Nothing has been written, so there is no fill for an append to stand apart from and nothing a hole
@@ -49,9 +46,7 @@ public sealed class StaleArchiveGuardTests(PostgresContainerFixture postgresCont
 
 		var outcome = await StaleArchiveGuard.CheckAsync(
 			Database.WriterConnectionString, Now(), TestContext.Current.CancellationToken);
-
-		Assert.True(outcome.IsSuccess, ArchiveReadSupport.Describe(outcome));
-		Assert.Null(outcome.Value);
+		Assert.Null(outcome);
 	}
 
 	// Program.FollowAsync starts its loop at the timestamp reported here, so the fill's own edge is what
@@ -69,9 +64,7 @@ public sealed class StaleArchiveGuardTests(PostgresContainerFixture postgresCont
 
 		var outcome = await StaleArchiveGuard.CheckAsync(
 			Database.WriterConnectionString, Now(), TestContext.Current.CancellationToken);
-
-		Assert.True(outcome.IsSuccess, ArchiveReadSupport.Describe(outcome));
-		Assert.Equal(newest, outcome.Value);
+		Assert.Equal(newest, outcome);
 	}
 
 	// The live case, which is what the bound exists to keep. A writer ticking every second leaves max(t)
@@ -90,7 +83,7 @@ public sealed class StaleArchiveGuardTests(PostgresContainerFixture postgresCont
 		var outcome = await StaleArchiveGuard.CheckAsync(
 			Database.WriterConnectionString, Now(), TestContext.Current.CancellationToken);
 
-		Assert.True(outcome.IsSuccess, ArchiveReadSupport.Describe(outcome));
+		Assert.NotNull(outcome);
 	}
 
 	private static DateTime Now()
@@ -115,12 +108,10 @@ public sealed class StaleArchiveGuardTests(PostgresContainerFixture postgresCont
 				new ArchiveRow(PenId, ArchiveRow.RawLayer, timestamp, 1.0, ArchiveRow.OrdinaryQuality))
 			.ToArray();
 
-		var written = await Writer().WriteAsync(
+		await Writer().WriteAsync(
 			rows,
 			timestamps.Min(),
 			timestamps.Max().AddSeconds(1),
 			cancellationToken: TestContext.Current.CancellationToken);
-
-		Assert.True(written.IsSuccess, ArchiveReadSupport.Describe(written));
 	}
 }

@@ -131,15 +131,9 @@ public sealed class PartitionScriptTests
 	[Fact]
 	public void TheStandardSliceBuildsOneStatement()
 	{
-		var parsed = SeederOptions.Parse(
-		[
-			"--connection", "Host=localhost;Database=archive;Username=scada_writer",
-			"--end", "2026-01-02T00:00:00"
-		]);
+		var options = BenchOptions.For();
 
-		Assert.True(parsed.IsSuccess);
-
-		var statements = PartitionScript.CreateStatements(parsed.Value.Start, parsed.Value.End);
+		var statements = PartitionScript.CreateStatements(options.Start, options.End);
 
 		Assert.Equal(["tp2026m01d01"], StatementNames(statements));
 	}

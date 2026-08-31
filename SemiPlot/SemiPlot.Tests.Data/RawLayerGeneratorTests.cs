@@ -210,12 +210,6 @@ public sealed class RawLayerGeneratorTests
 	}
 
 	[Fact]
-	public void GenerateRejectsZeroDays()
-	{
-		Assert.Throws<ArgumentOutOfRangeException>(() => RawLayerGenerator.Generate(BenchOptions.For(days: 0)));
-	}
-
-	[Fact]
 	public void SelectPensRejectsMoreThanTheCatalogueHolds()
 	{
 		var catalogue = SyntheticPenCatalog.Build().Count;

@@ -6,9 +6,6 @@ public static class RawLayerGenerator
 
 	public static IReadOnlyList<ArchiveRow> Generate(SeederOptions options)
 	{
-		ArgumentOutOfRangeException.ThrowIfLessThan(options.Days, 1);
-		ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.ChangeSeconds, 0.0);
-
 		var rows = new List<ArchiveRow>();
 		var breaks = BreakPlan.Create(options);
 		var intervalTicks = ChangeIntervalTicks(options.ChangeSeconds);

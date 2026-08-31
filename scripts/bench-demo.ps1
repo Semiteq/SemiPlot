@@ -87,6 +87,12 @@ $SeedDays = 1
 $SeedPens = 8
 $SeedSeed = 1
 
+# The same interval the demo writer runs at, in `.run/Demo writer.run.xml`. Seeding at the seeder's
+# own 5 s default and then following at 0.5 s drew a fill ten times sparser than its own live tail,
+# which reads on screen as a change in the plant rather than a change in the stand. Holding one
+# value here also puts both halves on the same lattice point for point, so the seam carries no step.
+$SeedChangeSeconds = 0.5
+
 # How far behind the wall clock the archive's newest row may sit and still count as live. The same
 # bound the demo writer applies from the other side, in StaleArchiveGuard.MaximumAge.
 #
@@ -327,6 +333,16 @@ function New-Archive($Newest)
     Write-Host "    $(Get-RecreateReason $Newest)"
 
     # CREATE DATABASE ... TEMPLATE refuses a source another session holds, and semiplot_provisioned is
+    # The connection file names a database that is about to stop existing, so it stops being true
+    # here and nowhere else. Clearing it on every convergence instead would break the case the mutex
+    # exists for: both demo children run this script, the second run keeps the live archive the first
+    # one filled, and a second run that cleared the signal would delete it out from under a child the
+    # first run already started.
+    if (Test-Path $ConnectionFile)
+    {
+        Remove-Item $ConnectionFile
+    }
+
     # the source of every recreate, so its backends are terminated alongside the target's.
     Invoke-Psql 'postgres' @"
 SELECT pg_terminate_backend(pid) FROM pg_stat_activity
@@ -351,7 +367,8 @@ WHERE datname IN ('$Database', '$ProvisionedDatabase') AND pid <> pg_backend_pid
     & dotnet run --project $seederProject -- `
         --connection $writerConnection `
         --admin-connection $adminConnection `
-        --end $SeedEnd --days $SeedDays --pens $SeedPens --seed $SeedSeed | Out-Host
+        --end $SeedEnd --days $SeedDays --pens $SeedPens --seed $SeedSeed `
+        --change-seconds $SeedChangeSeconds | Out-Host
     if ($LASTEXITCODE -ne 0)
     {
         throw "The seeder failed with exit code $LASTEXITCODE."

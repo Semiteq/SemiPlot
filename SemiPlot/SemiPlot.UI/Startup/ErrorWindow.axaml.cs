@@ -17,8 +17,6 @@ public partial class ErrorWindow : Window
 
 	public ErrorWindow(StartupFailureView failure) : this()
 	{
-		ArgumentNullException.ThrowIfNull(failure);
-
 		DataContext = failure;
 	}
 

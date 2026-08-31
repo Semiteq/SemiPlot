@@ -21,11 +21,6 @@ public sealed class TrendPenState : ReactiveObject
 	// Scatter holds a live reference to it and re-reads it on every render.
 	public TrendPenState(Pen pen, Scatter centerLine, FillY band, List<Coordinates> centerPoints)
 	{
-		ArgumentNullException.ThrowIfNull(pen);
-		ArgumentNullException.ThrowIfNull(centerLine);
-		ArgumentNullException.ThrowIfNull(band);
-		ArgumentNullException.ThrowIfNull(centerPoints);
-
 		Pen = pen;
 		CenterLine = centerLine;
 		Band = band;
@@ -62,8 +57,6 @@ public sealed class TrendPenState : ReactiveObject
 
 	public void LoadHistory(PenHistoryEnvelope envelope)
 	{
-		ArgumentNullException.ThrowIfNull(envelope);
-
 		_centerPoints.Clear();
 		_bandPoints.Clear();
 
@@ -79,8 +72,6 @@ public sealed class TrendPenState : ReactiveObject
 		CurrentValue = LastNonGapCenter();
 	}
 
-	// A pen the provider returned no envelope for in the current window keeps no curve: leaving the
-	// previous window's points on screen would draw data from a range the operator is no longer viewing.
 	public void ClearHistory()
 	{
 		_centerPoints.Clear();
@@ -90,12 +81,7 @@ public sealed class TrendPenState : ReactiveObject
 		CurrentValue = null;
 	}
 
-	// The pen's own half of the seam invariant. The provider never emits a timestamp at or before its own
-	// last, but it cannot see a history re-query: ApplyHistory reloads every envelope on a navigation
-	// gesture, so history's last point can move past samples the poll already delivered, and the next
-	// emission — only required to be newer than what the poll itself last sent — can land before it.
-	// ScottPlot's Scatter renders this list in order, so such a point draws a segment running backwards
-	// across the plot. It is dropped instead.
+	// A point at or before the last drawn X would render a segment running backwards; dropped.
 	public void AppendRealtime(DateTime timestampUtc, double? value)
 	{
 		var x = LocalTimeAxis.ToAxis(timestampUtc);
@@ -156,8 +142,6 @@ public sealed class TrendPenState : ReactiveObject
 		CurrentValue = value;
 	}
 
-	// A degenerate band (all Min == Max) draws nothing yet still costs a full polygon path build per
-	// frame, so it is hidden until a non-zero spread appears.
 	private void ApplyBandVisibility()
 	{
 		Band.IsVisible = _isVisible && !BandDegeneracy.IsDegenerate(_bandPoints);

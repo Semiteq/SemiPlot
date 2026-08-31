@@ -11,10 +11,6 @@ namespace SemiPlot.UI;
 
 public static class Program
 {
-	/// <summary>
-	/// Exit code of a start that never drew the main window, so a launcher or a service wrapper can tell
-	/// a failed start from an operator closing the application.
-	/// </summary>
 	public const int FailedExitCode = 1;
 
 	[STAThread]
@@ -30,19 +26,13 @@ public static class Program
 
 			if (startup.IsFailed)
 			{
-				// The error window replaces the main window; it never precedes it. Once Avalonia is
-				// initialised a second BuildAvaloniaApp() throws, so this branch returns rather than
-				// falling through to App.Run.
-				//
-				// Only the first error opens a window, and every error is logged. The probe short-circuits
-				// on the first failed step, so the list holds one entry on every path it produces; the
-				// loop covers a future step that collects more, and the window stays one state.
 				LogStartupFailure(startup.Errors);
 				App.RunErrorWindow(StartupFailureMapper.Map(startup.Errors[0]));
 
 				return FailedExitCode;
 			}
 
+			// Held for its disposal alone: the scope closes when Main returns, after App.Run.
 			using var serviceProvider = startup.Value.ServiceProvider;
 
 			App.Run(startup.Value);
@@ -86,8 +76,6 @@ public static class Program
 				.Enrich.FromLogContext()
 				.WriteTo.Console(outputTemplate: Template, formatProvider: invariant);
 
-		// The file sink creates the directory itself and, when it cannot, falls back to a null sink rather
-		// than failing the start; the console sink stays either way.
 		configuration = configuration.WriteTo.File(
 			path: logFilePath,
 			rollingInterval: RollingInterval.Infinite,

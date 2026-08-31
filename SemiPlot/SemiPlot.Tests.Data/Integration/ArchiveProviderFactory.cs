@@ -7,14 +7,7 @@ using SemiPlot.DataSource.Postgres.Configuration;
 
 namespace SemiPlot.Tests.Data.Integration;
 
-// The provider every gated read runs through, built by AddPostgresData rather than by the internal
-// constructor, so each test exercises the real registration and no test file repeats the argument list.
-//
-// Schema is why this is one shared helper instead of a settings record per test class: it becomes
-// SearchPath on the connection string (PostgresConnectionSettings.ConnectionString), the harness's own
-// connection strings set none (PostgresServer.ConnectionStringFor), and a wrong value makes
-// semiplot_tags unresolvable — turning every catalogue test into a 42P01 that reads exactly like a
-// correctly detected missing table.
+// Schema becomes SearchPath; a wrong value turns every catalogue read into a 42P01 look-alike.
 public static class ArchiveProviderFactory
 {
 	private const string Schema = "public";

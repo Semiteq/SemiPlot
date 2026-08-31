@@ -1,9 +1,7 @@
 ﻿namespace SemiPlot.DataSource.Postgres;
 
 /// <summary>
-/// Every SQL statement the application and provider path issues. No statement text exists anywhere else
-/// in the solution; parameters are bound, never interpolated. The bench seeder and the test projects own
-/// SQL of their own by design and are outside that rule.
+/// Every statement the provider issues; parameters are bound, never interpolated.
 /// </summary>
 internal static class ArchiveStatements
 {
@@ -18,9 +16,7 @@ internal static class ArchiveStatements
 	public const string TrendsRelation = "trends";
 
 	/// <summary>
-	/// Ordered by the coalesced group rather than by the raw column, because the row read projects a null
-	/// group onto the empty string: PostgreSQL sorts nulls last while the empty string sorts first, so
-	/// ordering on the raw column would return a list not ordered by the values it carries.
+	/// Coalesce on purpose: nulls sort last, the empty string the read projects sorts first.
 	/// </summary>
 	public const string PenCatalog = """
 	                                 SELECT id, name, group_name, color, line_style
@@ -31,10 +27,7 @@ internal static class ArchiveStatements
 	/// <summary>
 	/// The oldest and newest raw timestamps across the whole catalogue, read once to bound the chart.
 	/// <para>
-	/// The lateral pair of scalar subqueries is load-bearing. Each one is an index probe on
-	/// <c>PRIMARY KEY (id, l, t)</c> for one variable, so the pair of bounds costs two index descents per
-	/// variable rather than a scan of <c>trends</c>: a bare <c>min(t)</c>/<c>max(t)</c> over the table
-	/// loses PostgreSQL's min/max index-edge transform once the aggregate is not the whole query.
+	/// The lateral pair is load-bearing: a bare <c>min(t)</c>/<c>max(t)</c> loses the index-edge transform.
 	/// </para>
 	/// </summary>
 	public const string ArchiveExtent = """
@@ -49,15 +42,8 @@ internal static class ArchiveStatements
 	/// <summary>
 	/// Every raw sample newer than the last one a subscription saw. Issued once per poll tick.
 	/// <para>
-	/// The variable list is mandatory. <c>PRIMARY KEY (id, l, t)</c> is the only index on <c>trends</c>
-	/// and leads with <c>id</c>, so a predicate over time alone cannot use it at all and degenerates into
-	/// a sequential scan of the current day's partition on every tick
-	/// (docs/architecture/scada-archive.md, Reader hazards). <c>@ids</c> binds an array so the read stays
-	/// a bounded range per identifier on that key.
-	/// </para>
-	/// <para>
-	/// <c>t &gt; @lastSeen</c> is strict, so the row that set <c>@lastSeen</c> is never returned twice —
-	/// a repeat would draw a segment running backwards across the plot.
+	/// The variable list is mandatory (docs/architecture/scada-archive.md, Reader hazards).
+	/// Strict <c>&gt;</c>: the row that set <c>@lastSeen</c> must not return twice.
 	/// </para>
 	/// </summary>
 	public const string RealtimePoll = """
@@ -72,16 +58,7 @@ internal static class ArchiveStatements
 	/// starts from. A <c>NULL</c> answer means those variables carry no row yet, which is a content state
 	/// and not a failure.
 	/// <para>
-	/// The lateral shape is load-bearing. <c>max(t)</c> under <c>id = ANY(...)</c> does not get
-	/// PostgreSQL's min/max index-edge transform, so it collects a partition's rows before reducing them;
-	/// each lateral scalar subquery here is one index probe on <c>PRIMARY KEY (id, l, t)</c> per variable
-	/// instead. It is <see cref="ArchiveExtent"/>'s shape over the requested identifiers rather than over
-	/// the whole catalogue.
-	/// </para>
-	/// <para>
-	/// <c>DISTINCT unnest(@ids)</c> is the same de-duplicating source
-	/// <see cref="SparseHistoryWindow"/>'s seed branch uses, so a caller repeating an identifier costs one
-	/// probe rather than two.
+	/// Lateral on purpose: <c>max(t)</c> under <c>id = ANY(...)</c> loses the index-edge transform.
 	/// </para>
 	/// </summary>
 	public const string RealtimeBaseline = """
@@ -97,37 +74,10 @@ internal static class ArchiveStatements
 	/// still draws. Two branches under one outer <c>ORDER BY id, t</c>: the per-pen seed row, then the
 	/// window rows.
 	/// <para>
-	/// One statement rather than two, because <see cref="HistoryRowFold"/> groups by consecutive
-	/// identifier — a pen arriving in two runs would yield two envelopes for one pen, and no consumer
-	/// rejects that. Under one ordering each pen is still one ascending run.
-	/// </para>
-	/// <para>
-	/// The seed bound is <c>t &lt; @from</c> rather than <c>&lt;=</c>: the window branch already takes
-	/// <c>t &gt;= @from</c>, so an inclusive bound would return a boundary row on both branches.
-	/// </para>
-	/// <para>
-	/// The backwards seek is bounded by the wider of the requested window and one partition width.
-	/// <c>trends</c> is <c>PARTITION BY RANGE (t)</c> with a partition per calendar day and
-	/// <c>PRIMARY KEY (id, l, t)</c> as its only index, so an unbounded <c>ORDER BY t DESC LIMIT 1</c>
-	/// plans as a <c>Limit</c> over a <c>Merge Append</c> of every partition the bound leaves unpruned.
-	/// That node opens and pulls the first tuple from all of them before it can emit one, so the cost is
-	/// one index descent per older partition, per pen, on every window change, whether or not an older
-	/// row is there to be found. The bound is what prunes those partitions away.
-	/// </para>
-	/// <para>
-	/// It scales with the window because the archive's value-unchanged state does
-	/// (docs/architecture/scada-archive.md, the three-state table). A steady variable — a recipe setpoint
-	/// written once at process start — writes nothing for as long as it does not change, and it belongs
-	/// on the chart as a horizontal line at its last recorded value rather than as nothing at all. A
-	/// window zoomed out to a week reaches back a week for that sample; a two-minute window still costs
-	/// the one-day floor and no more. A pen with no row inside the look-back gets no seed and, having no
-	/// window rows either, no envelope: the answer it already got, reached in bounded time.
-	/// </para>
-	/// <para>
-	/// <c>@ids</c> binds an array rather than an expanded list so the read keeps the primary key, whose
-	/// leading column is <c>id</c>, instead of reading every partition. The seed branch unnests the same
-	/// array so each pen's probe carries an equality on that leading column. <c>q</c> is read by the fold
-	/// on every row of both branches, so a seed marking a break opens the window inside one.
+	/// One statement, not two: the fold groups by consecutive identifier.
+	/// The seed bound is strict <c>&lt;</c>, so no boundary row returns on both branches.
+	/// The look-back bound is what prunes partitions away
+	/// (docs/architecture/scada-archive.md, the three-state table).
 	/// </para>
 	/// </summary>
 	public const string SparseHistoryWindow = """

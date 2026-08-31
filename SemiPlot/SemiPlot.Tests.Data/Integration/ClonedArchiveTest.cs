@@ -43,8 +43,6 @@ public abstract class ClonedArchiveTest(PostgresContainerFixture fixture, CloneS
 		}
 	}
 
-	// A failed write is asserted rather than thrown by hand, so every class reports it the same way:
-	// Assert.True(written.IsSuccess, ArchiveReadSupport.Describe(written)).
 	protected virtual ValueTask SeedAsync()
 	{
 		return ValueTask.CompletedTask;

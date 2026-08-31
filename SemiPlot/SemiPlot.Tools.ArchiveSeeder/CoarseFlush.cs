@@ -4,31 +4,16 @@ using NpgsqlTypes;
 
 namespace SemiPlot.Tools.ArchiveSeeder;
 
-// The demo writer's coarse layers, thinned on the server rather than in the process. A tick appends its
-// raw rows and never reads them back, so the rows a closing period must be thinned from already sit in
-// the archive, and an INSERT ... SELECT reproduces LayerThinner's selection where they are. ON CONFLICT
-// DO NOTHING is what makes the coarse row the seeder already wrote for the period its fill ends inside a
-// no-op rather than the duplicate-key failure that would end the run.
-//
-// Closing a period is not enough on its own. FreshTail clamps a pen's seam at one whole period
-// (AggregationLayer.ToPointSpacing is a quarter of the period and FreshTail.Start clamps at spacing * 4),
-// so a coarse layer holding closed periods alone falls under the clamp for the last seconds of every
-// period and the tail vanishes. Writing the open period's first row as the period opens keeps the seam at
-// or after that period's start, which never falls under the clamp: inside the period the seam leads it,
-// and in the window between a boundary tick's raw commit and this call's own the two are exactly equal,
-// which FreshTail's non-strict comparison keeps. There is no margin above that — see
-// docs/architecture/bench.md, The demo writer.
+// The demo writer's coarse layers, thinned on the server rather than in the process.
+// Writing the open period's first row as the period opens keeps the seam inside FreshTail's clamp.
+// docs/architecture/bench.md#the-demo-writer
 public static class CoarseFlush
 {
-	// LayerThinner.AppendPeriod expressed in SQL: per pen the period's first, last, minimum and maximum
-	// row, ties resolved to the earliest by the trailing `t` in each ordering, plus every marker row.
+	// LayerThinner.AppendPeriod expressed in SQL: per pen the period's first, last, minimum and maximum row.
 	//
 	// ORDER BY v DESC NULLS LAST is load-bearing. trends.v is nullable while ArchiveRow.Value is not, so
 	// the thinner never sees a NULL, while PostgreSQL's default NULLS FIRST would select one as a period's
 	// maximum — a row the thinner cannot produce.
-	//
-	// The bound span holds exactly one calendar period, which is why the windows partition by id alone and
-	// need no period key.
 	private static readonly string _closedPeriodCommand =
 		$"""
 		INSERT INTO public.trends (id, l, t, v, q)
@@ -50,13 +35,7 @@ public static class CoarseFlush
 	// The open period's first raw row, per pen, at the coarse layer. It is the row AppendPeriod selects as
 	// the period's first, written before the period closes, so it adds nothing to the period's final
 	// content: the closed flush selects the same row and ON CONFLICT DO NOTHING skips it.
-	//
-	// Only the first row is written early, because only the first row is already final. The period's last
-	// row moves with every tick, so writing it would leave the coarse layer as dense as raw.
-	//
-	// No upper bound is needed: the raw layer ends at the live edge, which is inside the open period. The
-	// LATERAL with LIMIT 1 is what keeps the statement cheap — the primary key is (id, l, t), so each pen
-	// costs one index probe.
+	// Only the first row is written early, because only the first row is already final.
 	private static readonly string _openingRowCommand =
 		$"""
 		INSERT INTO public.trends (id, l, t, v, q)
@@ -70,16 +49,12 @@ public static class CoarseFlush
 		ON CONFLICT DO NOTHING;
 		""";
 
-	// The rows the statements of this call inserted. The connection is this method's own: a follow tick
-	// holds none open, because ArchiveWriter.WriteAsync opens one per call and disposes it.
 	public static async Task<long> FlushAsync(
 		FollowOptions options,
 		DateTime previousTickLocal,
 		DateTime nowLocal,
 		CancellationToken cancellationToken = default)
 	{
-		ArgumentNullException.ThrowIfNull(options);
-
 		await using var connection = new NpgsqlConnection(options.ConnectionString);
 
 		await connection.OpenAsync(cancellationToken);
@@ -102,9 +77,7 @@ public static class CoarseFlush
 		return inserted;
 	}
 
-	// Issued on every call and for every layer, since a period the caller sits inside has already opened.
-	// A pen with no raw row at or after the period start contributes nothing: the LATERAL finds no row and
-	// the CROSS JOIN drops the pen.
+	// A pen with no raw row at or after the period start contributes nothing.
 	private static async Task<long> OpenPeriodAsync(
 		NpgsqlConnection connection,
 		short layer,
@@ -122,13 +95,7 @@ public static class CoarseFlush
 		return await command.ExecuteNonQueryAsync(cancellationToken);
 	}
 
-	// Every period the two instants leave behind, not only the first. A tick can span many periods —
-	// --follow accepts a cadence up to FollowOptions.MaximumSeconds, and a host suspend stretches any
-	// cadence — and the append that ran ahead of this call filled those periods with raw rows, because
-	// LiveTailGenerator is a pure function of absolute time. Flushing only the first would leave a
-	// continuous raw layer under a coarse layer with a hole nothing marks.
-	//
-	// Each statement stays bound to one period, which is what lets its windows partition by id alone.
+	// Every period the two instants leave behind, not only the first.
 	private static async Task<long> FlushLayerAsync(
 		NpgsqlConnection connection,
 		short layer,
@@ -165,9 +132,7 @@ public static class CoarseFlush
 		return await command.ExecuteNonQueryAsync(cancellationToken);
 	}
 
-	// One period past its start. The width is read off LayerThinner's own lattice rather than restated
-	// here — the boundary before this one sits exactly one period earlier — so calendar alignment stays in
-	// the single method that owns it and an experiment replacing that method moves these bounds with it.
+	// The width is read off LayerThinner's own lattice so calendar alignment lives in one method.
 	private static DateTime PeriodEndExclusive(DateTime periodStart, short layer)
 	{
 		var previousStart = LayerThinner.PeriodStart(periodStart.AddTicks(-1), layer);

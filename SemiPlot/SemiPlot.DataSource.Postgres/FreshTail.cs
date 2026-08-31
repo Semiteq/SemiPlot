@@ -7,9 +7,7 @@ namespace SemiPlot.DataSource.Postgres;
 /// because a coarse layer is flushed on its own cadence and its newest row is up to one point spacing old
 /// (docs/architecture/data-integration.md, Fresh tail).
 /// <para>
-/// Every value here is the archive's naive local wall clock, the side
-/// <see cref="ArchiveStatements.SparseHistoryWindow"/> binds on and the side
-/// <see cref="HistoryRowFold.Row.ArchiveLocal"/> carries, so no conversion happens on this path.
+/// No conversion happens on this path.
 /// </para>
 /// </summary>
 internal static class FreshTail
@@ -42,19 +40,8 @@ internal static class FreshTail
 	/// <summary>
 	/// The instant a tail read starts at, or <c>null</c> when no tail is read at all.
 	/// <para>
-	/// The clamp is a cost bound and not a fault threshold. A layer's spacing is a quarter of its period
-	/// (<see cref="AggregationLayerExtensions.ToPointSpacing"/>), so at <see cref="AggregationLayer.Day"/>
-	/// one period is 24 h, and a coarse layer trailing the raw layer by less than a period is the ordinary
-	/// case rather than a fault. All the clamp does is cap how much raw data a single history query may
-	/// pull; a layer further behind than that keeps the short right edge it already had.
-	/// </para>
-	/// <para>
-	/// Only a pen whose own seam reaches the clamp decides the bound, because <see cref="Merge"/> keeps a
-	/// tail row for exactly those pens and discards the rest. A pen the coarse read answered nothing for
-	/// seams at the window start and drops out here: left in, it would pull the bound down to the clamp —
-	/// a full layer period of raw rows per pen, 24 h of them at <see cref="AggregationLayer.Day"/> — for
-	/// rows the merge would then throw away, and it would hold the shortcut below shut for every pen that
-	/// is already fresh.
+	/// Seams at the window start drop out here: left in, they pull the bound down to the clamp
+	/// for rows <see cref="Merge"/> discards.
 	/// </para>
 	/// </summary>
 	public static DateTime? Start(
@@ -62,7 +49,6 @@ internal static class FreshTail
 		IReadOnlyDictionary<int, DateTime> seams,
 		DateTime windowEndLocal)
 	{
-		// Raw is what the tail is read from, so there is nothing coarser for it to be short of.
 		if (layer == AggregationLayer.Raw || seams.Count == 0)
 		{
 			return null;
@@ -72,8 +58,6 @@ internal static class FreshTail
 		var clamped = windowEndLocal - (spacing * 4);
 		var earliestSeam = EarliestSeamReachingTheClamp(seams, clamped);
 
-		// No pen reaches the clamp, so no pen would keep a tail row. Every pen here keeps the short right
-		// edge it already had.
 		if (earliestSeam is null)
 		{
 			return null;
@@ -84,7 +68,6 @@ internal static class FreshTail
 		return windowEndLocal - earliestSeam.Value <= spacing ? null : earliestSeam;
 	}
 
-	// The result is at or after the clamp by construction, which is what keeps the cost bound.
 	private static DateTime? EarliestSeamReachingTheClamp(
 		IReadOnlyDictionary<int, DateTime> seams,
 		DateTime clampedLocal)
@@ -107,13 +90,8 @@ internal static class FreshTail
 	/// one consecutive run per pen — the ordering <see cref="HistoryRowFold.Fold"/> requires. Rows at or
 	/// before a pen's own seam are left to the fold, whose ascending check drops them.
 	/// <para>
-	/// A pen whose own seam falls before <paramref name="tailStartLocal"/> contributes no tail row at all.
-	/// Its coarse rows stop before the tail's own start, so appending tail rows would leave a range no row
-	/// covers — and a range carrying no row is not a gap: <see cref="HistoryRowFold"/> emits a null only
-	/// where a row asks for one, from a null value or from the archive's <c>q = 32</c> break mark, and
-	/// <see cref="MinMaxDecimator"/> turns only that null into the NaN column. The hole would draw as a
-	/// single straight interpolated segment across missing time. Such a pen keeps the short right edge it
-	/// already had.
+	/// A pen whose seam predates <paramref name="tailStartLocal"/> gets no tail row: a range with no row
+	/// is not a gap and would draw one straight segment.
 	/// </para>
 	/// </summary>
 	public static IReadOnlyList<HistoryRowFold.Row> Merge(

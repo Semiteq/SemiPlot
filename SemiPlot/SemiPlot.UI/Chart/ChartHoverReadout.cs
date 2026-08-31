@@ -9,9 +9,6 @@ public static class ChartHoverReadout
 		IReadOnlyDictionary<int, double?> values,
 		IReadOnlyCollection<TrendPenState> pens)
 	{
-		ArgumentNullException.ThrowIfNull(values);
-		ArgumentNullException.ThrowIfNull(pens);
-
 		var content = new StringBuilder();
 		content.Append(FormatTimestamp(cursorTime));
 

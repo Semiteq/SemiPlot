@@ -57,7 +57,6 @@ public class App : Application
 
 	public static void Run(StartupData startupData)
 	{
-		ArgumentNullException.ThrowIfNull(startupData);
 		EnsureSingleStart();
 
 		BuildAvaloniaApp()
@@ -72,13 +71,10 @@ public class App : Application
 
 	/// <summary>
 	/// The failure branch of startup: one window naming what broke and what to do, and no service
-	/// resolution behind it. It shares <see cref="EnsureSingleStart"/> with <see cref="Run"/> because a
-	/// process reaches exactly one of them — a second <c>BuildAvaloniaApp()</c> throws once Avalonia is
-	/// initialised.
+	/// resolution behind it.
 	/// </summary>
 	public static void RunErrorWindow(StartupFailureView failure)
 	{
-		ArgumentNullException.ThrowIfNull(failure);
 		EnsureSingleStart();
 
 		BuildAvaloniaApp()
@@ -90,29 +86,19 @@ public class App : Application
 			.StartWithClassicDesktopLifetime([]);
 	}
 
-	// Internal so a test reads the composed builder back and pins the three subsystems the desktop
-	// application cannot start without. The test builder composes UseHeadless, which registers its own
-	// rendering, windowing and shaping, so nothing headless covers this chain.
 	internal static AppBuilder BuildAvaloniaApp()
 	{
 		return AppBuilder.Configure<App>()
 			.UseWin32()
 			.UseSkia()
 			// Avalonia 12: Skia no longer brings a text shaper with it. Without UseHarfBuzz the desktop
-			// application fails at AppBuilder.Setup with "No text shaping system configured"; the headless
-			// platform supplies its own shaper, so no test reaches this.
+			// application fails at AppBuilder.Setup with "No text shaping system configured".
 			.UseHarfBuzz()
-			// Avalonia 12: UseReactiveUI takes a mandatory builder callback. Nothing here configures the
-			// ReactiveUI builder, so the callback is empty.
 			.UseReactiveUI(_ => { })
 			.LogToTrace();
 	}
 
-	// UseReactiveUI() has registered AvaloniaScheduler as RxApp.MainThreadScheduler by now, so the UI
-	// scheduler can only be captured here — after that ordering — and handed to the coordinator and the
-	// view models. Everything this reads from the archive was read by StartupProbe before
-	// Avalonia existed, so this awaits nothing and cannot throw an archive failure through AfterSetup.
-	// Internal so a test drives the real startup body rather than a look-alike rebuilt in the test.
+	// UseReactiveUI() has registered AvaloniaScheduler by now; capture it here.
 	internal static void InitializeServices(StartupData startupData)
 	{
 		var uiScheduler = AvaloniaScheduler.Instance;

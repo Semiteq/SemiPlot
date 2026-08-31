@@ -14,9 +14,7 @@ using Xunit;
 namespace SemiPlot.Tests.Data.Integration;
 
 // The catalogue read against the states a real archive is found in. Every read connects as
-// semiplot_reader, the role production uses and the one SeededArchiveTests already proves holds SELECT
-// on semiplot_tags, so a 42501 here is a connection-string or role fault in this slice rather than a
-// mapper bug or a missing grant.
+// semiplot_reader, the role production uses.
 [Collection(ArchiveDatabaseCollection.Name)]
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
@@ -55,7 +53,6 @@ public sealed class PostgresCatalogReadTests(
 		Assert.Equal(ExpectedPens(), result.Value);
 	}
 
-	// The stored values are asserted against literal 0 and 1, never against PenLineStyle.
 	[Fact]
 	public async Task SeededCatalogueLineStylesReadBackAsTheStoredOrdinals()
 	{

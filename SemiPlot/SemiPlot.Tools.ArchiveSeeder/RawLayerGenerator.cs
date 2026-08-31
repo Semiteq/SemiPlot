@@ -20,8 +20,7 @@ public static class RawLayerGenerator
 		return rows;
 	}
 
-	// Round-robin across the groups, never the first N: the first eight of the catalogue are all
-	// Heaters, which would leave every later slice developing against one group and one value range.
+	// Round-robin across the groups, never the first N: the first eight of the catalogue are all Heaters.
 	public static IReadOnlyList<SyntheticPen> SelectPens(int count)
 	{
 		ArgumentOutOfRangeException.ThrowIfLessThan(count, 1);
@@ -67,7 +66,7 @@ public static class RawLayerGenerator
 		var carriesAnchor = intervalTicks > anchorOffset;
 
 		// The plant kept moving while archiving was stopped, so the first change of a resumed run opens
-		// on a level of its own — which is what makes the q = 16 row a change row with no pre-anchor.
+		// on a level of its own.
 		var dropsAnchor = resumedAfterBreak;
 
 		for (var index = FirstIndex(fromTicks, intervalTicks); ; index++)
@@ -75,10 +74,8 @@ public static class RawLayerGenerator
 			var changeTicks = index * intervalTicks;
 			var anchorTicks = changeTicks - anchorOffset;
 
-			// A change past the window's end still hands its anchor to the window, which is what keeps two
-			// adjacent spans of a follow run from leaving a hole at the seam. A window a break closes has no
-			// such successor: the anchor would be a row repeating the previous value with no change behind
-			// it, and MarkRunBoundaries would put the q = 32 marker on it rather than on a real change.
+			// A change past the end still hands its anchor over unless a break follows:
+			// that anchor would carry the q = 32 mark.
 			if (anchorTicks >= toExclusiveTicks || (breakFollows && changeTicks >= toExclusiveTicks))
 			{
 				return;
@@ -151,8 +148,7 @@ public static class RawLayerGenerator
 	}
 
 	// A run holding a single change would have to carry both marker codes at once, which the archive has
-	// no code for, so with breaks every archiving run holds two. The tight run is the first or the last:
-	// BreakPlan guarantees those only MinimumRun, while a run between two breaks is at least twice that.
+	// no code for, so with breaks every archiving run holds two.
 	private static void RequireTwoChangesPerRun(BreakPlan breaks, long intervalTicks, SeederOptions options)
 	{
 		if (breaks.Breaks.Count == 0)

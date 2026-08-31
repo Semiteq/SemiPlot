@@ -6,10 +6,6 @@ namespace SemiPlot.UI.Startup;
 /// A startup read did not answer inside the bound <see cref="StartupProbe"/> gives it. This is the
 /// caller's bound, not the server's: <c>ArchiveFault.QueryTimedOut</c> reports a server that ended
 /// the read itself, while this type reports that startup stopped waiting for a read still in flight.
-/// <para>
-/// <see cref="Read"/> names which startup read it was, in English, so the log line says what the
-/// application was doing when it gave up.
-/// </para>
 /// </summary>
 public sealed class StartupReadTimedOutError(string read, TimeSpan bound)
 	: Error(Describe(read, bound))

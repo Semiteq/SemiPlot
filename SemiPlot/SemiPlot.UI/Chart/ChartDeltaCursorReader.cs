@@ -29,8 +29,6 @@ public sealed class ChartDeltaCursorReader(
 
 	public DeltaReadout? Measure(int activePenId)
 	{
-		// The `with` only swaps PenId on the already-valid empty envelope, so the column/ordering
-		// invariants the constructor enforces still hold (empty columns are valid).
 		var envelope = _envelopesById.GetValueOrDefault(activePenId)
 					   ?? _emptyEnvelope with { PenId = activePenId };
 

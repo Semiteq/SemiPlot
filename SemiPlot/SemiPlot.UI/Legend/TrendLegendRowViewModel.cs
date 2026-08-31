@@ -24,9 +24,6 @@ public sealed class TrendLegendRowViewModel : ReactiveObject, IDisposable
 
 	public TrendLegendRowViewModel(TrendChartViewModel chartViewModel, TrendPenState penState)
 	{
-		ArgumentNullException.ThrowIfNull(chartViewModel);
-		ArgumentNullException.ThrowIfNull(penState);
-
 		_chartViewModel = chartViewModel;
 		_penState = penState;
 		_penId = penState.Pen.PenId;

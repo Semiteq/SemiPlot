@@ -14,8 +14,6 @@ public static class AggregationLayerExtensions
 {
 	// Distance between two consecutive points of a layer. The archive writes up to four points into
 	// every period, so a layer's spacing is a quarter of its period, not the period itself.
-	// Raw has no period; its true spacing is the per-variable archiving interval, so one second stands
-	// in for it and never participates in layer selection.
 	public static TimeSpan ToPointSpacing(this AggregationLayer layer)
 	{
 		return layer switch

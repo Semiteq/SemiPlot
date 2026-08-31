@@ -18,11 +18,7 @@ namespace SemiPlot.Tests.Data.Integration;
 // The branch every other gated class seeds its way past: an archive that holds public.trends and no row
 // for the subscribed variables, which is what a commissioned installation looks like before the SCADA has
 // written anything. The baseline scalar answers NULL there, and that answer must still arm the
-// subscription — a consumer sequencing on the Connected state otherwise waits forever, and a
-// subscribe-then-append test written against such an archive hangs rather than fails.
-//
-// Nothing here is seeded, so the clone is the provisioned database exactly as the image left it. The class
-// appends, so it may not take SeededArchive.
+// subscription.
 [Collection(ArchiveDatabaseCollection.Name)]
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
@@ -52,8 +48,7 @@ public sealed class RealtimeEmptyArchiveTests(PostgresContainerFixture postgresC
 	}
 
 	// A NULL answer leaves lastSeen unset, so the next tick repeats the baseline read rather than binding
-	// @lastSeen to nothing and going blind for good. It reports no further state: the subscription was
-	// armed by the first tick and stays armed.
+	// @lastSeen to nothing and going blind for good.
 	[Fact]
 	public async Task TheBaselineBranchRepeatsUntilTheArchiveCarriesARow()
 	{
@@ -76,9 +71,7 @@ public sealed class RealtimeEmptyArchiveTests(PostgresContainerFixture postgresC
 		Assert.Null(second.StateChange);
 	}
 
-	// The whole point of arming an empty archive: the first row ever written becomes a baseline rather than
-	// a delivery — a tick that emitted it would have to emit every row since the archive began — and the
-	// row after it is delivered normally.
+	// A tick that emitted the first row ever written would have to emit every row since the archive began.
 	[Fact]
 	public async Task TheFirstEverRowBecomesTheBaselineAndTheNextOneIsDelivered()
 	{

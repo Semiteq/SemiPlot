@@ -33,8 +33,6 @@ public sealed class TrendNavigationModel
 
 	public DateTime FirstSample { get; }
 
-	// From is clamped to FirstSample so a pan into the past never reaches before stored data.
-	// If the resulting window no longer contains the live edge, sticky auto-detaches.
 	public void Pan(TimeSpan delta, DateTime now)
 	{
 		var width = Width;
@@ -53,8 +51,6 @@ public sealed class TrendNavigationModel
 		}
 	}
 
-	// Scales width about an anchor held fixed in time, clamped to [1 s, 1 year] and snapped onto the zoom
-	// ladder so reciprocal in/out gestures round-trip.
 	public void Zoom(double factor, DateTime anchor)
 	{
 		if (factor <= 0.0 || double.IsNaN(factor) || double.IsInfinity(factor))
@@ -67,9 +63,7 @@ public sealed class TrendNavigationModel
 
 		var anchorFraction = (anchor - From) / currentWidth;
 		var from = anchor - (targetWidth * anchorFraction);
-		// Tradeoff: when From would reach back past the first stored sample it is clamped to FirstSample
-		// (so the anchor is not held exactly fixed for that zoom). Clamping is preferred over pinning the
-		// anchor, since the alternative would render the empty left span as data.
+		// Clamped rather than anchor-pinned: pinning would render the empty left span as data.
 		if (from < FirstSample)
 		{
 			from = FirstSample;

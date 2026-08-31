@@ -7,8 +7,6 @@ public static class BandDegeneracy
 	// NaN columns are gaps, not spread; a band of only gaps is treated as degenerate.
 	public static bool IsDegenerate(IReadOnlyList<(double X, double Top, double Bottom)> bandPoints)
 	{
-		ArgumentNullException.ThrowIfNull(bandPoints);
-
 		foreach (var (_, top, bottom) in bandPoints)
 		{
 			if (double.IsNaN(top) || double.IsNaN(bottom))

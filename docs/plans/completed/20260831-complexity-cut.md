@@ -1,4 +1,4 @@
-# Complexity Cut
+﻿# Complexity Cut
 
 ## Overview
 
@@ -382,7 +382,7 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 - [x] `dotnet format SemiPlot.slnx`; `git log origin/master..HEAD --oneline` shows only slice-1 commits
 - [x] `dotnet test SemiPlot.slnx` with Docker running - green
 - [ ] manual: start `SemiPlot.UI` with no connection file, then with a wrong password, then with the container stopped; each error window shows the same title, detail and remedy wording as `StartupFailureMapperTests` pins
-- [ ] open the pull request; after merge, `git switch master && git pull --ff-only`
+- [x] open the pull request; after merge, `git switch master && git pull --ff-only` (#47)
 
 ### Slice 2 — `int-pen-ids`
 
@@ -581,10 +581,10 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 
 ### Task 21: Slice 7 close
 
-- [ ] `dotnet format SemiPlot.slnx`; `git log origin/master..HEAD --oneline` shows only slice-7 commits
-- [ ] `dotnet test SemiPlot.slnx` with Docker running - green
+- [x] `dotnet format SemiPlot.slnx`; `git log origin/master..HEAD --oneline` shows only slice-7 commits
+- [x] `dotnet test SemiPlot.slnx` with Docker running - green
 - [ ] manual: run `scripts/bench-demo.ps1`, stop it, start it again four minutes later; the chart shows one continuous line across the restart and the seeder log reports no `23505`
-- [ ] open the pull request; after merge, `git switch master && git pull --ff-only`
+- [x] open the pull request; after merge, `git switch master && git pull --ff-only` (#49)
 
 ### Slice 8 — `harness-provisioner`
 
@@ -603,13 +603,13 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 - [x] delete the harness self-tests; rewrite the tripwire without `Docker.DotNet`
 - [x] remove the package from the project and the central versions
 - [x] state in `bench.md` and `testing-strategy.md` that the tag moves on purpose and how the pull degrades without a registry route
-- [ ] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests.Data` and `SemiPlot.Tests.Journeys` - must pass before task 23
+- [x] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests.Data` and `SemiPlot.Tests.Journeys` - must pass before task 23
 
 ### Task 23: Slice 8 close
 
-- [ ] `dotnet format SemiPlot.slnx`; `git log origin/master..HEAD --oneline` shows only slice-8 commits
-- [ ] `dotnet test SemiPlot.slnx` with Docker running - green
-- [ ] open the pull request; after merge, `git switch master && git pull --ff-only`
+- [x] `dotnet format SemiPlot.slnx`; `git log origin/master..HEAD --oneline` shows only slice-8 commits
+- [x] `dotnet test SemiPlot.slnx` with Docker running - green
+- [x] open the pull request; after merge, `git switch master && git pull --ff-only` (#50)
 
 ### Slice 9 — `comment-audit`
 
@@ -619,27 +619,29 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 - Modify: every production `.cs` under `SemiPlot/SemiPlot.Core`, `SemiPlot.DataSource.Postgres`, `SemiPlot.UI`, `SemiPlot.Tools.ArchiveSeeder`, and the harness files under `SemiPlot.Tests.Data/Integration`
 - Modify: `docs/architecture/data-integration.md` (delete "Keeping this document honest"; the SQL lives in `ArchiveStatements.cs`, the document keeps the operation-to-statement table and the hazards), `docs/architecture/bench.md`, `docs/architecture/testing-strategy.md`, `CLAUDE.md`
 
-- [ ] run `/planning:comment-audit` over the four production projects and the harness; apply the kill-list: one line per non-obvious invariant and a bare `docs/architecture/<file>.md#<anchor>` reference where a document holds the reasoning; delete polemics, commit hashes, process notes and restatements of the document
-- [ ] compress `data-integration.md`: remove the quoted SQL blocks in favour of the constant names, remove "Keeping this document honest", keep responsibility zones, the layer ladder, the time boundary, quality and gaps, the error table, configuration and startup
-- [ ] compress `bench.md` to what a developer needs to run and extend the bench
-- [ ] trim `CLAUDE.md` "Test" and "Data-source projects" sections to the statements still true after slices 1 to 8
-- [ ] `dotnet build SemiPlot.slnx`; `dotnet test SemiPlot.slnx` - must pass before task 25
+- [x] run `/planning:comment-audit` over the four production projects and the harness; apply the kill-list: one line per non-obvious invariant and a bare `docs/architecture/<file>.md#<anchor>` reference where a document holds the reasoning; delete polemics, commit hashes, process notes and restatements of the document
+- [x] compress `data-integration.md`: remove the quoted SQL blocks in favour of the constant names, remove "Keeping this document honest", keep responsibility zones, the layer ladder, the time boundary, quality and gaps, the error table, configuration and startup
+- [x] compress `bench.md` to what a developer needs to run and extend the bench
+- [x] trim `CLAUDE.md` "Test" and "Data-source projects" sections to the statements still true after slices 1 to 8
+- [x] ➕ resolve the operator's `//wtf` marks: `PostgresConnectionLoader` gets one `Fail` helper and plain loops in place of the LINQ chain; `PostgresDataServiceCollectionExtensions` and `StartupProbe` lose their ceremonial `ThrowIfNull` guards; `StartupProbe` collapses to one `Run` with an optional bound, `Build` and the sync `Read` wrapper inlined, internal-member docs cut to a line; `Program` keeps the `using var` disposal with a one-line note
+- [x] ➕ sweep the four production projects and the harness for the same classes repo-wide: ceremonial null guards on first-party-only APIs, single-caller indirection methods, multi-paragraph XML docs on internal members, repeated error-construction boilerplate
+- [x] `dotnet build SemiPlot.slnx`; `dotnet test SemiPlot.slnx` - must pass before task 25
 
 ### Task 25: Verify acceptance criteria
 
-- [ ] run the symbol grep from Acceptance Evidence - prints nothing
-- [ ] run the line-count command; record the numbers in the slice-9 pull request beside the baseline
-- [ ] `dotnet build SemiPlot.slnx -c Release` - succeeds
-- [ ] `dotnet test SemiPlot.slnx` with Docker running - all three projects green
-- [ ] `dotnet format SemiPlot.slnx --verify-no-changes` - clean
+- [x] run the symbol grep from Acceptance Evidence - prints nothing
+- [x] run the line-count command; record the numbers in the slice-9 pull request beside the baseline
+- [x] `dotnet build SemiPlot.slnx -c Release` - succeeds
+- [x] `dotnet test SemiPlot.slnx` with Docker running - all three projects green
+- [x] `dotnet format SemiPlot.slnx --verify-no-changes` - clean
 - [ ] `scripts/bench-demo.ps1` and `dotnet run --project SemiPlot/SemiPlot.UI/SemiPlot.UI.csproj` - chart opens, follows the live edge, banner on container pause and clear on resume
 
 ### Task 26: Update documentation
 
-- [ ] `docs/architecture/README.md` document list reflects the compressed documents
-- [ ] `readme.md` seeder and bench paragraphs reflect the generated usage text
-- [ ] `CLAUDE.md` build, test and data-source sections re-read against the code once more
-- [ ] move this plan to `docs/plans/completed/`
+- [x] `docs/architecture/README.md` document list reflects the compressed documents
+- [x] `readme.md` seeder and bench paragraphs reflect the generated usage text
+- [x] `CLAUDE.md` build, test and data-source sections re-read against the code once more
+- [x] move this plan to `docs/plans/completed/`
 
 ## Post-Completion
 
@@ -654,5 +656,5 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 
 - `scripts/bench-demo.ps1` is the only consumer of the seeder command line; its invocations are kept
   compatible by design and verified in task 18.
-- The pinned provisioner digest in `bench/Dockerfile` needs a manual bump when SemiBase publishes a
-  release that changes `semibase bench`.
+- The bench follows `ghcr.io/semiteq/semibase:latest`; a SemiBase release that changes
+  `semibase bench` reaches the next run through the fixture's `docker pull`.

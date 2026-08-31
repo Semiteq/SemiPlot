@@ -5,15 +5,11 @@ namespace SemiPlot.UI.Chart;
 
 public sealed class ChartNavigationController
 {
-	// Margin past a layer ceiling the width must clear before the layer changes. Without it a zoom gesture
-	// hovering on a boundary flip-flops the layer every notch, and at the Raw side the realtime tail
-	// straight-lines a far-right raw point across the wide span (the right-side collapse artifact).
+	// Margin past a layer ceiling the width must clear before the layer changes.
 	private const double LayerHysteresisFraction = 0.1;
 
 	// Margin past a quantisation boundary the reported width must clear before the column count moves. One
-	// quantisation step doubles or halves every ceiling, so LayerHysteresisFraction cannot damp it: without
-	// this deadband one pixel of jitter across the 724/725 px boundary would flip the layer and re-query in
-	// each direction.
+	// quantisation step doubles or halves every ceiling, so LayerHysteresisFraction cannot damp it.
 	private const double ColumnCountHysteresisFraction = 0.1;
 	private static readonly TimeSpan _defaultWindowWidth = TimeSpan.FromHours(1.0);
 	private bool _hasData;
@@ -45,8 +41,6 @@ public sealed class ChartNavigationController
 
 	public event EventHandler<NavigationWindow>? WindowChanged;
 
-	// A changed count also invalidates the decimation width the visible data was fetched at, so the window is
-	// re-queried even when the layer survives.
 	public void SetTargetColumnCount(int columns)
 	{
 		var quantized = QuantizeColumnCount(columns);
@@ -64,20 +58,11 @@ public sealed class ChartNavigationController
 	/// Opens the window on the archive instead of on the wall clock, from the extent startup already read.
 	/// </summary>
 	/// <remarks>
-	/// It routes through <see cref="TrackDataExtents"/> deliberately: that call sets the has-data latch, so
-	/// the first history envelope does not snap the window a second time and undo the seed. An archive whose
-	/// last sample is older than the opening window would otherwise never snap at all — no envelope has rows,
-	/// nothing calls <see cref="TrackDataExtents"/>, and a pan into the past clamps to startup minus one hour,
-	/// after the data the minimap is drawing.
-	/// <para>
-	/// An empty extent seeds nothing and leaves the wall-clock window, which is the only sensible view of an
-	/// archive with no rows.
-	/// </para>
+	/// Routes through <see cref="TrackDataExtents"/> so the latch is set and the first envelope does not snap
+	/// again.
 	/// </remarks>
 	public void SeedFromArchiveExtent(ArchiveExtent extent)
 	{
-		ArgumentNullException.ThrowIfNull(extent);
-
 		if (extent.IsEmpty)
 		{
 			return;
@@ -152,7 +137,6 @@ public sealed class ChartNavigationController
 
 		_navigation.OnLiveEdge(_liveEdge);
 
-		// A sticky live-edge advance keeps width constant: shift the axis but do not re-query history.
 		ActiveLayer = LayerForCurrentWidth();
 		WindowChanged?.Invoke(
 			this,
@@ -201,8 +185,6 @@ public sealed class ChartNavigationController
 		return AggregationLayer.Day;
 	}
 
-	// Use the coarsest layer whose point spacing still fits inside one pixel column: a layer is left once the
-	// next coarser layer's spacing fits, so its upper bound is that spacing times the column count.
 	// Precondition: Raw, Minute or Hour. Day tops the ladder and has no ceiling, so `layer + 1` would leave
 	// the enum.
 	private static TimeSpan LayerCeiling(AggregationLayer layer, int targetColumnCount)

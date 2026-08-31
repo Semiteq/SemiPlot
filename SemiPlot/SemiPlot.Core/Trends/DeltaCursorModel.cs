@@ -33,8 +33,6 @@ public sealed class DeltaCursorModel
 
 	public DeltaReadout? Compute(PenHistoryEnvelope activePenEnvelope)
 	{
-		ArgumentNullException.ThrowIfNull(activePenEnvelope);
-
 		if (FirstCursor is not { } first || SecondCursor is not { } second)
 		{
 			return null;

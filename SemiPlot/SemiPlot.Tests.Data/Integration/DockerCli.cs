@@ -5,18 +5,18 @@ namespace SemiPlot.Tests.Data.Integration;
 
 internal static class DockerCli
 {
-	public const string ProvisionerImage = "ghcr.io/semiteq/semibase:latest";
+	public const string ProvisionerTag = "ghcr.io/semiteq/semibase:latest";
 
 	// The builder resolves FROM from the local cache, so this is what moves the tag. A failed pull is
 	// reported and the build goes on with the cached image (docs/architecture/bench.md#where-the-provisioning-comes-from).
 	public static async Task PullProvisionerAsync(TimeSpan bound)
 	{
-		var pulled = await RunAsync(["pull", "--quiet", ProvisionerImage], bound);
+		var pulled = await RunAsync(["pull", "--quiet", ProvisionerTag], bound);
 
 		if (pulled.ExitCode != 0)
 		{
 			await Console.Error.WriteLineAsync(
-				$"[bench] docker pull {ProvisionerImage} failed, building over the cached image: {pulled.Error}");
+				$"[bench] docker pull {ProvisionerTag} failed, building over the cached image: {pulled.Error}");
 		}
 	}
 

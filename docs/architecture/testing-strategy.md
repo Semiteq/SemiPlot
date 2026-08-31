@@ -35,7 +35,7 @@ and built from the commit under test. Its value is diagnosis.
 | --- | --- |
 | Decimation, navigation, scale, cursor geometry | `SemiPlot.Tests/Core/Data/MinMaxDecimatorTests.cs`, `Core/Trends/TrendNavigationModelTests.cs`, `PenScaleModelTests.cs`, `MinimapGeometryTests.cs`, `Chart/CursorReadoutModelTests.cs`, `DeltaCursorModelTests.cs` |
 | The seeder's generation rules | `SemiPlot.Tests.Data/LayerThinnerTests.cs`, `RawLayerGeneratorTests.cs`, `BreakGenerationTests.cs`, `PartitionScriptTests.cs` |
-| The demo writer's own rules and its option grammar | `SemiPlot.Tests.Data/LiveTailGeneratorTests.cs`, `FollowOptionsTests.cs`. Its coarse flush is not here: the selection is a statement the server executes, so `Integration/CoarseFlushTests.cs` carries it, gated |
+| The demo writer's own rules and the command line | `SemiPlot.Tests.Data/LiveTailGeneratorTests.cs`, `SharedLatticeTests.cs`, `SeederCommandTests.cs`. Its coarse flush is not here: the selection is a statement the server executes, so `Integration/CoarseFlushTests.cs` carries it, gated |
 | Error construction and extent arithmetic | `SemiPlot.Tests.Data/Errors/DataErrorTests.cs`, `Data/ArchiveExtentTests.cs` |
 | The provider's statement text and its binder | `SemiPlot.Tests.Data/Postgres/ArchiveStatementTextTests.cs` |
 | The live edge's own rules, and the fresh tail's bound | `SemiPlot.Tests.Data/Postgres/RealtimePollTests.cs`, `Postgres/FreshTailBoundTests.cs` |
@@ -50,19 +50,12 @@ A unit test must not open a socket, read the wall clock, or depend on anything t
 
 Statement text is pinned clause by clause, in `ArchiveStatementTextTests.cs` against the constants in
 `ArchiveStatements.cs`: one assertion per guarantee whose loss nothing else catches without a
-container. Those are the sparse history window's outer `ORDER BY id, t`, its strict seam bound and
-its one-day seed floor; the realtime poll's `l = 0` filter and its `ORDER BY t`; the realtime
-baseline's `l = 0` filter and its `DISTINCT unnest(@ids)`; and the default-partition occupancy check
-reading the relation its warning names. A whole-statement literal per constant was pinned before and
-named no guarantee: it failed on a reformatting and passed on a dropped clause it had been updated
-for. Three statements take parameters, each through a binder of its own, and each binder is pinned
-against its statement's own parameter names: `PostgresDataProvider.BindWindow`,
-`RealtimePoll.BindPoll` and `RealtimePoll.BindBaseline`.
-Nothing compares the shipped SQL to `data-integration.md`. That document quotes eight SQL blocks for
-a reader, of which six are shipped statements; the other two — the bucketed history read, whose
-slice is dropped, and the gap explanation, which no roadmap slice names — have no constant to drift
-from. A drift between a quote and the constant it names is caught by whoever reads it rather than
-by a test.
+container — the sparse history window's outer `ORDER BY id, t`, its strict seam bound and its one-day
+seed floor; the realtime poll's `l = 0` filter and its `ORDER BY t`; the realtime baseline's `l = 0`
+filter and its `DISTINCT unnest(@ids)`. Three statements take parameters, each through a binder of
+its own pinned against the statement's parameter names: `PostgresDataProvider.BindWindow`,
+`RealtimePoll.BindPoll` and `RealtimePoll.BindBaseline`. `data-integration.md` names the constants
+and quotes no SQL, so there is no second copy to drift.
 
 ## Integration tests
 

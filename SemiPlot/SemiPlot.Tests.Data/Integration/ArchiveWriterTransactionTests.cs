@@ -6,13 +6,7 @@ using Xunit;
 
 namespace SemiPlot.Tests.Data.Integration;
 
-// The write goes into a clone of the provisioned source, as scada_writer: the writer requires the
-// archive table provisioning creates, and refuses a database that does not carry one. What the
-// transaction owns is everything it creates itself — the day partitions and the rows — so that is
-// what the rollback has to take with it.
-//
-// Every test here writes, so none of them may take SeededArchive, whose contract is that the class
-// leaves the database as it found it.
+// What the transaction owns is what it creates: the day partitions and the rows.
 [Collection(ArchiveDatabaseCollection.Name)]
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
@@ -32,8 +26,6 @@ public sealed class ArchiveWriterTransactionTests(PostgresContainerFixture postg
 
 	private const int AppendedPenId = 2;
 
-	// Provisioning creates tpdefault with the table, so it is present before any run and is not evidence
-	// of one.
 	private const string DefaultPartition = "tpdefault";
 
 	private const string CountRowsCommand = "SELECT count(*) FROM public.trends;";
@@ -116,8 +108,6 @@ public sealed class ArchiveWriterTransactionTests(PostgresContainerFixture postg
 			await PartitionNamesAsync(cancellationToken));
 	}
 
-	// The appending run owns its own partitions and its own rows exactly as the seeding run does, so a
-	// COPY that fails part-way takes both back and leaves the archive the seeding run wrote.
 	[Fact]
 	public async Task AnAppendingCopyThatFailsPartWayLeavesTheArchiveAsItWas()
 	{

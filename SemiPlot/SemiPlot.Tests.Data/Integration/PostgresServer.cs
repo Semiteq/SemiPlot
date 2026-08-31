@@ -2,9 +2,7 @@
 
 namespace SemiPlot.Tests.Data.Integration;
 
-// Where the run's own container answers, and nothing else: the roles, their passwords and the
-// maintenance database are BenchNames' fixed dummies, which the fixture passes into the container.
-// Carrying them as parameters would let a caller state a credential the container was never given.
+// Credentials are BenchNames' fixed dummies, never parameters.
 public sealed record PostgresServer(string Host, int Port)
 {
 	public string AdminConnectionString => AdminConnectionStringFor(BenchNames.MaintenanceDatabase);

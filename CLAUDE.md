@@ -1,4 +1,4 @@
-# Agent Instructions for SemiPlot
+﻿# Agent Instructions for SemiPlot
 
 SemiPlot is a trend/chart viewer for an industrial installation (semiconductor plasma
 process tools: ICP / RIE / PECVD). It reads live tags and historical archives from
@@ -33,53 +33,30 @@ produce the same archive. `--admin-connection` is optional and only fills `semip
 
 ## Test
 
-Tests live in three projects, split by dependency graph and skip policy rather than by taste.
+Three projects, split by dependency graph and skip policy.
 
-| Project | Target | Framework | References | Holds |
-| --- | --- | --- | --- | --- |
-| `SemiPlot.Tests` | `net10.0` | xunit v3 + `Avalonia.Headless.XUnit` | `SemiPlot.UI` | Everything touching the UI, plus the renderer-agnostic Core models |
-| `SemiPlot.Tests.Data` | `net10.0` | xunit v3 | `SemiPlot.Core`, `SemiPlot.Tools.ArchiveSeeder`, `SemiPlot.DataSource.Postgres` | Bench and data-source tests, pure and container-gated. Never Avalonia, never the UI |
-| `SemiPlot.Tests.Journeys` | `net10.0` | xunit v3 + `Avalonia.Headless.XUnit` | `SemiPlot.UI`, `SemiPlot.Tests.Data` | The end-to-end journeys, which need the UI and a container at once. Gated end to end |
+| Project | Framework | References | Holds |
+| --- | --- | --- | --- |
+| `SemiPlot.Tests` | xunit v3 + `Avalonia.Headless.XUnit` | `SemiPlot.UI` | Everything touching the UI, plus the renderer-agnostic Core models |
+| `SemiPlot.Tests.Data` | xunit v3 | `SemiPlot.Core`, `SemiPlot.Tools.ArchiveSeeder`, `SemiPlot.DataSource.Postgres` | Bench and data-source tests, pure and container-gated. Never Avalonia |
+| `SemiPlot.Tests.Journeys` | xunit v3 + `Avalonia.Headless.XUnit` | `SemiPlot.UI`, `SemiPlot.Tests.Data` | End-to-end journeys, which need the UI and a container at once. Gated end to end |
 
-`SemiPlot.Tests` carries `TestAppBuilder.cs` with `[assembly: AvaloniaTestApplication]`. Pure logic
-(decimation, navigation, scale, cursor, delta) uses plain `[Fact]`; tests touching
-ReactiveUI/ScottPlot/Avalonia use `[AvaloniaFact]`/`[AvaloniaTheory]`. The Core model tests build
-against the UI project, so they do not run independently of the UI build — the accepted cost of
-keeping one Avalonia project.
-
-**Why the split exists.** All three are on xunit v3 and all three target plain `net10.0`, so neither
-the test framework nor the target framework separates them: `dotnet test` runs each in its own
-process only because they are three projects. The reason there are three is the dependency graph and
-the skip policy.
-`SemiPlot.Tests.Data` references only `SemiPlot.Core`, `SemiPlot.DataSource.Postgres` and
-`SemiPlot.Tools.ArchiveSeeder`, so the data suite and its `data-tests` CI job build and run without
-Avalonia, ScottPlot and SkiaSharp. An xunit v3 test project is one executable, so keeping them apart
-keeps the container lifecycle and the Avalonia dispatcher in separate processes, where a hung
-UI test cannot wedge the harness. `SemiPlot.DataSource.Postgres` also names `SemiPlot.Tests.Data` as
-the sole assembly in its `InternalsVisibleTo`.
-
-**The reference direction is one-way.** `SemiPlot.Tests` and `SemiPlot.Tests.Journeys` may take a
-project reference on `SemiPlot.Tests.Data` and consume its container harness; the reverse reference
-would build, and must not exist — it would drag Avalonia, ScottPlot and SkiaSharp into the data suite
-and its Linux job.
-
-**A journey fits neither of the other two**, which is the whole reason for the third project. It
-needs the UI, which `SemiPlot.Tests.Data` may not reference, and it is gated on a container runtime,
-which `SemiPlot.Tests` turns into a failure — `failSkips` is project-wide with no per-test scope, so
-one gated test there would either fail every machine without a runtime or cost the project its skip
-guard. `SemiPlot.Tests.Journeys` therefore carries no `xunit.runner.json`, and must not gain one.
-
-**An xunit v3 test project is an executable.** A test that hangs leaves `SemiPlot.Tests.exe` running
-and locked, and the next build fails with MSB3027/MSB3021 until that process is killed. The
-container half of that is bounded: the registry fetch and the readiness wait both stop after two
-minutes, so a bench that never comes up is a stated skip rather than a wedged process. Everything
-else is not. A plain `[Fact]` body also runs with no `SynchronizationContext` — v3 installs one only
-under the Aggressive parallel algorithm — so an `await` on a `TaskCompletionSource` that production
-code completes resumes inline on the completing thread. A test gate awaited by the test body and
-completed by production code therefore takes `TaskCreationOptions.RunContinuationsAsynchronously`; a
-gate awaited by production code and completed by the test body must not, because tests assert on
-that inline resumption. `[AvaloniaFact]` bodies are unaffected: `Avalonia.Headless.XUnit` installs
-`AvaloniaSynchronizationContext`.
+- `SemiPlot.Tests` carries `TestAppBuilder.cs` with `[assembly: AvaloniaTestApplication]`. Pure logic
+  uses plain `[Fact]`; tests touching ReactiveUI/ScottPlot/Avalonia use `[AvaloniaFact]`/`[AvaloniaTheory]`.
+- `SemiPlot.Tests.Data` never references Avalonia, ScottPlot or SkiaSharp, so its `data-tests` CI job
+  builds without them. `SemiPlot.DataSource.Postgres` names it as the sole `InternalsVisibleTo` assembly.
+- The reference direction is one-way: `SemiPlot.Tests` and `SemiPlot.Tests.Journeys` may reference
+  `SemiPlot.Tests.Data`; the reverse would build and must not exist.
+- `SemiPlot.Tests` sets `failSkips` in `xunit.runner.json`, so no gated test may live there. The
+  journeys are a third project for that reason; it and `SemiPlot.Tests.Data` carry no `xunit.runner.json`.
+- An xunit v3 test project is an executable: a hung test leaves `SemiPlot.Tests.exe` locked and the
+  next build fails with MSB3027 until it is killed. The container half is bounded at two minutes.
+- A plain `[Fact]` body runs with no `SynchronizationContext`, so an `await` on a
+  `TaskCompletionSource` completed by production code resumes inline on the completing thread. A gate
+  awaited by the test and completed by production code takes
+  `TaskCreationOptions.RunContinuationsAsynchronously`; one awaited by production code and completed
+  by the test must not, because tests assert on the inline resumption. `[AvaloniaFact]` bodies are
+  unaffected.
 
 ```powershell
 dotnet test SemiPlot.slnx                                                 # full suite, all three
@@ -87,73 +64,44 @@ dotnet test SemiPlot/SemiPlot.Tests/SemiPlot.Tests.csproj                 # UI a
 dotnet test SemiPlot/SemiPlot.Tests.Data/SemiPlot.Tests.Data.csproj       # bench and data source
 dotnet test SemiPlot/SemiPlot.Tests.Journeys/SemiPlot.Tests.Journeys.csproj  # end-to-end journeys
 dotnet test SemiPlot.slnx --filter "Area=Data"
-dotnet test SemiPlot.slnx --filter "Category=Unit"
 dotnet test SemiPlot.slnx --filter "FullyQualifiedName~TestMethodName"
 ```
 
-**`SemiPlot.Tests` runs on both platforms in CI:** `build-and-test` on `windows-latest` and
-`ui-tests-linux` on `ubuntu-latest`. `SemiPlot.Tests.Data` runs on `data-tests` and
-`SemiPlot.Tests.Journeys` on `journey-tests`, both `ubuntu-latest` and both with
-`SEMIPLOT_REQUIRE_DB=1`. The Linux leg proves two things: `SemiPlot.UI` and
-`SemiPlot.Tests` compile there, and every test passes under the headless platform. A Windows-only
-API fails that leg only once a test executes the call — the compiler reports it as the `CA1416`
-warning and no project turns warnings into errors. A Windows path used as a string does not fail it
-at all, which is why `StartupOptions`' `C:\DISTR\` defaults and the tests asserting on them are
-green there. The skip-versus-fail policy of each suite is in
-`docs/architecture/testing-strategy.md`.
+CI runs `SemiPlot.Tests` on `windows-latest` and `ubuntu-latest`, `SemiPlot.Tests.Data` and
+`SemiPlot.Tests.Journeys` on `ubuntu-latest` with `SEMIPLOT_REQUIRE_DB=1`. A Windows-only API fails
+the Linux leg only once a test executes the call (`CA1416` is a warning); a Windows path used as a
+string does not fail it at all. The skip-versus-fail policy is in `docs/architecture/testing-strategy.md`.
 
 Test traits: `[Trait("Component", "Core|UI")]`, `[Trait("Area", "Data|Bridge|Chart|Di")]`,
-`[Trait("Category", "Unit|Integration")]`. Every test class carries all three; `SemiPlot.Tests.Data`
-is `Component=Core` throughout, since nothing in it touches the UI, and `SemiPlot.Tests.Journeys` is
-`Category=Integration` throughout.
+`[Trait("Category", "Unit|Integration")]`. Every test class carries all three.
 
-**Assertions split by project, deliberately.** `SemiPlot.Tests` and `SemiPlot.Tests.Journeys` use
-AwesomeAssertions (`.Should()`) exclusively. `SemiPlot.Tests.Data` uses raw xunit `Assert.`
-exclusively and references no assertion library: its assertions are mostly `Assert.Equal`, `Assert.Contains` and `Assert.All`
-over rows and database state, where the fluent form buys no diagnostic the raw form does not already
-give. Keep each project on its own style rather than mixing the two inside one file.
-
-**Tests over provider errors assert by error type and structured field, never on exact message
-wording** — the message is built in the error's base constructor and stays free to change.
+Assertions split by project: `SemiPlot.Tests` and `SemiPlot.Tests.Journeys` use AwesomeAssertions
+(`.Should()`) exclusively; `SemiPlot.Tests.Data` uses raw xunit `Assert.` exclusively. Tests over
+provider errors assert by error type and structured field, never on message wording.
 
 ### Gated data tests
 
 The integration tests in `SemiPlot.Tests.Data` and every test in `SemiPlot.Tests.Journeys` need a
-container runtime and nothing else. The
-provisioner rides in as an image layer: `SemiPlot.Tests.Data/bench/Dockerfile` copies `/semibase`
-out of `ghcr.io/semiteq/semibase:latest` onto the base image and runs `semibase bench` from
-`/docker-entrypoint-initdb.d/`, over the unix socket, before the published port opens. A missing
-container runtime is reported as a skip with a stated reason, never as a pass. Environment carries
-the policy:
+container runtime and nothing else: `SemiPlot.Tests.Data/bench/Dockerfile` copies `/semibase` out of
+`ghcr.io/semiteq/semibase:latest`, which the fixture pulls ahead of the build, and runs
+`semibase bench` from `/docker-entrypoint-initdb.d/` before the published port opens. The container
+carries fixed dummy passwords of the fixture's own. A missing runtime is a skip with a stated reason,
+never a pass.
 
 | Variable | Effect | Unset means |
 | --- | --- | --- |
-| `SEMIPLOT_PG_IMAGE` | Base image the bench image is built over (`--build-arg BASE_IMAGE`), so it selects the PostgreSQL version | `postgres:17-alpine` |
-| `SEMIPLOT_REQUIRE_DB` | `1` or `true` turns an unavailable runtime from a skip into a failure. The CI `data-tests` job sets it; a developer machine must not | skip with a reason |
+| `SEMIPLOT_PG_IMAGE` | Base image the bench image is built over, so it selects the PostgreSQL version | `postgres:17-alpine` |
+| `SEMIPLOT_REQUIRE_DB` | `1` or `true` turns an unavailable runtime from a skip into a failure. CI sets it; a developer machine must not | skip with a reason |
 
-There is one path and it is the container. The suite never spawns a `semibase` binary and reads no
-role password from the environment: the container carries fixed dummy passwords of the fixture's own,
-so a developer needs no variable at all.
+A run leaves nothing behind but the images it pulled: `WithCleanUp(true)` and the resource reaper
+remove the built image, the container and every database.
+`TheBuiltBenchImageIsLabelledForTheReaperAndForThisRepository` is the tripwire.
 
-**A run leaves nothing behind.** It raises the harness, tests, and kills everything it made — the
-built image, the container, the template and every clone. That rests on `WithCleanUp(true)` and the
-resource reaper: the fixture's teardown only disposes the container, and everything the run created
-lives inside it. `TheBuiltBenchImageIsLabelledForTheReaperAndForThisRepository` is the tripwire on
-the reaper's label. The images the run *pulled* stay, on purpose. `docs/architecture/bench.md` holds
-the full statement.
-
-The container provisions one fixed database, `semiplot_provisioned`, before the published port opens;
-the fixture passes that name in, so no consumer carries a branch. Everything else the suite needs is
-a `CREATE DATABASE ... TEMPLATE` clone made inside the running container, of one of two sources.
-The seeded template `semiplot_bench` is itself a clone of the provisioned source, filled once per
-run; `CloneSource` names which of the two a test class clones. `SeededArchive` and
-`LiveEdgeArchiveJourneyTests` take the template, because they read the seeded rows. The seven
-writing classes — `ArchiveWriterTransactionTests`, `CoarseFlushTests`, `FollowRestartTests`,
-`RealtimeEmptyArchiveTests`, `RealtimePollReadTests`, `RealtimeSubscriptionTests` and
-`StaleArchiveGuardTests` — take `CloneSource.Provisioned` and write their own rows into an empty
-`public.trends`. The grain differs with the holder: the `SeededArchive` class fixture gives one clone
-to a whole class, while `ClonedArchiveTest` gives one per test method, since xunit constructs a test
-class once per test method.
+The container provisions `semiplot_provisioned`; the seeded template `semiplot_bench` is a clone of
+it filled once per run, and every test database is a `CREATE DATABASE ... TEMPLATE` clone of one of
+the two. `CloneSource` names which: a class that reads the seeded rows takes the template, a class
+that writes its own rows takes the provisioned source. `SeededArchive` gives one clone to a class,
+`ClonedArchiveTest` one per test method. `docs/architecture/bench.md` holds the full statement.
 
 ## Code Style
 
@@ -200,6 +148,8 @@ No abbreviations in names.
 
 - Nullable reference types enabled. Avoid nulls in public APIs.
 - Use `?.` and `??`. Do not suppress warnings with `!` without a verified reason.
+- No ceremonial `ArgumentNullException.ThrowIfNull` on APIs only this repository calls; the nullable
+  annotations are the contract. Guard only inputs that cross a process or file boundary.
 
 ### Dependency Injection
 
@@ -229,8 +179,14 @@ No abbreviations in names.
 
 ### Comments
 
-- Only for genuinely non-obvious business logic. No process notes (`// TODO`, `// in new version`).
-- English only.
+- Only for genuinely non-obvious business logic, one or two lines. English only.
+- Never restate what a `docs/architecture/*` document, a test, or a neighbouring member already says;
+  where a document holds the reasoning, leave a bare `docs/architecture/<file>.md#<anchor>` pointer.
+- No process notes (`// TODO`, `// in new version`), no test names in production code, no changelog
+  phrases ("the fix", "was moved", commit hashes), no CAPS for stress, no narration of alternatives
+  rejected. Rationale for a value goes in the commit message.
+- Internal and private members get at most a one-line `<summary>`; multi-paragraph XML documentation
+  belongs to nothing in this repository.
 
 ### UI (Avalonia / ScottPlot)
 
@@ -255,16 +211,12 @@ No abbreviations in names.
   `docs/architecture/charting.md` states.
 - The bench seeder `SemiPlot.Tools.ArchiveSeeder` owns `SyntheticValueWalk`, `SyntheticPenCatalog`
   and `SyntheticPen`. `RawLayerGeneratorTests` pins the generator by determinism and invariants —
-  the absolute lattice, the break holes, the row-pair shape — not by a digest, so the waveform may
-  change and the shape may not. **One lattice serves both generators.** A change sits at
-  `index * intervalTicks` from absolute tick zero and both `RawLayerGenerator` (run by run between
-  the breaks) and `LiveTailGenerator` (span by span) emit through `RawLayerGenerator.AppendWindow`.
-  Do not split them again: two lattices is what produced the primary-key collision in `f91889d` and
-  the seam hole in `caa935f`, and `SemiPlot.Tests.Data/SharedLatticeTests.cs` is the test that goes
-  red if they are. `docs/architecture/bench.md` states what the shape guarantees.
-  `public.trends`, `semiplot_tags`, the two roles and their grants are SemiBase's and are never
-  defined in this repository — the seeder fills the archive table and creates only the day
-  partitions its rows land in.
+  the absolute lattice, the break holes, the row-pair shape — not by a digest. **One lattice serves
+  both generators**: a change sits at `index * intervalTicks` from absolute tick zero, and
+  `RawLayerGenerator` and `LiveTailGenerator` both emit through `RawLayerGenerator.AppendWindow`.
+  `SemiPlot.Tests.Data/SharedLatticeTests.cs` goes red if they are split. `public.trends`,
+  `semiplot_tags`, the two roles and their grants are SemiBase's; the seeder fills the archive table
+  and creates only the day partitions its rows land in (`docs/architecture/bench.md`).
 - The provider runs no cold-path reader: a failed read is mapped by `ArchiveExceptionMapper`, which
   stays synchronous, pure and unit-testable, and nothing opens a second connection to enrich the
   error. Each read supplies the one relation its statement touches, which the detail line names.

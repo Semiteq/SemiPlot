@@ -81,8 +81,7 @@ public sealed class PostgresExtentReadTests(
 	}
 
 	// The extent statement touches both relations and reports its own, so a dropped catalogue is reported
-	// as a missing trends. That name reaches a log line and nothing further, and both tables carry the same
-	// remedy. This is the only coverage of the extent read's 42P01 path.
+	// as a missing trends.
 	[Fact]
 	public async Task ADroppedCatalogueFailsNamingTheStatementsOwnRelation()
 	{

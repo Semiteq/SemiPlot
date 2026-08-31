@@ -13,9 +13,6 @@ using Xunit;
 
 namespace SemiPlot.Tests.Data.Integration;
 
-// Both tests append rows, so neither may take SeededArchive, whose contract is that the class leaves the
-// database as it found it.
-//
 // Nothing here waits on a timeout. Every synchronisation point is an awaited emission: the Connected signal
 // the subscription's first successful tick reports, or a batch that has been delivered. A subscription can
 // never emit a row that already existed when it subscribed, so a test appending before the baseline has run
@@ -50,8 +47,6 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 		await Writer().WriteAsync(SeededRows(), _day, _nextDay);
 	}
 
-	// TrendCoordinator publishes the batches through RefCount, which disposes the upstream when the last
-	// subscriber goes, so a loop surviving its own disposal would keep querying for the rest of the process.
 	// The second subscription is what proves the elapsed time: its own delivery cannot happen before a poll
 	// interval has passed since the first was dropped.
 	[Fact]
@@ -213,19 +208,9 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 		return rows;
 	}
 
-	// One collector for the whole test, taken before the first subscription. ConnectionFaults is provider-
-	// wide and ArchiveConnectionState carries no discriminator, so which subscription a Connected belongs
-	// to is inferred rather than read: the subscriptions here are started one at a time, and a subscription
-	// reports Connected exactly once — on its own first successful tick — unless a fault is raised and
-	// later cleared. The nth Connected is therefore the nth subscription's armed point, and NoFaultWasSeen
-	// is what makes that an asserted precondition instead of an assumption. A per-subscription gate
-	// completed by the first Connected it happened to see could be completed by another subscription's
-	// recovery instead, arming a test before the subscription it is about has read its baseline.
-	//
-	// The waiters are completed from the poll's own thread, inside the connection stream's notification.
-	// They run their continuations asynchronously because an inline one would resume the test body on that
-	// thread and block the very loop the next await is waiting on (CLAUDE.md, "An xunit v3 test project is
-	// an executable").
+	// The nth Connected is the nth subscription's armed point, and NoFaultWasSeen is what makes that an
+	// asserted precondition instead of an assumption. The waiters run their continuations asynchronously
+	// (CLAUDE.md, "An xunit v3 test project is an executable").
 	private sealed class ArmedGate : IDisposable
 	{
 		private readonly List<ArchiveConnectionState> _states = [];

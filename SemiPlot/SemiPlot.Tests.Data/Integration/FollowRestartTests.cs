@@ -7,16 +7,8 @@ using Xunit;
 namespace SemiPlot.Tests.Data.Integration;
 
 // The operator's own sequence: a demo writer runs, is stopped, and a second one starts against the
-// archive the first left. Only a database can answer this — the failure it reproduces is the primary key
-// refusing a second copy of a row, and ArchiveWriter appends by binary COPY, which has no conflict
-// handling — so both cases are gated, and both write, so the class takes a clone of its own rather than
-// the shared seeded archive.
-//
-// The change interval is half a second, the demo's own. Every row a follow run writes is a pure function
-// of absolute time, so whichever row a stopped run left newest — a change row or the anchor one poll
-// interval ahead of one — sits on a point the lattice produces again, and the restart is a collision
-// rather than a near miss. The first case asserts that precondition instead of restating which of the two
-// kinds the edge happens to be.
+// archive the first left. Gated because the failure is a 23505 under ArchiveWriter's binary COPY, and
+// both cases write, so the class takes a clone of its own rather than the shared seeded archive.
 [Collection(ArchiveDatabaseCollection.Name)]
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
@@ -55,9 +47,7 @@ public sealed class FollowRestartTests(PostgresContainerFixture postgresContaine
 			TestContext.Current.CancellationToken);
 	}
 
-	// The regression. A window closed at the edge regenerates the row sitting there and the COPY fails with
-	// 23505 on the first tick, which from a run configuration looks like the writer vanishing rather than
-	// reporting anything. The precondition: the lattice a second run walks does produce the edge row again.
+	// The precondition: the lattice a second run walks does produce the edge row again.
 	[Fact]
 	public async Task ARestartOnALatticeAlignedEdgeAppendsWithoutADuplicateKey()
 	{
@@ -82,9 +72,8 @@ public sealed class FollowRestartTests(PostgresContainerFixture postgresContaine
 			await CountRawRowsAsync(cancellationToken));
 	}
 
-	// The other half of the fix: resuming past the edge must not open a hole at the seam. The next lattice
-	// point is inside one change interval of the edge, and every pen crosses the restart with no gap a raw
-	// window would draw.
+	// The next lattice point is inside one change interval of the edge, and every pen crosses the restart
+	// with no gap a raw window would draw.
 	[Fact]
 	public async Task TheFirstRowAfterTheRestartIsWithinOneChangeIntervalOfTheEdge()
 	{

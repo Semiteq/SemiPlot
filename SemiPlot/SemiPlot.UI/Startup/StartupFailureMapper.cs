@@ -9,21 +9,16 @@ namespace SemiPlot.UI.Startup;
 /// lays the three parts out as three blocks, and through <see cref="Describe"/> in the main window's
 /// status row, which has one line. It is the only place a remedy is written: no consumer renders
 /// <see cref="IError.Message"/> directly.
-/// <para>
-/// <c>StartupFailureMapperTests</c> enumerates <see cref="ArchiveFault"/> and
-/// <see cref="ConnectionFileProblem"/> and fails when a member maps to <see cref="GenericTitle"/>.
-/// </para>
 /// </summary>
 public static class StartupFailureMapper
 {
 	/// <summary>
-	/// The title of the catch-all arm. The coverage test asserts no known error produces it.
+	/// The title of the catch-all arm.
 	/// </summary>
 	public const string GenericTitle = "Startup failed";
 
 	/// <summary>
-	/// One error as a single line: what happened, then what to do about it. The title is dropped rather
-	/// than joined — it restates the detail's first clause.
+	/// One error as a single line: what happened, then what to do about it.
 	/// </summary>
 	public static string Describe(IError error)
 	{
@@ -34,8 +29,6 @@ public static class StartupFailureMapper
 
 	public static StartupFailureView Map(IError error)
 	{
-		ArgumentNullException.ThrowIfNull(error);
-
 		return error switch
 		{
 			ConnectionFileError file => MapConnectionFile(file),
@@ -88,8 +81,8 @@ public static class StartupFailureMapper
 				"Check that the PostgreSQL server is running and that the host and port in the connection "
 				+ "file are reachable from this machine — route, firewall and the server's listen address."),
 
-			// The detail stops at what the answer proves: 28P01 and 28000 are raised while authenticating,
-			// before PostgreSQL looks at the database name, so the archive was never confirmed to exist.
+			// 28P01 and 28000 are raised before PostgreSQL looks at the database name, so the archive was
+			// never confirmed to exist.
 			ArchiveFault.AccessDenied => new StartupFailureView(
 				"The archive refused the credentials",
 				$"The server at {address} answered, but refused user '{error.Detail}' on '{error.Database}'.",
@@ -120,7 +113,6 @@ public static class StartupFailureMapper
 				"Check that the PostgreSQL server is still running and still reachable from this machine. "
 				+ "SemiPlot keeps polling and clears this by itself once the archive answers again."),
 
-			// Nothing here holds the table's expected shape, so the detail quotes the server.
 			ArchiveFault.ShapeUnexpected => new StartupFailureView(
 				"The archive has an unexpected shape",
 				$"The archive {archive} holds the tables SemiPlot reads, but not the columns they are expected "
@@ -168,9 +160,6 @@ public static class StartupFailureMapper
 			+ "overloaded and whether the archive is indexed on its time column.");
 	}
 
-	// A startup step that throws instead of failing — building the data source, or a read cancelled under
-	// the provider — carries its exception here, and naming the type is what turns a silent exit into
-	// something an operator can report.
 	private static StartupFailureView MapThrown(IExceptionalError error)
 	{
 		return new StartupFailureView(

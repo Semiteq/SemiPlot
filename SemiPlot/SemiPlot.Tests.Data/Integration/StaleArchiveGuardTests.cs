@@ -4,10 +4,6 @@ using Xunit;
 
 namespace SemiPlot.Tests.Data.Integration;
 
-// The guard reads max(t) from a server, so every case is gated. Three of them write, and the class's
-// contract is that no database it touched survives it, so each test method gets its own clone — xunit
-// constructs the class once per method, which is what makes that per-method rather than per-class.
-//
 // The instants are relative to the machine's own clock rather than to a fixed calendar date, because
 // the bound the guard applies is against that clock.
 [Collection(ArchiveDatabaseCollection.Name)]
@@ -36,9 +32,7 @@ public sealed class StaleArchiveGuardTests(PostgresContainerFixture postgresCont
 		Assert.Contains("scripts/bench-demo.ps1", refused.Message, StringComparison.Ordinal);
 	}
 
-	// Nothing has been written, so there is no fill for an append to stand apart from and nothing a hole
-	// could be torn in. A refusal here would make a freshly provisioned database unusable, and there is
-	// no edge to report: the caller reads the absent timestamp as "start at the clock".
+	// The caller reads the absent timestamp as "start at the clock".
 	[Fact]
 	public async Task AnEmptyArchiveIsAcceptedAndReportsNoNewestRow()
 	{
@@ -49,10 +43,7 @@ public sealed class StaleArchiveGuardTests(PostgresContainerFixture postgresCont
 		Assert.Null(outcome);
 	}
 
-	// Program.FollowAsync starts its loop at the timestamp reported here, so the fill's own edge is what
-	// the first tick continues. The archive holds two rows one span apart, because the newest of them is
-	// what the guard owes the caller — an answer of "some row" would still leave a hole behind the first
-	// tick.
+	// The archive holds two rows one span apart, because the newest of them is what the guard owes the caller.
 	[Fact]
 	public async Task AnArchiveWithRowsReportsItsNewestRow()
 	{
@@ -67,10 +58,8 @@ public sealed class StaleArchiveGuardTests(PostgresContainerFixture postgresCont
 		Assert.Equal(newest, outcome);
 	}
 
-	// The live case, which is what the bound exists to keep. A writer ticking every second leaves max(t)
-	// a second or two behind the clock, and a guard that refused that would refuse every restart of the
-	// stand. The instant is stated rather than derived from MaximumAge, so it stays a live archive
-	// whatever the bound is set to.
+	// The instant is stated rather than derived from MaximumAge, so it stays a live archive whatever the
+	// bound is set to.
 	[Fact]
 	public async Task AnArchiveAWriterIsKeepingLiveIsAccepted()
 	{

@@ -4,9 +4,7 @@ using NpgsqlTypes;
 
 namespace SemiPlot.Tools.ArchiveSeeder;
 
-// Connects as scada_writer and fills the archive table that provisioning already created, the way
-// Simple-Scada 2 fills its own on a site. That keeps SemiBase's default-privileges chain on a path
-// exercised by every seeded run instead of leaving it to commissioning day.
+// Connects as scada_writer and fills the archive table that provisioning already created.
 public sealed class ArchiveWriter(string connectionString)
 {
 	// The archive table is provisioning's, not this seeder's, so its presence is a precondition of a
@@ -53,9 +51,6 @@ public sealed class ArchiveWriter(string connectionString)
 				+ "`semibase bench` against this database before seeding it.");
 		}
 
-		// A seeding run fills an empty archive in one go, so a half-filled one read as a whole one is the
-		// failure this refusal prevents. An appending run has the opposite contract: it adds to an archive
-		// somebody else already filled.
 		if (!allowExistingRows && await ScalarIsTrueAsync(connection, ArchiveIsSeededCommand, cancellationToken))
 		{
 			throw new SeederException(
@@ -63,9 +58,7 @@ public sealed class ArchiveWriter(string connectionString)
 				+ "and never adds to one.");
 		}
 
-		// One transaction over the partitions and the COPY. A COPY that fails part-way would otherwise
-		// leave the day partitions behind, and every later run would be refused by the seeded check with
-		// no recovery but dropping them by hand.
+		// One transaction: a half-done COPY must not leave day partitions the seeded check then refuses on.
 		await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
 		foreach (var statement in statements)

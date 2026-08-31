@@ -14,9 +14,6 @@ public sealed class PenScaleModel
 		DateTime windowStart,
 		DateTime windowEnd)
 	{
-		ArgumentNullException.ThrowIfNull(settings);
-		ArgumentNullException.ThrowIfNull(envelopes);
-
 		var axisOrder = new List<string>();
 		var axisGroups = new Dictionary<string, List<PenScaleSettings>>();
 

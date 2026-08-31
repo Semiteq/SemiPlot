@@ -22,24 +22,17 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 	private MinimapViewModel? _minimapViewModel;
 	private TrendToolbarViewModel? _toolbarViewModel;
 
-	// Notified only when ChartViewModel is assigned. TrendChartViewModel.Pens is a live view, so adding or
-	// removing a pen after assignment leaves this stale — whoever makes the pen set dynamic owns that chain.
+	// Not re-notified when pens change after assignment.
 	public int PenCount => ChartViewModel?.Pens.Count ?? 0;
 
 	/// <summary>
-	/// A chart that was built and holds no pen. The archive answered and provisioning is unfinished, which
-	/// is a success rather than an error window — so it needs a state the operator can read, otherwise an
-	/// empty catalogue and a broken chart look the same from the outside. False before a chart exists,
-	/// where nothing is drawn yet and there is nothing to explain.
+	/// Chart built, no pens: unfinished provisioning shown as a state, not an error.
 	/// </summary>
 	public bool IsCatalogueEmpty => ChartViewModel is not null && PenCount == 0;
 
 	/// <summary>
-	/// What the live-edge poll reports about its own connection: null while the archive answers, and while
-	/// it does not, what <see cref="StartupFailureMapper.Describe"/> makes of the fault — the state plus
-	/// the remedy, rather than the raw <see cref="FluentResults.IError.Message"/>, which names a state the
-	/// operator can do nothing with. Its only writer is the stream <see cref="ObserveArchiveConnection"/>
-	/// binds.
+	/// What the live-edge poll reports about its own connection: null while the archive answers. Its only
+	/// writer is the stream <see cref="ObserveArchiveConnection"/> binds.
 	/// </summary>
 	public string? ArchiveConnectionMessage => _archiveConnectionMessage?.Value;
 
@@ -51,8 +44,6 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 	/// </summary>
 	public void ObserveArchiveConnection(IObservable<ArchiveConnectionState> connectionStates)
 	{
-		ArgumentNullException.ThrowIfNull(connectionStates);
-
 		if (_archiveConnectionMessage is not null)
 		{
 			throw new InvalidOperationException(

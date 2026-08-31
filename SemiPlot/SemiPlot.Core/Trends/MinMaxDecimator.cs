@@ -10,9 +10,6 @@ public static class MinMaxDecimator
 		IReadOnlyList<double?> values,
 		int targetColumnCount)
 	{
-		ArgumentNullException.ThrowIfNull(timestamps);
-		ArgumentNullException.ThrowIfNull(values);
-
 		if (timestamps.Count != values.Count)
 		{
 			throw new ArgumentException(
@@ -40,19 +37,14 @@ public static class MinMaxDecimator
 		return builder.Build();
 	}
 
-	// The builder's lists become the envelope's columns and are held for the life of the pen's chart state,
-	// so seeding them from the sample count would retain a pre-decimation-sized array behind a few thousand
-	// useful entries.
+	// Cap the seed at 2 x target + 4: the lists live as long as the pen.
 	private static int SeedCapacityFor(int sampleCount, int targetColumnCount)
 	{
 		return (int)Math.Min(sampleCount, ((long)targetColumnCount * 2) + 4);
 	}
 
-	// One null becomes one gap column here, so a run of adjacent nulls becomes a run of adjacent NaN
-	// columns; the decimated branch below collapses each run into a single anchor instead. The two
-	// branches therefore differ for a caller that can hand over two nulls in a row. No measured input
-	// does, and a second NaN column beside the first draws the same break, so the difference is recorded
-	// rather than removed.
+	// Adjacent nulls become adjacent NaN columns here, one anchor in the decimated branch; both draw the
+	// same break.
 	private static void AppendPassThrough(
 		EnvelopeBuilder builder,
 		IReadOnlyList<DateTime> timestamps,
@@ -90,7 +82,7 @@ public static class MinMaxDecimator
 
 		// A null run at the window edges leaves no column there, so the chart would bridge the empty edge
 		// span with a straight line to the live-edge/next point. Anchoring a NaN gap at the window edge
-		// forces the line to segment instead (the right-side straight-line collapse fix).
+		// forces the line to segment instead.
 		if (segments[0].Start > 0)
 		{
 			builder.AppendGap(timestamps[0]);

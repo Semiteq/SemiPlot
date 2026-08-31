@@ -31,9 +31,6 @@ public sealed class ChartAxisRegion
 
 	public static ChartAxisRegion? TryCreate(Plot plot, IYAxis axis)
 	{
-		ArgumentNullException.ThrowIfNull(plot);
-		ArgumentNullException.ThrowIfNull(axis);
-
 		var layout = plot.RenderManager.LastRender.Layout;
 		var dataRect = layout.DataRect;
 
@@ -79,11 +76,9 @@ public sealed class ChartAxisRegion
 		return pixelY < (_dataTop + _dataBottom) / 2f;
 	}
 
-	// Top pixel is the maximum, bottom pixel the minimum, so the fraction is inverted before interpolation.
 	public double ValueAt(float pixelY)
 	{
 		var height = _dataBottom - _dataTop;
-		// Zero-height data area (no real render layout): no valid mapping, fall back to the axis maximum.
 		if (height <= 0f)
 		{
 			return _axisMax;

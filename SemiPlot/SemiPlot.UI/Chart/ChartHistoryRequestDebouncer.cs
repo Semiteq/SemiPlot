@@ -25,12 +25,6 @@ public sealed class ChartHistoryRequestDebouncer : IDisposable
 		IScheduler dataScheduler,
 		IScheduler uiScheduler)
 	{
-		ArgumentNullException.ThrowIfNull(queryAsync);
-		ArgumentNullException.ThrowIfNull(applyHistory);
-		ArgumentNullException.ThrowIfNull(reportQueryFailure);
-		ArgumentNullException.ThrowIfNull(dataScheduler);
-		ArgumentNullException.ThrowIfNull(uiScheduler);
-
 		_subscription = _requests
 			.Throttle(debounceWindow, dataScheduler)
 			.Select(request => Observable
@@ -69,7 +63,6 @@ public sealed class ChartHistoryRequestDebouncer : IDisposable
 
 	public void Request(HistoryRequest request)
 	{
-		ArgumentNullException.ThrowIfNull(request);
 		ObjectDisposedException.ThrowIf(_isDisposed, this);
 
 		_requests.OnNext(request);

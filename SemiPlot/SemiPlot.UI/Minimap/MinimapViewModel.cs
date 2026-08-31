@@ -14,7 +14,6 @@ using SemiPlot.UI.Chart;
 
 namespace SemiPlot.UI.Minimap;
 
-// Queries the extent through the coordinator pass-through, never holding the IDataProvider directly.
 public sealed class MinimapViewModel : ReactiveObject, IDisposable
 {
 	private readonly TrendCoordinator _coordinator;
@@ -33,11 +32,6 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 		IScheduler uiScheduler,
 		ILogger<MinimapViewModel> logger)
 	{
-		ArgumentNullException.ThrowIfNull(coordinator);
-		ArgumentNullException.ThrowIfNull(navigation);
-		ArgumentNullException.ThrowIfNull(uiScheduler);
-		ArgumentNullException.ThrowIfNull(logger);
-
 		_coordinator = coordinator;
 		_navigation = navigation;
 		_uiScheduler = uiScheduler;

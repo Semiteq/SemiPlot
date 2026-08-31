@@ -23,16 +23,19 @@ public sealed class TrendToolbarViewModel : ReactiveObject, IDisposable
 
 	public TrendToolbarViewModel(TrendChartViewModel chartViewModel)
 	{
-		ArgumentNullException.ThrowIfNull(chartViewModel);
 		_chartViewModel = chartViewModel;
 		_isSticky = chartViewModel.Navigation.IsSticky;
 		_activeLayer = chartViewModel.Navigation.ActiveLayer;
 
-		_disposables.Add(AutoscaleActiveAxisCommand = ReactiveCommand.Create(AutoscaleActiveAxis));
-		_disposables.Add(SetActiveAxisLimitsCommand = ReactiveCommand.Create(SetActiveAxisLimits));
-		_disposables.Add(JumpToNowCommand = ReactiveCommand.Create(JumpToNow));
-		_disposables.Add(ToggleStickyCommand = ReactiveCommand.Create(ToggleSticky));
-		_disposables.Add(ToggleDeltaModeCommand = ReactiveCommand.Create(ToggleDeltaMode));
+		_disposables.Add(AutoscaleActiveAxisCommand = ReactiveCommand.Create(
+			() => { _chartViewModel.AutoscaleAxis(_chartViewModel.ActivePenId); }));
+		_disposables.Add(SetActiveAxisLimitsCommand = ReactiveCommand.Create(
+			() => { _chartViewModel.SetAxisLimits(_chartViewModel.ActivePenId, _manualMin, _manualMax); }));
+		_disposables.Add(JumpToNowCommand = ReactiveCommand.Create(_chartViewModel.Navigation.JumpToNow));
+		_disposables.Add(ToggleStickyCommand = ReactiveCommand.Create(
+			() => _chartViewModel.Navigation.SetSticky(!_chartViewModel.Navigation.IsSticky)));
+		_disposables.Add(ToggleDeltaModeCommand = ReactiveCommand.Create(
+			() => _chartViewModel.SetDeltaModeEnabled(!_chartViewModel.IsDeltaModeEnabled)));
 
 		_chartViewModel.Navigation.WindowChanged += OnNavigationWindowChanged;
 		_disposables.Add(Disposable.Create(() =>

@@ -21,9 +21,7 @@ public sealed class TrendCoordinator : IDisposable
 
 	private IDisposable? _realtimeSubscription;
 
-	// The provider's stream is hot and never terminates, so the coordinator holds its own subscription to it
-	// rather than letting each consumer reach the provider directly: disposal stops the forwarding, and a
-	// consumer of a disposed coordinator hears nothing further.
+	// Own subject so disposal stops forwarding to every consumer.
 	private readonly Subject<ArchiveConnectionState> _connectionFaults = new();
 
 	private readonly IDisposable _connectionSubscription;
@@ -37,11 +35,6 @@ public sealed class TrendCoordinator : IDisposable
 		IScheduler uiScheduler,
 		TimeSpan? batchWindow = null)
 	{
-		ArgumentNullException.ThrowIfNull(dataProvider);
-		ArgumentNullException.ThrowIfNull(pens);
-		ArgumentNullException.ThrowIfNull(dataScheduler);
-		ArgumentNullException.ThrowIfNull(uiScheduler);
-
 		_dataProvider = dataProvider;
 		_dataScheduler = dataScheduler;
 		_uiScheduler = uiScheduler;
@@ -88,7 +81,6 @@ public sealed class TrendCoordinator : IDisposable
 		AggregationLayer layer,
 		int targetColumnCount)
 	{
-		ArgumentNullException.ThrowIfNull(penIds);
 		ObjectDisposedException.ThrowIf(_isDisposed, this);
 
 		return _dataProvider.QueryHistoryAsync(penIds, fromUtc, toUtc, layer, targetColumnCount);
@@ -129,10 +121,7 @@ public sealed class TrendCoordinator : IDisposable
 		return new RealtimeBatch(timestamps, pens);
 	}
 
-	// A pen carries the samples it actually has and nothing else. The batch's shared timestamp list is the
-	// union of every pen's, so a column over it would need a filler at every timestamp this pen did not
-	// sample — and the only filler a double? column offers is a null, which the chart draws as a break the
-	// archive never recorded.
+	// A pen carries only the samples it has; a filler null would draw a break the archive never recorded.
 	private static PenRealtimeValues BuildPenValues(IGrouping<int, Sample> penSamples)
 	{
 		var ordered = penSamples.OrderBy(sample => sample.TimestampUtc).ToArray();

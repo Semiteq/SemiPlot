@@ -14,7 +14,6 @@ public sealed class ChartAxisBinder
 
 	public ChartAxisBinder(Plot plot)
 	{
-		ArgumentNullException.ThrowIfNull(plot);
 		_plot = plot;
 	}
 
@@ -22,8 +21,6 @@ public sealed class ChartAxisBinder
 
 	public IYAxis? FindAxis(string axisKey)
 	{
-		ArgumentNullException.ThrowIfNull(axisKey);
-
 		return _axesByKey.GetValueOrDefault(axisKey);
 	}
 
@@ -31,9 +28,6 @@ public sealed class ChartAxisBinder
 		IReadOnlyList<PenScale> scales,
 		IReadOnlyDictionary<int, TrendPenState> pensById)
 	{
-		ArgumentNullException.ThrowIfNull(scales);
-		ArgumentNullException.ThrowIfNull(pensById);
-
 		foreach (var scale in scales)
 		{
 			var axis = ResolveAxis(scale.AxisKey);
@@ -56,7 +50,6 @@ public sealed class ChartAxisBinder
 		return axis;
 	}
 
-	// The first axis reuses the plot's built-in left axis; subsequent axes alternate left/right.
 	private IYAxis CreateAxis()
 	{
 		if (_axesByKey.Count == 0)

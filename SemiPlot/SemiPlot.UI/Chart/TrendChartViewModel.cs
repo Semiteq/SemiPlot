@@ -57,11 +57,6 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		IScheduler uiScheduler,
 		ILogger<TrendChartViewModel> logger)
 	{
-		ArgumentNullException.ThrowIfNull(coordinator);
-		ArgumentNullException.ThrowIfNull(dataScheduler);
-		ArgumentNullException.ThrowIfNull(uiScheduler);
-		ArgumentNullException.ThrowIfNull(logger);
-
 		_coordinator = coordinator;
 		_logger = logger;
 		_axisBinder = new ChartAxisBinder(Plot);
@@ -71,7 +66,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_historyDebouncer = new ChartHistoryRequestDebouncer(
 			QueryHistoryAsync,
 			ApplyHistory,
-			LogHistoryQueryFailure,
+			failure => _logger.LogWarning(failure, "History query failed."),
 			_historyDebounceWindow,
 			dataScheduler,
 			uiScheduler);
@@ -209,14 +204,8 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		RequestHistory(Navigation.From, Navigation.To, Navigation.ActiveLayer);
 	}
 
-	private void LogHistoryQueryFailure(Exception queryFailure)
-	{
-		_logger.LogWarning(queryFailure, "History query failed.");
-	}
-
 	public TrendPenState AddPen(Pen pen)
 	{
-		ArgumentNullException.ThrowIfNull(pen);
 		ObjectDisposedException.ThrowIf(_isDisposed, this);
 
 		if (_pensById.TryGetValue(pen.PenId, out var existing))
@@ -378,8 +367,6 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	{
 		var color = new Color(pen.Color);
 
-		// The center-line buffer is shared with the Scatter: ScottPlot's Scatter holds a live reference to
-		// this list, so the pen state's mutations are seen by the renderer.
 		var centerPoints = new List<Coordinates>();
 		var centerLine = Plot.Add.Scatter(centerPoints, color);
 		centerLine.MarkerStyle = MarkerStyle.None;
@@ -392,16 +379,13 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		// each frame.
 		band.MarkerStyle = MarkerStyle.None;
 
-		// Shared-X invariant: every plottable is pinned to the single bottom (time) axis; per-pen axes
-		// are Y-only.
+		// Shared-X invariant: every plottable is pinned to the single bottom (time) axis.
 		centerLine.Axes.XAxis = Plot.Axes.Bottom;
 		band.Axes.XAxis = Plot.Axes.Bottom;
 
 		return new TrendPenState(pen, centerLine, band, centerPoints);
 	}
 
-	// A sticky live-edge advance (RequiresHistoryRequery == false) only re-fits the scale window: the
-	// realtime tail already carries the live edge, so a full window is NOT re-queried on every tick.
 	private void OnNavigationWindowChanged(object? sender, NavigationWindow window)
 	{
 		_windowStart = window.From;
@@ -455,9 +439,8 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_historyApplied.OnNext(Unit.Default);
 	}
 
-	// A requested pen the provider returned no envelope for has no data in this window, so its curve is
-	// cleared. Only the identifiers the request carried are considered: a pen added while the query was in
-	// flight was never asked about, and clearing it would drop a curve the result says nothing about.
+	// Only the identifiers the request carried are considered: a pen added while the query was in flight was
+	// never asked about, and clearing it would drop a curve the result says nothing about.
 	private void DropPensMissingFromHistory(IReadOnlyList<PenHistoryEnvelope> envelopes,
 		IReadOnlyList<int> requestedPenIds)
 	{

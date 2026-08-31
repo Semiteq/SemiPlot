@@ -10,8 +10,6 @@ public sealed class TrendLegendViewModel : ReactiveObject, IDisposable
 
 	public TrendLegendViewModel(TrendChartViewModel chartViewModel)
 	{
-		ArgumentNullException.ThrowIfNull(chartViewModel);
-
 		_rows = chartViewModel.Pens
 			.Select(pen => new TrendLegendRowViewModel(chartViewModel, pen))
 			.ToArray();

@@ -7,8 +7,7 @@ namespace SemiPlot.UI.Startup;
 
 /// <summary>
 /// Everything <see cref="StartupProbe"/> reads before Avalonia exists, carried across that boundary into
-/// <see cref="App.Run(StartupData)"/>. The probe owns the reads; <c>App.InitializeServices</c> consumes
-/// this record and awaits nothing, so no blocking read survives inside Avalonia's <c>AfterSetup</c>.
+/// <see cref="App.Run(StartupData)"/>.
 /// </summary>
 /// <remarks>
 /// <see cref="ServiceProvider"/> is the concrete container rather than <see cref="IServiceProvider"/>,

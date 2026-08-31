@@ -81,8 +81,7 @@ public static class StartupProbe
 		}
 	}
 
-	// WaitAsync abandons the wait, not the query: IDataProvider takes no CancellationToken, so the read
-	// keeps running until the provider's own backstop ends it, and startup proceeds without it.
+	// WaitAsync abandons the wait, not the query: the read runs on until the provider's own backstop ends it.
 	private static async Task<Result<TValue>> ReadBoundedAsync<TValue>(
 		Task<Result<TValue>> read,
 		TimeSpan bound,

@@ -47,12 +47,11 @@ public partial class TrendChartView : UserControl
 		DataContextChanged += OnDataContextChanged;
 
 		AxisBoundEditor.KeyDown += OnAxisBoundEditorKeyDown;
-		AxisBoundEditor.LostFocus += OnAxisBoundEditorLostFocus;
+		AxisBoundEditor.LostFocus += (_, _) => HideAxisBoundEditor();
 
 		PlotControl.UserInputProcessor.Disable();
 		// AvaPlot marks every wheel event handled in its class handler, which would keep
-		// OnPointerWheelChanged below from ever running. Disabling the input processor does not
-		// cover this: the flag is applied after it, unconditionally.
+		// OnPointerWheelChanged below from ever running.
 		PlotControl.HandleMouseWheelEvent = false;
 		PlotControl.Cursor = _handCursor;
 		PlotControl.PointerWheelChanged += OnPointerWheelChanged;
@@ -61,17 +60,10 @@ public partial class TrendChartView : UserControl
 		PlotControl.PointerReleased += OnPointerReleased;
 		PlotControl.PointerCaptureLost += OnPointerCaptureLost;
 		PlotControl.PointerExited += OnPointerExited;
-		PlotControl.SizeChanged += OnPlotSizeChanged;
+		PlotControl.SizeChanged += (_, _) => RepositionCursorOverlay();
 	}
 
-	private void OnPlotSizeChanged(object? sender, SizeChangedEventArgs eventArgs)
-	{
-		RepositionCursorOverlay();
-	}
-
-	// The canvas width is reported by the frame that carries it, not read back from Plot.LastRender, which
-	// describes the frame already on screen. The plot draws inside an Avalonia custom draw operation, so
-	// this runs on the render thread and the report is posted back to the UI thread against the view model
+	// This runs on the render thread, so the report is posted back to the UI thread against the view model
 	// the frame was drawn for, not whichever one is bound when the post is dispatched.
 	private void OnPlotRenderFinished(object? sender, RenderDetails renderDetails)
 	{
@@ -84,14 +76,6 @@ public partial class TrendChartView : UserControl
 		_lastRenderedDataAreaWidth = dataAreaWidth;
 		var renderedViewModel = _viewModel;
 		Dispatcher.UIThread.Post(() => renderedViewModel?.ReportDataAreaWidth(dataAreaWidth));
-	}
-
-	// ScottPlot exposes its render events as plain delegate properties rather than events, so the removal
-	// has to be written out to keep the empty-delegate contract instead of leaving null behind.
-	private void UnsubscribeRenderFinished(RenderManager renderManager)
-	{
-		renderManager.RenderFinished =
-			(renderManager.RenderFinished - OnPlotRenderFinished) ?? _noRenderFinishedHandler;
 	}
 
 	private void OnDataContextChanged(object? sender, EventArgs eventArgs)
@@ -109,9 +93,15 @@ public partial class TrendChartView : UserControl
 		_lastRenderedDataAreaWidth = float.NaN;
 		var renderManager = _viewModel.Plot.RenderManager;
 		renderManager.RenderFinished += OnPlotRenderFinished;
-		_disposables.Add(Disposable.Create(() => UnsubscribeRenderFinished(renderManager)));
 
-		ApplyLocalTimeTicks(_viewModel.Plot);
+		// RenderFinished is a plain delegate property, so the removal keeps the empty-delegate contract
+		// instead of leaving null behind.
+		_disposables.Add(Disposable.Create(() => renderManager.RenderFinished =
+			(renderManager.RenderFinished - OnPlotRenderFinished) ?? _noRenderFinishedHandler));
+
+		// Assigned in place rather than via Plot.Axes.DateTimeTicksBottom(), which would replace the shared
+		// bottom-X axis instance the plottables are pinned to.
+		_viewModel.Plot.Axes.Bottom.TickGenerator = new DateTimeAutomatic();
 		CreateDeltaCursorLines(_viewModel.Plot);
 		ApplyWindow(_viewModel.Navigation.From, _viewModel.Navigation.To);
 
@@ -121,7 +111,11 @@ public partial class TrendChartView : UserControl
 
 		_disposables.Add(_viewModel
 			.WhenAnyValue(viewModel => viewModel.IsDeltaModeEnabled)
-			.Subscribe(_ => OnDeltaModeChanged()));
+			.Subscribe(_ =>
+			{
+				UpdateDeltaCursorLines();
+				RepositionCursorOverlay();
+			}));
 
 		_disposables.Add(_viewModel.RedrawRequested
 			.Subscribe(_ =>
@@ -131,14 +125,7 @@ public partial class TrendChartView : UserControl
 			}));
 	}
 
-	private void OnDeltaModeChanged()
-	{
-		UpdateDeltaCursorLines();
-		RepositionCursorOverlay();
-	}
-
-	// X-limit-only update; repaint is routed through the throttled RedrawRequested seam to avoid a second
-	// un-throttled re-render per pan/zoom step.
+	// X-limit-only; repaint goes through RedrawRequested.
 	private void OnNavigationWindowChanged(object? sender, NavigationWindow window)
 	{
 		ApplyWindow(window.From, window.To);
@@ -149,9 +136,6 @@ public partial class TrendChartView : UserControl
 		PlotControl.Plot.Axes.SetLimitsX(LocalTimeAxis.ToAxis(from), LocalTimeAxis.ToAxis(to));
 	}
 
-	// The plot control carries HandleMouseWheelEvent = false, so this handler is the only thing marking a
-	// wheel event handled. This early return therefore lets the event bubble to an ancestor — inert while
-	// nothing above the chart scrolls, and the place to look if the chart is ever put in a ScrollViewer.
 	private void OnPointerWheelChanged(object? sender, PointerWheelEventArgs eventArgs)
 	{
 		if (_viewModel is null)
@@ -224,12 +208,8 @@ public partial class TrendChartView : UserControl
 	private void BeginAxisBoundEdit(ChartAxisRegion region, Point position)
 	{
 		_axisEditEditsMax = region.IsUpperHalf((float)position.Y);
-		ShowAxisBoundEditor(position, region.ValueAt((float)position.Y));
-	}
 
-	private void ShowAxisBoundEditor(Point position, double seedValue)
-	{
-		AxisBoundEditor.Text = seedValue.ToString("0.###");
+		AxisBoundEditor.Text = region.ValueAt((float)position.Y).ToString("0.###");
 		AxisBoundEditor.Margin = new Thickness(position.X, position.Y, 0.0, 0.0);
 		AxisBoundEditor.IsVisible = true;
 		AxisBoundEditor.Focus();
@@ -256,11 +236,6 @@ public partial class TrendChartView : UserControl
 			HideAxisBoundEditor();
 			eventArgs.Handled = true;
 		}
-	}
-
-	private void OnAxisBoundEditorLostFocus(object? sender, RoutedEventArgs eventArgs)
-	{
-		HideAxisBoundEditor();
 	}
 
 	private void CommitAxisBoundEditor()
@@ -309,7 +284,8 @@ public partial class TrendChartView : UserControl
 			return;
 		}
 
-		MoveCursorTo(AnchorAt(current));
+		_viewModel.MoveCursor(AnchorAt(current));
+		RepositionCursorOverlay();
 	}
 
 	private void OnPointerReleased(object? sender, PointerReleasedEventArgs eventArgs)
@@ -348,13 +324,6 @@ public partial class TrendChartView : UserControl
 		HideCursorOverlay();
 	}
 
-	// The tick generator is assigned in place rather than via Plot.Axes.DateTimeTicksBottom() (which
-	// replaces the axis) so the shared bottom-X axis instance the plottables are pinned to is preserved.
-	private static void ApplyLocalTimeTicks(Plot plot)
-	{
-		plot.Axes.Bottom.TickGenerator = new DateTimeAutomatic();
-	}
-
 	private void CreateDeltaCursorLines(Plot plot)
 	{
 		_deltaFirstLine = plot.Add.VerticalLine(0.0);
@@ -388,12 +357,6 @@ public partial class TrendChartView : UserControl
 		}
 
 		line.IsVisible = false;
-	}
-
-	private void MoveCursorTo(DateTime cursorTime)
-	{
-		_viewModel?.MoveCursor(cursorTime);
-		RepositionCursorOverlay();
 	}
 
 	private void RepositionCursorOverlay()

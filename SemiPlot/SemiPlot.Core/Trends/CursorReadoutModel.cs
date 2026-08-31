@@ -6,8 +6,6 @@ public sealed class CursorReadoutModel
 		DateTime cursorTime,
 		IReadOnlyCollection<PenHistoryEnvelope> envelopes)
 	{
-		ArgumentNullException.ThrowIfNull(envelopes);
-
 		var readouts = new Dictionary<int, double?>(envelopes.Count);
 
 		foreach (var envelope in envelopes)

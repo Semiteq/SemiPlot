@@ -11,7 +11,7 @@
              x:DataType="chart:TrendChartViewModel">
 
     <Panel>
-        <scottplot:AvaPlot Name="Plot" />
+        <scottplot:AvaPlot Name="PlotControl" />
         <Canvas Name="CursorOverlay" IsHitTestVisible="False">
             <Line Name="CrosshairLine"
                   IsVisible="False"

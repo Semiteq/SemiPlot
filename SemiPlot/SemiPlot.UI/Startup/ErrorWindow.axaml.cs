@@ -1,6 +1,5 @@
 ﻿using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.Markup.Xaml;
 
 namespace SemiPlot.UI.Startup;
 
@@ -21,11 +20,6 @@ public partial class ErrorWindow : Window
 		ArgumentNullException.ThrowIfNull(failure);
 
 		DataContext = failure;
-	}
-
-	private void InitializeComponent()
-	{
-		AvaloniaXamlLoader.Load(this);
 	}
 
 	private void OnCloseClick(object? sender, RoutedEventArgs e)

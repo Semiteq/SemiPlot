@@ -115,7 +115,7 @@ An argument the table does not name is ignored, and so is a valued argument give
 after it; the default stands in both cases. An unrecognised logging level reads as `warning` and says
 so on the standard error stream — parsing runs before the logger exists, so it has no other route. A log
 directory that cannot be created disables file logging and leaves the console sink, rather than
-failing the start.
+failing the start; that is the file sink's own fallback.
 
 The process exits `0` when the main window opened and closed normally, and `1` when the start failed —
 the error window and the fatal catch alike — so a launcher can tell one from the other.

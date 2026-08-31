@@ -15,8 +15,8 @@ public static class MinimapGeometry
 			return (0.0, 1.0);
 		}
 
-		var start = Clamp01((windowFrom - extentFirst).TotalSeconds / span);
-		var end = Clamp01((windowTo - extentFirst).TotalSeconds / span);
+		var start = Math.Clamp((windowFrom - extentFirst).TotalSeconds / span, 0.0, 1.0);
+		var end = Math.Clamp((windowTo - extentFirst).TotalSeconds / span, 0.0, 1.0);
 
 		return (start, end - start);
 	}
@@ -25,21 +25,6 @@ public static class MinimapGeometry
 	{
 		var span = extentLast - extentFirst;
 
-		return extentFirst + (span * Clamp01(fraction));
-	}
-
-	private static double Clamp01(double value)
-	{
-		if (value < 0.0)
-		{
-			return 0.0;
-		}
-
-		if (value > 1.0)
-		{
-			return 1.0;
-		}
-
-		return value;
+		return extentFirst + (span * Math.Clamp(fraction, 0.0, 1.0));
 	}
 }

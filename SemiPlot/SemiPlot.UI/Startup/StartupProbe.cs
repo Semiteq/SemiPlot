@@ -135,23 +135,8 @@ public static class StartupProbe
 		}
 		catch (TimeoutException)
 		{
-			ObserveAbandoned(read);
-
 			return Result.Fail<TValue>(new StartupReadTimedOutError(description, bound));
 		}
-	}
-
-	// Hygiene, not a crash fix: the abandoned read outlives this method and the caller disposes the data
-	// source under it, so it can fault with nothing awaiting it. Nothing here sets
-	// ThrowUnobservedTaskExceptions, so such a fault is raised on TaskScheduler.UnobservedTaskException and
-	// swallowed. Touching Exception in a continuation marks it observed and keeps the finalizer path clear.
-	private static void ObserveAbandoned<TValue>(Task<Result<TValue>> read)
-	{
-		_ = read.ContinueWith(
-			static abandoned => _ = abandoned.Exception,
-			CancellationToken.None,
-			TaskContinuationOptions.OnlyOnFaulted,
-			TaskScheduler.Default);
 	}
 
 	private static async Task<Result<TValue>> FailAsync<TValue>(

@@ -108,22 +108,16 @@ public sealed class TrendCoordinator : IDisposable
 		return _dataProvider
 			.Subscribe(penIds)
 			.Buffer(_batchWindow, _dataScheduler)
-			.Where(window => window.Count > 0)
 			.Select(BuildRealtimeBatch)
-			.Where(batch => batch is not null)
-			.Select(batch => batch!)
+			.Where(batch => batch.Timestamps.Count > 0)
 			.ObserveOn(_uiScheduler)
 			.Publish()
 			.RefCount();
 	}
 
-	private static RealtimeBatch? BuildRealtimeBatch(IList<IReadOnlyList<Sample>> window)
+	private static RealtimeBatch BuildRealtimeBatch(IList<IReadOnlyList<Sample>> window)
 	{
 		var samples = window.SelectMany(batch => batch).ToArray();
-		if (samples.Length == 0)
-		{
-			return null;
-		}
 
 		var timestamps = samples.Select(sample => sample.TimestampUtc).Distinct().OrderBy(time => time).ToArray();
 

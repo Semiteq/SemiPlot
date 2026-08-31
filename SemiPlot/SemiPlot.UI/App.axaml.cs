@@ -6,6 +6,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 using ReactiveUI.Avalonia;
 
@@ -109,7 +110,7 @@ public class App : Application
 
 	// UseReactiveUI() has registered AvaloniaScheduler as RxApp.MainThreadScheduler by now, so the UI
 	// scheduler can only be captured here — after that ordering — and handed to the coordinator and the
-	// view-model factories. Everything this reads from the archive was read by StartupProbe before
+	// view models. Everything this reads from the archive was read by StartupProbe before
 	// Avalonia existed, so this awaits nothing and cannot throw an archive failure through AfterSetup.
 	// Internal so a test drives the real startup body rather than a look-alike rebuilt in the test.
 	internal static void InitializeServices(StartupData startupData)
@@ -125,9 +126,11 @@ public class App : Application
 			serviceProvider.GetRequiredService<IScheduler>(),
 			uiScheduler);
 
-		var chartFactory =
-			serviceProvider.GetRequiredService<Func<TrendCoordinator, IScheduler, TrendChartViewModel>>();
-		var chartViewModel = chartFactory(coordinator, uiScheduler);
+		var chartViewModel = new TrendChartViewModel(
+			coordinator,
+			serviceProvider.GetRequiredService<IScheduler>(),
+			uiScheduler,
+			serviceProvider.GetRequiredService<ILogger<TrendChartViewModel>>());
 
 		// Before the first history request and before the minimap exists: RequestInitialHistory queries
 		// whatever window is in force, and the minimap reads it back when its own extent arrives.
@@ -141,9 +144,11 @@ public class App : Application
 		var mainWindowViewModel = serviceProvider.GetRequiredService<MainWindowViewModel>();
 		mainWindowViewModel.ChartViewModel = chartViewModel;
 
-		var minimapFactory = serviceProvider
-			.GetRequiredService<Func<TrendCoordinator, ChartNavigationController, IScheduler, MinimapViewModel>>();
-		var minimapViewModel = minimapFactory(coordinator, chartViewModel.Navigation, uiScheduler);
+		var minimapViewModel = new MinimapViewModel(
+			coordinator,
+			chartViewModel.Navigation,
+			uiScheduler,
+			serviceProvider.GetRequiredService<ILogger<MinimapViewModel>>());
 		mainWindowViewModel.MinimapViewModel = minimapViewModel;
 
 		// Before Start, so the first poll tick's state reaches the banner rather than a stream nothing

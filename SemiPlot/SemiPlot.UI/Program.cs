@@ -86,40 +86,18 @@ public static class Program
 				.Enrich.FromLogContext()
 				.WriteTo.Console(outputTemplate: Template, formatProvider: invariant);
 
-		if (EnsureLogDirExists(logFilePath))
-		{
-			configuration = configuration.WriteTo.File(
-				path: logFilePath,
-				rollingInterval: RollingInterval.Infinite,
-				fileSizeLimitBytes: 5 * 1024 * 1024,
-				rollOnFileSizeLimit: true,
-				retainedFileCountLimit: 5,
-				shared: true,
-				outputTemplate: Template,
-				formatProvider: invariant);
-		}
+		// The file sink creates the directory itself and, when it cannot, falls back to a null sink rather
+		// than failing the start; the console sink stays either way.
+		configuration = configuration.WriteTo.File(
+			path: logFilePath,
+			rollingInterval: RollingInterval.Infinite,
+			fileSizeLimitBytes: 5 * 1024 * 1024,
+			rollOnFileSizeLimit: true,
+			retainedFileCountLimit: 5,
+			shared: true,
+			outputTemplate: Template,
+			formatProvider: invariant);
 
 		Log.Logger = configuration.CreateLogger();
-	}
-
-	private static bool EnsureLogDirExists(string filePath)
-	{
-		try
-		{
-			var directory = Path.GetDirectoryName(filePath);
-			if (directory is not null)
-			{
-				Directory.CreateDirectory(directory);
-			}
-
-			return true;
-		}
-		catch (Exception ex)
-		{
-			Console.Error.WriteLine(
-				$"Failed to create log directory for '{filePath}': {ex.Message}. File logging is disabled.");
-
-			return false;
-		}
 	}
 }

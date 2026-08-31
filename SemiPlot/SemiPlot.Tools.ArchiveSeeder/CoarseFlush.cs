@@ -55,8 +55,6 @@ public static class CoarseFlush
 		DateTime nowLocal,
 		CancellationToken cancellationToken = default)
 	{
-		ArgumentNullException.ThrowIfNull(options);
-
 		await using var connection = new NpgsqlConnection(options.ConnectionString);
 
 		await connection.OpenAsync(cancellationToken);

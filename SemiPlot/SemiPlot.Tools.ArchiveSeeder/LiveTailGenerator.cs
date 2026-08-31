@@ -6,8 +6,6 @@ public static class LiveTailGenerator
 	// One tick past each bound converts to the inclusive/exclusive walk AppendWindow takes.
 	public static IReadOnlyList<ArchiveRow> Generate(FollowOptions options, DateTime after, DateTime to)
 	{
-		ArgumentNullException.ThrowIfNull(options);
-
 		var rows = new List<ArchiveRow>();
 
 		if (to <= after)

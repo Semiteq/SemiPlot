@@ -11,11 +11,6 @@ namespace SemiPlot.UI;
 
 public static class Program
 {
-	//wtf no way bro
-	/// <summary>
-	/// Exit code of a start that never drew the main window, so a launcher or a service wrapper can tell
-	/// a failed start from an operator closing the application.
-	/// </summary>
 	public const int FailedExitCode = 1;
 
 	[STAThread]
@@ -81,8 +76,6 @@ public static class Program
 				.Enrich.FromLogContext()
 				.WriteTo.Console(outputTemplate: Template, formatProvider: invariant);
 
-		// The file sink creates the directory itself and, when it cannot, falls back to a null sink rather
-		// than failing the start; the console sink stays either way.
 		configuration = configuration.WriteTo.File(
 			path: logFilePath,
 			rollingInterval: RollingInterval.Infinite,

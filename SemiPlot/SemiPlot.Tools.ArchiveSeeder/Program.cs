@@ -1,88 +1,43 @@
-﻿using FluentResults;
+﻿using Npgsql;
 
 namespace SemiPlot.Tools.ArchiveSeeder;
 
 public static class Program
 {
-	public static async Task<int> Main(string[] arguments)
+	public static Task<int> Main(string[] arguments)
 	{
-		return FollowOptions.IsRequested(arguments)
-			? await RunFollowAsync(arguments)
-			: await RunSeedAsync(arguments);
+		return SeederCommand.RunAsync(arguments, options => ReportingAsync(() => SeedAsync(options)),
+			options => ReportingAsync(() => FollowAsync(options)));
 	}
 
-	// The try covers the parse and the in-memory generation and stops there. A value inside its own
-	// option's range can still be one the arithmetic downstream cannot hold — --days 1000000 underflows
-	// SeederOptions.Start before any check reads it — and the operator typed a command line either way,
-	// so that is a usage block rather than a stack trace. An ArgumentException out of the writer is not:
-	// the server answered, and printing the usage block would blame the options for it.
-	private static async Task<int> RunSeedAsync(string[] arguments)
+	// A refusal, a server answer or a malformed connection string is the operator's to fix and is printed as
+	// one line. Anything else is a fault in this tool and keeps its stack trace.
+	private static async Task<int> ReportingAsync(Func<Task<int>> run)
 	{
-		SeederOptions options;
-		ArchiveRow[] rows;
-
 		try
 		{
-			var parsed = SeederOptions.Parse(arguments);
-
-			if (parsed.IsFailed)
-			{
-				return ReportRejection(parsed, SeederOptions.Usage);
-			}
-
-			options = parsed.Value;
-
-			var rawRows = RawLayerGenerator.Generate(options);
-
-			rows = [.. rawRows, .. LayerThinner.ThinAll(rawRows)];
+			return await run();
 		}
-		catch (ArgumentException exception)
+		catch (Exception exception) when (exception is SeederException or NpgsqlException or ArgumentException
+											  or FormatException)
 		{
-			return ReportUsage(exception, SeederOptions.Usage);
-		}
-
-		return await SeedAsync(options, rows);
-	}
-
-	private static async Task<int> RunFollowAsync(string[] arguments)
-	{
-		Result<FollowOptions> parsed;
-
-		try
-		{
-			parsed = FollowOptions.Parse(arguments);
-		}
-		catch (ArgumentException exception)
-		{
-			return ReportUsage(exception, FollowOptions.Usage);
-		}
-
-		return parsed.IsFailed
-			? ReportRejection(parsed, FollowOptions.Usage)
-			: await FollowAsync(parsed.Value);
-	}
-
-	private static async Task<int> SeedAsync(SeederOptions options, ArchiveRow[] rows)
-	{
-		ReportPlan(options, rows);
-
-		var written = await new ArchiveWriter(options.ConnectionString)
-			.WriteAsync(rows, options.Start, options.End);
-
-		if (written.IsFailed)
-		{
-			ReportErrors(written);
+			Console.Error.WriteLine(exception.Message);
 
 			return 1;
 		}
-
-		Console.WriteLine($"rows written    {written.Value}");
-
-		return await SeedTagsAsync(options);
 	}
 
-	private static async Task<int> SeedTagsAsync(SeederOptions options)
+	private static async Task<int> SeedAsync(SeederOptions options)
 	{
+		var rawRows = RawLayerGenerator.Generate(options);
+		ArchiveRow[] rows = [.. rawRows, .. LayerThinner.ThinAll(rawRows)];
+
+		ReportPlan(options, rows);
+
+		var written = await new ArchiveWriter(options.ConnectionString).WriteAsync(rows, options.Start, options.End);
+
+		Console.WriteLine($"rows written    {written}");
+
 		if (options.AdminConnectionString is null)
 		{
 			Console.WriteLine("tags written    skipped, no --admin-connection");
@@ -93,14 +48,7 @@ public static class Program
 		var tags = await new TagCatalogWriter(options.AdminConnectionString)
 			.WriteAsync(RawLayerGenerator.SelectPens(options.PenCount));
 
-		if (tags.IsFailed)
-		{
-			ReportErrors(tags);
-
-			return 1;
-		}
-
-		Console.WriteLine($"tags written    {tags.Value}");
+		Console.WriteLine($"tags written    {tags}");
 
 		return 0;
 	}
@@ -125,50 +73,27 @@ public static class Program
 		ReportFollowPlan(options);
 
 		// Read once, before anything is written, and it answers with the max(t) the loop starts from.
-		var freshness = await StaleArchiveGuard.CheckAsync(options.ConnectionString, LocalNow());
-
-		if (freshness.IsFailed)
-		{
-			ReportErrors(freshness);
-
-			return 1;
-		}
+		var newest = await StaleArchiveGuard.CheckAsync(options.ConnectionString, LocalNow());
 
 		var writer = new ArchiveWriter(options.ConnectionString);
 
 		// Just past the archive's own newest row, so the first tick continues the fill rather than starting
-		// a second run of rows a hole away from it, and rather than rewriting the edge row a previous
-		// follow run left on the lattice. StaleArchiveGuard has already refused anything further behind the
-		// clock than its MaximumAge, so that first tick spans at most the bound, whatever the bound is set
-		// to.
-		var lastEmitted = StaleArchiveGuard.StartFrom(freshness.Value, LocalNow());
+		// a second run of rows a hole away from it, and rather than rewriting the edge row a previous follow
+		// run left on the lattice. StaleArchiveGuard has already refused anything further behind the clock
+		// than its MaximumAge, so that first tick spans at most the bound.
+		var lastEmitted = StaleArchiveGuard.StartFrom(newest, LocalNow());
 
 		while (await WaitForTickAsync(options.Interval, stopping.Token))
 		{
 			var now = LocalNow();
 			var appended = await AppendAsync(writer, options, lastEmitted, now);
 
-			if (appended.IsFailed)
-			{
-				ReportErrors(appended);
-
-				return 1;
-			}
-
-			// After the append has committed, never before it: at a cadence longer than a period the
-			// tick's own rows are the closing period's last ones, and a flush ahead of them would pick a
-			// coarse 'last' row the period had not produced yet.
+			// After the append has committed, never before it: at a cadence longer than a period the tick's
+			// own rows are the closing period's last ones, and a flush ahead of them would pick a coarse
+			// 'last' row the period had not produced yet.
 			var thinned = await CoarseFlush.FlushAsync(options, lastEmitted, now);
 
-			if (thinned.IsFailed)
-			{
-				ReportErrors(thinned);
-
-				return 1;
-			}
-
-			Console.WriteLine(
-				$"appended        {appended.Value} rows, {thinned.Value} coarse, up to {now:O}");
+			Console.WriteLine($"appended        {appended} rows, {thinned} coarse, up to {now:O}");
 			lastEmitted = now;
 		}
 
@@ -179,8 +104,7 @@ public static class Program
 
 	// The archive column is 'timestamp(3) without time zone' holding the SCADA host's naive local time
 	// (docs/architecture/scada-archive.md#time-semantics), so the follow edge is this machine's local
-	// clock with its Kind stripped. DateTime.UtcNow would place the demo's live edge one zone offset from
-	// where the viewer, converting through source_time_zone, looks for it.
+	// clock with its Kind stripped.
 	private static DateTime LocalNow()
 	{
 		return DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified);
@@ -200,7 +124,7 @@ public static class Program
 		}
 	}
 
-	private static async Task<Result<long>> AppendAsync(
+	private static async Task<long> AppendAsync(
 		ArchiveWriter writer,
 		FollowOptions options,
 		DateTime from,
@@ -208,12 +132,9 @@ public static class Program
 	{
 		var rows = LiveTailGenerator.Generate(options, from, toExclusive);
 
-		if (rows.Count == 0)
-		{
-			return Result.Ok(0L);
-		}
-
-		return await writer.WriteAsync(rows, from, toExclusive, allowExistingRows: true);
+		return rows.Count == 0
+			? 0L
+			: await writer.WriteAsync(rows, from, toExclusive, allowExistingRows: true);
 	}
 
 	private static void ReportFollowPlan(FollowOptions options)
@@ -236,32 +157,6 @@ public static class Program
 		foreach (var layer in rows.GroupBy(row => row.Layer).OrderBy(layer => layer.Key))
 		{
 			Console.WriteLine($"layer {layer.Key} rows    {layer.Count()}");
-		}
-	}
-
-	private static int ReportUsage(Exception exception, string usage)
-	{
-		Console.Error.WriteLine(exception.Message);
-		Console.Error.WriteLine();
-		Console.Error.WriteLine(usage);
-
-		return 1;
-	}
-
-	private static int ReportRejection(ResultBase result, string usage)
-	{
-		ReportErrors(result);
-		Console.Error.WriteLine();
-		Console.Error.WriteLine(usage);
-
-		return 1;
-	}
-
-	private static void ReportErrors(ResultBase result)
-	{
-		foreach (var error in result.Errors)
-		{
-			Console.Error.WriteLine(error.Message);
 		}
 	}
 }

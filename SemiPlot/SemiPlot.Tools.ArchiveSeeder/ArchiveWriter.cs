@@ -1,6 +1,4 @@
-﻿using FluentResults;
-
-using Npgsql;
+﻿using Npgsql;
 
 using NpgsqlTypes;
 
@@ -30,9 +28,12 @@ public sealed class ArchiveWriter(string connectionString)
 
 	private const string CopyCommand = "COPY public.trends (id, l, t, v, q) FROM STDIN (FORMAT BINARY)";
 
-	// allowExistingRows is what a follow run sets: it skips the seeded refusal and nothing else, so the
-	// archive-table precondition, the single transaction and the COPY stay one path rather than two.
-	public async Task<Result<long>> WriteAsync(
+	/// <summary>
+	/// The number of rows written. A missing archive table or a seeded archive is refused with a
+	/// <see cref="SeederException"/>; a connection that cannot be made or a rejected statement throws.
+	/// allowExistingRows is what a follow run sets: it skips the seeded refusal and nothing else.
+	/// </summary>
+	public async Task<long> WriteAsync(
 		IEnumerable<ArchiveRow> rows,
 		DateTime start,
 		DateTime endExclusive,
@@ -41,57 +42,42 @@ public sealed class ArchiveWriter(string connectionString)
 	{
 		var statements = PartitionScript.CreateStatements(start, endExclusive);
 
-		try
+		await using var connection = new NpgsqlConnection(connectionString);
+
+		await connection.OpenAsync(cancellationToken);
+
+		if (!await ScalarIsTrueAsync(connection, ArchiveExistsCommand, cancellationToken))
 		{
-			await using var connection = new NpgsqlConnection(connectionString);
-
-			await connection.OpenAsync(cancellationToken);
-
-			if (!await ScalarIsTrueAsync(connection, ArchiveExistsCommand, cancellationToken))
-			{
-				return Result.Fail<long>(
-					"public.trends does not exist: the archive table is created by provisioning, so run "
-						+ "`semibase bench` against this database before seeding it.");
-			}
-
-			// A seeding run fills an empty archive in one go, so a half-filled one read as a whole one is
-			// the failure this refusal prevents. An appending run has the opposite contract: it adds to
-			// an archive somebody else already filled.
-			if (!allowExistingRows && await ScalarIsTrueAsync(connection, ArchiveIsSeededCommand, cancellationToken))
-			{
-				return Result.Fail<long>(
-					"public.trends already carries rows or day partitions: the seeder fills an empty archive "
-						+ "and never adds to one.");
-			}
-
-			// One transaction over the partitions and the COPY. A COPY that fails part-way would
-			// otherwise leave the day partitions behind, and every later run would be refused by the
-			// seeded check with no recovery but dropping them by hand.
-			await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-
-			foreach (var statement in statements)
-			{
-				await ExecuteAsync(connection, transaction, statement, cancellationToken);
-			}
-
-			var written = await CopyAsync(connection, rows, cancellationToken);
-
-			await transaction.CommitAsync(cancellationToken);
-
-			return Result.Ok(written);
+			throw new SeederException(
+				"public.trends does not exist: the archive table is created by provisioning, so run "
+				+ "`semibase bench` against this database before seeding it.");
 		}
-		catch (Exception exception) when (IsReportable(exception))
+
+		// A seeding run fills an empty archive in one go, so a half-filled one read as a whole one is the
+		// failure this refusal prevents. An appending run has the opposite contract: it adds to an archive
+		// somebody else already filled.
+		if (!allowExistingRows && await ScalarIsTrueAsync(connection, ArchiveIsSeededCommand, cancellationToken))
 		{
-			return Result.Fail<long>(new ExceptionalError(exception.Message, exception));
+			throw new SeederException(
+				"public.trends already carries rows or day partitions: the seeder fills an empty archive "
+				+ "and never adds to one.");
 		}
-	}
 
-	// A malformed connection string throws out of the NpgsqlConnection constructor as an
-	// ArgumentException or a FormatException, well before any Npgsql failure type can appear, so a
-	// mistyped --connection has to reach the caller as a stated error rather than as a stack trace.
-	internal static bool IsReportable(Exception exception)
-	{
-		return exception is NpgsqlException or InvalidOperationException or ArgumentException or FormatException;
+		// One transaction over the partitions and the COPY. A COPY that fails part-way would otherwise
+		// leave the day partitions behind, and every later run would be refused by the seeded check with
+		// no recovery but dropping them by hand.
+		await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+		foreach (var statement in statements)
+		{
+			await ExecuteAsync(connection, transaction, statement, cancellationToken);
+		}
+
+		var written = await CopyAsync(connection, rows, cancellationToken);
+
+		await transaction.CommitAsync(cancellationToken);
+
+		return written;
 	}
 
 	private static async Task<bool> ScalarIsTrueAsync(

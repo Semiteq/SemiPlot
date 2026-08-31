@@ -1,12 +1,14 @@
-﻿using SemiPlot.Tools.ArchiveSeeder;
+﻿using Npgsql;
+
+using SemiPlot.Tools.ArchiveSeeder;
 
 using Xunit;
 
 namespace SemiPlot.Tests.Data;
 
-// Both writers promise that a connection they cannot make is a Result.Fail rather than an exception.
-// Neither case needs a server: a malformed string never leaves the Npgsql constructor, and a closed
-// port is refused at once.
+// A connection the writers cannot make surfaces as the exception Npgsql raises, which the entry point
+// prints as one line. Neither case needs a server: a malformed string never leaves the Npgsql
+// constructor, and a closed port is refused at once.
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
 [Trait("Category", "Unit")]
@@ -27,11 +29,10 @@ public sealed class WriterConnectionFailureTests
 	[InlineData(Malformed)]
 	public async Task TheArchiveWriterReportsAConnectionItCannotMake(string connectionString)
 	{
-		var written = await new ArchiveWriter(connectionString)
-			.WriteAsync([], _start, _end, cancellationToken: TestContext.Current.CancellationToken);
+		var thrown = await Assert.ThrowsAnyAsync<Exception>(() => new ArchiveWriter(connectionString)
+			.WriteAsync([], _start, _end, cancellationToken: TestContext.Current.CancellationToken));
 
-		Assert.True(written.IsFailed);
-		Assert.NotEmpty(written.Errors);
+		Assert.True(thrown is NpgsqlException or ArgumentException or FormatException, thrown.GetType().Name);
 	}
 
 	[Theory]
@@ -39,10 +40,9 @@ public sealed class WriterConnectionFailureTests
 	[InlineData(Malformed)]
 	public async Task TheTagCatalogWriterReportsAConnectionItCannotMake(string connectionString)
 	{
-		var written = await new TagCatalogWriter(connectionString)
-			.WriteAsync(RawLayerGenerator.SelectPens(1), TestContext.Current.CancellationToken);
+		var thrown = await Assert.ThrowsAnyAsync<Exception>(() => new TagCatalogWriter(connectionString)
+			.WriteAsync(RawLayerGenerator.SelectPens(1), TestContext.Current.CancellationToken));
 
-		Assert.True(written.IsFailed);
-		Assert.NotEmpty(written.Errors);
+		Assert.True(thrown is NpgsqlException or ArgumentException or FormatException, thrown.GetType().Name);
 	}
 }

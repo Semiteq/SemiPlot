@@ -1,6 +1,4 @@
-﻿using FluentResults;
-
-using Npgsql;
+﻿using Npgsql;
 
 using NpgsqlTypes;
 
@@ -74,7 +72,7 @@ public static class CoarseFlush
 
 	// The rows the statements of this call inserted. The connection is this method's own: a follow tick
 	// holds none open, because ArchiveWriter.WriteAsync opens one per call and disposes it.
-	public static async Task<Result<long>> FlushAsync(
+	public static async Task<long> FlushAsync(
 		FollowOptions options,
 		DateTime previousTickLocal,
 		DateTime nowLocal,
@@ -82,33 +80,26 @@ public static class CoarseFlush
 	{
 		ArgumentNullException.ThrowIfNull(options);
 
-		try
+		await using var connection = new NpgsqlConnection(options.ConnectionString);
+
+		await connection.OpenAsync(cancellationToken);
+
+		var inserted = 0L;
+
+		// The identifiers the follow loop itself writes. scada_writer holds no privilege on semiplot_tags,
+		// so the pens are taken from the generator rather than from a catalogue read.
+		var penIds = RawLayerGenerator.SelectPens(options.PenCount)
+			.Select(pen => pen.PenId)
+			.ToArray();
+
+		foreach (var layer in LayerThinner.CoarseLayers)
 		{
-			await using var connection = new NpgsqlConnection(options.ConnectionString);
+			inserted += await OpenPeriodAsync(connection, layer, penIds, nowLocal, cancellationToken);
 
-			await connection.OpenAsync(cancellationToken);
-
-			var inserted = 0L;
-
-			// The identifiers the follow loop itself writes. scada_writer holds no privilege on
-			// semiplot_tags, so the pens are taken from the generator rather than from a catalogue read.
-			var penIds = RawLayerGenerator.SelectPens(options.PenCount)
-				.Select(pen => pen.PenId)
-				.ToArray();
-
-			foreach (var layer in LayerThinner.CoarseLayers)
-			{
-				inserted += await OpenPeriodAsync(connection, layer, penIds, nowLocal, cancellationToken);
-
-				inserted += await FlushLayerAsync(connection, layer, previousTickLocal, nowLocal, cancellationToken);
-			}
-
-			return Result.Ok(inserted);
+			inserted += await FlushLayerAsync(connection, layer, previousTickLocal, nowLocal, cancellationToken);
 		}
-		catch (Exception exception) when (ArchiveWriter.IsReportable(exception))
-		{
-			return Result.Fail<long>(new ExceptionalError(exception.Message, exception));
-		}
+
+		return inserted;
 	}
 
 	// Issued on every call and for every layer, since a period the caller sits inside has already opened.

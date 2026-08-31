@@ -59,24 +59,10 @@ public static class ArchiveTemplate
 		var rawRows = RawLayerGenerator.Generate(Slice);
 		var rows = rawRows.Concat(LayerThinner.ThinAll(rawRows)).ToArray();
 
-		var written = await new ArchiveWriter(postgresServer.WriterConnectionStringFor(Name))
+		await new ArchiveWriter(postgresServer.WriterConnectionStringFor(Name))
 			.WriteAsync(rows, Slice.Start, Slice.End, cancellationToken: cancellationToken);
 
-		if (written.IsFailed)
-		{
-			throw new InvalidOperationException(
-				"the template database could not be seeded: "
-				+ string.Join("; ", written.Errors.Select(error => error.Message)));
-		}
-
-		var tags = await new TagCatalogWriter(adminConnectionString)
+		await new TagCatalogWriter(adminConnectionString)
 			.WriteAsync(RawLayerGenerator.SelectPens(Slice.PenCount), cancellationToken);
-
-		if (tags.IsFailed)
-		{
-			throw new InvalidOperationException(
-				"the template's tag catalogue could not be written: "
-				+ string.Join("; ", tags.Errors.Select(error => error.Message)));
-		}
 	}
 }

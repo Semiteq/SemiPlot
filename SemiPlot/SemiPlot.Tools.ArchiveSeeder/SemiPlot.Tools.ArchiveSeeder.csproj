@@ -5,8 +5,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="FluentResults"/>
     <PackageReference Include="Npgsql"/>
+    <PackageReference Include="System.CommandLine"/>
   </ItemGroup>
 
   <ItemGroup>

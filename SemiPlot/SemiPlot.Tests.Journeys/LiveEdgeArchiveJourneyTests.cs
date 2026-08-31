@@ -224,8 +224,7 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 		var written = await Writer()
 			.WriteAsync(rows, archiveLocal, archiveLocal.AddSeconds(1), allowExistingRows: true);
 
-		written.IsSuccess.Should().BeTrue(string.Join("; ", written.Errors.Select(error => error.Message)));
-		written.Value.Should().Be(rows.Length);
+		written.Should().Be(rows.Length);
 	}
 
 	// One row per variable, each on a second of its own, so no two variables share a timestamp. Written in
@@ -247,8 +246,7 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 			baseLocal.AddSeconds(pens.Count + 1),
 			allowExistingRows: true);
 
-		written.IsSuccess.Should().BeTrue(string.Join("; ", written.Errors.Select(error => error.Message)));
-		written.Value.Should().Be(rows.Length);
+		written.Should().Be(rows.Length);
 	}
 
 	private static void AssertCarries(RealtimeBatch batch, DateTime timestampUtc, IReadOnlyList<Pen> pens, int tick)

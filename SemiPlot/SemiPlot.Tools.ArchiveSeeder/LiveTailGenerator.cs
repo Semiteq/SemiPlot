@@ -16,7 +16,7 @@ public static class LiveTailGenerator
 			return rows;
 		}
 
-		var interval = ChangeIntervalTicks(options.ChangeSeconds);
+		var interval = RawLayerGenerator.ChangeIntervalTicks(options.ChangeSeconds);
 
 		foreach (var pen in RawLayerGenerator.SelectPens(options.PenCount))
 		{
@@ -32,20 +32,5 @@ public static class LiveTailGenerator
 		}
 
 		return rows;
-	}
-
-	// A follow run states no span of its own, so its ceiling is the literal FollowOptions carries rather
-	// than the seeding run's span.
-	private static long ChangeIntervalTicks(double changeSeconds)
-	{
-		if (!double.IsFinite(changeSeconds) || changeSeconds <= 0.0 || changeSeconds > FollowOptions.MaximumSeconds)
-		{
-			throw new ArgumentOutOfRangeException(
-				nameof(changeSeconds),
-				changeSeconds,
-				$"The change interval must be finite, above 0 and at most {FollowOptions.MaximumSeconds:0}.");
-		}
-
-		return RawLayerGenerator.ChangeIntervalTicks(changeSeconds);
 	}
 }

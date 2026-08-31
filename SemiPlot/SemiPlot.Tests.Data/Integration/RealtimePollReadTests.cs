@@ -59,9 +59,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 
 	protected override async ValueTask SeedAsync()
 	{
-		var written = await Writer().WriteAsync(SeededRows(), _day, _nextDay);
-
-		Assert.True(written.IsSuccess, ArchiveReadSupport.Describe(written));
+		await Writer().WriteAsync(SeededRows(), _day, _nextDay);
 	}
 
 	// The armed point every later consumer sequences on. It emits nothing: a first tick that emitted rows

@@ -193,9 +193,7 @@ public sealed class SeededArchiveTests(PostgresContainerFixture postgresContaine
 		var first = await writer.WriteAsync(pens, TestContext.Current.CancellationToken);
 		var second = await writer.WriteAsync(renamed, TestContext.Current.CancellationToken);
 
-		Assert.True(first.IsSuccess, string.Join("; ", first.Errors.Select(error => error.Message)));
-		Assert.True(second.IsSuccess, string.Join("; ", second.Errors.Select(error => error.Message)));
-		Assert.Equal(pens.Count, second.Value);
+		Assert.Equal(pens.Count, second);
 
 		Assert.Equal(
 			renamed.Select(pen => (pen.PenId, pen.Name)).OrderBy(tag => tag.Item1).ToArray(),

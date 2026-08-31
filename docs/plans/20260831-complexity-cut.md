@@ -503,10 +503,10 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 
 ### Task 15: Slice 5 close
 
-- [ ] `dotnet format SemiPlot.slnx`; `git log origin/master..HEAD --oneline` shows only slice-5 commits
-- [ ] `dotnet test SemiPlot.slnx` with Docker running - green
-- [ ] manual: start `SemiPlot.UI` with `--log-file` pointing into a directory that does not exist yet; the log file appears
-- [ ] open the pull request; after merge, `git switch master && git pull --ff-only`
+- [x] `dotnet format SemiPlot.slnx`; `git log origin/master..HEAD --oneline` shows only slice-5 commits
+- [x] `dotnet test SemiPlot.slnx` with Docker running - green
+- [x] manual: start `SemiPlot.UI` with `--log-file` pointing into a directory that does not exist yet; the log file appears
+- [x] open the pull request; after merge, `git switch master && git pull --ff-only`
 
 ### Slice 6 — `seeder-cli`
 
@@ -518,11 +518,11 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 - Modify: `SemiPlot/SemiPlot.Tools.ArchiveSeeder/SeederOptions.cs`, `FollowOptions.cs` (plain records built by the command handler; validators live once on the `Option<T>`s), `Program.cs:9-61,242` (root command; no `ArgumentException` catch; no `Usage` strings)
 - Modify: `SemiPlot/SemiPlot.Tests.Data/SeederOptionsTests.cs`, `FollowOptionsTests.cs`, `SeederEntryPointTests.cs`
 
-- [ ] read the flag set off `SeederOptions.Usage`, `FollowOptions.Usage` and every seeder invocation in `scripts/bench-demo.ps1`, and reproduce it exactly as `Option<T>`s on one `RootCommand`
-- [ ] attach each range rule once as an option validator, reproducing the set `SeederOptions.ValidateSpan`, `ValidatePenCount`, `ValidateChangeRate`, `ValidateBreaks` and `FollowOptions.ValidateSeconds` reject today
-- [ ] delete `OptionTokens`, both `Usage` strings, both `Func<T, Result>[]` check loops, the duplicated `ValidatePenCount` and the two `ArgumentException` catches
-- [ ] replace the three option test classes with one `SeederCommandTests`: full seed invocation parses; `--follow` selects follow mode; each rejected value exits 1 with the option named; `--help` exits 0
-- [ ] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests.Data` - must pass before task 17
+- [x] read the flag set off `SeederOptions.Usage`, `FollowOptions.Usage` and every seeder invocation in `scripts/bench-demo.ps1`, and reproduce it exactly as `Option<T>`s on one `RootCommand`
+- [x] attach each range rule once as an option validator, reproducing the set `SeederOptions.ValidateSpan`, `ValidatePenCount`, `ValidateChangeRate`, `ValidateBreaks` and `FollowOptions.ValidateSeconds` reject today
+- [x] delete `OptionTokens`, both `Usage` strings, both `Func<T, Result>[]` check loops, the duplicated `ValidatePenCount` and the two `ArgumentException` catches
+- [x] replace the three option test classes with one `SeederCommandTests`: full seed invocation parses; `--follow` selects follow mode; each rejected value exits 1 with the option named; `--help` exits 0
+- [x] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests.Data` - must pass before task 17
 
 ### Task 17: `FluentResults` out of the seeder; validate once
 
@@ -532,10 +532,10 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 - Modify: `SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.ArchiveSeeder.csproj` (drop `FluentResults`)
 - Modify: `SemiPlot/SemiPlot.Tests.Data/WriterConnectionFailureTests.cs`, `LiveTailGeneratorTests.cs`, `BreakGenerationTests.cs`, `Integration/StaleArchiveGuardTests.cs`
 
-- [ ] replace every `Result` return in the seeder with a direct return or a thrown exception; `Main` has one `catch (NpgsqlException)` that prints the message and returns 1, and lets everything else surface as a stack trace
-- [ ] remove the second and third validation of `Days`, `ChangeSeconds` and `BreakCount`
-- [ ] update the affected tests to assert on exit code and stderr, or on the thrown type
-- [ ] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests.Data` - must pass before task 18
+- [x] replace every `Result` return in the seeder with a direct return or a thrown exception; `Main` has one `catch (NpgsqlException)` that prints the message and returns 1, and lets everything else surface as a stack trace
+- [x] remove the second and third validation of `Days`, `ChangeSeconds` and `BreakCount`
+- [x] update the affected tests to assert on exit code and stderr, or on the thrown type
+- [x] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests.Data` - must pass before task 18
 
 ### Task 18: Slice 6 close
 

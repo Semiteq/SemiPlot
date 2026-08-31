@@ -436,9 +436,9 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 
 ### Task 9: Slice 3 close
 
-- [ ] `dotnet format SemiPlot.slnx`; `git log origin/master..HEAD --oneline` shows only slice-3 commits
-- [ ] `dotnet test SemiPlot.slnx` with Docker running - green
-- [ ] open the pull request; after merge, `git switch master && git pull --ff-only`
+- [x] `dotnet format SemiPlot.slnx`; `git log origin/master..HEAD --oneline` shows only slice-3 commits
+- [x] `dotnet test SemiPlot.slnx` with Docker running - green
+- [x] open the pull request; after merge, `git switch master && git pull --ff-only`
 
 ### Slice 4 — `single-history-path`
 
@@ -453,12 +453,12 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 - Modify: `SemiPlot/SemiPlot.Tests/UI/Chart/TrendChartViewModelTests.cs`, `ChartHistoryRequestDebouncerTests.cs`, `ChartNavigationControllerTests.cs`; `SemiPlot/SemiPlot.Tests.Journeys/LiveEdgeArchiveJourneyTests.cs` where it awaits the initial load
 - Modify: `docs/architecture/charting.md:114`, `docs/architecture/data-integration.md` "History" paragraph naming the two paths
 
-- [ ] route the initial request through the debouncer and delete the gate, the sequence and the deferred flag
-- [ ] simplify `ApplyHistory` to envelopes plus requested identifiers
-- [ ] rewrite the view-model tests that drive `RequestInitialHistory` to advance the test scheduler past the throttle window; delete the tests of the deferred gate and the sequence guard
-- [ ] add one test: a resize report arriving while the initial query is in flight results in exactly one applied window, the later one
-- [ ] update the two document paragraphs
-- [ ] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests` and `SemiPlot.Tests.Journeys` - must pass before task 11
+- [x] route the initial request through the debouncer and delete the gate, the sequence and the deferred flag
+- [x] simplify `ApplyHistory` to envelopes plus requested identifiers
+- [x] rewrite the view-model tests that drive `RequestInitialHistory` to advance the test scheduler past the throttle window; delete the tests of the deferred gate and the sequence guard
+- [x] add one test: a resize report arriving while the initial query is in flight results in exactly one applied window, the later one
+- [x] update the two document paragraphs
+- [x] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests` and `SemiPlot.Tests.Journeys` - must pass before task 11
 
 ### Task 11: Slice 4 close
 

@@ -8,8 +8,9 @@ using SemiPlot.Core.Trends;
 
 namespace SemiPlot.UI.Chart;
 
-// Switch drops any still-in-flight query when a newer window arrives (latest-wins), so a late stale
-// response never overwrites the current window.
+// The one history path. Throttle collapses a gesture's notches to one trailing request; Switch drops any
+// still-in-flight query when a newer request arrives, so a late stale response never overwrites the
+// current window.
 public sealed class ChartHistoryRequestDebouncer : IDisposable
 {
 	private readonly Subject<HistoryRequest> _requests = new();
@@ -18,7 +19,7 @@ public sealed class ChartHistoryRequestDebouncer : IDisposable
 
 	public ChartHistoryRequestDebouncer(
 		Func<HistoryRequest, Task<Result<IReadOnlyList<PenHistoryEnvelope>>>> queryAsync,
-		Action<TrendHistory, IReadOnlyList<int>, long> applyHistory,
+		Action<HistoryRequest, IReadOnlyList<PenHistoryEnvelope>> applyHistory,
 		Action<Exception> reportQueryFailure,
 		TimeSpan debounceWindow,
 		IScheduler dataScheduler,
@@ -38,14 +39,10 @@ public sealed class ChartHistoryRequestDebouncer : IDisposable
 				.Catch((Exception queryFailure) => ReportAndDrop(reportQueryFailure, queryFailure)))
 			.Switch()
 			.Where(pair => pair.result.IsSuccess)
-			// The requested identifiers travel beside the history so the consumer can tell "asked for and
-			// not returned" from "not asked for": a pen added while the query was in flight is neither.
-			.Select(pair => (
-				history: new TrendHistory(pair.request.Layer, pair.result.Value),
-				requestedPenIds: pair.request.PenIds,
-				pair.request.Sequence))
 			.ObserveOn(uiScheduler)
-			.Subscribe(pair => applyHistory(pair.history, pair.requestedPenIds, pair.Sequence));
+			// The request travels with its result so the consumer can tell "asked for and not returned" from
+			// "not asked for": a pen added while the query was in flight is neither.
+			.Subscribe(pair => applyHistory(pair.request, pair.result.Value));
 	}
 
 	public void Dispose()

@@ -1,4 +1,6 @@
 ﻿using System.Reactive.Concurrency;
+using System.Reactive.Linq;
+using System.Reactive.Threading.Tasks;
 
 using Avalonia.Headless.XUnit;
 
@@ -101,7 +103,9 @@ public sealed class BreakRenderArchiveJourneyTests(
 		OpenWindowOn(chart.Navigation, extent.Value.FirstUtc, stopped);
 		coordinator.Start();
 
-		await chart.RequestInitialHistory();
+		var historyApplied = chart.HistoryApplied.FirstAsync().ToTask();
+		chart.RequestInitialHistory();
+		await historyApplied;
 
 		var (pixels, dataRect) = Render(chart);
 

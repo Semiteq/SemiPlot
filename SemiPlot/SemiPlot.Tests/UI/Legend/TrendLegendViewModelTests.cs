@@ -23,6 +23,8 @@ namespace SemiPlot.Tests.UI.Legend;
 public sealed class TrendLegendViewModelTests
 {
 	private static readonly TimeSpan _batchWindow = TimeSpan.FromMilliseconds(33);
+	private static readonly TimeSpan _historyDebounceWindow = TimeSpan.FromMilliseconds(150);
+	private readonly TestScheduler _scheduler = new();
 	private static readonly DateTime _from = new(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
 	private static readonly DateTime _to = new(2026, 6, 15, 9, 0, 0, DateTimeKind.Utc);
 
@@ -118,11 +120,13 @@ public sealed class TrendLegendViewModelTests
 		row.CurrentValue.Should().Be(2.0);
 	}
 
-	private static Task LoadInitialHistory(TrendChartViewModel chart, DateTime from, DateTime to)
+	private Task LoadInitialHistory(TrendChartViewModel chart, DateTime from, DateTime to)
 	{
 		chart.Navigation.TrackDataExtents(from, to);
+		chart.RequestInitialHistory();
+		_scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
 
-		return chart.RequestInitialHistory();
+		return Task.CompletedTask;
 	}
 
 	private static TrendLegendRowViewModel SingleRow(TrendLegendViewModel legend, int penId)
@@ -132,18 +136,17 @@ public sealed class TrendLegendViewModelTests
 			.Single(row => row.Name == $"Pen {penId}");
 	}
 
-	private static TrendChartViewModel CreateChart()
+	private TrendChartViewModel CreateChart()
 	{
-		var scheduler = new TestScheduler();
-		var provider = new FakeDataProvider(scheduler, TimeSpan.FromMilliseconds(10));
+		var provider = new FakeDataProvider(_scheduler, TimeSpan.FromMilliseconds(10));
 		var coordinator = new TrendCoordinator(
 			provider,
 			provider.Pens,
-			scheduler,
+			_scheduler,
 			ImmediateScheduler.Instance,
 			_batchWindow);
 
 		return new TrendChartViewModel(
-			coordinator, scheduler, ImmediateScheduler.Instance, NullLogger<TrendChartViewModel>.Instance);
+			coordinator, _scheduler, ImmediateScheduler.Instance, NullLogger<TrendChartViewModel>.Instance);
 	}
 }

@@ -111,7 +111,7 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   (`AddLeftAxis`/`AddRightAxis`, shared-group axis assignment, `SetLimitsY`, shared-X pinning).
 - `Chart/ChartNavigationController` — owns the `TrendNavigationModel`, the layer ladder, the live-edge
   advance; raises `WindowChanged` (`NavigationWindow` = `[From, To]` + `Layer` +
-  `RequiresHistoryRequery` + `IsColumnCountChange`). A ceiling is derived, not constant:
+  `RequiresHistoryRequery`). A ceiling is derived, not constant:
   `nextCoarser(layer).ToPointSpacing() × TargetColumnCount`, guarded by a 10% hysteresis band.
   `TargetColumnCount` is the canvas width in columns, clamped to 256…2048 and quantised to a power of
   two with its own 10% deadband; it selects the layer only, never the query resolution. **Single
@@ -132,10 +132,10 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   non-positive width has no canvas behind it and is rejected). The unquantised value is what every
   history query asks the provider to decimate to; `TrendChartViewModel` keeps the last reported one
   and stands on `MaxColumns` until the first render reports.
-- `Chart/ChartHistoryRequestDebouncer` — the single chokepoint for gesture-driven history re-queries:
+- `Chart/ChartHistoryRequestDebouncer` — the one history path, for the initial load and every gesture:
   `Throttle` (one trailing request after the gesture goes quiet) → query on the data scheduler →
-  `Switch` (latest-wins, drops stale in-flight responses) → apply on the UI scheduler. The startup
-  initial load bypasses it; the first-snap path stays non-requerying.
+  `Switch` (latest-wins, drops stale in-flight responses) → apply on the UI scheduler. The first-snap
+  path stays non-requerying.
 - `Chart/ChartRealtimeApplier` — the append-vs-fold rule per layer for incoming `RealtimeBatch`es.
   It walks each `PenRealtimeValues` on that pen's own timestamps, never on the batch's union, and
   hands the union's last timestamp to `ChartNavigationController.OnLiveEdge`.
@@ -182,9 +182,8 @@ view model:
 
 - **History:** `QueryHistoryAsync(penIds, from, to, layer, targetColumnCount)` is the single history
   query, returning one `PenHistoryEnvelope` per pen (ascending `Timestamps` + `Min` + `Max` +
-  `Center`; NaN = gap). The view model awaits it directly for the initial load and routes gesture
-  re-queries through `ChartHistoryRequestDebouncer`; both apply via one monotonic-sequence path so the
-  latest window wins.
+  `Center`; NaN = gap). The initial load and every gesture re-query go through
+  `ChartHistoryRequestDebouncer`, whose `Switch` makes the latest window win.
 - **Realtime:** `IObservable<RealtimeBatch>` — an ascending union timeline the live edge advances
   from, plus one `PenRealtimeValues` per pen carrying that pen's **own** timestamps and `double`
   values; buffered on the data scheduler and observed on the UI scheduler. The values are per pen

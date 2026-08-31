@@ -1,4 +1,6 @@
 ﻿using System.Reactive.Concurrency;
+using System.Reactive.Linq;
+using System.Reactive.Threading.Tasks;
 
 using Avalonia.Headless.XUnit;
 
@@ -85,7 +87,9 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 		chart.Navigation.SeedFromArchiveExtent(extent.Value);
 		coordinator.Start();
 
-		await chart.RequestInitialHistory();
+		var historyApplied = chart.HistoryApplied.FirstAsync().ToTask();
+		chart.RequestInitialHistory();
+		await historyApplied;
 
 		chart.Navigation.ActiveLayer.Should().Be(
 			AggregationLayer.Raw,
@@ -174,7 +178,9 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 		chart.Navigation.SeedFromArchiveExtent(extent.Value);
 		coordinator.Start();
 
-		await chart.RequestInitialHistory();
+		var historyApplied = chart.HistoryApplied.FirstAsync().ToTask();
+		chart.RequestInitialHistory();
+		await historyApplied;
 
 		chart.Navigation.ActiveLayer.Should().Be(
 			AggregationLayer.Raw, "a coarse layer folds a realtime sample instead of appending a point");

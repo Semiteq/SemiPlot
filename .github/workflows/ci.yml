@@ -41,6 +41,39 @@ jobs:
         with:
           global-json-file: global.json
 
+      # The IDE drops a before-launch RunConfigurationTask it cannot resolve while it reloads a
+      # `.run` file, and writes the file back without it. That is how `890669d` committed a stripped
+      # `Demo writer.run.xml`, and how the demo stand's children came to start before the stand had
+      # converged. External edits to `.run/*.xml` while the project is open are the trigger, so the
+      # check belongs on the push rather than in anyone's memory.
+      - name: run configurations keep their before-launch task
+        shell: pwsh
+        run: |
+          $missing = @()
+          foreach ($child in 'Demo writer', 'Viewer (bench)')
+          {
+              $path = ".run/$child.run.xml"
+              if (-not (Test-Path $path))
+              {
+                  $missing += "$path is gone"
+                  continue
+              }
+
+              $text = Get-Content $path -Raw
+              if ($text -notmatch 'RunConfigurationTask[^>]*run_configuration_name="Bench up"')
+              {
+                  $missing += "$path lost its 'Bench up' before-launch task"
+              }
+          }
+
+          if ($missing)
+          {
+              $missing | ForEach-Object { Write-Error $_ }
+              exit 1
+          }
+
+          Write-Host 'Both demo children still run Bench up before they start.'
+
       - name: restore
         run: dotnet restore SemiPlot.slnx
 

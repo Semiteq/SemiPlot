@@ -1,4 +1,4 @@
-# Agent Instructions for SemiPlot
+﻿# Agent Instructions for SemiPlot
 
 SemiPlot is a trend/chart viewer for an industrial installation (semiconductor plasma
 process tools: ICP / RIE / PECVD). It reads live tags and historical archives from
@@ -148,6 +148,8 @@ No abbreviations in names.
 
 - Nullable reference types enabled. Avoid nulls in public APIs.
 - Use `?.` and `??`. Do not suppress warnings with `!` without a verified reason.
+- No ceremonial `ArgumentNullException.ThrowIfNull` on APIs only this repository calls; the nullable
+  annotations are the contract. Guard only inputs that cross a process or file boundary.
 
 ### Dependency Injection
 
@@ -177,8 +179,14 @@ No abbreviations in names.
 
 ### Comments
 
-- Only for genuinely non-obvious business logic. No process notes (`// TODO`, `// in new version`).
-- English only.
+- Only for genuinely non-obvious business logic, one or two lines. English only.
+- Never restate what a `docs/architecture/*` document, a test, or a neighbouring member already says;
+  where a document holds the reasoning, leave a bare `docs/architecture/<file>.md#<anchor>` pointer.
+- No process notes (`// TODO`, `// in new version`), no test names in production code, no changelog
+  phrases ("the fix", "was moved", commit hashes), no CAPS for stress, no narration of alternatives
+  rejected. Rationale for a value goes in the commit message.
+- Internal and private members get at most a one-line `<summary>`; multi-paragraph XML documentation
+  belongs to nothing in this repository.
 
 ### UI (Avalonia / ScottPlot)
 

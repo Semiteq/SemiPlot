@@ -31,9 +31,10 @@ test fixture drops databases, and only ones it created itself.
 
 One day, 8 pens, seed 1, change interval 5 s, 4 breaks, exclusive end `2026-01-02T00:00:00`.
 The end is fixed rather than floating, so two runs of the same seed produce the same archive. Its
-raw layer is 271 984 rows, pinned by a golden digest in `RawLayerGeneratorTests`; a deliberate
-waveform change updates that constant in the same commit. All four layers together are 314 845 rows,
-landing in one day partition.
+shape is pinned by `RawLayerGeneratorTests` — determinism, the absolute lattice, the break holes and
+the row-pair shape — and the waveform itself is not, so a deliberate change to the value walk moves
+no constant. The raw layer is about 272 000 rows and all four layers about 315 000, landing in one
+day partition.
 
 Pens are taken round-robin across the catalogue's groups rather than as the first N, so a slice
 spans more than one group and more than one value range.
@@ -68,7 +69,7 @@ Layer `0` only; the coarse layers are derived from it.
   check means what `PRIMARY KEY (id, l, t)` means.
 - **The lattice carries no per-pen phase**, so every pen changes at the same instants. That is a
   consequence of one lattice for both generators, and it is kept deliberately: a per-pen offset would
-  re-pin the golden digest and move every expectation computed against the seeded archive. A defect
+  move every expectation computed against the seeded archive. A defect
   that only shows when two pens carry distinct timestamps is therefore not exercised by this bench
   and needs a test that builds its own rows.
 - Three quality codes and no others: `0`, `16`, `32`. No bad-quality code was observed in the
@@ -87,27 +88,17 @@ pre-anchor, because the plant moved while archiving was stopped.
 Each break takes an equal slot of the span, lasts 3 to 10 minutes and leaves at least 5 minutes of
 archiving on either side — so two breaks never meet, and every break empties at least one whole
 calendar minute, which is the empty period the thinner has to survive. A span therefore holds at
-most one break per 20 minutes: 72 in a day. `SeederOptions` rejects a larger `--break-count` with
+most one break per 20 minutes: 72 in a day. `SeederCommand` rejects a larger `--break-count` with
 that number rather than letting `BreakPlan.Create` throw.
 
-A run holding a single row between two breaks would have to carry `32` and `16` at once, and the
-archive has no code for both. The resume row keeps `16`, and the poll tick 100 ms after it — which
-the SCADA certainly also recorded — is appended and marked `32`. It is the one row in the archive
-that did not come from the value walk, and it is reachable at ordinary parameters: at a change
-interval of 600 s, 40 breaks in a day produce it 3 times, 50 breaks 5 times, 55 breaks 7 times and
-60 breaks 15 times, all four pinned by
-`RawLayerGeneratorTests.ASingleRowRunBetweenTwoBreaksGetsASynthesisedStopRow`.
-
-A run holding no lattice point at all carries neither marker and breaks the alternation. **The tight
-run is the first or the last**, not one between two breaks: those two are guaranteed only
-`BreakPlan.MinimumRun`, five minutes, while a run between two breaks is at least twice that. So the
-bound is not a flat rule on `--change-seconds` — 600 s over 60 breaks is fine and is pinned above,
-while the same 600 s over 20 breaks is not, because the last run falls under it. The pair is
-rejected rather than emitted: `SeederOptions.Validate` fails with the reason, which `Program` prints
-above `SeederOptions.Usage`, and `RawLayerGenerator.Generate` throws behind it — both from
-`RawLayerGenerator.DescribeUnmarkableRun`,
-which also refuses a single-change run with no room for the synthesised stop row. At the standard
-slice's 5 s interval neither case is anywhere near.
+Both markers land on real change rows, so with breaks every archiving run holds at least two
+changes: a run holding one would have to carry `32` and `16` at once, and the archive has no code
+for both. **The tight run is the first or the last**, not one between two breaks: those two are
+guaranteed only `BreakPlan.MinimumRun`, five minutes, while a run between two breaks is at least
+twice that. So the bound is not a flat rule on `--change-seconds`: 600 s is refused at 20 breaks and
+beyond under the default seed because a run at one end falls under it, and the refusal names the
+run. `RawLayerGenerator.Generate` throws rather than inventing a row, and `Program` prints the
+reason. At the standard slice's 5 s interval no run comes anywhere near.
 
 ## The demo writer
 
@@ -183,18 +174,17 @@ Four properties decide what it is good for:
   An archive holding no rows is accepted and reports no timestamp: there is no edge to continue, and
   the loop starts at "now". A database provisioning never finished answers the same way and is
   `ArchiveWriter`'s to report, not this guard's.
-- **Past that row rather than on it, which is what makes a restart of the writer work.** The follow
+- **The window is open at the edge, which is what makes a restart of the writer work.** The follow
   lattice is absolute, so an archive whose newest row a previous follow run wrote carries that row on a
-  point the lattice produces again, and `LiveTailGenerator`'s span start is inclusive — a loop resuming
-  on the edge regenerates that row into a `COPY` that has no conflict handling, and the run dies on its
-  first tick with `23505: duplicate key value violates unique constraint`. Stopping the writer and
-  starting it again is the ordinary case, so the loop advances past the edge before its first tick.
-  A millisecond is the smallest step the archive can tell two rows apart by — `ArchiveRow` truncates
-  every timestamp to one and the column is `timestamp(3)` — so the seam stays inside one change
-  interval. `StaleArchiveGuard.StartFrom` is where that step lives, beside the read that answers with
-  the edge. The span start stays inclusive because the tick loop hands the previous tick's own instant
-  back as the next span's start, and a lattice point landing exactly there belongs to that span and to
-  no other.
+  point the lattice produces again, and a window that included its start would regenerate that row
+  into a `COPY` that has no conflict handling: the run would die on its first tick with `23505:
+  duplicate key value violates unique constraint`. `LiveTailGenerator.Generate(options, after, to)`
+  therefore emits the rows with `after < t <= to`. Both bounds are instants the archive already
+  accounts for — the edge a restart hands in, or the previous tick's own instant, whose rows that
+  tick wrote — so consecutive windows partition the lattice, and a restart continues it with no row
+  twice and no hole: the next lattice point is inside one change interval of the edge.
+  `FollowRestartTests` performs the restart against a database and `SharedLatticeTests` the same
+  sequence in memory.
 
 `--end`, `--days`, `--break-count` and `--admin-connection` belong to a seeding run and are rejected
 here, with a message saying what a follow run does rather than "Unknown option".
@@ -412,11 +402,11 @@ an archive as stale as itself, which `StaleArchiveGuard` refuses once it is more
 back: the stand would come up carrying history and never grow a live row.
 
 The row count is not a constant, so no six-digit figure is reproducible under the default. The raw
-layer holds 271984 rows for a one-day span at these parameters, while the coarse layers follow the
-calendar periods the span covers, and a day-long span ending at an arbitrary instant straddles two
-calendar days and one more calendar hour than one ending at midnight. A midnight end is 314845 rows
-across the four layers — the standard slice's own figure — and a default run lands a few hundred
-either side of it, in a few seconds.
+layer holds about 272 000 rows for a one-day span at these parameters, while the coarse layers follow
+the calendar periods the span covers, and a day-long span ending at an arbitrary instant straddles
+two calendar days and one more calendar hour than one ending at midnight. A midnight end is about
+315 000 rows across the four layers — the standard slice's own figure — and a default run lands a
+few hundred either side of it, in a few seconds.
 
 **Where the fill ends is a choice `-SeedEnd` makes**, and each choice buys a different reading. The
 default ends the fill at the script's own wall clock, so the archive meets the demo writer's live

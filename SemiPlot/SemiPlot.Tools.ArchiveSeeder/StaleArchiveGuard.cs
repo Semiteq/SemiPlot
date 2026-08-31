@@ -4,7 +4,7 @@ using Npgsql;
 
 namespace SemiPlot.Tools.ArchiveSeeder;
 
-// What bounds the first tick of Program.FollowAsync. The loop starts just past max(t), so the appended
+// What bounds the first tick of Program.FollowAsync. The loop continues from max(t), so the appended
 // rows continue the fill instead of standing apart from it behind a hole nothing in the archive marks;
 // the price of that start is the span of the first tick, which against an archive filled weeks ago would
 // be those weeks of rows and a day partition for each. Refusing an archive further behind the clock
@@ -56,17 +56,6 @@ public static class StaleArchiveGuard
 		}
 
 		return newest;
-	}
-
-	// Where the follow loop starts: one millisecond past the archive's newest row, never on it. The follow
-	// lattice is absolute, so an archive whose newest row a previous follow run wrote carries that row
-	// exactly on a lattice point, and LiveTailGenerator's span start is inclusive — a loop resuming on the
-	// edge regenerates that row into a COPY that has no conflict handling. A millisecond is the smallest
-	// step that separates two rows, since ArchiveRow truncates every timestamp to one and the column is
-	// timestamp(3). An archive with no rows has no edge to continue, and the clock is the start.
-	public static DateTime StartFrom(DateTime? newestRow, DateTime clock)
-	{
-		return newestRow is { } newest ? newest.AddMilliseconds(1.0) : clock;
 	}
 
 	private static string Describe(DateTime newest, TimeSpan age)

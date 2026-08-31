@@ -72,29 +72,29 @@ public static class Program
 
 		ReportFollowPlan(options);
 
-		// Read once, before anything is written, and it answers with the max(t) the loop starts from.
+		// Read once, before anything is written: the edge the first tick continues from.
 		var newest = await StaleArchiveGuard.CheckAsync(options.ConnectionString, LocalNow());
 
 		var writer = new ArchiveWriter(options.ConnectionString);
 
-		// Just past the archive's own newest row, so the first tick continues the fill rather than starting
-		// a second run of rows a hole away from it, and rather than rewriting the edge row a previous follow
-		// run left on the lattice. StaleArchiveGuard has already refused anything further behind the clock
-		// than its MaximumAge, so that first tick spans at most the bound.
-		var lastEmitted = StaleArchiveGuard.StartFrom(newest, LocalNow());
+		// The window a tick writes is open at its start, so the edge row itself is never written twice — a
+		// previous follow run left it on the lattice this run walks again — and StaleArchiveGuard has already
+		// bounded how far behind the clock that edge may sit. An empty archive has no edge, and the clock
+		// stands in.
+		var edge = newest ?? LocalNow();
 
 		while (await WaitForTickAsync(options.Interval, stopping.Token))
 		{
 			var now = LocalNow();
-			var appended = await AppendAsync(writer, options, lastEmitted, now);
+			var appended = await AppendAsync(writer, options, edge, now);
 
 			// After the append has committed, never before it: at a cadence longer than a period the tick's
 			// own rows are the closing period's last ones, and a flush ahead of them would pick a coarse
 			// 'last' row the period had not produced yet.
-			var thinned = await CoarseFlush.FlushAsync(options, lastEmitted, now);
+			var thinned = await CoarseFlush.FlushAsync(options, edge, now);
 
 			Console.WriteLine($"appended        {appended} rows, {thinned} coarse, up to {now:O}");
-			lastEmitted = now;
+			edge = now;
 		}
 
 		Console.WriteLine("stopped");
@@ -124,17 +124,14 @@ public static class Program
 		}
 	}
 
-	private static async Task<long> AppendAsync(
-		ArchiveWriter writer,
-		FollowOptions options,
-		DateTime from,
-		DateTime toExclusive)
+	// The window is closed at `to` and the writer's partition walk is open at its end.
+	private static async Task<long> AppendAsync(ArchiveWriter writer, FollowOptions options, DateTime after, DateTime to)
 	{
-		var rows = LiveTailGenerator.Generate(options, from, toExclusive);
+		var rows = LiveTailGenerator.Generate(options, after, to);
 
 		return rows.Count == 0
 			? 0L
-			: await writer.WriteAsync(rows, from, toExclusive, allowExistingRows: true);
+			: await writer.WriteAsync(rows, after, to.AddTicks(1), allowExistingRows: true);
 	}
 
 	private static void ReportFollowPlan(FollowOptions options)

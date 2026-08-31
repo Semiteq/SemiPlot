@@ -10,10 +10,7 @@ public static class RawLayerGenerator
 		var breaks = BreakPlan.Create(options);
 		var intervalTicks = ChangeIntervalTicks(options.ChangeSeconds);
 
-		if (DescribeUnmarkableRun(breaks, intervalTicks) is { } unmarkable)
-		{
-			throw new ArgumentOutOfRangeException(nameof(options), options.ChangeSeconds, unmarkable);
-		}
+		RequireTwoChangesPerRun(breaks, intervalTicks, options);
 
 		foreach (var pen in SelectPens(options.PenCount))
 		{
@@ -138,71 +135,44 @@ public static class RawLayerGenerator
 		}
 	}
 
-	// A run holding a single row between two breaks would have to carry both codes at once, which the
-	// archive has no code for; it gets the poll tick it certainly also recorded. The empty run this
-	// returns on is the one with no break on either side — Generate refuses every other kind ahead of
-	// the walk, through DescribeUnmarkableRun.
+	// Both markers land on real change rows: the run's first for q = 16 and its last for q = 32, and
+	// RequireTwoChangesPerRun has made sure a run bounded by a break holds two distinct ones.
 	private static void MarkRunBoundaries(List<ArchiveRow> rows, int firstIndex, bool resumed, bool breakFollows)
 	{
-		if (firstIndex == rows.Count)
-		{
-			return;
-		}
-
 		if (resumed)
 		{
 			rows[firstIndex] = rows[firstIndex] with { Quality = ArchiveRow.FirstAfterBreakQuality };
 		}
 
-		if (!breakFollows)
+		if (breakFollows)
+		{
+			rows[^1] = rows[^1] with { Quality = ArchiveRow.LastBeforeBreakQuality };
+		}
+	}
+
+	// A run holding a single change would have to carry both marker codes at once, which the archive has
+	// no code for, so with breaks every archiving run holds two. The tight run is the first or the last:
+	// BreakPlan guarantees those only MinimumRun, while a run between two breaks is at least twice that.
+	private static void RequireTwoChangesPerRun(BreakPlan breaks, long intervalTicks, SeederOptions options)
+	{
+		if (breaks.Breaks.Count == 0)
 		{
 			return;
 		}
 
-		if (resumed && rows.Count - 1 == firstIndex)
+		foreach (var run in breaks.Runs)
 		{
-			var only = rows[firstIndex];
+			var changes = FirstIndex(run.End.Ticks, intervalTicks) - FirstIndex(run.Start.Ticks, intervalTicks);
 
-			rows.Add(only with { Timestamp = only.Timestamp + PollInterval });
-		}
-
-		var lastIndex = rows.Count - 1;
-
-		rows[lastIndex] = rows[lastIndex] with { Quality = ArchiveRow.LastBeforeBreakQuality };
-	}
-
-	internal static string? DescribeUnmarkableRun(BreakPlan breaks, long intervalTicks)
-	{
-		for (var runIndex = 0; runIndex < breaks.Runs.Count; runIndex++)
-		{
-			var run = breaks.Runs[runIndex];
-			var resumed = runIndex > 0;
-			var breakFollows = runIndex < breaks.Runs.Count - 1;
-
-			if (!resumed && !breakFollows)
+			if (changes < 2)
 			{
-				continue;
-			}
-
-			var changeTicks = FirstIndex(run.Start.Ticks, intervalTicks) * intervalTicks;
-
-			if (changeTicks >= run.End.Ticks)
-			{
-				return $"the archiving run {run.Start:O} to {run.End:O} holds no change, so the break it bounds "
-					+ "gets no marker pair.";
-			}
-
-			var holdsOneChange = changeTicks + intervalTicks >= run.End.Ticks;
-
-			if (resumed && breakFollows && holdsOneChange
-				&& changeTicks + PollInterval.Ticks >= run.End.Ticks)
-			{
-				return $"the archiving run {run.Start:O} to {run.End:O} holds a single change with no room for "
-					+ "the stop row synthesised one poll interval after it.";
+				throw new ArgumentOutOfRangeException(
+					nameof(options),
+					options.ChangeSeconds,
+					$"the archiving run {run.Start:O} to {run.End:O} holds fewer than two changes, so the break "
+					+ "it bounds gets no marker pair.");
 			}
 		}
-
-		return null;
 	}
 
 	// Index 0 is skipped because its anchor would sit one poll interval before absolute tick zero, on a

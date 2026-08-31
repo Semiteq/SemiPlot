@@ -135,11 +135,8 @@ public sealed class BreakGenerationTests
 		}
 	}
 
-	// The assertion admits no exception because none of these rows reaches the one case that has one. A
-	// run holding a single change gets a synthesised stop row one poll interval after it, off the lattice
-	// by construction; every interval here is seconds against runs of minutes, so no run holds one. That
-	// case is pinned by ASingleRowRunBetweenTwoBreaksGetsASynthesisedStopRow, and a row added here with a
-	// change interval wide enough to reach it would turn this test red rather than extend it.
+	// Every stop marker is a real change row: a run bounded by a break holds at least two changes, and the
+	// generator refuses a change interval that leaves one with fewer rather than inventing a row.
 	[Theory]
 	[InlineData(5.0, 60)]
 	[InlineData(1.0, 60)]

@@ -55,9 +55,9 @@ public sealed class FollowRestartTests(PostgresContainerFixture postgresContaine
 			TestContext.Current.CancellationToken);
 	}
 
-	// The regression. A resume on the edge itself regenerates the row sitting there and the COPY fails with
+	// The regression. A window closed at the edge regenerates the row sitting there and the COPY fails with
 	// 23505 on the first tick, which from a run configuration looks like the writer vanishing rather than
-	// reporting anything.
+	// reporting anything. The precondition: the lattice a second run walks does produce the edge row again.
 	[Fact]
 	public async Task ARestartOnALatticeAlignedEdgeAppendsWithoutADuplicateKey()
 	{
@@ -66,7 +66,7 @@ public sealed class FollowRestartTests(PostgresContainerFixture postgresContaine
 		var cancellationToken = TestContext.Current.CancellationToken;
 
 		Assert.Contains(
-			LiveTailGenerator.Generate(Options(), Edge, _restartClock),
+			LiveTailGenerator.Generate(Options(), _firstRunStart, _restartClock),
 			row => row.Timestamp == Edge);
 
 		var secondRunRows = await ResumeAsync(cancellationToken);
@@ -82,9 +82,9 @@ public sealed class FollowRestartTests(PostgresContainerFixture postgresContaine
 			await CountRawRowsAsync(cancellationToken));
 	}
 
-	// The other half of the fix: resuming past the edge must not open a hole at the seam. One millisecond
-	// is the smallest step the archive can tell apart, so the next lattice point is still inside one change
-	// interval of the edge, and every pen crosses the restart with no gap a raw window would draw.
+	// The other half of the fix: resuming past the edge must not open a hole at the seam. The next lattice
+	// point is inside one change interval of the edge, and every pen crosses the restart with no gap a raw
+	// window would draw.
 	[Fact]
 	public async Task TheFirstRowAfterTheRestartIsWithinOneChangeIntervalOfTheEdge()
 	{
@@ -111,17 +111,16 @@ public sealed class FollowRestartTests(PostgresContainerFixture postgresContaine
 		return new("Host=localhost;Database=archive", TimeSpan.FromSeconds(1), PenCount, 1L, ChangeSeconds);
 	}
 
-	// What Program.FollowAsync does before its first tick: read the archive's edge once, then take the
-	// instant the loop starts from. Both pieces are the production ones, so a resume that lands back on the
-	// edge reaches the COPY here exactly as it reaches it in a run.
+	// What Program.FollowAsync does before its first tick: read the archive's edge once, then open the first
+	// window after it. Both pieces are the production ones, so a resume that lands back on the edge reaches
+	// the COPY here exactly as it reaches it in a run.
 	private async Task<IReadOnlyList<ArchiveRow>> ResumeAsync(CancellationToken cancellationToken)
 	{
 		var freshness = await StaleArchiveGuard.CheckAsync(
 			Database.WriterConnectionString, _restartClock, cancellationToken);
 		Assert.Equal(Edge, freshness);
 
-		var rows = LiveTailGenerator.Generate(
-			Options(), StaleArchiveGuard.StartFrom(freshness, _restartClock), _restartClock);
+		var rows = LiveTailGenerator.Generate(Options(), freshness!.Value, _restartClock);
 
 		Assert.NotEmpty(rows);
 

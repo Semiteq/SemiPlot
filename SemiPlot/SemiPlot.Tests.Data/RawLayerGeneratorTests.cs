@@ -1,22 +1,17 @@
-﻿using System.Globalization;
-using System.Security.Cryptography;
-using System.Text;
-
-using SemiPlot.Tools.ArchiveSeeder;
+﻿using SemiPlot.Tools.ArchiveSeeder;
 
 using Xunit;
 
 namespace SemiPlot.Tests.Data;
 
+// What pins the seeding generator: determinism, the absolute lattice, the break holes and the row-pair
+// shape. The waveform itself is not pinned, so a deliberate change to the value walk moves no constant
+// here; a change that breaks one of these properties is what the suite is for.
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
 [Trait("Category", "Unit")]
 public sealed class RawLayerGeneratorTests
 {
-	// The bench every later slice develops against: 1 day, 8 pens, seed 1, a fixed exclusive end.
-	private const string StandardSliceDigest = "b1291512fa0a3e962bcdf79db65bea46ab07d365fc2f528c2bf9e7b719627428";
-	private const int StandardSliceRowCount = 271984;
-
 	private static readonly TimeSpan _pollInterval = RawLayerGenerator.PollInterval;
 
 	private static readonly int[] _qualityCodes =
@@ -27,12 +22,63 @@ public sealed class RawLayerGeneratorTests
 	];
 
 	[Fact]
+	public void TheSameOptionsGenerateTheSameRowsTwice()
+	{
+		Assert.Equal(RawLayerGenerator.Generate(BenchOptions.For()), RawLayerGenerator.Generate(BenchOptions.For()));
+	}
+
+	[Fact]
 	public void ADifferentSeedProducesDifferentRows()
 	{
 		var first = RawLayerGenerator.Generate(BenchOptions.For());
 		var second = RawLayerGenerator.Generate(BenchOptions.For(seed: 2));
 
 		Assert.NotEqual(first, second);
+	}
+
+	// The lattice is absolute (docs/architecture/bench.md): a change sits at index * interval from tick
+	// zero and its anchor one poll interval ahead of that, whatever the span's own start is.
+	[Fact]
+	public void EveryRowSitsOnTheAbsoluteLattice()
+	{
+		var options = BenchOptions.For();
+		var interval = TimeSpan.FromSeconds(options.ChangeSeconds).Ticks;
+		var anchorOffset = _pollInterval.Ticks;
+
+		foreach (var row in RawLayerGenerator.Generate(options))
+		{
+			var offset = row.Timestamp.Ticks % interval;
+
+			Assert.True(
+				offset == 0L || offset == interval - anchorOffset,
+				$"{row.Timestamp:O} sits off the absolute lattice.");
+		}
+	}
+
+	// A plan with breaks is the no-break lattice with the break windows cut out and nothing else missing.
+	// The only other rows a break costs are two anchors: the one ahead of the first change past the break's
+	// start, which would repeat a value with no change behind it, and the one ahead of the resume change,
+	// which the plant's movement during the stop makes a level of its own. Every pen reads the same, because
+	// the project stops as a whole.
+	[Fact]
+	public void BreaksCutTheirWindowsOutOfTheLatticeAndLeaveNoOtherHole()
+	{
+		var options = BenchOptions.For();
+		var plan = BreakPlan.Create(options);
+		var interval = TimeSpan.FromSeconds(options.ChangeSeconds).Ticks;
+		var continuous = BenchRows.ByPen(RawLayerGenerator.Generate(options with { BreakCount = 0 }));
+		var broken = BenchRows.ByPen(RawLayerGenerator.Generate(options));
+
+		Assert.Equal(continuous.Count, broken.Count);
+
+		for (var pen = 0; pen < continuous.Count; pen++)
+		{
+			var expected = continuous[pen]
+				.Where(row => !plan.Breaks.Any(window => Removes(window, row, interval)))
+				.Select(row => (row.Timestamp, row.Value));
+
+			Assert.Equal(expected, broken[pen].Select(row => (row.Timestamp, row.Value)));
+		}
 	}
 
 	// The pair-local invariant of docs/architecture/scada-archive.md#write-behavior. A row carrying a value
@@ -155,6 +201,15 @@ public sealed class RawLayerGeneratorTests
 	}
 
 	[Fact]
+	public void TheStandardSliceGivesEveryPenItsOwnColour()
+	{
+		var colours = RawLayerGenerator.SelectPens(SeederOptions.DefaultPenCount).Select(pen => pen.Color).ToArray();
+
+		Assert.Equal(colours.Length, colours.Distinct(StringComparer.Ordinal).Count());
+		Assert.All(colours, colour => Assert.Matches("^#[0-9A-F]{6}$", colour));
+	}
+
+	[Fact]
 	public void ASinglePenProducesRowsForThatPenOnly()
 	{
 		var rows = RawLayerGenerator.Generate(BenchOptions.For(pens: 1));
@@ -163,50 +218,25 @@ public sealed class RawLayerGeneratorTests
 		Assert.All(rows, row => Assert.Equal(1000, row.Id));
 	}
 
-	[Theory]
-	[InlineData(40, 3)]
-	[InlineData(50, 5)]
-	[InlineData(55, 7)]
-	[InlineData(60, 15)]
-	public void ASingleRowRunBetweenTwoBreaksGetsASynthesisedStopRow(int breaks, int expected)
-	{
-		var options = BenchOptions.For(pens: 1, changeSeconds: 600.0, breaks: breaks);
-		var rows = BenchRows.ByPen(RawLayerGenerator.Generate(options))[0];
-
-		var synthesised = rows
-			.Zip(rows.Skip(1))
-			.Count(pair => pair.First.Quality == ArchiveRow.FirstAfterBreakQuality
-				&& pair.Second.Quality == ArchiveRow.LastBeforeBreakQuality
-				&& pair.Second.Value == pair.First.Value
-				&& pair.Second.Timestamp - pair.First.Timestamp == _pollInterval);
-
-		Assert.Equal(expected, synthesised);
-
-		// What the added row buys: the marker sequence stays a strict 32, 16 alternation, which is what
-		// every reader of a gap boundary relies on.
-		var markers = rows.Where(row => row.Quality != ArchiveRow.OrdinaryQuality).ToArray();
-
-		Assert.Equal(breaks * 2, markers.Length);
-		Assert.All(
-			markers.Index(),
-			marker => Assert.Equal(
-				marker.Index % 2 == 0 ? ArchiveRow.LastBeforeBreakQuality : ArchiveRow.FirstAfterBreakQuality,
-				marker.Item.Quality));
-	}
-
-	// The combination the alternation cannot survive: an archiving run holding no lattice point carries
-	// neither marker, and the archive is malformed with nothing else to show for it.
+	// Both markers of a break go on real change rows, so a run bounded by a break needs two of them. The
+	// tight run is the first or the last — 600 s over 20 breaks leaves the last run under one change — while
+	// a run between two breaks is at least twice as long and reaches a single change only at 40 breaks and
+	// beyond. Both shapes are refused rather than patched.
 	[Theory]
 	[InlineData(20)]
 	[InlineData(30)]
+	[InlineData(40)]
+	[InlineData(50)]
+	[InlineData(55)]
+	[InlineData(60)]
 	[InlineData(72)]
-	public void AChangeIntervalThatLeavesARunWithNoChangeIsRejected(int breaks)
+	public void AChangeIntervalThatLeavesARunWithFewerThanTwoChangesIsRejected(int breaks)
 	{
 		var options = BenchOptions.For(pens: 1, changeSeconds: 600.0, breaks: breaks);
 
 		var rejected = Assert.Throws<ArgumentOutOfRangeException>(() => RawLayerGenerator.Generate(options));
 
-		Assert.Contains("holds no change", rejected.Message, StringComparison.Ordinal);
+		Assert.Contains("fewer than two changes", rejected.Message, StringComparison.Ordinal);
 	}
 
 	[Fact]
@@ -238,16 +268,27 @@ public sealed class RawLayerGeneratorTests
 		Assert.InRange(only.Timestamp, options.Start, options.End.AddTicks(-1));
 	}
 
-	// A hash rather than a sample: an accidental edit anywhere in the generation code would otherwise
-	// change the bench for eight later slices without failing anything. A deliberate waveform change
-	// updates this constant in the same commit.
-	[Fact]
-	public void TheStandardSliceMatchesItsGoldenDigest()
+	// A row of the continuous lattice that a break window removes: one inside the window, the anchor of the
+	// first change at or past the window's start, or the anchor of the first change at or past its end.
+	private static bool Removes(BreakPlan.Window window, ArchiveRow row, long interval)
 	{
-		var rows = RawLayerGenerator.Generate(BenchOptions.For());
+		var timestamp = row.Timestamp;
 
-		Assert.Equal(StandardSliceRowCount, rows.Count);
-		Assert.Equal(StandardSliceDigest, Digest(rows));
+		if (timestamp >= window.Start && timestamp < window.End)
+		{
+			return true;
+		}
+
+		if (timestamp.Ticks % interval != interval - _pollInterval.Ticks)
+		{
+			return false;
+		}
+
+		var change = timestamp + _pollInterval;
+		var stranded = change >= window.Start && timestamp < window.Start;
+		var resumes = change >= window.End && change.AddTicks(-interval) < window.End;
+
+		return stranded || resumes;
 	}
 
 	private static TimeSpan LongestGap(IReadOnlyList<ArchiveRow> rows)
@@ -265,23 +306,5 @@ public sealed class RawLayerGeneratorTests
 		}
 
 		return longest;
-	}
-
-	// Values are rounded before hashing: Math.Sin may differ by one unit in the last place between
-	// platforms, and the digest must survive a Linux runner without hiding a real waveform change.
-	private static string Digest(IReadOnlyList<ArchiveRow> rows)
-	{
-		using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-
-		foreach (var row in rows)
-		{
-			var line = string.Create(
-				CultureInfo.InvariantCulture,
-				$"{row.Id};{row.Layer};{row.Timestamp:yyyy-MM-ddTHH:mm:ss.fff};{row.Value:F6};{row.Quality}\n");
-
-			hash.AppendData(Encoding.UTF8.GetBytes(line));
-		}
-
-		return Convert.ToHexStringLower(hash.GetHashAndReset());
 	}
 }

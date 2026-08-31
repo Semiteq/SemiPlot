@@ -169,7 +169,7 @@ public sealed class PostgresCompositionTests
 	//
 	// Silence alone would prove nothing here — these settings point at an address nothing answers, so a
 	// leaked loop emits no sample either. What it does emit is a fault: three refused ticks raise
-	// ArchiveConnectionLostError on the provider's own connection stream. The control is a second provider
+	// ArchiveFault.ConnectionLost on the provider's own connection stream. The control is a second provider
 	// whose subscription is left running, and the test waits for its fault before reading the dropped one's
 	// silence, so the wait is calibrated by a loop that really is polling rather than by a guessed delay.
 	//

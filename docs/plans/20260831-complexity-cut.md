@@ -343,12 +343,12 @@ No `+1 ms`, no `StartFrom`. The `t > edge` bound is what `RealtimePoll` already 
 - Modify: `SemiPlot/SemiPlot.UI/Startup/StartupFailureMapper.cs:211` (one fixed remedy), `SemiPlot/SemiPlot.Tests/UI/Startup/StartupFailureMapperTests.cs:151-162`
 - Modify: `docs/architecture/data-integration.md:522,621,661,799,807`, `docs/architecture/testing-strategy.md:60`, `CLAUDE.md:270` (the "cold-path reader" paragraph)
 
-- [ ] delete the reader, its statement, its registration and its three test classes
-- [ ] make `PostgresDataProvider.MapAsync` synchronous and drop the `57014` branch
-- [ ] rewrite the `57014` mapper arm to one detail and one remedy naming `statement_timeout` for the reader role
-- [ ] update the mapper unit tests to assert the type alone for `57014`
-- [ ] rewrite the `CLAUDE.md` paragraph on cold-path readers to state that the provider adds none
-- [ ] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests` and `SemiPlot.Tests.Data` - must pass before task 3
+- [x] delete the reader, its statement, its registration and its three test classes
+- [x] make `PostgresDataProvider.MapAsync` synchronous and drop the `57014` branch
+- [x] rewrite the `57014` mapper arm to one detail and one remedy naming `statement_timeout` for the reader role
+- [x] update the mapper unit tests to assert the type alone for `57014`
+- [x] rewrite the `CLAUDE.md` paragraph on cold-path readers to state that the provider adds none
+- [x] `dotnet build SemiPlot.slnx`; `dotnet test` on `SemiPlot.Tests` and `SemiPlot.Tests.Data` - must pass before task 3
 
 ### Task 3: Collapse the vocabulary into `ArchiveError` and `ConnectionFileError`; drop the file version
 

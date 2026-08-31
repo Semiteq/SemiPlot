@@ -23,7 +23,7 @@ namespace SemiPlot.Tests.UI.MainWindow;
 public sealed class ArchiveStatusBannerTests
 {
 	private static readonly ArchiveConnectionState _lost =
-		new(new ArchiveConnectionLostError("bench", 5432, "semiplot_dev", 3));
+		new(new ArchiveError(ArchiveFault.ConnectionLost, "bench", 5432, "semiplot_dev", "3"));
 
 	[AvaloniaFact]
 	public void ArchiveConnectionMessage_BeforeAnyState_IsAbsent()

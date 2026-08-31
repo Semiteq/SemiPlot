@@ -7,8 +7,6 @@
 /// </summary>
 internal sealed class PostgresConnectionDto
 {
-	public string? ConnectionFileVersion { get; set; }
-
 	public string? Host { get; set; }
 
 	public int? Port { get; set; }

@@ -17,41 +17,50 @@ public sealed class DataErrorTests
 	private const string Database = "semiplot_dev";
 
 	[Theory]
+	[InlineData(ConnectionFileProblem.NotFound)]
 	[InlineData(ConnectionFileProblem.Unreadable)]
 	[InlineData(ConnectionFileProblem.Unparseable)]
 	[InlineData(ConnectionFileProblem.MissingField)]
 	[InlineData(ConnectionFileProblem.OutOfRange)]
 	[InlineData(ConnectionFileProblem.UnknownTimeZone)]
-	[InlineData(ConnectionFileProblem.VersionMismatch)]
-	public void ConnectionFileInvalidErrorKeepsItsDiscriminator(ConnectionFileProblem kind)
+	public void ConnectionFileErrorKeepsItsDiscriminator(ConnectionFileProblem kind)
 	{
 		const string reason = "source_time_zone is blank";
 
-		var error = new ConnectionFileInvalidError(ConnectionFilePath, kind, reason);
+		var error = new ConnectionFileError(ConnectionFilePath, kind, reason);
 
 		Assert.Equal(ConnectionFilePath, error.Path);
 		Assert.Equal(kind, error.Kind);
 		Assert.Equal(reason, error.Reason);
+		Assert.Contains(ConnectionFilePath, error.Message, StringComparison.Ordinal);
 	}
 
-	// The consumer routes on Table once MissingObject says a table is absent, and a message reading
-	// "holds no table ''" names nothing to act on. So the pair is rejected where it is built.
 	[Theory]
-	[InlineData(null)]
-	[InlineData("")]
-	[InlineData("   ")]
-	public void ArchiveNotInitialisedErrorRejectsATableCaseNamingNoTable(string? table)
+	[InlineData(ArchiveFault.Unreachable, "")]
+	[InlineData(ArchiveFault.AccessDenied, "scada_reader")]
+	[InlineData(ArchiveFault.DatabaseMissing, "")]
+	[InlineData(ArchiveFault.TableMissing, "trends")]
+	[InlineData(ArchiveFault.ShapeUnexpected, "column \"v\" does not exist")]
+	[InlineData(ArchiveFault.QueryTimedOut, "")]
+	[InlineData(ArchiveFault.ConnectionLost, "3")]
+	[InlineData(ArchiveFault.ReadFailed, "42P07")]
+	[InlineData(ArchiveFault.ReadFailed, "")]
+	public void ArchiveErrorKeepsItsDiscriminatorAndNamesTheAddress(ArchiveFault kind, string detail)
 	{
-		Assert.ThrowsAny<ArgumentException>(
-			() => new ArchiveNotInitialisedError(Host, Port, Database, ArchiveObject.Table, table));
+		var error = new ArchiveError(kind, Host, Port, Database, detail);
+
+		Assert.Equal(kind, error.Kind);
+		Assert.Equal(detail, error.Detail);
+		Assert.Contains(Host, error.Message, StringComparison.Ordinal);
+		Assert.Contains(Database, error.Message, StringComparison.Ordinal);
 	}
 
 	[Fact]
 	public void EveryPublicErrorTypeIsSealedAndDerivesFromError()
 	{
-		var errorTypes = typeof(ConnectionFileNotFoundError).Assembly
+		var errorTypes = typeof(ArchiveError).Assembly
 			.GetExportedTypes()
-			.Where(type => type.Namespace == typeof(ConnectionFileNotFoundError).Namespace)
+			.Where(type => type.Namespace == typeof(ArchiveError).Namespace)
 			.Where(type => type.IsClass)
 			.ToList();
 

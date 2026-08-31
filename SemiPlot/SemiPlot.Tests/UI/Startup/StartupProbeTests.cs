@@ -71,7 +71,8 @@ public sealed class StartupProbeTests
 		var result = await StartupProbe.ReadAsync(container, StartupProbe.DefaultReadBound);
 
 		result.IsFailed.Should().BeTrue();
-		result.Errors.Should().ContainSingle().Which.Should().BeOfType<ArchiveUnreachableError>();
+		result.Errors.Should().ContainSingle().Which.Should().BeOfType<ArchiveError>()
+			.Which.Kind.Should().Be(ArchiveFault.Unreachable);
 
 		var resolve = () => container.GetRequiredService<IDataProvider>();
 		resolve.Should().Throw<ObjectDisposedException>();
@@ -89,7 +90,8 @@ public sealed class StartupProbeTests
 		// returning at once with the catalogue's error.
 		var result = await StartupProbe.ReadAsync(container, StartupProbe.DefaultReadBound);
 
-		result.Errors.Should().ContainSingle().Which.Should().BeOfType<ArchiveUnreachableError>();
+		result.Errors.Should().ContainSingle().Which.Should().BeOfType<ArchiveError>()
+			.Which.Kind.Should().Be(ArchiveFault.Unreachable);
 	}
 
 	[Fact]
@@ -102,7 +104,8 @@ public sealed class StartupProbeTests
 		var result = await StartupProbe.ReadAsync(container, StartupProbe.DefaultReadBound);
 
 		result.IsFailed.Should().BeTrue();
-		result.Errors.Should().ContainSingle().Which.Should().BeOfType<ArchiveReadFailedError>();
+		result.Errors.Should().ContainSingle().Which.Should().BeOfType<ArchiveError>()
+			.Which.Kind.Should().Be(ArchiveFault.ReadFailed);
 
 		var resolve = () => container.GetRequiredService<IDataProvider>();
 		resolve.Should().Throw<ObjectDisposedException>();
@@ -203,7 +206,7 @@ public sealed class StartupProbeTests
 			StartupProbe.DefaultReadBound);
 
 		result.IsFailed.Should().BeTrue();
-		result.Errors.Should().ContainSingle().Which.Should().BeOfType<ConnectionFileNotFoundError>()
+		result.Errors.Should().ContainSingle().Which.Should().BeOfType<ConnectionFileError>()
 			.Which.Path.Should().Be(Path.Combine(emptyConfigDir, StartupProbe.ConnectionFileName));
 	}
 

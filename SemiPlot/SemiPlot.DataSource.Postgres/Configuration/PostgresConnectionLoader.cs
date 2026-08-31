@@ -9,14 +9,11 @@ namespace SemiPlot.DataSource.Postgres.Configuration;
 
 /// <summary>
 /// Reads the archive connection file into <see cref="PostgresConnectionSettings"/>. Every failure is a
-/// typed error in the returned <see cref="Result{TValue}"/>; nothing escapes as an exception, for any
-/// input including a blank path, so a malformed file is reported at startup rather than at the first
-/// query.
+/// <see cref="ConnectionFileError"/> in the returned <see cref="Result{TValue}"/>; nothing escapes as an
+/// exception, for any input including a blank path. Keys the format does not name are ignored.
 /// </summary>
 public static class PostgresConnectionLoader
 {
-	private const string SupportedFileVersion = "1.0";
-
 	private const int LowestPort = 1;
 
 	private const int HighestPort = 65535;
@@ -34,7 +31,8 @@ public static class PostgresConnectionLoader
 	{
 		if (string.IsNullOrWhiteSpace(filePath))
 		{
-			return Result.Fail<PostgresConnectionSettings>(new ConnectionFileNotFoundError(filePath));
+			return Result.Fail<PostgresConnectionSettings>(
+				new ConnectionFileError(filePath, ConnectionFileProblem.NotFound));
 		}
 
 		var read = Read(filePath);
@@ -45,15 +43,6 @@ public static class PostgresConnectionLoader
 		}
 
 		var dto = read.Value;
-
-		// The version is checked ahead of the fields, because a file written for another version is
-		// allowed to lack fields this one requires and the version is the answer the operator can act on.
-		var version = ValidateVersion(filePath, dto.ConnectionFileVersion);
-
-		if (version.IsFailed)
-		{
-			return Result.Fail<PostgresConnectionSettings>(version.Errors);
-		}
 
 		var fields = ValidateFields(filePath, dto);
 
@@ -105,12 +94,13 @@ public static class PostgresConnectionLoader
 		catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
 		{
 			return Result.Fail<PostgresConnectionDto>(
-				new ConnectionFileNotFoundError(filePath).CausedBy(new ExceptionalError(exception)));
+				new ConnectionFileError(filePath, ConnectionFileProblem.NotFound)
+					.CausedBy(new ExceptionalError(exception)));
 		}
 		catch (Exception exception)
 		{
 			return Result.Fail<PostgresConnectionDto>(
-				new ConnectionFileInvalidError(
+				new ConnectionFileError(
 						filePath, ConnectionFileProblem.Unreadable, "the file cannot be opened for reading")
 					.CausedBy(new ExceptionalError(exception)));
 		}
@@ -121,44 +111,16 @@ public static class PostgresConnectionLoader
 
 			return dto is null
 				? Result.Fail<PostgresConnectionDto>(
-					new ConnectionFileInvalidError(
+					new ConnectionFileError(
 						filePath, ConnectionFileProblem.Unparseable, "the file carries no configuration"))
 				: Result.Ok(dto);
 		}
 		catch (Exception exception)
 		{
 			return Result.Fail<PostgresConnectionDto>(
-				new ConnectionFileInvalidError(
-						filePath, ConnectionFileProblem.Unparseable, "the file is not valid YAML")
+				new ConnectionFileError(filePath, ConnectionFileProblem.Unparseable, "the file is not valid YAML")
 					.CausedBy(new ExceptionalError(exception)));
 		}
-	}
-
-	/// <summary>
-	/// Reports a file written for another version ahead of the fields that version does not carry. The
-	/// guard reaches absent fields only: <see cref="Read"/> deserializes the whole document first, so a
-	/// later file version that changes a key's YAML type is reported as
-	/// <see cref="ConnectionFileProblem.Unparseable"/> and the operator never learns the version is the
-	/// real problem. A version bump that must stay reportable adds keys rather than retyping them.
-	/// </summary>
-	private static Result ValidateVersion(string filePath, string? foundVersion)
-	{
-		if (string.IsNullOrWhiteSpace(foundVersion))
-		{
-			return Invalid(
-				filePath, ConnectionFileProblem.MissingField, ["connection_file_version"], "absent or blank");
-		}
-
-		if (!string.Equals(foundVersion, SupportedFileVersion, StringComparison.Ordinal))
-		{
-			return Result.Fail(
-				new ConnectionFileInvalidError(
-					filePath,
-					ConnectionFileProblem.VersionMismatch,
-					$"the file is version '{foundVersion}', not the supported '{SupportedFileVersion}'"));
-		}
-
-		return Result.Ok();
 	}
 
 	private static Result ValidateFields(string filePath, PostgresConnectionDto dto)
@@ -190,7 +152,7 @@ public static class PostgresConnectionLoader
 
 	// A port of 0 and a negative interval parse as integers and then detonate downstream — the Npgsql
 	// builder rejects a port outside 1..65535 on assignment, and a non-positive interval becomes a
-	// TimeSpan nothing checks. They belong in the loader's Result like every other file fault.
+	// TimeSpan nothing checks.
 	private static Result ValidateRanges(string filePath, PostgresConnectionDto dto)
 	{
 		var outOfRange = new List<string>();
@@ -219,7 +181,7 @@ public static class PostgresConnectionLoader
 		catch (Exception exception) when (exception is TimeZoneNotFoundException or InvalidTimeZoneException)
 		{
 			return Result.Fail<TimeZoneInfo>(
-				new ConnectionFileInvalidError(
+				new ConnectionFileError(
 						filePath,
 						ConnectionFileProblem.UnknownTimeZone,
 						$"'{identifier}' is not a time zone this machine knows")
@@ -238,6 +200,6 @@ public static class PostgresConnectionLoader
 		var verb = fieldNames.Count == 1 ? "is" : "are";
 
 		return Result.Fail(
-			new ConnectionFileInvalidError(filePath, kind, $"the required {subject} '{names}' {verb} {complaint}"));
+			new ConnectionFileError(filePath, kind, $"the required {subject} '{names}' {verb} {complaint}"));
 	}
 }

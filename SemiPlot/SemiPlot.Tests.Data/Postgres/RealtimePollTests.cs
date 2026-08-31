@@ -55,9 +55,10 @@ public sealed class RealtimePollTests
 
 		Assert.All(states.Take(ConsecutiveFailuresBeforeFault - 1), Assert.Null);
 
-		var fault = Assert.IsType<ArchiveConnectionLostError>(states[^1]?.Fault);
+		var fault = Assert.IsType<ArchiveError>(states[^1]?.Fault);
 
-		Assert.Equal(ConsecutiveFailuresBeforeFault, fault.FailureThreshold);
+		Assert.Equal(ArchiveFault.ConnectionLost, fault.Kind);
+		Assert.Equal($"{ConsecutiveFailuresBeforeFault}", fault.Detail);
 	}
 
 	// The fault carries the address the failing ticks were issued against, so the operator reads which
@@ -71,7 +72,7 @@ public sealed class RealtimePollTests
 
 		var states = await TickAsync(NewPoll(dataSource), ConsecutiveFailuresBeforeFault);
 
-		var fault = Assert.IsType<ArchiveConnectionLostError>(states[^1]?.Fault);
+		var fault = Assert.IsType<ArchiveError>(states[^1]?.Fault);
 
 		Assert.Equal(settings.Host, fault.Host);
 		Assert.Equal(settings.Port, fault.Port);
@@ -81,7 +82,7 @@ public sealed class RealtimePollTests
 	// The flag, not the counter, is what stops the second banner: a run of failures is one fault, and the
 	// operator is told once until a success has reset it. The number the one fault carries is therefore the
 	// threshold that raised it and never the length of the run that followed — five failures here, three in
-	// the report, which is what ArchiveConnectionLostError.FailureThreshold promises.
+	// the report.
 	[Fact]
 	public async Task AFourthAndFifthConsecutiveFailureRaiseNothingFurther()
 	{
@@ -91,9 +92,9 @@ public sealed class RealtimePollTests
 
 		Assert.All(states.Take(ConsecutiveFailuresBeforeFault - 1), Assert.Null);
 
-		var fault = Assert.IsType<ArchiveConnectionLostError>(states[ConsecutiveFailuresBeforeFault - 1]?.Fault);
+		var fault = Assert.IsType<ArchiveError>(states[ConsecutiveFailuresBeforeFault - 1]?.Fault);
 
-		Assert.Equal(ConsecutiveFailuresBeforeFault, fault.FailureThreshold);
+		Assert.Equal($"{ConsecutiveFailuresBeforeFault}", fault.Detail);
 		Assert.All(states.Skip(ConsecutiveFailuresBeforeFault), Assert.Null);
 	}
 

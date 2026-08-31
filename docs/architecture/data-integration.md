@@ -107,7 +107,7 @@ ordering on the raw column would return a list not ordered by the values it carr
 
 An empty table yields an empty pen list, not a failure — a fresh installation before commissioning
 is a normal state. A missing table is the other state and is a failure: `42P01` maps to
-`ArchiveNotInitialisedError` with `Table` naming `semiplot_tags`.
+`ArchiveFault.TableMissing` with the detail naming `semiplot_tags`.
 
 ### Archive extent
 
@@ -495,7 +495,7 @@ does not.
   physical connection after a reset, so a dropped packet or a recycled pool connection produces
   exactly one failed tick, and a fault raised on one failure would flap over a healthy archive. The
   count multiplies the operator's own `poll_interval_ms`: at the 1 s cadence a bench uses, that is a
-  fault within about three seconds. The state carries `ArchiveConnectionLostError`, naming the host,
+  fault within about three seconds. The state carries `ArchiveFault.ConnectionLost`, naming the host,
   the port, the database and the threshold that raised it.
 - **The fault is raised once per outage, and the number it carries is the threshold rather than a
   running count.** The poll keeps failing behind a raised fault and reports nothing further until a
@@ -533,13 +533,13 @@ so no failure crosses to the UI thread (`DA-1`).
 | --- | --- | --- |
 | Connection refused or DNS failure at startup | failed `Result` | `ErrorWindow` titled "No connection to the archive", naming the host and port, with a remedy and one **Close** button — no retry, the operator corrects the cause and starts again |
 | Connection lost mid-session | failed `Result` on the query; realtime tick dropped | Chart keeps the data it has; staleness is visible |
-| Three consecutive realtime ticks fail | `ArchiveConnectionLostError` on `ConnectionFaults`; the observable keeps running | A banner row over the chart naming the live edge that stopped answering and the check to make — the server still running and still reachable — cleared by the first tick that succeeds |
-| A column the read needs is absent (SQLSTATE `42703`) | failed `Result` carrying `ArchiveShapeUnexpectedError` with the server's own detail | "The archive has an unexpected shape" — the remedy is running `semibase site`, then finding what altered the table |
+| Three consecutive realtime ticks fail | `ArchiveFault.ConnectionLost` on `ConnectionFaults`; the observable keeps running | A banner row over the chart naming the live edge that stopped answering and the check to make — the server still running and still reachable — cleared by the first tick that succeeds |
+| A column the read needs is absent (SQLSTATE `42703`) | failed `Result` carrying `ArchiveFault.ShapeUnexpected` with the server's own detail | "The archive has an unexpected shape" — the remedy is running `semibase site`, then finding what altered the table |
 | Query timeout | failed `Result` | Same as above; the timeout is a configured bound, not an accident |
-| The database does not exist (SQLSTATE `3D000`, the server answers) | failed `Result` carrying `ArchiveNotInitialisedError` whose `MissingObject` is `Database`, distinguished from a connection failure | "The archive is not provisioned" — the remedy is running `semibase site` |
+| The database does not exist (SQLSTATE `3D000`, the server answers) | failed `Result` carrying `ArchiveFault.DatabaseMissing`, distinguished from a connection failure | "The archive is not provisioned" — the remedy is running `semibase site` |
 | The credentials are refused or a grant is missing (SQLSTATE `28P01`, `28000`, `42501`) | failed `Result`, distinguished from a connection failure | "The archive refused the credentials" — the remedy is the user, password or grants, not the network |
-| `trends` does not exist (provisioning stopped part-way) | failed `Result` carrying `ArchiveNotInitialisedError` whose `MissingObject` is `Table` and whose `Table` is `trends` | "The archive is not provisioned" — the remedy is running `semibase site` |
-| `semiplot_tags` does not exist (provisioning unfinished) | failed `Result` carrying `ArchiveNotInitialisedError` whose `MissingObject` is `Table` and whose `Table` is `semiplot_tags` | "The archive is not provisioned" — the remedy is running `semibase site` |
+| `trends` does not exist (provisioning stopped part-way) | failed `Result` carrying `ArchiveFault.TableMissing` whose detail is `trends` | "The archive is not provisioned" — the remedy is running `semibase site` |
+| `semiplot_tags` does not exist (provisioning unfinished) | failed `Result` carrying `ArchiveFault.TableMissing` whose detail is `semiplot_tags` | "The archive is not provisioned" — the remedy is running `semibase site` |
 | `semiplot_tags` present but empty | empty pen list, success | A row stating the catalogue is empty and naming who fills it — commissioning is not finished |
 | Archive present but no rows in the window | success, empty envelope list — no pen has rows, so no pen gets an envelope | Empty chart, no error |
 
@@ -571,56 +571,43 @@ side and a missing one does not, and the split is why no `EmptyTagCatalogError` 
 catalogue is a successful read of zero rows: the database answered correctly and nothing is broken,
 and routing it as a failure would make every generic failure handler log a warning on every start of
 a fresh installation. A missing `semiplot_tags` raises `42P01` and is a failure, carried by
-`ArchiveNotInitialisedError` with `Table` naming the table. The two states stay distinguishable —
+`ArchiveFault.TableMissing` with the detail naming the table. The two states stay distinguishable —
 commissioning unfinished against provisioning unfinished — which is what the provisioning order in
 `postgres-instance.md` requires, and the split needs no error type of its own.
 
 | Type | Fields | Operator sentence |
 | --- | --- | --- |
-| `ConnectionFileNotFoundError` | path | The connection file is not where it was expected |
-| `ConnectionFileInvalidError` | path, kind (`Unreadable` \| `Unparseable` \| `MissingField` \| `OutOfRange` \| `UnknownTimeZone` \| `VersionMismatch`), reason | The file exists but cannot be read as configuration, the version it declares included |
-| `ArchiveUnreachableError` | host, port, database | No connection to the archive |
-| `ArchiveAccessDeniedError` | host, port, database, username | The credentials or the grants are wrong |
-| `ArchiveNotInitialisedError` | host, port, database, missingObject (`Database` \| `Table`), table (null on `Database`) | The server answers but the database, or a table the read needs, does not exist |
-| `ArchiveQueryTimedOutError` | host, port, database | The server ended the read (SQLSTATE `57014`): its `statement_timeout` passed or an administrator cancelled it |
-| `ArchiveShapeUnexpectedError` | host, port, database, detail (what the server said) | The tables are there, but not the columns they are expected to carry |
-| `ArchiveConnectionLostError` | host, port, database, failureThreshold (the number of consecutive failed ticks that raised the fault, fixed at the raise — not a running count) | The live edge stopped answering; the history already drawn is unaffected |
-| `ArchiveReadFailedError` | host, port, database, sqlState (empty when the failure carried none) | The archive rejected the read for a reason this build does not recognise |
+| `ConnectionFileError` | path, kind (`NotFound` \| `Unreadable` \| `Unparseable` \| `MissingField` \| `OutOfRange` \| `UnknownTimeZone`), reason | The connection file is absent, or exists but cannot be read as configuration |
+| `ArchiveError` | kind (`ArchiveFault`), host, port, database, detail | One sentence per kind, below |
 
-The two connection-file types are raised by the settings loader. Six `Archive*` types are the
-vocabulary the read path maps its SQLSTATEs onto — `28P01` is a type of its own rather than one
-schema error because it sends the operator to a separate remedy: fix the credentials, not the
-provisioning, and `42703` is `ArchiveShapeUnexpectedError` rather than a missing relation because
-the tables are there and it is their columns that are wrong.
-The remaining one is raised without a SQLSTATE behind it: `ArchiveConnectionLostError` counts
-failed poll ticks. `3D000` and `42P01` share `ArchiveNotInitialisedError` and stay apart inside it on
-`MissingObject`, because both say the same thing — something the read needs was never created — and
-differ only in what to create. On the table case the type carries the table name rather than assuming
-`trends`, because `42P01` is table-agnostic and the name is what the detail line reports; the remedy
-is `semibase site` for either table, since one provisioning run creates both. On the database case
-`Table` is null: `3D000` names no relation, and the remedy is `semibase site`.
-`ArchiveReadFailedError` closes the mapping: anything the table above does not name arrives as that
-type carrying its SQLSTATE, so nothing escapes as an exception and nothing crosses as an untyped
+| `ArchiveFault` | Raised by | Detail | Operator sentence |
+| --- | --- | --- | --- |
+| `Unreachable` | a socket failure, a client bound firing, any `NpgsqlException` without a SQLSTATE | empty | No connection to the archive |
+| `AccessDenied` | `28P01`, `28000`, `42501` | the username | The credentials or the grants are wrong |
+| `DatabaseMissing` | `3D000` | empty | The server answers but holds no such database |
+| `TableMissing` | `42P01` | the relation the failing statement touches | The database exists but a table the read needs does not |
+| `ShapeUnexpected` | `42703` | the server's own message | The tables are there, but not the columns they are expected to carry |
+| `QueryTimedOut` | `57014` | empty | The server ended the read: its `statement_timeout` passed or an administrator cancelled it |
+| `ConnectionLost` | three consecutive failed poll ticks | the number of failures that raised it | The live edge stopped answering; the history already drawn is unaffected |
+| `ReadFailed` | any other SQLSTATE, or a client-side throw | the SQLSTATE, or empty | The archive rejected the read for a reason this build does not recognise |
+
+`ConnectionFileError` is raised by the settings loader. `ArchiveError` is the vocabulary the read path
+maps its SQLSTATEs onto; `28P01` is a kind of its own rather than one schema error because it sends the
+operator to a separate remedy, and `42703` is `ShapeUnexpected` rather than a missing relation because
+the tables are there and it is their columns that are wrong. `TableMissing` carries the table name
+rather than assuming `trends`, because `42P01` is table-agnostic and the name is what the detail line
+reports; the remedy is `semibase site` for either table, since one provisioning run creates both.
+`ReadFailed` closes the mapping, so nothing escapes as an exception and nothing crosses as an untyped
 `Result.Fail(string)` a consumer cannot route on.
 
-**Eleven public types, and every one of them reaches the operator.** `StartupFailureMapper`
-(`SemiPlot.UI/Startup/`) turns each into a title, a detail and a remedy of its own, and it is the
-one place a remedy is written: an operator told a state alone is told nothing to do about it, so no
-consumer renders `IError.Message`. `ErrorWindow` lays the three parts out as three blocks.
-`Describe` joins the detail and the remedy into the single line a banner row has room for and drops
-the title, which restates the detail's first clause. One type never opens the error window — a
-lost live edge is drawn as a banner row over a chart that works — and it carries an arm for the
-remedy, which is the half a banner row cannot do without. The
-totality of that map is guarded by a reflection test rather than
-by the compiler: `CS8509` fires on any switch expression whose exhaustiveness cannot be proven, and
-over an interface it never can be, so a switch covering every type still warns and promoting that
-warning to an error would stop the build. The test enumerates the public `IError` types in
-`SemiPlot.Core.Data.Errors` and in `SemiPlot.UI.Startup`, and fails when one of them maps to the
-catch-all arm. A second test pins the enumeration at eleven — Core's ten plus the UI-local
-`StartupReadTimedOutError` — because a coverage test over an empty set passes vacuously. Adding a
-public error type without an arm is therefore a failing test, not a vague window.
+**Every kind reaches the operator.** `StartupFailureMapper` (`SemiPlot.UI/Startup/`) turns each into
+a title, a detail and a remedy of its own, and it is the one place a remedy is written: no consumer
+renders `IError.Message`. `ErrorWindow` lays the three parts out as three blocks; `Describe` joins the
+detail and the remedy into the single line a banner row has room for. `ConnectionLost` never opens the
+error window — it is drawn as a banner row over a chart that works. `StartupFailureMapperTests`
+enumerates both enums and fails when a member maps to the catch-all arm.
 
-`57014` maps unconditionally to `ArchiveQueryTimedOutError`. The server answers that SQLSTATE both
+`57014` maps unconditionally to `ArchiveFault.QueryTimedOut`. The server answers that SQLSTATE both
 for `statement_timeout` and for a client-issued cancel, and the chart cancels in-flight reads when it
 pans, so the two will have to be told apart — but no member of `IDataProvider` takes a
 `CancellationToken`, so no read on the provider path hands one down, and a caller's own cancellation
@@ -635,10 +622,10 @@ it without a number.
 A YAML file named `archive-connection.yaml`, read from the configuration directory —
 `C:\DISTR\Config\SemiPlot` unless `--config-dir` names another one, following the `C:\DISTR\`
 convention of the sibling project. The directory is correctable from the command line; the file name
-is not. All nine keys are required; the loader reports an absent one rather than defaulting it:
+is not. All eight keys are required; the loader reports an absent one rather than defaulting it, and ignores
+keys the format does not name:
 
 ```yaml
-connection_file_version: "1.0"
 host: scada-01
 port: 5432
 database: semiplot_dev
@@ -658,8 +645,8 @@ read path stamps its own per-command backstop, a fixed five minutes, on every co
 That backstop is a fixed bound rather than one derived from a value read at connection time, so it
 is not guaranteed to sit above the server's: on a site whose reader role carries a
 `statement_timeout` above five minutes the client cancel and the server's own cancel race, and a
-slow-but-alive read can be reported as `ArchiveUnreachableError` rather than as
-`ArchiveQueryTimedOutError`. Loading returns a `Result`; a malformed file — unreadable, unparseable,
+slow-but-alive read can be reported as `ArchiveFault.Unreachable` rather than as
+`ArchiveFault.QueryTimedOut`. Loading returns a `Result`; a malformed file — unreadable, unparseable,
 missing a key, holding a value outside its range, or naming a zone the machine does not know — is
 reported at startup rather than at first query.
 
@@ -696,14 +683,14 @@ server that accepts TCP and answers nothing shows the error window instead of ho
 provider's five-minute backstop. That abandons the wait, not the query — the read keeps running on
 its pooled connection until the backstop ends it, and the error window opens without it. The expiring
 bound is `StartupReadTimedOutError`, which lives in `SemiPlot.UI.Startup` and stays apart from
-`ArchiveQueryTimedOutError`: the latter means the server ended the read, and would send the operator
+`ArchiveFault.QueryTimedOut`: the latter means the server ended the read, and would send the operator
 after a `statement_timeout` that may be working as configured.
 
 **The read bound sits above the connect timeout, and that ordering is load-bearing.**
 `PostgresConnectionSettings.ConnectTimeoutSeconds` writes Npgsql's connect bound out as 15 s instead
 of inheriting it, and `StartupProbe.DefaultReadBound` is 30 s. An unreachable host — wrong address,
 host down, a firewall that drops — fails inside the connect attempt, so the wider caller bound lets
-`ArchiveUnreachableError` win and the operator reads "no connection to the archive". Equal values race,
+`ArchiveFault.Unreachable` win and the operator reads "no connection to the archive". Equal values race,
 and the loser reports a timeout whose remedy states the connection was accepted, which is the opposite
 of the truth on the single most common failure at a site.
 `StartupProbeTests.DefaultReadBound_StaysAboveTheConnectTimeout` pins the ordering.

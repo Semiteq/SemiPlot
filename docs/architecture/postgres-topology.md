@@ -93,7 +93,7 @@ flowchart TB
         ds["ArchiveDataSource<br/>connection · command bound"]
         conv["ArchiveTimeConverter<br/>naive local ⇄ UTC"]
         mapper["ArchiveExceptionMapper<br/>SQLSTATE → typed error"]
-        loader["PostgresConnectionLoader<br/>archive-connection.yaml<br/>nine keys"]
+        loader["PostgresConnectionLoader<br/>archive-connection.yaml<br/>eight keys"]
     end
 
     errs["SemiPlot.Core/Data/Errors<br/>ten sealed types"]

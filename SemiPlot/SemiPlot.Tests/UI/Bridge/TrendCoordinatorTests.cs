@@ -166,12 +166,12 @@ public sealed class TrendCoordinatorTests
 		using var subscription = coordinator.ConnectionFaults.Subscribe(states.Add);
 
 		provider.ReportConnectionState(
-			new ArchiveConnectionState(new ArchiveConnectionLostError("bench", 5432, "semiplot_dev", 3)));
+			new ArchiveConnectionState(new ArchiveError(ArchiveFault.ConnectionLost, "bench", 5432, "semiplot_dev", "3")));
 		uiScheduler.AdvanceBy(1);
 
 		states.Should().ContainSingle().Which.IsConnected.Should().BeFalse();
-		states[0].Fault.Should().BeOfType<ArchiveConnectionLostError>()
-			.Which.FailureThreshold.Should().Be(3);
+		states[0].Fault!.Kind.Should().Be(ArchiveFault.ConnectionLost);
+		states[0].Fault!.Detail.Should().Be("3");
 	}
 
 	[Fact]
@@ -203,7 +203,7 @@ public sealed class TrendCoordinatorTests
 		scheduler.AdvanceBy(_batchWindow.Ticks);
 
 		provider.ReportConnectionState(
-			new ArchiveConnectionState(new ArchiveConnectionLostError("bench", 5432, "semiplot_dev", 3)));
+			new ArchiveConnectionState(new ArchiveError(ArchiveFault.ConnectionLost, "bench", 5432, "semiplot_dev", "3")));
 
 		batches.Should().HaveCount(1);
 

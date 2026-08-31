@@ -37,7 +37,7 @@ public static class StartupProbe
 	/// It must stay above <see cref="PostgresConnectionSettings.ConnectTimeoutSeconds"/>, which is the
 	/// invariant <c>DefaultReadBound_StaysAboveTheConnectTimeout</c> pins. An unreachable host — a
 	/// wrong address, a host that is down, a firewall that drops — fails inside the connect attempt, and
-	/// only a bound above that attempt lets its <c>ArchiveUnreachableError</c> reach the operator. Equal
+	/// only a bound above that attempt lets its <c>ArchiveFault.Unreachable</c> reach the operator. Equal
 	/// values race, and the operator then reads "the connection was accepted", the opposite of the truth.
 	/// </para>
 	/// </summary>

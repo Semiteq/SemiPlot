@@ -1,4 +1,6 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using System.Globalization;
+
+using Microsoft.Extensions.Logging;
 
 using Npgsql;
 
@@ -321,11 +323,11 @@ internal sealed class RealtimePoll
 
 		// The threshold rather than the running count: the fault is raised once and _consecutiveFailures
 		// keeps climbing behind it, so anything read off the counter would be frozen at the raise anyway.
-		// ArchiveConnectionLostError says so in its own summary.
-		return new ArchiveConnectionState(new ArchiveConnectionLostError(
+		return new ArchiveConnectionState(new ArchiveError(
+			ArchiveFault.ConnectionLost,
 			_settings.Host,
 			_settings.Port,
 			_settings.Database,
-			ConsecutiveFailuresBeforeFault));
+			ConsecutiveFailuresBeforeFault.ToString(CultureInfo.InvariantCulture)));
 	}
 }

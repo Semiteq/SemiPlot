@@ -458,16 +458,16 @@ public sealed class PostgresDataProvider : IDataProvider
 			_timeConverter.ToUtc(reader.GetDateTime(1)));
 	}
 
-	// The relation the failing read names fills ArchiveNotInitialisedError.Table on the 42P01 path: each
-	// read knows the relation its own statement touches, so nothing is asked of the server to learn it.
+	// The relation the failing read names fills the 42P01 detail: each read knows the relation its own
+	// statement touches, so nothing is asked of the server to learn it.
 	private Error Map(Exception exception, string relation)
 	{
 		var error = _exceptionMapper.Map(exception, relation);
 
 		// A read that fails with no server answer behind it — a null reference or a bad cast inside the row
-		// read — is a fault in this code, and ArchiveReadFailedError alone dresses it as a server state. It
-		// still crosses typed, because nothing may escape the boundary; the log is where it stays visible.
-		if (error is ArchiveReadFailedError { SqlState.Length: 0 })
+		// read — is a fault in this code, and the typed error alone dresses it as a server state. It still
+		// crosses typed, because nothing may escape the boundary; the log is where it stays visible.
+		if (error is ArchiveError { Kind: ArchiveFault.ReadFailed, Detail.Length: 0 })
 		{
 			_logger.LogError(exception, "The archive read failed with an exception the provider did not expect.");
 		}

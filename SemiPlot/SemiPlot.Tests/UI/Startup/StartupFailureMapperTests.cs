@@ -1,6 +1,4 @@
-﻿using System.Reflection;
-
-using AwesomeAssertions;
+﻿using AwesomeAssertions;
 
 using FluentResults;
 
@@ -17,37 +15,37 @@ namespace SemiPlot.Tests.UI.Startup;
 [Trait("Category", "Unit")]
 public sealed class StartupFailureMapperTests
 {
-	// Both namespaces that hold a startup error type, not only the Core one. StartupReadTimedOutError is
-	// UI-local — Task.WaitAsync gives up on a read before the probe knows a host — and enumerating only
-	// SemiPlot.Core.Data.Errors would let it, and every UI-local type after it, reach the operator through
-	// the catch-all with no test failing.
-	private static readonly IReadOnlyList<Type> _errorTypes = CollectErrorTypes();
-
-	[Fact]
-	public void EveryPublicErrorType_MapsToItsOwnState()
+	// A coverage test over the enums rather than over reflected types: the two error types are closed
+	// over their discriminators, so a new member without an arm reaches the operator through the
+	// catch-all, and this is what fails when it does.
+	[Theory]
+	[MemberData(nameof(ArchiveFaults))]
+	public void EveryArchiveFault_MapsToItsOwnState(ArchiveFault kind)
 	{
-		var unmapped = _errorTypes
-			.Where(type => StartupFailureMapper.Map(Instantiate(type)).Title == StartupFailureMapper.GenericTitle)
-			.Select(type => type.FullName)
-			.ToList();
+		var view = StartupFailureMapper.Map(new ArchiveError(kind, "scada-host", 5432, "semiplot", "sample"));
 
-		unmapped.Should().BeEmpty(
-			"every public IError must have an arm in StartupFailureMapper; the catch-all is not a mapping");
+		view.Title.Should().NotBe(StartupFailureMapper.GenericTitle);
 	}
 
-	[Fact]
-	public void ErrorTypeEnumeration_CoversBothNamespaces()
+	[Theory]
+	[MemberData(nameof(ConnectionFileProblems))]
+	public void EveryConnectionFileProblem_MapsToItsOwnState(ConnectionFileProblem kind)
 	{
-		// A coverage test over an empty set passes vacuously. This pins that the reflection actually finds
-		// the vocabulary, Core's nine types and the UI-local one.
-		_errorTypes.Should().HaveCount(10);
-		_errorTypes.Should().Contain(typeof(ArchiveReadFailedError)).And.Contain(typeof(StartupReadTimedOutError));
+		var view = StartupFailureMapper.Map(new ConnectionFileError("a.yaml", kind, "sample"));
+
+		view.Title.Should().NotBe(StartupFailureMapper.GenericTitle);
 	}
+
+	public static TheoryData<ArchiveFault> ArchiveFaults => new(Enum.GetValues<ArchiveFault>());
+
+	public static TheoryData<ConnectionFileProblem> ConnectionFileProblems =>
+		new(Enum.GetValues<ConnectionFileProblem>());
 
 	[Fact]
 	public void ConnectionFileNotFound_SendsTheOperatorToTheFile()
 	{
-		var view = StartupFailureMapper.Map(new ConnectionFileNotFoundError(@"C:\DISTR\Config\SemiPlot\a.yaml"));
+		var view = StartupFailureMapper.Map(
+			new ConnectionFileError(@"C:\DISTR\Config\SemiPlot\a.yaml", ConnectionFileProblem.NotFound));
 
 		view.Title.Should().Be("Connection file not found");
 		view.Detail.Should().Contain(@"C:\DISTR\Config\SemiPlot\a.yaml");
@@ -60,10 +58,9 @@ public sealed class StartupFailureMapperTests
 	[InlineData(ConnectionFileProblem.MissingField, "Add the field")]
 	[InlineData(ConnectionFileProblem.OutOfRange, "inside the range")]
 	[InlineData(ConnectionFileProblem.UnknownTimeZone, "IANA identifier")]
-	[InlineData(ConnectionFileProblem.VersionMismatch, "format version")]
 	public void ConnectionFileInvalid_RemedyFollowsTheProblem(ConnectionFileProblem kind, string expectedPhrase)
 	{
-		var view = StartupFailureMapper.Map(new ConnectionFileInvalidError("a.yaml", kind, "the reason"));
+		var view = StartupFailureMapper.Map(new ConnectionFileError("a.yaml", kind, "the reason"));
 
 		view.Title.Should().Be("Connection file cannot be read");
 		view.Detail.Should().Contain("the reason");
@@ -73,7 +70,7 @@ public sealed class StartupFailureMapperTests
 	[Fact]
 	public void ArchiveUnreachable_SendsTheOperatorToTheNetwork()
 	{
-		var view = StartupFailureMapper.Map(new ArchiveUnreachableError("scada-host", 5432, "semiplot"));
+		var view = StartupFailureMapper.Map(Archive(ArchiveFault.Unreachable));
 
 		view.Title.Should().Be("No connection to the archive");
 		view.Detail.Should().Contain("scada-host:5432");
@@ -83,8 +80,7 @@ public sealed class StartupFailureMapperTests
 	[Fact]
 	public void ArchiveAccessDenied_SendsTheOperatorToTheCredentials()
 	{
-		var view = StartupFailureMapper.Map(
-			new ArchiveAccessDeniedError("scada-host", 5432, "semiplot", "scada_reader"));
+		var view = StartupFailureMapper.Map(Archive(ArchiveFault.AccessDenied, "scada_reader"));
 
 		view.Title.Should().Be("The archive refused the credentials");
 		view.Detail.Should().Contain("scada_reader");
@@ -93,42 +89,32 @@ public sealed class StartupFailureMapperTests
 	}
 
 	[Fact]
-	public void ArchiveNotInitialised_MissingDatabase_SendsTheOperatorToSemibaseSite()
+	public void ArchiveDatabaseMissing_SendsTheOperatorToSemibaseSite()
 	{
-		var view = StartupFailureMapper.Map(
-			new ArchiveNotInitialisedError("scada-host", 5432, "semiplot", ArchiveObject.Database, null));
+		var view = StartupFailureMapper.Map(Archive(ArchiveFault.DatabaseMissing));
 
 		view.Title.Should().Be("The archive is not provisioned");
 		view.Detail.Should().Contain("holds no database 'semiplot'");
 		view.Remedy.Should().Contain("semibase site");
 	}
 
-	[Fact]
-	public void ArchiveNotInitialised_MissingTrends_SendsTheOperatorToSemibaseSite()
+	[Theory]
+	[InlineData("trends")]
+	[InlineData("semiplot_tags")]
+	public void ArchiveTableMissing_NamesTheTableAndSendsTheOperatorToSemibaseSite(string table)
 	{
-		var view = StartupFailureMapper.Map(
-			new ArchiveNotInitialisedError("scada-host", 5432, "semiplot", ArchiveObject.Table, "trends"));
+		var view = StartupFailureMapper.Map(Archive(ArchiveFault.TableMissing, table));
 
-		view.Detail.Should().Contain("holds no table 'trends'");
-		view.Remedy.Should().Contain("trends");
-		view.Remedy.Should().Contain("semibase site");
-	}
-
-	[Fact]
-	public void ArchiveNotInitialised_MissingTagTable_SendsTheOperatorToSemibaseSite()
-	{
-		var view = StartupFailureMapper.Map(
-			new ArchiveNotInitialisedError("scada-host", 5432, "semiplot", ArchiveObject.Table, "semiplot_tags"));
-
-		view.Remedy.Should().Contain("semiplot_tags");
+		view.Title.Should().Be("The archive is not provisioned");
+		view.Detail.Should().Contain($"holds no table '{table}'");
+		view.Remedy.Should().Contain(table);
 		view.Remedy.Should().Contain("semibase site");
 	}
 
 	// Both tables arrive from the same provisioning run, so the remedy may not branch on which one is
-	// absent. Substituting the table name out of each remedy leaves two strings that must be equal: any
-	// arm switching on the table name makes them differ, whatever the arm says.
+	// absent. Substituting the table name out of each remedy leaves two strings that must be equal.
 	[Fact]
-	public void ArchiveNotInitialised_TheRemedyDoesNotDependOnWhichTableIsAbsent()
+	public void ArchiveTableMissing_TheRemedyDoesNotDependOnWhichTableIsAbsent()
 	{
 		var trendsRemedy = RemedyWithTableNameElided("trends");
 		var tagTableRemedy = RemedyWithTableNameElided("semiplot_tags");
@@ -138,8 +124,7 @@ public sealed class StartupFailureMapperTests
 
 	private static string RemedyWithTableNameElided(string table)
 	{
-		var view = StartupFailureMapper.Map(
-			new ArchiveNotInitialisedError("scada-host", 5432, "semiplot", ArchiveObject.Table, table));
+		var view = StartupFailureMapper.Map(Archive(ArchiveFault.TableMissing, table));
 
 		return view.Remedy.Replace(table, "<table>", StringComparison.Ordinal);
 	}
@@ -147,7 +132,7 @@ public sealed class StartupFailureMapperTests
 	[Fact]
 	public void ArchiveQueryTimedOut_NamesTheSqlStateAndTheReaderRolesBound()
 	{
-		var view = StartupFailureMapper.Map(new ArchiveQueryTimedOutError("scada-host", 5432, "semiplot"));
+		var view = StartupFailureMapper.Map(Archive(ArchiveFault.QueryTimedOut));
 
 		view.Title.Should().Be("The archive ended the read");
 		view.Detail.Should().Contain("scada-host:5432").And.Contain("57014");
@@ -157,7 +142,7 @@ public sealed class StartupFailureMapperTests
 	[Fact]
 	public void ArchiveReadFailed_WithASqlState_NamesItForTheReport()
 	{
-		var view = StartupFailureMapper.Map(new ArchiveReadFailedError("scada-host", 5432, "semiplot", "22003"));
+		var view = StartupFailureMapper.Map(Archive(ArchiveFault.ReadFailed, "22003"));
 
 		view.Title.Should().Be("The archive rejected the read");
 		view.Detail.Should().Contain("SQLSTATE 22003");
@@ -167,7 +152,7 @@ public sealed class StartupFailureMapperTests
 	[Fact]
 	public void ArchiveReadFailed_WithoutASqlState_PointsAtTheClientSide()
 	{
-		var view = StartupFailureMapper.Map(new ArchiveReadFailedError("scada-host", 5432, "semiplot", string.Empty));
+		var view = StartupFailureMapper.Map(Archive(ArchiveFault.ReadFailed));
 
 		view.Detail.Should().Contain("no SQLSTATE");
 		view.Remedy.Should().Contain("client side");
@@ -190,7 +175,7 @@ public sealed class StartupFailureMapperTests
 	public void ArchiveConnectionLost_NamesTheRunAndLeavesTheHistoryStanding()
 	{
 		var view = StartupFailureMapper.Map(
-			new ArchiveConnectionLostError("bench.example", 5432, "semiplot_dev", 3));
+			new ArchiveError(ArchiveFault.ConnectionLost, "bench.example", 5432, "semiplot_dev", "3"));
 
 		view.Title.Should().Be("The archive stopped answering");
 		view.Detail.Should().Contain("semiplot_dev").And.Contain("bench.example:5432").And.Contain("3");
@@ -203,11 +188,7 @@ public sealed class StartupFailureMapperTests
 	[Fact]
 	public void ArchiveShapeUnexpected_QuotesTheServerAndSendsTheOperatorToTheProvisioning()
 	{
-		var view = StartupFailureMapper.Map(new ArchiveShapeUnexpectedError(
-			"scada-host",
-			5432,
-			"semiplot",
-			"column \"v\" does not exist"));
+		var view = StartupFailureMapper.Map(Archive(ArchiveFault.ShapeUnexpected, "column \"v\" does not exist"));
 
 		view.Title.Should().Be("The archive has an unexpected shape");
 		view.Detail.Should().Contain("scada-host:5432").And.Contain("column \"v\" does not exist");
@@ -236,59 +217,8 @@ public sealed class StartupFailureMapperTests
 		view.Detail.Should().Be("something this build never named");
 	}
 
-	private static IReadOnlyList<Type> CollectErrorTypes()
+	private static ArchiveError Archive(ArchiveFault kind, string detail = "")
 	{
-		var namespaces = new[]
-		{
-			(Assembly: typeof(ArchiveUnreachableError).Assembly, Name: typeof(ArchiveUnreachableError).Namespace),
-			(Assembly: typeof(StartupProbe).Assembly, Name: typeof(StartupReadTimedOutError).Namespace)
-		};
-
-		return namespaces
-			.SelectMany(source => source.Assembly.GetExportedTypes()
-				.Where(type => type.Namespace == source.Name)
-				.Where(type => type is { IsClass: true, IsAbstract: false })
-				.Where(type => typeof(IError).IsAssignableFrom(type)))
-			.OrderBy(type => type.FullName, StringComparer.Ordinal)
-			.ToList();
-	}
-
-	// Every error type in the vocabulary takes only value-like constructor parameters, so a synthetic
-	// instance needs no factory per type — the coverage test routes on the type, never on the values.
-	private static IError Instantiate(Type type)
-	{
-		var constructor = type.GetConstructors().Single();
-
-		var arguments = constructor.GetParameters()
-			.Select(parameter => SampleValue(parameter.ParameterType))
-			.ToArray();
-
-		return (IError)constructor.Invoke(arguments);
-	}
-
-	private static object? SampleValue(Type parameterType)
-	{
-		if (parameterType == typeof(string))
-		{
-			return "sample";
-		}
-
-		if (parameterType == typeof(int))
-		{
-			return 5432;
-		}
-
-		if (parameterType == typeof(TimeSpan))
-		{
-			return TimeSpan.FromSeconds(1);
-		}
-
-		if (parameterType.IsEnum)
-		{
-			return Enum.GetValues(parameterType).GetValue(0);
-		}
-
-		throw new NotSupportedException(
-			$"No sample value for constructor parameter type '{parameterType}'. Extend SampleValue.");
+		return new ArchiveError(kind, "scada-host", 5432, "semiplot", detail);
 	}
 }

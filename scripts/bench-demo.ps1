@@ -403,7 +403,6 @@ function Write-ConnectionFile
     $zone = (Get-TimeZone).Id
     New-Item -ItemType Directory -Force -Path $ConfigDirectory | Out-Null
     @"
-connection_file_version: "1.0"
 host: localhost
 port: $HostPort
 database: $Database

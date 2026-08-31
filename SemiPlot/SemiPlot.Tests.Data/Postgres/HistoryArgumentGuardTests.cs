@@ -12,7 +12,7 @@ namespace SemiPlot.Tests.Data.Postgres;
 
 // A caller-argument fault answers before the connection opens, so the provider these tests resolve over
 // an address nothing answers returns the failed Result with no network round trip — an attempted connect
-// would surface as ArchiveUnreachableError instead of the message each test asserts.
+// would surface as ArchiveFault.Unreachable instead of the message each test asserts.
 //
 // This class asserts message text where the rest of the suite asserts error types and structured fields.
 [Trait("Component", "Core")]

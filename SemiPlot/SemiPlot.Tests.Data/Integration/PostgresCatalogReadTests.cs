@@ -142,10 +142,10 @@ public sealed class PostgresCatalogReadTests(
 
 		Assert.True(result.IsFailed);
 
-		var error = Assert.Single(result.Errors.OfType<ArchiveNotInitialisedError>());
+		var error = Assert.Single(result.Errors.OfType<ArchiveError>());
 
-		Assert.Equal(ArchiveObject.Table, error.MissingObject);
-		Assert.Equal("semiplot_tags", error.Table);
+		Assert.Equal(ArchiveFault.TableMissing, error.Kind);
+		Assert.Equal("semiplot_tags", error.Detail);
 		Assert.Equal(database.Name, error.Database);
 	}
 

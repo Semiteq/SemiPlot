@@ -31,7 +31,6 @@ public sealed class PostgresCompositionTests
 			dataSource,
 			new ArchiveTimeConverter(settings.SourceTimeZone),
 			new ArchiveExceptionMapper(settings),
-			new StatementTimeoutReader(dataSource, NullLogger<StatementTimeoutReader>.Instance),
 			settings,
 			DefaultScheduler.Instance,
 			NullLogger<PostgresDataProvider>.Instance);
@@ -92,14 +91,6 @@ public sealed class PostgresCompositionTests
 	}
 
 	[Fact]
-	public void AddPostgresDataResolvesTheStatementTimeoutReader()
-	{
-		using var services = BuildProvider();
-
-		Assert.NotNull(services.GetRequiredService<StatementTimeoutReader>());
-	}
-
-	[Fact]
 	public void AddPostgresDataResolvesTheTimeConverter()
 	{
 		using var services = BuildProvider();
@@ -129,7 +120,6 @@ public sealed class PostgresCompositionTests
 	[InlineData(typeof(IScheduler))]
 	[InlineData(typeof(ArchiveDataSource))]
 	[InlineData(typeof(ArchiveExceptionMapper))]
-	[InlineData(typeof(StatementTimeoutReader))]
 	[InlineData(typeof(ArchiveTimeConverter))]
 	[InlineData(typeof(PostgresConnectionSettings))]
 	public void AddPostgresDataRegistersASingleton(Type serviceType)
@@ -179,7 +169,7 @@ public sealed class PostgresCompositionTests
 	//
 	// Silence alone would prove nothing here — these settings point at an address nothing answers, so a
 	// leaked loop emits no sample either. What it does emit is a fault: three refused ticks raise
-	// ArchiveConnectionLostError on the provider's own connection stream. The control is a second provider
+	// ArchiveFault.ConnectionLost on the provider's own connection stream. The control is a second provider
 	// whose subscription is left running, and the test waits for its fault before reading the dropped one's
 	// silence, so the wait is calibrated by a loop that really is polling rather than by a guessed delay.
 	//

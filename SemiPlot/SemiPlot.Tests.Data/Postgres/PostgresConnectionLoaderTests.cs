@@ -19,7 +19,6 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 	private static readonly (string Field, string Value)[] _validFields =
 	[
-		("connection_file_version", "\"1.0\""),
 		("host", "\"scada-01\""),
 		("port", "5433"),
 		("database", "\"semiplot_dev\""),
@@ -72,8 +71,9 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 		var result = PostgresConnectionLoader.Load(path);
 
-		var error = Assert.Single(result.Errors.OfType<ConnectionFileNotFoundError>());
+		var error = Assert.Single(result.Errors.OfType<ConnectionFileError>());
 		Assert.True(result.IsFailed);
+		Assert.Equal(ConnectionFileProblem.NotFound, error.Kind);
 		Assert.Equal(path, error.Path);
 	}
 
@@ -84,7 +84,8 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	{
 		var result = PostgresConnectionLoader.Load(path);
 
-		var error = Assert.Single(result.Errors.OfType<ConnectionFileNotFoundError>());
+		var error = Assert.Single(result.Errors.OfType<ConnectionFileError>());
+		Assert.Equal(ConnectionFileProblem.NotFound, error.Kind);
 		Assert.Equal(path, error.Path);
 	}
 
@@ -95,33 +96,9 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	{
 		var result = PostgresConnectionLoader.Load(_directory);
 
-		var error = Assert.Single(result.Errors.OfType<ConnectionFileInvalidError>());
+		var error = Assert.Single(result.Errors.OfType<ConnectionFileError>());
 		Assert.Equal(_directory, error.Path);
 		Assert.Equal(ConnectionFileProblem.Unreadable, error.Kind);
-	}
-
-	[Fact]
-	public void AVersionMismatchYieldsTheMismatchDiscriminator()
-	{
-		var path = WriteFile(Compose(Replace("connection_file_version", "\"2.0\"")));
-
-		var result = PostgresConnectionLoader.Load(path);
-
-		var error = Assert.Single(result.Errors.OfType<ConnectionFileInvalidError>());
-		Assert.Equal(path, error.Path);
-		Assert.Equal(ConnectionFileProblem.VersionMismatch, error.Kind);
-	}
-
-	// A file holding nothing but the version is what pins the ordering; an otherwise-complete file cannot.
-	[Fact]
-	public void AVersionMismatchIsReportedAheadOfTheAbsentFields()
-	{
-		var path = WriteFile("connection_file_version: \"2.0\"\n");
-
-		var result = PostgresConnectionLoader.Load(path);
-
-		var error = Assert.Single(result.Errors.OfType<ConnectionFileInvalidError>());
-		Assert.Equal(ConnectionFileProblem.VersionMismatch, error.Kind);
 	}
 
 	[Fact]
@@ -131,7 +108,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 		var result = PostgresConnectionLoader.Load(path);
 
-		var error = Assert.Single(result.Errors.OfType<ConnectionFileInvalidError>());
+		var error = Assert.Single(result.Errors.OfType<ConnectionFileError>());
 		Assert.Equal(path, error.Path);
 		Assert.Equal(ConnectionFileProblem.Unparseable, error.Kind);
 	}
@@ -143,12 +120,11 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 		var result = PostgresConnectionLoader.Load(path);
 
-		var error = Assert.Single(result.Errors.OfType<ConnectionFileInvalidError>());
+		var error = Assert.Single(result.Errors.OfType<ConnectionFileError>());
 		Assert.Equal(ConnectionFileProblem.Unparseable, error.Kind);
 	}
 
 	[Theory]
-	[InlineData("connection_file_version")]
 	[InlineData("host")]
 	[InlineData("port")]
 	[InlineData("database")]
@@ -163,7 +139,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 		var result = PostgresConnectionLoader.Load(path);
 
-		var error = Assert.Single(result.Errors.OfType<ConnectionFileInvalidError>());
+		var error = Assert.Single(result.Errors.OfType<ConnectionFileError>());
 		Assert.Equal(path, error.Path);
 		Assert.Equal(ConnectionFileProblem.MissingField, error.Kind);
 		Assert.Contains(field, error.Reason, StringComparison.Ordinal);
@@ -176,7 +152,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 		var result = PostgresConnectionLoader.Load(path);
 
-		var error = Assert.Single(result.Errors.OfType<ConnectionFileInvalidError>());
+		var error = Assert.Single(result.Errors.OfType<ConnectionFileError>());
 		Assert.Equal(ConnectionFileProblem.MissingField, error.Kind);
 		Assert.Contains("host", error.Reason, StringComparison.Ordinal);
 	}
@@ -188,7 +164,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 		var result = PostgresConnectionLoader.Load(path);
 
-		var error = Assert.Single(result.Errors.OfType<ConnectionFileInvalidError>());
+		var error = Assert.Single(result.Errors.OfType<ConnectionFileError>());
 		Assert.Equal(path, error.Path);
 		Assert.Equal(ConnectionFileProblem.UnknownTimeZone, error.Kind);
 		Assert.Contains("Mars/Olympus_Mons", error.Reason, StringComparison.Ordinal);
@@ -202,7 +178,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 		var result = PostgresConnectionLoader.Load(path);
 
-		var error = Assert.Single(result.Errors.OfType<ConnectionFileInvalidError>());
+		var error = Assert.Single(result.Errors.OfType<ConnectionFileError>());
 		Assert.Equal(ConnectionFileProblem.MissingField, error.Kind);
 		Assert.All(absent, field => Assert.Contains(field, error.Reason, StringComparison.Ordinal));
 	}
@@ -219,7 +195,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 		var result = PostgresConnectionLoader.Load(path);
 
-		var error = Assert.Single(result.Errors.OfType<ConnectionFileInvalidError>());
+		var error = Assert.Single(result.Errors.OfType<ConnectionFileError>());
 		Assert.Equal(path, error.Path);
 		Assert.Equal(ConnectionFileProblem.OutOfRange, error.Kind);
 		Assert.Contains(field, error.Reason, StringComparison.Ordinal);
@@ -266,7 +242,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 		var result = PostgresConnectionLoader.Load(path);
 
-		var error = Assert.Single(result.Errors.OfType<ConnectionFileInvalidError>());
+		var error = Assert.Single(result.Errors.OfType<ConnectionFileError>());
 		var caused = Assert.Single(error.Reasons.OfType<ExceptionalError>());
 
 		Assert.NotNull(caused.Exception);
@@ -281,7 +257,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 		var result = PostgresConnectionLoader.Load(path);
 
-		var error = Assert.Single(result.Errors.OfType<ConnectionFileInvalidError>());
+		var error = Assert.Single(result.Errors.OfType<ConnectionFileError>());
 		var caused = Assert.Single(error.Reasons.OfType<ExceptionalError>());
 
 		Assert.IsType<TimeZoneNotFoundException>(caused.Exception);
@@ -361,7 +337,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 	private static ConnectionFileProblem KindOf(string path)
 	{
-		return PostgresConnectionLoader.Load(path).Errors.OfType<ConnectionFileInvalidError>().Single().Kind;
+		return PostgresConnectionLoader.Load(path).Errors.OfType<ConnectionFileError>().Single().Kind;
 	}
 
 	private string WriteFile(string content)

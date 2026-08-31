@@ -14,11 +14,8 @@ using Xunit;
 namespace SemiPlot.Tests.UI.MainWindow;
 
 /// <summary>
-/// The two archive-status rows of the main window, and the property that makes them two rows rather
-/// than one string. A lost connection and a startup health warning are independent facts with
-/// independent lifetimes: the poll withdraws its own row on the next successful tick, while the
-/// warning stands until the operator fixes what it names. One shared message would let either writer
-/// erase the other's sentence, so each row has exactly one writer and this class pins that.
+/// The archive-connection row of the main window: written by the poll's connection stream alone, and
+/// withdrawn by it on the next successful tick.
 /// </summary>
 [Trait("Component", "UI")]
 [Trait("Area", "Chart")]
@@ -26,7 +23,7 @@ namespace SemiPlot.Tests.UI.MainWindow;
 public sealed class ArchiveStatusBannerTests
 {
 	private static readonly ArchiveConnectionState _lost =
-		new(new ArchiveConnectionLostError("bench", 5432, "semiplot_dev", 3));
+		new(new ArchiveError(ArchiveFault.ConnectionLost, "bench", 5432, "semiplot_dev", "3"));
 
 	[AvaloniaFact]
 	public void ArchiveConnectionMessage_BeforeAnyState_IsAbsent()
@@ -114,73 +111,6 @@ public sealed class ArchiveStatusBannerTests
 		var bindAgain = () => viewModel.ObserveArchiveConnection(second);
 
 		bindAgain.Should().Throw<InvalidOperationException>();
-	}
-
-	[AvaloniaFact]
-	public void ArchiveHealthMessage_WhenSet_RaisesItsOwnRowOnly()
-	{
-		using var viewModel = new MainWindowViewModel();
-		using var states = new Subject<ArchiveConnectionState>();
-		viewModel.ObserveArchiveConnection(states);
-		var observed = Observe(viewModel, nameof(MainWindowViewModel.HasArchiveHealthMessage),
-			() => viewModel.HasArchiveHealthMessage);
-
-		viewModel.ArchiveHealthMessage = "The default partition holds rows.";
-
-		viewModel.HasArchiveHealthMessage.Should().BeTrue();
-		observed.Should().Equal(true);
-		viewModel.HasArchiveConnectionMessage.Should().BeFalse();
-	}
-
-	[AvaloniaFact]
-	public void ArchiveHealthMessage_SetToTheSameText_PublishesNothing()
-	{
-		using var viewModel = new MainWindowViewModel();
-		viewModel.ArchiveHealthMessage = "The default partition holds rows.";
-		var observed = Observe(viewModel, nameof(MainWindowViewModel.HasArchiveHealthMessage),
-			() => viewModel.HasArchiveHealthMessage);
-
-		viewModel.ArchiveHealthMessage = "The default partition holds rows.";
-
-		observed.Should().BeEmpty();
-	}
-
-	// The point of the split: a connection fault arriving while a health warning stands leaves the
-	// warning on screen, and the connection's own withdrawal does not take the warning with it.
-	[AvaloniaFact]
-	public void TheTwoRows_AreIndependent_AndNeitherWriterClearsTheOther()
-	{
-		using var viewModel = new MainWindowViewModel();
-		using var states = new Subject<ArchiveConnectionState>();
-		viewModel.ObserveArchiveConnection(states);
-		viewModel.ArchiveHealthMessage = "The default partition holds rows.";
-
-		states.OnNext(_lost);
-
-		viewModel.HasArchiveHealthMessage.Should().BeTrue();
-		viewModel.HasArchiveConnectionMessage.Should().BeTrue();
-
-		states.OnNext(ArchiveConnectionState.Connected);
-
-		viewModel.HasArchiveConnectionMessage.Should().BeFalse();
-		viewModel.ArchiveHealthMessage.Should().Be("The default partition holds rows.");
-		viewModel.HasArchiveHealthMessage.Should().BeTrue();
-	}
-
-	[AvaloniaFact]
-	public void TheHealthRow_DoesNotFollowTheConnectionStream()
-	{
-		using var viewModel = new MainWindowViewModel();
-		using var states = new Subject<ArchiveConnectionState>();
-		viewModel.ObserveArchiveConnection(states);
-		var observed = Observe(viewModel, nameof(MainWindowViewModel.ArchiveHealthMessage),
-			() => viewModel.ArchiveHealthMessage);
-
-		states.OnNext(_lost);
-		states.OnNext(ArchiveConnectionState.Connected);
-
-		viewModel.ArchiveHealthMessage.Should().BeNull();
-		observed.Should().BeEmpty();
 	}
 
 	// Records the value each notification carries, so a test reads both how often a row changed and what

@@ -5,14 +5,12 @@ using AwesomeAssertions;
 using FluentResults;
 
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
 
 using Npgsql;
 
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
-using SemiPlot.DataSource.Postgres;
 using SemiPlot.DataSource.Postgres.Configuration;
 using SemiPlot.Tests.UI.Bridge;
 using SemiPlot.UI;
@@ -46,41 +44,6 @@ public sealed class StartupProbeTests
 		result.Value.ServiceProvider.Should().BeSameAs(container);
 	}
 
-	// The health check is resolved with GetService, so a container built around a test double registers no
-	// reader at all. That is not a startup failure and not a warning either — it is a check that was never
-	// asked for.
-	[Fact]
-	public async Task ReadAsync_WithNoHealthReaderRegistered_SucceedsAndCarriesNoWarning()
-	{
-		using var container = BuildContainer(NewProvider());
-
-		var result = await StartupProbe.ReadAsync(container, StartupProbe.DefaultReadBound);
-
-		result.IsSuccess.Should().BeTrue();
-		result.Value.HealthWarnings.Should().BeEmpty();
-	}
-
-	// A health check that cannot run is a logged nothing, never a second failure plane: the archive's own
-	// reads have already succeeded here, and refusing to start over a diagnostic would hide a working
-	// archive. The reader is the shipped one over a port nothing listens on, so the failure is real rather
-	// than staged.
-	[Fact]
-	public async Task ReadAsync_WithAHealthCheckThatCannotRun_StillSucceedsAndCarriesNoWarning()
-	{
-		var settings = UnreachableSettings();
-		await using var dataSource = new ArchiveDataSource(settings);
-		using var container = BuildContainer(
-			NewProvider(),
-			services => services.AddSingleton(
-				new ArchiveHealthReader(dataSource, settings, NullLogger<ArchiveHealthReader>.Instance)));
-
-		var result = await StartupProbe.ReadAsync(container, StartupProbe.DefaultReadBound);
-
-		result.IsSuccess.Should().BeTrue();
-		result.Errors.Should().BeEmpty();
-		result.Value.HealthWarnings.Should().BeEmpty();
-	}
-
 	// An empty semiplot_tags is a correct answer, not a failure: the database is reachable and only
 	// commissioning is unfinished. So the probe carries it out as a success and disposes nothing. What the
 	// operator then sees is pinned by EmptyCatalogueStartupTests.
@@ -108,7 +71,8 @@ public sealed class StartupProbeTests
 		var result = await StartupProbe.ReadAsync(container, StartupProbe.DefaultReadBound);
 
 		result.IsFailed.Should().BeTrue();
-		result.Errors.Should().ContainSingle().Which.Should().BeOfType<ArchiveUnreachableError>();
+		result.Errors.Should().ContainSingle().Which.Should().BeOfType<ArchiveError>()
+			.Which.Kind.Should().Be(ArchiveFault.Unreachable);
 
 		var resolve = () => container.GetRequiredService<IDataProvider>();
 		resolve.Should().Throw<ObjectDisposedException>();
@@ -126,7 +90,8 @@ public sealed class StartupProbeTests
 		// returning at once with the catalogue's error.
 		var result = await StartupProbe.ReadAsync(container, StartupProbe.DefaultReadBound);
 
-		result.Errors.Should().ContainSingle().Which.Should().BeOfType<ArchiveUnreachableError>();
+		result.Errors.Should().ContainSingle().Which.Should().BeOfType<ArchiveError>()
+			.Which.Kind.Should().Be(ArchiveFault.Unreachable);
 	}
 
 	[Fact]
@@ -139,7 +104,8 @@ public sealed class StartupProbeTests
 		var result = await StartupProbe.ReadAsync(container, StartupProbe.DefaultReadBound);
 
 		result.IsFailed.Should().BeTrue();
-		result.Errors.Should().ContainSingle().Which.Should().BeOfType<ArchiveReadFailedError>();
+		result.Errors.Should().ContainSingle().Which.Should().BeOfType<ArchiveError>()
+			.Which.Kind.Should().Be(ArchiveFault.ReadFailed);
 
 		var resolve = () => container.GetRequiredService<IDataProvider>();
 		resolve.Should().Throw<ObjectDisposedException>();
@@ -240,7 +206,7 @@ public sealed class StartupProbeTests
 			StartupProbe.DefaultReadBound);
 
 		result.IsFailed.Should().BeTrue();
-		result.Errors.Should().ContainSingle().Which.Should().BeOfType<ConnectionFileNotFoundError>()
+		result.Errors.Should().ContainSingle().Which.Should().BeOfType<ConnectionFileError>()
 			.Which.Path.Should().Be(Path.Combine(emptyConfigDir, StartupProbe.ConnectionFileName));
 	}
 
@@ -264,9 +230,7 @@ public sealed class StartupProbeTests
 		return new FakeDataProvider(CurrentThreadScheduler.Instance, TimeSpan.FromSeconds(1), pens);
 	}
 
-	private static ServiceProvider BuildContainer(
-		IDataProvider dataProvider,
-		Action<IServiceCollection>? addExtras = null)
+	private static ServiceProvider BuildContainer(IDataProvider dataProvider)
 	{
 		var services =
 			new ServiceCollection()
@@ -275,7 +239,6 @@ public sealed class StartupProbeTests
 				.AddUi();
 
 		services.AddLogging();
-		addExtras?.Invoke(services);
 
 		return services.BuildServiceProvider();
 	}

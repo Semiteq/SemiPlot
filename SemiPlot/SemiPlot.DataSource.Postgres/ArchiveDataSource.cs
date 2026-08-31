@@ -69,7 +69,7 @@ public sealed class ArchiveDataSource : IDisposable, IAsyncDisposable
 	// answering. It is no longer derived from the server's own bound and therefore no longer guaranteed above
 	// it, so on a site whose reader role exceeds five minutes the two cancels race. Npgsql surfaces this bound
 	// firing as an NpgsqlException wrapping a TimeoutException — never as a PostgresException carrying 57014 —
-	// which IsConnectionFailure routes to ArchiveUnreachableError.
+	// which IsConnectionFailure routes to ArchiveFault.Unreachable.
 	private static int ResolveCommandTimeoutSeconds()
 	{
 		return (int)_commandTimeoutBackstop.TotalSeconds;

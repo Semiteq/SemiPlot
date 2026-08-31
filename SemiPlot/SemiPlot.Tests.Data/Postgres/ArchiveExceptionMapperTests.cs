@@ -25,38 +25,33 @@ public sealed class ArchiveExceptionMapperTests
 	private const string Database = ConnectionSettingsFactory.Database;
 	private const string Username = ConnectionSettingsFactory.Username;
 
-	private static readonly TimeSpan _effectiveBound = TimeSpan.FromSeconds(30);
-
 	[Fact]
-	public void ASocketFailureMapsToTheUnreachableError()
+	public void ASocketFailureMapsToUnreachable()
 	{
 		var exception = new NpgsqlException("failed to connect", new SocketException(10061));
 
 		var error = Map(exception);
 
-		var unreachable = Assert.IsType<ArchiveUnreachableError>(error);
-		AssertEndpoint(unreachable.Host, unreachable.Port, unreachable.Database);
+		Assert.Equal(ArchiveFault.Unreachable, error.Kind);
+		AssertEndpoint(error);
 	}
 
 	[Fact]
-	public void TheCommandBoundFiringMapsToTheUnreachableErrorAndNotToTheTimedOutError()
+	public void TheCommandBoundFiringMapsToUnreachableAndNotToQueryTimedOut()
 	{
 		var exception = new NpgsqlException("exception while reading from stream", new TimeoutException());
 
-		var error = Map(exception);
-
-		Assert.IsType<ArchiveUnreachableError>(error);
+		Assert.Equal(ArchiveFault.Unreachable, Map(exception).Kind);
 	}
 
 	[Fact]
-	public void AMissingDatabaseMapsToTheDatabaseDiscriminatorAndNamesNoTable()
+	public void AMissingDatabaseMapsToDatabaseMissingAndNamesNoTable()
 	{
 		var error = Map(Postgres("3D000"));
 
-		var missing = Assert.IsType<ArchiveNotInitialisedError>(error);
-		Assert.Equal(ArchiveObject.Database, missing.MissingObject);
-		Assert.Null(missing.Table);
-		AssertEndpoint(missing.Host, missing.Port, missing.Database);
+		Assert.Equal(ArchiveFault.DatabaseMissing, error.Kind);
+		Assert.Equal(string.Empty, error.Detail);
+		AssertEndpoint(error);
 	}
 
 	[Theory]
@@ -66,20 +61,9 @@ public sealed class ArchiveExceptionMapperTests
 	{
 		var error = Map(Postgres("42P01"), relation);
 
-		var notInitialised = Assert.IsType<ArchiveNotInitialisedError>(error);
-		Assert.Equal(ArchiveObject.Table, notInitialised.MissingObject);
-		Assert.Equal(relation, notInitialised.Table);
-		AssertEndpoint(notInitialised.Host, notInitialised.Port, notInitialised.Database);
-	}
-
-	// The two SQLSTATEs now share one type, so the discriminator is the only thing keeping them apart.
-	[Fact]
-	public void TheTwoAbsentObjectStatesStayApartOnTheDiscriminator()
-	{
-		var databaseMissing = Assert.IsType<ArchiveNotInitialisedError>(Map(Postgres("3D000")));
-		var tableMissing = Assert.IsType<ArchiveNotInitialisedError>(Map(Postgres("42P01"), "trends"));
-
-		Assert.NotEqual(databaseMissing.MissingObject, tableMissing.MissingObject);
+		Assert.Equal(ArchiveFault.TableMissing, error.Kind);
+		Assert.Equal(relation, error.Detail);
+		AssertEndpoint(error);
 	}
 
 	[Theory]
@@ -90,44 +74,18 @@ public sealed class ArchiveExceptionMapperTests
 	{
 		var error = Map(Postgres(sqlState));
 
-		var denied = Assert.IsType<ArchiveAccessDeniedError>(error);
-		Assert.Equal(Username, denied.Username);
-		AssertEndpoint(denied.Host, denied.Port, denied.Database);
+		Assert.Equal(ArchiveFault.AccessDenied, error.Kind);
+		Assert.Equal(Username, error.Detail);
+		AssertEndpoint(error);
 	}
 
 	[Fact]
-	public void AServerCancelMapsToTheTimedOutErrorCarryingTheBoundTheCallerResolved()
+	public void AServerCancelMapsToQueryTimedOut()
 	{
-		var error = Map(Postgres("57014"), effectiveBound: _effectiveBound);
+		var error = Map(Postgres("57014"));
 
-		var timedOut = Assert.IsType<ArchiveQueryTimedOutError>(error);
-		Assert.Equal(_effectiveBound, timedOut.Timeout);
-		AssertEndpoint(timedOut.Host, timedOut.Port, timedOut.Database);
-	}
-
-	// The caller passes null when the bound could not be read, which is the reader's own failure answer.
-	// This pins that the mapper still produces a usable error rather than a null reference.
-	[Fact]
-	public void AServerCancelWithAnUnreadableBoundReportsAZeroBoundRatherThanThrowing()
-	{
-		var timedOut = Assert.IsType<ArchiveQueryTimedOutError>(Map(Postgres("57014")));
-
-		Assert.Equal(TimeSpan.Zero, timedOut.Timeout);
-		AssertEndpoint(timedOut.Host, timedOut.Port, timedOut.Database);
-	}
-
-	// The one place the wording itself is the property under test. A zero bound covers two states the code
-	// cannot tell apart — the bound could not be read, or the server bounds nothing — so the sentence names
-	// the SQLSTATE and no number. It must not name statement_timeout: on the second state that setting reads
-	// 0, and blaming it sends the operator after a setting that is working as configured.
-	[Fact]
-	public void AServerCancelWithAnUnreadableBoundNamesTheSqlStateWithoutANumber()
-	{
-		var timedOut = Assert.IsType<ArchiveQueryTimedOutError>(Map(Postgres("57014")));
-
-		Assert.Contains("57014", timedOut.Message, StringComparison.Ordinal);
-		Assert.DoesNotContain("bound of 0", timedOut.Message, StringComparison.Ordinal);
-		Assert.DoesNotContain("statement_timeout", timedOut.Message, StringComparison.Ordinal);
+		Assert.Equal(ArchiveFault.QueryTimedOut, error.Kind);
+		AssertEndpoint(error);
 	}
 
 	[Fact]
@@ -144,28 +102,27 @@ public sealed class ArchiveExceptionMapperTests
 	// server cannot resolve. Nothing probes the shape up front, so the server's own message text is the
 	// only thing that can name the column, and the mapper carries it through unchanged.
 	[Fact]
-	public void AnUndefinedColumnMapsToTheShapeUnexpectedErrorCarryingTheServersMessage()
+	public void AnUndefinedColumnMapsToShapeUnexpectedCarryingTheServersMessage()
 	{
 		var error = Map(Postgres("42703"));
 
-		var shape = Assert.IsType<ArchiveShapeUnexpectedError>(error);
-		Assert.Equal("the server said so", shape.Detail);
-		Assert.Contains("the server said so", shape.Message, StringComparison.Ordinal);
-		AssertEndpoint(shape.Host, shape.Port, shape.Database);
+		Assert.Equal(ArchiveFault.ShapeUnexpected, error.Kind);
+		Assert.Equal("the server said so", error.Detail);
+		Assert.Contains("the server said so", error.Message, StringComparison.Ordinal);
+		AssertEndpoint(error);
 	}
 
-	// The unmapped example stays unmapped: adding the 42703 arm must not widen the read-failed arm's
-	// catch-all into anything else the tests already stand on.
 	[Fact]
-	public void AnUnmappedSqlStateProducesAFailedResultCarryingTheReadFailedError()
+	public void AnUnmappedSqlStateProducesReadFailedCarryingTheSqlState()
 	{
 		var result = Result.Fail(Map(Postgres("42P07")));
 
 		Assert.True(result.IsFailed);
 
-		var readFailed = Assert.Single(result.Errors.OfType<ArchiveReadFailedError>());
-		Assert.Equal("42P07", readFailed.SqlState);
-		AssertEndpoint(readFailed.Host, readFailed.Port, readFailed.Database);
+		var readFailed = Assert.Single(result.Errors.OfType<ArchiveError>());
+		Assert.Equal(ArchiveFault.ReadFailed, readFailed.Kind);
+		Assert.Equal("42P07", readFailed.Detail);
+		AssertEndpoint(readFailed);
 	}
 
 	[Fact]
@@ -173,8 +130,8 @@ public sealed class ArchiveExceptionMapperTests
 	{
 		var error = Map(new InvalidCastException("column is int4"));
 
-		var readFailed = Assert.IsType<ArchiveReadFailedError>(error);
-		Assert.Equal(string.Empty, readFailed.SqlState);
+		Assert.Equal(ArchiveFault.ReadFailed, error.Kind);
+		Assert.Equal(string.Empty, error.Detail);
 	}
 
 	[Theory]
@@ -198,17 +155,17 @@ public sealed class ArchiveExceptionMapperTests
 		return new PostgresException("the server said so", "ERROR", "ERROR", sqlState);
 	}
 
-	private static Error Map(Exception exception, string? relation = null, TimeSpan? effectiveBound = null)
+	private static ArchiveError Map(Exception exception, string? relation = null)
 	{
 		var mapper = new ArchiveExceptionMapper(ConnectionSettingsFactory.Create(host: Host, port: Port));
 
-		return mapper.Map(exception, relation, effectiveBound);
+		return Assert.IsType<ArchiveError>(mapper.Map(exception, relation));
 	}
 
-	private static void AssertEndpoint(string host, int port, string database)
+	private static void AssertEndpoint(ArchiveError error)
 	{
-		Assert.Equal(Host, host);
-		Assert.Equal(Port, port);
-		Assert.Equal(Database, database);
+		Assert.Equal(Host, error.Host);
+		Assert.Equal(Port, error.Port);
+		Assert.Equal(Database, error.Database);
 	}
 }

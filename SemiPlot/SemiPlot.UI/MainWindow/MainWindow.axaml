@@ -17,7 +17,7 @@
         Height="800"
         WindowStartupLocation="CenterScreen">
 
-    <Grid RowDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto">
+    <Grid RowDefinitions="Auto,*,Auto,Auto,Auto,Auto">
 
         <Border Grid.Row="0"
                 Name="Toolbar"
@@ -77,18 +77,6 @@
         </Border>
 
         <Border Grid.Row="5"
-                Name="ArchiveHealthPanel"
-                BorderThickness="0,1,0,0"
-                BorderBrush="Gray"
-                Padding="8,4"
-                IsVisible="{Binding HasArchiveHealthMessage}">
-            <TextBlock Name="ArchiveHealthMessage"
-                       Text="{Binding ArchiveHealthMessage}"
-                       TextWrapping="Wrap"
-                       VerticalAlignment="Center" />
-        </Border>
-
-        <Border Grid.Row="6"
                 Name="StatusBar"
                 BorderThickness="0,1,0,0"
                 BorderBrush="Gray"

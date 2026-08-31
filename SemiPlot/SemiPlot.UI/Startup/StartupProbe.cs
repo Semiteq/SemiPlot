@@ -37,7 +37,7 @@ public static class StartupProbe
 	/// It must stay above <see cref="PostgresConnectionSettings.ConnectTimeoutSeconds"/>, which is the
 	/// invariant <c>DefaultReadBound_StaysAboveTheConnectTimeout</c> pins. An unreachable host — a
 	/// wrong address, a host that is down, a firewall that drops — fails inside the connect attempt, and
-	/// only a bound above that attempt lets its <c>ArchiveUnreachableError</c> reach the operator. Equal
+	/// only a bound above that attempt lets its <c>ArchiveFault.Unreachable</c> reach the operator. Equal
 	/// values race, and the operator then reads "the connection was accepted", the opposite of the truth.
 	/// </para>
 	/// </summary>
@@ -108,37 +108,12 @@ public static class StartupProbe
 				return await FailAsync<StartupData>(serviceProvider, extent.Errors).ConfigureAwait(false);
 			}
 
-			var healthWarnings = await ReadHealthWarningsAsync(serviceProvider).ConfigureAwait(false);
-
-			return Result.Ok(new StartupData(serviceProvider, pens.Value, extent.Value, healthWarnings));
+			return Result.Ok(new StartupData(serviceProvider, pens.Value, extent.Value));
 		}
 		catch (Exception exception)
 		{
 			return await FailAsync(serviceProvider, exception).ConfigureAwait(false);
 		}
-	}
-
-	/// <summary>
-	/// The archive's health warnings, read last and never able to end startup. It runs after both reads
-	/// have succeeded, so the archive is already known to answer, and its result rides out on
-	/// <see cref="StartupData.HealthWarnings"/> rather than on the <see cref="Result"/>: a non-empty default
-	/// partition is still read by every query, and failing here would hide a working archive from its
-	/// operator over a fault written on the SCADA side.
-	/// <para>
-	/// Resolved with <c>GetService</c> rather than <c>GetRequiredService</c>: a container holding a test
-	/// double for <see cref="IDataProvider"/> registers no reader, and the absence of a health check is not
-	/// a startup failure. The reader owns its own bound and swallows its own failures, so nothing here
-	/// bounds it a second time.
-	/// </para>
-	/// </summary>
-	private static async Task<IReadOnlyList<IError>> ReadHealthWarningsAsync(ServiceProvider serviceProvider)
-	{
-		if (serviceProvider.GetService<ArchiveHealthReader>() is not { } healthReader)
-		{
-			return [];
-		}
-
-		return await healthReader.ReadAsync().ConfigureAwait(false);
 	}
 
 	private static Result<StartupData> Read(ServiceProvider serviceProvider, TimeSpan readBound)

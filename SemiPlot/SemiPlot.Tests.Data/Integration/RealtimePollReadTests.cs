@@ -257,7 +257,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 	// made by taking public.trends out from under the poll's own statements and putting it back — a rename
 	// rather than a stopped server, because the container is shared with every other gated class.
 	//
-	// Whatever the underlying failure is, three of them in a row raise ArchiveConnectionLostError: the tick
+	// Whatever the underlying failure is, three of them in a row raise ArchiveFault.ConnectionLost: the tick
 	// reports a connection state and the mapped error only reaches the log line. The tick after the last
 	// one is what this test exists for — and the tick after that, which must report nothing, because a
 	// second Connected there would mean the raised flag was never cleared and the banner would stay on
@@ -292,7 +292,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 		states.Add((await poll.ReadOnceAsync(cancellationToken)).StateChange);
 
 		Assert.All(states.Take(ConsecutiveFailuresBeforeFault - 1), Assert.Null);
-		Assert.IsType<ArchiveConnectionLostError>(states[ConsecutiveFailuresBeforeFault - 1]?.Fault);
+		Assert.Equal(ArchiveFault.ConnectionLost, states[ConsecutiveFailuresBeforeFault - 1]?.Fault?.Kind);
 		Assert.Same(ArchiveConnectionState.Connected, states[ConsecutiveFailuresBeforeFault]);
 		Assert.Null(states[ConsecutiveFailuresBeforeFault + 1]);
 

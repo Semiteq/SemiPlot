@@ -131,7 +131,7 @@ internal sealed class FakeDataProvider : IDataProvider
 		if (FailPens)
 		{
 			return Task.FromResult(
-				Result.Fail<IReadOnlyList<Pen>>(new ArchiveUnreachableError("bench", 5432, "semiplot_dev")));
+				Result.Fail<IReadOnlyList<Pen>>(new ArchiveError(ArchiveFault.Unreachable, "bench", 5432, "semiplot_dev")));
 		}
 
 		if (GatePens)
@@ -188,7 +188,7 @@ internal sealed class FakeDataProvider : IDataProvider
 		if (FailExtent)
 		{
 			return Task.FromResult(
-				Result.Fail<ArchiveExtent>(new ArchiveReadFailedError("bench", 5432, "semiplot_dev", "42601")));
+				Result.Fail<ArchiveExtent>(new ArchiveError(ArchiveFault.ReadFailed, "bench", 5432, "semiplot_dev", "42601")));
 		}
 
 		if (GateExtent)

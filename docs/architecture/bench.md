@@ -40,12 +40,10 @@ spans more than one group and more than one value range.
 
 **What a smaller slice would buy, and what it would cost.** The planner floor is **509 rows in 4
 `relpages`, and it is a knife edge**: 494 rows in the same 4 pages already loses the poll statement's
-index plan to the sequential scan `ExplainPlanTests` rejects. Two content tests bind far above that
-floor and are what actually sets the size —
+index plan to the sequential scan `ExplainPlanTests` rejects. One content test binds far above that
+floor and is what actually sets the size —
 `PostgresHistoryReadTests.TheMinuteLayerReturnsFewerColumnsThanRawOverTheSameWindow`, which needs the
-raw layer denser than the minute layer inside its window, and
-`StatementTimeoutReadTests.TimedOutReadReportsTheServersOwnBound`, which forces a `57014` by reading
-the whole seeded day at raw inside a 50 ms bound. The saving is small either way: the seeder wrote a
+raw layer denser than the minute layer inside its window. The saving is small either way: the seeder wrote a
 slice of this order over a published port in about a second, and a slice a thirty-seventh of its size
 took 0.45 s. Both floors were measured before the generator merge, which only widened the margin —
 the merged lattice is denser than the walk it replaced.

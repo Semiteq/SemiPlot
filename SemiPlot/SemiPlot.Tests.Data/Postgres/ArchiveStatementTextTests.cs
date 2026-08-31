@@ -82,17 +82,6 @@ public sealed class ArchiveStatementTextTests
 		Assert.Contains("DISTINCT unnest(@ids)", ArchiveStatements.RealtimeBaseline, StringComparison.Ordinal);
 	}
 
-	// The statement names the partition and so does the warning the reader raises. They are two constants,
-	// and an operator sent to an object the read never touched is worse than no warning at all.
-	[Fact]
-	public void TheDefaultPartitionOccupancyStatementReadsTheRelationTheWarningNames()
-	{
-		Assert.Contains(
-			ArchiveStatements.DefaultPartitionRelation,
-			ArchiveStatements.DefaultPartitionOccupancy,
-			StringComparison.Ordinal);
-	}
-
 	// The drift that breaks production is the binder naming a parameter the statement does not.
 	[Fact]
 	public void TheWindowBinderNamesExactlyTheStatementsOwnParameters()

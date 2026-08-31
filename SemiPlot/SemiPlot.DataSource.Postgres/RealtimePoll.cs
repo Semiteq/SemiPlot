@@ -1,4 +1,6 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using System.Globalization;
+
+using Microsoft.Extensions.Logging;
 
 using Npgsql;
 
@@ -49,10 +51,9 @@ internal sealed class RealtimePoll
 	// A tick runs every poll_interval_ms and must not inherit ArchiveDataSource's five-minute client
 	// backstop: a server that accepts connections and then stops answering would hold each tick for
 	// minutes and reach the fault threshold only after fifteen of them, leaving a frozen chart and no
-	// banner in between. Ten seconds is the bound ArchiveHealthReader already carries for the same reason
-	// — an order of magnitude above the second a bench cadence gives a tick, and low enough that three
-	// stalled ticks raise the fault inside half a minute. The connect attempt keeps its own separate
-	// bound, PostgresConnectionSettings.ConnectTimeoutSeconds.
+	// banner in between. Ten seconds is an order of magnitude above the second a bench cadence gives a
+	// tick, and low enough that three stalled ticks raise the fault inside half a minute. The connect
+	// attempt keeps its own separate bound, PostgresConnectionSettings.ConnectTimeoutSeconds.
 	private const int TickCommandTimeoutSeconds = 10;
 
 	private static readonly IReadOnlyList<Sample> _noSamples = [];
@@ -201,7 +202,8 @@ internal sealed class RealtimePoll
 		{
 			Advance(baseline);
 
-			_logger.LogDebug("The realtime baseline for {PenCount} variables is {Baseline:O}.", _penIds.Length, baseline);
+			_logger.LogDebug("The realtime baseline for {PenCount} variables is {Baseline:O}.", _penIds.Length,
+				baseline);
 		}
 		else
 		{
@@ -301,11 +303,8 @@ internal sealed class RealtimePoll
 
 	private ArchiveConnectionState? Fail(Exception exception)
 	{
-		// Both statements touch one relation, so a 42P01 here can only mean trends. The server's
-		// effective statement_timeout is deliberately not read: that cold-path reader costs a connection
-		// and a query per failed tick against a server that has just failed one, and a tick reports a
-		// connection state rather than a bound.
-		var error = _exceptionMapper.Map(exception, ArchiveStatements.TrendsRelation, effectiveBound: null);
+		// Both statements touch one relation, so a 42P01 here can only mean trends.
+		var error = _exceptionMapper.Map(exception, ArchiveStatements.TrendsRelation);
 
 		_consecutiveFailures++;
 
@@ -324,11 +323,11 @@ internal sealed class RealtimePoll
 
 		// The threshold rather than the running count: the fault is raised once and _consecutiveFailures
 		// keeps climbing behind it, so anything read off the counter would be frozen at the raise anyway.
-		// ArchiveConnectionLostError says so in its own summary.
-		return new ArchiveConnectionState(new ArchiveConnectionLostError(
+		return new ArchiveConnectionState(new ArchiveError(
+			ArchiveFault.ConnectionLost,
 			_settings.Host,
 			_settings.Port,
 			_settings.Database,
-			ConsecutiveFailuresBeforeFault));
+			ConsecutiveFailuresBeforeFault.ToString(CultureInfo.InvariantCulture)));
 	}
 }

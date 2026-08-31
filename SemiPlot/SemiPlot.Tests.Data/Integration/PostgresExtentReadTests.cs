@@ -100,10 +100,10 @@ public sealed class PostgresExtentReadTests(
 
 		Assert.True(result.IsFailed);
 
-		var error = Assert.Single(result.Errors.OfType<ArchiveNotInitialisedError>());
+		var error = Assert.Single(result.Errors.OfType<ArchiveError>());
 
-		Assert.Equal(ArchiveObject.Table, error.MissingObject);
-		Assert.Equal("trends", error.Table);
+		Assert.Equal(ArchiveFault.TableMissing, error.Kind);
+		Assert.Equal("trends", error.Detail);
 		Assert.Equal(database.Name, error.Database);
 	}
 
@@ -124,10 +124,10 @@ public sealed class PostgresExtentReadTests(
 
 		Assert.True(result.IsFailed);
 
-		var error = Assert.Single(result.Errors.OfType<ArchiveNotInitialisedError>());
+		var error = Assert.Single(result.Errors.OfType<ArchiveError>());
 
-		Assert.Equal(ArchiveObject.Table, error.MissingObject);
-		Assert.Equal("trends", error.Table);
+		Assert.Equal(ArchiveFault.TableMissing, error.Kind);
+		Assert.Equal("trends", error.Detail);
 		Assert.Equal(database.Name, error.Database);
 	}
 

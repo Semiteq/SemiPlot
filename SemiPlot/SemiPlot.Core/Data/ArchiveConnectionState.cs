@@ -1,25 +1,19 @@
-﻿using FluentResults;
+﻿using SemiPlot.Core.Data.Errors;
 
 namespace SemiPlot.Core.Data;
 
 /// <summary>
-/// What a provider reports about its own connection to the archive. Not an error type — it carries one:
-/// <see cref="Fault"/> is null while the archive answers and holds the error that names the fault while it
-/// does not, so a consumer routes on <see cref="IsConnected"/> and renders <see cref="Fault"/>.
+/// What a provider reports about its own connection to the archive. <see cref="Fault"/> is null while the
+/// archive answers and names the fault while it does not.
 /// <para>
-/// <see cref="Connected"/> is one shared instance, so two connected states are reference-equal. That is
-/// deliberate and is also why nothing filters this stream with <c>DistinctUntilChanged</c>: every
-/// subscription's first successful tick reports <see cref="Connected"/>, and a distinct filter would drop
-/// every one after the first — the armed point consumers sequence on.
+/// <see cref="Connected"/> is one shared instance and the stream is never filtered with
+/// <c>DistinctUntilChanged</c>: every subscription's first successful tick reports <see cref="Connected"/>,
+/// which is the armed point consumers sequence on.
 /// </para>
 /// </summary>
-public sealed record ArchiveConnectionState(IError? Fault)
+public sealed record ArchiveConnectionState(ArchiveError? Fault)
 {
-	/// <summary>
-	/// The archive answered. Reported by a subscription's first successful tick and by the first success
-	/// after a fault, never by an ordinary tick in between.
-	/// </summary>
-	public static readonly ArchiveConnectionState Connected = new((IError?)null);
+	public static readonly ArchiveConnectionState Connected = new((ArchiveError?)null);
 
 	public bool IsConnected => Fault is null;
 }

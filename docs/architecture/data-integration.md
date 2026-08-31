@@ -107,7 +107,7 @@ ordering on the raw column would return a list not ordered by the values it carr
 
 An empty table yields an empty pen list, not a failure — a fresh installation before commissioning
 is a normal state. A missing table is the other state and is a failure: `42P01` maps to
-`ArchiveNotInitialisedError` with `Table` naming `semiplot_tags`.
+`ArchiveFault.TableMissing` with the detail naming `semiplot_tags`.
 
 ### Archive extent
 
@@ -261,20 +261,6 @@ the archive-extent statement's shape over the requested identifiers rather than 
 catalogue, and `DISTINCT unnest(@ids)` is the seeded window's own de-duplicating source, so a caller
 repeating an identifier costs one probe rather than two. A `NULL` answer means those variables carry
 no row yet — a content state, not a failure.
-
-### Default-partition occupancy
-
-```sql
-SELECT EXISTS (SELECT 1 FROM ONLY public.tpdefault);
-```
-
-Read once at startup, on a connection of its own, to answer whether samples have been landing in the
-catch-all partition. `ONLY` is load-bearing: without it the read descends into the whole partition
-tree and answers about the archive instead of about the catch-all. `EXISTS` is load-bearing for the
-same reason a count is not — the answer is a yes or a no, and the planner stops at the first row. The
-partition is qualified rather than left to the search path because it is an object named in a warning
-the operator has to find under exactly that name. **Archive health** below states what the answer
-does.
 
 ### Gap explanation
 
@@ -509,7 +495,7 @@ does not.
   physical connection after a reset, so a dropped packet or a recycled pool connection produces
   exactly one failed tick, and a fault raised on one failure would flap over a healthy archive. The
   count multiplies the operator's own `poll_interval_ms`: at the 1 s cadence a bench uses, that is a
-  fault within about three seconds. The state carries `ArchiveConnectionLostError`, naming the host,
+  fault within about three seconds. The state carries `ArchiveFault.ConnectionLost`, naming the host,
   the port, the database and the threshold that raised it.
 - **The fault is raised once per outage, and the number it carries is the threshold rather than a
   running count.** The poll keeps failing behind a raised fault and reports nothing further until a
@@ -519,31 +505,10 @@ does not.
 - **A self-cancelled read is not a failure.** Disposal cancels the in-flight query, and
   `OperationCanceledException` ends the loop ahead of the mapper rather than counting towards the
   threshold.
-- **A failed tick reads no effective bound.** `StatementTimeoutReader` costs a connection and a query
-  against a server that has just failed one, and a tick reports a connection state rather than a
-  bound.
-
 `MainWindowViewModel` renders the state as one row of the archive banner over a chart that keeps its
 history: `StartupFailureMapper.Describe(fault)`, which is the detail followed by the remedy, never
 the error's own `Message`. That row has a single writer, the bound stream, so nothing else can set
 or clear it.
-
-### Archive health
-
-`ArchiveHealthReader` runs once on the startup path, after both reads have succeeded, on a connection
-of its own under a 10 s bound. It answers with the warnings it found — zero or more — and never with
-a failure.
-
-One state today: a non-empty `public.tpdefault`, which `scada-archive.md` names as a fault signal. It
-is a warning rather than a startup failure because every read still returns those rows and only
-partition elimination is lost, so refusing to start would hide a readable archive from its operator
-over a planning fault written on the SCADA side. A check that cannot run reports nothing and writes a
-log line: a degraded probe must not become a second failure plane beside the reads that matter, and
-"the archive might be unhealthy, we could not tell" is not a state an operator can act on.
-
-The warnings ride out of startup on `StartupData` and become the banner's second row. The two rows
-are independent facts and have separate writers: the health row is written once at startup, and the
-connection stream can neither set nor clear it.
 
 ## Error semantics
 
@@ -568,14 +533,13 @@ so no failure crosses to the UI thread (`DA-1`).
 | --- | --- | --- |
 | Connection refused or DNS failure at startup | failed `Result` | `ErrorWindow` titled "No connection to the archive", naming the host and port, with a remedy and one **Close** button — no retry, the operator corrects the cause and starts again |
 | Connection lost mid-session | failed `Result` on the query; realtime tick dropped | Chart keeps the data it has; staleness is visible |
-| Three consecutive realtime ticks fail | `ArchiveConnectionLostError` on `ConnectionFaults`; the observable keeps running | A banner row over the chart naming the live edge that stopped answering and the check to make — the server still running and still reachable — cleared by the first tick that succeeds |
-| A column the read needs is absent (SQLSTATE `42703`) | failed `Result` carrying `ArchiveShapeUnexpectedError` with the server's own detail | "The archive has an unexpected shape" — the remedy is running `semibase site`, then finding what altered the table |
-| `public.tpdefault` holds rows | success; `ArchiveDefaultPartitionNotEmptyError` rides out of startup as a health warning | A banner row over a working chart naming the partition, stating that its rows are still read and that reads which cannot skip it are slower — the remedy is on the SCADA side |
+| Three consecutive realtime ticks fail | `ArchiveFault.ConnectionLost` on `ConnectionFaults`; the observable keeps running | A banner row over the chart naming the live edge that stopped answering and the check to make — the server still running and still reachable — cleared by the first tick that succeeds |
+| A column the read needs is absent (SQLSTATE `42703`) | failed `Result` carrying `ArchiveFault.ShapeUnexpected` with the server's own detail | "The archive has an unexpected shape" — the remedy is running `semibase site`, then finding what altered the table |
 | Query timeout | failed `Result` | Same as above; the timeout is a configured bound, not an accident |
-| The database does not exist (SQLSTATE `3D000`, the server answers) | failed `Result` carrying `ArchiveNotInitialisedError` whose `MissingObject` is `Database`, distinguished from a connection failure | "The archive is not provisioned" — the remedy is running `semibase site` |
+| The database does not exist (SQLSTATE `3D000`, the server answers) | failed `Result` carrying `ArchiveFault.DatabaseMissing`, distinguished from a connection failure | "The archive is not provisioned" — the remedy is running `semibase site` |
 | The credentials are refused or a grant is missing (SQLSTATE `28P01`, `28000`, `42501`) | failed `Result`, distinguished from a connection failure | "The archive refused the credentials" — the remedy is the user, password or grants, not the network |
-| `trends` does not exist (provisioning stopped part-way) | failed `Result` carrying `ArchiveNotInitialisedError` whose `MissingObject` is `Table` and whose `Table` is `trends` | "The archive is not provisioned" — the remedy is running `semibase site` |
-| `semiplot_tags` does not exist (provisioning unfinished) | failed `Result` carrying `ArchiveNotInitialisedError` whose `MissingObject` is `Table` and whose `Table` is `semiplot_tags` | "The archive is not provisioned" — the remedy is running `semibase site` |
+| `trends` does not exist (provisioning stopped part-way) | failed `Result` carrying `ArchiveFault.TableMissing` whose detail is `trends` | "The archive is not provisioned" — the remedy is running `semibase site` |
+| `semiplot_tags` does not exist (provisioning unfinished) | failed `Result` carrying `ArchiveFault.TableMissing` whose detail is `semiplot_tags` | "The archive is not provisioned" — the remedy is running `semibase site` |
 | `semiplot_tags` present but empty | empty pen list, success | A row stating the catalogue is empty and naming who fills it — commissioning is not finished |
 | Archive present but no rows in the window | success, empty envelope list — no pen has rows, so no pen gets an envelope | Empty chart, no error |
 
@@ -607,94 +571,61 @@ side and a missing one does not, and the split is why no `EmptyTagCatalogError` 
 catalogue is a successful read of zero rows: the database answered correctly and nothing is broken,
 and routing it as a failure would make every generic failure handler log a warning on every start of
 a fresh installation. A missing `semiplot_tags` raises `42P01` and is a failure, carried by
-`ArchiveNotInitialisedError` with `Table` naming the table. The two states stay distinguishable —
+`ArchiveFault.TableMissing` with the detail naming the table. The two states stay distinguishable —
 commissioning unfinished against provisioning unfinished — which is what the provisioning order in
 `postgres-instance.md` requires, and the split needs no error type of its own.
 
 | Type | Fields | Operator sentence |
 | --- | --- | --- |
-| `ConnectionFileNotFoundError` | path | The connection file is not where it was expected |
-| `ConnectionFileInvalidError` | path, kind (`Unreadable` \| `Unparseable` \| `MissingField` \| `OutOfRange` \| `UnknownTimeZone` \| `VersionMismatch`), reason | The file exists but cannot be read as configuration, the version it declares included |
-| `ArchiveUnreachableError` | host, port, database | No connection to the archive |
-| `ArchiveAccessDeniedError` | host, port, database, username | The credentials or the grants are wrong |
-| `ArchiveNotInitialisedError` | host, port, database, missingObject (`Database` \| `Table`), table (null on `Database`) | The server answers but the database, or a table the read needs, does not exist |
-| `ArchiveQueryTimedOutError` | host, port, database, timeout (the effective server `statement_timeout` the failing read ran under, read on the failure path from a session of the same reader role; `TimeSpan.Zero` means there is no bound to report — the read-back could not run, or the server bounds nothing) | The read exceeded its configured bound, or the server ended it and no bound can be named |
-| `ArchiveShapeUnexpectedError` | host, port, database, detail (what the server said) | The tables are there, but not the columns they are expected to carry |
-| `ArchiveConnectionLostError` | host, port, database, failureThreshold (the number of consecutive failed ticks that raised the fault, fixed at the raise — not a running count) | The live edge stopped answering; the history already drawn is unaffected |
-| `ArchiveDefaultPartitionNotEmptyError` | host, port, database, partition | Samples are landing in the partition that catches days nobody created |
-| `ArchiveReadFailedError` | host, port, database, sqlState (empty when the failure carried none) | The archive rejected the read for a reason this build does not recognise |
+| `ConnectionFileError` | path, kind (`NotFound` \| `Unreadable` \| `Unparseable` \| `MissingField` \| `OutOfRange` \| `UnknownTimeZone`), reason | The connection file is absent, or exists but cannot be read as configuration |
+| `ArchiveError` | kind (`ArchiveFault`), host, port, database, detail | One sentence per kind, below |
 
-The two connection-file types are raised by the settings loader. Six `Archive*` types are the
-vocabulary the read path maps its SQLSTATEs onto — `28P01` is a type of its own rather than one
-schema error because it sends the operator to a separate remedy: fix the credentials, not the
-provisioning, and `42703` is `ArchiveShapeUnexpectedError` rather than a missing relation because
-the tables are there and it is their columns that are wrong.
-The remaining two are raised without a SQLSTATE behind them: `ArchiveConnectionLostError` counts
-failed poll ticks and `ArchiveDefaultPartitionNotEmptyError` reports a successful health read whose
-answer was `true`. `3D000` and `42P01` share `ArchiveNotInitialisedError` and stay apart inside it on
-`MissingObject`, because both say the same thing — something the read needs was never created — and
-differ only in what to create. On the table case the type carries the table name rather than assuming
-`trends`, because `42P01` is table-agnostic and the name is what the detail line reports; the remedy
-is `semibase site` for either table, since one provisioning run creates both. On the database case
-`Table` is null: `3D000` names no relation, and the remedy is `semibase site`.
-`ArchiveReadFailedError` closes the mapping: anything the table above does not name arrives as that
-type carrying its SQLSTATE, so nothing escapes as an exception and nothing crosses as an untyped
+| `ArchiveFault` | Raised by | Detail | Operator sentence |
+| --- | --- | --- | --- |
+| `Unreachable` | a socket failure, a client bound firing, any `NpgsqlException` without a SQLSTATE | empty | No connection to the archive |
+| `AccessDenied` | `28P01`, `28000`, `42501` | the username | The credentials or the grants are wrong |
+| `DatabaseMissing` | `3D000` | empty | The server answers but holds no such database |
+| `TableMissing` | `42P01` | the relation the failing statement touches | The database exists but a table the read needs does not |
+| `ShapeUnexpected` | `42703` | the server's own message | The tables are there, but not the columns they are expected to carry |
+| `QueryTimedOut` | `57014` | empty | The server ended the read: its `statement_timeout` passed or an administrator cancelled it |
+| `ConnectionLost` | three consecutive failed poll ticks | the number of failures that raised it | The live edge stopped answering; the history already drawn is unaffected |
+| `ReadFailed` | any other SQLSTATE, or a client-side throw | the SQLSTATE, or empty | The archive rejected the read for a reason this build does not recognise |
+
+`ConnectionFileError` is raised by the settings loader. `ArchiveError` is the vocabulary the read path
+maps its SQLSTATEs onto; `28P01` is a kind of its own rather than one schema error because it sends the
+operator to a separate remedy, and `42703` is `ShapeUnexpected` rather than a missing relation because
+the tables are there and it is their columns that are wrong. `TableMissing` carries the table name
+rather than assuming `trends`, because `42P01` is table-agnostic and the name is what the detail line
+reports; the remedy is `semibase site` for either table, since one provisioning run creates both.
+`ReadFailed` closes the mapping, so nothing escapes as an exception and nothing crosses as an untyped
 `Result.Fail(string)` a consumer cannot route on.
 
-**Eleven public types, and every one of them reaches the operator.** `StartupFailureMapper`
-(`SemiPlot.UI/Startup/`) turns each into a title, a detail and a remedy of its own, and it is the
-one place a remedy is written: an operator told a state alone is told nothing to do about it, so no
-consumer renders `IError.Message`. `ErrorWindow` lays the three parts out as three blocks.
-`Describe` joins the detail and the remedy into the single line a banner row has room for and drops
-the title, which restates the detail's first clause. Two types never open the error window — a
-lost live edge and a non-empty default partition are drawn as banner rows over a chart that works
-— and they carry an arm for the remedy, which is the half a banner row cannot do without. The
-totality of that map is guarded by a reflection test rather than
-by the compiler: `CS8509` fires on any switch expression whose exhaustiveness cannot be proven, and
-over an interface it never can be, so a switch covering every type still warns and promoting that
-warning to an error would stop the build. The test enumerates the public `IError` types in
-`SemiPlot.Core.Data.Errors` and in `SemiPlot.UI.Startup`, and fails when one of them maps to the
-catch-all arm. A second test pins the enumeration at eleven — Core's ten plus the UI-local
-`StartupReadTimedOutError` — because a coverage test over an empty set passes vacuously. Adding a
-public error type without an arm is therefore a failing test, not a vague window.
+**Every kind reaches the operator.** `StartupFailureMapper` (`SemiPlot.UI/Startup/`) turns each into
+a title, a detail and a remedy of its own, and it is the one place a remedy is written: no consumer
+renders `IError.Message`. `ErrorWindow` lays the three parts out as three blocks; `Describe` joins the
+detail and the remedy into the single line a banner row has room for. `ConnectionLost` never opens the
+error window — it is drawn as a banner row over a chart that works. `StartupFailureMapperTests`
+enumerates both enums and fails when a member maps to the catch-all arm.
 
-`57014` maps unconditionally to `ArchiveQueryTimedOutError`. The server answers that SQLSTATE both
+`57014` maps unconditionally to `ArchiveFault.QueryTimedOut`. The server answers that SQLSTATE both
 for `statement_timeout` and for a client-issued cancel, and the chart cancels in-flight reads when it
 pans, so the two will have to be told apart — but no member of `IDataProvider` takes a
 `CancellationToken`, so no read on the provider path hands one down, and a caller's own cancellation
 raises `OperationCanceledException`, which the mapper rethrows rather than turning into a failed
 `Result`. The slice that gives the interface tokens owns splitting the two.
 
-The bound the error carries is read only once a `57014` has already arrived, on an asynchronous
-failure path that runs nothing else, from a fresh connection of the same reader role. No successful
-read pays for it. The number is the one the failing read ran under because SemiPlot sends no
-`statement_timeout` in any form, so every session of that role runs under the role default. That
-holds while the default is static: role and database defaults bind at backend start and a pooled
-physical connection keeps its startup value, so an administrative change to the role default mid-run
-can leave one report one increment stale. A read-back that cannot run reports
-`TimeSpan.Zero`, and so does a server that bounds nothing; the two stay apart in the log and
-collapse in the operator sentence, because neither has a number.
-
-**A shipped limitation: the read-back runs under the bound that just fired.** It opens a session of
-the same reader role, so a `statement_timeout` smaller than the read-back itself cuts the read-back
-too and the error falls to the no-number wording. The read-back materialises `pg_show_all_settings()`
-and measures 4.246 ms cold and 1.6 to 1.8 ms warm on a `postgres:17-alpine` container, so the
-limitation bites only at a bound of a few milliseconds. That is the misconfigured-tiny-bound site
-where the number would be most diagnostic, and it is accepted rather than solved. It is no ground an
-eager read at connection time held either: that read ran the same `pg_settings` query under the same
-role on every physical connection open and let its failure out, so a bound below it failed the
-connection open itself, left the cached value unset and reported the same absent number. The lazy
-read costs no successful connection a round trip, and the log carries the reader's own failure.
+The error carries no bound: `statement_timeout` is the reader role's own setting and the remedy names
+it without a number.
 
 ## Configuration
 
 A YAML file named `archive-connection.yaml`, read from the configuration directory —
 `C:\DISTR\Config\SemiPlot` unless `--config-dir` names another one, following the `C:\DISTR\`
 convention of the sibling project. The directory is correctable from the command line; the file name
-is not. All nine keys are required; the loader reports an absent one rather than defaulting it:
+is not. All eight keys are required; the loader reports an absent one rather than defaulting it, and ignores
+keys the format does not name:
 
 ```yaml
-connection_file_version: "1.0"
 host: scada-01
 port: 5432
 database: semiplot_dev
@@ -714,8 +645,8 @@ read path stamps its own per-command backstop, a fixed five minutes, on every co
 That backstop is a fixed bound rather than one derived from a value read at connection time, so it
 is not guaranteed to sit above the server's: on a site whose reader role carries a
 `statement_timeout` above five minutes the client cancel and the server's own cancel race, and a
-slow-but-alive read can be reported as `ArchiveUnreachableError` rather than as
-`ArchiveQueryTimedOutError`. Loading returns a `Result`; a malformed file — unreadable, unparseable,
+slow-but-alive read can be reported as `ArchiveFault.Unreachable` rather than as
+`ArchiveFault.QueryTimedOut`. Loading returns a `Result`; a malformed file — unreadable, unparseable,
 missing a key, holding a value outside its range, or naming a zone the machine does not know — is
 reported at startup rather than at first query.
 
@@ -734,11 +665,9 @@ archive read left inside it either blocks Avalonia's setup or throws through it.
 
 1. Load `<ConfigDir>/archive-connection.yaml` and register `AddPostgresData(settings)`.
 2. Resolve `IDataProvider`, read the pen catalogue, then read the archive extent.
-3. Read the archive's health warnings, which end nothing: they run only once both reads have
-   succeeded, so the archive is already known to answer, and they ride out on the success channel.
 
-The first two steps answer with a `Result`. What the sequence carries — the container, the pens, the
-extent and the health warnings — crosses the Avalonia boundary in a `StartupData` record, so
+Both reads answer with a `Result`. What the sequence carries — the container, the pens and the
+extent — crosses the Avalonia boundary in a `StartupData` record, so
 `App.InitializeServices` consumes data already read and awaits nothing. The settings do not travel that way: they reach the
 provider through the DI singleton `AddPostgresData(settings)` registers. A failed step
 short-circuits, disposes the container, and carries its error to `Program`, which maps it through
@@ -754,14 +683,14 @@ server that accepts TCP and answers nothing shows the error window instead of ho
 provider's five-minute backstop. That abandons the wait, not the query — the read keeps running on
 its pooled connection until the backstop ends it, and the error window opens without it. The expiring
 bound is `StartupReadTimedOutError`, which lives in `SemiPlot.UI.Startup` and stays apart from
-`ArchiveQueryTimedOutError`: the latter means the server ended the read, and would send the operator
+`ArchiveFault.QueryTimedOut`: the latter means the server ended the read, and would send the operator
 after a `statement_timeout` that may be working as configured.
 
 **The read bound sits above the connect timeout, and that ordering is load-bearing.**
 `PostgresConnectionSettings.ConnectTimeoutSeconds` writes Npgsql's connect bound out as 15 s instead
 of inheriting it, and `StartupProbe.DefaultReadBound` is 30 s. An unreachable host — wrong address,
 host down, a firewall that drops — fails inside the connect attempt, so the wider caller bound lets
-`ArchiveUnreachableError` win and the operator reads "no connection to the archive". Equal values race,
+`ArchiveFault.Unreachable` win and the operator reads "no connection to the archive". Equal values race,
 and the loser reports a timeout whose remedy states the connection was accepted, which is the opposite
 of the truth on the single most common failure at a site.
 `StartupProbeTests.DefaultReadBound_StaysAboveTheConnectTimeout` pins the ordering.
@@ -790,27 +719,23 @@ inside step 2:
 
 1. All statement text on the application and provider path lives in one class,
    `ArchiveStatements.cs`. Nothing else on that path issues SQL. The bench seeder and the test
-   projects own SQL of their own by design and are outside the rule. Eight SQL blocks stand above,
-   and six of them are shipped statements with a constant in that class: the pen catalogue, the
-   archive extent, the sparse history window, the realtime poll, the realtime baseline and the
-   default-partition occupancy check. The other two — the bucketed history read and the gap
+   projects own SQL of their own by design and are outside the rule. Seven SQL blocks stand above,
+   and five of them are shipped statements with a constant in that class: the pen catalogue, the
+   archive extent, the sparse history window, the realtime poll and the realtime baseline. The other two — the bucketed history read and the gap
    explanation — have no constant behind them: `postgres-bucketed-read` is dropped, and no roadmap
    slice names the gap explanation. They are a design record until a slice ships them.
-   `ArchiveStatements.cs` carries one constant no block above quotes, `EffectiveStatementTimeout`,
-   which runs only after a read has already failed with `57014`.
 2. Unit tests pin the shipped statements clause by clause, in
    `SemiPlot.Tests.Data/Postgres/ArchiveStatementTextTests.cs` against the constants: one assertion
    per guarantee whose loss nothing else catches without a container — the sparse history window's
    outer ordering, its strict seam bound and its one-day seed floor, the realtime poll's raw-layer
    filter and its time ordering, the realtime baseline's raw-layer filter and its de-duplicated
-   identifiers, and the default-partition occupancy check reading the relation its warning names.
-   `EffectiveStatementTimeout` is a cold-path diagnostic and carries no pin. Three statements take
+   identifiers. Three statements take
    parameters, and each binds through a binder of its own pinned against that statement's own
    parameter names: `PostgresDataProvider.BindWindow` over the sparse history window,
    `RealtimePoll.BindPoll` over the poll and `RealtimePoll.BindBaseline` over the baseline. A change
    to a pinned clause therefore shows up as a failing test, while a reformatting does not. None of
    it covers this document: nothing checks that the SQL quoted above still matches the constants, so
-   whoever assembles a brief from this document re-reads by hand the six blocks that have a constant
+   whoever assembles a brief from this document re-reads by hand the five blocks that have a constant
    against `ArchiveStatements.cs`. The other two name no constant, so that re-read cannot cover
    them; they are checked against the code only when the slice that ships them lands.
 3. Gated integration tests run `EXPLAIN` on the extent statement, the sparse history window, the
@@ -841,5 +766,5 @@ When a chart is empty, check in this order. Each step distinguishes a different 
    mismatch if the offset looks like a whole number of hours.
 6. Is `tpdefault` non-empty? Rows there indicate the SCADA failed to create a daily partition. They
    are **not** a cause of an empty chart: every read still returns them, and what is lost is
-   partition elimination, so reads that cannot skip that partition are slower. Startup reports it as
-   a banner row over a working chart, and the remedy is on the SCADA side.
+   partition elimination, so reads that cannot skip that partition are slower. The remedy is on the
+   SCADA side.

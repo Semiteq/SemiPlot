@@ -1,4 +1,4 @@
-﻿# The seeded bench
+# The seeded bench
 
 The data-source slices need a PostgreSQL archive that looks like a Simple-Scada 2 archive and holds
 the same rows on every machine. This document is that bench as it exists. What the vendor's archive
@@ -182,16 +182,14 @@ application bench is where a person looks at the chart. It runs the same bench i
 database that already carries rows, and the source stays pristine for the next recreate.
 
 ```powershell
-pwsh scripts/bench-demo.ps1          # converge the stand
-pwsh scripts/bench-demo.ps1 -Down    # remove it
+docker compose --file scripts/compose.yaml up --detach   # the container; Rider: `Bench container`
+pwsh scripts/bench-demo.ps1                              # converge the stand on it
+pwsh scripts/bench-demo.ps1 -Down                        # remove container, volume and connection file
 ```
 
-`scripts/bench-demo.ps1` converges every piece it owns:
+The container is Docker Compose's; its data directory is the named volume `semiplot-bench-data`, so a
+`compose down` keeps the archive. `scripts/bench-demo.ps1` waits for its port and converges the rest:
 
-- The container is Docker Compose's, over `scripts/compose.yaml`: `docker compose up --detach` by hand or
-  the Rider configuration `Bench container`. The script waits for its port and does not start it. The data
-  directory is the named volume `semiplot-bench-data`, so a removed container keeps its archive; `-Down`
-  removes container and volume.
 - `semiplot_app` **on freshness**: when `max(t)` is within five minutes of the wall clock the archive
   is live and is kept, only the connection file being rewritten; otherwise — stale, empty or absent —
   the database is dropped, cloned from `semiplot_provisioned` and filled with
@@ -233,12 +231,12 @@ lives only in the generated connection file.
 
 | Configuration | What it does |
 | --- | --- |
-| `Bench container` | The Docker plugin's Compose configuration over `scripts/compose.yaml`. Stop runs `compose down`: the container goes, the volume and the archive stay. Needs a Docker connection named `Docker` in Settings > Build, Execution, Deployment > Docker |
+| `Bench container` | The Docker plugin's Compose configuration over `scripts/compose.yaml`; Stop is `compose down`. Needs a Docker connection named `Docker` in Settings > Build, Execution, Deployment > Docker |
 | `Bench up` | Runs the script on its own |
-| `Bench down` | Removes the container and the generated connection file |
+| `Bench down` | `-Down`: removes the container, the volume and the connection file |
 | `Demo writer` | The seeder in `--follow 1` against `semiplot_app`, with `Bench up` as a before-launch task |
 | `Viewer (bench)` | `SemiPlot.UI` with `--config-dir` on the generated file and `--logging-level debug`, with `Bench up` as a before-launch task |
-| `Live demo` | A compound of the three above. Stop takes the writer, the viewer and the container down together |
+| `Live demo` | A compound of `Bench container`, `Demo writer` and `Viewer (bench)`; Stop takes all three down |
 
 `Bench up` is a before-launch task of both children, not of the compound: a compound carries no
 before-launch list and starts its children in parallel, and the mutex serialises the two runs.

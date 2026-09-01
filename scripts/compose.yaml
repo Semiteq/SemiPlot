@@ -1,6 +1,3 @@
-# The application bench container. `scripts/bench-demo.ps1` and the Rider configuration `Bench container`
-# both create it from this file, so the two never disagree about the image, the port or the passwords;
-# the test fixture builds the same image on its own (docs/architecture/bench.md#the-application-bench).
 name: semiplot-bench
 
 services:
@@ -16,8 +13,6 @@ services:
       SEMIBASE_WRITER_PASSWORD: semibase-container-writer
       SEMIBASE_READER_PASSWORD: semibase-container-reader
       SEMIPLOT_PROVISIONED_DATABASE: semiplot_provisioned
-    # A named volume, so a `compose down` — which Rider runs on Stop — removes the container and keeps
-    # the archive; `bench-demo.ps1 -Down` removes the volume too.
     volumes:
       - semiplot-bench-data:/var/lib/postgresql/data
 

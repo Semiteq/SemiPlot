@@ -1,8 +1,8 @@
-﻿#Requires -Version 7.0
+#Requires -Version 7.0
 <#
 .SYNOPSIS
-    Raises the application bench: a container, a seeded archive that reaches the wall clock, and a
-    connection file the viewer can read.
+    Raises the application bench on a running container: a seeded archive that reaches the wall clock,
+    and a connection file the viewer can read.
 
 .DESCRIPTION
     The canonical recipe for the demo stand. docs/architecture/bench.md points here rather than
@@ -12,9 +12,6 @@
     before-launch task of two configurations at once. A named mutex serialises concurrent instances:
     the loser waits and then finds everything already converged, and the mutex is released in a
     finally so a failure does not wedge the next run.
-
-    The image and the container are built once and reused, so the slow half of the recipe is paid
-    once per boot rather than once per session.
 
     semiplot_app is recreated when its newest row is further behind the wall clock than $LiveWithin,
     and kept when it is not. Recreating means terminating the backends, dropping the database,
@@ -37,7 +34,7 @@
     log reads rows normally.
 
 .PARAMETER Down
-    Remove the container and the generated connection file instead of converging them.
+    Remove the container, its data volume and the generated connection file instead of converging them.
 
 .PARAMETER SeedEnd
     Naive local instant the fill stops before, as yyyy-MM-ddTHH:mm:ss. Defaults to the script's own
@@ -68,8 +65,6 @@ Set-StrictMode -Version Latest
 
 $RepositoryRoot = Split-Path -Parent $PSScriptRoot
 $ContainerName = 'semiplot-bench'
-# The container is compose's: `docker compose --file scripts/compose.yaml up --detach` by hand, or the Rider
-# configuration `Bench container`. This script waits for it, seeds it and writes the connection file.
 $ComposeFile = Join-Path $PSScriptRoot 'compose.yaml'
 $ConfigDirectory = Join-Path $RepositoryRoot 'SemiPlot/Artifacts/bench-config'
 $ConnectionFile = Join-Path $ConfigDirectory 'archive-connection.yaml'
@@ -106,8 +101,7 @@ $SeedChangeSeconds = 0.5
 # against the 793.7 minutes an unchecked run once left is the trade this bound makes.
 $LiveWithin = [timespan]::FromMinutes(5)
 
-# Long enough to sit out a cold container start held by the other instance, and short enough that a
-# wedged run reports rather than hangs for the session.
+# Long enough to sit out a seed held by the other instance, short enough that a wedged run reports.
 $ConvergenceTimeout = [timespan]::FromMinutes(15)
 
 # Stating -SeedEnd states where the fill ends, so it is a recreate whatever the archive holds.
@@ -121,17 +115,6 @@ function Write-Step([string] $Message)
 function Write-Skip([string] $Message)
 {
     Write-Host "    $Message" -ForegroundColor DarkGray
-}
-
-function Invoke-Docker
-{
-    $output = & docker @args 2>&1
-    if ($LASTEXITCODE -ne 0)
-    {
-        throw "docker $($args -join ' ') failed with exit code $LASTEXITCODE`n$output"
-    }
-
-    return $output
 }
 
 function Invoke-Psql([string] $TargetDatabase, [string] $Command)
@@ -178,7 +161,11 @@ END;
 function Invoke-Down
 {
     Write-Step 'Removing the bench container and its volume'
-    Invoke-Docker compose --file $ComposeFile down --volumes | Out-Null
+    $output = & docker compose --file $ComposeFile down --volumes 2>&1
+    if ($LASTEXITCODE -ne 0)
+    {
+        throw "docker compose down failed with exit code $LASTEXITCODE`n$output"
+    }
     Write-Host '    removed'
 
     if (Test-Path $ConnectionFile)
@@ -233,8 +220,7 @@ function Wait-ForPort
         $running = & docker ps --filter "name=^/$ContainerName$" --format '{{.Names}}' 2>$null
         if ($running -notcontains $ContainerName)
         {
-            throw "Container $ContainerName is not running. Start it first: " +
-                "docker compose --file scripts/compose.yaml up --detach, or the Rider configuration 'Bench container'."
+            throw "Container $ContainerName is not running. Start it: docker compose --file scripts/compose.yaml up --detach."
         }
 
         & docker exec --env "PGPASSWORD=$SuperuserPassword" $ContainerName `
@@ -297,7 +283,6 @@ function New-Archive($Newest)
     Write-Step "Recreating $Database from $ProvisionedDatabase"
     Write-Host "    $(Get-RecreateReason $Newest)"
 
-    # CREATE DATABASE ... TEMPLATE refuses a source another session holds, and semiplot_provisioned is
     # The connection file names a database that is about to stop existing, so it stops being true
     # here and nowhere else. Clearing it on every convergence instead would break the case the mutex
     # exists for: both demo children run this script, the second run keeps the live archive the first
@@ -380,9 +365,8 @@ schema: public
     Write-Host "    $ConnectionFile, source_time_zone $zone"
 }
 
-# One mutex over the whole convergence, so two before-launch instances started by one compound
-# serialise instead of racing the same DROP DATABASE. The loser waits and
-# then finds an archive the winner already filled, which the freshness check above keeps.
+# One mutex over the whole convergence, so two before-launch instances started by one compound serialise
+# instead of racing the same DROP DATABASE; the loser finds the archive the winner filled.
 $convergence = [System.Threading.Mutex]::new($false, 'Global\semiplot-bench')
 $held = $false
 

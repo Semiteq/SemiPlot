@@ -195,11 +195,12 @@ function Invoke-Down
         # rm rather than `compose down` alone: a container an older script created with `docker run`
         # carries no compose labels, and `down` would leave it standing.
         Invoke-Docker rm --force $ContainerName | Out-Null
-        Invoke-Docker compose --file $ComposeFile down | Out-Null
-        Write-Host "    removed container $ContainerName"
+        Invoke-Docker compose --file $ComposeFile down --volumes | Out-Null
+        Write-Host "    removed container $ContainerName and its volume"
     }
     else
     {
+        Invoke-Docker compose --file $ComposeFile down --volumes | Out-Null
         Write-Skip "no container named $ContainerName"
     }
 

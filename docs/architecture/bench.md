@@ -189,7 +189,8 @@ pwsh scripts/bench-demo.ps1 -Down    # remove it
 `scripts/bench-demo.ps1` converges every piece it owns:
 
 - The image and the container **on existence**, through `docker compose up` over `scripts/compose.yaml`:
-  built once, reused after. `-Down` removes the container; the image stays.
+  built once, reused after. The data directory is the named volume `semiplot-bench-data`, so a removed
+  container keeps its archive. `-Down` removes the container and the volume; the image stays.
 - `semiplot_app` **on freshness**: when `max(t)` is within five minutes of the wall clock the archive
   is live and is kept, only the connection file being rewritten; otherwise — stale, empty or absent —
   the database is dropped, cloned from `semiplot_provisioned` and filled with
@@ -231,12 +232,12 @@ lives only in the generated connection file.
 
 | Configuration | What it does |
 | --- | --- |
-| `Bench container` | `docker compose up` over `scripts/compose.yaml`, attached: the same container the script creates, with its log in the Run window. Rider's Stop emulates Ctrl+C, which `compose up` answers by stopping the container |
+| `Bench container` | The Docker plugin's Compose configuration over `scripts/compose.yaml`: the same container the script creates. Stop runs `compose down`, which removes the container and keeps the named data volume, so the archive survives to the next start |
 | `Bench up` | Runs the script on its own |
 | `Bench down` | Removes the container and the generated connection file |
 | `Demo writer` | The seeder in `--follow 1` against `semiplot_app`, with `Bench up` as a before-launch task |
 | `Viewer (bench)` | `SemiPlot.UI` with `--config-dir` on the generated file and `--logging-level debug`, with `Bench up` as a before-launch task |
-| `Live demo` | A compound of the three above. Stop takes the writer, the viewer and the container down together. The container stops rather than being removed, so the archive survives to the next start |
+| `Live demo` | A compound of the three above. Stop takes the writer, the viewer and the container down together |
 
 `Bench up` is a before-launch task of both children, not of the compound: a compound carries no
 before-launch list and starts its children in parallel, and the mutex serialises the two runs.

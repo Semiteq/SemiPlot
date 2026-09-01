@@ -1,4 +1,4 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 <#
 .SYNOPSIS
     Raises the application bench: a container, a seeded archive that reaches the wall clock, and a
@@ -68,8 +68,9 @@ Set-StrictMode -Version Latest
 
 $RepositoryRoot = Split-Path -Parent $PSScriptRoot
 $ContainerName = 'semiplot-bench'
-$ImageTag = 'semiplot-bench:manual'
-$BenchContext = Join-Path $RepositoryRoot 'SemiPlot/SemiPlot.Tests.Data/bench'
+# The container's image, port and passwords live in compose.yaml, shared with the Rider configuration
+# `Bench container`; the names below repeat what the script needs to talk to it.
+$ComposeFile = Join-Path $PSScriptRoot 'compose.yaml'
 $ConfigDirectory = Join-Path $RepositoryRoot 'SemiPlot/Artifacts/bench-config'
 $ConnectionFile = Join-Path $ConfigDirectory 'archive-connection.yaml'
 $HostPort = 55432
@@ -191,7 +192,10 @@ function Invoke-Down
     Write-Step 'Removing the bench'
     if (Test-ContainerExists)
     {
+        # rm rather than `compose down` alone: a container an older script created with `docker run`
+        # carries no compose labels, and `down` would leave it standing.
         Invoke-Docker rm --force $ContainerName | Out-Null
+        Invoke-Docker compose --file $ComposeFile down | Out-Null
         Write-Host "    removed container $ContainerName"
     }
     else
@@ -221,28 +225,17 @@ function Invoke-Up
         throw 'No container runtime answered. Start Docker Desktop and run this again.'
     }
 
-    Write-Step "Building $ImageTag"
-    Invoke-Docker build --tag $ImageTag $BenchContext | Out-Null
-
     Write-Step "Starting $ContainerName on port $HostPort"
     if (Test-ContainerRunning)
     {
         Write-Skip 'already running'
     }
-    elseif (Test-ContainerExists)
-    {
-        Invoke-Docker start $ContainerName | Out-Null
-        Write-Host '    started the existing container'
-    }
     else
     {
-        Invoke-Docker run --detach --name $ContainerName --publish "${HostPort}:5432" `
-            --env "POSTGRES_PASSWORD=$SuperuserPassword" `
-            --env "SEMIBASE_WRITER_PASSWORD=$WriterPassword" `
-            --env "SEMIBASE_READER_PASSWORD=$ReaderPassword" `
-            --env "SEMIPLOT_PROVISIONED_DATABASE=$ProvisionedDatabase" `
-            $ImageTag | Out-Null
-        Write-Host '    created a new container'
+        # Builds the image when it is missing, starts an existing container or creates one: the same
+        # `up` the Rider configuration `Bench container` runs, so either path meets the other's container.
+        Invoke-Docker compose --file $ComposeFile up --detach | Out-Null
+        Write-Host '    up'
     }
 
     Wait-ForPort

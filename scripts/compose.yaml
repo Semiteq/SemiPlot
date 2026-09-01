@@ -1,0 +1,18 @@
+# The application bench container. `scripts/bench-demo.ps1` and the Rider configuration `Bench container`
+# both create it from this file, so the two never disagree about the image, the port or the passwords;
+# the test fixture builds the same image on its own (docs/architecture/bench.md#the-application-bench).
+name: semiplot-bench
+
+services:
+  semiplot-bench:
+    container_name: semiplot-bench
+    image: semiplot-bench:manual
+    build:
+      context: ../SemiPlot/SemiPlot.Tests.Data/bench
+    ports:
+      - "55432:5432"
+    environment:
+      POSTGRES_PASSWORD: semibase-container-superuser
+      SEMIBASE_WRITER_PASSWORD: semibase-container-writer
+      SEMIBASE_READER_PASSWORD: semibase-container-reader
+      SEMIPLOT_PROVISIONED_DATABASE: semiplot_provisioned

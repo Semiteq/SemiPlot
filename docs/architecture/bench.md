@@ -1,4 +1,4 @@
-# The seeded bench
+﻿# The seeded bench
 
 The data-source slices need a PostgreSQL archive that looks like a Simple-Scada 2 archive and holds
 the same rows on every machine. This document is that bench as it exists. What the vendor's archive
@@ -188,7 +188,8 @@ pwsh scripts/bench-demo.ps1 -Down    # remove it
 
 `scripts/bench-demo.ps1` converges every piece it owns:
 
-- The image and the container **on existence**: built once, reused after. `-Down` removes them.
+- The image and the container **on existence**, through `docker compose up` over `scripts/compose.yaml`:
+  built once, reused after. `-Down` removes the container; the image stays.
 - `semiplot_app` **on freshness**: when `max(t)` is within five minutes of the wall clock the archive
   is live and is kept, only the connection file being rewritten; otherwise — stale, empty or absent —
   the database is dropped, cloned from `semiplot_provisioned` and filled with
@@ -230,11 +231,12 @@ lives only in the generated connection file.
 
 | Configuration | What it does |
 | --- | --- |
+| `Bench container` | Docker Compose over `scripts/compose.yaml`: the same container the script creates. Stopping it stops the container |
 | `Bench up` | Runs the script on its own |
 | `Bench down` | Removes the container and the generated connection file |
 | `Demo writer` | The seeder in `--follow 1` against `semiplot_app`, with `Bench up` as a before-launch task |
 | `Viewer (bench)` | `SemiPlot.UI` with `--config-dir` on the generated file and `--logging-level debug`, with `Bench up` as a before-launch task |
-| `Live demo` | A compound of the last two |
+| `Live demo` | A compound of the three above. Stop takes the writer, the viewer and the container down together; a run configuration of its own is the one shape Rider stops a container from, since Stop kills a script or an executable before any exit handler runs |
 
 `Bench up` is a before-launch task of both children, not of the compound: a compound carries no
 before-launch list and starts its children in parallel, and the mutex serialises the two runs.

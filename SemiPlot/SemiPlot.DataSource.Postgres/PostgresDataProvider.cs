@@ -350,12 +350,7 @@ public sealed class PostgresDataProvider : IDataProvider
 
 	private async Task<ArchiveExtent> ReadExtentAsync(NpgsqlDataReader reader)
 	{
-		if (!await reader.ReadAsync().ConfigureAwait(false))
-		{
-			return ArchiveExtent.Empty;
-		}
-
-		if (reader.IsDBNull(0) || reader.IsDBNull(1))
+		if (!await reader.ReadAsync().ConfigureAwait(false) || reader.IsDBNull(0) || reader.IsDBNull(1))
 		{
 			return ArchiveExtent.Empty;
 		}

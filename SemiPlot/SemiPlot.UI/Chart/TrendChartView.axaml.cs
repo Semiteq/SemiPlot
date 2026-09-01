@@ -3,14 +3,12 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
-using Avalonia.Interactivity;
 using Avalonia.Threading;
 
 using ReactiveUI;
 
 using ScottPlot;
 using ScottPlot.Plottables;
-using ScottPlot.Rendering;
 using ScottPlot.TickGenerators;
 
 using Cursor = Avalonia.Input.Cursor;

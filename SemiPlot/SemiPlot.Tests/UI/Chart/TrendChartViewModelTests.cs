@@ -263,7 +263,7 @@ public sealed class TrendChartViewModelTests
 	{
 		var (viewModel, _, _, _) = CreateViewModel();
 
-		var state = viewModel.AddPen(new Pen(7, "Heater", "Heaters", "#ff0000", PenLineStyle.Interpolated));
+		var state = viewModel.AddPen(new Pen(7, "Heater", "Heaters", "#ff0000"));
 
 		state.CenterLine.ConnectStyle.Should().Be(ConnectStyle.Straight);
 	}

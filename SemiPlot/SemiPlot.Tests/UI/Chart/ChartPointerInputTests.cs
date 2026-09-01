@@ -169,7 +169,7 @@ public sealed class ChartPointerInputTests
 		IPointer? pressedPointer = null;
 		window.AddHandler(
 			InputElement.PointerPressedEvent,
-			(object? _, PointerPressedEventArgs eventArgs) => pressedPointer = eventArgs.Pointer,
+			(_, eventArgs) => pressedPointer = eventArgs.Pointer,
 			RoutingStrategies.Bubble,
 			handledEventsToo: true);
 

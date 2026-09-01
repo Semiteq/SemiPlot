@@ -188,7 +188,7 @@ public sealed class MinimapPointerInputTests
 
 		stripCanvas.AddHandler(
 			InputElement.PointerMovedEvent,
-			(object? _, PointerEventArgs eventArgs) => moves.Add(eventArgs.GetPosition(stripCanvas)),
+			(_, eventArgs) => moves.Add(eventArgs.GetPosition(stripCanvas)),
 			RoutingStrategies.Bubble,
 			handledEventsToo: true);
 

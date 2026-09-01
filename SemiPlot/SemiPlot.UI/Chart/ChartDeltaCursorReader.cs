@@ -8,7 +8,6 @@ public sealed class ChartDeltaCursorReader(
 	private static readonly PenHistoryEnvelope _emptyEnvelope = new(0, [], [], [], []);
 
 	private readonly DeltaCursorModel _deltaCursor = new();
-	private readonly IReadOnlyDictionary<int, PenHistoryEnvelope> _envelopesById = envelopesById;
 
 	public bool IsEnabled { get; private set; }
 
@@ -29,7 +28,7 @@ public sealed class ChartDeltaCursorReader(
 
 	public DeltaReadout? Measure(int activePenId)
 	{
-		var envelope = _envelopesById.GetValueOrDefault(activePenId)
+		var envelope = envelopesById.GetValueOrDefault(activePenId)
 					   ?? _emptyEnvelope with { PenId = activePenId };
 
 		return _deltaCursor.Compute(envelope);

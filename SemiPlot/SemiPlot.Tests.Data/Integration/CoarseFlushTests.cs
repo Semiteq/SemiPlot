@@ -80,7 +80,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 
 		Assert.NotEmpty(expected);
 
-		var flushed = await CoarseFlush.FlushAsync(
+		await CoarseFlush.FlushAsync(
 			Options(), minute.AddSeconds(30), minute.AddSeconds(65), cancellationToken);
 		Assert.Equal(expected, await ReadPeriodAsync(LayerThinner.MinuteLayer, minute, cancellationToken));
 	}
@@ -95,7 +95,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 		var previousTick = minute.AddSeconds(30);
 		var now = minute.AddSeconds(65);
 
-		var first = await CoarseFlush.FlushAsync(Options(), previousTick, now, cancellationToken);
+		await CoarseFlush.FlushAsync(Options(), previousTick, now, cancellationToken);
 
 		var afterFirst = await ReadPeriodAsync(LayerThinner.MinuteLayer, minute, cancellationToken);
 
@@ -115,7 +115,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 		var previousTick = _markerInstant.AddSeconds(15);
 		var now = _day.AddDays(1).AddSeconds(5);
 
-		var flushed = await CoarseFlush.FlushAsync(Options(), previousTick, now, cancellationToken);
+		await CoarseFlush.FlushAsync(Options(), previousTick, now, cancellationToken);
 
 		foreach (var layer in LayerThinner.CoarseLayers)
 		{
@@ -143,7 +143,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 		var minute = _day.AddHours(23).AddMinutes(10);
 		var now = minute.AddSeconds(50);
 
-		var flushed = await CoarseFlush.FlushAsync(
+		await CoarseFlush.FlushAsync(
 			Options(), minute.AddSeconds(20), now, cancellationToken);
 
 		Assert.Empty(
@@ -167,7 +167,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 		var minute = hour.AddMinutes(59);
 		var now = hour.AddHours(1).AddSeconds(20);
 
-		var flushed = await CoarseFlush.FlushAsync(
+		await CoarseFlush.FlushAsync(
 			Options(), minute.AddSeconds(40), now, cancellationToken);
 
 		Assert.Equal(
@@ -195,14 +195,14 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 		var expected = ExpectedThin(LayerThinner.MinuteLayer, minute);
 		var alreadyThinned = expected.GroupBy(row => row.Id).Select(pen => pen.First()).ToArray();
 
-		var written = await Writer().WriteAsync(
+		await Writer().WriteAsync(
 			alreadyThinned,
 			minute,
 			minute.AddMinutes(1),
 			allowExistingRows: true,
 			cancellationToken);
 
-		var flushed = await CoarseFlush.FlushAsync(
+		await CoarseFlush.FlushAsync(
 			Options(), minute.AddSeconds(30), minute.AddSeconds(65), cancellationToken);
 		Assert.Equal(expected, await ReadPeriodAsync(LayerThinner.MinuteLayer, minute, cancellationToken));
 	}
@@ -250,7 +250,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 		var firstMinute = _day.AddHours(23).AddMinutes(10);
 		var now = firstMinute.AddMinutes(4).AddSeconds(20);
 
-		var flushed = await CoarseFlush.FlushAsync(
+		await CoarseFlush.FlushAsync(
 			Options(), firstMinute.AddSeconds(30), now, cancellationToken);
 
 		for (var offset = 0; offset < 4; offset++)
@@ -284,7 +284,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 
 		await InsertNullValuedRawRowAsync(_penIds[0], nullInstant, cancellationToken);
 
-		var flushed = await CoarseFlush.FlushAsync(
+		await CoarseFlush.FlushAsync(
 			Options(), minute.AddSeconds(30), minute.AddSeconds(65), cancellationToken);
 
 		Assert.Equal(
@@ -304,14 +304,14 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var minute = _day.AddHours(23).AddMinutes(10);
 
-		var opened = await CoarseFlush.FlushAsync(
+		await CoarseFlush.FlushAsync(
 			Options(), minute.AddSeconds(10), minute.AddSeconds(40), cancellationToken);
 
 		Assert.Equal(
 			ExpectedOpening(LayerThinner.MinuteLayer, minute),
 			await ReadPeriodAsync(LayerThinner.MinuteLayer, minute, cancellationToken));
 
-		var closed = await CoarseFlush.FlushAsync(
+		await CoarseFlush.FlushAsync(
 			Options(), minute.AddSeconds(50), minute.AddSeconds(65), cancellationToken);
 
 		Assert.Equal(

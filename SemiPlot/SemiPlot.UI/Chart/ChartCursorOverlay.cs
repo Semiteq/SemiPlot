@@ -4,12 +4,7 @@ public static class ChartCursorOverlay
 {
 	public static OverlayPlacement Project(double cursorPixelX, DataRectPixels dataRect, double renderScale)
 	{
-		if (renderScale <= 0.0)
-		{
-			return OverlayPlacement.Hidden;
-		}
-
-		if (cursorPixelX < dataRect.Left || cursorPixelX > dataRect.Right)
+		if (renderScale <= 0.0 || cursorPixelX < dataRect.Left || cursorPixelX > dataRect.Right)
 		{
 			return OverlayPlacement.Hidden;
 		}

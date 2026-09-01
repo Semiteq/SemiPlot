@@ -30,7 +30,6 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	private readonly CompositeDisposable _disposables = new();
 	private readonly Dictionary<int, PenHistoryEnvelope> _envelopesById = [];
 	private readonly ChartHistoryRequestDebouncer _historyDebouncer;
-	private readonly ILogger<TrendChartViewModel> _logger;
 	private readonly Dictionary<int, TrendPenState> _pensById = [];
 	private readonly ChartRealtimeApplier _realtimeApplier;
 	private readonly Subject<Unit> _redrawRequests = new();
@@ -58,7 +57,6 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		ILogger<TrendChartViewModel> logger)
 	{
 		_coordinator = coordinator;
-		_logger = logger;
 		_axisBinder = new ChartAxisBinder(Plot);
 		_cursorReader = new ChartCursorReader(_pensById, _envelopesById);
 		_deltaCursorReader = new ChartDeltaCursorReader(_envelopesById);
@@ -66,7 +64,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_historyDebouncer = new ChartHistoryRequestDebouncer(
 			QueryHistoryAsync,
 			ApplyHistory,
-			failure => _logger.LogWarning(failure, "History query failed."),
+			failure => logger.LogWarning(failure, "History query failed."),
 			_historyDebounceWindow,
 			dataScheduler,
 			uiScheduler);

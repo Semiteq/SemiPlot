@@ -102,29 +102,4 @@ public sealed class TrendToolbarViewModel : ReactiveObject, IDisposable
 		ActiveLayer = window.Layer;
 		IsSticky = _chartViewModel.Navigation.IsSticky;
 	}
-
-	private void AutoscaleActiveAxis()
-	{
-		_chartViewModel.AutoscaleAxis(_chartViewModel.ActivePenId);
-	}
-
-	private void SetActiveAxisLimits()
-	{
-		_chartViewModel.SetAxisLimits(_chartViewModel.ActivePenId, _manualMin, _manualMax);
-	}
-
-	private void JumpToNow()
-	{
-		_chartViewModel.Navigation.JumpToNow();
-	}
-
-	private void ToggleSticky()
-	{
-		_chartViewModel.Navigation.SetSticky(!_chartViewModel.Navigation.IsSticky);
-	}
-
-	private void ToggleDeltaMode()
-	{
-		_chartViewModel.SetDeltaModeEnabled(!_chartViewModel.IsDeltaModeEnabled);
-	}
 }

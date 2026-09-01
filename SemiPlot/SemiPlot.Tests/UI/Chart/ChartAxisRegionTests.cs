@@ -28,7 +28,7 @@ public sealed class ChartAxisRegionTests
 		var insideAxisPanel = dataRect.Left - 2f;
 		var verticalCenter = (dataRect.Top + dataRect.Bottom) / 2f;
 
-		region!.Contains(insideAxisPanel, verticalCenter).Should().BeTrue();
+		region.Contains(insideAxisPanel, verticalCenter).Should().BeTrue();
 		region.Contains(dataRect.HorizontalCenter, verticalCenter).Should().BeFalse();
 	}
 
@@ -76,7 +76,7 @@ public sealed class ChartAxisRegionTests
 		var size = layout.PanelSizes[rightAxis];
 		var insideRightPanel = dataRect.Right + offset + (size / 2f);
 
-		region!.Contains(insideRightPanel, verticalCenter).Should().BeTrue();
+		region.Contains(insideRightPanel, verticalCenter).Should().BeTrue();
 		region.Contains(dataRect.HorizontalCenter, verticalCenter).Should().BeFalse();
 	}
 

@@ -4,7 +4,7 @@ using SemiPlot.Core.Trends;
 
 using Xunit;
 
-namespace SemiPlot.Tests.Core.Chart;
+namespace SemiPlot.Tests.Chart;
 
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
@@ -35,7 +35,7 @@ public sealed class DeltaCursorModelTests
 		var readout = model.Compute(envelope);
 
 		readout.Should().NotBeNull();
-		readout!.DeltaTime.Should().Be(TimeSpan.FromHours(2));
+		readout.DeltaTime.Should().Be(TimeSpan.FromHours(2));
 		readout.DeltaY.Should().NotBeNull();
 		readout.DeltaY!.Value.Should().BeApproximately(7.0, 1e-9);
 	}

@@ -6,16 +6,13 @@ public sealed class ChartRealtimeApplier(
 	IReadOnlyDictionary<int, TrendPenState> pensById,
 	ChartNavigationController navigation)
 {
-	private readonly ChartNavigationController _navigation = navigation;
-	private readonly IReadOnlyDictionary<int, TrendPenState> _pensById = pensById;
-
 	public void Apply(RealtimeBatch batch, bool foldIntoColumn)
 	{
 		ApplyBatch(batch, foldIntoColumn);
 
 		if (batch.Timestamps.Count > 0)
 		{
-			_navigation.OnLiveEdge(batch.Timestamps[^1]);
+			navigation.OnLiveEdge(batch.Timestamps[^1]);
 		}
 	}
 
@@ -23,7 +20,7 @@ public sealed class ChartRealtimeApplier(
 	{
 		foreach (var penValues in batch.Pens)
 		{
-			if (!_pensById.TryGetValue(penValues.PenId, out var state))
+			if (!pensById.TryGetValue(penValues.PenId, out var state))
 			{
 				continue;
 			}

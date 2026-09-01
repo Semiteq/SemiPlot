@@ -68,7 +68,7 @@ public sealed class FollowRestartTests(PostgresContainerFixture postgresContaine
 			cancellationToken);
 
 		Assert.Equal(
-			(long)(_firstRunRows.Count + secondRunRows.Count),
+			_firstRunRows.Count + secondRunRows.Count,
 			await CountRawRowsAsync(cancellationToken));
 	}
 

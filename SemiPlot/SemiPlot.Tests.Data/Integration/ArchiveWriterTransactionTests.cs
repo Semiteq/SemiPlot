@@ -97,7 +97,7 @@ public sealed class ArchiveWriterTransactionTests(PostgresContainerFixture postg
 
 		await WriteSeedRowsAsync(cancellationToken);
 
-		var appended = await Writer().WriteAsync(
+		await Writer().WriteAsync(
 			OrdinaryRows(_laterDay, SeededPenId),
 			_laterDay,
 			_laterDay.AddDays(1),

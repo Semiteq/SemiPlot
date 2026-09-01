@@ -185,7 +185,7 @@ public sealed class SeededArchiveTests(PostgresContainerFixture postgresContaine
 		var renamed = pens.Select(pen => pen with { Name = pen.Name + " rewritten" }).ToArray();
 		var writer = new TagCatalogWriter(database.AdminConnectionString);
 
-		var first = await writer.WriteAsync(pens, TestContext.Current.CancellationToken);
+		await writer.WriteAsync(pens, TestContext.Current.CancellationToken);
 		var second = await writer.WriteAsync(renamed, TestContext.Current.CancellationToken);
 
 		Assert.Equal(pens.Count, second);

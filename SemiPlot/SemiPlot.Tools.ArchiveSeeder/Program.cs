@@ -56,15 +56,11 @@ public static class Program
 	// The demo writer: each tick appends the span since the previous tick and thins it into the coarse layers.
 	private static async Task<int> FollowAsync(FollowOptions options)
 	{
-		using var stopping = new CancellationTokenSource();
+		var stopping = new CancellationTokenSource();
 
 		// Ctrl+C stops the loop where it waits rather than tearing the process down inside a COPY: the
 		// in-flight append is never handed the token.
-		Console.CancelKeyPress += (_, pressed) =>
-		{
-			pressed.Cancel = true;
-			stopping.Cancel();
-		};
+		Console.CancelKeyPress += StopOnCancel;
 
 		ReportFollowPlan(options);
 
@@ -90,9 +86,17 @@ public static class Program
 			edge = now;
 		}
 
+		Console.CancelKeyPress -= StopOnCancel;
+		stopping.Dispose();
 		Console.WriteLine("stopped");
 
 		return 0;
+
+		void StopOnCancel(object? sender, ConsoleCancelEventArgs pressed)
+		{
+			pressed.Cancel = true;
+			stopping.Cancel();
+		}
 	}
 
 	// The archive column is 'timestamp(3) without time zone' holding the SCADA host's naive local time

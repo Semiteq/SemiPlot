@@ -4,7 +4,7 @@ using SemiPlot.Core.Trends;
 
 using Xunit;
 
-namespace SemiPlot.Tests.Core.Chart;
+namespace SemiPlot.Tests.Chart;
 
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]

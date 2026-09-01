@@ -115,7 +115,7 @@ public sealed class ChartAxisRegionEditTests
 		var region = ChartAxisRegion.TryCreate(viewModel.Plot, axis);
 		region.Should().NotBeNull();
 
-		return (region!, viewModel.Plot.RenderManager.LastRender.Layout.DataRect);
+		return (region, viewModel.Plot.RenderManager.LastRender.Layout.DataRect);
 	}
 
 	private static TrendChartViewModel CreateLoadedViewModel()

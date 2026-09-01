@@ -94,7 +94,7 @@ public sealed class TrendCoordinatorTests
 		var (coordinator, scheduler, _) = CreateCoordinator(realtimeInterval: TimeSpan.FromMilliseconds(10));
 		var batches = new List<RealtimeBatch>();
 		coordinator.Start();
-		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
+		var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
 		scheduler.AdvanceBy(_batchWindow.Ticks);
 		var countBeforeDispose = batches.Count;
 		countBeforeDispose.Should().BeGreaterThan(0);
@@ -144,7 +144,7 @@ public sealed class TrendCoordinatorTests
 	{
 		var uiScheduler = new TestScheduler();
 		var (coordinator, _, provider) = CreateCoordinator(uiScheduler: uiScheduler);
-		using var _unused = coordinator;
+		using var ownedCoordinator = coordinator;
 		var states = new List<ArchiveConnectionState>();
 		using var subscription = coordinator.ConnectionFaults.Subscribe(states.Add);
 
@@ -161,7 +161,7 @@ public sealed class TrendCoordinatorTests
 	{
 		var uiScheduler = new TestScheduler();
 		var (coordinator, _, provider) = CreateCoordinator(uiScheduler: uiScheduler);
-		using var _unused = coordinator;
+		using var ownedCoordinator = coordinator;
 		var states = new List<ArchiveConnectionState>();
 		using var subscription = coordinator.ConnectionFaults.Subscribe(states.Add);
 
@@ -195,7 +195,7 @@ public sealed class TrendCoordinatorTests
 	public void AConnectionFault_LeavesTheRealtimeBatchesUntouched()
 	{
 		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: TimeSpan.FromMilliseconds(10));
-		using var _unused = coordinator;
+		using var ownedCoordinator = coordinator;
 		var batches = new List<RealtimeBatch>();
 		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
 

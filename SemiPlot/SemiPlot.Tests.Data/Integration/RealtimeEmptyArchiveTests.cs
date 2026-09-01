@@ -6,7 +6,6 @@ using Npgsql;
 using NpgsqlTypes;
 
 using SemiPlot.Core.Data;
-using SemiPlot.Core.Trends;
 using SemiPlot.DataSource.Postgres;
 using SemiPlot.DataSource.Postgres.Configuration;
 using SemiPlot.Tools.ArchiveSeeder;

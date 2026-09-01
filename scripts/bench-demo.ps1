@@ -234,8 +234,18 @@ function Invoke-Up
     {
         # Builds the image when it is missing, starts an existing container or creates one: the same
         # `up` the Rider configuration `Bench container` runs, so either path meets the other's container.
-        Invoke-Docker compose --file $ComposeFile up --detach | Out-Null
-        Write-Host '    up'
+        try
+        {
+            Invoke-Docker compose --file $ComposeFile up --detach | Out-Null
+            Write-Host '    up'
+        }
+        catch
+        {
+            # The `Bench container` configuration runs the same `up` beside this script when `Live demo`
+            # starts on a machine with no container yet; whichever wins, the other finds it standing.
+            if (-not (Test-ContainerExists)) { throw }
+            Write-Host '    up, by the Bench container configuration'
+        }
     }
 
     Wait-ForPort

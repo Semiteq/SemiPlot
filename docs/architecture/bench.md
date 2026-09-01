@@ -231,12 +231,12 @@ lives only in the generated connection file.
 
 | Configuration | What it does |
 | --- | --- |
-| `Bench container` | Docker Compose over `scripts/compose.yaml`: the same container the script creates. Stopping it stops the container |
+| `Bench container` | `docker compose up` over `scripts/compose.yaml`, attached: the same container the script creates, with its log in the Run window. Rider's Stop emulates Ctrl+C, which `compose up` answers by stopping the container |
 | `Bench up` | Runs the script on its own |
 | `Bench down` | Removes the container and the generated connection file |
 | `Demo writer` | The seeder in `--follow 1` against `semiplot_app`, with `Bench up` as a before-launch task |
 | `Viewer (bench)` | `SemiPlot.UI` with `--config-dir` on the generated file and `--logging-level debug`, with `Bench up` as a before-launch task |
-| `Live demo` | A compound of the three above. Stop takes the writer, the viewer and the container down together; a run configuration of its own is the one shape Rider stops a container from, since Stop kills a script or an executable before any exit handler runs |
+| `Live demo` | A compound of the three above. Stop takes the writer, the viewer and the container down together. The container stops rather than being removed, so the archive survives to the next start |
 
 `Bench up` is a before-launch task of both children, not of the compound: a compound carries no
 before-launch list and starts its children in parallel, and the mutex serialises the two runs.

@@ -1,6 +1,6 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="Live demo" type="CompoundRunConfigurationType">
-    <toRun name="Bench container" type="docker-deploy" />
+    <toRun name="Bench container" type="ShConfigurationType" />
     <toRun name="Demo writer" type="DotNetProject" />
     <toRun name="Viewer (bench)" type="DotNetProject" />
     <method v="2" />

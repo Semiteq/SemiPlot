@@ -217,22 +217,27 @@ function Wait-ForPort
     $deadline = (Get-Date).AddSeconds(120)
     while ($true)
     {
+        # The container may still be starting: `Bench container` runs beside this script when `Live demo`
+        # starts, so its absence is waited out up to the deadline rather than refused.
         $running = & docker ps --filter "name=^/$ContainerName$" --format '{{.Names}}' 2>$null
-        if ($running -notcontains $ContainerName)
+        if ($running -contains $ContainerName)
         {
-            throw "Container $ContainerName is not running. Start it: docker compose --file scripts/compose.yaml up --detach."
-        }
-
-        & docker exec --env "PGPASSWORD=$SuperuserPassword" $ContainerName `
-            psql --username postgres --dbname postgres `
-            --host host.docker.internal --port $HostPort --command 'SELECT 1' 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0)
-        {
-            break
+            & docker exec --env "PGPASSWORD=$SuperuserPassword" $ContainerName `
+                psql --username postgres --dbname postgres `
+                --host host.docker.internal --port $HostPort --command 'SELECT 1' 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0)
+            {
+                break
+            }
         }
 
         if ((Get-Date) -gt $deadline)
         {
+            if ($running -notcontains $ContainerName)
+            {
+                throw "Container $ContainerName is not running. Start it: docker compose --file scripts/compose.yaml up --detach."
+            }
+
             Write-Host (& docker logs --tail 40 $ContainerName 2>&1 | Out-String)
             throw "Port $HostPort did not serve within 120 s. The container's last log lines are above."
         }

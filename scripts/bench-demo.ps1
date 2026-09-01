@@ -68,8 +68,8 @@ Set-StrictMode -Version Latest
 
 $RepositoryRoot = Split-Path -Parent $PSScriptRoot
 $ContainerName = 'semiplot-bench'
-# The container's image, port and passwords live in compose.yaml, shared with the Rider configuration
-# `Bench container`; the names below repeat what the script needs to talk to it.
+# The container is compose's: `docker compose --file scripts/compose.yaml up --detach` by hand, or the Rider
+# configuration `Bench container`. This script waits for it, seeds it and writes the connection file.
 $ComposeFile = Join-Path $PSScriptRoot 'compose.yaml'
 $ConfigDirectory = Join-Path $RepositoryRoot 'SemiPlot/Artifacts/bench-config'
 $ConnectionFile = Join-Path $ConfigDirectory 'archive-connection.yaml'
@@ -106,7 +106,7 @@ $SeedChangeSeconds = 0.5
 # against the 793.7 minutes an unchecked run once left is the trade this bound makes.
 $LiveWithin = [timespan]::FromMinutes(5)
 
-# Long enough to sit out a cold `docker build` held by the other instance, and short enough that a
+# Long enough to sit out a cold container start held by the other instance, and short enough that a
 # wedged run reports rather than hangs for the session.
 $ConvergenceTimeout = [timespan]::FromMinutes(15)
 
@@ -132,18 +132,6 @@ function Invoke-Docker
     }
 
     return $output
-}
-
-function Test-ContainerExists
-{
-    $names = & docker ps --all --filter "name=^/$ContainerName$" --format '{{.Names}}' 2>$null
-    return $LASTEXITCODE -eq 0 -and $names -contains $ContainerName
-}
-
-function Test-ContainerRunning
-{
-    $names = & docker ps --filter "name=^/$ContainerName$" --format '{{.Names}}' 2>$null
-    return $LASTEXITCODE -eq 0 -and $names -contains $ContainerName
 }
 
 function Invoke-Psql([string] $TargetDatabase, [string] $Command)
@@ -189,20 +177,9 @@ END;
 
 function Invoke-Down
 {
-    Write-Step 'Removing the bench'
-    if (Test-ContainerExists)
-    {
-        # rm rather than `compose down` alone: a container an older script created with `docker run`
-        # carries no compose labels, and `down` would leave it standing.
-        Invoke-Docker rm --force $ContainerName | Out-Null
-        Invoke-Docker compose --file $ComposeFile down --volumes | Out-Null
-        Write-Host "    removed container $ContainerName and its volume"
-    }
-    else
-    {
-        Invoke-Docker compose --file $ComposeFile down --volumes | Out-Null
-        Write-Skip "no container named $ContainerName"
-    }
+    Write-Step 'Removing the bench container and its volume'
+    Invoke-Docker compose --file $ComposeFile down --volumes | Out-Null
+    Write-Host '    removed'
 
     if (Test-Path $ConnectionFile)
     {
@@ -224,29 +201,6 @@ function Invoke-Up
     if ($LASTEXITCODE -ne 0)
     {
         throw 'No container runtime answered. Start Docker Desktop and run this again.'
-    }
-
-    Write-Step "Starting $ContainerName on port $HostPort"
-    if (Test-ContainerRunning)
-    {
-        Write-Skip 'already running'
-    }
-    else
-    {
-        # Builds the image when it is missing, starts an existing container or creates one: the same
-        # `up` the Rider configuration `Bench container` runs, so either path meets the other's container.
-        try
-        {
-            Invoke-Docker compose --file $ComposeFile up --detach | Out-Null
-            Write-Host '    up'
-        }
-        catch
-        {
-            # The `Bench container` configuration runs the same `up` beside this script when `Live demo`
-            # starts on a machine with no container yet; whichever wins, the other finds it standing.
-            if (-not (Test-ContainerExists)) { throw }
-            Write-Host '    up, by the Bench container configuration'
-        }
     }
 
     Wait-ForPort
@@ -276,6 +230,13 @@ function Wait-ForPort
     $deadline = (Get-Date).AddSeconds(120)
     while ($true)
     {
+        $running = & docker ps --filter "name=^/$ContainerName$" --format '{{.Names}}' 2>$null
+        if ($running -notcontains $ContainerName)
+        {
+            throw "Container $ContainerName is not running. Start it first: " +
+                "docker compose --file scripts/compose.yaml up --detach, or the Rider configuration 'Bench container'."
+        }
+
         & docker exec --env "PGPASSWORD=$SuperuserPassword" $ContainerName `
             psql --username postgres --dbname postgres `
             --host host.docker.internal --port $HostPort --command 'SELECT 1' 2>&1 | Out-Null
@@ -420,7 +381,7 @@ schema: public
 }
 
 # One mutex over the whole convergence, so two before-launch instances started by one compound
-# serialise instead of racing the same `docker run` and the same DROP DATABASE. The loser waits and
+# serialise instead of racing the same DROP DATABASE. The loser waits and
 # then finds an archive the winner already filled, which the freshness check above keeps.
 $convergence = [System.Threading.Mutex]::new($false, 'Global\semiplot-bench')
 $held = $false

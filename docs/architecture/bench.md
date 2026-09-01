@@ -188,9 +188,10 @@ pwsh scripts/bench-demo.ps1 -Down    # remove it
 
 `scripts/bench-demo.ps1` converges every piece it owns:
 
-- The image and the container **on existence**, through `docker compose up` over `scripts/compose.yaml`:
-  built once, reused after. The data directory is the named volume `semiplot-bench-data`, so a removed
-  container keeps its archive. `-Down` removes the container and the volume; the image stays.
+- The container is Docker Compose's, over `scripts/compose.yaml`: `docker compose up --detach` by hand or
+  the Rider configuration `Bench container`. The script waits for its port and does not start it. The data
+  directory is the named volume `semiplot-bench-data`, so a removed container keeps its archive; `-Down`
+  removes container and volume.
 - `semiplot_app` **on freshness**: when `max(t)` is within five minutes of the wall clock the archive
   is live and is kept, only the connection file being rewritten; otherwise — stale, empty or absent —
   the database is dropped, cloned from `semiplot_provisioned` and filled with
@@ -232,7 +233,7 @@ lives only in the generated connection file.
 
 | Configuration | What it does |
 | --- | --- |
-| `Bench container` | The Docker plugin's Compose configuration over `scripts/compose.yaml`: the same container the script creates. Stop runs `compose down`, which removes the container and keeps the named data volume, so the archive survives to the next start |
+| `Bench container` | The Docker plugin's Compose configuration over `scripts/compose.yaml`. Stop runs `compose down`: the container goes, the volume and the archive stay. Needs a Docker connection named `Docker` in Settings > Build, Execution, Deployment > Docker |
 | `Bench up` | Runs the script on its own |
 | `Bench down` | Removes the container and the generated connection file |
 | `Demo writer` | The seeder in `--follow 1` against `semiplot_app`, with `Bench up` as a before-launch task |

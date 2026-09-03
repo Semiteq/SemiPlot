@@ -146,7 +146,7 @@ a rehearsed restore, because an untested backup is not a backup.
 ## Schema drift
 
 Simple-Scada upgrades can change the archive schema without notice — it is a vendor internal, not a
-published interface. SemiPlot probes the shape of `trends` at startup against `information_schema`
-and reports a clear incompatibility rather than producing wrong charts. That probe belongs to the
-reader, not to the provisioning tool. A supported version range is recorded here once a second SCADA
+published interface. SemiPlot runs no shape probe: a read that fails on a missing column is mapped
+to `ShapeUnexpected` (`ArchiveExceptionMapper`) and reported rather than producing wrong charts.
+That check belongs to the reader, not to the provisioning tool. A supported version range is recorded here once a second SCADA
 version has been observed.

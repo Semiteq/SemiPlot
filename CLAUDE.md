@@ -43,8 +43,8 @@ Three projects, split by dependency graph and skip policy.
 
 - `SemiPlot.Tests` carries `TestAppBuilder.cs` with `[assembly: AvaloniaTestApplication]`. Pure logic
   uses plain `[Fact]`; tests touching ReactiveUI/ScottPlot/Avalonia use `[AvaloniaFact]`/`[AvaloniaTheory]`.
-- `SemiPlot.Tests.Data` never references Avalonia, ScottPlot or SkiaSharp, so its `data-tests` CI job
-  builds without them. `SemiPlot.DataSource.Postgres` names it as the sole `InternalsVisibleTo` assembly.
+- `SemiPlot.Tests.Data` never references Avalonia, ScottPlot or SkiaSharp.
+  `SemiPlot.DataSource.Postgres` names it as the sole `InternalsVisibleTo` assembly.
 - The reference direction is one-way: `SemiPlot.Tests` and `SemiPlot.Tests.Journeys` may reference
   `SemiPlot.Tests.Data`; the reverse would build and must not exist.
 - `SemiPlot.Tests` sets `failSkips` in `xunit.runner.json`, so no gated test may live there. The
@@ -67,8 +67,9 @@ dotnet test SemiPlot.slnx --filter "Area=Data"
 dotnet test SemiPlot.slnx --filter "FullyQualifiedName~TestMethodName"
 ```
 
-CI runs `SemiPlot.Tests` on `windows-latest` and `ubuntu-latest`, `SemiPlot.Tests.Data` and
-`SemiPlot.Tests.Journeys` on `ubuntu-latest` with `SEMIPLOT_REQUIRE_DB=1`. A Windows-only API fails
+CI has two jobs: `unit-windows` runs `SemiPlot.Tests` on `windows-latest`; `linux` builds the solution
+once on `ubuntu-latest` and runs all three test projects, the Docker daemon of the runner serving the
+container fixture. A Windows-only API fails
 the Linux leg only once a test executes the call (`CA1416` is a warning); a Windows path used as a
 string does not fail it at all. The skip-versus-fail policy is in `docs/architecture/testing-strategy.md`.
 
@@ -91,7 +92,7 @@ never a pass.
 | Variable | Effect | Unset means |
 | --- | --- | --- |
 | `SEMIPLOT_PG_IMAGE` | Base image the bench image is built over, so it selects the PostgreSQL version | `postgres:17-alpine` |
-| `SEMIPLOT_REQUIRE_DB` | `1` or `true` turns an unavailable runtime from a skip into a failure. CI sets it; a developer machine must not | skip with a reason |
+| `SEMIPLOT_REQUIRE_DB` | `1` or `true` turns an unavailable runtime from a skip into a failure. No job sets it: the CI runner carries Docker, so the fixture starts there | skip with a reason |
 
 A run leaves nothing behind but the images it pulled: `WithCleanUp(true)` and the resource reaper
 remove the built image, the container and every database.
@@ -112,7 +113,11 @@ that writes its own rows takes the provisioned source. `SeededArchive` gives one
 
 ### File Layout
 
-- One class per file. File-scoped namespaces: `namespace SemiPlot.Core.Trends;`
+- A file holds one concept, named for its primary type: that type and the small types only it uses
+  (an options record, an enum it switches on, a private helper). Group related small types together
+  rather than giving each a three-line file; split when a grouped type gains a second consumer or the
+  file passes the size limit. Never group by size alone (`Types.cs`).
+- File-scoped namespaces: `namespace SemiPlot.Core.Trends;`
 - `using` directives above the namespace. `System` namespaces first, blank line, then others.
 - Never inline full namespace paths — use `using` directives.
 
@@ -160,15 +165,13 @@ No abbreviations in names.
   `SemiPlot.DataSource.*` projects names the one it registers. Core registers nothing.
 - Avoid mutable static state.
 - `AddPostgresData()` registers the bare data `IScheduler` (`DefaultScheduler.Instance`). The UI
-  scheduler is not a second container
-  registration: capture `AvaloniaScheduler.Instance` (= `RxApp.MainThreadScheduler`) in the
-  `.AfterSetup(...)` callback after `UseReactiveUI()` and pass it explicitly to the coordinator
-  constructor and the chart/minimap factories.
-- Startup work that touches no Avalonia type belongs in `Program`, ahead of `BuildAvaloniaApp()`,
-  not in `.AfterSetup(...)`: that callback is synchronous, so a data read inside it either blocks
-  Avalonia's setup or throws through it. `StartupProbe` reads there and hands `App.Run` a
-  `StartupData` record; the UI scheduler is why the split lands exactly at that boundary
-  (`docs/architecture/data-integration.md`).
+  scheduler is not a second container registration: `App` reads the static
+  `AvaloniaScheduler.Instance` (= `RxApp.MainThreadScheduler`) and passes it explicitly to the
+  coordinator constructor and the chart/minimap factories.
+- `.AfterSetup(...)` is synchronous, so no blocking call belongs in it. `StartupProbe` does its
+  blocking reads in `Program`, ahead of `BuildAvaloniaApp()`, and hands `App.Run` a `StartupData`
+  record; the reads `InitializeServices` starts inside the callback are asynchronous and return
+  through the schedulers (`docs/architecture/data-integration.md`).
 
 ### Interface Design
 

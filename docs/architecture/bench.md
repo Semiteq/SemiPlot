@@ -161,17 +161,16 @@ and the readiness wait share one two-minute bound, `PostgresContainerFixture._st
 bench that never comes up is a stated skip rather than a hung `SemiPlot.Tests.Data.exe`.
 
 A missing container runtime is a stated skip, never a pass; `SEMIPLOT_REQUIRE_DB` turns it into a
-failure and the CI `data-tests` job sets it. The variable list is in the root `CLAUDE.md`, *Gated
-data tests*.
+failure, and no CI job needs it because the Linux runner carries the daemon. The variable list is in
+the root `CLAUDE.md`, *Gated data tests*.
 
 **`latest` is a moving tag on purpose.** Delivered installations update only the provisioner, so the
-pair worth testing is the newest `semibase` with the current reader. The Engine's builder resolves
-`FROM` from the local image cache, so the fixture runs `docker pull ghcr.io/semiteq/semibase:latest`
-ahead of the build (`DockerCli.PullProvisionerAsync`). A failed pull — no registry route, no `docker`
-CLI on `PATH` — is one `[bench]` line on standard error and the build goes on with the cached image;
-only a machine with neither route nor image is an unavailable reason. It is a separate step rather
-than `pull` on the build request because the Engine fails such a build outright when the registry is
-unreachable. When an unchanged commit fails after the tag moved,
+pair worth testing is the newest `semibase` with the current reader. The image build pulls a `FROM`
+image it lacks and never re-pulls one it has, so the fixture runs
+`docker pull ghcr.io/semiteq/semibase:latest` ahead of the build (`DockerCli.PullProvisionerAsync`),
+which is the one step that moves the tag. A failed pull — no registry route, no `docker` CLI on
+`PATH` — is one `[bench]` line on standard error and the build goes on with the cached image;
+only a machine with neither route nor image fails. When an unchanged commit fails after the tag moved,
 `docker image inspect ghcr.io/semiteq/semibase:latest` names the digest the run built over.
 
 ## The application bench

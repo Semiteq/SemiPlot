@@ -95,3 +95,20 @@ defect in the shipped tree; each is a scoped follow-up an audit named.
   answers. That audit was removed before the branch shipped. The file is a point-in-time record and its own
   convention is that later notes supersede earlier ones, so this is noted rather than rewritten — read the
   code, not the plan, for what teardown does.
+
+## Tooling and layout
+
+- **xunit.v3 4.0.0 with adapter 4.0.0.** Released 2026-08-14; the repository is on 3.2.2 with
+  `xunit.runner.visualstudio` 3.1.5. It brings full test parallelization regardless of collections (with
+  per-collection opt-out), makes Microsoft Testing Platform v2 the default and drops MTP v1. An upgrade is
+  its own PR after `20260903-harness-debloat.md`: the harness clones independent databases per class, so
+  parallel gated classes against one server are fine, and the one thing to reword is the
+  `ArchiveDatabaseCollection` comment about classes not racing.
+
+- **Group small related types the Go way.** `CLAUDE.md#file-layout` lets a file hold one concept with the
+  small types only it uses. Eleven UI files are under 15 lines (`Chart/DataRectPixels.cs` 3,
+  `Legend/TrendLegendGroupViewModel.cs` 3, `Chart/LeftButtonTool.cs` 7, `Chart/ChartPressAction.cs` 9,
+  `Chart/HistoryRequest.cs` 10, `Chart/OverlayPlacement.cs` 10, `Chart/NavigationWindow.cs` 11, and four
+  more). Fold each into the file of its primary consumer where that consumer is unique (`LeftButtonTool`
+  and `ChartPressAction` into `ChartPressRouter.cs`, `HistoryRequest` into the debouncer); a type with
+  several consumers stays on its own. One pass, one PR, no behaviour change.

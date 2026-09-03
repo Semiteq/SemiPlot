@@ -287,7 +287,9 @@ poll_interval_ms: 1000
 schema: public
 ```
 
-`source_time_zone` takes an IANA identifier. The file states no query bound: `statement_timeout`
+`source_time_zone` takes any identifier `TimeZoneInfo.FindSystemTimeZoneById` resolves on the
+machine running the viewer: an IANA name such as `Europe/Berlin`, or on Windows the id `tzutil /g`
+prints. The file states no query bound: `statement_timeout`
 belongs to the `semiplot_reader` role and SemiBase owns it (`postgres-instance.md`). The connection
 string carries `Command Timeout=300` as a client backstop; the live-edge poll uses a 10 s bound of
 its own on every tick. Loading returns a `Result`; a malformed file is reported at startup, not at
@@ -295,9 +297,10 @@ first query. The password is stored in plain text; the mitigation is the read-on
 
 ## Startup
 
-Startup splits at the Avalonia boundary because the schedulers do: the UI scheduler exists only once
-`UseReactiveUI()` has run inside `AfterSetup`, which is synchronous. `StartupProbe`
-(`SemiPlot.UI/Startup/StartupProbe.cs`) therefore runs in `Program`, ahead of `BuildAvaloniaApp()`:
+Startup splits at the Avalonia boundary because `AfterSetup` is synchronous: a blocking read inside
+it would hold Avalonia's setup. `StartupProbe` (`SemiPlot.UI/Startup/StartupProbe.cs`) therefore
+runs in `Program`, ahead of `BuildAvaloniaApp()`, and the reads `InitializeServices` starts inside
+`AfterSetup` are asynchronous:
 
 1. Load `<ConfigDir>/archive-connection.yaml` and register `AddPostgresData(settings)`.
 2. Resolve `IDataProvider`, read the pen catalogue, then the archive extent.

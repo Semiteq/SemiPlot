@@ -159,11 +159,10 @@ so a gated journey inside `SemiPlot.Tests` would either fail every machine witho
 that project its skip guard for every ungated test in it. A third project is the shape that keeps
 both properties.
 
-CI gives each project its own job: `build-and-test` on `windows-latest` and `ui-tests-linux` on
-`ubuntu-latest` run `SemiPlot.Tests`, `data-tests` runs `SemiPlot.Tests.Data`, and `journey-tests`
-runs `SemiPlot.Tests.Journeys`, both on `ubuntu-latest`. The two gated jobs set
-`SEMIPLOT_REQUIRE_DB`; the two `SemiPlot.Tests` legs omit it deliberately, because that project has
-no gated test to require a runtime for and the Windows runner cannot host a Linux container.
+CI has two jobs: `unit-windows` runs `SemiPlot.Tests` on `windows-latest`, the platform the viewer
+ships on, and `linux` builds the solution once on `ubuntu-latest` and runs all three projects, the
+runner's Docker daemon serving the fixture. No job sets `SEMIPLOT_REQUIRE_DB`: the Windows runner
+cannot host a Linux container and runs no gated project, and the Linux runner has the daemon.
 
 ## Ownership
 

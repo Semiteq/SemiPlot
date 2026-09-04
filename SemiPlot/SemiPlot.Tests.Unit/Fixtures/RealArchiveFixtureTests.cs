@@ -187,22 +187,20 @@ public sealed class RealArchiveFixtureTests(ITestOutputHelper testOutputHelper)
 
 		testOutputHelper.WriteLine($"{listed.Length} rows {heading}:");
 
-		foreach (var row in listed)
+		foreach (var (id, timestamp, value, quality) in listed)
 		{
-			testOutputHelper.WriteLine($"  id={row.Id} t={row.Timestamp:HH:mm:ss.fff} v={row.Value} q={row.Quality}");
+			testOutputHelper.WriteLine($"  id={id} t={timestamp:HH:mm:ss.fff} v={value} q={quality}");
 		}
 	}
 
 	private static IReadOnlyList<ArchiveRow> Ordered(IEnumerable<ArchiveRow> rows, int pen)
 	{
-		return rows.Where(row => row.Id == pen).OrderBy(row => row.Timestamp).ToArray();
+		return [.. rows.Where(row => row.Id == pen).OrderBy(row => row.Timestamp)];
 	}
 
 	private static IReadOnlyList<ArchiveRow> InMinute(IEnumerable<ArchiveRow> rows, DateTime minute)
 	{
-		return rows
-			.Where(row => LayerThinner.PeriodStart(row.Timestamp, LayerThinner.MinuteLayer) == minute)
-			.ToArray();
+		return [.. rows.Where(row => LayerThinner.PeriodStart(row.Timestamp, LayerThinner.MinuteLayer) == minute)];
 	}
 
 	private static IEnumerable<IGrouping<(int Id, DateTime Minute), ArchiveRow>> ByMinute(IEnumerable<ArchiveRow> rows)
@@ -213,10 +211,9 @@ public sealed class RealArchiveFixtureTests(ITestOutputHelper testOutputHelper)
 	private static IReadOnlyList<(int Id, DateTime Minute)> Minutes(
 		IEnumerable<(int Id, DateTime Timestamp, double Value, int Quality)> rows)
 	{
-		return rows
+		return [.. rows
 			.Select(row => (row.Id, Minute: LayerThinner.PeriodStart(row.Timestamp, LayerThinner.MinuteLayer)))
 			.Distinct()
-			.Order()
-			.ToArray();
+			.Order()];
 	}
 }

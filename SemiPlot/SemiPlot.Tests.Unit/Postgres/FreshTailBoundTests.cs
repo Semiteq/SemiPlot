@@ -201,7 +201,7 @@ public sealed class FreshTailBoundTests
 		var merged = FreshTail.Merge(coarse, tail, seams, tailStart.Value);
 
 		merged.Should().Equal(
-			new[] { Row(_penIds[0], behindSeam), Row(_penIds[1], freshSeam), Row(_penIds[1], tailRow) });
+			[Row(_penIds[0], behindSeam), Row(_penIds[1], freshSeam), Row(_penIds[1], tailRow)]);
 	}
 
 	// One consecutive run per pen on ascending identifiers, coarse rows then tail rows — the ordering
@@ -223,9 +223,9 @@ public sealed class FreshTailBoundTests
 		var merged = FreshTail.Merge(coarse, tail, seams, seam);
 
 		merged.Select(row => row.PenId).Should().Equal(
-			new[] { _penIds[0], _penIds[0], _penIds[0], _penIds[1], _penIds[1] });
+			[_penIds[0], _penIds[0], _penIds[0], _penIds[1], _penIds[1]]);
 		merged.Select(row => row.ArchiveLocal).Should().Equal(
-			new[] { seam, seam.AddSeconds(10), seam.AddSeconds(20), seam, seam.AddSeconds(10) });
+			[seam, seam.AddSeconds(10), seam.AddSeconds(20), seam, seam.AddSeconds(10)]);
 	}
 
 	// A pen present only in the tail keeps its rows when its seam clears the bound, and it lands in
@@ -238,13 +238,13 @@ public sealed class FreshTailBoundTests
 
 		var merged = FreshTail.Merge([Row(_penIds[1], _windowStart)], tail, seams, _windowStart);
 
-		merged.Select(row => row.PenId).Should().Equal(new[] { _penIds[0], _penIds[1] });
+		merged.Select(row => row.PenId).Should().Equal([_penIds[0], _penIds[1]]);
 	}
 
 	private static Dictionary<int, DateTime> SeamsAt(DateTime archiveLocal)
 	{
 		return FreshTail.Seams(
-			_penIds.Select(penId => Row(penId, archiveLocal)).ToArray(),
+			[.. _penIds.Select(penId => Row(penId, archiveLocal))],
 			_penIds,
 			_windowStart);
 	}

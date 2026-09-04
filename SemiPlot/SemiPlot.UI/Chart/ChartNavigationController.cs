@@ -16,7 +16,6 @@ public sealed class ChartNavigationController
 	private DateTime _liveEdge;
 
 	private TrendNavigationModel _navigation;
-	private int _targetColumnCount = HistoryColumnTarget.MaxColumns;
 
 	public ChartNavigationController()
 	{
@@ -37,19 +36,19 @@ public sealed class ChartNavigationController
 
 	// Number of pixel columns the canvas will draw. The stored value is quantized, so it does not read back
 	// as the value passed to SetTargetColumnCount.
-	public int TargetColumnCount => _targetColumnCount;
+	public int TargetColumnCount { get; private set; } = HistoryColumnTarget.MaxColumns;
 
 	public event EventHandler<NavigationWindow>? WindowChanged;
 
 	public void SetTargetColumnCount(int columns)
 	{
 		var quantized = QuantizeColumnCount(columns);
-		if (quantized == _targetColumnCount)
+		if (quantized == TargetColumnCount)
 		{
 			return;
 		}
 
-		_targetColumnCount = quantized;
+		TargetColumnCount = quantized;
 		ActiveLayer = LayerForCurrentWidth();
 		WindowChanged?.Invoke(this, new NavigationWindow(_navigation.From, _navigation.To, ActiveLayer));
 	}
@@ -151,7 +150,7 @@ public sealed class ChartNavigationController
 
 	private AggregationLayer LayerForCurrentWidth()
 	{
-		return LayerForWidth(_navigation.Width, ActiveLayer, _targetColumnCount);
+		return LayerForWidth(_navigation.Width, ActiveLayer, TargetColumnCount);
 	}
 
 	// The layer in force is an argument because the hysteresis band widens the ceiling of that layer only, so
@@ -201,9 +200,9 @@ public sealed class ChartNavigationController
 		// Counts are powers of two, so the boundary between two neighbours is their geometric midpoint, a
 		// factor of sqrt(2) from each; the deadband pushes that boundary out by the hysteresis margin.
 		var holdRatio = Math.Sqrt(2.0) * (1.0 + ColumnCountHysteresisFraction);
-		if (clamped >= _targetColumnCount / holdRatio && clamped <= _targetColumnCount * holdRatio)
+		if (clamped >= TargetColumnCount / holdRatio && clamped <= TargetColumnCount * holdRatio)
 		{
-			return _targetColumnCount;
+			return TargetColumnCount;
 		}
 
 		var exponent = (int)Math.Round(Math.Log2(clamped));

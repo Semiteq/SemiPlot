@@ -54,6 +54,6 @@ public static class PartitionScript
 
 	public static IReadOnlyList<string> CreateStatements(DateTime start, DateTime endExclusive)
 	{
-		return CoveredDays(start, endExclusive).Select(CreateStatement).ToArray();
+		return [.. CoveredDays(start, endExclusive).Select(CreateStatement)];
 	}
 }

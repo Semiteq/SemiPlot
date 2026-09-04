@@ -14,6 +14,6 @@ internal static class BenchRows
 
 	public static IReadOnlyList<IReadOnlyList<ArchiveRow>> ByPen(IReadOnlyList<ArchiveRow> rows)
 	{
-		return rows.GroupBy(row => row.Id).Select(pen => (IReadOnlyList<ArchiveRow>)pen.ToArray()).ToArray();
+		return [.. rows.GroupBy(row => row.Id).Select(pen => (IReadOnlyList<ArchiveRow>)[.. pen])];
 	}
 }

@@ -14,14 +14,9 @@ namespace SemiPlot.DataSource.Postgres;
 /// <see cref="OperationCanceledException"/> leaves as it arrived, while the server's own <c>57014</c>
 /// maps to <see cref="ArchiveFault.QueryTimedOut"/>.
 /// </summary>
-internal sealed class ArchiveExceptionMapper
+internal sealed class ArchiveExceptionMapper(PostgresConnectionSettings settings)
 {
-	private readonly PostgresConnectionSettings _settings;
-
-	public ArchiveExceptionMapper(PostgresConnectionSettings settings)
-	{
-		_settings = settings;
-	}
+	private readonly PostgresConnectionSettings _settings = settings;
 
 	/// <summary>Maps what the read threw; <c>relation</c> is read on the <c>42P01</c> path only.</summary>
 	public Error Map(Exception exception, string? relation)

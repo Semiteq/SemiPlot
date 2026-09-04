@@ -22,23 +22,22 @@ public static class RealArchiveFixture
 
 	public static IReadOnlyList<ArchiveRow> Layer(short layer)
 	{
-		return Rows.Where(row => row.Layer == layer).ToArray();
+		return [.. Rows.Where(row => row.Layer == layer)];
 	}
 
 	public static IReadOnlyList<int> Pens()
 	{
-		return Rows.Select(row => row.Id).Distinct().Order().ToArray();
+		return [.. Rows.Select(row => row.Id).Distinct().Order()];
 	}
 
 	private static IReadOnlyList<ArchiveRow> Read()
 	{
 		var path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "real-archive-rows.csv");
 
-		return File.ReadLines(path)
+		return [.. File.ReadLines(path)
 			.Skip(1)
 			.Where(line => line.Length > 0)
-			.Select(Parse)
-			.ToArray();
+			.Select(Parse)];
 	}
 
 	private static ArchiveRow Parse(string line)

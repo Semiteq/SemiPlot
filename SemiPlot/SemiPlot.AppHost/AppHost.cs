@@ -3,33 +3,33 @@
 // The Aspire AppHost SDK does not add a project resource's assembly as a compile reference, so the
 // role names and passwords cannot come from BenchRoles.cs (SemiPlot.Tools.ArchiveSeeder) directly;
 // they are repeated here, as they were in the now-deleted scripts/bench-demo.ps1.
-const string standDatabase = "semiplot_app";
-const string maintenanceDatabase = "postgres";
-const string provisionedDatabase = "semiplot_provisioned";
-const string superuserName = "postgres";
-const string superuserPassword = "semibase-container-superuser";
-const string writerRole = "scada_writer";
-const string writerPassword = "semibase-container-writer";
-const string readerPassword = "semibase-container-reader";
-const ushort hostPort = 55432;
-const ushort containerPort = 5432;
+const string StandDatabase = "semiplot_app";
+const string MaintenanceDatabase = "postgres";
+const string ProvisionedDatabase = "semiplot_provisioned";
+const string SuperuserName = "postgres";
+const string SuperuserPassword = "semibase-container-superuser";
+const string WriterRole = "scada_writer";
+const string WriterPassword = "semibase-container-writer";
+const string ReaderPassword = "semibase-container-reader";
+const ushort HostPort = 55432;
+const ushort ContainerPort = 5432;
 // One density for the seeded day and the live tail, so the chart shows no seam between them.
-const string changeSeconds = "0.5";
+const string ChangeSeconds = "0.5";
 
 var configDirectory = Path.Combine(builder.AppHostDirectory, "..", "Artifacts", "bench-config");
 var logFilePath = Path.Combine(configDirectory, "semiplot.log");
 
 var bench = builder.AddDockerfile("bench", "../bench")
-	.WithEnvironment("POSTGRES_PASSWORD", superuserPassword)
-	.WithEnvironment("SEMIBASE_WRITER_PASSWORD", writerPassword)
-	.WithEnvironment("SEMIBASE_READER_PASSWORD", readerPassword)
-	.WithEnvironment("SEMIPLOT_PROVISIONED_DATABASE", provisionedDatabase)
-	.WithEndpoint(port: hostPort, targetPort: containerPort, scheme: "tcp", name: "postgres", isProxied: false);
+	.WithEnvironment("POSTGRES_PASSWORD", SuperuserPassword)
+	.WithEnvironment("SEMIBASE_WRITER_PASSWORD", WriterPassword)
+	.WithEnvironment("SEMIBASE_READER_PASSWORD", ReaderPassword)
+	.WithEnvironment("SEMIPLOT_PROVISIONED_DATABASE", ProvisionedDatabase)
+	.WithEndpoint(port: HostPort, targetPort: ContainerPort, scheme: "tcp", name: "postgres", isProxied: false);
 
-var writerConnection = $"Host=localhost;Port={hostPort};Database={standDatabase};"
-	+ $"Username={writerRole};Password={writerPassword}";
-var adminConnection = $"Host=localhost;Port={hostPort};Database={maintenanceDatabase};"
-	+ $"Username={superuserName};Password={superuserPassword}";
+var writerConnection = $"Host=localhost;Port={HostPort};Database={StandDatabase};"
+	+ $"Username={WriterRole};Password={WriterPassword}";
+var adminConnection = $"Host=localhost;Port={HostPort};Database={MaintenanceDatabase};"
+	+ $"Username={SuperuserName};Password={SuperuserPassword}";
 
 var converge = builder.AddProject<Projects.SemiPlot_Tools_ArchiveSeeder>("converge")
 	.WithArgs(
@@ -37,11 +37,11 @@ var converge = builder.AddProject<Projects.SemiPlot_Tools_ArchiveSeeder>("conver
 		"--connection", writerConnection,
 		"--admin-connection", adminConnection,
 		"--config-dir", configDirectory,
-		"--change-seconds", changeSeconds)
+		"--change-seconds", ChangeSeconds)
 	.WaitFor(bench);
 
 builder.AddProject<Projects.SemiPlot_Tools_ArchiveSeeder>("writer")
-	.WithArgs("--connection", writerConnection, "--follow", "1", "--change-seconds", changeSeconds)
+	.WithArgs("--connection", writerConnection, "--follow", "1", "--change-seconds", ChangeSeconds)
 	.WaitForCompletion(converge);
 
 builder.AddProject<Projects.SemiPlot_UI>("viewer")

@@ -1,4 +1,5 @@
-﻿using System.Reactive.Disposables;
+﻿using System.Globalization;
+using System.Reactive.Disposables;
 using System.Reactive.Linq;
 
 using ReactiveUI;
@@ -17,7 +18,7 @@ public sealed class TrendLegendRowViewModel : ReactiveObject, IDisposable
 	private readonly int _penId;
 	private readonly TrendPenState _penState;
 	private readonly ObservableAsPropertyHelper<(double Min, double Max)?> _scaleRange;
-	private readonly CompositeDisposable _subscriptions = new();
+	private readonly CompositeDisposable _subscriptions = [];
 	private bool _isSettingVisibilityFromChart;
 
 	private bool _isVisible;
@@ -122,7 +123,7 @@ public sealed class TrendLegendRowViewModel : ReactiveObject, IDisposable
 
 	private static string FormatValue(double? value)
 	{
-		return value is { } number ? number.ToString("0.###") : "—";
+		return value is { } number ? number.ToString("0.###", CultureInfo.CurrentCulture) : "—";
 	}
 
 	private void MirrorVisibilityFromChart(bool isVisible)

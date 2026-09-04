@@ -117,7 +117,7 @@ public sealed class RealtimeEmptyArchiveTests(PostgresContainerFixture postgresC
 		await armed.Task;
 	}
 
-	private RealtimePoll NewPoll(IServiceProvider services)
+	private static RealtimePoll NewPoll(IServiceProvider services)
 	{
 		return new RealtimePoll(
 			services.GetRequiredService<NpgsqlDataSource>(),

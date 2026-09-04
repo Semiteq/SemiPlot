@@ -72,11 +72,11 @@ public sealed class BreakPlan
 			var durationFraction = SyntheticValueWalk.Fraction(seed, -1 - (2 * index));
 			var offsetFraction = SyntheticValueWalk.Fraction(seed, -2 - (2 * index));
 
-			var drawn = MinimumDuration + (MaximumDuration - MinimumDuration) * durationFraction;
+			var drawn = MinimumDuration + ((MaximumDuration - MinimumDuration) * durationFraction);
 			var duration = WholeMilliseconds(drawn);
 			var headroom = slot - duration - MinimumRun - MinimumRun;
 			var offset = WholeMilliseconds(headroom * offsetFraction);
-			var breakStart = ArchiveRow.TruncateToMilliseconds(start + slot * index + MinimumRun + offset);
+			var breakStart = ArchiveRow.TruncateToMilliseconds(start + (slot * index) + MinimumRun + offset);
 
 			windows.Add(new Window(breakStart, ArchiveRow.TruncateToMilliseconds(breakStart + duration)));
 		}

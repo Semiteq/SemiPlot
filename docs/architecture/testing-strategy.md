@@ -65,7 +65,7 @@ would encode our own assumption on both sides. The value is contract verificatio
 
 There are three families — the same category with different foreign parties.
 
-**Against a real PostgreSQL** — `SemiPlot.Tests.Integration/Integration/`: `PostgresCatalogReadTests`,
+**Against a real PostgreSQL** — `SemiPlot.Tests.Integration/`: `PostgresCatalogReadTests`,
 `PostgresExtentReadTests`, `PostgresHistoryReadTests`, `RealtimePollReadTests`,
 `RealtimeSubscriptionTests`, `RealtimeEmptyArchiveTests`,
 `ArchiveWriterTransactionTests`, `CoarseFlushTests`,
@@ -152,7 +152,7 @@ Each piece lives with the party whose change invalidates it.
 | Instance provisioning: database, roles, grants, default privileges, `semiplot_tags`, `public.trends` | SemiBase | `github.com/Semiteq/SemiBase` | the instance is shared by the SCADA, SemiPlot and future readers. The bench must be provisioned by the same implementation a site is, or it stops testing the grant chain. The archive table is in that list because SemiBase creates it: a second definition here would be the one exercised daily while the real one decayed |
 | `semibase` artifact formats and versions | SemiBase | its release workflow and its published image | the producer owns its artifacts; SemiPlot only consumes them |
 | Synthetic data model, including `LayerThinner` — this project's hypothesis about the vendor's thinning rule | SemiPlot | `SemiPlot.Tools.ArchiveSeeder` | the hypothesis couples to the consumer, not the provisioner: if the rule is refuted, the *read path* changes and SemiBase changes nothing. It must version in lock-step with the code that bets on it, which is why `RawLayerGeneratorTests` lives beside it and why `SyntheticValueWalk`, `SyntheticPenCatalog` and `SyntheticPen` are the seeder's own: the tests pin the generator's shape and later slices develop against its output, so a generator shared with anything evolving for its own reasons would break them |
-| Test harness | SemiPlot tests | `SemiPlot.Tests.Integration/Integration/` | the harness serves this repository's tests and nothing else; no other party can decide its shape |
+| Test harness | SemiPlot tests | `SemiPlot.Tests.Integration/` | the harness serves this repository's tests and nothing else; no other party can decide its shape |
 | Developer environment | SemiPlot | `dotnet test` and the bench recipe in `bench.md` | it composes the others' artifacts and defines none of them |
 
 Two rules follow from the first two rows and are not negotiable, restating

@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Globalization;
+using System.Text;
 
 namespace SemiPlot.UI.Chart;
 
@@ -33,11 +34,11 @@ public static class ChartHoverReadout
 	{
 		return DateTime.SpecifyKind(cursorTimeUtc, DateTimeKind.Utc)
 			.ToLocalTime()
-			.ToString("yyyy-MM-dd HH:mm:ss");
+			.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture);
 	}
 
 	private static string FormatValue(double? value)
 	{
-		return value is { } number ? number.ToString("0.###") : "—";
+		return value is { } number ? number.ToString("0.###", CultureInfo.CurrentCulture) : "—";
 	}
 }

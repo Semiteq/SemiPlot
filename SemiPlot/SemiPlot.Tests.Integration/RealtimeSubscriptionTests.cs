@@ -155,10 +155,9 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 
 	private static DateTime[] Delivered(BatchCollector collector)
 	{
-		return collector.Batches
+		return [.. collector.Batches
 			.SelectMany(batch => batch)
-			.Select(sample => sample.TimestampUtc)
-			.ToArray();
+			.Select(sample => sample.TimestampUtc)];
 	}
 
 	// Written as scada_writer, the role the SCADA itself writes with, and one row at a time: a COPY would go
@@ -225,7 +224,7 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 			{
 				lock (_guard)
 				{
-					return _states.ToArray();
+					return [.. _states];
 				}
 			}
 		}
@@ -268,9 +267,9 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 
 				_connectedCount++;
 
-				foreach (var waiter in _waiters.Where(waiter => waiter.Count <= _connectedCount))
+				foreach (var (count, reached) in _waiters.Where(waiter => waiter.Count <= _connectedCount))
 				{
-					waiter.Reached.TrySetResult();
+					reached.TrySetResult();
 				}
 
 				_waiters.RemoveAll(waiter => waiter.Count <= _connectedCount);
@@ -301,7 +300,7 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 			{
 				lock (_guard)
 				{
-					return _batches.ToArray();
+					return [.. _batches];
 				}
 			}
 		}

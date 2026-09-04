@@ -277,8 +277,8 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	[Fact]
 	public void APasswordCarryingSeparatorsRoundTripsThroughTheBuilder()
 	{
-		const string password = "pa;ss'word";
-		var path = WriteFile(Compose(Replace("password", $"\"{password}\"")));
+		const string Password = "pa;ss'word";
+		var path = WriteFile(Compose(Replace("password", $"\"{Password}\"")));
 
 		var result = PostgresConnectionLoader.Load(path);
 
@@ -286,7 +286,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 		var parsed = new NpgsqlConnectionStringBuilder(result.Value.ConnectionString);
 
-		parsed.Password.Should().Be(password);
+		parsed.Password.Should().Be(Password);
 		parsed.Host.Should().Be("scada-01");
 		parsed.Port.Should().Be(5433);
 		parsed.Database.Should().Be("semiplot_dev");
@@ -318,8 +318,8 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	[Fact]
 	public void TheSettingsNeverPrintThePassword()
 	{
-		const string password = "pa;ss'word";
-		var path = WriteFile(Compose(Replace("password", $"\"{password}\"")));
+		const string Password = "pa;ss'word";
+		var path = WriteFile(Compose(Replace("password", $"\"{Password}\"")));
 
 		var result = PostgresConnectionLoader.Load(path);
 
@@ -327,7 +327,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 		var printed = result.Value.ToString();
 
-		printed.Should().NotContain(password);
+		printed.Should().NotContain(Password);
 		printed.Should().Contain("scada-01");
 	}
 

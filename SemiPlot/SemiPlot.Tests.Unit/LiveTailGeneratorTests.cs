@@ -40,7 +40,7 @@ public sealed class LiveTailGeneratorTests
 		{
 			var timestamps = pen.Select(row => row.Timestamp).ToArray();
 
-			timestamps.Should().Equal(timestamps.OrderBy(timestamp => timestamp).ToArray());
+			timestamps.Should().Equal([.. timestamps.OrderBy(timestamp => timestamp)]);
 			timestamps.Length.Should().Be(timestamps.Distinct().Count());
 		}
 	}
@@ -145,7 +145,7 @@ public sealed class LiveTailGeneratorTests
 		var rows = LiveTailGenerator.Generate(options, _midnight, _midnight.AddSeconds(30));
 
 		rows.Select(row => row.Id).Distinct().Order().ToArray().Should().Equal(
-			RawLayerGenerator.SelectPens(options.PenCount).Select(pen => pen.PenId).Order().ToArray());
+			[.. RawLayerGenerator.SelectPens(options.PenCount).Select(pen => pen.PenId).Order()]);
 	}
 
 	[Fact]

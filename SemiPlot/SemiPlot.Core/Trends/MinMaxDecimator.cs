@@ -204,22 +204,13 @@ public static class MinMaxDecimator
 
 	private readonly record struct Segment(int Start, int Length);
 
-	private sealed class EnvelopeBuilder
+	private sealed class EnvelopeBuilder(int penId, int capacity)
 	{
-		private readonly int _penId;
-		private readonly List<DateTime> _timestamps;
-		private readonly List<double> _min;
-		private readonly List<double> _max;
-		private readonly List<double> _center;
-
-		public EnvelopeBuilder(int penId, int capacity)
-		{
-			_penId = penId;
-			_timestamps = new List<DateTime>(capacity);
-			_min = new List<double>(capacity);
-			_max = new List<double>(capacity);
-			_center = new List<double>(capacity);
-		}
+		private readonly int _penId = penId;
+		private readonly List<DateTime> _timestamps = new(capacity);
+		private readonly List<double> _min = new(capacity);
+		private readonly List<double> _max = new(capacity);
+		private readonly List<double> _center = new(capacity);
 
 		public void AppendColumn(DateTime timestamp, double min, double max, double center)
 		{

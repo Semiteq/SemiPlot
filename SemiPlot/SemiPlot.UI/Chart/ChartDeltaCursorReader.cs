@@ -1,4 +1,6 @@
-﻿using SemiPlot.Core.Trends;
+﻿using System.Globalization;
+
+using SemiPlot.Core.Trends;
 
 namespace SemiPlot.UI.Chart;
 
@@ -41,7 +43,7 @@ public sealed class ChartDeltaCursorReader(
 			return string.Empty;
 		}
 
-		var deltaY = readout.DeltaY is { } value ? value.ToString("0.###") : "—";
+		var deltaY = readout.DeltaY is { } value ? value.ToString("0.###", CultureInfo.CurrentCulture) : "—";
 
 		return $"Δt {FormatDeltaTime(readout.DeltaTime)}   Δy {deltaY}";
 	}

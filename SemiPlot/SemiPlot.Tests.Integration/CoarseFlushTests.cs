@@ -40,7 +40,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 	// The pens the follow loop itself writes, so the opening-row statement probes the same identifiers this
 	// archive carries.
 	private static readonly IReadOnlyList<int> _penIds =
-		RawLayerGenerator.SelectPens(PenCount).Select(pen => pen.PenId).ToArray();
+		[.. RawLayerGenerator.SelectPens(PenCount).Select(pen => pen.PenId)];
 
 	// One row per pen at each coarse layer: what the first call inside a period writes and what no later
 	// call inside that period repeats.
@@ -295,23 +295,21 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 			.Where(row => row.Timestamp >= periodStart && row.Timestamp < periodEndExclusive)
 			.ToArray();
 
-		return LayerThinner.Thin(period, layer)
+		return [.. LayerThinner.Thin(period, layer)
 			.OrderBy(row => row.Id)
-			.ThenBy(row => row.Timestamp)
-			.ToArray();
+			.ThenBy(row => row.Timestamp)];
 	}
 
 	// The first raw row at or after the period start, per pen, stamped at the coarse layer — the opening
 	// statement's output, computed from the archive's rows rather than from the statement.
 	private static IReadOnlyList<ArchiveRow> ExpectedOpening(short layer, DateTime periodStart)
 	{
-		return _rawRows
+		return [.. _rawRows
 			.Where(row => row.Timestamp >= periodStart)
 			.GroupBy(row => row.Id)
 			.Select(pen => pen.OrderBy(row => row.Timestamp).First() with { Layer = layer })
 			.OrderBy(row => row.Id)
-			.ThenBy(row => row.Timestamp)
-			.ToArray();
+			.ThenBy(row => row.Timestamp)];
 	}
 
 	// Stated here rather than derived from the production code, so the bounds an assertion reads are
@@ -408,9 +406,9 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 
 	private static void AppendSlice(List<ArchiveRow> rows, DateTime from, DateTime toExclusive)
 	{
-		for (var index = 0; from + _sampleInterval * index < toExclusive; index++)
+		for (var index = 0; from + (_sampleInterval * index) < toExclusive; index++)
 		{
-			var at = from + _sampleInterval * index;
+			var at = from + (_sampleInterval * index);
 
 			for (var penIndex = 0; penIndex < _penIds.Count; penIndex++)
 			{
@@ -430,9 +428,9 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 	{
 		return penIndex switch
 		{
-			0 => index * 37 % 101 + 0.5,
+			0 => (index * 37 % 101) + 0.5,
 			1 => 42.0,
-			_ => index * 53 % 89 + 0.25
+			_ => (index * 53 % 89) + 0.25
 		};
 	}
 

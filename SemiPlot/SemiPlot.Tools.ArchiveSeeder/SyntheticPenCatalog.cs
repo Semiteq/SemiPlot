@@ -74,7 +74,7 @@ public static class SyntheticPenCatalog
 	// Gas lines deliberately use heterogeneous ranges so the multi-axis use case is exercised.
 	private static (double Min, double Max) GasLineRange(int index)
 	{
-		var span = 5.0 + index * 12.0;
+		var span = 5.0 + (index * 12.0);
 		var min = index * 2.0;
 
 		return (min, min + span);

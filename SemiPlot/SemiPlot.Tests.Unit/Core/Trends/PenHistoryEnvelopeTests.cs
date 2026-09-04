@@ -31,10 +31,10 @@ public sealed class PenHistoryEnvelopeTests
 	{
 		var act = () => new PenHistoryEnvelope(
 			1,
-			Array.Empty<DateTime>(),
-			Array.Empty<double>(),
-			Array.Empty<double>(),
-			Array.Empty<double>());
+			[],
+			[],
+			[],
+			[]);
 
 		act.Should().NotThrow();
 	}
@@ -44,10 +44,10 @@ public sealed class PenHistoryEnvelopeTests
 	{
 		var act = () => new PenHistoryEnvelope(
 			1,
-			new[] { _origin },
-			new[] { 0.0 },
-			new[] { 1.0 },
-			new[] { 0.5 });
+			[_origin],
+			[0.0],
+			[1.0],
+			[0.5]);
 
 		act.Should().NotThrow();
 	}
@@ -97,9 +97,9 @@ public sealed class PenHistoryEnvelopeTests
 		var act = () => new PenHistoryEnvelope(
 			1,
 			null!,
-			Array.Empty<double>(),
-			Array.Empty<double>(),
-			Array.Empty<double>());
+			[],
+			[],
+			[]);
 
 		act.Should().Throw<ArgumentNullException>();
 	}
@@ -109,10 +109,10 @@ public sealed class PenHistoryEnvelopeTests
 	{
 		var act = () => new PenHistoryEnvelope(
 			1,
-			Array.Empty<DateTime>(),
+			[],
 			null!,
-			Array.Empty<double>(),
-			Array.Empty<double>());
+			[],
+			[]);
 
 		act.Should().Throw<ArgumentNullException>();
 	}
@@ -122,10 +122,10 @@ public sealed class PenHistoryEnvelopeTests
 	{
 		var act = () => new PenHistoryEnvelope(
 			1,
-			Array.Empty<DateTime>(),
-			Array.Empty<double>(),
+			[],
+			[],
 			null!,
-			Array.Empty<double>());
+			[]);
 
 		act.Should().Throw<ArgumentNullException>();
 	}
@@ -135,9 +135,9 @@ public sealed class PenHistoryEnvelopeTests
 	{
 		var act = () => new PenHistoryEnvelope(
 			1,
-			Array.Empty<DateTime>(),
-			Array.Empty<double>(),
-			Array.Empty<double>(),
+			[],
+			[],
+			[],
 			null!);
 
 		act.Should().Throw<ArgumentNullException>();

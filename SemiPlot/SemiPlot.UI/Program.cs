@@ -65,7 +65,7 @@ public static class Program
 
 	private static void CreateLogger(string logFilePath, LogEventLevel logLevel)
 	{
-		const string template =
+		const string Template =
 			"{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}";
 
 		var invariant = CultureInfo.InvariantCulture;
@@ -74,7 +74,7 @@ public static class Program
 			new LoggerConfiguration()
 				.MinimumLevel.Is(logLevel)
 				.Enrich.FromLogContext()
-				.WriteTo.Console(outputTemplate: template, formatProvider: invariant);
+				.WriteTo.Console(outputTemplate: Template, formatProvider: invariant);
 
 		configuration = configuration.WriteTo.File(
 			path: logFilePath,
@@ -83,7 +83,7 @@ public static class Program
 			rollOnFileSizeLimit: true,
 			retainedFileCountLimit: 5,
 			shared: true,
-			outputTemplate: template,
+			outputTemplate: Template,
 			formatProvider: invariant);
 
 		Log.Logger = configuration.CreateLogger();

@@ -47,6 +47,8 @@ public abstract class ClonedArchiveTest(PostgresContainerFixture fixture, CloneS
 
 	public async ValueTask DisposeAsync()
 	{
+		GC.SuppressFinalize(this);
+
 		if (_archiveDatabase is null)
 		{
 			return;

@@ -106,7 +106,7 @@ public sealed class ExplainPlanTests(
 				+ "row-holding trends partition sequentially, so the read now walks the whole archive "
 				+ $"instead of stepping to one index edge per variable.{Environment.NewLine}{plan}");
 
-		(_indexEdgeReachedRows.Matches(plan).Count >= BoundedSubqueryCount).Should().BeTrue(
+		(_indexEdgeReachedRows.Count(plan) >= BoundedSubqueryCount).Should().BeTrue(
 			"The extent plan reaches no row-holding trends partition through an index scan. Each of the "
 				+ "two per-variable bounded subqueries must step to one index edge; a bitmap or a plan "
 				+ $"without them reads rows the bound does not need.{Environment.NewLine}{plan}");
@@ -144,7 +144,7 @@ public sealed class ExplainPlanTests(
 
 		seedWalk.Groups["condition"].Value.Should().Contain("t >=");
 
-		(_dayPartitionRead.Matches(plan).Count <= MaximumDayPartitionsRead).Should().BeTrue(
+		(_dayPartitionRead.Count(plan) <= MaximumDayPartitionsRead).Should().BeTrue(
 			"The seed's backwards seek has lost its lower bound: the plan reads more day partitions than "
 				+ "a look-back of one partition width can reach, which on a longer archive is one probe "
 				+ $"per older day, per pen, on every window change.{Environment.NewLine}{plan}");
@@ -171,7 +171,7 @@ public sealed class ExplainPlanTests(
 			"The window branch reaches no row-holding trends partition through an index at the archive's "
 				+ $"first instant.{Environment.NewLine}{plan}");
 
-		var partitionReads = _dayPartitionRead.Matches(plan).Count;
+		var partitionReads = _dayPartitionRead.Count(plan);
 
 		(partitionReads == WindowBranchPartitionReads).Should().BeTrue(
 			$"The plan reads {partitionReads} day partitions where the window branch alone accounts for "
@@ -253,10 +253,9 @@ public sealed class ExplainPlanTests(
 
 	private static int[] ExplainedPenIds()
 	{
-		return RawLayerGenerator.SelectPens(ArchiveTemplate.Slice.PenCount)
+		return [.. RawLayerGenerator.SelectPens(ArchiveTemplate.Slice.PenCount)
 			.Take(ExplainedPenCount)
-			.Select(pen => pen.PenId)
-			.ToArray();
+			.Select(pen => pen.PenId)];
 	}
 
 	private static async Task AnalyseAsync(ArchiveDatabase database, CancellationToken cancellationToken)

@@ -50,10 +50,6 @@ internal sealed class RealtimePoll
 
 	private readonly int[] _penIds;
 
-	// Never taken from the local clock: a clock difference between the two hosts would drop or repeat
-	// the first seconds.
-	private DateTime? _lastSeen;
-
 	private int _consecutiveFailures;
 
 	private bool _faultRaised;
@@ -85,9 +81,10 @@ internal sealed class RealtimePoll
 
 	/// <summary>
 	/// The newest archive timestamp this subscription has read, in the archive's own naive wall clock, or
-	/// null while the baseline is still unread. It only ever moves forward.
+	/// null while the baseline is still unread. It only ever moves forward. Never taken from the local
+	/// clock: a clock difference between the two hosts would drop or repeat the first seconds.
 	/// </summary>
-	public DateTime? LastSeen => _lastSeen;
+	public DateTime? LastSeen { get; private set; }
 
 	/// <summary>
 	/// One tick. The first one establishes the baseline and emits no sample; every later one emits the
@@ -101,7 +98,7 @@ internal sealed class RealtimePoll
 				.OpenConnectionAsync(cancellationToken)
 				.ConfigureAwait(false);
 
-			var samples = _lastSeen is { } lastSeen
+			var samples = LastSeen is { } lastSeen
 				? await ReadSamplesAsync(connection, lastSeen, cancellationToken).ConfigureAwait(false)
 				: await ReadBaselineAsync(connection, cancellationToken).ConfigureAwait(false);
 
@@ -234,9 +231,9 @@ internal sealed class RealtimePoll
 
 	private void Advance(DateTime archiveLocal)
 	{
-		if (_lastSeen is null || archiveLocal > _lastSeen)
+		if (LastSeen is null || archiveLocal > LastSeen)
 		{
-			_lastSeen = archiveLocal;
+			LastSeen = archiveLocal;
 		}
 	}
 

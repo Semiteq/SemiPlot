@@ -13,9 +13,6 @@ public sealed class TrendPenState : ReactiveObject
 	private readonly List<(double X, double Top, double Bottom)> _bandPoints = [];
 
 	private readonly List<Coordinates> _centerPoints;
-	private double? _currentValue;
-
-	private bool _isVisible = true;
 
 	// centerPoints MUST be the exact instance the center-line Scatter was built against: ScottPlot's
 	// Scatter holds a live reference to it and re-reads it on every render.
@@ -40,19 +37,19 @@ public sealed class TrendPenState : ReactiveObject
 
 	public bool IsVisible
 	{
-		get => _isVisible;
+		get;
 		set
 		{
-			this.RaiseAndSetIfChanged(ref _isVisible, value);
+			this.RaiseAndSetIfChanged(ref field, value);
 			CenterLine.IsVisible = value;
 			ApplyBandVisibility();
 		}
-	}
+	} = true;
 
 	public double? CurrentValue
 	{
-		get => _currentValue;
-		private set => this.RaiseAndSetIfChanged(ref _currentValue, value);
+		get;
+		private set => this.RaiseAndSetIfChanged(ref field, value);
 	}
 
 	public void LoadHistory(PenHistoryEnvelope envelope)
@@ -144,7 +141,7 @@ public sealed class TrendPenState : ReactiveObject
 
 	private void ApplyBandVisibility()
 	{
-		Band.IsVisible = _isVisible && !BandDegeneracy.IsDegenerate(_bandPoints);
+		Band.IsVisible = IsVisible && !BandDegeneracy.IsDegenerate(_bandPoints);
 	}
 
 	private double? LastNonGapCenter()

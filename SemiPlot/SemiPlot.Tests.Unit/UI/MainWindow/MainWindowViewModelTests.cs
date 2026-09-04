@@ -1,5 +1,4 @@
-﻿using System.ComponentModel;
-using System.Reactive.Concurrency;
+﻿using System.Reactive.Concurrency;
 
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
@@ -145,7 +144,7 @@ public sealed class MainWindowViewModelTests
 	private static List<bool> ObserveEmptyCatalogueState(MainWindowViewModel viewModel)
 	{
 		var observed = new List<bool>();
-		((INotifyPropertyChanged)viewModel).PropertyChanged += (_, args) =>
+		viewModel.PropertyChanged += (_, args) =>
 		{
 			if (args.PropertyName == nameof(MainWindowViewModel.IsCatalogueEmpty))
 			{
@@ -159,7 +158,7 @@ public sealed class MainWindowViewModelTests
 	private static List<int> ObservePenCount(MainWindowViewModel viewModel)
 	{
 		var observed = new List<int>();
-		((INotifyPropertyChanged)viewModel).PropertyChanged += (_, args) =>
+		viewModel.PropertyChanged += (_, args) =>
 		{
 			if (args.PropertyName == nameof(MainWindowViewModel.PenCount))
 			{

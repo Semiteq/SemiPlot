@@ -85,7 +85,7 @@ public sealed class PenScaleModelTests
 
 		var shared = scales.Should().ContainSingle().Which;
 		shared.AxisKey.Should().Be("heaters");
-		shared.PenIds.Should().BeEquivalentTo(new[] { 1, 2, 3 });
+		shared.PenIds.Should().BeEquivalentTo([1, 2, 3]);
 		shared.Min.Should().BeApproximately(5.0 - (25.0 * 0.05), 1e-9);
 		shared.Max.Should().BeApproximately(30.0 + (25.0 * 0.05), 1e-9);
 	}

@@ -169,6 +169,35 @@ public sealed class PostgresCompositionTests
 		act.Should().Throw<ArgumentNullException>();
 	}
 
+	[Fact]
+	public void DisposingTheProviderCompletesTheConnectionFaultStream()
+	{
+		var settings = Settings();
+		using var dataSource = NpgsqlDataSource.Create(settings.ConnectionString);
+		var provider = NewProvider(settings, dataSource);
+		var completed = false;
+
+		using var watch = provider.ConnectionFaults.Subscribe(_ => { }, () => completed = true);
+
+		provider.Dispose();
+
+		completed.Should().BeTrue();
+	}
+
+	[Fact]
+	public void DisposingTwiceDoesNotThrow()
+	{
+		var settings = Settings();
+		using var dataSource = NpgsqlDataSource.Create(settings.ConnectionString);
+		var provider = NewProvider(settings, dataSource);
+
+		provider.Dispose();
+
+		var act = provider.Dispose;
+
+		act.Should().NotThrow();
+	}
+
 	// Asserts that dropping a subscription at once returns without blocking and leaves no loop running.
 	// Silence alone would not prove that (a leaked loop against this unreachable address is also silent),
 	// so a second, left-running provider's own ArchiveFault.ConnectionLost calibrates the wait instead.

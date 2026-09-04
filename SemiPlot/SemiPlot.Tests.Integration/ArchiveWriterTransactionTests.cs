@@ -128,15 +128,14 @@ public sealed class ArchiveWriterTransactionTests(PostgresContainerFixture postg
 
 	private static IReadOnlyList<ArchiveRow> OrdinaryRows(DateTime day, int penId)
 	{
-		return Enumerable
+		return [.. Enumerable
 			.Range(0, 1000)
 			.Select(index => new ArchiveRow(
 				penId,
 				ArchiveRow.RawLayer,
 				day.AddMilliseconds(index * 100),
 				index,
-				ArchiveRow.OrdinaryQuality))
-			.ToArray();
+				ArchiveRow.OrdinaryQuality))];
 	}
 
 	private static IReadOnlyList<ArchiveRow> DuplicatingRows(DateTime day, int penId)

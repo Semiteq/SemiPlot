@@ -139,11 +139,10 @@ public sealed class PartitionScriptTests
 
 	private static IReadOnlyList<string> StatementNames(IEnumerable<string> statements)
 	{
-		return statements
+		return [.. statements
 			.Select(statement => statement
 				.Split(' ')
 				.First(token => token.StartsWith("public.tp", StringComparison.Ordinal)))
-			.Select(token => token["public.".Length..])
-			.ToArray();
+			.Select(token => token["public.".Length..])];
 	}
 }

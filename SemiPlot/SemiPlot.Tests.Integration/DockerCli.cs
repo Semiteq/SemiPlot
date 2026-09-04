@@ -11,12 +11,12 @@ internal static class DockerCli
 	// reported and the build goes on with the cached image (docs/architecture/bench.md#where-the-provisioning-comes-from).
 	public static async Task PullProvisionerAsync(TimeSpan bound)
 	{
-		var pulled = await RunAsync(["pull", "--quiet", ProvisionerTag], bound);
+		var (exitCode, _, error) = await RunAsync(["pull", "--quiet", ProvisionerTag], bound);
 
-		if (pulled.ExitCode != 0)
+		if (exitCode != 0)
 		{
 			await Console.Error.WriteLineAsync(
-				$"[bench] docker pull {ProvisionerTag} failed, building over the cached image: {pulled.Error}");
+				$"[bench] docker pull {ProvisionerTag} failed, building over the cached image: {error}");
 		}
 	}
 

@@ -14,7 +14,7 @@ public partial class MinimapView : UserControl
 	private const double MinimumHighlightWidth = 6.0;
 	private const double LabelEdgePadding = 4.0;
 
-	private readonly CompositeDisposable _disposables = new();
+	private readonly CompositeDisposable _disposables = [];
 	private bool _isDragging;
 
 	public MinimapView()

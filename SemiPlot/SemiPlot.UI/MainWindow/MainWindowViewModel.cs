@@ -13,14 +13,9 @@ namespace SemiPlot.UI.MainWindow;
 
 public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 {
-	private readonly CompositeDisposable _subscriptions = new();
+	private readonly CompositeDisposable _subscriptions = [];
 
 	private ObservableAsPropertyHelper<string?>? _archiveConnectionMessage;
-	private TrendChartViewModel? _chartViewModel;
-	private TrendLegendViewModel? _legendViewModel;
-	private MinimapViewModel? _minimapViewModel;
-	private TrendToolbarViewModel? _toolbarViewModel;
-	private ArchiveFailureView? _startupFailure;
 
 	// Not re-notified when pens change after assignment.
 	public int PenCount => ChartViewModel?.Pens.Count ?? 0;
@@ -36,10 +31,10 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 	/// </summary>
 	public ArchiveFailureView? StartupFailure
 	{
-		get => _startupFailure;
+		get;
 		set
 		{
-			this.RaiseAndSetIfChanged(ref _startupFailure, value);
+			this.RaiseAndSetIfChanged(ref field, value);
 			this.RaisePropertyChanged(nameof(HasStartupFailure));
 		}
 	}
@@ -78,19 +73,19 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 
 	public TrendChartViewModel? ChartViewModel
 	{
-		get => _chartViewModel;
+		get;
 		set
 		{
-			if (ReferenceEquals(_chartViewModel, value))
+			if (ReferenceEquals(field, value))
 			{
 				return;
 			}
 
-			_toolbarViewModel?.Dispose();
-			_legendViewModel?.Dispose();
-			_chartViewModel?.Dispose();
+			ToolbarViewModel?.Dispose();
+			LegendViewModel?.Dispose();
+			field?.Dispose();
 
-			this.RaiseAndSetIfChanged(ref _chartViewModel, value);
+			this.RaiseAndSetIfChanged(ref field, value);
 			this.RaisePropertyChanged(nameof(PenCount));
 			this.RaisePropertyChanged(nameof(IsCatalogueEmpty));
 
@@ -101,32 +96,32 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 
 	public TrendToolbarViewModel? ToolbarViewModel
 	{
-		get => _toolbarViewModel;
-		private set => this.RaiseAndSetIfChanged(ref _toolbarViewModel, value);
+		get;
+		private set => this.RaiseAndSetIfChanged(ref field, value);
 	}
 
 	public TrendLegendViewModel? LegendViewModel
 	{
-		get => _legendViewModel;
-		private set => this.RaiseAndSetIfChanged(ref _legendViewModel, value);
+		get;
+		private set => this.RaiseAndSetIfChanged(ref field, value);
 	}
 
 	public MinimapViewModel? MinimapViewModel
 	{
-		get => _minimapViewModel;
+		get;
 		set
 		{
-			_minimapViewModel?.Dispose();
-			this.RaiseAndSetIfChanged(ref _minimapViewModel, value);
+			field?.Dispose();
+			this.RaiseAndSetIfChanged(ref field, value);
 		}
 	}
 
 	public void Dispose()
 	{
 		_subscriptions.Dispose();
-		_toolbarViewModel?.Dispose();
-		_legendViewModel?.Dispose();
-		_minimapViewModel?.Dispose();
-		_chartViewModel?.Dispose();
+		ToolbarViewModel?.Dispose();
+		LegendViewModel?.Dispose();
+		MinimapViewModel?.Dispose();
+		ChartViewModel?.Dispose();
 	}
 }

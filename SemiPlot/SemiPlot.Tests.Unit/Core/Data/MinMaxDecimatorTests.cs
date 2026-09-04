@@ -18,83 +18,83 @@ public sealed class MinMaxDecimatorTests
 	[Fact]
 	public void Decimate_PreservesSpikeThatNthSamplingWouldDrop()
 	{
-		const int sampleCount = 1000;
-		const int spikeIndex = 503;
-		const double spikeValue = 9999.0;
-		const int targetColumns = 50;
+		const int SampleCount = 1000;
+		const int SpikeIndex = 503;
+		const double SpikeValue = 9999.0;
+		const int TargetColumns = 50;
 
-		var timestamps = BuildTimestamps(sampleCount);
-		var values = new double?[sampleCount];
-		for (var index = 0; index < sampleCount; index++)
+		var timestamps = BuildTimestamps(SampleCount);
+		var values = new double?[SampleCount];
+		for (var index = 0; index < SampleCount; index++)
 		{
 			values[index] = 0.0;
 		}
 
-		values[spikeIndex] = spikeValue;
+		values[SpikeIndex] = SpikeValue;
 
-		var nthSamplingStride = sampleCount / targetColumns;
-		var nthSamplingHitsSpike = (spikeIndex % nthSamplingStride) == 0;
+		var nthSamplingStride = SampleCount / TargetColumns;
+		var nthSamplingHitsSpike = (SpikeIndex % nthSamplingStride) == 0;
 		nthSamplingHitsSpike.Should().BeFalse("the test is only meaningful if naive sampling misses the spike");
 
-		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, targetColumns);
+		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, TargetColumns);
 
-		envelope.Max.Should().Contain(spikeValue);
+		envelope.Max.Should().Contain(SpikeValue);
 	}
 
 	[Fact]
 	public void Decimate_ColumnCountStaysWithinConstantFactorOfTarget()
 	{
-		const int sampleCount = 100_000;
-		const int targetColumns = 800;
+		const int SampleCount = 100_000;
+		const int TargetColumns = 800;
 
-		var timestamps = BuildTimestamps(sampleCount);
-		var values = new double?[sampleCount];
-		for (var index = 0; index < sampleCount; index++)
+		var timestamps = BuildTimestamps(SampleCount);
+		var values = new double?[SampleCount];
+		for (var index = 0; index < SampleCount; index++)
 		{
 			values[index] = Math.Sin(index / 13.0);
 		}
 
-		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, targetColumns);
+		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, TargetColumns);
 
-		envelope.Timestamps.Count.Should().BeLessThanOrEqualTo(targetColumns * 4);
+		envelope.Timestamps.Count.Should().BeLessThanOrEqualTo(TargetColumns * 4);
 		envelope.Timestamps.Count.Should().BeGreaterThan(0);
 	}
 
 	[Fact]
 	public void Decimate_DoesNotRetainBackingArraysSizedToTheInput()
 	{
-		const int sampleCount = 123_000;
-		const int targetColumns = 2048;
+		const int SampleCount = 123_000;
+		const int TargetColumns = 2048;
 
-		var timestamps = BuildTimestamps(sampleCount);
-		var values = new double?[sampleCount];
-		for (var index = 0; index < sampleCount; index++)
+		var timestamps = BuildTimestamps(SampleCount);
+		var values = new double?[SampleCount];
+		for (var index = 0; index < SampleCount; index++)
 		{
 			values[index] = Math.Sin(index / 11.0);
 		}
 
-		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, targetColumns);
+		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, TargetColumns);
 
-		CapacityOf(envelope.Timestamps).Should().BeLessThanOrEqualTo(targetColumns * 4);
-		CapacityOf(envelope.Min).Should().BeLessThanOrEqualTo(targetColumns * 4);
-		CapacityOf(envelope.Max).Should().BeLessThanOrEqualTo(targetColumns * 4);
-		CapacityOf(envelope.Center).Should().BeLessThanOrEqualTo(targetColumns * 4);
+		CapacityOf(envelope.Timestamps).Should().BeLessThanOrEqualTo(TargetColumns * 4);
+		CapacityOf(envelope.Min).Should().BeLessThanOrEqualTo(TargetColumns * 4);
+		CapacityOf(envelope.Max).Should().BeLessThanOrEqualTo(TargetColumns * 4);
+		CapacityOf(envelope.Center).Should().BeLessThanOrEqualTo(TargetColumns * 4);
 	}
 
 	[Fact]
 	public void Decimate_ProducesMonotonicTimestamps()
 	{
-		const int sampleCount = 5000;
-		const int targetColumns = 120;
+		const int SampleCount = 5000;
+		const int TargetColumns = 120;
 
-		var timestamps = BuildTimestamps(sampleCount);
-		var values = new double?[sampleCount];
-		for (var index = 0; index < sampleCount; index++)
+		var timestamps = BuildTimestamps(SampleCount);
+		var values = new double?[SampleCount];
+		for (var index = 0; index < SampleCount; index++)
 		{
 			values[index] = (index % 7) - 3.0;
 		}
 
-		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, targetColumns);
+		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, TargetColumns);
 
 		envelope.Timestamps.Should().BeInAscendingOrder();
 	}
@@ -120,17 +120,17 @@ public sealed class MinMaxDecimatorTests
 	[Fact]
 	public void Decimate_BandSpansMinAndMaxPerColumn()
 	{
-		const int sampleCount = 40;
-		const int targetColumns = 4;
+		const int SampleCount = 40;
+		const int TargetColumns = 4;
 
-		var timestamps = BuildTimestamps(sampleCount);
-		var values = new double?[sampleCount];
-		for (var index = 0; index < sampleCount; index++)
+		var timestamps = BuildTimestamps(SampleCount);
+		var values = new double?[SampleCount];
+		for (var index = 0; index < SampleCount; index++)
 		{
 			values[index] = index % 2 == 0 ? index : -index;
 		}
 
-		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, targetColumns);
+		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, TargetColumns);
 
 		for (var column = 0; column < envelope.Min.Count; column++)
 		{
@@ -141,12 +141,12 @@ public sealed class MinMaxDecimatorTests
 	[Fact]
 	public void Decimate_MapsNullsToNaNGapColumnsAndSegmentsTheTimeline()
 	{
-		const int sampleCount = 600;
-		const int targetColumns = 30;
+		const int SampleCount = 600;
+		const int TargetColumns = 30;
 
-		var timestamps = BuildTimestamps(sampleCount);
-		var values = new double?[sampleCount];
-		for (var index = 0; index < sampleCount; index++)
+		var timestamps = BuildTimestamps(SampleCount);
+		var values = new double?[SampleCount];
+		for (var index = 0; index < SampleCount; index++)
 		{
 			values[index] = index;
 		}
@@ -156,7 +156,7 @@ public sealed class MinMaxDecimatorTests
 			values[index] = null;
 		}
 
-		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, targetColumns);
+		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, TargetColumns);
 
 		envelope.Center.Should().Contain(value => double.IsNaN(value));
 		envelope.Min.Should().Contain(value => double.IsNaN(value));
@@ -181,20 +181,20 @@ public sealed class MinMaxDecimatorTests
 	[Fact]
 	public void Decimate_CenterTimestampSitsBetweenBucketBounds_AndXStaysAscending()
 	{
-		const int sampleCount = 200;
-		const int targetColumns = 10;
+		const int SampleCount = 200;
+		const int TargetColumns = 10;
 
-		var timestamps = BuildTimestamps(sampleCount);
-		var values = new double?[sampleCount];
+		var timestamps = BuildTimestamps(SampleCount);
+		var values = new double?[SampleCount];
 
 		// Max precedes min in every bucket, so column X must be the center sample's timestamp (not an
 		// extremum's) yet stay strictly ascending.
-		for (var index = 0; index < sampleCount; index++)
+		for (var index = 0; index < SampleCount; index++)
 		{
 			values[index] = -index;
 		}
 
-		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, targetColumns);
+		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, TargetColumns);
 
 		envelope.Timestamps.Should().BeInAscendingOrder();
 		for (var column = 0; column < envelope.Timestamps.Count; column++)
@@ -222,23 +222,23 @@ public sealed class MinMaxDecimatorTests
 	[Fact]
 	public void Decimate_TrailingNullRun_AnchorsNaNGapAtWindowEnd()
 	{
-		const int sampleCount = 600;
-		const int targetColumns = 30;
+		const int SampleCount = 600;
+		const int TargetColumns = 30;
 
-		var timestamps = BuildTimestamps(sampleCount);
-		var values = new double?[sampleCount];
-		for (var index = 0; index < sampleCount; index++)
+		var timestamps = BuildTimestamps(SampleCount);
+		var values = new double?[SampleCount];
+		for (var index = 0; index < SampleCount; index++)
 		{
 			values[index] = index;
 		}
 
 		// Empty the right third so a chart without an edge gap would straight-line across it.
-		for (var index = 400; index < sampleCount; index++)
+		for (var index = 400; index < SampleCount; index++)
 		{
 			values[index] = null;
 		}
 
-		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, targetColumns);
+		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, TargetColumns);
 
 		envelope.Timestamps[^1].Should().Be(timestamps[^1]);
 		double.IsNaN(envelope.Center[^1]).Should().BeTrue();
@@ -248,12 +248,12 @@ public sealed class MinMaxDecimatorTests
 	[Fact]
 	public void Decimate_LeadingNullRun_AnchorsNaNGapAtWindowStart()
 	{
-		const int sampleCount = 600;
-		const int targetColumns = 30;
+		const int SampleCount = 600;
+		const int TargetColumns = 30;
 
-		var timestamps = BuildTimestamps(sampleCount);
-		var values = new double?[sampleCount];
-		for (var index = 0; index < sampleCount; index++)
+		var timestamps = BuildTimestamps(SampleCount);
+		var values = new double?[SampleCount];
+		for (var index = 0; index < SampleCount; index++)
 		{
 			values[index] = index;
 		}
@@ -263,7 +263,7 @@ public sealed class MinMaxDecimatorTests
 			values[index] = null;
 		}
 
-		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, targetColumns);
+		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, TargetColumns);
 
 		envelope.Timestamps[0].Should().Be(timestamps[0]);
 		double.IsNaN(envelope.Center[0]).Should().BeTrue();
@@ -306,12 +306,12 @@ public sealed class MinMaxDecimatorTests
 	[Fact]
 	public void Decimate_EmittedEnvelope_SatisfiesEnvelopeValidation()
 	{
-		const int sampleCount = 5000;
-		const int targetColumns = 120;
+		const int SampleCount = 5000;
+		const int TargetColumns = 120;
 
-		var timestamps = BuildTimestamps(sampleCount);
-		var values = new double?[sampleCount];
-		for (var index = 0; index < sampleCount; index++)
+		var timestamps = BuildTimestamps(SampleCount);
+		var values = new double?[SampleCount];
+		for (var index = 0; index < SampleCount; index++)
 		{
 			values[index] = Math.Sin(index / 9.0);
 		}
@@ -321,7 +321,7 @@ public sealed class MinMaxDecimatorTests
 			values[index] = null;
 		}
 
-		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, targetColumns);
+		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, TargetColumns);
 
 		// Re-running the columns back through the validating constructor proves the producer honors
 		// the envelope invariants (equal column lengths, strictly ascending timestamps).
@@ -338,22 +338,22 @@ public sealed class MinMaxDecimatorTests
 	[Fact]
 	public void Decimate_GapFollowedByShortSegment_EmitsStrictlyAscendingTimestamps()
 	{
-		const int sampleCount = 600;
-		const int targetColumns = 50;
+		const int SampleCount = 600;
+		const int TargetColumns = 50;
 
-		var timestamps = BuildTimestamps(sampleCount);
-		var values = new double?[sampleCount];
-		for (var index = 0; index < sampleCount; index++)
+		var timestamps = BuildTimestamps(SampleCount);
+		var values = new double?[SampleCount];
+		for (var index = 0; index < SampleCount; index++)
 		{
 			values[index] = Math.Sin(index / 7.0);
 		}
 
-		for (var index = sampleCount - 50; index < sampleCount - 1; index++)
+		for (var index = SampleCount - 50; index < SampleCount - 1; index++)
 		{
 			values[index] = null;
 		}
 
-		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, targetColumns);
+		var envelope = MinMaxDecimator.Decimate(PenId, timestamps, values, TargetColumns);
 
 		for (var index = 1; index < envelope.Timestamps.Count; index++)
 		{

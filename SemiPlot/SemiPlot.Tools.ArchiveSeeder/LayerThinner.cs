@@ -38,7 +38,7 @@ public static class LayerThinner
 
 			foreach (var period in ordered.GroupBy(row => PeriodStart(row.Timestamp, layer)))
 			{
-				AppendPeriod(thinned, period.ToArray(), layer);
+				AppendPeriod(thinned, [.. period], layer);
 			}
 		}
 
@@ -47,7 +47,7 @@ public static class LayerThinner
 
 	public static IReadOnlyList<ArchiveRow> ThinAll(IReadOnlyCollection<ArchiveRow> rawRows)
 	{
-		return CoarseLayers.SelectMany(layer => Thin(rawRows, layer)).ToArray();
+		return [.. CoarseLayers.SelectMany(layer => Thin(rawRows, layer))];
 	}
 
 	// Ties resolve to the earliest row; the vendor keeps the later one.

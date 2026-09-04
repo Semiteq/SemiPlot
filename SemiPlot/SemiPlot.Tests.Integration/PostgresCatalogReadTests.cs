@@ -146,18 +146,15 @@ public sealed class PostgresCatalogReadTests(
 
 	private static IReadOnlyList<Pen> ExpectedPens()
 	{
-		return RawLayerGenerator.SelectPens(ArchiveTemplate.Slice.PenCount)
+		return [.. RawLayerGenerator.SelectPens(ArchiveTemplate.Slice.PenCount)
 			.Select(pen => pen.ToPen())
 			.OrderBy(pen => pen.Group, StringComparer.Ordinal)
-			.ThenBy(pen => pen.Name, StringComparer.Ordinal)
-			.ToArray();
+			.ThenBy(pen => pen.Name, StringComparer.Ordinal)];
 	}
 
 	private static IReadOnlyList<(int Id, short LineStyle)> ReadLineStyles(IEnumerable<Pen> pens)
 	{
-		return pens.Select(pen => (Id: pen.PenId, LineStyle: (short)pen.LineStyle))
-			.OrderBy(entry => entry.Id)
-			.ToArray();
+		return [.. pens.Select(pen => (Id: pen.PenId, LineStyle: (short)pen.LineStyle)).OrderBy(entry => entry.Id)];
 	}
 
 	// Read straight off the table rather than through the provider, so the comparison covers the stored

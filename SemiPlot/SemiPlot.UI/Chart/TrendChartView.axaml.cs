@@ -1,4 +1,5 @@
-﻿using System.Reactive.Disposables;
+﻿using System.Globalization;
+using System.Reactive.Disposables;
 
 using Avalonia;
 using Avalonia.Controls;
@@ -27,7 +28,7 @@ public partial class TrendChartView : UserControl
 	// when the view drops the last handler.
 	private static readonly EventHandler<RenderDetails> _noRenderFinishedHandler = (_, _) => { };
 
-	private readonly CompositeDisposable _disposables = new();
+	private readonly CompositeDisposable _disposables = [];
 	private bool _axisEditEditsMax;
 	private VerticalLine? _deltaFirstLine;
 	private VerticalLine? _deltaSecondLine;
@@ -207,7 +208,7 @@ public partial class TrendChartView : UserControl
 	{
 		_axisEditEditsMax = region.IsUpperHalf((float)position.Y);
 
-		AxisBoundEditor.Text = region.ValueAt((float)position.Y).ToString("0.###");
+		AxisBoundEditor.Text = region.ValueAt((float)position.Y).ToString("0.###", CultureInfo.CurrentCulture);
 		AxisBoundEditor.Margin = new Thickness(position.X, position.Y, 0.0, 0.0);
 		AxisBoundEditor.IsVisible = true;
 		AxisBoundEditor.Focus();
@@ -243,7 +244,11 @@ public partial class TrendChartView : UserControl
 			return;
 		}
 
-		if (double.TryParse(AxisBoundEditor.Text, out var typedBound)
+		if (double.TryParse(
+				AxisBoundEditor.Text,
+				NumberStyles.Float,
+				CultureInfo.CurrentCulture,
+				out var typedBound)
 			&& _viewModel.ScaleRangeForPen(_viewModel.ActivePenId) is { } currentRange)
 		{
 			var (min, max) = ChartAxisEdit.SeedManualLimits(typedBound, _axisEditEditsMax, currentRange);

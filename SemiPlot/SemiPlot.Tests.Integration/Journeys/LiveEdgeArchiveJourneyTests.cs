@@ -294,7 +294,7 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 			{
 				lock (_guard)
 				{
-					return _batches.ToArray();
+					return [.. _batches];
 				}
 			}
 		}

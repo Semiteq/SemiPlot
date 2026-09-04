@@ -16,6 +16,13 @@ dotnet run   --project SemiPlot/SemiPlot.UI/SemiPlot.UI.csproj
 dotnet format SemiPlot.slnx                    # pre-commit hook enforces this
 ```
 
+`.editorconfig`'s style and quality analyzer rules fail `dotnet build` (`TreatWarningsAsErrors`,
+`EnforceCodeStyleInBuild`) and `dotnet format SemiPlot.slnx --verify-no-changes` alike, so a
+regression stops both the build and the pre-commit hook. The repository's `nuget.config` clears
+every inherited package source, so a `dotnet tool install` run from inside the repository sees only
+`nuget.org`; install a tool from another source outside the repository directory or with
+`--add-source`.
+
 The bench seeder fills a `semibase bench`-provisioned database with a generated archive. The
 provisioning creates `public.trends`, so the seeder requires the table and refuses a database that
 already carries rows or day partitions. It issues no `DROP` anywhere:
@@ -148,7 +155,7 @@ that writes its own rows takes the provisioned source. `SeededArchive` gives one
 | Interfaces                        | I-prefix                       | `IDataProvider`                  |
 | Private fields                    | `_camelCase`                   | `_dataProvider`                  |
 | Class instance fields             | `_className` (no abbreviation) | `_trendViewer`, `_dataProvider`  |
-| Constants                         | PascalCase                     | `MaxPenCount`                    |
+| Constants                         | PascalCase, including local `const` | `MaxPenCount`                |
 | Local variables                   | camelCase                      | `penIndex`                       |
 
 No abbreviations in names.

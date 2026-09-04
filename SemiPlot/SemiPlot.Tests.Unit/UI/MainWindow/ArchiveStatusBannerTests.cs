@@ -1,5 +1,4 @@
-﻿using System.ComponentModel;
-using System.Reactive.Subjects;
+﻿using System.Reactive.Subjects;
 
 using Avalonia.Headless.XUnit;
 
@@ -118,7 +117,7 @@ public sealed class ArchiveStatusBannerTests
 	private static List<T> Observe<T>(MainWindowViewModel viewModel, string propertyName, Func<T> read)
 	{
 		var observed = new List<T>();
-		((INotifyPropertyChanged)viewModel).PropertyChanged += (_, args) =>
+		viewModel.PropertyChanged += (_, args) =>
 		{
 			if (args.PropertyName == propertyName)
 			{

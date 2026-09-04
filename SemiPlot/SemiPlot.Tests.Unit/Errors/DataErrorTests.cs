@@ -27,13 +27,13 @@ public sealed class DataErrorTests
 	[InlineData(ConnectionFileProblem.UnknownTimeZone)]
 	public void ConnectionFileErrorKeepsItsDiscriminator(ConnectionFileProblem kind)
 	{
-		const string reason = "source_time_zone is blank";
+		const string Reason = "source_time_zone is blank";
 
-		var error = new ConnectionFileError(ConnectionFilePath, kind, reason);
+		var error = new ConnectionFileError(ConnectionFilePath, kind, Reason);
 
 		error.Path.Should().Be(ConnectionFilePath);
 		error.Kind.Should().Be(kind);
-		error.Reason.Should().Be(reason);
+		error.Reason.Should().Be(Reason);
 		error.Message.Should().Contain(ConnectionFilePath);
 	}
 

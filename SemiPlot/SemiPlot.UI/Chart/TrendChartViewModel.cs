@@ -27,7 +27,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	private readonly TrendCoordinator _coordinator;
 	private readonly ChartCursorReader _cursorReader;
 	private readonly ChartDeltaCursorReader _deltaCursorReader;
-	private readonly CompositeDisposable _disposables = new();
+	private readonly CompositeDisposable _disposables = [];
 	private readonly Dictionary<int, PenHistoryEnvelope> _envelopesById = [];
 	private readonly ChartHistoryRequestDebouncer _historyDebouncer;
 	private readonly Dictionary<int, TrendPenState> _pensById = [];
@@ -37,11 +37,6 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	private readonly Dictionary<int, PenScale> _scalesByPenId = [];
 	private readonly Dictionary<int, PenScaleSettings> _settingsById = [];
-
-	private int _activePenId;
-	private DateTime? _cursorTime;
-	private IReadOnlyDictionary<int, double?> _cursorValues = new Dictionary<int, double?>();
-	private DeltaReadout? _deltaReadout;
 	private readonly Subject<Unit> _historyApplied = new();
 	private bool _isDisposed;
 	// Decimation width of every history query, in columns: the last width the render seam reported. The
@@ -86,8 +81,8 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	public int ActivePenId
 	{
-		get => _activePenId;
-		private set => this.RaiseAndSetIfChanged(ref _activePenId, value);
+		get;
+		private set => this.RaiseAndSetIfChanged(ref field, value);
 	}
 
 	public ChartNavigationController Navigation { get; } = new();
@@ -106,21 +101,21 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	public int ScalesRevision { get; private set; }
 
 	public IYAxis? ActivePenAxis =>
-		_settingsById.TryGetValue(_activePenId, out var settings)
+		_settingsById.TryGetValue(ActivePenId, out var settings)
 			? _axisBinder.FindAxis(settings.AxisKey)
 			: null;
 
 	public DateTime? CursorTime
 	{
-		get => _cursorTime;
-		private set => this.RaiseAndSetIfChanged(ref _cursorTime, value);
+		get;
+		private set => this.RaiseAndSetIfChanged(ref field, value);
 	}
 
 	public IReadOnlyDictionary<int, double?> CursorValues
 	{
-		get => _cursorValues;
-		private set => this.RaiseAndSetIfChanged(ref _cursorValues, value);
-	}
+		get;
+		private set => this.RaiseAndSetIfChanged(ref field, value);
+	} = new Dictionary<int, double?>();
 
 	public bool IsDeltaModeEnabled => _deltaCursorReader.IsEnabled;
 
@@ -135,15 +130,15 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	public DeltaReadout? DeltaReadout
 	{
-		get => _deltaReadout;
+		get;
 		private set
 		{
-			this.RaiseAndSetIfChanged(ref _deltaReadout, value);
+			this.RaiseAndSetIfChanged(ref field, value);
 			this.RaisePropertyChanged(nameof(DeltaReadoutText));
 		}
 	}
 
-	public string DeltaReadoutText => ChartDeltaCursorReader.FormatReadout(_deltaReadout);
+	public string DeltaReadoutText => ChartDeltaCursorReader.FormatReadout(DeltaReadout);
 
 	public void Dispose()
 	{
@@ -215,7 +210,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_pensById.Add(pen.PenId, state);
 		_settingsById.Add(pen.PenId, new PenScaleSettings(pen.PenId, pen.Group));
 
-		if (_activePenId == 0)
+		if (ActivePenId == 0)
 		{
 			ActivePenId = pen.PenId;
 		}
@@ -238,7 +233,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_settingsById.Remove(penId);
 		_envelopesById.Remove(penId);
 
-		if (_activePenId == penId)
+		if (ActivePenId == penId)
 		{
 			ActivePenId = _pensById.Keys.FirstOrDefault();
 		}
@@ -342,7 +337,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		}
 
 		_deltaCursorReader.Place(cursorTime);
-		DeltaReadout = _deltaCursorReader.Measure(_activePenId);
+		DeltaReadout = _deltaCursorReader.Measure(ActivePenId);
 	}
 
 	public bool AutoscaleAxis(int penId)
@@ -478,9 +473,9 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		}
 
 		var scales = _scaleModel.Compute(
-			_settingsById.Values.ToArray(),
+			[.. _settingsById.Values],
 			_envelopesById,
-			_activePenId,
+			ActivePenId,
 			_windowStart,
 			_windowEnd);
 

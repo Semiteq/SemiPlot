@@ -1,4 +1,5 @@
-﻿using System.Reactive.Concurrency;
+﻿using System.Globalization;
+using System.Reactive.Concurrency;
 using System.Reactive.Disposables;
 
 using FluentResults;
@@ -17,14 +18,12 @@ namespace SemiPlot.UI.Minimap;
 public sealed class MinimapViewModel : ReactiveObject, IDisposable
 {
 	private readonly TrendCoordinator _coordinator;
-	private readonly CompositeDisposable _disposables = new();
+	private readonly CompositeDisposable _disposables = [];
 	private readonly ILogger<MinimapViewModel> _logger;
 	private readonly ChartNavigationController _navigation;
 	private readonly IScheduler _uiScheduler;
 
 	private bool _isDisposed;
-	private double _windowStartFraction;
-	private double _windowWidthFraction = 1.0;
 
 	public MinimapViewModel(
 		TrendCoordinator coordinator,
@@ -53,15 +52,15 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 
 	public double WindowStartFraction
 	{
-		get => _windowStartFraction;
-		private set => this.RaiseAndSetIfChanged(ref _windowStartFraction, value);
+		get;
+		private set => this.RaiseAndSetIfChanged(ref field, value);
 	}
 
 	public double WindowWidthFraction
 	{
-		get => _windowWidthFraction;
-		private set => this.RaiseAndSetIfChanged(ref _windowWidthFraction, value);
-	}
+		get;
+		private set => this.RaiseAndSetIfChanged(ref field, value);
+	} = 1.0;
 
 	public void Dispose()
 	{
@@ -131,7 +130,7 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 
 	private static string FormatEndpoint(DateTime utc)
 	{
-		return utc.ToLocalTime().ToString("MMM d HH:mm");
+		return utc.ToLocalTime().ToString("MMM d HH:mm", CultureInfo.CurrentCulture);
 	}
 
 	private void OnNavigationWindowChanged(object? sender, NavigationWindow window)

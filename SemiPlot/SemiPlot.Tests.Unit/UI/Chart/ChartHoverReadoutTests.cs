@@ -1,4 +1,6 @@
-﻿using AwesomeAssertions;
+﻿using System.Globalization;
+
+using AwesomeAssertions;
 
 using ScottPlot;
 
@@ -60,7 +62,7 @@ public sealed class ChartHoverReadoutTests
 	{
 		var values = new Dictionary<int, double?>();
 
-		var content = ChartHoverReadout.BuildContent(_cursor, values, Array.Empty<TrendPenState>());
+		var content = ChartHoverReadout.BuildContent(_cursor, values, []);
 
 		content.Should().Be(LocalTimestamp(_cursor));
 	}
@@ -93,7 +95,7 @@ public sealed class ChartHoverReadoutTests
 
 	private static string LocalTimestamp(DateTime cursorUtc)
 	{
-		return cursorUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+		return cursorUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture);
 	}
 
 	private static TrendPenState CreatePen(int projectVarId, string name)

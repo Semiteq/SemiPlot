@@ -11,7 +11,7 @@ is remains in `scada-archive.md`; what SemiPlot reads from it remains in `data-i
 | Database, roles, grants, default-privileges chain, `semiplot_tags`, `public.trends` with `tpdefault` | `semibase bench` (`github.com/Semiteq/SemiBase`), carried in the bench image |
 | The daily partitions and the rows | `SemiPlot.Tools.ArchiveSeeder`, connected as `scada_writer` |
 | The moving live edge of a demo archive | `SemiPlot.Tools.ArchiveSeeder --follow`, connected as `scada_writer` |
-| Template build, the clones, teardown | `SemiPlot.Tests.Integration/Integration` |
+| Template build, the clones, teardown | `SemiPlot.Tests.Integration` |
 
 The archive table is the provisioner's, not this repository's: nothing here transcribes the vendor's
 DDL. The seeder creates the day partitions its rows land in and nothing else, and never destroys.

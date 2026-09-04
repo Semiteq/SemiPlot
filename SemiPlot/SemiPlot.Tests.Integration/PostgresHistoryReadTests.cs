@@ -498,9 +498,7 @@ public sealed class PostgresHistoryReadTests(
 	// gap column, so one series carries the count and the straddling test checks the other two agree.
 	private static IReadOnlyList<int> GapColumnIndices(PenHistoryEnvelope envelope)
 	{
-		return Enumerable.Range(0, envelope.Timestamps.Count)
-			.Where(index => double.IsNaN(envelope.Center[index]))
-			.ToArray();
+		return [.. Enumerable.Range(0, envelope.Timestamps.Count).Where(index => double.IsNaN(envelope.Center[index]))];
 	}
 
 	// Each pen's rows inside the window, led by the row the statement's seed branch finds before it. A pen
@@ -636,21 +634,17 @@ public sealed class PostgresHistoryReadTests(
 
 	private static IReadOnlyList<DateTime> ExpectedUtc(IEnumerable<DateTime> archiveLocal)
 	{
-		return archiveLocal.Select(_timeConverter.ToUtc).ToArray();
+		return [.. archiveLocal.Select(_timeConverter.ToUtc)];
 	}
 
 	private static IReadOnlyList<ArchiveRow> GenerateSeededRawRows()
 	{
-		return RawLayerGenerator.Generate(ArchiveTemplate.Slice)
-			.Where(row => row.Layer == ArchiveRow.RawLayer)
-			.ToArray();
+		return [.. RawLayerGenerator.Generate(ArchiveTemplate.Slice).Where(row => row.Layer == ArchiveRow.RawLayer)];
 	}
 
 	private static IReadOnlyList<int> SelectSeededPenIds()
 	{
-		return RawLayerGenerator.SelectPens(ArchiveTemplate.Slice.PenCount)
-			.Select(pen => pen.PenId)
-			.ToArray();
+		return [.. RawLayerGenerator.SelectPens(ArchiveTemplate.Slice.PenCount).Select(pen => pen.PenId)];
 	}
 
 	// The archive's naive local wall clock, the vocabulary the seeder writes in.

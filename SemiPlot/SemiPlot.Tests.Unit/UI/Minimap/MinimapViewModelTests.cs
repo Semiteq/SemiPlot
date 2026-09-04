@@ -1,4 +1,5 @@
-﻿using System.Reactive.Concurrency;
+﻿using System.Globalization;
+using System.Reactive.Concurrency;
 
 using Avalonia.Headless.XUnit;
 
@@ -69,8 +70,8 @@ public sealed class MinimapViewModelTests
 
 		await viewModel.LoadExtentAsync();
 
-		viewModel.ExtentFirstLabel.Should().Be(_extentFirst.ToLocalTime().ToString("MMM d HH:mm"));
-		viewModel.ExtentLastLabel.Should().Be(_extentLast.ToLocalTime().ToString("MMM d HH:mm"));
+		viewModel.ExtentFirstLabel.Should().Be(_extentFirst.ToLocalTime().ToString("MMM d HH:mm", CultureInfo.CurrentCulture));
+		viewModel.ExtentLastLabel.Should().Be(_extentLast.ToLocalTime().ToString("MMM d HH:mm", CultureInfo.CurrentCulture));
 	}
 
 	[AvaloniaFact]

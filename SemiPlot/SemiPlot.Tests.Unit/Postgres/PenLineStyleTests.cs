@@ -16,7 +16,7 @@ public sealed class PenLineStyleTests
 	[Fact]
 	public void TheOrdinalsAreTheValuesTheCatalogueStores()
 	{
-		((short)PenLineStyle.Interpolated).Should().Be((short)0);
-		((short)PenLineStyle.Stepped).Should().Be((short)1);
+		((short)PenLineStyle.Interpolated).Should().Be(0);
+		((short)PenLineStyle.Stepped).Should().Be(1);
 	}
 }

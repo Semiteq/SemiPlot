@@ -222,7 +222,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 		await poll.ReadOnceAsync(cancellationToken);
 		seen.Add(poll.LastSeen);
 
-		seen.Should().Equal(new DateTime?[] { _seededLast, first, first, second });
+		seen.Should().Equal([_seededLast, first, first, second]);
 	}
 
 	// Renamed rather than dropped: the container is shared. The tick after recovery must report nothing.
@@ -284,7 +284,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 			cancellationToken);
 	}
 
-	private RealtimePoll NewPoll(IServiceProvider services)
+	private static RealtimePoll NewPoll(IServiceProvider services)
 	{
 		return new RealtimePoll(
 			services.GetRequiredService<NpgsqlDataSource>(),

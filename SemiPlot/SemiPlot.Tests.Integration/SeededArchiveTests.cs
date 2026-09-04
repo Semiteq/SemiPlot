@@ -132,7 +132,7 @@ public sealed class SeededArchiveTests(PostgresContainerFixture postgresContaine
 	{
 		var expected = RawLayerGenerator.SelectPens(ArchiveTemplate.Slice.PenCount)
 			.Select(pen => (pen.PenId, pen.Name))
-			.OrderBy(pen => pen.Item1)
+			.OrderBy(pen => pen.PenId)
 			.ToArray();
 
 		(await TagsAsync(seededArchive.Database.ReaderConnectionString)).Should().Equal(expected);
@@ -177,7 +177,7 @@ public sealed class SeededArchiveTests(PostgresContainerFixture postgresContaine
 		second.Should().Be(pens.Count);
 
 		(await TagsAsync(database.AdminConnectionString)).Should().Equal(
-			renamed.Select(pen => (pen.PenId, pen.Name)).OrderBy(tag => tag.Item1).ToArray());
+			[.. renamed.Select(pen => (pen.PenId, pen.Name)).OrderBy(tag => tag.PenId)]);
 	}
 
 	// The seeder through its own entry point, against a database that already carries an archive.
@@ -228,11 +228,10 @@ public sealed class SeededArchiveTests(PostgresContainerFixture postgresContaine
 	{
 		var rawRows = RawLayerGenerator.Generate(ArchiveTemplate.Slice);
 
-		return rawRows.Concat(LayerThinner.ThinAll(rawRows))
+		return [.. rawRows.Concat(LayerThinner.ThinAll(rawRows))
 			.GroupBy(row => row.Layer)
 			.OrderBy(layer => layer.Key)
-			.Select(layer => (layer.Key, layer.LongCount()))
-			.ToArray();
+			.Select(layer => (layer.Key, layer.LongCount()))];
 	}
 
 	private async Task<ArchiveRow> FirstRawRowAsync()

@@ -22,7 +22,7 @@ namespace SemiPlot.DataSource.Postgres;
 /// configured variables, <see cref="QueryArchiveExtentAsync"/> the span they cover, <see cref="QueryHistoryAsync"/>
 /// a window of one layer and <see cref="Subscribe"/> the live edge, all crossing the boundary in UTC.
 /// </summary>
-public sealed class PostgresDataProvider : IDataProvider
+public sealed class PostgresDataProvider : IDataProvider, IDisposable
 {
 	private readonly NpgsqlDataSource _dataSource;
 	private readonly ArchiveTimeConverter _timeConverter;
@@ -31,7 +31,13 @@ public sealed class PostgresDataProvider : IDataProvider
 	private readonly IScheduler _scheduler;
 	private readonly ILogger<PostgresDataProvider> _logger;
 
-	private readonly Subject<ArchiveConnectionState> _connectionFaults = new();
+	private readonly Subject<ArchiveConnectionState> _connectionFaultsSource = new();
+
+	// PollAsync's OnNext and Dispose's OnCompleted run on different threads; Synchronize() serializes them,
+	// as System.Reactive's contract for a multi-writer Subject requires.
+	private readonly ISubject<ArchiveConnectionState> _connectionFaults;
+
+	private int _disposed;
 
 	internal PostgresDataProvider(
 		NpgsqlDataSource dataSource,
@@ -47,6 +53,7 @@ public sealed class PostgresDataProvider : IDataProvider
 		_settings = settings;
 		_scheduler = scheduler;
 		_logger = logger;
+		_connectionFaults = Subject.Synchronize(_connectionFaultsSource);
 	}
 
 	/// <summary>
@@ -165,6 +172,22 @@ public sealed class PostgresDataProvider : IDataProvider
 		}
 	}
 
+	/// <summary>
+	/// Completes <see cref="ConnectionFaults"/>; the container disposes the singleton provider.
+	/// </summary>
+	public void Dispose()
+	{
+		if (Interlocked.Exchange(ref _disposed, 1) != 0)
+		{
+			return;
+		}
+
+		// The raw subject is never disposed: PollAsync keeps writing OnNext after Dispose returns (its
+		// loop is not cancelled here), and OnNext on a disposed Subject<T> throws where OnNext after
+		// OnCompleted is a silent no-op. Subject<T> holds no unmanaged resource, so completing it is enough.
+		_connectionFaults.OnCompleted();
+	}
+
 	private async Task PollAsync(
 		int[] penIds,
 		IObserver<IReadOnlyList<Sample>> observer,
@@ -243,7 +266,7 @@ public sealed class PostgresDataProvider : IDataProvider
 		command.Parameters.Add(new NpgsqlParameter("to", NpgsqlDbType.Timestamp) { Value = toLocal });
 	}
 
-	private async Task<IReadOnlyList<HistoryRowFold.Row>> ReadWindowAsync(
+	private static async Task<IReadOnlyList<HistoryRowFold.Row>> ReadWindowAsync(
 		NpgsqlConnection connection,
 		int[] penIds,
 		DateTime fromLocal,
@@ -266,7 +289,7 @@ public sealed class PostgresDataProvider : IDataProvider
 		return rows;
 	}
 
-	private async Task<IReadOnlyList<HistoryRowFold.Row>> FillFreshTailAsync(
+	private static async Task<IReadOnlyList<HistoryRowFold.Row>> FillFreshTailAsync(
 		NpgsqlConnection connection,
 		int[] penIds,
 		DateTime fromLocal,

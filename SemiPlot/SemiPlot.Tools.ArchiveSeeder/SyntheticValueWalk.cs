@@ -6,7 +6,7 @@ public static class SyntheticValueWalk
 	{
 		var normalized = Normalized(seed, penId, tickIndex);
 
-		return minValue + normalized * (maxValue - minValue);
+		return minValue + (normalized * (maxValue - minValue));
 	}
 
 	// Two decorrelated sine waves plus hash jitter, so the signal looks process-like yet stays a
@@ -18,15 +18,15 @@ public static class SyntheticValueWalk
 		var slowPhase = (penHash & 0xFFFF) / 65535.0 * (2.0 * Math.PI);
 		var fastPhase = ((penHash >> 16) & 0xFFFF) / 65535.0 * (2.0 * Math.PI);
 
-		var slowPeriod = 64.0 + (penHash >> 32 & 0xFF);
-		var fastPeriod = 7.0 + (penHash >> 40 & 0x1F);
+		var slowPeriod = 64.0 + ((penHash >> 32) & 0xFF);
+		var fastPeriod = 7.0 + ((penHash >> 40) & 0x1F);
 
-		var slow = Math.Sin(2.0 * Math.PI * tickIndex / slowPeriod + slowPhase);
-		var fast = Math.Sin(2.0 * Math.PI * tickIndex / fastPeriod + fastPhase);
+		var slow = Math.Sin((2.0 * Math.PI * tickIndex / slowPeriod) + slowPhase);
+		var fast = Math.Sin((2.0 * Math.PI * tickIndex / fastPeriod) + fastPhase);
 
 		var jitter = ToUnitInterval(Hash((long)penHash, tickIndex)) - 0.5;
 
-		var combined = 0.6 * slow + 0.25 * fast + 0.15 * (2.0 * jitter);
+		var combined = (0.6 * slow) + (0.25 * fast) + (0.15 * (2.0 * jitter));
 
 		return Math.Clamp((combined + 1.0) / 2.0, 0.0, 1.0);
 	}
@@ -47,7 +47,7 @@ public static class SyntheticValueWalk
 	{
 		unchecked
 		{
-			var value = (ulong)left * 0x9E3779B97F4A7C15UL ^ (ulong)right + 0x7F4A7C159E3779B9UL;
+			var value = ((ulong)left * 0x9E3779B97F4A7C15UL) ^ ((ulong)right + 0x7F4A7C159E3779B9UL);
 			value ^= value >> 30;
 			value *= 0xBF58476D1CE4E5B9UL;
 			value ^= value >> 27;

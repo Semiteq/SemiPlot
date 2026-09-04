@@ -10,32 +10,22 @@ using SemiPlot.Core.Trends;
 
 namespace SemiPlot.Tests.Unit.UI.Bridge;
 
-internal sealed class FakeDataProvider : IDataProvider
+internal sealed class FakeDataProvider(
+	IScheduler scheduler,
+	TimeSpan realtimeInterval,
+	IReadOnlyList<Pen>? pens = null) : IDataProvider
 {
 	// The default last-column center value an unoverridden layer returns; tests assert against this.
 	public const double DefaultCenter = 2.0;
 	// A deterministic epoch: tests assert batch structure and dispatch, not a history-to-realtime join.
 	private static readonly DateTime _realtimeEpoch = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-	private readonly TimeSpan _realtimeInterval;
+	private readonly TimeSpan _realtimeInterval = realtimeInterval;
 
-	private readonly IScheduler _scheduler;
+	private readonly IScheduler _scheduler = scheduler;
 
 	// Hot and never completed, like the real provider's. A test pushes into it through ReportConnectionState
 	// instead of waiting for a tick that this fake never runs.
 	private readonly Subject<ArchiveConnectionState> _connectionFaults = new();
-
-	// pens overrides the two-pen default catalogue. An empty list is the commissioned-but-unfilled
-	// semiplot_tags a real server answers with, which is a successful read and not a failure.
-	public FakeDataProvider(IScheduler scheduler, TimeSpan realtimeInterval, IReadOnlyList<Pen>? pens = null)
-	{
-		_scheduler = scheduler;
-		_realtimeInterval = realtimeInterval;
-		Pens = pens ??
-		[
-			new Pen(1, "Pen 1", "Group A", "#ff0000"),
-			new Pen(2, "Pen 2", "Group A", "#00ff00")
-		];
-	}
 
 	public DateTime ArchiveFirstUtc { get; set; } = new(2025, 12, 25, 0, 0, 0, DateTimeKind.Utc);
 
@@ -90,7 +80,11 @@ internal sealed class FakeDataProvider : IDataProvider
 
 	public int? LastQueriedTargetColumnCount { get; private set; }
 
-	public IReadOnlyList<Pen> Pens { get; }
+	public IReadOnlyList<Pen> Pens { get; } = pens ??
+		[
+			new Pen(1, "Pen 1", "Group A", "#ff0000"),
+			new Pen(2, "Pen 2", "Group A", "#00ff00")
+		];
 
 	// Off by default: every pen shares one timestamp per tick. Set, each pen's sample offsets by its own
 	// position, matching the real archive's per-variable, change-based delivery, where two variables rarely
@@ -112,14 +106,13 @@ internal sealed class FakeDataProvider : IDataProvider
 
 		return Observable
 			.Interval(_realtimeInterval, _scheduler)
-			.Select(tick => (IReadOnlyList<Sample>)subscribed
+			.Select(tick => (IReadOnlyList<Sample>)[.. subscribed
 				.Select((id, index) => new Sample(
 					id,
 					_realtimeEpoch
 					+ TimeSpan.FromTicks(_realtimeInterval.Ticks * (tick + 1))
 					+ (StaggerRealtimeTimestamps ? TimeSpan.FromMilliseconds(index) : TimeSpan.Zero),
-					id + tick))
-				.ToArray());
+					id + tick))]);
 	}
 
 	public Task<Result<IReadOnlyList<Pen>>> QueryPensAsync()

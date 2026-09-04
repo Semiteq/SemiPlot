@@ -25,7 +25,7 @@ public sealed class ArchiveTimeConverterTests
 	[Fact]
 	public void AConverterWithoutAZoneIsRejected()
 	{
-		Action act = () => new ArchiveTimeConverter(null!);
+		Action act = () => _ = new ArchiveTimeConverter(null!);
 
 		act.Should().Throw<ArgumentNullException>();
 	}

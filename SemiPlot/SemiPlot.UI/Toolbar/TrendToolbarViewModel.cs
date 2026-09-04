@@ -13,13 +13,10 @@ namespace SemiPlot.UI.Toolbar;
 public sealed class TrendToolbarViewModel : ReactiveObject, IDisposable
 {
 	private readonly TrendChartViewModel _chartViewModel;
-	private readonly CompositeDisposable _disposables = new();
+	private readonly CompositeDisposable _disposables = [];
 
 	private AggregationLayer _activeLayer;
-	private bool _isDeltaModeEnabled;
 	private bool _isSticky;
-	private double _manualMax = 1.0;
-	private double _manualMin;
 
 	public TrendToolbarViewModel(TrendChartViewModel chartViewModel)
 	{
@@ -30,7 +27,7 @@ public sealed class TrendToolbarViewModel : ReactiveObject, IDisposable
 		_disposables.Add(AutoscaleActiveAxisCommand = ReactiveCommand.Create(
 			() => { _chartViewModel.AutoscaleAxis(_chartViewModel.ActivePenId); }));
 		_disposables.Add(SetActiveAxisLimitsCommand = ReactiveCommand.Create(
-			() => { _chartViewModel.SetAxisLimits(_chartViewModel.ActivePenId, _manualMin, _manualMax); }));
+			() => { _chartViewModel.SetAxisLimits(_chartViewModel.ActivePenId, ManualMin, ManualMax); }));
 		_disposables.Add(JumpToNowCommand = ReactiveCommand.Create(_chartViewModel.Navigation.JumpToNow));
 		_disposables.Add(ToggleStickyCommand = ReactiveCommand.Create(
 			() => _chartViewModel.Navigation.SetSticky(!_chartViewModel.Navigation.IsSticky)));
@@ -68,15 +65,15 @@ public sealed class TrendToolbarViewModel : ReactiveObject, IDisposable
 
 	public double ManualMin
 	{
-		get => _manualMin;
-		set => this.RaiseAndSetIfChanged(ref _manualMin, value);
+		get;
+		set => this.RaiseAndSetIfChanged(ref field, value);
 	}
 
 	public double ManualMax
 	{
-		get => _manualMax;
-		set => this.RaiseAndSetIfChanged(ref _manualMax, value);
-	}
+		get;
+		set => this.RaiseAndSetIfChanged(ref field, value);
+	} = 1.0;
 
 	public bool IsSticky
 	{
@@ -86,8 +83,8 @@ public sealed class TrendToolbarViewModel : ReactiveObject, IDisposable
 
 	public bool IsDeltaModeEnabled
 	{
-		get => _isDeltaModeEnabled;
-		private set => this.RaiseAndSetIfChanged(ref _isDeltaModeEnabled, value);
+		get;
+		private set => this.RaiseAndSetIfChanged(ref field, value);
 	}
 
 	public string DeltaReadoutText => _chartViewModel.DeltaReadoutText;

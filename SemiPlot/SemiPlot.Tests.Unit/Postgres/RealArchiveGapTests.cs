@@ -142,7 +142,7 @@ public sealed class RealArchiveGapTests
 	{
 		// The fold takes rows in the order the windowed statement produces them, ORDER BY id, t, and one
 		// pen at a time is one consecutive ascending run.
-		return RealArchiveFixture.RawRows.Where(row => row.Id == pen).OrderBy(row => row.Timestamp).ToArray();
+		return [.. RealArchiveFixture.RawRows.Where(row => row.Id == pen).OrderBy(row => row.Timestamp)];
 	}
 
 	private static PenHistoryEnvelope FoldOf(IReadOnlyList<ArchiveRow> rows)

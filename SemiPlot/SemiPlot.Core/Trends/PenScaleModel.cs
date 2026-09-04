@@ -21,7 +21,7 @@ public sealed class PenScaleModel
 		{
 			if (!axisGroups.TryGetValue(setting.AxisKey, out var members))
 			{
-				members = new List<PenScaleSettings>();
+				members = [];
 				axisGroups[setting.AxisKey] = members;
 				axisOrder.Add(setting.AxisKey);
 			}
@@ -52,9 +52,9 @@ public sealed class PenScaleModel
 		var isLogarithmic = members.Any(member => member.IsLogarithmic);
 		var mode = members[0].Mode;
 
-		var range = ComputeRange(members, envelopes, windowStart, windowEnd, mode, isLogarithmic);
+		var (min, max) = ComputeRange(members, envelopes, windowStart, windowEnd, mode, isLogarithmic);
 
-		return new PenScale(axisKey, penIds, range.Min, range.Max, mode, isActive, isVisible, isLogarithmic);
+		return new PenScale(axisKey, penIds, min, max, mode, isActive, isVisible, isLogarithmic);
 	}
 
 	private static (double Min, double Max) ComputeRange(

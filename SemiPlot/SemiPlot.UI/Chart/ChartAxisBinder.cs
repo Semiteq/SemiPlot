@@ -7,15 +7,10 @@ namespace SemiPlot.UI.Chart;
 // Each axis key owns exactly one IYAxis (the first key reuses the plot's built-in left axis); every pen
 // sharing that key is assigned the same IYAxis. The bottom (time) axis is shared by all plottables and
 // is never replaced here, preserving the shared-X invariant.
-public sealed class ChartAxisBinder
+public sealed class ChartAxisBinder(Plot plot)
 {
 	private readonly Dictionary<string, IYAxis> _axesByKey = [];
-	private readonly Plot _plot;
-
-	public ChartAxisBinder(Plot plot)
-	{
-		_plot = plot;
-	}
+	private readonly Plot _plot = plot;
 
 	public IReadOnlyDictionary<string, IYAxis> AxesByKey => _axesByKey;
 

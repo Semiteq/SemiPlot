@@ -111,7 +111,7 @@ public sealed class TrendNavigationModel
 		From = now - width;
 	}
 
-	private (DateTime From, DateTime To) ClampWidth(DateTime from, DateTime to)
+	private static (DateTime From, DateTime To) ClampWidth(DateTime from, DateTime to)
 	{
 		var width = ClampWidthSpan(to - from);
 

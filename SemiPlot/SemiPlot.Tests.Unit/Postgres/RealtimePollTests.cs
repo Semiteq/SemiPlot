@@ -137,15 +137,15 @@ public sealed class RealtimePollTests
 	[InlineData(ArchiveStatements.RealtimePoll)]
 	public void ATicksStatementCarriesItsOwnBoundAndNotTheDataSourceBackstop(string statementText)
 	{
-		const int tickBoundSeconds = 10;
-		const int dataSourceBackstopSeconds = 300;
+		const int TickBoundSeconds = 10;
+		const int DataSourceBackstopSeconds = 300;
 
 		using var connection = new NpgsqlConnection();
 
 		using var command = RealtimePoll.CreateTickCommand(statementText, connection);
 
-		command.CommandTimeout.Should().Be(tickBoundSeconds);
-		(command.CommandTimeout < dataSourceBackstopSeconds).Should().BeTrue();
+		command.CommandTimeout.Should().Be(TickBoundSeconds);
+		(command.CommandTimeout < DataSourceBackstopSeconds).Should().BeTrue();
 	}
 
 	[Fact]

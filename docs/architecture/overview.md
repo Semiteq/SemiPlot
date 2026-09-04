@@ -29,15 +29,15 @@ Constraint: **$0 budget** — only free/OSS components.
 
 > Version note: SemiPlot pins **Avalonia 12.0.5** with `ScottPlot.Avalonia` 5.1.59 (which depends on
 > Avalonia 12.0.0) and `ReactiveUI.Avalonia` 12.0.3 — the pairing the sibling repository `SemiStep`
-> already ships. All three test projects sit on `xunit.v3` 3.2.2 and all three target plain
-> `net10.0`; what keeps them separate is the dependency graph and the skip policy, not the target
-> framework (`testing-strategy.md`).
+> already ships. Both test projects sit on `xunit.v3` 3.2.2 and both target plain
+> `net10.0`; what keeps them separate is the dependency graph, not the target framework
+> (`testing-strategy.md`).
 > `SemiPlot.UI` references `Avalonia.HarfBuzz` 12.0.5 and `App.BuildAvaloniaApp` calls `UseHarfBuzz()`
 > between `UseSkia()` and `UseReactiveUI()`. The chain names the platform itself
 > (`UseWin32().UseSkia()`) rather than calling `UsePlatformDetect()`, and Skia brings no text shaper, so
 > without that call `AppBuilder.Setup` throws "No text shaping system configured" before any window
 > exists. The headless platform registers a shaper of its own, which is why no headless test reaches
-> that path; `SemiPlot.Tests/UI/Startup/AppBuilderCompositionTests` reads the composed builder back and
+> that path; `SemiPlot.Tests.Unit/UI/Startup/AppBuilderCompositionTests` reads the composed builder back and
 > pins all three subsystems instead.
 
 ## Components
@@ -72,9 +72,10 @@ Constraint: **$0 budget** — only free/OSS components.
 
 The UI never talks to a data source directly; it depends only on `IDataProvider`
 (see [data-integration.md](./data-integration.md)). The composition root resolves the PostgreSQL
-provider, which is the only one the application ships; an archive that does not answer opens an error
-window rather than falling back to invented data. There is **no web bridge**: the chart is a native
-ScottPlot control, fed in-process by `TrendCoordinator` over `IObservable`/awaitable seams.
+provider, which is the only one the application ships; an archive that does not answer shows the
+startup failure in the main window rather than falling back to invented data. There is **no web
+bridge**: the chart is a native ScottPlot control, fed in-process by `TrendCoordinator` over
+`IObservable`/awaitable seams.
 
 ## Data flow
 
@@ -100,8 +101,8 @@ ScottPlot control, fed in-process by `TrendCoordinator` over `IObservable`/await
   in `C:\DISTR\Config\SemiPlot`, logs in `C:\DISTR\Logs\SemiPlot\`. Neither sits beside the
   executable and neither is per-user.
 - The connection file `C:\DISTR\Config\SemiPlot\archive-connection.yaml` is required. An
-  installation without one opens the startup error window instead of a chart — the startup path is in
-  [data-integration.md](./data-integration.md).
+  installation without one shows the startup failure in the main window instead of a chart — the
+  startup path is in [data-integration.md](./data-integration.md).
 
 ### Command line
 
@@ -118,7 +119,7 @@ directory that cannot be created disables file logging and leaves the console si
 failing the start; that is the file sink's own fallback.
 
 The process exits `0` when the main window opened and closed normally, and `1` when the start failed —
-the error window and the fatal catch alike — so a launcher can tell one from the other.
+the startup failure and the fatal catch alike — so a launcher can tell one from the other.
 
 ## Scope status
 

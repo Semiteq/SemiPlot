@@ -1,0 +1,190 @@
+﻿using AwesomeAssertions;
+
+using Npgsql;
+
+using SemiPlot.Tools.ArchiveSeeder;
+
+using Xunit;
+
+namespace SemiPlot.Tests.Integration;
+
+// What the transaction owns is what it creates: the day partitions and the rows.
+[Collection(ArchiveDatabaseCollection.Name)]
+[Trait("Component", "Core")]
+[Trait("Area", "Data")]
+[Trait("Category", "Integration")]
+public sealed class ArchiveWriterTransactionTests(PostgresContainerFixture postgresContainerFixture)
+	: ClonedArchiveTest(postgresContainerFixture, CloneSource.Provisioned)
+{
+	private static readonly DateTime _start = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Unspecified);
+
+	private static readonly DateTime _end = new(2026, 1, 2, 0, 0, 0, DateTimeKind.Unspecified);
+
+	// A day the seeding run does not cover, so a partition created for it can only be the appending
+	// run's own.
+	private static readonly DateTime _laterDay = new(2026, 1, 3, 0, 0, 0, DateTimeKind.Unspecified);
+
+	private const int SeededPenId = 1;
+
+	private const int AppendedPenId = 2;
+
+	private const string DefaultPartition = "tpdefault";
+
+	private const string CountRowsCommand = "SELECT count(*) FROM public.trends;";
+
+	private const string ArchiveExistsCommand = "SELECT to_regclass('public.trends') IS NOT NULL;";
+
+	// What a seeding run leaves behind: rows, or a day partition beside the default one.
+	private const string ArchiveIsSeededCommand = """
+		SELECT EXISTS (SELECT 1 FROM public.trends)
+			OR EXISTS (
+				SELECT 1
+				FROM pg_inherits
+				JOIN pg_class AS partition ON partition.oid = pg_inherits.inhrelid
+				WHERE pg_inherits.inhparent = to_regclass('public.trends')
+					AND partition.relname <> 'tpdefault');
+		""";
+
+	private const string PartitionNamesCommand = """
+		SELECT partition.relname
+		FROM pg_inherits
+		JOIN pg_class AS partition ON partition.oid = pg_inherits.inhrelid
+		WHERE pg_inherits.inhparent = to_regclass('public.trends')
+		ORDER BY partition.relname;
+		""";
+
+	// The COPY carries one primary key twice, so the server rejects it well after the day partitions
+	// were created — a failure part-way through, forced without a race.
+	[Fact]
+	public async Task ACopyThatFailsPartWayLeavesNoArchiveBehind()
+	{
+		var cancellationToken = TestContext.Current.CancellationToken;
+
+		(await ScalarIsTrueAsync(ArchiveExistsCommand, cancellationToken)).Should().BeTrue();
+
+		(await ScalarIsTrueAsync(ArchiveIsSeededCommand, cancellationToken)).Should().BeFalse();
+
+		Func<Task> act = () => Writer()
+			.WriteAsync(DuplicatingRows(_start, SeededPenId), _start, _end, cancellationToken: cancellationToken);
+
+		await act.Should().ThrowAsync<NpgsqlException>();
+
+		(await ScalarIsTrueAsync(ArchiveIsSeededCommand, cancellationToken)).Should().BeFalse(
+			"a failed COPY rolled back the day partitions with it, so neither a row nor a partition may remain.");
+	}
+
+	// The two paths differ in exactly one check, and the appending run's day falls on the partition the
+	// seeding run already created — which is what the IF NOT EXISTS clause has to pass through.
+	[Fact]
+	public async Task TheAppendingRunWritesWhereTheSeedingRunIsRefused()
+	{
+		var cancellationToken = TestContext.Current.CancellationToken;
+
+		var seeded = await WriteSeedRowsAsync(cancellationToken);
+
+		Func<Task> act = () => Writer()
+			.WriteAsync(OrdinaryRows(_start, AppendedPenId), _start, _end, cancellationToken: cancellationToken);
+
+		var refused = (await act.Should().ThrowAsync<SeederException>()).Which;
+
+		refused.Message.Should().Contain("already carries rows");
+
+		var appended = await Writer().WriteAsync(
+			OrdinaryRows(_start, AppendedPenId),
+			_start,
+			_end,
+			allowExistingRows: true,
+			cancellationToken);
+		appended.Should().Be(seeded);
+		(await CountRowsAsync(cancellationToken)).Should().Be(seeded + appended);
+		(await PartitionNamesAsync(cancellationToken)).Should().Equal(
+			[PartitionScript.PartitionName(_start), DefaultPartition]);
+	}
+
+	[Fact]
+	public async Task TheAppendingRunCreatesOnlyTheDaysItsRowsNeed()
+	{
+		var cancellationToken = TestContext.Current.CancellationToken;
+
+		await WriteSeedRowsAsync(cancellationToken);
+
+		await Writer().WriteAsync(
+			OrdinaryRows(_laterDay, SeededPenId),
+			_laterDay,
+			_laterDay.AddDays(1),
+			allowExistingRows: true,
+			cancellationToken);
+		(await PartitionNamesAsync(cancellationToken)).Should().Equal(
+			[PartitionScript.PartitionName(_start), PartitionScript.PartitionName(_laterDay), DefaultPartition]);
+	}
+
+	private async Task<long> WriteSeedRowsAsync(CancellationToken cancellationToken)
+	{
+		var written = await Writer()
+			.WriteAsync(OrdinaryRows(_start, SeededPenId), _start, _end, cancellationToken: cancellationToken);
+
+		return written;
+	}
+
+	private static IReadOnlyList<ArchiveRow> OrdinaryRows(DateTime day, int penId)
+	{
+		return Enumerable
+			.Range(0, 1000)
+			.Select(index => new ArchiveRow(
+				penId,
+				ArchiveRow.RawLayer,
+				day.AddMilliseconds(index * 100),
+				index,
+				ArchiveRow.OrdinaryQuality))
+			.ToArray();
+	}
+
+	private static IReadOnlyList<ArchiveRow> DuplicatingRows(DateTime day, int penId)
+	{
+		var rows = OrdinaryRows(day, penId).ToList();
+
+		rows.Add(rows[0]);
+
+		return rows;
+	}
+
+	private async Task<bool> ScalarIsTrueAsync(string statement, CancellationToken cancellationToken)
+	{
+		return await ScalarAsync(statement, cancellationToken) is true;
+	}
+
+	private async Task<long> CountRowsAsync(CancellationToken cancellationToken)
+	{
+		return (long)(await ScalarAsync(CountRowsCommand, cancellationToken))!;
+	}
+
+	private async Task<object?> ScalarAsync(string statement, CancellationToken cancellationToken)
+	{
+		await using var connection = new NpgsqlConnection(Database.AdminConnectionString);
+
+		await connection.OpenAsync(cancellationToken);
+
+		await using var command = new NpgsqlCommand(statement, connection);
+
+		return await command.ExecuteScalarAsync(cancellationToken);
+	}
+
+	private async Task<IReadOnlyList<string>> PartitionNamesAsync(CancellationToken cancellationToken)
+	{
+		await using var connection = new NpgsqlConnection(Database.AdminConnectionString);
+
+		await connection.OpenAsync(cancellationToken);
+
+		await using var command = new NpgsqlCommand(PartitionNamesCommand, connection);
+		await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+		var names = new List<string>();
+
+		while (await reader.ReadAsync(cancellationToken))
+		{
+			names.Add(reader.GetString(0));
+		}
+
+		return names;
+	}
+}

@@ -7,7 +7,8 @@ public static class Program
 	public static Task<int> Main(string[] arguments)
 	{
 		return SeederCommand.RunAsync(arguments, options => ReportingAsync(() => SeedAsync(options)),
-			options => ReportingAsync(() => FollowAsync(options)));
+			options => ReportingAsync(() => FollowAsync(options)),
+			options => ReportingAsync(() => ConvergeAsync(options)));
 	}
 
 	// A refusal, a server answer or a malformed connection string is the operator's to fix and is printed as
@@ -29,26 +30,14 @@ public static class Program
 
 	private static async Task<int> SeedAsync(SeederOptions options)
 	{
-		var rawRows = RawLayerGenerator.Generate(options);
-		ArchiveRow[] rows = [.. rawRows, .. LayerThinner.ThinAll(rawRows)];
+		var fill = await SeedFiller.FillAsync(options);
 
-		ReportPlan(options, rows);
+		ReportPlan(options, fill.Rows);
 
-		var written = await new ArchiveWriter(options.ConnectionString).WriteAsync(rows, options.Start, options.End);
-
-		Console.WriteLine($"rows written    {written}");
-
-		if (options.AdminConnectionString is null)
-		{
-			Console.WriteLine("tags written    skipped, no --admin-connection");
-
-			return 0;
-		}
-
-		var tags = await new TagCatalogWriter(options.AdminConnectionString)
-			.WriteAsync(RawLayerGenerator.SelectPens(options.PenCount));
-
-		Console.WriteLine($"tags written    {tags}");
+		Console.WriteLine($"rows written    {fill.RowsWritten}");
+		Console.WriteLine(fill.TagsWritten is { } tags
+			? $"tags written    {tags}"
+			: "tags written    skipped, no --admin-connection");
 
 		return 0;
 	}
@@ -136,6 +125,18 @@ public static class Program
 		Console.WriteLine($"pens            {options.PenCount}");
 		Console.WriteLine($"seed            {options.Seed}");
 		Console.WriteLine($"change seconds  {options.ChangeSeconds}");
+	}
+
+	private static async Task<int> ConvergeAsync(ConvergeOptions options)
+	{
+		var result = await Converge.RunAsync(options);
+
+		Console.WriteLine($"database        {result.Database}, ready in {result.ReadinessWait.TotalSeconds:0.#} s");
+		Console.WriteLine($"rows written    {result.RowsWritten}");
+		Console.WriteLine($"tags written    {result.TagsWritten}");
+		Console.WriteLine($"config          {Path.Combine(options.ConfigDirectory, ConnectionFileWriter.FileName)}");
+
+		return 0;
 	}
 
 	private static void ReportPlan(SeederOptions options, IReadOnlyCollection<ArchiveRow> rows)

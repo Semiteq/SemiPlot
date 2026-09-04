@@ -216,13 +216,13 @@ the local machine's, so a clock difference between the two hosts drops or repeat
   ahead of the mapper.
 
 `MainWindowViewModel` renders the state as one row of the archive banner, through
-`StartupFailureMapper.Describe(fault)`; that row has a single writer, the bound stream.
+`ArchiveFailureMapper.Describe(fault)`; that row has a single writer, the bound stream.
 
 ## Error semantics
 
 | Situation | Provider result | What the operator sees |
 | --- | --- | --- |
-| Connection refused or DNS failure at startup | failed `Result` | `ErrorWindow` titled "No connection to the archive", naming the host and port, with a remedy and one **Close** button |
+| Connection refused or DNS failure at startup | failed `Result` | The main window opens with the chart empty and its message panel titled "No connection to the archive", naming the host and port, with a remedy |
 | Connection lost mid-session | failed `Result` on the query; realtime tick dropped | Chart keeps the data it has |
 | Three consecutive realtime ticks fail | `ArchiveFault.ConnectionLost` on `ConnectionFaults`; the observable keeps running | A banner row over the chart, cleared by the first tick that succeeds |
 | A column the read needs is absent (`42703`) | `ArchiveFault.ShapeUnexpected` with the server's detail | "The archive has an unexpected shape" — run `semibase site`, then find what altered the table |
@@ -261,10 +261,9 @@ empty window, an empty `semiplot_tags` — travel in the success channel.
 | `ConnectionLost` | three consecutive failed poll ticks | the number of failures that raised it |
 | `ReadFailed` | any other SQLSTATE, or a client-side throw | the SQLSTATE, or empty |
 
-`StartupFailureMapper` (`SemiPlot.UI/Startup/`) turns each kind into a title, a detail and a remedy,
-and is the one place a remedy is written. `ConnectionLost` never opens the error window; it is a
-banner row over a chart that works. `StartupFailureMapperTests` enumerates both enums and fails when
-a member maps to the catch-all arm.
+`ArchiveFailureMapper` (`SemiPlot.UI/MainWindow/`) turns each kind into a title, a detail and a
+remedy, and is the one place a remedy is written. `ConnectionLost` never opens the startup failure
+panel; it is a banner row over a chart that works.
 
 `57014` maps unconditionally to `QueryTimedOut`: no member of `IDataProvider` takes a
 `CancellationToken`, so no read on the provider path is cancelled by a caller, and a caller's own
@@ -273,8 +272,8 @@ cancellation raises `OperationCanceledException`, which the mapper rethrows.
 ## Configuration
 
 A YAML file named `archive-connection.yaml`, read from `C:\DISTR\Config\SemiPlot` unless
-`--config-dir` names another directory. All keys are required; an absent one is reported, an unknown
-one ignored:
+`--config-dir` names another directory. Every key but `schema` is required; an absent required key is
+reported, an unknown key ignored. `schema` defaults to `public` when absent:
 
 ```yaml
 host: scada-01
@@ -284,7 +283,6 @@ user: semiplot_reader
 password: "change me"
 source_time_zone: Europe/Berlin
 poll_interval_ms: 1000
-schema: public
 ```
 
 `source_time_zone` takes any identifier `TimeZoneInfo.FindSystemTimeZoneById` resolves on the
@@ -305,11 +303,14 @@ runs in `Program`, ahead of `BuildAvaloniaApp()`, and the reads `InitializeServi
 1. Load `<ConfigDir>/archive-connection.yaml` and register `AddPostgresData(settings)`.
 2. Resolve `IDataProvider`, read the pen catalogue, then the archive extent.
 
-The container, the pens and the extent cross the boundary in a `StartupData` record, so
-`App.InitializeServices` awaits nothing. A failed step disposes the container and carries its error to
-`Program`, which maps it through `StartupFailureMapper` and opens `ErrorWindow` in place of the main
-window. There is no second data source to fall back to: synthetic data would let an operator read
-invented numbers as process data.
+The container, the pens and the extent cross the boundary in a `StartupData` record inside a
+`Result`, so `App.InitializeServices` awaits nothing. `Program.Main` passes that `Result` to
+`App.Run` unconditionally: on success it runs as today; on failure `App` maps the error through
+`ArchiveFailureMapper` and opens the main window with `MainWindowViewModel.StartupFailure` set — the
+message panel names what broke and what to do, and the chart, legend and minimap bind to null and
+render empty, because `CreateMainWindow` builds that view model without a service provider. There is
+no second data source to fall back to: synthetic data would let an operator read invented numbers as
+process data. `Program.Main` returns 1 once that window closes.
 
 - **The startup reads are bounded by the caller**, `Task.WaitAsync` at `StartupProbe.DefaultReadBound`
   (30 s). The expiring bound is `StartupReadTimedOutError`, distinct from `ArchiveFault.QueryTimedOut`,
@@ -318,7 +319,7 @@ invented numbers as process data.
   15 s), so an unreachable host fails inside the connect attempt and reports `Unreachable` rather
   than a timeout. `StartupProbeTests.DefaultReadBound_StaysAboveTheConnectTimeout` pins the ordering.
 - **A throw on the startup path is a failed `Result`.** `StartupProbe.ReadAsync` catches, logs with
-  the stack, disposes the container and returns an `ExceptionalError`, which `StartupFailureMapper`
+  the stack, disposes the container and returns an `ExceptionalError`, which `ArchiveFailureMapper`
   maps through its `IExceptionalError` arm.
 
 An empty pen catalogue is a successful start: the window opens, draws nothing, and states that the

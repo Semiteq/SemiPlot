@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <PackageReference Include="FluentResults"/>
@@ -14,7 +14,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="SemiPlot.Tests.Data"/>
+    <InternalsVisibleTo Include="SemiPlot.Tests.Unit"/>
+    <InternalsVisibleTo Include="SemiPlot.Tests.Integration"/>
   </ItemGroup>
 
 </Project>

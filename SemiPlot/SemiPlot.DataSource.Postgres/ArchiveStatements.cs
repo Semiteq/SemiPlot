@@ -25,10 +25,8 @@ internal static class ArchiveStatements
 	                                 """;
 
 	/// <summary>
-	/// The oldest and newest raw timestamps across the whole catalogue, read once to bound the chart.
-	/// <para>
-	/// The lateral pair is load-bearing: a bare <c>min(t)</c>/<c>max(t)</c> loses the index-edge transform.
-	/// </para>
+	/// The oldest and newest raw timestamps across the whole catalogue, read once to bound the chart; the
+	/// lateral pair is load-bearing, a bare <c>min(t)</c>/<c>max(t)</c> loses the index-edge transform.
 	/// </summary>
 	public const string ArchiveExtent = """
 	                                    SELECT min(lo) AS first, max(hi) AS last
@@ -40,11 +38,8 @@ internal static class ArchiveStatements
 	                                    """;
 
 	/// <summary>
-	/// Every raw sample newer than the last one a subscription saw. Issued once per poll tick.
-	/// <para>
-	/// The variable list is mandatory (docs/architecture/scada-archive.md, Reader hazards).
-	/// Strict <c>&gt;</c>: the row that set <c>@lastSeen</c> must not return twice.
-	/// </para>
+	/// Every raw sample newer than the last one a subscription saw, issued once per poll tick with a strict
+	/// <c>&gt;</c> so the row that set <c>@lastSeen</c> never returns twice (docs/architecture/scada-archive.md).
 	/// </summary>
 	public const string RealtimePoll = """
 	                                   SELECT id, t, v, q
@@ -54,12 +49,9 @@ internal static class ArchiveStatements
 	                                   """;
 
 	/// <summary>
-	/// The newest raw timestamp across the subscribed variables, read once to establish the point a poll
-	/// starts from. A <c>NULL</c> answer means those variables carry no row yet, which is a content state
-	/// and not a failure.
-	/// <para>
-	/// Lateral on purpose: <c>max(t)</c> under <c>id = ANY(...)</c> loses the index-edge transform.
-	/// </para>
+	/// The newest raw timestamp across the subscribed variables, read once to establish where a poll starts;
+	/// a <c>NULL</c> answer is a content state, not a failure. Lateral on purpose: a bare <c>max(t)</c>
+	/// under <c>id = ANY(...)</c> loses the index-edge transform.
 	/// </summary>
 	public const string RealtimeBaseline = """
 	                                       SELECT max(hi) AS last
@@ -70,15 +62,9 @@ internal static class ArchiveStatements
 	                                       """;
 
 	/// <summary>
-	/// A window of one layer, with the left edge seeded so a pen whose last sample predates the window
-	/// still draws. Two branches under one outer <c>ORDER BY id, t</c>: the per-pen seed row, then the
-	/// window rows.
-	/// <para>
-	/// One statement, not two: the fold groups by consecutive identifier.
-	/// The seed bound is strict <c>&lt;</c>, so no boundary row returns on both branches.
-	/// The look-back bound is what prunes partitions away
-	/// (docs/architecture/scada-archive.md, the three-state table).
-	/// </para>
+	/// A window of one layer, left-edge seeded so a pen whose last sample predates the window still draws;
+	/// one statement, not two, folded under one outer <c>ORDER BY id, t</c> with a strict <c>&lt;</c> seed
+	/// bound so no boundary row returns on both branches (docs/architecture/scada-archive.md#reader-hazards).
 	/// </summary>
 	public const string SparseHistoryWindow = """
 	                                          SELECT id, t, v, q

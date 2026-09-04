@@ -109,13 +109,13 @@ flowchart TB
 ```
 
 The composition root resolves `PostgresDataProvider`, and there is nothing else to resolve: an
-archive that does not answer opens an error window rather than falling back to invented data, which
-`data-integration.md` states under **Startup**. `StartupFailureMapper` turns each public error type
-into a title, a detail and a remedy — Core's ten plus the UI-local `StartupReadTimedOutError`,
-eleven in all — and a reflection coverage test fails when one has no arm; two of them reach the
-operator as a banner row over a working chart rather than as a window. Every member
-of `IDataProvider` is implemented — the pen catalogue, the archive extent, the windowed history read
-and the live-edge poll.
+archive that does not answer opens the main window with its message panel filled rather than
+falling back to invented data, which `data-integration.md` states under **Startup**.
+`ArchiveFailureMapper` turns each public error type into a title, a detail and a remedy — Core's ten
+plus the UI-local `StartupReadTimedOutError`, eleven in all; two of them reach the operator as a
+banner row over a working chart rather than as the startup panel. Every member of `IDataProvider` is
+implemented — the pen catalogue, the archive extent, the windowed history read and the live-edge
+poll.
 
 ## The three provisioning states, and the fourth
 
@@ -171,7 +171,7 @@ hook, before the published port opens, so nothing is resolved from the machine r
 
 ```mermaid
 flowchart LR
-    tests["SemiPlot.Tests.Data<br/>gated integration tests"]
+    tests["SemiPlot.Tests.Integration<br/>container integration tests"]
     fix["PostgresContainerFixture<br/>builds the bench image"]
     sb["semibase bench<br/>init hook, unix socket"]
     src[("semiplot_provisioned")]
@@ -185,11 +185,6 @@ flowchart LR
     tmpl -- "cloned, to read the seeded rows" --> clone
     src -- "cloned, to write its own rows" --> clone
     clone --> tests
-
-    gate["DatabaseGate<br/>no runtime → skip with a reason<br/>SEMIPLOT_REQUIRE_DB=1 → fail"]
-    tests -.-> gate
-
-    style gate fill:none,stroke-dasharray:3 3
 ```
 
 The provisioning creates `public.trends` empty; the seeder writes into it as `scada_writer`, the way

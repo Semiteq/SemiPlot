@@ -4,10 +4,8 @@ namespace SemiPlot.DataSource.Postgres;
 
 internal static class HistoryRowFold
 {
-	// The archive marks the last sample before a break q = 32 and the first sample after it q = 16
-	// (docs/architecture/scada-archive.md#quality-and-gaps). Only the opening mark takes a branch here:
-	// the resumption is what the decimator already produces on the far side of a null.
-	// Exact equality on purpose: only {0, 16, 32} have been measured.
+	// q = 32 marks the last sample before a break (docs/architecture/scada-archive.md#quality-and-gaps);
+	// exact equality on purpose, only {0, 16, 32} have been measured.
 	private const int LastBeforeBreakQuality = 32;
 
 	/// <summary>
@@ -17,11 +15,9 @@ internal static class HistoryRowFold
 	public readonly record struct Row(int PenId, DateTime ArchiveLocal, double? Value, int Quality);
 
 	/// <summary>
-	/// Unenforced precondition: <paramref name="rows"/> arrive in the order
-	/// <see cref="ArchiveStatements.SparseHistoryWindow"/> produces them, <c>ORDER BY id, t</c>, so each
-	/// pen's rows form one consecutive ascending run. Runs are grouped by consecutive identifier and
-	/// nothing sorts or de-duplicates client-side.
-	/// <para>Losing the total ordering yields two envelopes for one pen.</para>
+	/// Unenforced precondition: <c>rows</c> arrive <c>ORDER BY id, t</c>
+	/// (<see cref="ArchiveStatements.SparseHistoryWindow"/>), grouped by consecutive identifier with no
+	/// client-side sort or dedup; losing that ordering yields two envelopes for one pen.
 	/// </summary>
 	public static IReadOnlyList<PenHistoryEnvelope> Fold(
 		IReadOnlyList<Row> rows,

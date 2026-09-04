@@ -17,7 +17,7 @@
         Height="800"
         WindowStartupLocation="CenterScreen">
 
-    <Grid RowDefinitions="Auto,*,Auto,Auto,Auto,Auto">
+    <Grid RowDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto">
 
         <Border Grid.Row="0"
                 Name="Toolbar"
@@ -80,9 +80,32 @@
                 Name="StatusBar"
                 BorderThickness="0,1,0,0"
                 BorderBrush="Gray"
-                Padding="8,4">
+                Padding="8,4"
+                IsVisible="{Binding !HasStartupFailure}">
             <TextBlock Text="{Binding PenCount, StringFormat='Pens: {0}'}"
                        VerticalAlignment="Center" />
+        </Border>
+
+        <Border Grid.Row="6"
+                Name="StartupFailurePanel"
+                BorderThickness="0,1,0,0"
+                BorderBrush="Gray"
+                Padding="8,4"
+                IsVisible="{Binding HasStartupFailure}">
+            <StackPanel>
+                <TextBlock Name="StartupFailureTitle"
+                           Text="{Binding StartupFailure.Title}"
+                           FontWeight="Bold"
+                           TextWrapping="Wrap" />
+                <TextBlock Name="StartupFailureDetail"
+                           Text="{Binding StartupFailure.Detail}"
+                           TextWrapping="Wrap"
+                           Margin="0,4,0,0" />
+                <TextBlock Name="StartupFailureRemedy"
+                           Text="{Binding StartupFailure.Remedy}"
+                           TextWrapping="Wrap"
+                           Margin="0,4,0,0" />
+            </StackPanel>
         </Border>
 
     </Grid>

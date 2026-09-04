@@ -50,10 +50,10 @@ jobs:
         run: dotnet build SemiPlot.slnx -c Release --no-restore
 
       - name: test
-        run: dotnet test SemiPlot/SemiPlot.Tests/SemiPlot.Tests.csproj -c Release --no-build --logger "console;verbosity=normal"
+        run: dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj -c Release --no-build --logger "console;verbosity=normal"
 
-  # One build of the solution, then every test project. The container fixture builds the bench
-  # image from SemiPlot/SemiPlot.Tests.Data/bench over ghcr.io/semiteq/semibase:latest, a public
+  # One build of the solution, then both test projects. The container fixture builds the bench
+  # image from SemiPlot/bench over ghcr.io/semiteq/semibase:latest, a public
   # package the runner pulls with no login; the Docker daemon ubuntu-latest carries is all it needs.
   # The headless Avalonia stack relies on the runner image providing libfontconfig.so.1, which
   # libSkiaSharp.so links against. When it is absent, `ldd libSkiaSharp.so` reports
@@ -61,7 +61,7 @@ jobs:
   # once, not only the one that rasterises. The remedy is `sudo apt-get install -y libfontconfig1`
   # ahead of the test steps.
   linux:
-    name: Unit, data and journeys (Linux)
+    name: Unit and integration (Linux)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -84,10 +84,7 @@ jobs:
         run: dotnet build SemiPlot.slnx -c Release --no-restore
 
       - name: unit tests
-        run: dotnet test SemiPlot/SemiPlot.Tests/SemiPlot.Tests.csproj -c Release --no-build --logger "console;verbosity=normal"
+        run: dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj -c Release --no-build --logger "console;verbosity=normal"
 
-      - name: data tests
-        run: dotnet test SemiPlot/SemiPlot.Tests.Data/SemiPlot.Tests.Data.csproj -c Release --no-build --logger "console;verbosity=normal"
-
-      - name: journey tests
-        run: dotnet test SemiPlot/SemiPlot.Tests.Journeys/SemiPlot.Tests.Journeys.csproj -c Release --no-build --logger "console;verbosity=normal"
+      - name: integration tests
+        run: dotnet test SemiPlot/SemiPlot.Tests.Integration/SemiPlot.Tests.Integration.csproj -c Release --no-build --logger "console;verbosity=normal"

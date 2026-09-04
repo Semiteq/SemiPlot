@@ -18,10 +18,9 @@ using SemiPlot.DataSource.Postgres.Configuration;
 namespace SemiPlot.DataSource.Postgres;
 
 /// <summary>
-/// Reads the archive over the pooled <see cref="NpgsqlDataSource"/>. <see cref="QueryPensAsync"/> answers
-/// the configured variables, <see cref="QueryArchiveExtentAsync"/> the span they cover,
-/// <see cref="QueryHistoryAsync"/> a window of one layer and <see cref="Subscribe"/> the live edge, all
-/// crossing the boundary in UTC.
+/// Reads the archive over the pooled <see cref="NpgsqlDataSource"/>: <see cref="QueryPensAsync"/> answers the
+/// configured variables, <see cref="QueryArchiveExtentAsync"/> the span they cover, <see cref="QueryHistoryAsync"/>
+/// a window of one layer and <see cref="Subscribe"/> the live edge, all crossing the boundary in UTC.
 /// </summary>
 public sealed class PostgresDataProvider : IDataProvider
 {
@@ -57,10 +56,9 @@ public sealed class PostgresDataProvider : IDataProvider
 	public IObservable<ArchiveConnectionState> ConnectionFaults => _connectionFaults;
 
 	/// <summary>
-	/// The live edge of the requested variables. Cold: each subscription starts a poll loop of its own, on
-	/// the injected scheduler and at the operator's <see cref="PostgresConnectionSettings.PollInterval"/>,
-	/// holding a baseline of its own. Disposing the subscription cancels the loop's query and its wait, so
-	/// no further statement is issued.
+	/// The live edge of the requested variables. Cold: each subscription starts a poll loop of its own, on the
+	/// injected scheduler and at the operator's <see cref="PostgresConnectionSettings.PollInterval"/>, holding
+	/// its own baseline; disposing it cancels the loop's query and its wait, so no further statement is issued.
 	/// </summary>
 	public IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<int> penIds)
 	{
@@ -146,10 +144,9 @@ public sealed class PostgresDataProvider : IDataProvider
 	}
 
 	/// <summary>
-	/// The span the configured variables cover, in UTC. It is the span of the catalogue rather than of the
-	/// archive: the statement is rooted at <c>semiplot_tags</c>, so an empty catalogue over an archive full
-	/// of rows reports <see cref="ArchiveExtent.Empty"/>, the same answer a seeded catalogue over an empty
-	/// <c>trends</c> gives. Both are successful reads — a null bound is a content state, not a failure.
+	/// The span the configured variables cover, in UTC. It is the span of the catalogue, not of the archive:
+	/// rooted at <c>semiplot_tags</c>, so an empty catalogue over a full archive reports
+	/// <see cref="ArchiveExtent.Empty"/>, same as a seeded catalogue over an empty <c>trends</c> — both succeed.
 	/// </summary>
 	public async Task<Result<ArchiveExtent>> QueryArchiveExtentAsync()
 	{

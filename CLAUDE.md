@@ -31,26 +31,48 @@ dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.Archiv
 produce the same archive. `--admin-connection` is optional and only fills `semiplot_tags`, which
 `scada_writer` holds no privilege on. Run it with `--help` for the option list.
 
+`converge` is a separate, bench-only subcommand: unlike the seeding run above, it does issue `DROP
+DATABASE ... WITH (FORCE)`. It waits for `--admin-connection` up to 60 s, recreates the database
+`--connection` names from `semiplot_provisioned`, seeds it up to `--end` or this machine's clock,
+fills the tag catalogue and writes `archive-connection.yaml` into `--config-dir` with the bench
+reader role's fixed password (`docs/architecture/bench.md#the-converge-verb`):
+
+```powershell
+dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.ArchiveSeeder.csproj -- converge `
+  --connection "Host=localhost;Port=55432;Database=semiplot_app;Username=scada_writer;Password=<writer>" `
+  --admin-connection "Host=localhost;Port=55432;Database=postgres;Username=postgres;Password=<super>" `
+  --config-dir SemiPlot/Artifacts/bench-config
+```
+
+The demo writer is the same seeder run with `--follow <seconds>` instead of `--end`: it appends to
+the archive `converge` created and thins it into the coarse layers on every tick
+(`docs/architecture/bench.md#the-demo-writer`).
+
+`SemiPlot.AppHost` runs the whole demo stand — the bench container, `converge`, the demo writer and
+the viewer — in dependency order and stops them together:
+
+```powershell
+dotnet run --project SemiPlot/SemiPlot.AppHost
+```
+
 ## Test
 
-Three projects, split by dependency graph and skip policy.
+Two projects, split on one axis: needs a container or not.
 
 | Project | Framework | References | Holds |
 | --- | --- | --- | --- |
-| `SemiPlot.Tests` | xunit v3 + `Avalonia.Headless.XUnit` | `SemiPlot.UI` | Everything touching the UI, plus the renderer-agnostic Core models |
-| `SemiPlot.Tests.Data` | xunit v3 | `SemiPlot.Core`, `SemiPlot.Tools.ArchiveSeeder`, `SemiPlot.DataSource.Postgres` | Bench and data-source tests, pure and container-gated. Never Avalonia |
-| `SemiPlot.Tests.Journeys` | xunit v3 + `Avalonia.Headless.XUnit` | `SemiPlot.UI`, `SemiPlot.Tests.Data` | End-to-end journeys, which need the UI and a container at once. Gated end to end |
+| `SemiPlot.Tests.Unit` | xunit v3 + `Avalonia.Headless.XUnit` | `SemiPlot.UI`, `SemiPlot.Core`, `SemiPlot.DataSource.Postgres`, `SemiPlot.Tools.ArchiveSeeder` | Every test that needs no container: the UI, the Core models, the seeder's generators and the provider's pure classes |
+| `SemiPlot.Tests.Integration` | xunit v3 + `Avalonia.Headless.XUnit` | the same four | The container harness, the container tests and the journeys, all in one xunit collection |
 
-- `SemiPlot.Tests` carries `TestAppBuilder.cs` with `[assembly: AvaloniaTestApplication]`. Pure logic
-  uses plain `[Fact]`; tests touching ReactiveUI/ScottPlot/Avalonia use `[AvaloniaFact]`/`[AvaloniaTheory]`.
-- `SemiPlot.Tests.Data` never references Avalonia, ScottPlot or SkiaSharp.
-  `SemiPlot.DataSource.Postgres` names it as the sole `InternalsVisibleTo` assembly.
-- The reference direction is one-way: `SemiPlot.Tests` and `SemiPlot.Tests.Journeys` may reference
-  `SemiPlot.Tests.Data`; the reverse would build and must not exist.
-- `SemiPlot.Tests` sets `failSkips` in `xunit.runner.json`, so no gated test may live there. The
-  journeys are a third project for that reason; it and `SemiPlot.Tests.Data` carry no `xunit.runner.json`.
-- An xunit v3 test project is an executable: a hung test leaves `SemiPlot.Tests.exe` locked and the
-  next build fails with MSB3027 until it is killed. The container half is bounded at two minutes.
+- Each project carries its own `TestAppBuilder.cs` with `[assembly: AvaloniaTestApplication]`. Pure
+  logic uses plain `[Fact]`; tests touching ReactiveUI/ScottPlot/Avalonia use
+  `[AvaloniaFact]`/`[AvaloniaTheory]`.
+- Neither project references the other. Core, `SemiPlot.DataSource.Postgres` and `SemiPlot.UI` each
+  name both in `InternalsVisibleTo`.
+- `SemiPlot.Tests.Unit` sets `failSkips` in `xunit.runner.json`, so no gated test may live there.
+  `SemiPlot.Tests.Integration` carries no `xunit.runner.json`.
+- An xunit v3 test project is an executable: a hung test leaves `SemiPlot.Tests.Unit.exe` locked and
+  the next build fails with MSB3027 until it is killed. The container half is bounded at two minutes.
 - A plain `[Fact]` body runs with no `SynchronizationContext`, so an `await` on a
   `TaskCompletionSource` completed by production code resumes inline on the completing thread. A gate
   awaited by the test and completed by production code takes
@@ -59,44 +81,37 @@ Three projects, split by dependency graph and skip policy.
   unaffected.
 
 ```powershell
-dotnet test SemiPlot.slnx                                                 # full suite, all three
-dotnet test SemiPlot/SemiPlot.Tests/SemiPlot.Tests.csproj                 # UI and Core models
-dotnet test SemiPlot/SemiPlot.Tests.Data/SemiPlot.Tests.Data.csproj       # bench and data source
-dotnet test SemiPlot/SemiPlot.Tests.Journeys/SemiPlot.Tests.Journeys.csproj  # end-to-end journeys
+dotnet test SemiPlot.slnx                                                        # both projects
+dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj              # no container needed
+dotnet test SemiPlot/SemiPlot.Tests.Integration/SemiPlot.Tests.Integration.csproj  # container required
 dotnet test SemiPlot.slnx --filter "Area=Data"
 dotnet test SemiPlot.slnx --filter "FullyQualifiedName~TestMethodName"
 ```
 
-CI has two jobs: `unit-windows` runs `SemiPlot.Tests` on `windows-latest`; `linux` builds the solution
-once on `ubuntu-latest` and runs all three test projects, the Docker daemon of the runner serving the
-container fixture. A Windows-only API fails
+CI has two jobs: `unit-windows` runs `SemiPlot.Tests.Unit` on `windows-latest`; `linux` builds the
+solution once on `ubuntu-latest` and runs both test projects, the Docker daemon of the runner serving
+the container fixture. A Windows-only API fails
 the Linux leg only once a test executes the call (`CA1416` is a warning); a Windows path used as a
-string does not fail it at all. The skip-versus-fail policy is in `docs/architecture/testing-strategy.md`.
+string does not fail it at all. The fail-only behavior is in `docs/architecture/testing-strategy.md`.
 
 Test traits: `[Trait("Component", "Core|UI")]`, `[Trait("Area", "Data|Bridge|Chart|Di")]`,
 `[Trait("Category", "Unit|Integration")]`. Every test class carries all three.
 
-Assertions split by project: `SemiPlot.Tests` and `SemiPlot.Tests.Journeys` use AwesomeAssertions
-(`.Should()`) exclusively; `SemiPlot.Tests.Data` uses raw xunit `Assert.` exclusively. Tests over
-provider errors assert by error type and structured field, never on message wording.
+AwesomeAssertions everywhere. Tests over provider errors assert by error type and structured field,
+never on message wording.
 
-### Gated data tests
+### Container tests
 
-The integration tests in `SemiPlot.Tests.Data` and every test in `SemiPlot.Tests.Journeys` need a
-container runtime and nothing else: `SemiPlot.Tests.Data/bench/Dockerfile` copies `/semibase` out of
+Every test in `SemiPlot.Tests.Integration` needs a container runtime and nothing else:
+`SemiPlot/bench/Dockerfile` copies `/semibase` out of
 `ghcr.io/semiteq/semibase:latest`, which the fixture pulls ahead of the build, and runs
 `semibase bench` from `/docker-entrypoint-initdb.d/` before the published port opens. The container
-carries fixed dummy passwords of the fixture's own. A missing runtime is a skip with a stated reason,
-never a pass.
+carries fixed dummy passwords of the fixture's own, and the base image is the constant
+`postgres:17-alpine`. A missing runtime fails every test of the collection with
+`TestPipelineException`; nothing skips.
 
-| Variable | Effect | Unset means |
-| --- | --- | --- |
-| `SEMIPLOT_PG_IMAGE` | Base image the bench image is built over, so it selects the PostgreSQL version | `postgres:17-alpine` |
-| `SEMIPLOT_REQUIRE_DB` | `1` or `true` turns an unavailable runtime from a skip into a failure. No job sets it: the CI runner carries Docker, so the fixture starts there | skip with a reason |
-
-A run leaves nothing behind but the images it pulled: `WithCleanUp(true)` and the resource reaper
-remove the built image, the container and every database.
-`TheBuiltBenchImageIsLabelledForTheReaperAndForThisRepository` is the tripwire.
+A run leaves nothing behind but the images it pulled: the resource reaper removes the built image,
+the container and every database.
 
 The container provisions `semiplot_provisioned`; the seeded template `semiplot_bench` is a clone of
 it filled once per run, and every test database is a `CREATE DATABASE ... TEMPLATE` clone of one of
@@ -169,9 +184,9 @@ No abbreviations in names.
   `AvaloniaScheduler.Instance` (= `RxApp.MainThreadScheduler`) and passes it explicitly to the
   coordinator constructor and the chart/minimap factories.
 - `.AfterSetup(...)` is synchronous, so no blocking call belongs in it. `StartupProbe` does its
-  blocking reads in `Program`, ahead of `BuildAvaloniaApp()`, and hands `App.Run` a `StartupData`
-  record; the reads `InitializeServices` starts inside the callback are asynchronous and return
-  through the schedulers (`docs/architecture/data-integration.md`).
+  blocking reads in `Program`, ahead of `BuildAvaloniaApp()`, and hands `App.Run` a
+  `Result<StartupData>`; the reads `InitializeServices` starts inside the callback are asynchronous
+  and return through the schedulers (`docs/architecture/data-integration.md`).
 
 ### Interface Design
 
@@ -217,7 +232,7 @@ No abbreviations in names.
   the absolute lattice, the break holes, the row-pair shape — not by a digest. **One lattice serves
   both generators**: a change sits at `index * intervalTicks` from absolute tick zero, and
   `RawLayerGenerator` and `LiveTailGenerator` both emit through `RawLayerGenerator.AppendWindow`.
-  `SemiPlot.Tests.Data/SharedLatticeTests.cs` goes red if they are split. `public.trends`,
+  `SemiPlot.Tests.Unit/SharedLatticeTests.cs` goes red if they are split. `public.trends`,
   `semiplot_tags`, the two roles and their grants are SemiBase's; the seeder fills the archive table
   and creates only the day partitions its rows land in (`docs/architecture/bench.md`).
 - The provider runs no cold-path reader: a failed read is mapped by `ArchiveExceptionMapper`, which

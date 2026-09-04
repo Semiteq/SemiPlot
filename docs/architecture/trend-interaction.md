@@ -37,7 +37,7 @@ operator interaction.
   itself (`UseWin32().UseSkia()`) instead of calling `UsePlatformDetect()`, and Skia carries no text
   shaper, so without that call `AppBuilder.Setup` throws "No text shaping system configured" before any
   window exists. The headless platform registers a shaper of its own, so no headless test reaches that
-  path — `SemiPlot.Tests/UI/Startup/AppBuilderCompositionTests` reads the composed builder back instead.
+  path — `SemiPlot.Tests.Unit/UI/Startup/AppBuilderCompositionTests` reads the composed builder back instead.
   `AvaloniaScheduler` / `UseReactiveUI` live in namespace `ReactiveUI.Avalonia` (NOT
   `Avalonia.ReactiveUI`), and `UseReactiveUI` takes a mandatory `Action<ReactiveUIBuilder>`.
   Stack: **ReactiveUI** MVVM

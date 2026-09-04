@@ -5,6 +5,8 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 
+using FluentResults;
+
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -21,11 +23,9 @@ namespace SemiPlot.UI;
 
 public class App : Application
 {
-	private static bool _started;
-
 	private IServiceProvider? _serviceProvider;
 
-	private StartupFailureView? _startupFailure;
+	private ArchiveFailureView? _startupFailure;
 
 	public override void Initialize()
 	{
@@ -36,7 +36,7 @@ public class App : Application
 	{
 		if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
 		{
-			desktop.MainWindow = _startupFailure is null ? CreateMainWindow() : new ErrorWindow(_startupFailure);
+			desktop.MainWindow = CreateMainWindow();
 		}
 
 		base.OnFrameworkInitializationCompleted();
@@ -44,6 +44,14 @@ public class App : Application
 
 	private Window CreateMainWindow()
 	{
+		if (_startupFailure is not null)
+		{
+			return new MainWindow.MainWindow
+			{
+				DataContext = new MainWindowViewModel { StartupFailure = _startupFailure }
+			};
+		}
+
 		if (_serviceProvider is null)
 		{
 			throw new InvalidOperationException(
@@ -55,33 +63,22 @@ public class App : Application
 		return new MainWindow.MainWindow { DataContext = mainWindowViewModel };
 	}
 
-	public static void Run(StartupData startupData)
+	public static void Run(Result<StartupData> startup)
 	{
-		EnsureSingleStart();
-
-		BuildAvaloniaApp()
-			.AfterSetup(_ => InitializeServices(startupData))
-			.AfterSetup(builder =>
-			{
-				var app = (App)builder.Instance!;
-				app._serviceProvider = startupData.ServiceProvider;
-			})
-			.StartWithClassicDesktopLifetime([]);
-	}
-
-	/// <summary>
-	/// The failure branch of startup: one window naming what broke and what to do, and no service
-	/// resolution behind it.
-	/// </summary>
-	public static void RunErrorWindow(StartupFailureView failure)
-	{
-		EnsureSingleStart();
-
 		BuildAvaloniaApp()
 			.AfterSetup(builder =>
 			{
 				var app = (App)builder.Instance!;
-				app._startupFailure = failure;
+
+				if (startup.IsFailed)
+				{
+					app._startupFailure = ArchiveFailureMapper.Map(startup.Errors[0]);
+
+					return;
+				}
+
+				InitializeServices(startup.Value);
+				app._serviceProvider = startup.Value.ServiceProvider;
 			})
 			.StartWithClassicDesktopLifetime([]);
 	}
@@ -98,7 +95,6 @@ public class App : Application
 			.LogToTrace();
 	}
 
-	// UseReactiveUI() has registered AvaloniaScheduler by now; capture it here.
 	internal static void InitializeServices(StartupData startupData)
 	{
 		var uiScheduler = AvaloniaScheduler.Instance;
@@ -145,16 +141,5 @@ public class App : Application
 
 		chartViewModel.RequestInitialHistory();
 		_ = minimapViewModel.LoadExtentAsync();
-	}
-
-	private static void EnsureSingleStart()
-	{
-		if (_started)
-		{
-			throw new InvalidOperationException(
-				"App has already been started. Run() and RunErrorWindow() must be called at most once per process.");
-		}
-
-		_started = true;
 	}
 }

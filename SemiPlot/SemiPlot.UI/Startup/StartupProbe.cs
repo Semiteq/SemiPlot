@@ -23,7 +23,7 @@ public static class StartupProbe
 	// an accepted connection that timed out.
 	public static readonly TimeSpan DefaultReadBound = TimeSpan.FromSeconds(30);
 
-	public static Result<StartupData> Run(StartupOptions options, TimeSpan? readBound = null)
+	public static Result<StartupData> Run(StartupOptions options)
 	{
 		var settings = PostgresConnectionLoader.Load(Path.Combine(options.ConfigDir, ConnectionFileName));
 
@@ -34,7 +34,8 @@ public static class StartupProbe
 
 		var serviceProvider = BuildArchiveServiceProvider(settings.Value);
 
-		return Task.Run(() => ReadAsync(serviceProvider, readBound ?? DefaultReadBound)).GetAwaiter().GetResult();
+		// Main runs with no SynchronizationContext ahead of BuildAvaloniaApp, so this cannot deadlock.
+		return ReadAsync(serviceProvider, DefaultReadBound).GetAwaiter().GetResult();
 	}
 
 	/// <summary>The container the archive path runs on.</summary>

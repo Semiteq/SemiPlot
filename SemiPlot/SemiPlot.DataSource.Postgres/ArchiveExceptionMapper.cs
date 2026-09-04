@@ -23,10 +23,7 @@ internal sealed class ArchiveExceptionMapper
 		_settings = settings;
 	}
 
-	/// <param name="exception">What the read threw.</param>
-	/// <param name="relation">
-	/// The relation the calling statement touches. Read on the <c>42P01</c> path only.
-	/// </param>
+	/// <summary>Maps what the read threw; <c>relation</c> is read on the <c>42P01</c> path only.</summary>
 	public Error Map(Exception exception, string? relation)
 	{
 		if (exception is OperationCanceledException)

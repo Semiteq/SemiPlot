@@ -48,8 +48,8 @@ SemiPlot — приложение для просмотра графиков и 
 | --------------- | ------------------------------------------------------------- |
 | ОС              | Windows 10 или Windows 11 (64-bit)                            |
 | Среда сборки    | .NET 10 SDK                                                   |
-| Источник данных | Архив PostgreSQL от Simple-Scada 2, подготовленный SemiBase. Без него приложение открывает окно ошибки вместо графика |
-| Тестовый стенд  | Только для интеграционных тестов: Docker (или иная среда контейнеров). `semibase` приходит слоем образа из `ghcr.io/semiteq/semibase`, ставить его на машину не нужно; без среды контейнеров эти тесты пропускаются |
+| Источник данных | Архив PostgreSQL от Simple-Scada 2, подготовленный SemiBase. Без него приложение показывает ошибку старта в главном окне вместо графика |
+| Тестовый стенд  | Только для интеграционных тестов: Docker (или иная среда контейнеров). `semibase` приходит слоем образа из `ghcr.io/semiteq/semibase`, ставить его на машину не нужно; без среды контейнеров эти тесты падают, а не пропускаются |
 
 ---
 
@@ -66,9 +66,12 @@ dotnet run --project SemiPlot/SemiPlot.UI/SemiPlot.UI.csproj
 dotnet test SemiPlot.slnx
 ```
 
-Интеграционные тесты стенда (`SemiPlot.Tests.Data`, трейт `Category=Integration`) и сквозные
-сценарии (`SemiPlot.Tests.Journeys`, весь проект) поднимают PostgreSQL в контейнере. Образ стенда
-собирается из `SemiPlot/SemiPlot.Tests.Data/bench/Dockerfile`:
+Демо-стенд с одноразовым архивом и живой записью поднимается одной командой:
+`dotnet run --project SemiPlot/SemiPlot.AppHost` — контейнер PostgreSQL, `converge`, писатель и
+вьювер стартуют в порядке зависимостей и останавливаются вместе (см. `docs/architecture/bench.md`).
+
+Весь проект `SemiPlot.Tests.Integration` — тесты стенда и сквозные сценарии — поднимает PostgreSQL
+в контейнере. Образ стенда собирается из `SemiPlot/bench/Dockerfile`:
 он забирает `/semibase` из `ghcr.io/semiteq/semibase:latest` и выполняет `semibase bench` из
 `/docker-entrypoint-initdb.d/` — до того, как откроется опубликованный порт. Отдельный бинарник
 `semibase` на машине не нужен: `dotnet test SemiPlot.slnx` запускает эти тесты сам.
@@ -78,7 +81,6 @@ dotnet test SemiPlot.slnx
 `ghcr.io/semiteq/semibase:latest`) остаются — намеренно; тег `latest` фикстура подтягивает перед
 сборкой образа.
 
-Если контейнерной среды нет, тесты **пропускаются с указанием причины**, а не проваливаются, —
-`dotnet test SemiPlot.slnx` на такой машине проходит, но проверяет меньше.
-`SEMIPLOT_REQUIRE_DB=1` превращает пропуск в падение — это то, что делает CI. Полный список
-переменных окружения — в `CLAUDE.md`, раздел «Gated data tests».
+Если контейнерной среды нет, тесты **падают**, а не пропускаются: фикстура пробрасывает ошибку, и
+xunit заваливает всю коллекцию с `TestPipelineException`. `dotnet test SemiPlot.slnx` на такой
+машине красный, а зелёным остаётся только `SemiPlot.Tests.Unit`.

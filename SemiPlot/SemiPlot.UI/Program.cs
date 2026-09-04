@@ -11,7 +11,7 @@ namespace SemiPlot.UI;
 
 public static class Program
 {
-	public const int FailedExitCode = 1;
+	private const int FailedExitCode = 1;
 
 	[STAThread]
 	public static int Main(string[] args)
@@ -27,7 +27,7 @@ public static class Program
 			if (startup.IsFailed)
 			{
 				LogStartupFailure(startup.Errors);
-				App.RunErrorWindow(StartupFailureMapper.Map(startup.Errors[0]));
+				App.Run(startup);
 
 				return FailedExitCode;
 			}
@@ -35,7 +35,7 @@ public static class Program
 			// Held for its disposal alone: the scope closes when Main returns, after App.Run.
 			using var serviceProvider = startup.Value.ServiceProvider;
 
-			App.Run(startup.Value);
+			App.Run(startup);
 
 			return 0;
 		}

@@ -20,10 +20,8 @@ namespace SemiPlot.DataSource.Postgres;
 internal readonly record struct RealtimeTick(IReadOnlyList<Sample> Samples, ArchiveConnectionState? StateChange);
 
 /// <summary>
-/// The live edge of one subscription, as an awaitable read rather than as an observable.
-/// <para>
-/// One instance per subscription, and not thread-safe: the caller drives it from one loop at a time.
-/// </para>
+/// The live edge of one subscription, as an awaitable read rather than as an observable; one instance per
+/// subscription, and not thread-safe, the caller drives it from one loop at a time.
 /// </summary>
 internal sealed class RealtimePoll
 {

@@ -22,6 +22,8 @@ public static class PostgresConnectionLoader
 
 	private const string PollIntervalKey = "poll_interval_ms";
 
+	private const string DefaultSchema = "public";
+
 	private static readonly IDeserializer _deserializer = new DeserializerBuilder()
 		.WithNamingConvention(UnderscoredNamingConvention.Instance)
 		.IgnoreUnmatchedProperties()
@@ -77,7 +79,7 @@ public static class PostgresConnectionLoader
 			dto.Password!,
 			sourceTimeZone,
 			TimeSpan.FromMilliseconds(dto.PollIntervalMs!.Value),
-			dto.Schema!);
+			dto.Schema ?? DefaultSchema);
 	}
 
 	// Neither reason repeats what the exception said: a parser message embeds the offending scalar, and
@@ -124,8 +126,7 @@ public static class PostgresConnectionLoader
 			("database", dto.Database),
 			("user", dto.User),
 			("password", dto.Password),
-			("source_time_zone", dto.SourceTimeZone),
-			("schema", dto.Schema)
+			("source_time_zone", dto.SourceTimeZone)
 		];
 
 		var missing = new List<string>();

@@ -8,6 +8,7 @@ public sealed record FollowOptions(
 	long Seed,
 	double ChangeSeconds)
 {
-	// A change interval above one day emits nothing and far above it overflows the tick arithmetic.
+	// The ceiling on both --follow and --change-seconds: an interval above one day emits nothing and far
+	// above it overflows the tick arithmetic.
 	public const double MaximumSeconds = 86400.0;
 }

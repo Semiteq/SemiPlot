@@ -9,12 +9,12 @@ public sealed class ArchiveWriter(string connectionString)
 {
 	// The archive table is provisioning's, not this seeder's, so its presence is a precondition of a
 	// seeding run. Its absence names a database `semibase bench` never touched.
-	public const string ArchiveExistsCommand = "SELECT to_regclass('public.trends') IS NOT NULL;";
+	private const string ArchiveExistsCommand = "SELECT to_regclass('public.trends') IS NOT NULL;";
 
 	// What a previous seeding run leaves: rows, and the day partitions the run creates before its COPY.
 	// Provisioning creates the table empty and tpdefault with it, so neither of those is evidence of a
 	// seeding run and neither counts here.
-	public const string ArchiveIsSeededCommand = """
+	private const string ArchiveIsSeededCommand = """
 		SELECT EXISTS (SELECT 1 FROM public.trends)
 			OR EXISTS (
 				SELECT 1

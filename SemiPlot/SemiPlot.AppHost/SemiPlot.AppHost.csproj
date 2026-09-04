@@ -1,0 +1,16 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.5.3">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsAspireHost>true</IsAspireHost>
+    <!-- No aspire CLI on this machine: DCP and the dashboard come from NuGet instead. -->
+    <AspireUseCliBundle>false</AspireUseCliBundle>
+    <NoWarn>$(NoWarn);ASPIRE010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SemiPlot.Tools.ArchiveSeeder\SemiPlot.Tools.ArchiveSeeder.csproj" />
+    <ProjectReference Include="..\SemiPlot.UI\SemiPlot.UI.csproj" />
+  </ItemGroup>
+
+</Project>

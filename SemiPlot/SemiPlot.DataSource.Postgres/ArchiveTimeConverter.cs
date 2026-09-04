@@ -1,10 +1,9 @@
 ﻿namespace SemiPlot.DataSource.Postgres;
 
 /// <summary>
-/// The single place that knows the archive's zone. The archive stores naive local wall-clock time and
-/// everything above the provider works in UTC, so this converter sits at the provider edge and translates
-/// both ways. It is constructed from the <see cref="TimeZoneInfo"/> the connection loader already
-/// resolved, so it carries no error path of its own: neither direction throws.
+/// The single place that knows the archive's zone: it stores naive local wall-clock time while everything
+/// above the provider works in UTC. Built from the <see cref="TimeZoneInfo"/> the connection loader already
+/// resolved, so neither direction throws.
 /// </summary>
 public sealed class ArchiveTimeConverter
 {
@@ -18,13 +17,9 @@ public sealed class ArchiveTimeConverter
 	}
 
 	/// <summary>
-	/// A naive value read from the archive becomes an instant with <see cref="DateTimeKind.Utc"/>. The
-	/// <see cref="DateTime.Kind"/> of the input is ignored: an archive value is wall-clock time whatever
-	/// the caller stamped on it.
-	/// <para>
-	/// A skipped local time resolves via <see cref="TimeZoneInfo.BaseUtcOffset"/> instead of throwing.
-	/// </para>
-	/// <para>Ordering across the transitions: docs/architecture/data-integration.md, Time boundary.</para>
+	/// A naive archive value becomes an instant with <see cref="DateTimeKind.Utc"/>; the input's own
+	/// <see cref="DateTime.Kind"/> is ignored, and a skipped local time resolves via
+	/// <see cref="TimeZoneInfo.BaseUtcOffset"/> instead of throwing (docs/architecture/data-integration.md).
 	/// </summary>
 	public DateTime ToUtc(DateTime archiveLocal)
 	{
@@ -39,14 +34,9 @@ public sealed class ArchiveTimeConverter
 	}
 
 	/// <summary>
-	/// A UTC window bound becomes the naive local value a query parameter needs. The
-	/// <see cref="DateTime.Kind"/> of the input is ignored the same way <see cref="ToUtc"/> ignores it: a
-	/// window bound is an instant whatever the caller stamped on it, so a <c>Local</c> or
-	/// <c>Unspecified</c> value is read as UTC rather than converted from the machine's own zone.
-	/// <para>
-	/// Not injective across the autumn fall-back: a window over the transition narrows
-	/// (docs/architecture/data-integration.md, Time boundary).
-	/// </para>
+	/// A UTC window bound becomes the naive local value a query parameter needs; the input's
+	/// <see cref="DateTime.Kind"/> is ignored the same way <see cref="ToUtc"/> ignores it, and the mapping is
+	/// not injective across the autumn fall-back (docs/architecture/data-integration.md, Time boundary).
 	/// </summary>
 	public DateTime ToArchiveLocal(DateTime utc)
 	{

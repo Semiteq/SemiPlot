@@ -11,7 +11,7 @@ is remains in `scada-archive.md`; what SemiPlot reads from it remains in `data-i
 | Database, roles, grants, default-privileges chain, `semiplot_tags`, `public.trends` with `tpdefault` | `semibase bench` (`github.com/Semiteq/SemiBase`), carried in the bench image |
 | The daily partitions and the rows | `SemiPlot.Tools.ArchiveSeeder`, connected as `scada_writer` |
 | The moving live edge of a demo archive | `SemiPlot.Tools.ArchiveSeeder --follow`, connected as `scada_writer` |
-| Template build, the clones, teardown | `SemiPlot.Tests.Data/Integration` |
+| Template build, the clones, teardown | `SemiPlot.Tests.Integration/Integration` |
 
 The archive table is the provisioner's, not this repository's: nothing here transcribes the vendor's
 DDL. The seeder creates the day partitions its rows land in and nothing else, and never destroys.
@@ -60,8 +60,9 @@ row is the first lattice point at or after the break's end and carries no pre-an
 
 Each break takes an equal slot of the span, lasts 3 to 10 minutes and leaves at least 5 minutes of
 archiving on either side, so every break empties at least one whole calendar minute — the empty
-period the thinner has to survive. A span holds at most one break per 20 minutes: 72 in a day.
-`SeederCommand` rejects a larger `--break-count` with that number.
+period the thinner has to survive. A span holds at most one break per 20 minutes: 72 in a day, and
+`BreakPlan` refuses a `SeederOptions.BreakCount` above that. The seeder states no option for it:
+`SeederOptions.DefaultBreakCount` breaks fit any span the command line can ask for.
 
 Both markers land on real change rows, so with breaks every archiving run must hold at least two
 changes. The tight run is the first or the last, which `BreakPlan` guarantees only `MinimumRun`;
@@ -71,14 +72,13 @@ run.
 ## The demo writer
 
 `--follow <seconds>` runs the seeder as a demo writer: it appends to an archive somebody else seeded,
-so it plants no break and fills no tag catalogue. `--end`, `--days`, `--break-count` and
-`--admin-connection` are rejected in this mode. `--pens`, `--seed` and `--change-seconds` mean what
-they mean in a seeding run.
+so it plants no break and fills no tag catalogue. `--end`, `--days` and `--admin-connection` are
+rejected in this mode. `--pens`, `--seed` and `--change-seconds` mean what they mean in a seeding run.
 
 ```powershell
 dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.ArchiveSeeder.csproj -- `
   --connection "Host=localhost;Port=55432;Database=semiplot_app;Username=scada_writer;Password=<writer>" `
-  --follow 1 --pens 8 --seed 1 --change-seconds 0.5
+  --follow 1 --change-seconds 0.5
 ```
 
 Every tick appends the raw rows of the window since the previous tick, thins them into the coarse
@@ -91,14 +91,14 @@ layers and prints both counts; `Ctrl+C` stops the loop where it waits, never ins
   no hole, since the next lattice point is inside one change interval. `FollowRestartTests` performs
   the restart against a database; `SharedLatticeTests` performs it in memory.
 - **`StaleArchiveGuard` bounds the first tick.** It reads `max(t)` once and refuses an archive more
-  than `MaximumAge` (five minutes) behind the clock, naming `scripts/bench-demo.ps1` as the refill:
+  than `MaximumAge` (five minutes) behind the clock, naming `converge` as the refill:
   the first tick writes everything between the edge and now, and against an archive filled weeks ago
   that would be weeks of rows and a partition per day. An empty archive is accepted and the loop
   starts at the clock.
-- **Every layer moves, each on its own cadence.** `CoarseFlush` issues two statements per layer per
-  tick on a connection of its own: a closed-period `INSERT ... SELECT` reproducing `LayerThinner`'s
-  selection for every period the tick leaves behind, and an opening-row `INSERT` writing the open
-  period's first raw row. Both end with `ON CONFLICT DO NOTHING`, so a period's opening row is
+- **Every layer moves, each on its own cadence.** `CoarseFlush` works one layer at a time on a
+  connection of its own: for every period the tick leaves behind it reads the finer layer's rows,
+  runs `LayerThinner.Thin` over them and inserts the result, and an opening-row `INSERT` writes the
+  open period's first raw row. Both inserts end with `ON CONFLICT DO NOTHING`, so a period's opening row is
   written once and later ticks inside it report `0 coarse`. The opening row is what keeps every
   layer's seam inside the open period, which `FreshTail`'s clamp requires (`data-integration.md`,
   Layer ladder): with `--change-seconds` dividing the period the seam sits exactly at the period
@@ -110,8 +110,14 @@ layers and prints both counts; `Ctrl+C` stops the loop where it waits, never ins
 ## Thinning into the coarse layers
 
 Layers `1`, `2` and `3` hold verbatim copies of raw rows — first, last, minimum and maximum of the
-period, deduplicated when they coincide, plus every marker row. Every layer is computed against the
-raw rows, so `l=3 ⊆ l=2 ⊆ l=1 ⊆ l=0` holds by construction.
+period, deduplicated when they coincide, plus every marker row. `LayerThinner.Thin` is the only
+implementation, and `l=3 ⊆ l=2 ⊆ l=1 ⊆ l=0` holds by construction.
+
+A seeding run thins every layer from the raw rows it generated. The demo writer thins the minute
+layer from the raw rows and each coarser layer from the layer below it, which is exact: a period's
+minute rows already carry that period's first, last, minimum and maximum, and every marker. The
+invariant it rests on is the order of `CoarseFlush.FlushAsync` — minute, then hour, then day inside
+one call — so the finer layer of a closing period is complete before the coarser layer reads it.
 
 Ties on value resolve to the **earliest** row; the vendor keeps the **later** one
 (`[MEAS:dump-20260805]`). The difference moves only the abscissa of a point. Flipping it waits on the
@@ -120,7 +126,7 @@ alignment lives.
 
 ## The test bench
 
-`SemiPlot.Tests.Data` runs on a Linux CI runner and never references the UI.
+`SemiPlot.Tests.Integration` runs on a Linux CI runner.
 
 - One server per run: a container start costs seconds while a `CREATE DATABASE` costs under one.
 - One provisioned source database per server, `semiplot_provisioned`. Everything else is a
@@ -130,22 +136,19 @@ alignment lives.
 - One clone per consumer. `CloneSource` names the source: a class that reads the seeded rows clones
   `semiplot_bench`, a class that writes its own rows clones `semiplot_provisioned`. The `SeededArchive`
   class fixture gives a whole class one clone; `ClonedArchiveTest` gives one per test method.
-- Every read in the gated tests connects as `semiplot_reader`, so a grant that never reached the
+- Every read in the container tests connects as `semiplot_reader`, so a grant that never reached the
   reader fails here instead of on commissioning day.
 
-**The container is the only path, and it is disposable.** The built image carries the label
-`semiplot.bench=1` and is built with `WithCleanUp(true)`, so the resource reaper deletes it with the
-session; the container, its volume and every database die with it.
-`PostgresContainerFixtureTests.TheBuiltBenchImageIsLabelledForTheReaperAndForThisRepository` is the
-tripwire: a revert to `WithCleanUp(false)` drops the reaper's label. The images the run *pulled* —
-`ghcr.io/semiteq/semibase:latest` and the base image — stay, because re-pulling every run would put
-the registry on the critical path.
+**The container is the only path, and it is disposable.** The resource reaper deletes the built
+image `semiplot-bench:test` with the session; the container, its volume and every database die with
+it. The images the run *pulled* — `ghcr.io/semiteq/semibase:latest` and the base image — stay,
+because re-pulling every run would put the registry on the critical path.
 
 ## Where the provisioning comes from
 
 The provisioner is a layer of the bench image, not a binary on the machine.
-`SemiPlot.Tests.Data/bench/Dockerfile` copies `/semibase` out of `ghcr.io/semiteq/semibase:latest`
-onto the base image `SEMIPLOT_PG_IMAGE` names and places `provision.sh` in
+`SemiPlot/bench/Dockerfile` copies `/semibase` out of `ghcr.io/semiteq/semibase:latest`
+onto the base image `PostgresContainerFixture.BaseImage` names and places `provision.sh` in
 `/docker-entrypoint-initdb.d/` with mode 0755. The entrypoint runs it while `initdb` is still in
 progress, so `semibase bench --host /var/run/postgresql --database "$SEMIPLOT_PROVISIONED_DATABASE"`
 goes over the unix socket before the published port opens. `set -e` in the script and in the
@@ -153,16 +156,15 @@ entrypoint make a failed provisioning and a dead container one event; `docker lo
 reason.
 
 The fixture builds that image in-process from the `bench/` directory copied to the output
-directory. The image tag carries a digest of the base image, so a run under a changed
-`SEMIPLOT_PG_IMAGE` is never served the build made over the previous base. Readiness is the wait
-strategy's `psql` against `public.trends` over TCP — the entrypoint's temporary server listens on the
-unix socket only — so a container whose provisioning did not complete never becomes ready. The pull
-and the readiness wait share one two-minute bound, `PostgresContainerFixture._startupBound`, so a
-bench that never comes up is a stated skip rather than a hung `SemiPlot.Tests.Data.exe`.
+directory, under the fixed tag `semiplot-bench:test`. Readiness is the wait strategy's `psql`
+against `public.trends` over TCP — the entrypoint's temporary server listens on the unix socket only
+— so a container whose provisioning did not complete never becomes ready. The pull, the build, the
+start and the readiness wait share one two-minute bound,
+`PostgresContainerFixture._startupBound`, so a bench that never comes up fails rather than hanging
+`SemiPlot.Tests.Integration.exe`.
 
-A missing container runtime is a stated skip, never a pass; `SEMIPLOT_REQUIRE_DB` turns it into a
-failure, and no CI job needs it because the Linux runner carries the daemon. The variable list is in
-the root `CLAUDE.md`, *Gated data tests*.
+A missing container runtime is never a pass and never a skip: `InitializeAsync` lets the exception
+through, and xunit fails every test of the collection with `TestPipelineException`.
 
 **`latest` is a moving tag on purpose.** Delivered installations update only the provisioner, so the
 pair worth testing is the newest `semibase` with the current reader. The image build pulls a `FROM`
@@ -175,36 +177,53 @@ only a machine with neither route nor image fails. When an unchanged commit fail
 
 ## The application bench
 
-The gated tests exercise the provider and the journeys exercise the composed application; the
-application bench is where a person looks at the chart. It runs the same bench image, clones
-`semiplot_provisioned` into `semiplot_app` on port 55432 and seeds the clone — the seeder refuses a
-database that already carries rows, and the source stays pristine for the next recreate.
+The container tests exercise the provider and the journeys exercise the composed application; the
+application bench is where a person looks at the chart. `SemiPlot.AppHost` owns the whole stand: the
+bench container, the converge job, the demo writer and the viewer start in dependency order and stop
+together.
 
 ```powershell
-pwsh scripts/bench-demo.ps1          # converge the stand
-pwsh scripts/bench-demo.ps1 -Down    # remove it
+dotnet run --project SemiPlot/SemiPlot.AppHost
 ```
 
-`scripts/bench-demo.ps1` converges every piece it owns:
+or the `Live demo` run configuration, which runs the `http` launch profile (the profile carries
+`ASPIRE_ALLOW_UNSECURED_TRANSPORT`, without which the AppHost refuses its http dashboard address).
+Either way, stopping the AppHost stops the container: it runs under the AppHost's default
+`ContainerLifetime.Session`, and DCP watches its parent process, so a Ctrl+C and a hard kill of
+`SemiPlot.AppHost.exe` (Rider's Stop in Debug) both remove the container, the writer and the viewer
+within seconds. The JetBrains Aspire plugin (`me.rafaelldi.aspire`) is optional; it adds
+per-resource debugging (attaching to the converge job or the writer individually) on top of what the
+Aspire dashboard already shows. The AppHost injects the standard OpenTelemetry and console-formatter
+environment variables into every project resource; neither the seeder nor the viewer carries an
+OpenTelemetry SDK or the `Microsoft.Extensions.Logging` console provider, so the variables are inert.
 
-- The image and the container **on existence**: built once, reused after. `-Down` removes them.
-- `semiplot_app` **on freshness**: when `max(t)` is within five minutes of the wall clock the archive
-  is live and is kept, only the connection file being rewritten; otherwise — stale, empty or absent —
-  the database is dropped, cloned from `semiplot_provisioned` and filled with
-  `--days 1 --pens 8 --seed 1` up to `-SeedEnd`, which defaults to the script's own wall clock.
-  Stating `-SeedEnd` recreates whatever the archive holds; there is no separate `-Reseed`.
-- The connection file, **on every run**, into `SemiPlot/Artifacts/bench-config/` (git-ignored). Its
-  `source_time_zone` is the machine's own identifier, because the demo writer writes that machine's
-  local clock; a zone naming anywhere else shows as a chart that never advances.
+There is no volume: `converge` recreates the archive on every start regardless of what a previous
+session left, so a volume would carry nothing across runs. Every stand start pays `initdb`,
+`semibase bench` and the day-slice seed.
 
-Five minutes is the same bound `StaleArchiveGuard.MaximumAge` applies from the writer's side. A named
-mutex, `Global\semiplot-bench`, spans the whole convergence, so two instances started at once
-serialise and the loser finds the work done — which is what makes the script safe as a before-launch
-task of two run configurations.
+### The converge verb
 
-`-SeedEnd` in the past — `pwsh scripts/bench-demo.ps1 -SeedEnd 2026-08-01T00:00:00` — is the
-stale-past bench: an archive whose last sample predates the opening window, which the demo writer
-refuses, so it is a viewer-only reading taken from the command line.
+`converge` is the seeder's own bench-only verb, and it is what the AppHost runs to bring the stand's
+archive up before the writer and the viewer start.
+
+```powershell
+dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder -- converge `
+  --connection "Host=localhost;Port=55432;Database=semiplot_app;Username=scada_writer;Password=<writer>" `
+  --admin-connection "Host=localhost;Port=55432;Database=postgres;Username=postgres;Password=<super>" `
+  --config-dir SemiPlot/Artifacts/bench-config
+```
+
+It waits for the admin connection up to 60 s, then unconditionally `DROP DATABASE IF EXISTS ...
+WITH (FORCE)` and `CREATE DATABASE ... TEMPLATE semiplot_provisioned` against the database
+`--connection` names, seeds it with `SeederOptions` at the defaults (`--change-seconds` may override
+the change interval; the AppHost passes the writer's 0.5 s so the seeded day and the live tail share
+one density) up to `--end` or this machine's
+clock, fills `semiplot_tags` through `--admin-connection` re-pointed at the stand database, and
+writes `archive-connection.yaml` with the bench reader role's fixed password and
+`TimeZoneInfo.Local.Id`. `BenchRoles` in the seeder is the one place the bench's role names and
+passwords live; the container fixture reads them from there, and the AppHost repeats the same fixed
+values as environment variables for the container, because an Aspire AppHost project cannot compile
+against a project resource's own assembly.
 
 What the server can be asked afterwards, which needs no screen:
 
@@ -221,27 +240,14 @@ The failure states are forced from outside the application: stop the container f
 server, rename `semiplot_tags` for an unfinished provisioning, change the password in the connection
 file for a refused login, delete the catalogue rows for an empty catalogue.
 
-### Running it from Rider
-
-`.run/` at the repository root tracks the buttons over the recipe. Nothing machine-dependent lives in
-them: the role passwords are the fixture's public constants, the port is 55432, and the time zone
-lives only in the generated connection file.
-
-| Configuration | What it does |
-| --- | --- |
-| `Bench up` | Runs the script on its own |
-| `Bench down` | Removes the container and the generated connection file |
-| `Demo writer` | The seeder in `--follow 1` against `semiplot_app`, with `Bench up` as a before-launch task |
-| `Viewer (bench)` | `SemiPlot.UI` with `--config-dir` on the generated file and `--logging-level debug`, with `Bench up` as a before-launch task |
-| `Live demo` | A compound of the last two |
-
-`Bench up` is a before-launch task of both children, not of the compound: a compound carries no
-before-launch list and starts its children in parallel, and the mutex serialises the two runs.
-Stopping the viewer leaves the writer running.
+Nothing machine-dependent lives in `AppHost.cs`: the role passwords are `BenchRoles`' public
+constants, the port is 55432, and the time zone lives only in the generated connection file. The
+`Live demo` run configuration at the repository root's `.run/` is a `DotNetProject` configuration
+over `SemiPlot.AppHost`, in the shape of `Debug.run.xml`.
 
 ## The headless render and input guards
 
-Three classes in `SemiPlot.Tests` pin what a rendering-stack version bump can change without
+Three classes in `SemiPlot.Tests.Unit` pin what a rendering-stack version bump can change without
 announcing it: how a gap is drawn, and how a pointer reaches a handler.
 
 | Class | Drives | Asserts |

@@ -4,11 +4,8 @@ namespace SemiPlot.DataSource.Postgres;
 
 /// <summary>
 /// The bound and the merge of the fresh tail: the raw rows a coarse window is short of at its right edge,
-/// because a coarse layer is flushed on its own cadence and its newest row is up to one point spacing old
-/// (docs/architecture/data-integration.md, Fresh tail).
-/// <para>
-/// No conversion happens on this path.
-/// </para>
+/// because a coarse layer is flushed on its own cadence and its newest row is up to one point spacing old.
+/// No conversion happens on this path (docs/architecture/data-integration.md, Fresh tail).
 /// </summary>
 internal static class FreshTail
 {
@@ -38,11 +35,8 @@ internal static class FreshTail
 	}
 
 	/// <summary>
-	/// The instant a tail read starts at, or <c>null</c> when no tail is read at all.
-	/// <para>
-	/// Seams at the window start drop out here: left in, they pull the bound down to the clamp
-	/// for rows <see cref="Merge"/> discards.
-	/// </para>
+	/// The instant a tail read starts at, or <c>null</c> when no tail is read at all. Seams at the window
+	/// start drop out here: left in, they pull the bound down to the clamp for rows <see cref="Merge"/> discards.
 	/// </summary>
 	public static DateTime? Start(
 		AggregationLayer layer,
@@ -86,13 +80,9 @@ internal static class FreshTail
 	}
 
 	/// <summary>
-	/// The coarse rows with each pen's tail rows appended after its own, in ascending pen identifier with
-	/// one consecutive run per pen — the ordering <see cref="HistoryRowFold.Fold"/> requires. Rows at or
-	/// before a pen's own seam are left to the fold, whose ascending check drops them.
-	/// <para>
-	/// A pen whose seam predates <paramref name="tailStartLocal"/> gets no tail row: a range with no row
-	/// is not a gap and would draw one straight segment.
-	/// </para>
+	/// The coarse rows with each pen's tail rows appended after its own, in ascending pen identifier with one
+	/// consecutive run per pen — the ordering <see cref="HistoryRowFold.Fold"/> requires. A pen whose seam
+	/// predates <c>tailStartLocal</c> gets no tail row: a range with no row is not a gap.
 	/// </summary>
 	public static IReadOnlyList<HistoryRowFold.Row> Merge(
 		IReadOnlyList<HistoryRowFold.Row> coarseRows,

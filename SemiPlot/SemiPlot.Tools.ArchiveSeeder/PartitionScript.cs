@@ -2,10 +2,9 @@
 
 namespace SemiPlot.Tools.ArchiveSeeder;
 
-// One day partition per covered day, named tpYYYYmMMdDD
-// (docs/architecture/scada-archive.md#database-objects). A row whose day has no partition lands in
-// tpdefault, which every later slice reads as a fault signal (#reader-hazards), so the writer creates
-// them all before it copies anything.
+// One day partition per covered day, named tpYYYYmMMdDD (docs/architecture/scada-archive.md#database-objects);
+// a row with no partition lands in tpdefault, a fault signal (#reader-hazards), so the writer creates them
+// all before it copies anything.
 public static class PartitionScript
 {
 	// Invariant throughout: a machine running a non-Gregorian calendar would otherwise name the

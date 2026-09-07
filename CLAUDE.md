@@ -107,6 +107,8 @@ Test traits: `[Trait("Component", "Core|UI")]`, `[Trait("Area", "Data|Bridge|Cha
 AwesomeAssertions everywhere. Tests over provider errors assert by error type and structured field,
 never on message wording.
 
+Frame cost during a drag is measured, not asserted: `docs/architecture/testing-strategy.md`, Frame cost.
+
 ### Container tests
 
 Every test in `SemiPlot.Tests.Integration` needs a container runtime and nothing else:
@@ -231,9 +233,9 @@ No abbreviations in names.
 - `IDataProvider` + its DTOs stay in `SemiPlot.Core`; every concrete provider lives in its own
   `SemiPlot.DataSource.*` project (`SemiPlot.DataSource.Postgres` is the only one). Core must not
   reference a data-source project; a further provider slots in as a sibling without touching Core.
-- `MinMaxDecimator` lives in `SemiPlot.Core/Trends` beside `PenHistoryEnvelope` and is shared by every
-  provider; each provider translates its own rows into the decimator's input vocabulary, which
-  `docs/architecture/charting.md` states.
+- `MinMaxDecimator` lives in `SemiPlot.Core/Trends` beside `PenHistoryEnvelope` and is shared by the
+  coarse-layer read path of every provider; each provider translates its own rows into the
+  decimator's input vocabulary, which `docs/architecture/charting.md` states.
 - The bench seeder `SemiPlot.Tools.ArchiveSeeder` owns `SyntheticValueWalk`, `SyntheticPenCatalog`
   and `SyntheticPen`. `RawLayerGeneratorTests` pins the generator by determinism and invariants —
   the absolute lattice, the break holes, the row-pair shape — not by a digest. **One lattice serves

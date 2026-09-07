@@ -19,9 +19,9 @@ namespace SemiPlot.UI.Chart;
 
 public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 {
-	private const double BandFillOpacity = 0.2;
 	private static readonly TimeSpan _redrawThrottle = TimeSpan.FromMilliseconds(33);
 	private static readonly TimeSpan _historyDebounceWindow = TimeSpan.FromMilliseconds(150);
+	private static readonly TimeSpan _historyCapInterval = TimeSpan.FromMilliseconds(400);
 	private readonly ChartAxisBinder _axisBinder;
 
 	private readonly TrendCoordinator _coordinator;
@@ -30,6 +30,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	private readonly CompositeDisposable _disposables = [];
 	private readonly Dictionary<int, PenHistoryEnvelope> _envelopesById = [];
 	private readonly ChartHistoryRequestDebouncer _historyDebouncer;
+	private readonly ILogger<TrendChartViewModel> _logger;
 	private readonly Dictionary<int, TrendPenState> _pensById = [];
 	private readonly ChartRealtimeApplier _realtimeApplier;
 	private readonly Subject<Unit> _redrawRequests = new();
@@ -42,6 +43,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	// Decimation width of every history query, in columns: the last width the render seam reported. The
 	// maximum stands until the first report so the initial query is not starved of resolution.
 	private int _reportedColumnTarget = HistoryColumnTarget.MaxColumns;
+	private FetchRange? _lastFetch;
 	private DateTime _windowEnd;
 	private DateTime _windowStart;
 
@@ -52,6 +54,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		ILogger<TrendChartViewModel> logger)
 	{
 		_coordinator = coordinator;
+		_logger = logger;
 		_axisBinder = new ChartAxisBinder(Plot);
 		_cursorReader = new ChartCursorReader(_pensById, _envelopesById);
 		_deltaCursorReader = new ChartDeltaCursorReader(_envelopesById);
@@ -59,8 +62,9 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_historyDebouncer = new ChartHistoryRequestDebouncer(
 			QueryHistoryAsync,
 			ApplyHistory,
-			failure => logger.LogWarning(failure, "History query failed."),
+			OnHistoryQueryFailed,
 			_historyDebounceWindow,
+			_historyCapInterval,
 			dataScheduler,
 			uiScheduler);
 		Navigation.WindowChanged += OnNavigationWindowChanged;
@@ -194,7 +198,10 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_windowStart = Navigation.From;
 		_windowEnd = Navigation.To;
 
-		RequestHistory(Navigation.From, Navigation.To, Navigation.ActiveLayer);
+		if (!IsWindowFetched(Navigation.From, Navigation.To, Navigation.ActiveLayer))
+		{
+			RequestHistory(Navigation.From, Navigation.To, Navigation.ActiveLayer);
+		}
 	}
 
 	public TrendPenState AddPen(Pen pen)
@@ -238,8 +245,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			ActivePenId = _pensById.Keys.FirstOrDefault();
 		}
 
-		Plot.Remove(state.CenterLine);
-		Plot.Remove(state.Band);
+		Plot.Remove(state.Line);
 		ApplyAxisModel();
 		RequestRedraw();
 
@@ -358,25 +364,14 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	private TrendPenState BuildPenState(Pen pen)
 	{
-		var color = new Color(pen.Color);
-
-		var centerPoints = new List<Coordinates>();
-		var centerLine = Plot.Add.Scatter(centerPoints, color);
-		centerLine.MarkerStyle = MarkerStyle.None;
-
-		var band = Plot.Add.FillY([], [], []);
-		band.FillColor = color.WithAlpha(BandFillOpacity);
-		band.LineWidth = 0f;
-
-		// Leaving the default marker makes Polygon.Render walk every vertex calling a no-op marker draw
-		// each frame.
-		band.MarkerStyle = MarkerStyle.None;
+		var columns = new List<EnvelopeColumn>();
+		var line = new EnvelopeLine(columns) { Color = new Color(pen.Color) };
 
 		// Shared-X invariant: every plottable is pinned to the single bottom (time) axis.
-		centerLine.Axes.XAxis = Plot.Axes.Bottom;
-		band.Axes.XAxis = Plot.Axes.Bottom;
+		line.Axes.XAxis = Plot.Axes.Bottom;
+		Plot.Add.Plottable(line);
 
-		return new TrendPenState(pen, centerLine, band, centerPoints);
+		return new TrendPenState(pen, line, columns);
 	}
 
 	private void OnNavigationWindowChanged(object? sender, NavigationWindow window)
@@ -384,19 +379,43 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_windowStart = window.From;
 		_windowEnd = window.To;
 
-		if (window.RequiresHistoryRequery)
+		if (window.RequiresHistoryRequery && !IsWindowFetched(window.From, window.To, window.Layer))
 		{
 			RequestHistory(window.From, window.To, window.Layer);
+
+			if (!MayApplyAxisModel(window.From, window.To))
+			{
+				// docs/architecture/trend-feature-spec.md, AY-4
+				RequestRedraw();
+
+				return;
+			}
 		}
 
 		ApplyAxisModel();
 		RequestRedraw();
 	}
 
+	private bool IsWindowFetched(DateTime fromUtc, DateTime toUtc, AggregationLayer layer)
+	{
+		return _lastFetch is { } fetched
+			&& HistoryPrefetch.Covers(fetched, fromUtc, toUtc, layer, Navigation.TargetColumnCount);
+	}
+
+	private bool MayApplyAxisModel(DateTime fromUtc, DateTime toUtc)
+	{
+		return _lastFetch is not { } fetched || (fromUtc < fetched.ToUtc && toUtc > fetched.FromUtc);
+	}
+
 	private void RequestHistory(DateTime fromUtc, DateTime toUtc, AggregationLayer layer)
 	{
+		var range = HistoryPrefetch.Expand(
+			fromUtc, toUtc, layer, Navigation.TargetColumnCount, Navigation.FirstSample);
+
 		_historyDebouncer.Request(new HistoryRequest(
-			[.. _pensById.Keys], fromUtc, toUtc, layer, _reportedColumnTarget));
+			[.. _pensById.Keys],
+			range,
+			HistoryPrefetch.ScaleColumnTarget(_reportedColumnTarget)));
 	}
 
 	private Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(HistoryRequest request)
@@ -411,6 +430,10 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	private void ApplyHistory(HistoryRequest request, IReadOnlyList<PenHistoryEnvelope> envelopes)
 	{
+		// The gate opens on the range that came back, never on the one last asked for: only a result that
+		// landed says what the envelopes in hand cover.
+		_lastFetch = request.Range;
+
 		foreach (var envelope in envelopes)
 		{
 			_envelopesById[envelope.PenId] = envelope;
@@ -427,9 +450,37 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		}
 
 		DropPensMissingFromHistory(envelopes, request.PenIds);
-		ApplyAxisModel();
+
+		var drawsTheWindowInView = IsWindowFetched(_windowStart, _windowEnd, Navigation.ActiveLayer);
+
+		if (!drawsTheWindowInView)
+		{
+			// A drag can leave the band a query was issued for and re-enter the band the envelopes in hand
+			// covered, which the gate then reads as fetched and asks nothing more. The result landing here
+			// replaces those envelopes, so the window in view is re-requested from the range that arrived.
+			RequestHistory(_windowStart, _windowEnd, Navigation.ActiveLayer);
+		}
+
+		if (drawsTheWindowInView || MayApplyAxisModel(_windowStart, _windowEnd))
+		{
+			ApplyAxisModel();
+		}
+
 		RequestRedraw();
 		_historyApplied.OnNext(Unit.Default);
+	}
+
+	// The axis is applied whatever the window in view holds, because the whole-envelope fallback is the best
+	// range there is until a read succeeds.
+	private void OnHistoryQueryFailed(IReadOnlyList<IError> errors)
+	{
+		_logger.LogWarning(
+			errors.OfType<ExceptionalError>().FirstOrDefault()?.Exception,
+			"History query failed: {Reasons}",
+			string.Join("; ", errors.Select(error => error.Message)));
+
+		ApplyAxisModel();
+		RequestRedraw();
 	}
 
 	// Only the identifiers the request carried are considered: a pen added while the query was in flight was

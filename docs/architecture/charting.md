@@ -7,36 +7,50 @@ native Avalonia control (`AvaPlot`), no web view. It was chosen over OxyPlot for
 independent multi-axis; the prior uPlot/WebView2 stack is removed. The surrounding UI (legend,
 toolbar, axes UX, theming) is ours; ScottPlot is only the plotting core.
 
-### Per-pen plottables: `Scatter` (center) + `FillY` (band)
+### Per-pen plottable: `EnvelopeLine`
 
-Each pen is drawn as **two plottables over a data-layer-decimated min/max envelope**
-(`PenHistoryEnvelope`: ascending `Timestamps` + `Min` + `Max` + `Center`):
-
-- a **`Scatter`** center line over the envelope's `Center` channel, and
-- a **`FillY`** min/max band (`X`, `Top = Max`, `Bottom = Min`) carrying the decimation envelope.
+Each pen is drawn as **one plottable of our own** over a data-layer-decimated min/max envelope
+(`PenHistoryEnvelope`: ascending `Timestamps` + `Min` + `Max` + `Center`). `Chart/EnvelopeLine` is an
+`IPlottable` holding a `List<EnvelopeColumn>` (`X`, `Min`, `Max`, `Center`) by reference and strokes one
+polyline through every visible column's `Min` and `Max`: no fill, no band, no markers.
 
 `SignalXY` was rejected: it cannot express per-pen stepping plus NaN gaps, and its built-in
 decimation is unused because the data layer pre-decimates. `DataLogger` is cited prior art only
 (it cannot carry a pre-decimated min/max band), **not** the implementation pattern.
 
-**Gaps via NaN, not an enum.** ScottPlot 5 `Scatter` has **no `OnNaN`/`Gap` property** (an
-earlier plan assumption). Gap segmentation is automatic: the default path strategy
-(`ScottPlot.PathStrategies.Straight`) skips `float.IsNaN` points and breaks the path, so feeding
-`double.NaN` (the envelope's gap marker, and what `TrendPenState` encodes a null append as) produces
-the gap in the center line and the band at the same X. Every NaN a chart draws comes from the
-history path: `RealtimeBatch` carries `double` values, so the live edge has no null to encode.
+**Why one polyline instead of `Scatter` + `FillY`.** The pair it replaced walked every coordinate twice
+per frame: `FillY` is a `Polygon` building an `SKPath` of `2 x columns + 1` vertices, and `Scatter` walked
+all points again through `Drawing.DrawMarkers` even at `MarkerStyle.None`. Neither culled to the viewport,
+and the prefetch margin (`HistoryPrefetch.MarginColumnFactor = 3`) makes every pen's buffer three visible
+windows wide, so a frame cost three times what it drew. Measured on the bench stand on 2026-09-07 with
+8 pens and 2048 columns, `RenderOnce` averaged 62 ms (max 386 ms) with the fill anti-aliased and 4.8 ms
+(max 34 ms) with it off. Drawing the min/max as a line rather than a fill also keeps a spike inside a
+column visible, which a centre-only line hides.
 
-**Per-pen stepping.** `Scatter.ConnectStyle` carries the per-pen line style — `StepHorizontal`
-for stepped (discrete/digital tags), `Straight` for interpolated (analog). Mapped from the Core
-`PenLineStyle` enum in `Chart/TrendPenState`.
+**Viewport culling.** `EnvelopePath.VisibleRange` binary-searches the ascending `X` for the columns inside
+the `Axes.XAxis` range plus one column beyond each edge, so a segment entering the viewport is drawn and
+the buffer outside it is never walked.
 
-**Realtime append / live-edge join.** `TrendPenState` owns one pen's `Scatter` + `FillY` plus the
-backing buffers. The center `Scatter` wraps a `List<Coordinates>` by reference so appends are live;
-the `FillY` snapshots, so it is re-set (`SetDataSource`) after each append. The realtime tail
-appends one point to the center line with the band degenerate (`Min == Max == value`) at the live
-edge. At coarse layers (minute/hour/day) a realtime sample does **not** draw a raw point — it folds
-into the current decimation column (`FoldRealtime` widens that column's Min/Max band and moves its
-center). Cursor and legend read the `Center` channel consistently across the seam.
+**Path shape.** `EnvelopePath.Build` turns the visible columns into the point sequence `Render` strokes: a
+column is entered at whichever of `Min`/`Max` is nearer the previous point's Y and left at the other, which
+keeps the crossing between two columns short; a column whose `Min` equals its `Max` is one point; a stepped
+pen holds the previous Y to the new column's X before the vertical move. It touches no Skia, so the culling
+window, the gap break and the step shape are unit-tested (`EnvelopePathTests`).
+
+**Gaps via NaN.** A column carrying `NaN` in `Min`/`Max` is the envelope's gap marker (and what
+`TrendPenState` encodes a null append as): `Build` breaks the path there and the next real column opens a
+new segment with a `MoveTo`. Every NaN a chart draws comes from the history path: `RealtimeBatch` carries
+`double` values, so the live edge has no null to encode.
+
+**Per-pen stepping.** `EnvelopeLine.PenLineStyle` carries the Core `PenLineStyle` — `Stepped` for
+discrete/digital tags, `Interpolated` for analog. `Chart/TrendPenState` assigns it from the pen.
+
+**Realtime append / live-edge join.** `TrendPenState` owns one pen's `EnvelopeLine` plus the column buffer.
+The plottable re-reads that list on every render, so appends are live and nothing is re-set. The realtime
+tail appends one degenerate column (`Min == Max == Center == value`) at the live edge. At coarse layers
+(minute/hour/day) a realtime sample does **not** append — it folds into the current decimation column
+(`FoldRealtime` widens that column's `Min`/`Max` and moves its `Center`). Cursor and legend read the
+`Center` channel consistently across the seam.
 
 **Axes / shared-X invariant.** Each distinct-unit pen gets its own `IYAxis`
 (`AddLeftAxis`/`AddRightAxis`); a same-unit group shares one `IYAxis`; non-active axes are
@@ -105,8 +119,10 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
 - `Chart/TrendChartView` + `TrendChartViewModel` — the chart. The view is the only type touching
   `AvaPlot`; the view model owns a bare `ScottPlot.Plot` (headless-constructable), the per-pen
   `TrendPenState` dictionary, and the coordinator subscriptions — so it is unit-tested headless.
-- `Chart/TrendPenState` — one pen's `Scatter` + `FillY`, its backing buffers, `IsVisible`,
-  `CurrentValue`, and the history-load / realtime-append / fold logic.
+- `Chart/EnvelopeLine` + `EnvelopePath` — the per-pen `IPlottable` and the pure geometry it strokes:
+  the visible-column search, the min/max point order, the gap break and the step shape.
+- `Chart/TrendPenState` — one pen's `EnvelopeLine`, its column buffer, `IsVisible`, `CurrentValue`,
+  and the history-load / realtime-append / fold logic.
 - `Chart/ChartAxisBinder` — applies the `PenScaleModel` output to ScottPlot Y axes
   (`AddLeftAxis`/`AddRightAxis`, shared-group axis assignment, `SetLimitsY`, shared-X pinning).
 - `Chart/ChartNavigationController` — owns the `TrendNavigationModel`, the layer ladder, the live-edge
@@ -128,14 +144,28 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   (with 1024 in force: any width from 659 to 1592 px) changes the requested resolution without
   re-querying. The drawn resolution then lags the canvas by up to one deadband span, `2 × 1.1² ≈ 2.42`,
   until the next navigation gesture re-queries at the current width.
+  Every window change that asks for a re-query passes the prefetch gate below before a query leaves:
+  the flag says the data may be stale, `HistoryPrefetch.Covers` says whether it is.
 - `Chart/HistoryColumnTarget` — pixel width → column count (one per pixel, clamped to 256…2048; a
   non-positive width has no canvas behind it and is rejected). The unquantised value is what every
-  history query asks the provider to decimate to; `TrendChartViewModel` keeps the last reported one
-  and stands on `MaxColumns` until the first render reports.
+  history query asks the provider to decimate to, times the three windows the prefetch below fetches;
+  `TrendChartViewModel` keeps the last reported one and stands on `MaxColumns` until the first render
+  reports.
 - `Chart/ChartHistoryRequestDebouncer` — the one history path, for the initial load and every gesture:
-  `Throttle` (one trailing request after the gesture goes quiet) → query on the data scheduler →
-  `Switch` (latest-wins, drops stale in-flight responses) → apply on the UI scheduler. The first-snap
-  path stays non-requerying.
+  `Throttle` (one trailing request 150 ms after the gesture goes quiet) merged with `Sample` at a
+  400 ms cap interval (one request per cap while the gesture keeps moving), duplicates dropped by
+  window, layer and column target → one query at a time on the data scheduler, the newest request
+  that arrived while it ran running when it lands → apply, or report the failure, on the UI
+  scheduler. The cap is what fills the strip a long drag exposes while it is still moving; the single
+  slot is what lets a read slower than the cap complete at all. The first-snap path stays
+  non-requerying.
+- `Chart/HistoryPrefetch` — visible window → the window to fetch: one window width of margin on each
+  side at three times the column target, so the fetched range stays at one column per pixel, with the
+  left edge clamped to the archive's first sample. `TrendChartViewModel` keeps the last `FetchRange`
+  and asks `Covers` before every request, so a pan that stays in the inner band, half a window width
+  in from each fetched edge, issues no query, while a zoom, a layer change and a column-target change
+  always issue one. Envelopes therefore span three windows, and the auto scale reads the visible one
+  only, through `PenScaleModel`'s window bound.
 - `Chart/ChartRealtimeApplier` — the append-vs-fold rule per layer for incoming `RealtimeBatch`es.
   It walks each `PenRealtimeValues` on that pen's own timestamps, never on the batch's union, and
   hands the union's last timestamp to `ChartNavigationController.OnLiveEdge`.
@@ -152,8 +182,7 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   from the toolbar delta toggle.
 - `Chart/ChartAxisRegion` + `ChartAxisEdit` — Y-axis click-region hit-test (panel band, upper/lower
   split, pixel→value with Y inversion) and the seed-untouched-bound helper for inline range edits.
-- `Chart/LocalTimeAxis` — UTC↔local-OADate conversion at every render boundary;
-  `PenLineStyle` → `Scatter.ConnectStyle`.
+- `Chart/LocalTimeAxis` — UTC↔local-OADate conversion at every render boundary.
 - `Toolbar/TrendToolbarView` + `TrendToolbarViewModel` — autoscale, set-limits, layer selector,
   jump-to-now, sticky toggle, delta-mode toggle + inline Δt/Δy readout (ReactiveUI commands).
 - `Legend/TrendLegendView` + `TrendLegendViewModel` (+ group / row VMs and two converters) — the
@@ -164,12 +193,14 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
 **Core models (`SemiPlot.Core.Trends`, renderer-agnostic, unit-tested):**
 
 - `PenScaleModel` — per-axis `(Min, Max)` + autoscale mode + visibility + axis key (active pen on
-  the primary axis; per-pen or shared-group scaling; Auto / Manual / AutoscaleToWindow; log sanitize).
+  the primary axis; per-pen or shared-group scaling; Auto over the columns inside
+  `[windowStart, windowEnd]` / Manual; log sanitize).
 - `TrendNavigationModel` — `[from, to]` window, sticky flag, zoom width; pan / zoom / jump-to-now /
   live-edge advance, clamped 1 s … 1 year, zoom width quantized onto a 1.25 ladder, `From ≥ FirstSample`.
 - `MinMaxDecimator` — samples + target column count → min AND max per column (+ center); NaN-gap anchor
-  at empty leading/trailing edge sub-spans. Shared by every provider: each translates its own rows
-  into the parallel `(timestamp, value?)` vocabulary where a null marks a gap.
+  at empty leading/trailing edge sub-spans. Shared by the coarse-layer read path of every provider:
+  each translates its own rows into the parallel `(timestamp, value?)` vocabulary where a null marks
+  a gap. The Postgres Raw path runs no decimator; the server reduces the rows instead.
 - `MinimapGeometry` — extent + window → strip start/width fractions, and fraction → timestamp.
 - `CursorReadoutModel` — cursor X → per-pen interpolated `Center` value (gaps → no value).
 - `DeltaCursorModel` — two cursor times → `DeltaReadout` (Δt + Δy for the active pen).
@@ -183,7 +214,8 @@ view model:
 - **History:** `QueryHistoryAsync(penIds, from, to, layer, targetColumnCount)` is the single history
   query, returning one `PenHistoryEnvelope` per pen (ascending `Timestamps` + `Min` + `Max` +
   `Center`; NaN = gap). The initial load and every gesture re-query go through
-  `ChartHistoryRequestDebouncer`, whose `Switch` makes the latest window win.
+  `ChartHistoryRequestDebouncer`, which runs one query at a time and lets the newest window asked
+  for run last.
 - **Realtime:** `IObservable<RealtimeBatch>` — an ascending union timeline the live edge advances
   from, plus one `PenRealtimeValues` per pen carrying that pen's **own** timestamps and `double`
   values; buffered on the data scheduler and observed on the UI scheduler. The values are per pen
@@ -199,5 +231,5 @@ view model:
   `IObservable<ArchiveConnectionState>` on the UI scheduler. `MainWindowViewModel` binds it once and
   draws it as a banner row over a chart that keeps its history (see data-integration.md).
 
-These records are ScottPlot's input shape after the view model maps them onto `Coordinates` /
-`FillY` data sources; there is no serialization step.
+These records are the plottables' input shape after the view model maps them onto `EnvelopeColumn`
+buffers; there is no serialization step.

@@ -63,14 +63,13 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 **Definition.** `Manual` mode: fixed `ManualMin/ManualMax` for an axis; on swapped bounds — auto-swap. Bound editing is available from the UI (a click in the upper zone of the axis = MAX, in the lower zone = MIN, inline editor).
 **Acceptance.** Core/test: `ScaleMode.Manual` returns exactly the given bounds; swapped input is swapped back. UI: a click in an axis zone opens the editor, and entry applies the bounds immediately.
 
-### AY-4 — Autoscale over all data (MUST)
-**Definition.** `Auto` mode: min/max over the pen's whole envelope with 5% padding; a flat range → ±0.5. A one-shot autofit via a button/double-click on the axis.
-**Acceptance.** Core/test: `ScaleMode.Auto` — the bounds span min..max with padding; a flat range gives ±0.5. UI: a double-click on the axis fits the pen in full.
+### AY-4 — Autoscale to the visible window (MUST)
+**Definition.** `Auto` mode: min/max over the columns inside the current `[windowStart, windowEnd]` with 5% padding; a flat range → ±0.5; a window holding no column → the whole fetched envelope, and the default range only when no envelope carries a usable value at all. A one-shot autofit via a button/double-click on the axis.
+**Acceptance.** Core/test: `ScaleMode.Auto` — the bounds span min..max of the columns in the window with padding; a flat range gives ±0.5; columns outside the window do not widen the range. UI: a double-click on the axis fits the pen over the window it shows.
+**Note.** The fetched envelope carries a margin on each side of the window, so the bound is what keeps a pan from re-scaling on data the operator cannot see. A window that leaves the fetched band outright shows none of those columns, and the chart view model then skips the axis recompute entirely: the axis holds its last range until the query the pan issued lands. The whole-envelope fallback inside `PenScaleModel` is left for the sticky live edge, where the window runs ahead of the newest fetched column with no query behind it.
 
-### AY-5 — Autoscale to the visible window (SHOULD)
-**Definition.** `AutoscaleToWindow` mode: min/max only over the columns inside the current `[windowStart, windowEnd]`. It must be **available from the UI** (toggle/command), not only modeled in Core.
-**Acceptance.** Core/test: the mode computes bounds only over the points in the window. UI: a command/toggle switches the axis into this mode, and the bounds are recomputed when the window changes.
-**Note.** Closes gap (b)3: the mode exists in Core but is not wired to the interface.
+### AY-5 — Folded into AY-4
+`Auto` is the window-bounded mode; there is no second autoscale mode to switch into.
 
 ### AY-6 — Logarithmic scale (SHOULD)
 **Definition.** A log axis mode (Log10/Ln/arbitrary base — at minimum Log10). Values ≤ 0 are sanitized (dropped/clamped), and there is a default range on empty data. The mode must be **available from the UI and actually change the axis type in the render**, not merely clamp linear limits.
@@ -86,8 +85,8 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 ## 3. Pens
 
 ### PN-1 — Pen model and Y layer (MUST)
-**Definition.** A pen: `PenId`, `Name`, `Group`, `Color`, `LineStyle`, axis key. A pen's history is a `PenHistoryEnvelope` (parallel `Timestamps/Min/Max/Center`, strictly increasing timestamps, NaN = gap). Render: `Scatter(Center)` + a `FillY(Min/Max)` band; the band is hidden where Min==Max.
-**Acceptance.** Core/test: the envelope constructor throws on unequal lengths and non-increasing timestamps; NaN breaks the line. UI: the band is drawn only where Min≠Max.
+**Definition.** A pen: `PenId`, `Name`, `Group`, `Color`, `LineStyle`, axis key. A pen's history is a `PenHistoryEnvelope` (parallel `Timestamps/Min/Max/Center`, strictly increasing timestamps, NaN = gap). Render: one `EnvelopeLine` polyline through each column's Min and Max.
+**Acceptance.** Core/test: the envelope constructor throws on unequal lengths and non-increasing timestamps; NaN breaks the line. UI: a column whose Min differs from its Max is drawn as a vertical segment.
 
 ### PN-2 — Resize a pen's Y layer (MUST)
 **Definition.** The user can compress/stretch a pen vertically (change the visible Y range of a specific pen/axis) independently of the others — with the mouse and/or bound controls.
@@ -99,7 +98,7 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 
 ### PN-4 — Enable/disable a pen (visibility) (MUST)
 **Definition.** A pen can be hidden/shown (a checkbox in the legend, two-way sync with the visibility flag). A hidden pen is not drawn and does not participate in the hover readout.
-**Acceptance.** UI: toggling visibility in the legend removes/restores the pen and its band; the flag is synchronized between the legend and the chart without looping (guard).
+**Acceptance.** UI: toggling visibility in the legend removes/restores the pen's line; the flag is synchronized between the legend and the chart without looping (guard).
 
 ### PN-5 — Color and line style (MUST)
 **Definition.** A pen's color and line style: interpolated (a straight line between points) and stepped (Stepped). Style is mapped to the render in `TrendPenState`.
@@ -177,11 +176,11 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 **Note.** Closes gap (b)1: there is no manual selector, the layer is only auto-by-zoom.
 
 ### DA-5 — Decimation to the canvas width (MUST)
-**Definition.** The number of columns ≈ the DataRect width in pixels (256..2048). A min/max-type decimator (M4-like): spikes survive; gaps split the series into segments with NaN anchors (no "collapse to a straight line" at the edges).
+**Definition.** The number of columns across the visible window ≈ the DataRect width in pixels (256..2048); the query asks for three times that count, because it fetches one window width of margin on each side as well (§DA-9), which keeps the fetched range at one column per pixel. A min/max-type decimator (M4-like): spikes survive; gaps split the series into segments with NaN anchors (no "collapse to a straight line" at the edges).
 **Acceptance.** Core/test: the decimator preserves the global min/max of a bucket; on fragmented data it inserts NaN anchors between segments. UI: on gaps the line breaks rather than being stretched as a straight line.
 
 ### DA-6 — Column-count stability under fragmentation (SHOULD)
-**Definition.** The final column count must not substantially exceed `targetColumnCount` when there are many short segments (each segment yields ≥1 column → overflow). The distribution of columns across segments must keep the "≈ target" contract.
+**Definition.** `targetColumnCount` here is the canvas figure for the visible window; the query's own target is three times it (§DA-5). The final column count must not substantially exceed the requested target when there are many short segments (each segment yields ≥1 column → overflow). The distribution of columns across segments must keep the "≈ target" contract.
 **Acceptance.** Core/test: over N segments the total column count ≤ target + tolerance; the "≈ target" contract is not grossly violated.
 **Note.** Closes gap (b)6.
 
@@ -196,8 +195,8 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 **Note.** Closes gap (b)10.
 
 ### DA-9 — History query sequencing (MUST)
-**Definition.** Gesture re-queries are debounced (Throttle ~150 ms → FromAsync → Switch, latest-wins) and carry monotonic numbering (an old response does not overwrite a newer window). The initial load is awaited directly.
-**Acceptance.** Core/test: with two overlapping queries the response with the greater sequence is applied; the stale one is ignored. UI: a fast zoom does not leave the old window on screen.
+**Definition.** Gesture re-queries are debounced by a trailing Throttle (~150 ms) merged with a Sample at a 400 ms cap interval, so a continuous gesture keeps fetching once per cap interval instead of only after it goes quiet. One query runs at a time and the newest window that arrived while it ran runs when it lands, so a read slower than the cap still completes and the newest window is the last one applied. The prefetch gate sits ahead of the debouncer: a pan that stays inside the already fetched band issues no query at all (§DA-5). The initial load is awaited directly.
+**Acceptance.** Core/test: with two overlapping queries the response with the greater sequence is applied; the stale one is ignored. Core/test: a request pushed continuously for 2 s on a test scheduler issues one query per cap interval during the gesture and one trailing query after it stops. UI: a fast zoom does not leave the old window on screen; a continuous drag fills the exposed strip while the drag is still moving.
 
 ---
 
@@ -257,10 +256,10 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 
 **MUST (product core):** TM-1, TM-2, TM-3, TM-4; AY-1, AY-2, AY-3, AY-4; PN-1, PN-2, PN-3, PN-4, PN-5, PN-6; CU-1, CU-2, CU-3; DA-1, DA-2, DA-3, DA-5, DA-7, DA-9; RT-1, RT-2.
 
-**SHOULD:** TM-5, TM-6; AY-5, AY-6; PN-7, PN-8; CU-4, CU-6; DA-4, DA-6, DA-8; RT-3; MS-1, MS-2.
+**SHOULD:** TM-5, TM-6; AY-6; PN-7, PN-8; CU-4, CU-6; DA-4, DA-6, DA-8; RT-3; MS-1, MS-2.
 
 **NICE:** TM-7, TM-8; AY-7; PN-9, PN-10; CU-5; RT-4; MS-3, MS-4, MS-5, MS-6, MS-7.
 
 **Direct user requirements (all MUST):** continuous time canvas → TM-1; multiple Y axes → AY-1/AY-2; resize a pen's Y layer, min/max, disable → PN-2/PN-3/PN-4; T1/T2 markers → CU-3; pen value at a point → CU-2; source always PostgreSQL → DA-1.
 
-**Known "model exists — UI missing" discrepancies promoted to requirements:** AY-6 (log axis), AY-5 (autoscale-to-window), DA-4 (manual layer), AY-2 (AxisKey ≠ group), DA-7 (X monotonicity), CU-6 (readout at the live edge), DA-6 (column-count stability).
+**Known "model exists — UI missing" discrepancies promoted to requirements:** AY-6 (log axis), DA-4 (manual layer), AY-2 (AxisKey ≠ group), DA-7 (X monotonicity), CU-6 (readout at the live edge), DA-6 (column-count stability).

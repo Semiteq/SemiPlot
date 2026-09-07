@@ -59,7 +59,7 @@ Constraint: **$0 budget** — only free/OSS components.
 |   - IDataProvider abstraction + records (Pen, envelope,     |
 |     ArchiveExtent, …)                                       |
 |   - renderer-agnostic models (navigation, scale, cursor, …) |
-|   - MinMaxDecimator, shared by every provider               |
+|   - MinMaxDecimator, shared by the coarse-layer reads       |
 +-------------------------------------------------------------+
               │ implemented by a SemiPlot.DataSource.* project
               ▼
@@ -88,7 +88,8 @@ bridge**: the chart is a native ScottPlot control, fed in-process by `TrendCoord
 - **History:** the chart requests a window → `TrendCoordinator.QueryHistoryAsync` (the single history
   query, reached through the debouncer by the initial load and every gesture alike) → provider
   returns one decimated `PenHistoryEnvelope` per pen (ascending `X` + `Min`/`Max`/`Center`) → the view
-  model applies the result into the plot; `Switch` in the debouncer is what makes the latest window win.
+  model applies the result into the plot; the debouncer runs one query at a time and lets the newest
+  window asked for run last.
 
 ## Deployment
 

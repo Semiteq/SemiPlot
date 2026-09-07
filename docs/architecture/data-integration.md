@@ -88,14 +88,67 @@ constant clause by clause; `ExplainPlanTests` asserts each plan's shape against 
 | --- | --- | --- |
 | Pen catalogue | `PenCatalog` | `ORDER BY coalesce(group_name, ''), name`: `group_name` is nullable and `Pen.Group` is not, so the ordering coalesces the way the read does. An empty table is an empty list; a missing one is `ArchiveFault.TableMissing` naming `semiplot_tags`. |
 | Archive extent | `ArchiveExtent` | Rooted at `semiplot_tags`, one `min(t)`/`max(t)` subquery pair per configured `id` at `l = 0`. A bare `min(t)` over `trends` cannot use `PRIMARY KEY (id, l, t)` and scans the archive. Nulls map to `ArchiveExtent.Empty`; an empty catalogue over a full archive is also `Empty`, since no pen could draw it. |
-| History | `SparseHistoryWindow` | Two branches under one outer `ORDER BY id, t`: the window rows, and per pen one seed row strictly before `@from`, bounded to the wider of the window and one day. `HistoryRowFold` groups by consecutive identifier, so the single total ordering is what keeps each pen one run; the bound is what prunes older partitions from the seed's `Merge Append`; the seed is what keeps a steady variable on the chart as a horizontal line. |
+| History, coarse layers | `SparseHistoryWindow` | Two branches under one outer `ORDER BY id, t`: the window rows, and per pen one seed row strictly before `@from`, bounded to the wider of the window and one day. `HistoryRowFold` groups by consecutive identifier, so the single total ordering is what keeps each pen one run; the bound is what prunes older partitions from the seed's `Merge Append`; the seed is what keeps a steady variable on the chart as a horizontal line. |
+| History, Raw | `BucketedRawWindow` | The same seed branch, and a window branch the server reduces to one row per column: `GROUP BY id, segment, date_bin(@bucket, t, @from)`. `segment` counts the `q = 32` markers strictly before each row, so a marker closes its own bucket and no bucket straddles a break. Each bucket carries `min(v)`, `max(v)`, whether it ends in a gap, and the bucket's newest non-null sample as the column's timestamp and value, which is what the legend reads at the cursor. A `q = 32` marker and a null `v` both end the bucket in a gap. Raw by construction: `l = 0`, no `@layer`. `@bucket` is `(to - from) / targetColumnCount`, never below one millisecond, the column's own resolution. |
 | Realtime poll | `RealtimePoll` | `id = ANY(@ids) AND l = 0 AND t > @lastSeen ORDER BY t`. The variable list is mandatory or the read scans the day's partition; the bound is strict so the row that set `@lastSeen` is never returned twice. |
 | Realtime baseline | `RealtimeBaseline` | The extent's lateral shape over `DISTINCT unnest(@ids)`: one index probe per variable. `NULL` means no row yet — a state, not a failure. |
 
-Three statements bind parameters through a binder of their own — `PostgresDataProvider.BindWindow`,
-`RealtimePoll.BindPoll`, `RealtimePoll.BindBaseline` — each pinned against its statement's
-parameter names. A server-side bucketed read (`date_bin` per pixel column) and a gap explanation
-over `messages` are designed but not shipped; nothing issues either.
+Four statements bind parameters through a binder of their own, each pinned against its statement's
+parameter names: `PostgresDataProvider.BindWindow`, `PostgresDataProvider.BindBucketedWindow`,
+`RealtimePoll.BindPoll` and `RealtimePoll.BindBaseline`. A gap explanation over `messages` is
+designed but not shipped; nothing issues it.
+
+`BucketedRawWindow` reaches the window rows through the index on `(id, l, t)`, and on the bench the
+planner sorts them by `(id, t)` before the window aggregate rather than reading them in index order,
+at every width from two minutes to eight hours.
+`ExplainPlanTests.TheBucketedRawPlanFeedsItsWindowAggregateThroughAnIndex` therefore pins what holds
+either way: no sequential scan over a row-holding partition, the aggregate's input an index scan or
+a bitmap over one, and the seed walk bounded as in the sparse statement's fact.
+
+### What one history query covers
+
+The window a query reads is wider than the window in view. `HistoryPrefetch.Expand`
+(`SemiPlot.UI/Chart/HistoryPrefetch.cs`) adds one visible window width of margin on each side and
+asks for three times the column target, so the fetched range stays at one column per pixel. The left
+edge is clamped to the archive's first sample; the right edge is not, because a range reaching past
+the live edge is a successful empty read. A new window is drawn from the last fetch while it stays
+inside the inner band, half a window width in from each fetched edge, so a pan issues no query until
+the margin is half spent. A zoom, a layer change and a column-target change always re-fetch,
+because each changes the resolution the range was read at.
+
+Two column counts travel on one request, and the gate reads only one of them. `HistoryRequest.Range`
+carries the quantized count `ChartNavigationController.TargetColumnCount` holds, which a deadband
+keeps still while the Y tick labels widen and narrow the data rect by a pixel mid-gesture;
+`HistoryRequest.TargetColumnCount` carries the unquantized pixel width the provider decimates to.
+The range travels on the request so the result alone says which band the envelopes in hand describe:
+`TrendChartViewModel` opens the gate on the range that came back, never on the one last asked for.
+
+A gesture that never goes quiet still fetches. `ChartHistoryRequestDebouncer` merges the trailing
+`Throttle` of 150 ms with a `Sample` of 400 ms over the same requests and drops the request whose
+window the last applied result already covers, so a continuous drag issues one query per 400 ms and
+one more after it stops. A read that is still in flight or that came back failed covers nothing, so
+the same window asked for again reaches the archive.
+
+One query runs at a time, and the newest request that arrived while it ran runs when it lands. A read
+slower than the cap interval therefore still completes during the gesture, the server sees one
+history query per chart, no window is read for nothing, and the last window a gesture asked for is
+the last one applied. The window waiting behind a query is dropped when that query turns out to have
+applied it. The provider takes no `CancellationToken`, and this shape needs none: the query in flight
+is never abandoned.
+
+A failed read reaches the chart. `ChartHistoryRequestDebouncer` delivers the `Result`'s errors on the
+UI scheduler, a thrown query joining the same channel as an `ExceptionalError`;
+`TrendChartViewModel.OnHistoryQueryFailed` logs them and re-applies the axis over the envelopes still
+in hand. Skipping the axis there would freeze it with no way back, because the gate that would ask
+again opens only on a result. A throw out of the apply, and any fault the pipeline itself raises,
+reach the same channel: without that the subscription issuing every history query would tear down,
+and the chart would stop reading the archive for the rest of the session.
+
+The margin makes the Raw read smaller in rows returned, not cheaper on the server: the window
+function still reads and sorts every row of the range, and the range is three visible windows wide.
+`PostgresHistoryReadTests.TheWidestRawWindowThePrefetchMarginAsksForComesBackBucketed` records
+`EXPLAIN (ANALYZE, TIMING OFF)` for the widest read the margin can ask for, and the plan's row counts
+and timing are what say what it costs.
 
 ## Layer ladder
 
@@ -135,7 +188,9 @@ Two adjustments the ladder needs are implemented:
   returned, or the window start when none was. A layer fresh within one of its own points reads no
   tail; otherwise the tail starts at the earliest seam, clamped to four point spacings back from the
   window end. A pen whose seam precedes the tail's start contributes no tail row, because a range no
-  row covers is not a gap and would draw as one straight segment.
+  row covers is not a gap and would draw as one straight segment. The tail's own raw read stays
+  row-level: it issues `SparseHistoryWindow` at `l = 0`, not the bucketed statement, because the tail
+  spans at most four coarse point spacings and no canvas is denser than that.
 
 Correctness of the envelope at every layer rests on the vendor's selection preserving each period's
 extremes `[FORUM:1974]` — well supported, not yet measured (`scada-archive.md`, open questions).
@@ -156,7 +211,8 @@ transitions are accepted as cosmetic, and the archive stores no offset to make t
 that pen, which is what keeps the envelope strictly ascending: at the spring gap that drops the one
 or two rows the conversion put out of order; at the autumn fall-back it drops the whole repeated
 hour, for every pen, once a year, and stamps the surviving hour an hour late. Pinned by
-`HistoryRowFoldTests.TheSecondPassOverTheRepeatedHourIsDropped`.
+`HistoryRowFoldTests.TheSecondPassOverTheRepeatedHourIsDropped`. `BucketedRowFold` drops a
+non-advancing bucket by the same rule.
 
 ## Quality and gaps
 
@@ -179,6 +235,20 @@ on the UTC side, clear of daylight-saving boundaries. `q = 16` takes no branch: 
 the decimator already produces past a null segment. A seed row carries its own `q`, so a seed marked
 `32` opens the window inside a gap. `RealArchiveGapTests` drives the fold with rows lifted from the
 customer dump, including a 4 min 18 s absence carrying no marker.
+
+On the Raw path the marker travels as the bucket's `breaks` flag and `BucketedRowFold` writes the
+`NaN` column itself: the server already reduced the window, so no decimator pass follows to split a
+series on a null.
+
+A null `v` sets the same flag, because a bucket is the finest resolution this path has: `min(v)`,
+`max(v)` and the newest-value aggregate all skip a null, so without the flag a bucket holding data
+and nulls together would come back as an ordinary column and the line would run straight across the
+null run. The column's timestamp is the newest **non-null** sample's, coupled to the value beside
+it; a bucket of nothing but nulls keeps `max(t)` and reads back `NaN` in all three series. The
+coarse path splits at the null itself rather than at the bucket, so the two paths agree that a null
+is a hole and differ only in where the hole starts. `scada-archive.md` records that `v` was never
+null in the measured archive, so no integration fact can reach this: the seeded archive writes no
+nulls either, and `ArchiveStatementTextTests` plus `BucketedRowFoldTests` pin the rule instead.
 
 ## Realtime
 

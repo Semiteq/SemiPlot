@@ -67,8 +67,7 @@ public sealed class ChartAxisBinder(Plot plot)
 				continue;
 			}
 
-			state.CenterLine.Axes.YAxis = axis;
-			state.Band.Axes.YAxis = axis;
+			state.Line.Axes.YAxis = axis;
 		}
 	}
 }

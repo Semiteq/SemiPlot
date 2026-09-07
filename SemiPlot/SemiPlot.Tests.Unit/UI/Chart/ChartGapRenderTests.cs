@@ -265,8 +265,8 @@ public sealed class ChartGapRenderTests
 		return _from.AddSeconds(offsetSeconds);
 	}
 
-	// A varying signal so every decimated column keeps a Min/Max spread: a degenerate band is hidden by
-	// TrendPenState, which would take FillY's own NaN handling out of the test.
+	// A varying signal so every decimated column keeps a Min/Max spread: a column whose Min equals its Max
+	// is a single point, and a run of them would leave the probe nothing stroked to find.
 	private static double ValueAt(int index)
 	{
 		return 50.0 + (20.0 * Math.Sin(index / 7.0));

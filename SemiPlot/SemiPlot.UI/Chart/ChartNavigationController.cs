@@ -30,6 +30,8 @@ public sealed class ChartNavigationController
 
 	public DateTime To => _navigation.To;
 
+	public DateTime FirstSample => _navigation.FirstSample;
+
 	public bool IsSticky => _navigation.IsSticky;
 
 	public AggregationLayer ActiveLayer { get; private set; }

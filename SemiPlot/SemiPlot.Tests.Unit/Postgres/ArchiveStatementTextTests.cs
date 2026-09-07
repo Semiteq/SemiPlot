@@ -29,6 +29,101 @@ public sealed class ArchiveStatementTextTests
 		ArchiveStatements.SparseHistoryWindow.Should().EndWith("ORDER BY id, t;");
 	}
 
+	// BucketedRowFold groups by consecutive identifier the same way, and its rows arrive from a GROUP BY
+	// whose output order is the planner's business.
+	[Fact]
+	public void TheBucketedWindowEndsWithOneOuterOrdering()
+	{
+		ArchiveStatements.BucketedRawWindow.Should().EndWith("ORDER BY id, t;");
+	}
+
+	// Without the segment in the grouping key a bucket wider than a break spans it, and the fold anchors
+	// the gap after a sample the plant recorded once archiving had resumed.
+	[Fact]
+	public void TheBucketedWindowGroupsByTheBreakSegment()
+	{
+		ArchiveStatements.BucketedRawWindow.Should().Contain("GROUP BY id, segment, date_bin(@bucket, t, @from)");
+	}
+
+	// min, max and the newest-value aggregate all skip a null, so without the flag a bucket holding data and
+	// nulls comes back as an ordinary column and the line is drawn straight across the null run, which is the
+	// opposite of what MinMaxDecimator does on the coarse path.
+	[Fact]
+	public void TheBucketedWindowEndsANullHoldingBucketInAGap()
+	{
+		ArchiveStatements.BucketedRawWindow.Should().Contain("bool_or(q = 32 OR v IS NULL) AS breaks");
+		ArchiveStatements.BucketedRawWindow.Should().Contain("(seed.q = 32 OR seed.v IS NULL) AS breaks");
+	}
+
+	// The value is the bucket's newest non-null sample, so the timestamp beside it has to be that sample's
+	// own: max(t) alone would report a value at a moment the archive stored NULL at.
+	[Fact]
+	public void TheBucketedWindowTimestampsTheNewestNonNullSample()
+	{
+		ArchiveStatements.BucketedRawWindow.Should()
+			.Contain("coalesce(max(t) FILTER (WHERE v IS NOT NULL), max(t)) AS t");
+	}
+
+	[Fact]
+	public void TheBucketedWindowReadsTheRawLayerAlone()
+	{
+		ArchiveStatements.BucketedRawWindow.Should().Contain("AND l = 0 AND t >= @from AND t < @to");
+	}
+
+	[Fact]
+	public void TheBucketedWindowBinderNamesExactlyTheStatementsOwnParameters()
+	{
+		using var command = new NpgsqlCommand(ArchiveStatements.BucketedRawWindow);
+
+		PostgresDataProvider.BindBucketedWindow(
+			command,
+			new ArchiveTimeConverter(TimeZoneInfo.Utc),
+			[1, 2],
+			new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc),
+			new DateTime(2026, 1, 2, 1, 0, 0, DateTimeKind.Utc),
+			64);
+
+		AssertBinderNamesTheStatementsOwnParameters(command, ArchiveStatements.BucketedRawWindow);
+	}
+
+	// A bucket is the window divided by the column target, and a window narrower than the target's own
+	// millisecond floor would otherwise bind an interval of zero, which date_bin rejects.
+	[Fact]
+	public void TheBucketedWindowBinderFloorsTheBucketAtOneMillisecond()
+	{
+		using var command = new NpgsqlCommand(ArchiveStatements.BucketedRawWindow);
+
+		var from = new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc);
+
+		PostgresDataProvider.BindBucketedWindow(
+			command,
+			new ArchiveTimeConverter(TimeZoneInfo.Utc),
+			[1],
+			from,
+			from.AddMilliseconds(10),
+			64);
+
+		command.Parameters["bucket"].Value.Should().Be(TimeSpan.FromMilliseconds(1));
+	}
+
+	[Fact]
+	public void TheBucketedWindowBinderDividesTheWindowByTheColumnTarget()
+	{
+		using var command = new NpgsqlCommand(ArchiveStatements.BucketedRawWindow);
+
+		var from = new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc);
+
+		PostgresDataProvider.BindBucketedWindow(
+			command,
+			new ArchiveTimeConverter(TimeZoneInfo.Utc),
+			[1],
+			from,
+			from.AddHours(1),
+			60);
+
+		command.Parameters["bucket"].Value.Should().Be(TimeSpan.FromMinutes(1));
+	}
+
 	// The window branch takes `t >= @from`, so an inclusive seed bound returns the boundary row on both
 	// branches.
 	[Fact]

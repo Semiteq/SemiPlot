@@ -51,11 +51,15 @@ A unit test must not open a socket, read the wall clock, or depend on anything t
 Statement text is pinned clause by clause, in `ArchiveStatementTextTests.cs` against the constants in
 `ArchiveStatements.cs`: one assertion per guarantee whose loss nothing else catches without a
 container — the sparse history window's outer `ORDER BY id, t`, its strict seam bound and its one-day
-seed floor; the realtime poll's `l = 0` filter and its `ORDER BY t`; the realtime baseline's `l = 0`
-filter and its `DISTINCT unnest(@ids)`. Three statements take parameters, each through a binder of
-its own pinned against the statement's parameter names: `PostgresDataProvider.BindWindow`,
-`RealtimePoll.BindPoll` and `RealtimePoll.BindBaseline`. `data-integration.md` names the constants
-and quotes no SQL, so there is no second copy to drift.
+seed floor; the bucketed raw window's own outer `ORDER BY id, t`, its
+`GROUP BY id, segment, date_bin(@bucket, t, @from)` and its `l = 0` window bound; the realtime poll's
+`l = 0` filter and its `ORDER BY t`; the realtime baseline's `l = 0` filter and its
+`DISTINCT unnest(@ids)`. Four statements take parameters, each through a binder of its own pinned
+against the statement's parameter names: `PostgresDataProvider.BindWindow`,
+`PostgresDataProvider.BindBucketedWindow`, `RealtimePoll.BindPoll` and `RealtimePoll.BindBaseline`.
+`BindBucketedWindow` carries two assertions more, on the bucket it derives from the window and the
+column target and on its one-millisecond floor. `data-integration.md` names the constants and quotes
+no SQL, so there is no second copy to drift.
 
 ## Integration tests
 
@@ -116,6 +120,23 @@ A test that starts a container is an integration test when it interrogates one s
 end-to-end test only when the container feeds the composed application. `PostgresHistoryReadTests`
 builds its provider through the real `AddPostgresData` registration, but that is one layer's wiring
 and the assertion sits on rows: integration.
+
+## Frame cost
+
+Per-frame cost is measured rather than asserted: nothing in the suite can time a real drag.
+`scripts/perf/trace-shares.py` reads a dotnet-trace Speedscope export and prints call count, total,
+mean and max milliseconds per frame.
+
+```powershell
+dotnet-trace collect -p (Get-Process SemiPlot.UI).Id --format Speedscope --duration 00:00:45 -o drag.speedscope.json
+python scripts/perf/trace-shares.py drag.speedscope.speedscope.json
+```
+
+dotnet-trace names the converted file `<name>.speedscope.json`, so the second argument repeats the
+extension. Six frames are printed: `RenderOnce`, `Polygon.Render` and `SKCanvas.DrawPath` on the
+chart's frame path, `OnNavigationWindowChanged`, `ApplyHistory` and `QueryHistoryAsync` on its
+history path. A 45 s drag capture passes when `RenderOnce` averages 10 ms or less and
+`SKCanvas.DrawPath` totals 1 s or less.
 
 ## Where the boundaries between projects fall
 

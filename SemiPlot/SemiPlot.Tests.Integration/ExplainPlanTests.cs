@@ -7,6 +7,7 @@ using Npgsql;
 using SemiPlot.Core.Trends;
 using SemiPlot.DataSource.Postgres;
 using SemiPlot.Tools.ArchiveSeeder;
+using SemiPlot.UI.Chart;
 
 using Xunit;
 
@@ -37,6 +38,9 @@ public sealed class ExplainPlanTests(
 	// caller asks for the pens it draws, never for every configured variable.
 	private const int ExplainedPenCount = 2;
 
+	// The bucket a Raw frame asks for: HistoryColumnTarget's ceiling, one column per pixel of a wide chart.
+	private const int ExplainedColumnTarget = HistoryColumnTarget.MaxColumns;
+
 	// tpdefault is outside the pattern: empty and analysed, a Seq Scan on it is a correct plan.
 	private const string DayPartition = @"(public\.)?tp\d{4}m\d{2}d\d{2}\b";
 
@@ -58,6 +62,12 @@ public sealed class ExplainPlanTests(
 	// tpYYYYmMMdDD_pkey and the underscore keeps the word boundary from closing after the day, so
 	// "Bitmap Index Scan on tp2026m01d01_pkey" is not counted as a partition read.
 	private static readonly Regex _dayPartitionRead = new(@"\bon " + DayPartition);
+
+	// What feeds the bucketed statement's window aggregate, which counts the break markers over (id, t): an
+	// index scan, or a bitmap the planner then sorts.
+	private static readonly Regex _windowAggregateInput = new(
+		@"WindowAgg[^\r\n]*\r?\n(\s*->  Sort[^\r\n]*\r?\n\s*Sort Key:[^\r\n]*\r?\n)?\s*->  ("
+			+ IndexScan + @"|Bitmap Heap Scan on )" + DayPartition);
 
 	// The seed's backward walk together with the index condition on the line under it, captured so the
 	// bound the planner actually pushed into the index is read rather than inferred. The condition is a
@@ -180,6 +190,45 @@ public sealed class ExplainPlanTests(
 				+ $"row-holding partition at all.{Environment.NewLine}{plan}");
 	}
 
+	[Fact]
+	public async Task TheBucketedRawPlanFeedsItsWindowAggregateThroughAnIndex()
+	{
+		var database = seededArchive.Database;
+
+		await AnalyseAsync(database, TestContext.Current.CancellationToken);
+
+		var plan = await ExplainAsync(
+			database.ReaderConnectionString,
+			ArchiveStatements.BucketedRawWindow,
+			command => BindBucketedParametersAt(command, ArchiveTemplate.Slice.Start + _seedProbeOffset),
+			TestContext.Current.CancellationToken);
+
+		_sequentialScanOverRows.IsMatch(plan).Should().BeFalse(
+			"The bucketed statement no longer narrows on the primary key: the plan reads a row-holding "
+				+ $"trends partition sequentially.{Environment.NewLine}{plan}");
+
+		_indexReachedRows.IsMatch(plan).Should().BeTrue(
+			"The bucketed plan reaches no row-holding trends partition through an index, neither directly "
+				+ $"nor through a bitmap.{Environment.NewLine}{plan}");
+
+		_windowAggregateInput.IsMatch(plan).Should().BeTrue(
+			"The segment number's window aggregate no longer takes its rows from a bounded read of the "
+				+ "window: its input is neither an index scan nor a bitmap over one, so counting the break "
+				+ $"markers now costs a read of rows outside the window.{Environment.NewLine}{plan}");
+
+		var seedWalk = _seedBackwardWalk.Match(plan);
+
+		seedWalk.Success.Should().BeTrue(
+			"The bucketed statement's seed branch reaches no row-holding trends partition through a "
+				+ $"backward index scan.{Environment.NewLine}{plan}");
+
+		seedWalk.Groups["condition"].Value.Should().Contain("t >=");
+
+		(_dayPartitionRead.Count(plan) <= MaximumDayPartitionsRead).Should().BeTrue(
+			"The bucketed statement's seed seek has lost its lower bound: the plan reads more day "
+				+ $"partitions than a look-back of one partition width can reach.{Environment.NewLine}{plan}");
+	}
+
 	// The poll's own index plan.
 	[Fact]
 	public async Task ThePollPlanReachesItsRowsThroughAnIndex()
@@ -249,6 +298,19 @@ public sealed class ExplainPlanTests(
 			from,
 			from + _explainedWindow,
 			AggregationLayer.Raw);
+	}
+
+	private static void BindBucketedParametersAt(NpgsqlCommand command, DateTime windowStart)
+	{
+		var from = DateTime.SpecifyKind(windowStart, DateTimeKind.Utc);
+
+		PostgresDataProvider.BindBucketedWindow(
+			command,
+			new ArchiveTimeConverter(TimeZoneInfo.Utc),
+			ExplainedPenIds(),
+			from,
+			from + _explainedWindow,
+			ExplainedColumnTarget);
 	}
 
 	private static int[] ExplainedPenIds()

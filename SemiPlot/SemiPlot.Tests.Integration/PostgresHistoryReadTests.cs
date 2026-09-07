@@ -4,11 +4,14 @@ using FluentResults;
 
 using Microsoft.Extensions.DependencyInjection;
 
+using Npgsql;
+
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
 using SemiPlot.DataSource.Postgres;
 using SemiPlot.Tools.ArchiveSeeder;
+using SemiPlot.UI.Chart;
 
 using Xunit;
 
@@ -26,10 +29,24 @@ public sealed class PostgresHistoryReadTests(
 	SeededArchive seededArchive)
 	: IClassFixture<SeededArchive>
 {
-	// Above the row count of every window this class reads, so MinMaxDecimator passes each row through one
-	// column of its own and the envelopes compare against raw rows rather than against a second decimator
-	// run.
+	// The floor under every column target here: above the row count of every window this class reads, so a
+	// coarse read passes each row through one column of its own.
 	private const int TargetColumnCount = 4096;
+
+	// A Raw read reduces by time, so a row keeps a column of its own only while the bucket is no wider than
+	// this: RawLayerGenerator writes an anchor one PollInterval before every change, and the row-for-row
+	// comparisons below would otherwise compare buckets. ColumnTargetFor sizes the target to hold it.
+	private static readonly TimeSpan _tightestRowSpacing = RawLayerGenerator.PollInterval;
+
+	// Denser than the canvas: over the window below the archive holds some 360 changes per pen, so the
+	// server reduces rather than passes through.
+	private const int BucketedColumnTarget = 64;
+
+	// Wide enough that the target above reduces, narrow enough to sit inside one archiving run.
+	private static readonly TimeSpan _denseWindowLength = TimeSpan.FromMinutes(30);
+
+	// One minute of run on each side of that window, so it opens and closes clear of the markers.
+	private static readonly TimeSpan _denseWindowMargin = TimeSpan.FromMinutes(1);
 
 	// A strict subset of the seeded pens, so a read that ignored the pen list would fail.
 	private const int RequestedPenCount = 3;
@@ -257,6 +274,140 @@ public sealed class PostgresHistoryReadTests(
 		(anchors == 0).Should().BeTrue($"A steady stretch produced {anchors} gap columns across the eight pens.");
 	}
 
+	[Fact]
+	public async Task ARawWindowDenserThanTheCanvasComesBackBucketed()
+	{
+		var window = DenseWindow();
+		var expected = SeededRowsIn(window);
+
+		expected.Should().AllSatisfy(pen => (pen.Value.Count > BucketedColumnTarget).Should().BeTrue(
+			$"Pen {pen.Key} holds {pen.Value.Count} rows in the window, which a target of "
+				+ $"{BucketedColumnTarget} columns would pass through instead of reducing."));
+
+		var result = await ReadHistoryAsync(
+			seededArchive.Database.ReaderConnectionString,
+			window,
+			_seededPenIds.Value,
+			AggregationLayer.Raw,
+			BucketedColumnTarget);
+
+		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
+		result.Value.Select(envelope => envelope.PenId).Should().Equal(expected.Keys);
+
+		foreach (var envelope in result.Value)
+		{
+			var rows = expected[envelope.PenId];
+			var markers = rows.Count(row => row.Quality == ArchiveRow.LastBeforeBreakQuality);
+
+			// One column per bucket, one gap anchor per marker, and the seed's own column.
+			(envelope.Timestamps.Count <= BucketedColumnTarget + markers + 1).Should().BeTrue(
+				$"Pen {envelope.PenId} comes back with {envelope.Timestamps.Count} columns over "
+					+ $"{rows.Count} rows, so the window was not reduced to the {BucketedColumnTarget}-column "
+					+ "target the request carried.");
+
+			envelope.Timestamps.Should().BeInAscendingOrder().And.OnlyHaveUniqueItems();
+
+			AssertEachColumnBracketsItsCenter(envelope);
+
+			// Which sample stands for a bucket: the newest one's timestamp and value, and the extremes of
+			// the whole bucket. min(t) in place of max(t) passes every other fact in this class.
+			AssertMatchesExpectedBuckets(envelope, rows, window, BucketedColumnTarget);
+		}
+
+		await ReportServerTimeAsync(window, BucketedColumnTarget);
+	}
+
+	// The widest Raw read the prefetch margin can ask for: a query covers three visible windows, so the
+	// ceiling is the whole seeded archive at three times the canvas maximum.
+	[Fact]
+	public async Task TheWidestRawWindowThePrefetchMarginAsksForComesBackBucketed()
+	{
+		var window = new LocalWindow(ArchiveTemplate.Slice.Start, ArchiveTemplate.Slice.End);
+		var target = HistoryColumnTarget.MaxColumns * HistoryPrefetch.MarginColumnFactor;
+		var expected = SeededRowsIn(window);
+
+		var result = await ReadHistoryAsync(
+			seededArchive.Database.ReaderConnectionString,
+			window,
+			_seededPenIds.Value,
+			AggregationLayer.Raw,
+			target);
+
+		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
+		result.Value.Select(envelope => envelope.PenId).Should().Equal(expected.Keys);
+
+		foreach (var envelope in result.Value)
+		{
+			var rows = expected[envelope.PenId];
+			var markers = rows.Count(row => row.Quality == ArchiveRow.LastBeforeBreakQuality);
+
+			(envelope.Timestamps.Count <= target + markers + 1).Should().BeTrue(
+				$"Pen {envelope.PenId} comes back with {envelope.Timestamps.Count} columns over "
+					+ $"{rows.Count} rows, so the archive's widest window was not reduced to the "
+					+ $"{target}-column target the request carried.");
+		}
+
+		await ReportServerTimeAsync(window, target);
+	}
+
+	// The counterpart, and the premise every row-for-row fact in this class rests on.
+	[Fact]
+	public async Task ARawWindowSparserThanTheCanvasComesBackRowForRow()
+	{
+		var window = QuietWindow();
+
+		ColumnTargetFor(window).Should().Be(TargetColumnCount);
+
+		(BucketFor(window) <= _tightestRowSpacing).Should().BeTrue(
+			$"A bucket of {BucketFor(window)} merges the anchor and change rows the seeder writes "
+				+ $"{_tightestRowSpacing} apart, so the comparison below would compare buckets, not rows.");
+
+		var result = await ReadHistoryAsync(seededArchive.Database.ReaderConnectionString, window);
+
+		AssertMatchesSeededRows(result, window);
+	}
+
+	// The anti-straddle rule, at a target whose bucket spans the whole break: without the segment in the
+	// GROUP BY the marker and the rows after the break fold into one column and the marker's own sample is
+	// lost, which no row-for-row fact in this class would notice.
+	[Fact]
+	public async Task ABucketWideEnoughToSpanABreakStillSplitsAtTheMarker()
+	{
+		var stopped = _breakPlan.Value.Breaks[0];
+		var window = new LocalWindow(stopped.Start - _breakMargin, stopped.End + _breakMargin);
+		var target = StraddlingColumnTargetFor(window, stopped.End - stopped.Start);
+
+		(BucketFor(window, target) > stopped.End - stopped.Start).Should().BeTrue(
+			$"A bucket of {BucketFor(window, target)} is narrower than the {stopped.End - stopped.Start} "
+				+ "break, so date_bin alone would keep the marker apart from what follows it.");
+
+		var result = await ReadHistoryAsync(
+			seededArchive.Database.ReaderConnectionString,
+			window,
+			_seededPenIds.Value,
+			AggregationLayer.Raw,
+			target);
+
+		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
+
+		var expected = SeededRowsIn(window);
+
+		result.Value.Select(envelope => envelope.PenId).Should().Equal(expected.Keys);
+
+		foreach (var envelope in result.Value)
+		{
+			var rows = expected[envelope.PenId];
+			var marker = rows.Should().ContainSingle(row => row.Quality == ArchiveRow.LastBeforeBreakQuality).Which;
+			var anchor = GapColumnIndices(envelope).Should().ContainSingle().Which;
+
+			envelope.Timestamps[anchor - 1].Should().Be(_timeConverter.ToUtc(marker.Timestamp));
+			envelope.Center[anchor - 1].Should().Be(marker.Value);
+			envelope.Timestamps[anchor].Should().Be(envelope.Timestamps[anchor - 1].AddTicks(1));
+
+			AssertMatchesExpectedBuckets(envelope, rows, window, target);
+		}
+	}
+
 	// Only the seed branch answers here.
 	[Fact]
 	public async Task AWindowOpeningAfterEveryPensLastSampleStillReturnsThePens()
@@ -423,6 +574,64 @@ public sealed class PostgresHistoryReadTests(
 		return new LocalWindow(ArchiveTemplate.Slice.Start, ArchiveTemplate.Slice.Start + _quietWindowLength);
 	}
 
+	// Half an hour inside the longest archiving run, so the only reduction the read shows is the bucketing.
+	private static LocalWindow DenseWindow()
+	{
+		var run = _breakPlan.Value.Runs.MaxBy(candidate => candidate.End - candidate.Start);
+		var window = new LocalWindow(
+			run.Start + _denseWindowMargin,
+			run.Start + _denseWindowMargin + _denseWindowLength);
+
+		(window.To + _denseWindowMargin < run.End).Should().BeTrue(
+			$"The longest archiving run, {run.Start:O} to {run.End:O}, is too short to hold the window.");
+
+		return window;
+	}
+
+	private static void AssertEachColumnBracketsItsCenter(PenHistoryEnvelope envelope)
+	{
+		for (var column = 0; column < envelope.Timestamps.Count; column++)
+		{
+			(envelope.Min[column] <= envelope.Center[column] && envelope.Center[column] <= envelope.Max[column])
+				.Should().BeTrue(
+					$"Pen {envelope.PenId} column {column} carries a center of {envelope.Center[column]} "
+						+ $"outside [{envelope.Min[column]}, {envelope.Max[column]}], so the band does not "
+						+ "hold the line it is drawn around.");
+		}
+	}
+
+	// Recorded rather than asserted: a threshold on the server's own time would flake on a shared runner. The
+	// whole plan is printed, not the timing lines alone, because the rows read and sorted ahead of the window
+	// aggregate are the other half of what the read costs.
+	private async Task ReportServerTimeAsync(LocalWindow window, int columnTarget)
+	{
+		await using var connection = new NpgsqlConnection(seededArchive.Database.ReaderConnectionString);
+
+		await connection.OpenAsync(TestContext.Current.CancellationToken);
+
+		await using var command = new NpgsqlCommand(
+			"EXPLAIN (ANALYZE, TIMING OFF) " + ArchiveStatements.BucketedRawWindow,
+			connection);
+
+		PostgresDataProvider.BindBucketedWindow(
+			command,
+			_timeConverter,
+			[.. _seededPenIds.Value],
+			_timeConverter.ToUtc(window.From),
+			_timeConverter.ToUtc(window.To),
+			columnTarget);
+
+		await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+
+		TestContext.Current.TestOutputHelper?.WriteLine(
+			$"{window.From:O} to {window.To:O}, {_seededPenIds.Value.Count} pens, {columnTarget} columns:");
+
+		while (await reader.ReadAsync(TestContext.Current.CancellationToken))
+		{
+			TestContext.Current.TestOutputHelper?.WriteLine(reader.GetString(0).Trim());
+		}
+	}
+
 	private static Task<Result<IReadOnlyList<PenHistoryEnvelope>>> ReadHistoryAsync(
 		string connectionString,
 		LocalWindow window)
@@ -430,11 +639,21 @@ public sealed class PostgresHistoryReadTests(
 		return ReadHistoryAsync(connectionString, window, _seededPenIds.Value, AggregationLayer.Raw);
 	}
 
-	private static async Task<Result<IReadOnlyList<PenHistoryEnvelope>>> ReadHistoryAsync(
+	private static Task<Result<IReadOnlyList<PenHistoryEnvelope>>> ReadHistoryAsync(
 		string connectionString,
 		LocalWindow window,
 		IReadOnlyList<int> penIds,
 		AggregationLayer layer)
+	{
+		return ReadHistoryAsync(connectionString, window, penIds, layer, ColumnTargetFor(window));
+	}
+
+	private static async Task<Result<IReadOnlyList<PenHistoryEnvelope>>> ReadHistoryAsync(
+		string connectionString,
+		LocalWindow window,
+		IReadOnlyList<int> penIds,
+		AggregationLayer layer,
+		int targetColumnCount)
 	{
 		await using var services = ArchiveProviderFactory.Build(connectionString);
 
@@ -444,7 +663,106 @@ public sealed class PostgresHistoryReadTests(
 			_timeConverter.ToUtc(window.From),
 			_timeConverter.ToUtc(window.To),
 			layer,
-			TargetColumnCount);
+			targetColumnCount);
+	}
+
+	// The target that keeps a Raw bucket at or under the archive's tightest row spacing, never below the
+	// floor a coarse read needs.
+	private static int ColumnTargetFor(LocalWindow window)
+	{
+		return Math.Max(TargetColumnCount, (int)Math.Ceiling((window.To - window.From) / _tightestRowSpacing));
+	}
+
+	private static TimeSpan BucketFor(LocalWindow window)
+	{
+		return BucketFor(window, ColumnTargetFor(window));
+	}
+
+	private static TimeSpan BucketFor(LocalWindow window, int targetColumnCount)
+	{
+		return PostgresDataProvider.BucketFor(window.From, window.To, targetColumnCount);
+	}
+
+	// The coarsest target whose bucket still spans twice the break, so the marker and the rows after it
+	// share a date_bin slot and only the segment separates them.
+	private static int StraddlingColumnTargetFor(LocalWindow window, TimeSpan breakLength)
+	{
+		return Math.Max(1, (int)((window.To - window.From) / (breakLength + breakLength)));
+	}
+
+	private static void AssertMatchesExpectedBuckets(
+		PenHistoryEnvelope envelope,
+		IReadOnlyList<ArchiveRow> rows,
+		LocalWindow window,
+		int targetColumnCount)
+	{
+		var columns = ExpectedBuckets(rows, window, targetColumnCount);
+
+		envelope.Timestamps.Should().Equal(columns.Select(column => column.Timestamp));
+		envelope.Center.Should().Equal(columns.Select(column => column.Center));
+		envelope.Min.Should().Equal(columns.Select(column => column.Min));
+		envelope.Max.Should().Equal(columns.Select(column => column.Max));
+	}
+
+	private static IReadOnlyList<ExpectedBucket> ExpectedBuckets(
+		IReadOnlyList<ArchiveRow> rows,
+		LocalWindow window,
+		int targetColumnCount)
+	{
+		var bucket = BucketFor(window, targetColumnCount);
+		var columns = new List<ExpectedBucket>();
+		var group = new List<ArchiveRow>();
+		var groupKey = (Segment: -1, Bin: -1L);
+		var segment = 0;
+
+		foreach (var row in rows)
+		{
+			if (row.Timestamp < window.From)
+			{
+				AppendBucket(columns, [row]);
+
+				continue;
+			}
+
+			var key = (segment, (row.Timestamp - window.From).Ticks / bucket.Ticks);
+
+			if (group.Count > 0 && key != groupKey)
+			{
+				AppendBucket(columns, group);
+				group = [];
+			}
+
+			groupKey = key;
+			group.Add(row);
+
+			if (row.Quality == ArchiveRow.LastBeforeBreakQuality)
+			{
+				segment++;
+			}
+		}
+
+		if (group.Count > 0)
+		{
+			AppendBucket(columns, group);
+		}
+
+		return columns;
+	}
+
+	private static void AppendBucket(List<ExpectedBucket> columns, IReadOnlyList<ArchiveRow> group)
+	{
+		var timestamp = _timeConverter.ToUtc(group[^1].Timestamp);
+
+		columns.Add(new ExpectedBucket(
+			timestamp,
+			group[^1].Value,
+			group.Min(row => row.Value),
+			group.Max(row => row.Value)));
+
+		if (group.Any(row => row.Quality == ArchiveRow.LastBeforeBreakQuality))
+		{
+			columns.Add(new ExpectedBucket(timestamp.AddTicks(1), double.NaN, double.NaN, double.NaN));
+		}
 	}
 
 	private static void AssertMatchesSeededRows(Result<IReadOnlyList<PenHistoryEnvelope>> result, LocalWindow window)
@@ -459,13 +777,14 @@ public sealed class PostgresHistoryReadTests(
 		// pen identifiers — which is the order the expectation is built in.
 		result.Value.Select(envelope => envelope.PenId).Should().Equal(expected.Keys);
 
+		var target = ColumnTargetFor(window);
+
 		foreach (var envelope in result.Value)
 		{
 			var columns = ExpectedColumns(expected[envelope.PenId]);
 
-			(columns.Count <= TargetColumnCount).Should().BeTrue(
-				$"Pen {envelope.PenId} carries {columns.Count} columns, over the "
-					+ $"{TargetColumnCount}-column target.");
+			(columns.Count <= target).Should().BeTrue(
+				$"Pen {envelope.PenId} carries {columns.Count} columns, over the {target}-column target.");
 
 			envelope.Timestamps.Should().Equal(columns.Select(column => column.Timestamp));
 			envelope.Min.Should().Equal(columns.Select(column => column.Value));
@@ -649,4 +968,7 @@ public sealed class PostgresHistoryReadTests(
 
 	// The archive's naive local wall clock, the vocabulary the seeder writes in.
 	private readonly record struct LocalWindow(DateTime From, DateTime To);
+
+	// One column the bucketed statement is expected to return, in the chart's own UTC vocabulary.
+	private readonly record struct ExpectedBucket(DateTime Timestamp, double Center, double Min, double Max);
 }

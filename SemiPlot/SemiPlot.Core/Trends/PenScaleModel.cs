@@ -70,16 +70,18 @@ public sealed class PenScaleModel
 			return SanitizeManualRange(members[0], isLogarithmic);
 		}
 
-		var values = CollectValues(members, envelopes, mode, windowStart, windowEnd, isLogarithmic);
-		if (values.Count == 0)
+		if (TryReadRange(members, envelopes, windowStart, windowEnd, isLogarithmic, out var min, out var max))
 		{
-			return DefaultRange(isLogarithmic);
+			return PadRange(min, max, isLogarithmic);
 		}
 
-		var min = values.Min();
-		var max = values.Max();
+		// docs/architecture/trend-feature-spec.md, AY-4
+		if (TryReadRange(members, envelopes, DateTime.MinValue, DateTime.MaxValue, isLogarithmic, out min, out max))
+		{
+			return PadRange(min, max, isLogarithmic);
+		}
 
-		return PadRange(min, max, isLogarithmic);
+		return DefaultRange(isLogarithmic);
 	}
 
 	private static (double Min, double Max) SanitizeManualRange(PenScaleSettings setting, bool isLogarithmic)
@@ -99,15 +101,20 @@ public sealed class PenScaleModel
 		return (min, max);
 	}
 
-	private static List<double> CollectValues(
+	// Runs once per mouse move over an envelope carrying three visible windows of columns.
+	private static bool TryReadRange(
 		IReadOnlyList<PenScaleSettings> members,
 		IReadOnlyDictionary<int, PenHistoryEnvelope> envelopes,
-		ScaleMode mode,
 		DateTime windowStart,
 		DateTime windowEnd,
-		bool isLogarithmic)
+		bool isLogarithmic,
+		out double min,
+		out double max)
 	{
-		var values = new List<double>();
+		min = double.MaxValue;
+		max = double.MinValue;
+		var hasValue = false;
+
 		foreach (var member in members)
 		{
 			if (!envelopes.TryGetValue(member.PenId, out var envelope))
@@ -115,50 +122,70 @@ public sealed class PenScaleModel
 				continue;
 			}
 
-			AppendEnvelopeValues(values, envelope, mode, windowStart, windowEnd, isLogarithmic);
+			hasValue |= ReadEnvelopeRange(envelope, windowStart, windowEnd, isLogarithmic, ref min, ref max);
 		}
 
-		return values;
+		return hasValue;
 	}
 
-	private static void AppendEnvelopeValues(
-		List<double> values,
+	private static bool ReadEnvelopeRange(
 		PenHistoryEnvelope envelope,
-		ScaleMode mode,
 		DateTime windowStart,
 		DateTime windowEnd,
-		bool isLogarithmic)
+		bool isLogarithmic,
+		ref double min,
+		ref double max)
 	{
-		for (var index = 0; index < envelope.Timestamps.Count; index++)
+		var timestamps = envelope.Timestamps;
+		var hasValue = false;
+
+		for (var index = FirstAtOrAfter(timestamps, windowStart); index < timestamps.Count; index++)
 		{
-			if (mode == ScaleMode.AutoscaleToWindow && !IsInWindow(envelope.Timestamps[index], windowStart, windowEnd))
+			if (timestamps[index] > windowEnd)
 			{
-				continue;
+				break;
 			}
 
-			AppendIfUsable(values, envelope.Min[index], isLogarithmic);
-			AppendIfUsable(values, envelope.Max[index], isLogarithmic);
+			hasValue |= Widen(envelope.Min[index], isLogarithmic, ref min, ref max);
+			hasValue |= Widen(envelope.Max[index], isLogarithmic, ref min, ref max);
 		}
+
+		return hasValue;
 	}
 
-	private static void AppendIfUsable(List<double> values, double value, bool isLogarithmic)
+	private static bool Widen(double value, bool isLogarithmic, ref double min, ref double max)
 	{
-		if (double.IsNaN(value))
+		if (double.IsNaN(value) || (isLogarithmic && value <= 0.0))
 		{
-			return;
+			return false;
 		}
 
-		if (isLogarithmic && value <= 0.0)
-		{
-			return;
-		}
+		min = Math.Min(min, value);
+		max = Math.Max(max, value);
 
-		values.Add(value);
+		return true;
 	}
 
-	private static bool IsInWindow(DateTime timestamp, DateTime windowStart, DateTime windowEnd)
+	// PenHistoryEnvelope enforces strictly ascending timestamps.
+	private static int FirstAtOrAfter(IReadOnlyList<DateTime> timestamps, DateTime windowStart)
 	{
-		return timestamp >= windowStart && timestamp <= windowEnd;
+		var low = 0;
+		var high = timestamps.Count;
+
+		while (low < high)
+		{
+			var middle = low + ((high - low) / 2);
+			if (timestamps[middle] < windowStart)
+			{
+				low = middle + 1;
+			}
+			else
+			{
+				high = middle;
+			}
+		}
+
+		return low;
 	}
 
 	private static (double Min, double Max) PadRange(double min, double max, bool isLogarithmic)

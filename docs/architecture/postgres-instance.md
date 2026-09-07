@@ -21,11 +21,10 @@ commissioning day and the copy that has drifted.
 ## What SemiPlot may assume about the server
 
 - Vanilla PostgreSQL with the major version pinned. Production and the test bench both run 17;
-  **14 is the declared floor**, which is the constraint on the SQL SemiPlot may write. It is a
-  deliberate margin rather than a requirement any shipped statement makes: the features the bench
-  executes bottom out at 13 (`DROP DATABASE ... WITH (FORCE)`), and no statement in
-  `ArchiveStatements.cs` needs more. The bucketing query `data-integration.md` quotes would read
-  `date_bin`, which arrives in 14, if the slice that ships it is ever revived.
+  **14 is the declared floor**, which is the constraint on the SQL SemiPlot may write, and a shipped
+  statement now needs it: `BucketedRawWindow` groups by `date_bin`, added in 14
+  (`data-integration.md`, History, Raw). The bench's own SQL bottoms out at 13
+  (`DROP DATABASE ... WITH (FORCE)`); the client's floor is 14.
 - Reachable on the loopback interface plus the operator network only.
 - The archive database holds `trends`, which the SCADA writes and SemiBase creates, `semiplot_tags`,
   which is SemiBase's outright, and `messages`, which is the SCADA's outright. Nothing of ours runs

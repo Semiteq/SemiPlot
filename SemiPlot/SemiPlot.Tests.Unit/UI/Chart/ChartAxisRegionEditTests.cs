@@ -98,7 +98,7 @@ public sealed class ChartAxisRegionEditTests
 		var viewModel = CreateLoadedViewModel();
 		var pen = viewModel.FindPen(1)!;
 
-		viewModel.ActivePenAxis.Should().BeSameAs(pen.CenterLine.Axes.YAxis);
+		viewModel.ActivePenAxis.Should().BeSameAs(pen.Line.Axes.YAxis);
 	}
 
 	private static void ApplyEdit(TrendChartViewModel viewModel, double typedBound, bool editsMax)

@@ -91,10 +91,10 @@ public sealed class PenScaleModelTests
 	}
 
 	[Fact]
-	public void Compute_AutoscaleToWindow_FitsOnlyValuesInsideVisibleWindow()
+	public void Compute_AutoMode_FitsOnlyValuesInsideVisibleWindow()
 	{
 		var model = new PenScaleModel();
-		var settings = new[] { new PenScaleSettings(PenId: 1, AxisKey: "a", Mode: ScaleMode.AutoscaleToWindow) };
+		var settings = new[] { new PenScaleSettings(PenId: 1, AxisKey: "a") };
 
 		var timestamps = new[] { _origin, _origin.AddHours(1), _origin.AddHours(2), _origin.AddHours(3) };
 		var min = new[] { 0.0, 50.0, 1000.0, -500.0 };
@@ -111,6 +111,40 @@ public sealed class PenScaleModelTests
 		var windowed = scales.Should().ContainSingle().Which;
 		windowed.Min.Should().BeApproximately(50.0 - (10.0 * 0.05), 1e-9);
 		windowed.Max.Should().BeApproximately(60.0 + (10.0 * 0.05), 1e-9);
+	}
+
+	[Fact]
+	public void Compute_AutoModeWithNoEnvelopeAtAll_FallsBackToTheDefaultRange()
+	{
+		var model = new PenScaleModel();
+		var settings = new[] { new PenScaleSettings(PenId: 1, AxisKey: "a") };
+
+		var scales = model.Compute(
+			settings, new Dictionary<int, PenHistoryEnvelope>(), activePenId: 1, _origin, _origin.AddHours(1));
+
+		var empty = scales.Should().ContainSingle().Which;
+		empty.Min.Should().Be(0.0);
+		empty.Max.Should().Be(1.0);
+	}
+
+	[Fact]
+	public void Compute_AutoModeOverAStickyWindowPastTheLastColumn_KeepsThePenScale()
+	{
+		var model = new PenScaleModel();
+		var settings = new[] { new PenScaleSettings(PenId: 1, AxisKey: "a") };
+		var envelopes = new Dictionary<int, PenHistoryEnvelope>
+		{
+			[1] = Envelope(1, (900.0, 1000.0), (950.0, 1100.0))
+		};
+
+		// The live edge has moved a day past the newest fetched column, which the sticky advance never
+		// requeries.
+		var scales = model.Compute(
+			settings, envelopes, activePenId: 1, _origin.AddDays(1), _origin.AddDays(1).AddHours(1));
+
+		var live = scales.Should().ContainSingle().Which;
+		live.Min.Should().BeApproximately(900.0 - (200.0 * 0.05), 1e-9);
+		live.Max.Should().BeApproximately(1100.0 + (200.0 * 0.05), 1e-9);
 	}
 
 	[Fact]

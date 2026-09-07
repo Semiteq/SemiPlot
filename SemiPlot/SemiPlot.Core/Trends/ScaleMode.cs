@@ -3,6 +3,5 @@
 public enum ScaleMode
 {
 	Auto,
-	Manual,
-	AutoscaleToWindow
+	Manual
 }

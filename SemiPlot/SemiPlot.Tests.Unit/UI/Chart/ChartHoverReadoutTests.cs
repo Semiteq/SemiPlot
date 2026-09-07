@@ -2,8 +2,6 @@
 
 using AwesomeAssertions;
 
-using ScottPlot;
-
 using SemiPlot.Core.Trends;
 using SemiPlot.UI.Chart;
 
@@ -100,11 +98,11 @@ public sealed class ChartHoverReadoutTests
 
 	private static TrendPenState CreatePen(int projectVarId, string name)
 	{
-		var plot = new Plot();
-		var centerPoints = new List<Coordinates>();
-		var centerLine = plot.Add.Scatter(centerPoints);
-		var band = plot.Add.FillY([], [], []);
+		var columns = new List<EnvelopeColumn>();
 
-		return new TrendPenState(new Pen(projectVarId, name, "Group", "#ff0000"), centerLine, band, centerPoints);
+		return new TrendPenState(
+			new Pen(projectVarId, name, "Group", "#ff0000"),
+			new EnvelopeLine(columns),
+			columns);
 	}
 }

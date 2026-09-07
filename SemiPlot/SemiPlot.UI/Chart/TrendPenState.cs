@@ -1,8 +1,5 @@
 ﻿using ReactiveUI;
 
-using ScottPlot;
-using ScottPlot.Plottables;
-
 using SemiPlot.Core.Trends;
 
 namespace SemiPlot.UI.Chart;
@@ -10,30 +7,24 @@ namespace SemiPlot.UI.Chart;
 public sealed class TrendPenState : ReactiveObject
 {
 	private const int MaxRealtimePoints = 100_000;
-	private readonly List<(double X, double Top, double Bottom)> _bandPoints = [];
 
-	private readonly List<Coordinates> _centerPoints;
+	private readonly List<EnvelopeColumn> _columns;
 
-	// centerPoints MUST be the exact instance the center-line Scatter was built against: ScottPlot's
-	// Scatter holds a live reference to it and re-reads it on every render.
-	public TrendPenState(Pen pen, Scatter centerLine, FillY band, List<Coordinates> centerPoints)
+	// columns MUST be the exact instance the EnvelopeLine was built against: the plottable holds a live
+	// reference to it and re-reads it on every render.
+	public TrendPenState(Pen pen, EnvelopeLine line, List<EnvelopeColumn> columns)
 	{
 		Pen = pen;
-		CenterLine = centerLine;
-		Band = band;
-		_centerPoints = centerPoints;
-		CenterLine.ConnectStyle = pen.LineStyle == PenLineStyle.Stepped ? ConnectStyle.StepHorizontal : ConnectStyle.Straight;
+		Line = line;
+		_columns = columns;
+		Line.PenLineStyle = pen.LineStyle;
 	}
 
 	public Pen Pen { get; }
 
-	public Scatter CenterLine { get; }
+	public EnvelopeLine Line { get; }
 
-	public FillY Band { get; }
-
-	public IReadOnlyList<Coordinates> CenterPoints => _centerPoints;
-
-	public IReadOnlyList<(double X, double Top, double Bottom)> BandPoints => _bandPoints;
+	public IReadOnlyList<EnvelopeColumn> Columns => _columns;
 
 	public bool IsVisible
 	{
@@ -41,8 +32,7 @@ public sealed class TrendPenState : ReactiveObject
 		set
 		{
 			this.RaiseAndSetIfChanged(ref field, value);
-			CenterLine.IsVisible = value;
-			ApplyBandVisibility();
+			Line.IsVisible = value;
 		}
 	} = true;
 
@@ -54,27 +44,23 @@ public sealed class TrendPenState : ReactiveObject
 
 	public void LoadHistory(PenHistoryEnvelope envelope)
 	{
-		_centerPoints.Clear();
-		_bandPoints.Clear();
+		_columns.Clear();
 
 		for (var index = 0; index < envelope.Timestamps.Count; index++)
 		{
-			var x = LocalTimeAxis.ToAxis(envelope.Timestamps[index]);
-			_centerPoints.Add(new Coordinates(x, envelope.Center[index]));
-			_bandPoints.Add((x, envelope.Max[index], envelope.Min[index]));
+			_columns.Add(new EnvelopeColumn(
+				LocalTimeAxis.ToAxis(envelope.Timestamps[index]),
+				envelope.Min[index],
+				envelope.Max[index],
+				envelope.Center[index]));
 		}
 
-		Band.SetDataSource(_bandPoints);
-		ApplyBandVisibility();
 		CurrentValue = LastNonGapCenter();
 	}
 
 	public void ClearHistory()
 	{
-		_centerPoints.Clear();
-		_bandPoints.Clear();
-		Band.SetDataSource(_bandPoints);
-		ApplyBandVisibility();
+		_columns.Clear();
 		CurrentValue = null;
 	}
 
@@ -82,18 +68,15 @@ public sealed class TrendPenState : ReactiveObject
 	public void AppendRealtime(DateTime timestampUtc, double? value)
 	{
 		var x = LocalTimeAxis.ToAxis(timestampUtc);
-		if (_centerPoints.Count > 0 && x <= _centerPoints[^1].X)
+		if (_columns.Count > 0 && x <= _columns[^1].X)
 		{
 			return;
 		}
 
 		var y = value ?? double.NaN;
 
-		_centerPoints.Add(new Coordinates(x, y));
-		_bandPoints.Add((x, y, y));
+		_columns.Add(new EnvelopeColumn(x, y, y, y));
 		TrimToCap();
-		Band.SetDataSource(_bandPoints);
-		ApplyBandVisibility();
 
 		if (value.HasValue)
 		{
@@ -103,55 +86,49 @@ public sealed class TrendPenState : ReactiveObject
 
 	private void TrimToCap()
 	{
-		var overflow = _centerPoints.Count - MaxRealtimePoints;
+		var overflow = _columns.Count - MaxRealtimePoints;
 		if (overflow <= 0)
 		{
 			return;
 		}
 
-		_centerPoints.RemoveRange(0, overflow);
-		_bandPoints.RemoveRange(0, overflow);
+		_columns.RemoveRange(0, overflow);
 	}
 
 	// At coarse layers a realtime sample folds into the current (last) decimation column instead of drawing
-	// a raw point, widening its Min/Max band; a null/empty/gap tail is skipped.
+	// a raw point, widening its Min/Max; a null/empty/gap tail is skipped.
 	public void FoldRealtime(double? value)
 	{
-		if (!value.HasValue || _bandPoints.Count == 0)
+		if (!value.HasValue || _columns.Count == 0)
 		{
 			return;
 		}
 
-		var index = _bandPoints.Count - 1;
-		var (x, top, bottom) = _bandPoints[index];
-		if (double.IsNaN(top) || double.IsNaN(bottom))
+		var index = _columns.Count - 1;
+		var column = _columns[index];
+		if (double.IsNaN(column.Min) || double.IsNaN(column.Max))
 		{
 			return;
 		}
 
-		var foldedTop = Math.Max(top, value.Value);
-		var foldedBottom = Math.Min(bottom, value.Value);
-		_bandPoints[index] = (x, foldedTop, foldedBottom);
-		_centerPoints[index] = new Coordinates(x, value.Value);
-		Band.SetDataSource(_bandPoints);
-		ApplyBandVisibility();
+		_columns[index] = column with
+		{
+			Min = Math.Min(column.Min, value.Value),
+			Max = Math.Max(column.Max, value.Value),
+			Center = value.Value
+		};
 
 		CurrentValue = value;
 	}
 
-	private void ApplyBandVisibility()
-	{
-		Band.IsVisible = IsVisible && !BandDegeneracy.IsDegenerate(_bandPoints);
-	}
-
 	private double? LastNonGapCenter()
 	{
-		for (var index = _centerPoints.Count - 1; index >= 0; index--)
+		for (var index = _columns.Count - 1; index >= 0; index--)
 		{
-			var y = _centerPoints[index].Y;
-			if (!double.IsNaN(y))
+			var center = _columns[index].Center;
+			if (!double.IsNaN(center))
 			{
-				return y;
+				return center;
 			}
 		}
 

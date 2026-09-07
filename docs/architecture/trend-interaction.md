@@ -30,6 +30,8 @@ operator interaction.
   *As-built reconciliation:* `Scatter` has **no `OnNaN`/`Gap` property** (a plan
   assumption); gaps are produced by feeding `double.NaN` (the default `Straight` path strategy
   breaks the line at NaN), so the committed gap mechanism is "NaN in Center/Min/Max", not an enum.
+  The `Scatter` + `FillY` pair was later replaced by one plottable of our own, `Chart/EnvelopeLine`,
+  drawing each pen as a viewport-culled min/max polyline with no fill (charting.md).
 - **UI framework:** **Avalonia 12.0.5 / net10**, the same pairing `SemiStep` ships
   (`ReactiveUI.Avalonia` 12.0.3, `ScottPlot.Avalonia` 5.1.59, which itself depends on Avalonia 12.0.0).
   *As-built note:* `SemiPlot.UI` references `Avalonia.HarfBuzz` 12.0.5 and the builder chain calls
@@ -58,7 +60,8 @@ operator interaction.
   The pen catalogue is passed in because the coordinator needs the pen identifiers in its constructor
   and `QueryPensAsync` cannot be awaited there; the composition root reads it once and hands it over.
 - **Decimation envelope contract:** history record per pen = ascending `X[]` + `Min[]` + `Max[]` + center
-  `Y[]`; realtime stays single-value `double?[]` (null = gap); rendered as `Scatter` + `FillY` (see Renderer).
+  `Y[]`; realtime stays single-value `double?[]` (null = gap); rendered as one `EnvelopeLine` polyline
+  (see Renderer).
 - **Δ cursors:** Δy is reported only for the **active/selected pen** (pens share X but have independent Y
   scales, so a global Δy is meaningless).
 - **Bad quality → gap:** OPC bad-quality is mapped to `null` at the `IDataProvider` boundary, reusing the
@@ -111,16 +114,17 @@ as-built mechanics that realize them:
   stored sample and renders the missing left span as data (§TM-3).
 - **Zoom history is debounced off the UI thread** (§DA-9). Gesture-driven re-queries flow through a
   single chokepoint (`Chart/ChartHistoryRequestDebouncer`): `Throttle` collapses rapid notches to one
-  trailing request after the gesture goes quiet, the query runs on the data scheduler, and `Switch`
-  drops any still-in-flight query when a newer window arrives (latest-wins, so a stale response never
-  overwrites the current window). Per-zoom redraws are coalesced through the 30 FPS `Sample(33 ms)`
+  trailing request after the gesture goes quiet, the query runs on the data scheduler, one at a time,
+  and the newest window that arrived while it ran runs when it lands (so a read slower than the cap
+  still completes, and the newest window is the last applied). Per-zoom redraws are coalesced through
+  the 30 FPS `Sample(33 ms)`
   redraw seam, not an inline refresh. The startup `RequestInitialHistory` is an ordinary request on
   that path, so the initial load and gestures share one latest-wins history path; the first-snap
   `TrackDataExtents` path stays non-requerying (single initial load).
 - **Axis scaling gestures (as-built):** double-click an axis = autoscale (§AY-4); entering min/max =
-  fixed manual limits (§AY-3); the same actions are duplicated in a toolbar. Autoscale modes are
-  `auto`, `manual`, and `autoscale-to-window` (§AY-3 … §AY-5); the logarithmic axis is an axis
-  *type* with values ≤ 0 sanitized before scaling (§AY-6).
+  fixed manual limits (§AY-3); the same actions are duplicated in a toolbar. The scale modes are
+  `auto`, which ranges over the columns inside the visible window, and `manual` (§AY-3, §AY-4); the
+  logarithmic axis is an axis *type* with values ≤ 0 sanitized before scaling (§AY-6).
 
 ## Multi-pen / multi-axis behavior
 
@@ -211,21 +215,23 @@ and the render budget (§RT-4). The as-built rationale and mechanics:
   The column count carries **its own deadband** on the same grounds: one quantisation step doubles or
   halves every ceiling, so a pixel of jitter across a boundary must not move it.
 - **Empty edge sub-spans render as gaps, not straight lines** (§DA-5). When the leading or trailing
-  sub-span of the samples it is given has no data, `MinMaxDecimator` (`SemiPlot.Core.Trends`, shared
-  by every provider) anchors a `NaN` column there, so the line segments instead of the chart bridging
-  the empty span with a straight line to the live-edge point (the right-side straight-line collapse
-  fix). The edge it anchors at is the first and last **row**, not the window bound — the decimator
-  never sees the window. The archive provider does not reach the window edge, because the archive
-  writes a row only when a value changes; it reaches the same anchors from the break markers instead
-  — `HistoryRowFold` appends a null one tick after a `q = 32` row, and the decimator splits on it
-  (see `data-integration.md`, Quality and gaps).
+  sub-span of the samples it is given has no data, `MinMaxDecimator` (`SemiPlot.Core.Trends`, on the
+  coarse-layer read path) anchors a `NaN` column there, so the line segments instead of the chart
+  bridging the empty span with a straight line to the live-edge point (the right-side straight-line
+  collapse fix). The edge it anchors at is the first and last **row**, not the window bound — the
+  decimator never sees the window. The archive provider does not reach the window edge, because the
+  archive writes a row only when a value changes; it reaches the same anchors from the break markers
+  instead, by a different route per layer. On the coarse layers `HistoryRowFold` appends a null one
+  tick after a `q = 32` row and the decimator splits on it. On Raw no decimator runs: the server
+  closes a bucket at the marker, and `BucketedRowFold` writes the `NaN` column itself one tick after
+  that bucket (see `data-integration.md`, Quality and gaps).
 - **Use a min/max-per-pixel envelope, not plain sampling.** Plain decimation aliases away spikes
   (AVEVA warns of exactly this). Retain min AND max per pixel column so spikes survive (M4:
   min/max/first/last per column → visually lossless; MinMaxLTTB for speed; Power Chart "MinMax").
-- **Aggregation runs PostgreSQL-side** (§DA-2): per the spec the production layer aggregates in the
-  PostgreSQL query rather than streaming raw rows to the client. The provider folds its rows
-  in-process through `MinMaxDecimator`; the data layer is structured so that decimator and a
-  server-side SQL aggregate are interchangeable behind `IDataProvider`.
+- **Aggregation is placed per layer** (§DA-2): Raw aggregates in the query
+  (`BucketedRawWindow`, `GROUP BY date_bin`), one row per column, so no raw stream reaches the
+  client. The coarse layers fold in-process through `MinMaxDecimator`, over rows the SCADA already
+  thinned. Both sit behind `IDataProvider` and reach the chart in one envelope vocabulary.
 - **Performance budget (§RT-4):** 30 FPS pan/zoom lock; input data ≤ 10 Hz; ≤ 50 simultaneous pens;
   points per pen handed to the chart ≈ viewport width × 2–4.
 
@@ -281,8 +287,8 @@ and fast navigation across long archives.
 
 - **ScottPlot 5** (as-built): MIT; SkiaSharp; each distinct-unit pen gets its own `IYAxis`
   (`AddLeftAxis`/`AddRightAxis`), same-unit groups share one axis, non-active axes `IsVisible = false`.
-  Trends drawn as `Scatter` + `FillY` band over a data-layer-decimated envelope; NaN segments the
-  line at gaps (no `OnNaN` property in ScottPlot 5); `DataLogger` is prior art, not the pattern. Shared-X
+  Trends drawn as one per-pen `EnvelopeLine` — our own `IPlottable` — over a data-layer-decimated
+  envelope; a NaN column segments the line at gaps; `DataLogger` is prior art, not the pattern. Shared-X
   invariant: all pens pinned to `plot.Axes.Bottom`.
 - **Avalonia 12.0.5 / net10** (as-built): hosts `ScottPlot.Avalonia` 5.1.59, which depends on Avalonia
   12.0.0. Mirrors SemiStep's patterns (ReactiveUI + MS.DI + Serilog + FluentTheme) and now its versions

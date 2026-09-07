@@ -105,7 +105,8 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 
 	/// <summary>
 	/// A window of one layer for the pens the caller asks for, folded into one envelope per pen that has
-	/// rows. A window holding no rows at all is a successful empty list rather than a failure.
+	/// rows. A window holding no rows at all is a successful empty list rather than a failure. Raw reduces to
+	/// the column target server-side; the coarse layers read the sparse window and patch their fresh tail.
 	/// </summary>
 	public async Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(
 		IReadOnlyList<int> penIds,
@@ -137,6 +138,14 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 
 			var fromLocal = _timeConverter.ToArchiveLocal(fromUtc);
 			var toLocal = _timeConverter.ToArchiveLocal(toUtc);
+
+			if (layer == AggregationLayer.Raw)
+			{
+				var buckets = await ReadBucketedWindowAsync(connection, ids, fromLocal, toLocal, targetColumnCount)
+					.ConfigureAwait(false);
+
+				return Result.Ok(BucketedRowFold.Fold(buckets, _timeConverter));
+			}
 
 			var rows = await ReadWindowAsync(connection, ids, fromLocal, toLocal, layer).ConfigureAwait(false);
 
@@ -249,6 +258,22 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 			layer);
 	}
 
+	internal static void BindBucketedWindow(
+		NpgsqlCommand command,
+		ArchiveTimeConverter timeConverter,
+		int[] penIds,
+		DateTime fromUtc,
+		DateTime toUtc,
+		int targetColumnCount)
+	{
+		BindLocalBucketedWindow(
+			command,
+			penIds,
+			timeConverter.ToArchiveLocal(fromUtc),
+			timeConverter.ToArchiveLocal(toUtc),
+			targetColumnCount);
+	}
+
 	// Bound on the archive's own wall clock: a UTC round trip is not injective across DST.
 	private static void BindLocalWindow(
 		NpgsqlCommand command,
@@ -264,6 +289,40 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		command.Parameters.Add(new NpgsqlParameter("layer", NpgsqlDbType.Smallint) { Value = (short)layer });
 		command.Parameters.Add(new NpgsqlParameter("from", NpgsqlDbType.Timestamp) { Value = fromLocal });
 		command.Parameters.Add(new NpgsqlParameter("to", NpgsqlDbType.Timestamp) { Value = toLocal });
+	}
+
+	private static void BindLocalBucketedWindow(
+		NpgsqlCommand command,
+		int[] penIds,
+		DateTime fromLocal,
+		DateTime toLocal,
+		int targetColumnCount)
+	{
+		command.Parameters.Add(new NpgsqlParameter("ids", NpgsqlDbType.Array | NpgsqlDbType.Integer)
+		{
+			Value = penIds
+		});
+		command.Parameters.Add(new NpgsqlParameter("from", NpgsqlDbType.Timestamp) { Value = fromLocal });
+		command.Parameters.Add(new NpgsqlParameter("to", NpgsqlDbType.Timestamp) { Value = toLocal });
+		command.Parameters.Add(new NpgsqlParameter("bucket", NpgsqlDbType.Interval)
+		{
+			Value = BucketFor(fromLocal, toLocal, targetColumnCount)
+		});
+	}
+
+	// One millisecond is the column's own resolution, so a narrower bucket buys no reduction and a zero one
+	// is not an interval date_bin accepts. The result is truncated to the microsecond the interval wire
+	// format carries, so it is the bucket the server bins by rather than the one asked for.
+	internal static TimeSpan BucketFor(DateTime fromLocal, DateTime toLocal, int targetColumnCount)
+	{
+		var bucket = (toLocal - fromLocal) / targetColumnCount;
+
+		if (bucket < TimeSpan.FromMilliseconds(1))
+		{
+			bucket = TimeSpan.FromMilliseconds(1);
+		}
+
+		return TimeSpan.FromTicks(bucket.Ticks - (bucket.Ticks % TimeSpan.TicksPerMicrosecond));
 	}
 
 	private static async Task<IReadOnlyList<HistoryRowFold.Row>> ReadWindowAsync(
@@ -289,6 +348,29 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		return rows;
 	}
 
+	private static async Task<IReadOnlyList<BucketedRowFold.Row>> ReadBucketedWindowAsync(
+		NpgsqlConnection connection,
+		int[] penIds,
+		DateTime fromLocal,
+		DateTime toLocal,
+		int targetColumnCount)
+	{
+		await using var command = new NpgsqlCommand(ArchiveStatements.BucketedRawWindow, connection);
+
+		BindLocalBucketedWindow(command, penIds, fromLocal, toLocal, targetColumnCount);
+
+		await using var reader = await command.ExecuteReaderAsync().ConfigureAwait(false);
+
+		var rows = new List<BucketedRowFold.Row>();
+
+		while (await reader.ReadAsync().ConfigureAwait(false))
+		{
+			rows.Add(ReadBucketedRow(reader));
+		}
+
+		return rows;
+	}
+
 	private static async Task<IReadOnlyList<HistoryRowFold.Row>> FillFreshTailAsync(
 		NpgsqlConnection connection,
 		int[] penIds,
@@ -297,11 +379,6 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		AggregationLayer layer,
 		IReadOnlyList<HistoryRowFold.Row> coarseRows)
 	{
-		if (layer == AggregationLayer.Raw)
-		{
-			return coarseRows;
-		}
-
 		var seams = FreshTail.Seams(coarseRows, penIds, fromLocal);
 
 		if (FreshTail.Start(layer, seams, toLocal) is not { } tailStart)
@@ -337,6 +414,24 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 			reader.GetDateTime(1),
 			reader.IsDBNull(2) ? null : reader.GetDouble(2),
 			reader.GetInt32(3));
+	}
+
+	private static BucketedRowFold.Row ReadBucketedRow(NpgsqlDataReader reader)
+	{
+		return new BucketedRowFold.Row(
+			reader.GetInt32(0),
+			reader.GetDateTime(1),
+			ReadValueOrGap(reader, 2),
+			ReadValueOrGap(reader, 3),
+			ReadValueOrGap(reader, 4),
+			reader.GetBoolean(5));
+	}
+
+	// v is nullable in the archive. A bucket of nothing but nulls aggregates to null in all three series and
+	// reads back as the gap column the chart draws; the statement's breaks flag carries the mixed bucket.
+	private static double ReadValueOrGap(NpgsqlDataReader reader, int ordinal)
+	{
+		return reader.IsDBNull(ordinal) ? double.NaN : reader.GetDouble(ordinal);
 	}
 
 	private Pen ReadPen(NpgsqlDataReader reader)

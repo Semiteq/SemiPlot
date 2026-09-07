@@ -25,11 +25,19 @@ each is a scoped future task.
 
 ## Rendering / performance
 
+- **The strip a drag exposes still lags behind the gesture.** Measured on the stand on 2026-09-07 after
+  the culled `EnvelopeLine` polyline: the frame is cheap, but a pan past the prefetched band waits on the
+  history read (about 0.5 s near the Raw ceiling) plus the 150 ms trailing throttle before the strip
+  fills. The planned fix is the layer ladder as a cache: keep `Minute` and coarser for the whole extent
+  in memory (one read per layer at startup), draw the exposed strip from the coarse buffer at once and
+  swap the Raw columns in when they land, and widen the Raw margin to several windows now that the
+  frame no longer pays for buffer width. The Raw read itself stays as it is; nothing on the server
+  makes it faster than reading its rows.
+
 - **GPU render backend (engine) — consider, not now.** Smoothness is acceptable after the pixel-width
-  history target + cheaper FillY bands + single redraw path. The remaining ceiling is CPU SkiaSharp
-  projecting/rasterising ~100 plottables (50 Scatter + 50 FillY) per frame for 50 pens. If higher pen counts
-  or larger windows demand it, evaluate a Skia GL/Vulkan backend for `AvaPlot`, and/or a band-on-demand /
-  visible-pen cap (render the min/max band only for the active or a bounded set of pens).
+  history target + the culled `EnvelopeLine` polyline + single redraw path. The remaining ceiling is CPU
+  SkiaSharp projecting/rasterising one plottable per pen for 50 pens. If higher pen counts or larger
+  windows demand it, evaluate a Skia GL/Vulkan backend for `AvaPlot`, and/or a visible-pen cap.
 
 ## Maintainability
 

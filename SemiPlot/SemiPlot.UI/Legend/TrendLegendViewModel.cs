@@ -4,6 +4,8 @@ using SemiPlot.UI.Chart;
 
 namespace SemiPlot.UI.Legend;
 
+public sealed record TrendLegendGroupViewModel(string Name, IReadOnlyList<TrendLegendRowViewModel> Rows);
+
 public sealed class TrendLegendViewModel : ReactiveObject, IDisposable
 {
 	private readonly IReadOnlyList<TrendLegendRowViewModel> _rows;

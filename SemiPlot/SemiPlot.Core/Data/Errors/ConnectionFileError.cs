@@ -2,6 +2,16 @@ using FluentResults;
 
 namespace SemiPlot.Core.Data.Errors;
 
+public enum ConnectionFileProblem
+{
+	NotFound,
+	Unreadable,
+	Unparseable,
+	MissingField,
+	OutOfRange,
+	UnknownTimeZone
+}
+
 /// <summary>
 /// The connection file could not be turned into settings. <see cref="Kind"/> is what the operator's remedy
 /// routes on; <see cref="Reason"/> names the field or the position, never the file's own values.

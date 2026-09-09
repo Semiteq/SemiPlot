@@ -6,9 +6,6 @@ using SkiaSharp;
 
 namespace SemiPlot.UI.Chart;
 
-/// <summary>One decimation column: its Min/Max extent and Center at one axis X.</summary>
-public readonly record struct EnvelopeColumn(double X, double Min, double Max, double Center);
-
 // One pen drawn as a single stroked polyline through every visible column's Min and Max: no fill, no band,
 // no markers, and only the columns inside the X range are walked.
 // docs/architecture/charting.md#per-pen-plottable-envelopeline

@@ -1,5 +1,13 @@
 namespace SemiPlot.UI.Chart;
 
+public enum ChartPressAction
+{
+	Pan,
+	PlaceDeltaCursor,
+	EditAxisBound,
+	AutoscaleAxis
+}
+
 // Branch ordering: an axis-region hit pre-empts delta and pan; delta mode pre-empts pan.
 public static class ChartPressRouter
 {

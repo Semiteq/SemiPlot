@@ -18,7 +18,14 @@ dotnet format SemiPlot.slnx                    # pre-commit hook enforces this
 
 `.editorconfig`'s style and quality analyzer rules fail `dotnet build` (`TreatWarningsAsErrors`,
 `EnforceCodeStyleInBuild`) and `dotnet format SemiPlot.slnx --verify-no-changes` alike, so a
-regression stops both the build and the pre-commit hook. The repository's `nuget.config` clears
+regression stops both the build and the pre-commit hook. The hook is `.githooks/pre-commit`; wire it
+once per clone with `git config core.hooksPath .githooks`. It runs `dotnet format --verify-no-changes`
+over the staged `.cs` files only and lints their staged content with
+[terse](https://github.com/mrcsin/terse), pinned in `.config/dotnet-tools.json`
+(`dotnet tool restore` installs it, the hook runs the restore itself): ASCII-only source, a
+`<summary>` of at most three lines, no `//` essays, banners or `#region`. The gate holds at zero
+with no baseline and no suppression marker; a comment that cannot pass moves its knowledge into the
+code or `docs/architecture` with a one-line pointer. The repository's `nuget.config` clears
 every inherited package source, so a `dotnet tool install` run from inside the repository sees only
 `nuget.org`; install a tool from another source outside the repository directory or with
 `--add-source`.

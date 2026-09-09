@@ -1,4 +1,4 @@
-﻿using AwesomeAssertions;
+using AwesomeAssertions;
 
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
@@ -155,7 +155,7 @@ public sealed class ChartNavigationControllerTests
 		controller.ZoomAt(TimeSpan.FromHours(4.0) / currentWidth, controller.To);
 
 		// Four hours is 56 s per column at 256 columns, where the minute layer's 15 s spacing fills every
-		// column, but 7 s per column at 2048 — finer than that spacing. Both calls are transitions: the
+		// column, but 7 s per column at 2048, finer than that spacing. Both calls are transitions: the
 		// count starts at the 2048 default, so the narrow canvas is applied first.
 		controller.SetTargetColumnCount(256);
 		controller.ActiveLayer.Should().Be(AggregationLayer.Minute);
@@ -165,7 +165,7 @@ public sealed class ChartNavigationControllerTests
 	}
 
 	// A pixel-by-pixel drag across the whole width range crosses the three quantisation steps of the
-	// 256…2048 range and the one layer boundary a four-hour window has inside it.
+	// 256..2048 range and the one layer boundary a four-hour window has inside it.
 	[Theory]
 	[InlineData(2048, 256)]
 	[InlineData(256, 2048)]

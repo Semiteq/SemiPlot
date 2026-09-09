@@ -1,4 +1,4 @@
-﻿using System.Text.RegularExpressions;
+using System.Text.RegularExpressions;
 
 using AwesomeAssertions;
 
@@ -167,7 +167,7 @@ public sealed class ArchiveStatementTextTests
 		ArchiveStatements.RealtimeBaseline.Should().Contain("AND l = 0");
 	}
 
-	// A caller may hand the same identifier twice — nothing upstream deduplicates a pen list. Without
+	// A caller may hand the same identifier twice, since nothing upstream deduplicates a pen list. Without
 	// DISTINCT the lateral join runs once per copy and the baseline carries one row per copy, which the
 	// fold reads as a second pen.
 	[Fact]

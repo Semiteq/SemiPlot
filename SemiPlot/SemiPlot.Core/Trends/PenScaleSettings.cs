@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.Core.Trends;
+namespace SemiPlot.Core.Trends;
 
 public sealed record PenScaleSettings(
 	int PenId,

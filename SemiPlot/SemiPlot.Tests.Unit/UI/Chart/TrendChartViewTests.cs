@@ -1,4 +1,4 @@
-﻿using System.Reactive.Concurrency;
+using System.Reactive.Concurrency;
 
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;

@@ -1,4 +1,4 @@
-﻿using System.Reactive.Concurrency;
+using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
 
@@ -77,7 +77,7 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 
 		chart.Navigation.ActiveLayer.Should().Be(
 			AggregationLayer.Raw,
-			"only the raw layer appends a realtime sample as a point of its own — a coarse layer folds it "
+			"only the raw layer appends a realtime sample as a point of its own; a coarse layer folds it "
 			+ "into the last column instead, and the live-edge assertions below read the appended point");
 		chart.Navigation.IsSticky.Should().BeTrue("a window that does not follow the edge cannot be moved by it");
 		chart.Navigation.To.Should().Be(seededLastUtc, "the window opens on the archive's own last sample");

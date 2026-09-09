@@ -63,6 +63,12 @@ each is a scoped future task.
 - **NU1903 advisory.** Transitive `Tmds.DBus.Protocol` 0.21.2 (pulled by Avalonia, unused on the Win32
   target) carries a high-severity NuGet advisory. Track for a transitive bump when Avalonia updates it.
 
+- **The byte order mark survives in the other repositories.** This repository is on `charset = utf-8`
+  for `[*.cs]`, but the canonical `.editorconfig` asset of the `project-layout` skill
+  (`assets/editorconfig/csharp.editorconfig`, line 25) still says `charset = utf-8-bom`, and so does
+  every clone that copied it: SemiStep carries the mark in 546 of its 547 `.cs` files, NtoLib in 625 of
+  625. Each is its own change in its own repository, the skill asset through `marketplace-ops`.
+
 - **~~Test unification (with the Avalonia 12 bump).~~ Resolved.** Avalonia is on 12.0.5 and all three test
   projects target xunit v3. `SemiPlot.Core.Tests` no longer exists; the suites are now split by dependency
   graph and skip policy rather than by framework, which `CLAUDE.md` states.

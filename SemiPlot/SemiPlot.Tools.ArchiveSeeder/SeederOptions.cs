@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.Tools.ArchiveSeeder;
+namespace SemiPlot.Tools.ArchiveSeeder;
 
 public sealed record SeederOptions(
 	string ConnectionString,

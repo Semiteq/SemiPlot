@@ -1,4 +1,4 @@
-﻿using AwesomeAssertions;
+using AwesomeAssertions;
 
 using SemiPlot.Tools.ArchiveSeeder;
 
@@ -81,7 +81,7 @@ public sealed class RawLayerGeneratorTests
 	}
 
 	// The pair-local invariant of docs/architecture/scada-archive.md#write-behavior. A row carrying a value
-	// its predecessor did not carry is a change row; two are exempt — the run's first row, and the
+	// its predecessor did not carry is a change row; two are exempt: the run's first row, and the
 	// q = 16 row resuming after a break, whose pre-anchor would fall inside the gap the break forbids.
 	[Fact]
 	public void EveryChangeRowFollowsItsPredecessorByExactlyOnePollInterval()

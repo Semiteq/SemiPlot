@@ -1,4 +1,4 @@
-﻿using System.Reactive.Concurrency;
+using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 
@@ -162,7 +162,7 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 	/// <summary>
 	/// The span the configured variables cover, in UTC. It is the span of the catalogue, not of the archive:
 	/// rooted at <c>semiplot_tags</c>, so an empty catalogue over a full archive reports
-	/// <see cref="ArchiveExtent.Empty"/>, same as a seeded catalogue over an empty <c>trends</c> — both succeed.
+	/// <see cref="ArchiveExtent.Empty"/>, same as a seeded catalogue over an empty <c>trends</c>. Both succeed.
 	/// </summary>
 	public async Task<Result<ArchiveExtent>> QueryArchiveExtentAsync()
 	{

@@ -1,4 +1,4 @@
-﻿using SemiPlot.Core.Data.Errors;
+using SemiPlot.Core.Data.Errors;
 
 namespace SemiPlot.Core.Data;
 

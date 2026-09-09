@@ -1,10 +1,11 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
 
 using ReactiveUI;
 
 using SemiPlot.UI.Chart;
+using SemiPlot.UI.Localization;
 
 namespace SemiPlot.UI.Legend;
 
@@ -94,7 +95,7 @@ public sealed class TrendLegendRowViewModel : ReactiveObject, IDisposable
 
 			return range is { } value
 				? $"{value.Min:0.###}..{value.Max:0.###}"
-				: "—";
+				: Resources.NoValuePlaceholder;
 		}
 	}
 
@@ -123,7 +124,9 @@ public sealed class TrendLegendRowViewModel : ReactiveObject, IDisposable
 
 	private static string FormatValue(double? value)
 	{
-		return value is { } number ? number.ToString("0.###", CultureInfo.CurrentCulture) : "—";
+		return value is { } number
+			? number.ToString("0.###", CultureInfo.CurrentCulture)
+			: Resources.NoValuePlaceholder;
 	}
 
 	private void MirrorVisibilityFromChart(bool isVisible)

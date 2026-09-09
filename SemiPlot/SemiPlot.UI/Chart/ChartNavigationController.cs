@@ -1,4 +1,4 @@
-﻿using SemiPlot.Core.Data;
+using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
 
 namespace SemiPlot.UI.Chart;

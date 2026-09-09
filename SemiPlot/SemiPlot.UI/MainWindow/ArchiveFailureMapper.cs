@@ -1,4 +1,4 @@
-﻿using FluentResults;
+using FluentResults;
 
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.UI.Startup;
@@ -75,7 +75,7 @@ public static class ArchiveFailureMapper
 				"No connection to the archive",
 				$"SemiPlot could not open a connection to {archive}.",
 				"Check that the PostgreSQL server is running and that the host and port in the connection "
-				+ "file are reachable from this machine — route, firewall and the server's listen address."),
+				+ "file are reachable from this machine: route, firewall and the server's listen address."),
 
 			// 28P01 and 28000 are raised before PostgreSQL looks at the database name, so the archive was
 			// never confirmed to exist.
@@ -83,7 +83,7 @@ public static class ArchiveFailureMapper
 				"The archive refused the credentials",
 				$"The server at {address} answered, but refused user '{error.Detail}' on '{error.Database}'.",
 				"Correct the user name and password in the connection file, or grant that role SELECT on "
-				+ "the archive tables. The network is not the problem — leave the host and port alone."),
+				+ "the archive tables. The network is not the problem. Leave the host and port alone."),
 
 			// A wrong database name reaches the server and looks the same as an unprovisioned one.
 			ArchiveFault.DatabaseMissing => new ArchiveFailureView(

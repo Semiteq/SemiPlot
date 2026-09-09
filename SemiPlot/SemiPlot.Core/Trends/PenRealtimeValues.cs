@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.Core.Trends;
+namespace SemiPlot.Core.Trends;
 
 /// <summary>
 /// One pen's share of a <see cref="RealtimeBatch"/>, on that pen's own timestamps and nothing else;

@@ -1,4 +1,4 @@
-﻿using System.Reactive.Concurrency;
+using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
 
@@ -21,7 +21,7 @@ using Xunit;
 
 namespace SemiPlot.Tests.Integration.Journeys;
 
-// Proves the composed path — AddPostgresData, TrendCoordinator, TrendChartViewModel — draws the archive's
+// Proves the composed path of AddPostgresData, TrendCoordinator and TrendChartViewModel draws the archive's
 // own break as a gap, using ChartGapRenderTests' pixel technique (Plot.GetImage through SkiaSharp, sampled
 // by band): a column counts as drawn when it carries any chroma, since the frame, grid and labels are grey.
 [Collection(ArchiveDatabaseCollection.Name)]
@@ -46,7 +46,7 @@ public sealed class BreakRenderArchiveJourneyTests(
 
 	// Columns dropped from each end of the break before probing, since a bound falls between two pixel
 	// columns: the segment ending at q = 32 and the segment resuming at q = 16 antialias into the column
-	// the bound rounds away from — that is the break's edge, not a line across it.
+	// the bound rounds away from: that is the break's edge, not a line across it.
 	private const int BoundaryInsetColumns = 1;
 
 	// How far either side of the break the curves must still be drawn: inside BreakPlan.MinimumRun's five
@@ -95,7 +95,7 @@ public sealed class BreakRenderArchiveJourneyTests(
 	}
 
 	// The seeder's own break, computed rather than read back out of the archive: BreakPlan is what placed
-	// it, and every clone comes from a template seeded with ArchiveTemplate.Slice — the pairing
+	// it, and every clone comes from a template seeded with ArchiveTemplate.Slice, the pairing
 	// PostgresHistoryReadTests generates its own expectations from.
 	private static ArchiveBreak FirstBreak()
 	{

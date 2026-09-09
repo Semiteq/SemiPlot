@@ -1,4 +1,4 @@
-﻿using System.Reactive.Concurrency;
+using System.Reactive.Concurrency;
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

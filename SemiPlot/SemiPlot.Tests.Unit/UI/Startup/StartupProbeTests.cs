@@ -1,4 +1,4 @@
-﻿using System.Reactive.Concurrency;
+using System.Reactive.Concurrency;
 
 using AwesomeAssertions;
 
@@ -20,7 +20,7 @@ using Xunit;
 
 namespace SemiPlot.Tests.Unit.UI.Startup;
 
-// StartupProbe touches no Avalonia and no ReactiveUI type — that is the whole point of extracting it —
+// StartupProbe touches no Avalonia and no ReactiveUI type, which is the whole point of extracting it,
 // so these are plain [Fact], not [AvaloniaFact].
 [Trait("Component", "UI")]
 [Trait("Area", "Di")]

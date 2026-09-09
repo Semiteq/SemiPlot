@@ -1,9 +1,9 @@
-﻿using Npgsql;
+using Npgsql;
 
 namespace SemiPlot.Tools.ArchiveSeeder;
 
 // The write goes through the admin connection because scada_writer holds no privilege on
-// semiplot_tags — on a site that table is filled by hand during commissioning
+// semiplot_tags. On a site that table is filled by hand during commissioning
 // (docs/architecture/postgres-instance.md).
 public sealed class TagCatalogWriter(string adminConnectionString)
 {

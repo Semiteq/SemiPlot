@@ -11,6 +11,8 @@ implementation plans see `docs/plans/`.
   charting features (pens, multi-axis per-pen scaling, cursor, aggregation layers, time navigation).
 - [trend-interaction.md](./trend-interaction.md) — behavior spec: time navigation, sticky scroll,
   axis management, cursors, decimation, rendering; the locked decisions log.
+- [ui-text.md](./ui-text.md) - the strings the operator reads: the one English `Resources.resx`, the
+  compile-time accessor and why it is a source generator, and what stays a literal in code.
 - [data-integration.md](./data-integration.md) — the contract between SemiPlot and the archive
   database: responsibility zones, the `IDataProvider` surface, the statement each operation issues
   and what it must keep, layer selection, the time boundary, gap mapping, error semantics, the

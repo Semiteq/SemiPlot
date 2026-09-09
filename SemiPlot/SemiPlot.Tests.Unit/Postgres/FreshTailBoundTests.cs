@@ -1,4 +1,4 @@
-﻿using AwesomeAssertions;
+using AwesomeAssertions;
 
 using SemiPlot.Core.Trends;
 using SemiPlot.DataSource.Postgres;
@@ -179,7 +179,7 @@ public sealed class FreshTailBoundTests
 	}
 
 	// The failure the exclusion exists for: coarse rows, then a range no row covers, then tail rows. That
-	// range carries no null, so HistoryRowFold opens no gap and MinMaxDecimator writes no NaN column — it
+	// range carries no null, so HistoryRowFold opens no gap and MinMaxDecimator writes no NaN column. It
 	// draws as one straight interpolated segment across the hole.
 	[Fact]
 	public void APenWhoseSeamPrecedesTheTailStartContributesNoTailRow()
@@ -204,7 +204,7 @@ public sealed class FreshTailBoundTests
 			[Row(_penIds[0], behindSeam), Row(_penIds[1], freshSeam), Row(_penIds[1], tailRow)]);
 	}
 
-	// One consecutive run per pen on ascending identifiers, coarse rows then tail rows — the ordering
+	// One consecutive run per pen on ascending identifiers, coarse rows then tail rows: the ordering
 	// HistoryRowFold.Fold requires, and the one a per-pen concatenation would lose.
 	[Fact]
 	public void TheMergeKeepsOneAscendingRunPerPen()

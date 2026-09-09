@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.Core.Trends;
+namespace SemiPlot.Core.Trends;
 
 // Mirrors the Simple-Scada archive layer codes. The values are explicit because they are bound to the
 // archive's l column directly, so a member inserted between two others would read the wrong layer.

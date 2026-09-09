@@ -1,4 +1,4 @@
-﻿using AwesomeAssertions;
+using AwesomeAssertions;
 
 using Npgsql;
 
@@ -54,7 +54,7 @@ public sealed class ArchiveWriterTransactionTests(PostgresContainerFixture postg
 		""";
 
 	// The COPY carries one primary key twice, so the server rejects it well after the day partitions
-	// were created — a failure part-way through, forced without a race.
+	// were created: a failure part-way through, forced without a race.
 	[Fact]
 	public async Task ACopyThatFailsPartWayLeavesNoArchiveBehind()
 	{
@@ -74,7 +74,7 @@ public sealed class ArchiveWriterTransactionTests(PostgresContainerFixture postg
 	}
 
 	// The two paths differ in exactly one check, and the appending run's day falls on the partition the
-	// seeding run already created — which is what the IF NOT EXISTS clause has to pass through.
+	// seeding run already created, which is what the IF NOT EXISTS clause has to pass through.
 	[Fact]
 	public async Task TheAppendingRunWritesWhereTheSeedingRunIsRefused()
 	{

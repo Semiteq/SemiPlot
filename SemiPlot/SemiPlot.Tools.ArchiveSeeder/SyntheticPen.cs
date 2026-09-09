@@ -1,4 +1,4 @@
-﻿using SemiPlot.Core.Trends;
+using SemiPlot.Core.Trends;
 
 namespace SemiPlot.Tools.ArchiveSeeder;
 

@@ -1,9 +1,9 @@
-﻿using Xunit;
+using Xunit;
 
 namespace SemiPlot.Tests.Integration;
 
 // One clone of the seeded template for a whole test class. The counts the tests assert are the
-// template's, so every test in the class must see the same database and must leave it as it found it —
+// template's, so every test in the class must see the same database and must leave it as it found it:
 // a leaked row would corrupt the next test's count.
 public sealed class SeededArchive(PostgresContainerFixture postgresContainerFixture) : IAsyncLifetime
 {

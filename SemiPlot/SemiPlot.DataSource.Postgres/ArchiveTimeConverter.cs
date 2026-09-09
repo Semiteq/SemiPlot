@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.DataSource.Postgres;
+namespace SemiPlot.DataSource.Postgres;
 
 /// <summary>
 /// The single place that knows the archive's zone: it stores naive local wall-clock time while everything

@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Reactive.Concurrency;
 using System.Reactive.Disposables;
 

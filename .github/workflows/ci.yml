@@ -6,6 +6,8 @@ on:
     paths:
       - ".github/workflows/ci.yml"
       - ".editorconfig"
+      - ".config/dotnet-tools.json"
+      - ".githooks/**"
       - "SemiPlot/**"
       - "SemiPlot.slnx"
       - "global.json"
@@ -15,6 +17,8 @@ on:
     paths:
       - ".github/workflows/ci.yml"
       - ".editorconfig"
+      - ".config/dotnet-tools.json"
+      - ".githooks/**"
       - "SemiPlot/**"
       - "SemiPlot.slnx"
       - "global.json"
@@ -87,6 +91,16 @@ jobs:
 
       - name: format check
         run: dotnet format SemiPlot.slnx --verify-no-changes
+
+      # The format check above is the byte order mark gate (error CHARSET); terse is the character gate.
+      - name: comment gate
+        run: |
+          dotnet tool restore
+          if [ -z "$(git ls-files '*.cs')" ]; then
+            echo "comment gate: no tracked .cs file to lint" >&2
+            exit 1
+          fi
+          git ls-files -z '*.cs' | xargs -0 dotnet terse
 
       - name: unit tests
         run: dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj -c Release --no-build --logger "console;verbosity=normal"

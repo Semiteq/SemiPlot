@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.Tools.ArchiveSeeder;
+namespace SemiPlot.Tools.ArchiveSeeder;
 
 // A break is the SCADA project stopped: no rows anywhere in the interval, the last row before it
 // marked q = 32 and the first row after it q = 16 (docs/architecture/scada-archive.md#quality-and-gaps).
@@ -59,7 +59,7 @@ public sealed class BreakPlan
 	}
 
 	// One break per equal slot of the span, which spaces them across the run without letting two of
-	// them meet — a stop and a start that overlap is not a shape the archive can hold.
+	// them meet: a stop and a start that overlap is not a shape the archive can hold.
 	private static IReadOnlyList<Window> BuildWindows(long seed, DateTime start, TimeSpan slot, int count)
 	{
 		var windows = new List<Window>(count);
@@ -67,7 +67,7 @@ public sealed class BreakPlan
 		for (var index = 0; index < count; index++)
 		{
 			// Two draws per break, so two coordinates. They run below zero, clear of the pen identifiers
-			// the same hash carries — the catalogue starts at 1000 — so break placement and pen values
+			// the same hash carries, since the catalogue starts at 1000, so break placement and pen values
 			// never read the same point.
 			var durationFraction = SyntheticValueWalk.Fraction(seed, -1 - (2 * index));
 			var offsetFraction = SyntheticValueWalk.Fraction(seed, -2 - (2 * index));

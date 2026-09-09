@@ -1,10 +1,10 @@
-﻿using SemiPlot.Tools.ArchiveSeeder;
+using SemiPlot.Tools.ArchiveSeeder;
 
 namespace SemiPlot.Tests.Integration;
 
 // The seeded database the classes that read the seeded rows clone, built once per run as a clone of the
 // provisioned source, then filled by ArchiveWriter and TagCatalogWriter. A class that writes its own rows
-// clones the provisioned source instead — CloneSource names which.
+// clones the provisioned source instead. CloneSource names which.
 public static class ArchiveTemplate
 {
 	public const string Name = "semiplot_bench";

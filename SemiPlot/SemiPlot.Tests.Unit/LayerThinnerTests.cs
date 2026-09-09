@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 
 using AwesomeAssertions;
 
@@ -9,7 +9,7 @@ using Xunit;
 namespace SemiPlot.Tests.Unit;
 
 // docs/architecture/scada-archive.md#layers and #quality-and-gaps. A coarse layer holds verbatim
-// copies of raw rows — up to four per period, plus every marker row regardless of selection.
+// copies of raw rows: up to four per period, plus every marker row regardless of selection.
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
 [Trait("Category", "Unit")]
@@ -117,8 +117,8 @@ public sealed class LayerThinnerTests
 		(byLayer[LayerThinner.HourLayer] > byLayer[LayerThinner.DayLayer]).Should().BeTrue();
 	}
 
-	// A slice falling under this number would move the gated expectations — the index plans, the
-	// statement-timeout bound and the minute-layer density test — with nothing here failing first.
+	// A slice falling under this number would move the gated expectations, the index plans, the
+	// statement-timeout bound and the minute-layer density test, with nothing here failing first.
 	[Fact]
 	public void TheStandardSliceFillsFourLayersAtOrAboveTheMeasuredVolume()
 	{
@@ -211,7 +211,7 @@ public sealed class LayerThinnerTests
 	}
 
 	// Markers are additional to the four, so a period bounding a break can legitimately exceed the
-	// budget — which is why the budget assertion counts ordinary rows only.
+	// budget, which is why the budget assertion counts ordinary rows only.
 	[Fact]
 	public void MarkerRowsAreKeptOnTopOfTheFourSelectedOnes()
 	{

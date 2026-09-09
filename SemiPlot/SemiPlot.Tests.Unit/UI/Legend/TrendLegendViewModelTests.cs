@@ -1,4 +1,4 @@
-﻿using System.Reactive.Concurrency;
+using System.Reactive.Concurrency;
 
 using Avalonia.Headless.XUnit;
 
@@ -12,6 +12,7 @@ using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.Legend;
+using SemiPlot.UI.Localization;
 
 using Xunit;
 
@@ -118,6 +119,21 @@ public sealed class TrendLegendViewModelTests
 		await LoadInitialHistory(chart, _from, _to);
 
 		row.CurrentValue.Should().Be(2.0);
+	}
+
+	[AvaloniaFact]
+	public void RowTexts_WithoutAValueOrAScaleRange_ReadTheNoValuePlaceholder()
+	{
+		var chart = CreateChart();
+		var columns = new List<EnvelopeColumn>();
+		var penState = new TrendPenState(
+			new Pen(1, "Pen 1", "Heaters", "#ff0000"), new EnvelopeLine(columns), columns);
+
+		using var row = new TrendLegendRowViewModel(chart, penState);
+
+		row.CurrentValueText.Should().Be(Resources.NoValuePlaceholder);
+		row.CursorValueText.Should().Be(Resources.NoValuePlaceholder);
+		row.ScaleRangeText.Should().Be(Resources.NoValuePlaceholder);
 	}
 
 	private Task LoadInitialHistory(TrendChartViewModel chart, DateTime from, DateTime to)

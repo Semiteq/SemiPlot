@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;

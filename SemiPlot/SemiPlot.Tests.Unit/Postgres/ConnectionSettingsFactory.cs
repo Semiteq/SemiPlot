@@ -1,4 +1,4 @@
-﻿using SemiPlot.DataSource.Postgres.Configuration;
+using SemiPlot.DataSource.Postgres.Configuration;
 
 namespace SemiPlot.Tests.Unit.Postgres;
 

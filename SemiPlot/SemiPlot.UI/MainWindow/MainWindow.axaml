@@ -7,12 +7,13 @@
         xmlns:toolbar="clr-namespace:SemiPlot.UI.Toolbar"
         xmlns:legend="clr-namespace:SemiPlot.UI.Legend"
         xmlns:minimap="clr-namespace:SemiPlot.UI.Minimap"
+        xmlns:text="clr-namespace:SemiPlot.UI.Localization"
         mc:Ignorable="d"
         d:DesignWidth="1280"
         d:DesignHeight="800"
         x:Class="SemiPlot.UI.MainWindow.MainWindow"
         x:DataType="local:MainWindowViewModel"
-        Title="SemiPlot — Trend Viewer"
+        Title="{x:Static text:Resources.WindowTitle}"
         Width="1280"
         Height="800"
         WindowStartupLocation="CenterScreen">
@@ -58,8 +59,7 @@
                 BorderBrush="Gray"
                 Padding="8,4"
                 IsVisible="{Binding IsCatalogueEmpty}">
-            <TextBlock Name="EmptyCatalogueMessage"
-                       Text="Pen catalogue is empty: the archive answered and semiplot_tags holds no pens. Ask whoever commissions this tool to fill it."
+            <TextBlock Text="{x:Static text:Resources.EmptyCatalogueMessage}"
                        TextWrapping="Wrap"
                        VerticalAlignment="Center" />
         </Border>
@@ -82,7 +82,7 @@
                 BorderBrush="Gray"
                 Padding="8,4"
                 IsVisible="{Binding !HasStartupFailure}">
-            <TextBlock Text="{Binding PenCount, StringFormat='Pens: {0}'}"
+            <TextBlock Text="{Binding PenCount, StringFormat={x:Static text:Resources.StatusPenCountFormat}}"
                        VerticalAlignment="Center" />
         </Border>
 

@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.Tools.ArchiveSeeder;
+namespace SemiPlot.Tools.ArchiveSeeder;
 
 // Bench only: recreates the database ConnectionString names from BenchRoles.ProvisionedDatabase, seeds
 // it up to End or now at ChangeSeconds, fills the tag catalogue and writes the connection file into

@@ -66,6 +66,13 @@ dotnet run --project SemiPlot/SemiPlot.UI/SemiPlot.UI.csproj
 dotnet test SemiPlot.slnx
 ```
 
+Хуки живут в `.githooks/` и подключаются один раз на клон: `git config core.hooksPath .githooks`. Хук
+запрещает коммит прямо в `master` или `main`. Дальше он проверяет только проиндексированные `.cs`:
+`dotnet format --verify-no-changes` и линтер комментариев `terse` (закреплён в
+`.config/dotnet-tools.json`, хук сам делает `dotnet tool restore`).
+Исходники ASCII, без BOM; файл из `dotnet new` проходит хук только после
+`dotnet format SemiPlot.slnx --include <file>`.
+
 Демо-стенд с одноразовым архивом и живой записью поднимается одной командой:
 `dotnet run --project SemiPlot/SemiPlot.AppHost` — контейнер PostgreSQL, `converge`, писатель и
 вьювер стартуют в порядке зависимостей и останавливаются вместе (см. `docs/architecture/bench.md`).

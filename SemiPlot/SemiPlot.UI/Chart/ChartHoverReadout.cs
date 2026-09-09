@@ -1,5 +1,7 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text;
+
+using SemiPlot.UI.Localization;
 
 namespace SemiPlot.UI.Chart;
 
@@ -39,6 +41,8 @@ public static class ChartHoverReadout
 
 	private static string FormatValue(double? value)
 	{
-		return value is { } number ? number.ToString("0.###", CultureInfo.CurrentCulture) : "—";
+		return value is { } number
+			? number.ToString("0.###", CultureInfo.CurrentCulture)
+			: Resources.NoValuePlaceholder;
 	}
 }

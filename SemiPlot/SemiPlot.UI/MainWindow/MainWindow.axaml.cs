@@ -1,4 +1,4 @@
-﻿
+
 using ReactiveUI.Avalonia;
 
 namespace SemiPlot.UI.MainWindow;

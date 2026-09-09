@@ -1,4 +1,4 @@
-﻿using SemiPlot.Tools.ArchiveSeeder;
+using SemiPlot.Tools.ArchiveSeeder;
 
 namespace SemiPlot.Tests.Unit;
 

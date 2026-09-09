@@ -1,6 +1,7 @@
-﻿using System.Globalization;
+using System.Globalization;
 
 using SemiPlot.Core.Trends;
+using SemiPlot.UI.Localization;
 
 namespace SemiPlot.UI.Chart;
 
@@ -43,9 +44,12 @@ public sealed class ChartDeltaCursorReader(
 			return string.Empty;
 		}
 
-		var deltaY = readout.DeltaY is { } value ? value.ToString("0.###", CultureInfo.CurrentCulture) : "—";
+		var deltaTime = FormatDeltaTime(readout.DeltaTime);
+		var deltaY = readout.DeltaY is { } value
+			? value.ToString("0.###", CultureInfo.CurrentCulture)
+			: Resources.NoValuePlaceholder;
 
-		return $"Δt {FormatDeltaTime(readout.DeltaTime)}   Δy {deltaY}";
+		return $"{Resources.DeltaTimeLabel} {deltaTime}   {Resources.DeltaValueLabel} {deltaY}";
 	}
 
 	private static string FormatDeltaTime(TimeSpan deltaTime)

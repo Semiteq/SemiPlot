@@ -1,4 +1,4 @@
-﻿using AwesomeAssertions;
+using AwesomeAssertions;
 
 using Npgsql;
 
@@ -50,7 +50,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 
 	private static readonly DateTime _previousDay = _day.AddDays(-1);
 
-	// One sample every ten seconds gives a minute six rows per pen — enough for a first, a last, an
+	// One sample every ten seconds gives a minute six rows per pen, enough for a first, a last, an
 	// interior minimum and an interior maximum to be four distinct rows.
 	private static readonly TimeSpan _sampleInterval = TimeSpan.FromSeconds(10);
 
@@ -300,7 +300,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 			.ThenBy(row => row.Timestamp)];
 	}
 
-	// The first raw row at or after the period start, per pen, stamped at the coarse layer — the opening
+	// The first raw row at or after the period start, per pen, stamped at the coarse layer: the opening
 	// statement's output, computed from the archive's rows rather than from the statement.
 	private static IReadOnlyList<ArchiveRow> ExpectedOpening(short layer, DateTime periodStart)
 	{

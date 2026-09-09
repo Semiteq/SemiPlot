@@ -1,4 +1,4 @@
-﻿using FluentResults;
+using FluentResults;
 
 using SemiPlot.Core.Data.Errors;
 

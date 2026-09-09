@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.Tests.Integration;
+namespace SemiPlot.Tests.Integration;
 
 public enum CloneSource
 {

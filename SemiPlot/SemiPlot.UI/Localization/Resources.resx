@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="DeltaTimeLabel" xml:space="preserve">
+    <value>Δt</value>
+  </data>
+  <data name="DeltaValueLabel" xml:space="preserve">
+    <value>Δy</value>
+  </data>
+  <data name="NoValuePlaceholder" xml:space="preserve">
+    <value>—</value>
+  </data>
+  <data name="ToolbarAutoscale" xml:space="preserve">
+    <value>Autoscale</value>
+  </data>
+  <data name="ToolbarMinPlaceholder" xml:space="preserve">
+    <value>Min</value>
+  </data>
+  <data name="ToolbarMaxPlaceholder" xml:space="preserve">
+    <value>Max</value>
+  </data>
+  <data name="ToolbarSetLimits" xml:space="preserve">
+    <value>Set Limits</value>
+  </data>
+  <data name="ToolbarLayerFormat" xml:space="preserve">
+    <value>Layer: {0}</value>
+  </data>
+  <data name="ToolbarJumpToNow" xml:space="preserve">
+    <value>Jump to Now</value>
+  </data>
+  <data name="ToolbarSticky" xml:space="preserve">
+    <value>Sticky</value>
+  </data>
+  <data name="ToolbarDelta" xml:space="preserve">
+    <value>Delta</value>
+  </data>
+  <data name="StatusPenCountFormat" xml:space="preserve">
+    <value>Pens: {0}</value>
+  </data>
+  <data name="WindowTitle" xml:space="preserve">
+    <value>SemiPlot — Trend Viewer</value>
+  </data>
+  <data name="EmptyCatalogueMessage" xml:space="preserve">
+    <value>Pen catalogue is empty: the archive answered and semiplot_tags holds no pens. Ask whoever commissions this tool to fill it.</value>
+  </data>
+</root>

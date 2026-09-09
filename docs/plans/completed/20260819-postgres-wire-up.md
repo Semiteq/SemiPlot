@@ -1,4 +1,4 @@
-﻿# Wire the application to the real archive
+# Wire the application to the real archive
 
 ## Overview
 

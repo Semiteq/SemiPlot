@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:toolbar="clr-namespace:SemiPlot.UI.Toolbar"
+             xmlns:text="clr-namespace:SemiPlot.UI.Localization"
              mc:Ignorable="d"
              d:DesignWidth="900"
              d:DesignHeight="40"
@@ -13,31 +14,31 @@
                 Spacing="8"
                 VerticalAlignment="Center">
 
-        <Button Content="Autoscale"
+        <Button Content="{x:Static text:Resources.ToolbarAutoscale}"
                 Command="{Binding AutoscaleActiveAxisCommand}" />
 
         <TextBox Width="80"
-                 PlaceholderText="Min"
+                 PlaceholderText="{x:Static text:Resources.ToolbarMinPlaceholder}"
                  Text="{Binding ManualMin}" />
 
         <TextBox Width="80"
-                 PlaceholderText="Max"
+                 PlaceholderText="{x:Static text:Resources.ToolbarMaxPlaceholder}"
                  Text="{Binding ManualMax}" />
 
-        <Button Content="Set Limits"
+        <Button Content="{x:Static text:Resources.ToolbarSetLimits}"
                 Command="{Binding SetActiveAxisLimitsCommand}" />
 
-        <TextBlock Text="{Binding ActiveLayer, StringFormat='Layer: {0}'}"
+        <TextBlock Text="{Binding ActiveLayer, StringFormat={x:Static text:Resources.ToolbarLayerFormat}}"
                    VerticalAlignment="Center" />
 
-        <Button Content="Jump to Now"
+        <Button Content="{x:Static text:Resources.ToolbarJumpToNow}"
                 Command="{Binding JumpToNowCommand}" />
 
-        <ToggleButton Content="Sticky"
+        <ToggleButton Content="{x:Static text:Resources.ToolbarSticky}"
                       IsChecked="{Binding IsSticky, Mode=OneWay}"
                       Command="{Binding ToggleStickyCommand}" />
 
-        <ToggleButton Content="Delta"
+        <ToggleButton Content="{x:Static text:Resources.ToolbarDelta}"
                       IsChecked="{Binding IsDeltaModeEnabled, Mode=OneWay}"
                       Command="{Binding ToggleDeltaModeCommand}" />
 

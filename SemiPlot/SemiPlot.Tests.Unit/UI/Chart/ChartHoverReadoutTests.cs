@@ -1,9 +1,10 @@
-﻿using System.Globalization;
+using System.Globalization;
 
 using AwesomeAssertions;
 
 using SemiPlot.Core.Trends;
 using SemiPlot.UI.Chart;
+using SemiPlot.UI.Localization;
 
 using Xunit;
 
@@ -29,7 +30,7 @@ public sealed class ChartHoverReadoutTests
 	}
 
 	[Fact]
-	public void BuildContent_PenWithGapAtCursor_RendersDashForThatPen()
+	public void BuildContent_PenWithGapAtCursor_RendersTheNoValuePlaceholderForThatPen()
 	{
 		var pens = new[] { CreatePen(1, "Pen 1"), CreatePen(2, "Pen 2") };
 		var values = new Dictionary<int, double?> { [1] = 2.0, [2] = null };
@@ -37,7 +38,7 @@ public sealed class ChartHoverReadoutTests
 		var content = ChartHoverReadout.BuildContent(_cursor, values, pens);
 
 		content.Should().Contain("Pen 1: 2");
-		content.Should().Contain("Pen 2: —");
+		content.Should().Contain($"Pen 2: {Resources.NoValuePlaceholder}");
 	}
 
 	[Fact]
@@ -81,14 +82,14 @@ public sealed class ChartHoverReadoutTests
 	}
 
 	[Fact]
-	public void BuildContent_PenMissingFromValues_RendersDash()
+	public void BuildContent_PenMissingFromValues_RendersTheNoValuePlaceholder()
 	{
 		var pens = new[] { CreatePen(1, "Pen 1") };
 		var values = new Dictionary<int, double?>();
 
 		var content = ChartHoverReadout.BuildContent(_cursor, values, pens);
 
-		content.Should().Contain("Pen 1: —");
+		content.Should().Contain($"Pen 1: {Resources.NoValuePlaceholder}");
 	}
 
 	private static string LocalTimestamp(DateTime cursorUtc)

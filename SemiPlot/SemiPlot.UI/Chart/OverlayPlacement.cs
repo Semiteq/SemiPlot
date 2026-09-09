@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.UI.Chart;
+namespace SemiPlot.UI.Chart;
 
 public readonly record struct OverlayPlacement(
 	bool IsVisible,

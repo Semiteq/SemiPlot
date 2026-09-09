@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.DataSource.Postgres.Configuration;
+namespace SemiPlot.DataSource.Postgres.Configuration;
 
 /// <summary>
 /// Every member nullable so an absent field reaches the loader as a state to report; YAML keys follow

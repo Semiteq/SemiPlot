@@ -1,10 +1,15 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <!-- Program.Main is the explicit entry point. -->
     <StartupObject>SemiPlot.UI.Program</StartupObject>
+    <NeutralLanguage>en</NeutralLanguage>
   </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Update="Localization/Resources.resx" GenerateSource="true"/>
+  </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="SemiPlot.Tests.Unit"/>
@@ -20,6 +25,7 @@
     <PackageReference Include="Avalonia.Skia"/>
     <PackageReference Include="ReactiveUI.Avalonia"/>
     <PackageReference Include="ScottPlot.Avalonia"/>
+    <PackageReference Include="Microsoft.CodeAnalysis.ResxSourceGenerator" PrivateAssets="all"/>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection"/>
     <PackageReference Include="Microsoft.Extensions.Logging"/>
     <PackageReference Include="Serilog"/>

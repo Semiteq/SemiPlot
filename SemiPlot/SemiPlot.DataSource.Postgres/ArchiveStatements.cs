@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.DataSource.Postgres;
+namespace SemiPlot.DataSource.Postgres;
 
 /// <summary>
 /// Every statement the provider issues; parameters are bound, never interpolated.

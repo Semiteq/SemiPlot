@@ -1,4 +1,4 @@
-﻿var builder = DistributedApplication.CreateBuilder(args);
+var builder = DistributedApplication.CreateBuilder(args);
 
 // The Aspire AppHost SDK does not add a project resource's assembly as a compile reference, so the
 // role names and passwords cannot come from BenchRoles.cs (SemiPlot.Tools.ArchiveSeeder) directly;

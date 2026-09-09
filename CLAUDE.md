@@ -1,4 +1,4 @@
-﻿# Agent Instructions for SemiPlot
+# Agent Instructions for SemiPlot
 
 SemiPlot is a trend/chart viewer for an industrial installation (semiconductor plasma
 process tools: ICP / RIE / PECVD). It reads live tags and historical archives from
@@ -19,16 +19,20 @@ dotnet format SemiPlot.slnx                    # pre-commit hook enforces this
 `.editorconfig`'s style and quality analyzer rules fail `dotnet build` (`TreatWarningsAsErrors`,
 `EnforceCodeStyleInBuild`) and `dotnet format SemiPlot.slnx --verify-no-changes` alike, so a
 regression stops both the build and the pre-commit hook. The hook is `.githooks/pre-commit`; wire it
-once per clone with `git config core.hooksPath .githooks`. It runs `dotnet format --verify-no-changes`
-over the staged `.cs` files only and lints their staged content with
-[terse](https://github.com/mrcsin/terse), pinned in `.config/dotnet-tools.json`
-(`dotnet tool restore` installs it, the hook runs the restore itself): ASCII-only source, a
-`<summary>` of at most three lines, no `//` essays, banners or `#region`. The gate holds at zero
-with no baseline and no suppression marker; a comment that cannot pass moves its knowledge into the
-code or `docs/architecture` with a one-line pointer. The repository's `nuget.config` clears
-every inherited package source, so a `dotnet tool install` run from inside the repository sees only
-`nuget.org`; install a tool from another source outside the repository directory or with
-`--add-source`.
+once per clone with `git config core.hooksPath .githooks`. Over the staged `.cs` files it runs
+`dotnet format --verify-no-changes` and the comment linter
+[terse](https://github.com/mrcsin/terse), pinned in `.config/dotnet-tools.json` and restored by the
+hook itself: ASCII-only source, a `<summary>` of at most three lines, no `//` essays, banners or
+`#region`. Both gates hold at zero with no baseline and no suppression marker; a comment that
+cannot pass moves its knowledge into the code or `docs/architecture` with a one-line pointer.
+
+`[*.cs]` is `charset = utf-8` with no byte order mark, and a file `dotnet new` writes passes the hook
+only after one `dotnet format SemiPlot.slnx --include <file>`. `docs/architecture/ui-text.md` holds
+what the operator reads, what stays a literal in code, and how CI gates both.
+
+The repository's `nuget.config` clears every inherited package source, so a `dotnet tool install` run
+from inside the repository sees only `nuget.org`; install a tool from another source outside the
+repository directory or with `--add-source`.
 
 The bench seeder fills a `semibase bench`-provisioned database with a generated archive. The
 provisioning creates `public.trends`, so the seeder requires the table and refuses a database that
@@ -213,7 +217,7 @@ No abbreviations in names.
 
 ### Comments
 
-- Only for genuinely non-obvious business logic, one or two lines. English only.
+- Only for genuinely non-obvious business logic, one or two lines. English only, ASCII only.
 - Never restate what a `docs/architecture/*` document, a test, or a neighbouring member already says;
   where a document holds the reasoning, leave a bare `docs/architecture/<file>.md#<anchor>` pointer.
 - No process notes (`// TODO`, `// in new version`), no test names in production code, no changelog
@@ -229,6 +233,10 @@ No abbreviations in names.
 - ScottPlot is a thin render target: renderer-agnostic logic (navigation, scale, cursor) lives in
   unit-tested Core models; only views touch `AvaPlot`. The data hub (`TrendCoordinator`) feeds the
   chart VM via `IObservable`/awaitables (see `docs/architecture/data-integration.md`).
+- Every string the operator reads on the trend screen lives in
+  `SemiPlot.UI/Localization/Resources.resx`; C# reads `Resources.Key`, AXAML
+  `{x:Static text:Resources.Key}`. The failure-window strings stay literals
+  (`docs/architecture/ui-text.md`).
 - The left-button gesture is one state, never overlapping branches: a `Chart/LeftButtonTool`
   (`Pan | DeltaPlacement`) enum sourced from the toolbar delta toggle decides pan vs delta placement,
   and the axis-region edit is a pre-branch ahead of it. Toolbar `IsSticky` has a single writer (the

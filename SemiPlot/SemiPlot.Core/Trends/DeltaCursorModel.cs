@@ -1,6 +1,6 @@
-﻿namespace SemiPlot.Core.Trends;
+namespace SemiPlot.Core.Trends;
 
-// Δy is measured for the active pen only, since pens share X but not Y.
+// Delta y is measured for the active pen only, since pens share X but not Y.
 public sealed class DeltaCursorModel
 {
 	private readonly CursorReadoutModel _cursorReadout = new();

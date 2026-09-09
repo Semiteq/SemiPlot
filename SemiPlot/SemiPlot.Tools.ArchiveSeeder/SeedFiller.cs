@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.Tools.ArchiveSeeder;
+namespace SemiPlot.Tools.ArchiveSeeder;
 
 /// <summary>The rows a fill generated, the count written to the archive, and the tag count written when
 /// <see cref="SeederOptions.AdminConnectionString"/> was set.</summary>

@@ -1,4 +1,4 @@
-﻿using System.Reactive.Concurrency;
+using System.Reactive.Concurrency;
 
 using AwesomeAssertions;
 
@@ -56,7 +56,7 @@ public sealed class TrendCoordinatorTests
 	}
 
 	// The archive is per-variable and change-based, so two pens rarely share a t. Each pen carries the
-	// samples it has and no filler at the timestamps only the other pen sampled — the batch's shared
+	// samples it has and no filler at the timestamps only the other pen sampled: the batch's shared
 	// timestamp list is the union of the two, and is only ever read for the live edge.
 	[Fact]
 	public void RealtimeBatch_KeepsEachPenOnItsOwnTimestamps()

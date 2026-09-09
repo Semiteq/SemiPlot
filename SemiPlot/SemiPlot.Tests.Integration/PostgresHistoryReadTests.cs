@@ -1,4 +1,4 @@
-﻿using AwesomeAssertions;
+using AwesomeAssertions;
 
 using FluentResults;
 
@@ -431,8 +431,8 @@ public sealed class PostgresHistoryReadTests(
 	}
 
 	// The look-back scales with the window, and this is the read that needs it: a pen silent for longer
-	// than one partition width — a recipe setpoint written once at process start is the case — seeds a
-	// window wide enough to reach back to it instead of being dropped from the chart.
+	// than one partition width seeds a window wide enough to reach back to it instead of being dropped
+	// from the chart. A recipe setpoint written once at process start is that case.
 	[Fact]
 	public async Task AWindowWiderThanTheLookBackFloorSeeksBackAsFarAsItAsks()
 	{
@@ -547,7 +547,7 @@ public sealed class PostgresHistoryReadTests(
 		envelope.Timestamps.Should().Equal(ExpectedUtc(_laggingCoarse));
 		envelope.Timestamps[^1].Should().Be(_timeConverter.ToUtc(_laggingSeam));
 
-		// Nothing lands after the seam, so there is no segment spanning the hole — and nothing anchors a
+		// Nothing lands after the seam, so there is no segment spanning the hole, and nothing anchors a
 		// gap either, which is what would have made such a segment readable had one been drawn.
 		GapColumnIndices(envelope).Should().BeEmpty();
 	}
@@ -774,7 +774,7 @@ public sealed class PostgresHistoryReadTests(
 		expected.Should().NotBeEmpty();
 
 		// The statement orders by id, and the fold keeps that order, so the envelopes arrive on ascending
-		// pen identifiers — which is the order the expectation is built in.
+		// pen identifiers, which is the order the expectation is built in.
 		result.Value.Select(envelope => envelope.PenId).Should().Equal(expected.Keys);
 
 		var target = ColumnTargetFor(window);

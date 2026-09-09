@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.Tools.ArchiveSeeder;
+namespace SemiPlot.Tools.ArchiveSeeder;
 
 // Writes the YAML PostgresConnectionLoader reads.
 public static class ConnectionFileWriter

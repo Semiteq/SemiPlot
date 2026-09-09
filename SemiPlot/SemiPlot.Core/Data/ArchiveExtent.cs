@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 
 namespace SemiPlot.Core.Data;
 
@@ -12,7 +12,7 @@ public sealed record ArchiveExtent(DateTime FirstUtc, DateTime LastUtc)
 	// one of the two directions.
 	public bool IsEmpty => FirstUtc == default && LastUtc == default;
 
-	// The synthesized form prints the two timestamps alone, so Empty logs as year 0001 — the exact
+	// The synthesized form prints the two timestamps alone, so Empty logs as year 0001, the exact
 	// misreading this type exists to prevent.
 	public override string ToString()
 	{

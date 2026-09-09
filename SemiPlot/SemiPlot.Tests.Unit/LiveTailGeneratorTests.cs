@@ -1,4 +1,4 @@
-﻿using AwesomeAssertions;
+using AwesomeAssertions;
 
 using SemiPlot.Tools.ArchiveSeeder;
 
@@ -56,9 +56,9 @@ public sealed class LiveTailGeneratorTests
 		rows.Should().AllSatisfy(row => row.Timestamp.Should().BeOnOrAfter(after.AddTicks(1)).And.BeOnOrBefore(to));
 	}
 
-	// The window is open at its start: `after` is an instant the archive already accounts for — the newest
-	// row a stopped run left, which a restart hands in, or the previous tick's own instant, whose rows that
-	// tick wrote — so a lattice point sitting exactly there is never written twice.
+	// The window is open at its start: `after` is an instant the archive already accounts for. It is the
+	// newest row a stopped run left, which a restart hands in, or the previous tick's own instant, whose
+	// rows that tick wrote, so a lattice point sitting exactly there is never written twice.
 	[Fact]
 	public void ARowExactlyAtTheWindowStartIsNotEmitted()
 	{

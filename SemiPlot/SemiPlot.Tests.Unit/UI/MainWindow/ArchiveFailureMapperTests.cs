@@ -1,4 +1,4 @@
-﻿using AwesomeAssertions;
+using AwesomeAssertions;
 
 using FluentResults;
 
@@ -170,8 +170,8 @@ public sealed class ArchiveFailureMapperTests
 		view.Remedy.Should().Contain("public.trends").And.Contain("semibase site");
 	}
 
-	// The exception arm is what stops a throw on the startup path — a data source that cannot be built, a
-	// cancelled read — from ending the process with no window at all.
+	// The exception arm is what stops a throw on the startup path, a data source that cannot be built or
+	// a cancelled read, from ending the process with no window at all.
 	[Fact]
 	public void ThrownException_NamesItsTypeInsteadOfExitingSilently()
 	{

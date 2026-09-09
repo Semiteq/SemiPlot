@@ -1,4 +1,4 @@
-﻿using AwesomeAssertions;
+using AwesomeAssertions;
 
 using SemiPlot.Tools.ArchiveSeeder;
 
@@ -69,7 +69,7 @@ public sealed class RealArchiveFixtureTests(ITestOutputHelper testOutputHelper)
 		(markerPairs > 0).Should().BeTrue("the extract holds no 32/16 marker pair");
 	}
 
-	// docs/architecture/scada-archive.md#layers — every coarse row reproduces the timestamp, value and
+	// docs/architecture/scada-archive.md#layers: every coarse row reproduces the timestamp, value and
 	// quality of an existing raw row. 170 of 170 matched in the whole dump; all of them do here too.
 	[Theory]
 	[InlineData(LayerThinner.MinuteLayer)]
@@ -84,7 +84,7 @@ public sealed class RealArchiveFixtureTests(ITestOutputHelper testOutputHelper)
 		coarse.Should().AllSatisfy(row => raw.Should().Contain(BenchRows.Identity(row)));
 	}
 
-	// docs/architecture/scada-archive.md#layers — the minute layer carries that minute's lowest and
+	// docs/architecture/scada-archive.md#layers: the minute layer carries that minute's lowest and
 	// highest samples, which is what keeps the amplitude of an excursion visible at every zoom level.
 	[Fact]
 	public void EveryMinuteKeepsItsExtremesInTheMinuteLayer()
@@ -103,7 +103,7 @@ public sealed class RealArchiveFixtureTests(ITestOutputHelper testOutputHelper)
 		}
 	}
 
-	// docs/architecture/scada-archive.md#quality-and-gaps — marker rows are copied into every layer
+	// docs/architecture/scada-archive.md#quality-and-gaps: marker rows are copied into every layer
 	// unchanged, so a gap boundary survives thinning and a broken line renders correctly at any zoom
 	// level.
 	[Fact]

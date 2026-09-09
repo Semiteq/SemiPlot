@@ -1,4 +1,4 @@
-﻿using AwesomeAssertions;
+using AwesomeAssertions;
 
 using SemiPlot.Tools.ArchiveSeeder;
 
@@ -212,7 +212,7 @@ public sealed class BreakGenerationTests
 	}
 
 	// A break spans several minutes, so at least one whole calendar minute inside it holds no row of
-	// any pen — the empty period LayerThinner has to survive.
+	// any pen: the empty period LayerThinner has to survive.
 	[Fact]
 	public void ABreakLeavesWholeMinutePeriodsEmpty()
 	{

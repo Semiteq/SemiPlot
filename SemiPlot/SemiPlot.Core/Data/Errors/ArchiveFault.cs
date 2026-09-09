@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.Core.Data.Errors;
+namespace SemiPlot.Core.Data.Errors;
 
 /// <summary>
 /// What went wrong with the archive, as the operator needs it routed. Each member has one remedy; the

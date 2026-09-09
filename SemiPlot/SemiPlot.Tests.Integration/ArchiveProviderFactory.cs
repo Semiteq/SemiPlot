@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 
 using Npgsql;
 
@@ -19,7 +19,7 @@ public static class ArchiveProviderFactory
 	private static readonly TimeSpan _pollInterval = TimeSpan.FromSeconds(1);
 
 	// The caller disposes what comes back, which returns the pooled connections before
-	// ArchiveDatabase.DisposeAsync drops the database — a pooled connection makes DROP DATABASE refuse.
+	// ArchiveDatabase.DisposeAsync drops the database, and a pooled connection makes DROP DATABASE refuse.
 	public static ServiceProvider Build(string connectionString)
 	{
 		var services = new ServiceCollection();

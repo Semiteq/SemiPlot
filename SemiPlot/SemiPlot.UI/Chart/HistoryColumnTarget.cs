@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.UI.Chart;
+namespace SemiPlot.UI.Chart;
 
 // Maps the chart data-area pixel width to the number of decimation columns to request, targeting roughly
 // one column per horizontal pixel to remove sub-pixel oversampling.

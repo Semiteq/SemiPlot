@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.UI.Chart;
+namespace SemiPlot.UI.Chart;
 
 // Branch ordering: an axis-region hit pre-empts delta and pan; delta mode pre-empts pan.
 public static class ChartPressRouter

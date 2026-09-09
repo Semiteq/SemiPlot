@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.Tools.ArchiveSeeder;
+namespace SemiPlot.Tools.ArchiveSeeder;
 
 // The demo writer's options. A follow run has no span: it appends to an archive somebody else seeded.
 public sealed record FollowOptions(

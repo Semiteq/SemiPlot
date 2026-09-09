@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.UI.Chart;
+namespace SemiPlot.UI.Chart;
 
 // The single conversion boundary between the UTC time domain and the chart's local-time axis, so plotted X,
 // axis limits, cursor X and the navigation window never double-convert. Not perfectly invertible across a DST

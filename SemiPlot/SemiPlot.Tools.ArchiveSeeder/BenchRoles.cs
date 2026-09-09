@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.Tools.ArchiveSeeder;
+namespace SemiPlot.Tools.ArchiveSeeder;
 
 // Every name and credential the bench container answers to, in one place: a role and the password the
 // container gave it are read together, so neither can be changed without the other in view. The

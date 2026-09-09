@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.Tools.ArchiveSeeder;
+namespace SemiPlot.Tools.ArchiveSeeder;
 
 /// <summary>
 /// A refusal the operator can act on: the archive is not what the run needs. The entry point prints the

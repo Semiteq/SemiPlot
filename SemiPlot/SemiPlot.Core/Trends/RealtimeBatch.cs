@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.Core.Trends;
+namespace SemiPlot.Core.Trends;
 
 /// <summary>
 /// One buffer window of the live edge. <paramref name="Timestamps"/> is the ascending union of every pen's own

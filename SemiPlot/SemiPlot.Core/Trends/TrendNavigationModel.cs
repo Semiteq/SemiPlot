@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.Core.Trends;
+namespace SemiPlot.Core.Trends;
 
 // The live edge and first stored sample arrive as inputs, never a clock.
 // Sticky semantics are specified in trend-interaction.md.

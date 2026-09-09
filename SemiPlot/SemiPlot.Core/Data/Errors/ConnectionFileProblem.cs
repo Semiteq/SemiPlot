@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.Core.Data.Errors;
+namespace SemiPlot.Core.Data.Errors;
 
 public enum ConnectionFileProblem
 {

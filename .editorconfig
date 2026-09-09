@@ -22,7 +22,7 @@ indent_size = 4
 tab_width = 4
 
 # Encoding
-charset = utf-8-bom
+charset = utf-8
 
 #### Core EditorConfig Options ####
 max_line_length = 120

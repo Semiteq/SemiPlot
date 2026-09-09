@@ -1,4 +1,4 @@
-﻿using Avalonia.Logging;
+using Avalonia.Logging;
 
 using AwesomeAssertions;
 

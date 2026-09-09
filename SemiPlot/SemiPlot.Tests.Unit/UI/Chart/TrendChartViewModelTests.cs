@@ -1,4 +1,4 @@
-﻿using System.Reactive.Concurrency;
+using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
 
@@ -15,6 +15,7 @@ using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
+using SemiPlot.UI.Localization;
 
 using Xunit;
 
@@ -781,7 +782,7 @@ public sealed class TrendChartViewModelTests
 		var (viewModel, _, _, _) = CreateViewModel();
 		var currentWidth = viewModel.Navigation.To - viewModel.Navigation.From;
 
-		// Roughly four hours: 7 s per column at 2048 columns — finer than the minute layer's 15 s spacing —
+		// Roughly four hours: 7 s per column at 2048 columns, finer than the minute layer's 15 s spacing,
 		// but 56 s per column at 256, where the minute layer fills every column.
 		viewModel.Navigation.ZoomAt(TimeSpan.FromHours(4.0) / currentWidth, viewModel.Navigation.To);
 		viewModel.ReportDataAreaWidth(2048.0);
@@ -922,7 +923,9 @@ public sealed class TrendChartViewModelTests
 		viewModel.DeltaReadout.Should().NotBeNull();
 		viewModel.DeltaReadout!.DeltaTime.Should().Be(historyEnd - _from);
 		viewModel.DeltaReadout.DeltaY.Should().Be(1.0);
-		viewModel.DeltaReadoutText.Should().Contain("Δt").And.Contain("Δy");
+		viewModel.DeltaReadoutText.Should()
+			.Contain(Resources.DeltaTimeLabel)
+			.And.Contain(Resources.DeltaValueLabel);
 	}
 
 	[AvaloniaFact]

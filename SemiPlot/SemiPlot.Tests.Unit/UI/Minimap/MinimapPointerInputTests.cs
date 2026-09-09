@@ -1,4 +1,4 @@
-﻿using System.Reactive.Concurrency;
+using System.Reactive.Concurrency;
 
 using Avalonia;
 using Avalonia.Controls;
@@ -28,9 +28,9 @@ using Point = Avalonia.Point;
 
 namespace SemiPlot.Tests.Unit.UI.Minimap;
 
-// The minimap's half of the input guard: MinimapViewModelTests drive NavigateToFraction directly, so the
-// path from a pointer to that call — hit testing, capture, the drag flag, pixel-to-fraction — is exercised
-// only here, via Avalonia.Headless in window-client coordinates translated into StripCanvas's own space.
+// The minimap's half of the input guard: MinimapViewModelTests drive NavigateToFraction directly, so hit
+// testing, capture, the drag flag and pixel-to-fraction are exercised only here, via Avalonia.Headless
+// in window-client coordinates translated into StripCanvas's own space.
 [Trait("Component", "UI")]
 [Trait("Area", "Bridge")]
 [Trait("Category", "Unit")]

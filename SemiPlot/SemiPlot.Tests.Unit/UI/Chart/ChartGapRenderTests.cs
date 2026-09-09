@@ -1,4 +1,4 @@
-﻿using System.Reactive.Concurrency;
+using System.Reactive.Concurrency;
 
 using AwesomeAssertions;
 
@@ -74,8 +74,8 @@ public sealed class ChartGapRenderTests
 	}
 
 	// The only pixel assertion in the gap-reconstruction slice; envelope-column tests cover the rest. Input
-	// is built in HistoryRowFold's own output shape — marker row, null anchor, resumption row — rather than
-	// by calling the fold, which HistoryRowFoldTests pins separately.
+	// is built in HistoryRowFold's own output shape, a marker row, a null anchor and a resumption row,
+	// rather than by calling the fold, which HistoryRowFoldTests pins separately.
 	[Fact]
 	public void ArchiveShapedBreak_WithTheFoldsNullAnchor_LeavesEveryBreakColumnWithoutPenColor()
 	{
@@ -222,7 +222,7 @@ public sealed class ChartGapRenderTests
 	}
 
 	// Rows arrive at a fixed poll interval with the broken span simply absent; withAnchor: false drops the
-	// fold's null anchor after the q = 32 row, leaving one segment — the plausible-but-wrong rendering this
+	// fold's null anchor after the q = 32 row, leaving one segment: the plausible-but-wrong rendering this
 	// test exists to reject.
 	private static (IReadOnlyList<DateTime> Timestamps, IReadOnlyList<double?> Values) ArchiveShapedBreak(
 		bool withAnchor)

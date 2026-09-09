@@ -1,4 +1,4 @@
-﻿# Complexity Cut
+# Complexity Cut
 
 ## Overview
 

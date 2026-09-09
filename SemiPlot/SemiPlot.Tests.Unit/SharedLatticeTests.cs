@@ -1,4 +1,4 @@
-﻿using AwesomeAssertions;
+using AwesomeAssertions;
 
 using SemiPlot.Tools.ArchiveSeeder;
 
@@ -70,7 +70,7 @@ public sealed class SharedLatticeTests
 
 		// The lattice is absolute (docs/architecture/bench.md): a change sits at index * interval from tick
 		// zero and its anchor one poll interval ahead of that. A lattice drawn from a run's own start passes
-		// the two checks above — its rows simply miss the seeded ones — and fails here.
+		// the two checks above, since its rows simply miss the seeded ones, and fails here.
 		var interval = _changeInterval.Ticks;
 		var anchorOffset = RawLayerGenerator.PollInterval.Ticks;
 

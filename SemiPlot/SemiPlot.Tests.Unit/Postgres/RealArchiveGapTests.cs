@@ -1,4 +1,4 @@
-﻿using AwesomeAssertions;
+using AwesomeAssertions;
 
 using SemiPlot.Core.Trends;
 using SemiPlot.DataSource.Postgres;

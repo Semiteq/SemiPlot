@@ -1,10 +1,10 @@
-﻿using FluentResults;
+using FluentResults;
 
 namespace SemiPlot.Core.Data.Errors;
 
 /// <summary>
 /// Every failure the archive can answer with, keyed by <see cref="Kind"/>. <see cref="Detail"/> carries the
-/// one per-kind value the operator's remedy names — see <see cref="ArchiveFault"/> — and is empty for the
+/// one per-kind value the operator's remedy names (see <see cref="ArchiveFault"/>) and is empty for the
 /// kinds that have none. Consumers route on <see cref="Kind"/> and never on <see cref="Error.Message"/>.
 /// </summary>
 public sealed class ArchiveError(ArchiveFault kind, string host, int port, string database, string detail = "")

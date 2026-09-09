@@ -1,4 +1,4 @@
-﻿using AwesomeAssertions;
+using AwesomeAssertions;
 
 using SemiPlot.Core.Trends;
 using SemiPlot.DataSource.Postgres;
@@ -245,7 +245,7 @@ public sealed class HistoryRowFoldTests
 		(resumptionIndex + 1).Should().Be(envelope.Timestamps.Count - 1);
 	}
 
-	// Evidence 2: a row absence carries no meaning on its own — the value simply did not change.
+	// Evidence 2: a row absence carries no meaning on its own. The value simply did not change.
 	[Fact]
 	public void ALongAbsenceWithNoBreakMarkerYieldsNoGapColumn()
 	{
@@ -312,7 +312,7 @@ public sealed class HistoryRowFoldTests
 
 	// The anchor is appended to the pen's list only when the marker row itself is kept, so the strict-ascent
 	// guard governs both. The drop itself is TheSecondPassOverTheRepeatedHourIsDropped; this is what the
-	// anchor does about it — a row that never reached the series cannot break the line.
+	// anchor does about it: a row that never reached the series cannot break the line.
 	[Fact]
 	public void ABreakMarkerDroppedByTheStrictAscentGuardEmitsNoAnchor()
 	{
@@ -409,7 +409,7 @@ public sealed class HistoryRowFoldTests
 
 	// The seed row carries its own q, so a seed marked q = 32 says the window opens inside a break. The
 	// anchor then lands at index 1 and the series opens on the seed's value, the anchor, and only then the
-	// first in-window sample — never on a line drawn from the seed across the break.
+	// first in-window sample, never on a line drawn from the seed across the break.
 	[Fact]
 	public void ASeedMarkedAsABreakOpensTheWindowInsideAGap()
 	{
@@ -449,8 +449,8 @@ public sealed class HistoryRowFoldTests
 		double.IsNaN(envelope.Center[1]).Should().BeTrue();
 
 		// The window segment's first column carries its bucket's centre sample rather than the bucket's
-		// first, so it is at or after 10:00 rather than exactly on it — the decimator's own behaviour, not
-		// the seed's.
+		// first, so it is at or after 10:00 rather than exactly on it. That is the decimator's own
+		// behaviour, not the seed's.
 		double.IsNaN(envelope.Center[2]).Should().BeFalse();
 		(envelope.Timestamps[2] >= Utc(10, 0)).Should().BeTrue();
 	}

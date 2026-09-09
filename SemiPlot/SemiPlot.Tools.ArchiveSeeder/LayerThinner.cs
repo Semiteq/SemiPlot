@@ -1,4 +1,4 @@
-﻿namespace SemiPlot.Tools.ArchiveSeeder;
+namespace SemiPlot.Tools.ArchiveSeeder;
 
 // A coarse layer is not an aggregate: it holds verbatim copies of raw rows, up to four per period,
 // selected by magnitude (docs/architecture/scada-archive.md#layers).

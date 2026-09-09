@@ -1,11 +1,11 @@
-﻿using System.Globalization;
+using System.Globalization;
 
 using SemiPlot.Tools.ArchiveSeeder;
 
 namespace SemiPlot.Tests.Unit;
 
-// The options every generator test starts from. The connection string is never opened — these tests
-// reach no database — and --end is fixed, so a run of the same seed produces the same rows.
+// The options every generator test starts from. The connection string is never opened, because these
+// tests reach no database, and --end is fixed, so a run of the same seed produces the same rows.
 internal static class BenchOptions
 {
 	public const string ConnectionString = "Host=localhost;Database=archive;Username=scada_writer";

@@ -118,11 +118,3 @@ defect in the shipped tree; each is a scoped follow-up an audit named.
   its own PR after `20260903-harness-debloat.md`: the harness clones independent databases per class, so
   parallel gated classes against one server are fine, and the one thing to reword is the
   `ArchiveDatabaseCollection` comment about classes not racing.
-
-- **Group small related types the Go way.** `CLAUDE.md#file-layout` lets a file hold one concept with the
-  small types only it uses. Eleven UI files are under 15 lines (`Chart/DataRectPixels.cs` 3,
-  `Legend/TrendLegendGroupViewModel.cs` 3, `Chart/LeftButtonTool.cs` 7, `Chart/ChartPressAction.cs` 9,
-  `Chart/HistoryRequest.cs` 10, `Chart/OverlayPlacement.cs` 10, `Chart/NavigationWindow.cs` 11, and four
-  more). Fold each into the file of its primary consumer where that consumer is unique (`LeftButtonTool`
-  and `ChartPressAction` into `ChartPressRouter.cs`, `HistoryRequest` into the debouncer); a type with
-  several consumers stays on its own. One pass, one PR, no behaviour change.

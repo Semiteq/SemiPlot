@@ -8,6 +8,29 @@ using YamlDotNet.Serialization.NamingConventions;
 namespace SemiPlot.DataSource.Postgres.Configuration;
 
 /// <summary>
+/// Every member nullable so an absent field reaches the loader as a state to report; YAML keys follow
+/// the underscored convention (<c>PollIntervalMs</c> reads <c>poll_interval_ms</c>).
+/// </summary>
+internal sealed class PostgresConnectionDto
+{
+	public string? Host { get; set; }
+
+	public int? Port { get; set; }
+
+	public string? Database { get; set; }
+
+	public string? User { get; set; }
+
+	public string? Password { get; set; }
+
+	public string? SourceTimeZone { get; set; }
+
+	public int? PollIntervalMs { get; set; }
+
+	public string? Schema { get; set; }
+}
+
+/// <summary>
 /// Reads the archive connection file into <see cref="PostgresConnectionSettings"/>. Every failure is a
 /// <see cref="ConnectionFileError"/> in the returned <see cref="Result{TValue}"/>; nothing escapes as an
 /// exception, for any input including a blank path. Keys the format does not name are ignored.

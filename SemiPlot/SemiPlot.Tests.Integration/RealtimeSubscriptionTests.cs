@@ -231,7 +231,9 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 
 		public bool NoFaultWasSeen => States.All(state => state.IsConnected);
 
-		/// <summary>Completes once the stream has carried the given count of connected states.</summary>
+		/// <summary>
+		/// Completes once the stream has carried <paramref name="subscriptionCount"/> connected states.
+		/// </summary>
 		public Task Armed(int subscriptionCount)
 		{
 			lock (_guard)

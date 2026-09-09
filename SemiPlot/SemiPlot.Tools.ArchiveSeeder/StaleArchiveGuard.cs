@@ -14,7 +14,7 @@ public static class StaleArchiveGuard
 
 	/// <summary>
 	/// The archive's newest row, or null when there is no row to start from. An archive further behind
-	/// <c>now</c> than <see cref="MaximumAge"/> is refused with a <see cref="SeederException"/>.
+	/// <paramref name="now"/> than <see cref="MaximumAge"/> is refused with a <see cref="SeederException"/>.
 	/// </summary>
 	public static async Task<DateTime?> CheckAsync(
 		string connectionString,

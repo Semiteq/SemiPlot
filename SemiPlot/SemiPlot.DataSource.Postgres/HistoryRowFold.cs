@@ -15,7 +15,7 @@ internal static class HistoryRowFold
 	public readonly record struct Row(int PenId, DateTime ArchiveLocal, double? Value, int Quality);
 
 	/// <summary>
-	/// Unenforced precondition: <c>rows</c> arrive <c>ORDER BY id, t</c>
+	/// Unenforced precondition: <paramref name="rows"/> arrive <c>ORDER BY id, t</c>
 	/// (<see cref="ArchiveStatements.SparseHistoryWindow"/>), grouped by consecutive identifier with no
 	/// client-side sort or dedup; losing that ordering yields two envelopes for one pen.
 	/// </summary>

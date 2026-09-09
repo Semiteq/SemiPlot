@@ -81,8 +81,8 @@ internal static class FreshTail
 
 	/// <summary>
 	/// The coarse rows with each pen's tail rows appended after its own, in ascending pen identifier with one
-	/// consecutive run per pen — the ordering <see cref="HistoryRowFold.Fold"/> requires. A pen whose seam
-	/// predates <c>tailStartLocal</c> gets no tail row: a range with no row is not a gap.
+	/// consecutive run per pen, the ordering <see cref="HistoryRowFold.Fold"/> requires. A pen whose seam
+	/// predates <paramref name="tailStartLocal"/> gets no tail row: a range with no row is not a gap.
 	/// </summary>
 	public static IReadOnlyList<HistoryRowFold.Row> Merge(
 		IReadOnlyList<HistoryRowFold.Row> coarseRows,

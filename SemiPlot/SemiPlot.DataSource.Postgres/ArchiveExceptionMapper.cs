@@ -18,7 +18,8 @@ internal sealed class ArchiveExceptionMapper(PostgresConnectionSettings settings
 {
 	private readonly PostgresConnectionSettings _settings = settings;
 
-	/// <summary>Maps what the read threw; <c>relation</c> is read on the <c>42P01</c> path only.</summary>
+	/// <param name="exception">What the read threw.</param>
+	/// <param name="relation">The relation the calling statement touches, read on the <c>42P01</c> path only.</param>
 	public Error Map(Exception exception, string? relation)
 	{
 		if (exception is OperationCanceledException)

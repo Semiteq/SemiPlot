@@ -364,14 +364,13 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	private TrendPenState BuildPenState(Pen pen)
 	{
-		var columns = new List<EnvelopeColumn>();
-		var line = new EnvelopeLine(columns) { Color = new Color(pen.Color) };
+		var line = new EnvelopeLine { Color = new Color(pen.Color) };
 
 		// Shared-X invariant: every plottable is pinned to the single bottom (time) axis.
 		line.Axes.XAxis = Plot.Axes.Bottom;
 		Plot.Add.Plottable(line);
 
-		return new TrendPenState(pen, line, columns);
+		return new TrendPenState(pen, line);
 	}
 
 	private void OnNavigationWindowChanged(object? sender, NavigationWindow window)

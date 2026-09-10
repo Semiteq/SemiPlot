@@ -182,7 +182,7 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 
 		chart.Pens.Should().AllSatisfy(pen =>
 		{
-			pen.Columns.Should().NotContain(column => double.IsNaN(column.Center));
+			pen.Line.Columns.Should().NotContain(column => double.IsNaN(column.Center));
 			pen.CurrentValue.Should().Be(ValueFor(pen.Pen.PenId, tick: 1));
 		});
 	}

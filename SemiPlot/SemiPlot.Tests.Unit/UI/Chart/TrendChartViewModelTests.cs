@@ -88,7 +88,7 @@ public sealed class TrendChartViewModelTests
 		await LoadInitialHistory(viewModel, scheduler, _from, _to);
 
 		viewModel.FindPen(1)!.CurrentValue.Should().Be(2.0);
-		viewModel.FindPen(1)!.Columns.Should().HaveCount(2);
+		viewModel.FindPen(1)!.Line.Columns.Should().HaveCount(2);
 	}
 
 	[AvaloniaFact]
@@ -120,7 +120,7 @@ public sealed class TrendChartViewModelTests
 
 		var pen = viewModel.FindPen(1)!;
 		pen.CurrentValue.Should().NotBeNull();
-		pen.Columns.Should().NotBeEmpty();
+		pen.Line.Columns.Should().NotBeEmpty();
 	}
 
 	[AvaloniaFact]
@@ -223,11 +223,11 @@ public sealed class TrendChartViewModelTests
 		var (viewModel, scheduler, _, _) = CreateViewModel();
 		var state = viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
 		await LoadInitialHistory(viewModel, scheduler, _from, _to);
-		var columnsBefore = state.Columns.Count;
+		var columnsBefore = state.Line.Columns.Count;
 
 		state.FoldRealtime(99.0);
 
-		state.Columns.Should().HaveCount(columnsBefore);
+		state.Line.Columns.Should().HaveCount(columnsBefore);
 		state.CurrentValue.Should().Be(99.0);
 	}
 
@@ -266,10 +266,10 @@ public sealed class TrendChartViewModelTests
 
 		state.LoadHistory(envelope);
 
-		state.Columns.Should().HaveCount(3);
-		double.IsNaN(state.Columns[0].Center).Should().BeFalse();
-		double.IsNaN(state.Columns[1].Center).Should().BeTrue();
-		double.IsNaN(state.Columns[2].Center).Should().BeFalse();
+		state.Line.Columns.Should().HaveCount(3);
+		double.IsNaN(state.Line.Columns[0].Center).Should().BeFalse();
+		double.IsNaN(state.Line.Columns[1].Center).Should().BeTrue();
+		double.IsNaN(state.Line.Columns[2].Center).Should().BeFalse();
 	}
 
 	[AvaloniaFact]
@@ -281,8 +281,8 @@ public sealed class TrendChartViewModelTests
 
 		state.AppendRealtime(timestamp, value: null);
 
-		state.Columns.Should().ContainSingle();
-		double.IsNaN(state.Columns[0].Center).Should().BeTrue();
+		state.Line.Columns.Should().ContainSingle();
+		double.IsNaN(state.Line.Columns[0].Center).Should().BeTrue();
 	}
 
 	[AvaloniaFact]
@@ -337,7 +337,7 @@ public sealed class TrendChartViewModelTests
 
 		await act.Should().NotThrowAsync();
 		viewModel.FindPen(1)!.CurrentValue.Should().BeNull();
-		viewModel.FindPen(1)!.Columns.Should().BeEmpty();
+		viewModel.FindPen(1)!.Line.Columns.Should().BeEmpty();
 	}
 
 	[AvaloniaFact]
@@ -355,11 +355,11 @@ public sealed class TrendChartViewModelTests
 
 		state.LoadHistory(envelope);
 
-		state.Columns.Should().HaveCount(2);
-		state.Columns[0].Min.Should().Be(1.0);
-		state.Columns[0].Max.Should().Be(5.0);
-		state.Columns[1].Min.Should().Be(3.0);
-		state.Columns[1].Max.Should().Be(9.0);
+		state.Line.Columns.Should().HaveCount(2);
+		state.Line.Columns[0].Min.Should().Be(1.0);
+		state.Line.Columns[0].Max.Should().Be(5.0);
+		state.Line.Columns[1].Min.Should().Be(3.0);
+		state.Line.Columns[1].Max.Should().Be(9.0);
 	}
 
 	[AvaloniaFact]
@@ -371,10 +371,10 @@ public sealed class TrendChartViewModelTests
 
 		state.AppendRealtime(timestamp, 42.0);
 
-		state.Columns.Should().ContainSingle();
-		state.Columns[0].Min.Should().Be(42.0);
-		state.Columns[0].Max.Should().Be(42.0);
-		state.Columns[0].Center.Should().Be(42.0);
+		state.Line.Columns.Should().ContainSingle();
+		state.Line.Columns[0].Min.Should().Be(42.0);
+		state.Line.Columns[0].Max.Should().Be(42.0);
+		state.Line.Columns[0].Center.Should().Be(42.0);
 	}
 
 	[AvaloniaFact]
@@ -388,7 +388,7 @@ public sealed class TrendChartViewModelTests
 		state.AppendRealtime(t0.AddMinutes(1.0), 42.0);
 		state.AppendRealtime(t0, 42.0);
 
-		state.Columns.Should().HaveCount(2);
+		state.Line.Columns.Should().HaveCount(2);
 		state.CurrentValue.Should().Be(6.0);
 	}
 
@@ -402,8 +402,8 @@ public sealed class TrendChartViewModelTests
 
 		state.AppendRealtime(t0.AddMinutes(2.0), 42.0);
 
-		state.Columns.Should().HaveCount(3);
-		state.Columns[2].Center.Should().Be(42.0);
+		state.Line.Columns.Should().HaveCount(3);
+		state.Line.Columns[2].Center.Should().Be(42.0);
 		state.CurrentValue.Should().Be(42.0);
 	}
 
@@ -420,8 +420,8 @@ public sealed class TrendChartViewModelTests
 		state.LoadHistory(new PenHistoryEnvelope(1, [t0, t0.AddMinutes(1.0)], [1.0, 3.0], [5.0, 9.0], [2.0, 6.0]));
 		state.AppendRealtime(t0.AddMinutes(1.5), 42.0);
 
-		state.Columns.Should().HaveCount(3);
-		state.Columns[2].Center.Should().Be(42.0);
+		state.Line.Columns.Should().HaveCount(3);
+		state.Line.Columns[2].Center.Should().Be(42.0);
 		state.CurrentValue.Should().Be(42.0);
 	}
 
@@ -436,8 +436,8 @@ public sealed class TrendChartViewModelTests
 		state.ClearHistory();
 		state.AppendRealtime(t0, 42.0);
 
-		state.Columns.Should().ContainSingle();
-		state.Columns[0].Center.Should().Be(42.0);
+		state.Line.Columns.Should().ContainSingle();
+		state.Line.Columns[0].Center.Should().Be(42.0);
 		state.CurrentValue.Should().Be(42.0);
 	}
 
@@ -454,8 +454,8 @@ public sealed class TrendChartViewModelTests
 			state.AppendRealtime(t0.AddSeconds(index), index);
 		}
 
-		state.Columns.Should().HaveCount(Cap);
-		state.Columns[0].Center.Should().Be(10.0);
+		state.Line.Columns.Should().HaveCount(Cap);
+		state.Line.Columns[0].Center.Should().Be(10.0);
 	}
 
 	[AvaloniaFact]
@@ -468,10 +468,10 @@ public sealed class TrendChartViewModelTests
 
 		state.FoldRealtime(9.0);
 
-		state.Columns.Should().ContainSingle();
-		state.Columns[0].Max.Should().Be(9.0);
-		state.Columns[0].Min.Should().Be(1.0);
-		state.Columns[0].Center.Should().Be(9.0);
+		state.Line.Columns.Should().ContainSingle();
+		state.Line.Columns[0].Max.Should().Be(9.0);
+		state.Line.Columns[0].Min.Should().Be(1.0);
+		state.Line.Columns[0].Center.Should().Be(9.0);
 	}
 
 	[AvaloniaFact]
@@ -511,12 +511,12 @@ public sealed class TrendChartViewModelTests
 		// A coarse (non-Raw) layer folds realtime into the current column instead of appending.
 		viewModel.Navigation.ZoomAt(48.0, viewModel.Navigation.To);
 		viewModel.Navigation.ActiveLayer.Should().NotBe(AggregationLayer.Raw);
-		var columnsBefore = state.Columns.Count;
+		var columnsBefore = state.Line.Columns.Count;
 
 		coordinator.Start();
 		scheduler.AdvanceBy(_batchWindow.Ticks);
 
-		state.Columns.Count.Should().Be(columnsBefore);
+		state.Line.Columns.Count.Should().Be(columnsBefore);
 	}
 
 	[AvaloniaFact]
@@ -526,12 +526,12 @@ public sealed class TrendChartViewModelTests
 			realtimeInterval: TimeSpan.FromMilliseconds(10));
 		var state = viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
 		viewModel.Navigation.ActiveLayer.Should().Be(AggregationLayer.Raw);
-		var columnsBefore = state.Columns.Count;
+		var columnsBefore = state.Line.Columns.Count;
 
 		coordinator.Start();
 		scheduler.AdvanceBy(_batchWindow.Ticks);
 
-		state.Columns.Count.Should().BeGreaterThan(columnsBefore);
+		state.Line.Columns.Count.Should().BeGreaterThan(columnsBefore);
 	}
 
 	// The archive is per-variable and change-based, so a buffer window routinely spans timestamps only one
@@ -550,10 +550,10 @@ public sealed class TrendChartViewModelTests
 		coordinator.Start();
 		scheduler.AdvanceBy(_batchWindow.Ticks);
 
-		first.Columns.Should().NotBeEmpty();
-		second.Columns.Should().NotBeEmpty();
-		first.Columns.Should().NotContain(column => double.IsNaN(column.Center));
-		second.Columns.Should().NotContain(column => double.IsNaN(column.Center));
+		first.Line.Columns.Should().NotBeEmpty();
+		second.Line.Columns.Should().NotBeEmpty();
+		first.Line.Columns.Should().NotContain(column => double.IsNaN(column.Center));
+		second.Line.Columns.Should().NotContain(column => double.IsNaN(column.Center));
 	}
 
 	[AvaloniaFact]
@@ -881,7 +881,7 @@ public sealed class TrendChartViewModelTests
 
 		provider.HistoryQueryCount.Should().Be(2);
 		provider.LastQueriedTargetColumnCount.Should().Be(HistoryPrefetch.MarginColumnFactor * 256);
-		state.Columns.Should().HaveCount(2);
+		state.Line.Columns.Should().HaveCount(2);
 		state.CurrentValue.Should().Be(FakeDataProvider.DefaultCenter);
 	}
 
@@ -1089,16 +1089,16 @@ public sealed class TrendChartViewModelTests
 		viewModel.AddPen(new Pen(2, "Pen 2", "Group A", "#00ff00"));
 
 		await LoadInitialHistory(viewModel, scheduler, _from, _to);
-		viewModel.FindPen(2)!.Columns.Should().HaveCount(2);
+		viewModel.FindPen(2)!.Line.Columns.Should().HaveCount(2);
 
 		// The next window holds no row for pen 2, so the provider answers with no envelope for it at all.
 		provider.OmittedPenIds.Add(2);
 		viewModel.Navigation.ZoomAt(48.0, viewModel.Navigation.To);
 		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
 
-		viewModel.FindPen(2)!.Columns.Should().BeEmpty();
+		viewModel.FindPen(2)!.Line.Columns.Should().BeEmpty();
 		viewModel.FindPen(2)!.CurrentValue.Should().BeNull();
-		viewModel.FindPen(1)!.Columns.Should().HaveCount(2);
+		viewModel.FindPen(1)!.Line.Columns.Should().HaveCount(2);
 	}
 
 	[AvaloniaFact]
@@ -1126,7 +1126,7 @@ public sealed class TrendChartViewModelTests
 		await applied.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
 		viewModel.FindPen(1)!.CurrentValue.Should().Be(2.0);
-		lateState.Columns.Should().HaveCount(2);
+		lateState.Line.Columns.Should().HaveCount(2);
 		lateState.CurrentValue.Should().Be(4.0);
 	}
 

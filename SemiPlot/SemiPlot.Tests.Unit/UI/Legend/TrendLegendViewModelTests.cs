@@ -125,9 +125,7 @@ public sealed class TrendLegendViewModelTests
 	public void RowTexts_WithoutAValueOrAScaleRange_ReadTheNoValuePlaceholder()
 	{
 		var chart = CreateChart();
-		var columns = new List<EnvelopeColumn>();
-		var penState = new TrendPenState(
-			new Pen(1, "Pen 1", "Heaters", "#ff0000"), new EnvelopeLine(columns), columns);
+		var penState = new TrendPenState(new Pen(1, "Pen 1", "Heaters", "#ff0000"), new EnvelopeLine());
 
 		using var row = new TrendLegendRowViewModel(chart, penState);
 

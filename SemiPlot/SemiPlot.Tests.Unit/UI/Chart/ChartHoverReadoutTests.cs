@@ -99,11 +99,6 @@ public sealed class ChartHoverReadoutTests
 
 	private static TrendPenState CreatePen(int projectVarId, string name)
 	{
-		var columns = new List<EnvelopeColumn>();
-
-		return new TrendPenState(
-			new Pen(projectVarId, name, "Group", "#ff0000"),
-			new EnvelopeLine(columns),
-			columns);
+		return new TrendPenState(new Pen(projectVarId, name, "Group", "#ff0000"), new EnvelopeLine());
 	}
 }

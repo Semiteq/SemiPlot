@@ -86,7 +86,10 @@ pointer capture and event routing. Real framework, synthetic data. These are wha
 
 **Against a real rasterizer** — `SemiPlot.Tests.Unit/UI/Chart/ChartGapRenderTests.cs`, a plain `[Fact]`
 with no Avalonia: it renders through SkiaSharp and asserts on pixels that a `NaN` column breaks the
-line.
+line. `EnvelopeLineTests.cs` uses the same rasterizer as a render thread, not for its pixels: a
+background task renders frames while the test thread rewrites the same pen's columns, and the pin is
+that the render task throws nothing and reaches its frame budget, the run bounded by that budget and a
+cancellation token.
 
 An integration test must not cross a second foreign boundary in the same assertion, and must not
 exercise the production composition root. The moment it does either, a failure stops naming a seam.

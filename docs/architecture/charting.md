@@ -11,8 +11,8 @@ toolbar, axes UX, theming) is ours; ScottPlot is only the plotting core.
 
 Each pen is drawn as **one plottable of our own** over a data-layer-decimated min/max envelope
 (`PenHistoryEnvelope`: ascending `Timestamps` + `Min` + `Max` + `Center`). `Chart/EnvelopeLine` is an
-`IPlottable` holding a `List<EnvelopeColumn>` (`X`, `Min`, `Max`, `Center`) by reference and strokes one
-polyline through every visible column's `Min` and `Max`: no fill, no band, no markers.
+`IPlottable` owning a `List<EnvelopeColumn>` (`X`, `Min`, `Max`, `Center`) and strokes one polyline
+through every visible column's `Min` and `Max`: no fill, no band, no markers.
 
 `SignalXY` was rejected: it cannot express per-pen stepping plus NaN gaps, and its built-in
 decimation is unused because the data layer pre-decimates. `DataLogger` is cited prior art only
@@ -45,8 +45,18 @@ new segment with a `MoveTo`. Every NaN a chart draws comes from the history path
 **Per-pen stepping.** `EnvelopeLine.PenLineStyle` carries the Core `PenLineStyle` — `Stepped` for
 discrete/digital tags, `Interpolated` for analog. `Chart/TrendPenState` assigns it from the pen.
 
-**Realtime append / live-edge join.** `TrendPenState` owns one pen's `EnvelopeLine` plus the column buffer.
-The plottable re-reads that list on every render, so appends are live and nothing is re-set. The realtime
+**Column buffer and its two threads.** The plottable owns the column list and the `Lock` that guards it,
+both private. Every mutation goes through `ReplaceColumns`, `ClearColumns`, `AppendColumn` or
+`FoldIntoLastColumn`, each of which takes the lock, so no caller can reach the list without it.
+`Chart/TrendPenState` is the only caller of those four and calls them on the UI thread; `Render` and
+`GetAxisLimits` read on Avalonia's render thread under the same lock. `Render` holds it for the
+visible-column read alone (`EnvelopePath.VisibleRange` plus `EnvelopePath.Build`) and strokes the resulting
+points outside it, so a frame that meets a history load waits for the one `AddRange` that swaps the buffer,
+not for the conversion ahead of it: `LoadHistory` converts into a list local to the call and hands it over
+in one `ReplaceColumns`.
+
+**Realtime append / live-edge join.** `TrendPenState` holds one pen's `EnvelopeLine` and appends into the
+plottable's column list, which every render re-reads, so appends are live and nothing is re-set. The realtime
 tail appends one degenerate column (`Min == Max == Center == value`) at the live edge. At coarse layers
 (minute/hour/day) a realtime sample does **not** append — it folds into the current decimation column
 (`FoldRealtime` widens that column's `Min`/`Max` and moves its `Center`). Cursor and legend read the
@@ -119,10 +129,11 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
 - `Chart/TrendChartView` + `TrendChartViewModel` — the chart. The view is the only type touching
   `AvaPlot`; the view model owns a bare `ScottPlot.Plot` (headless-constructable), the per-pen
   `TrendPenState` dictionary, and the coordinator subscriptions — so it is unit-tested headless.
-- `Chart/EnvelopeLine` + `EnvelopePath` — the per-pen `IPlottable` and the pure geometry it strokes:
-  the visible-column search, the min/max point order, the gap break and the step shape.
-- `Chart/TrendPenState` — one pen's `EnvelopeLine`, its column buffer, `IsVisible`, `CurrentValue`,
-  and the history-load / realtime-append / fold logic.
+- `Chart/EnvelopeLine` + `EnvelopePath` — the per-pen `IPlottable`, the private column buffer with the
+  lock over it and the four mutators that take it, and the pure geometry it strokes: the visible-column
+  search, the min/max point order, the gap break and the step shape.
+- `Chart/TrendPenState` — one pen's `EnvelopeLine`, `IsVisible`, `CurrentValue`, and the
+  history-load / realtime-append / fold logic that drives those mutators.
 - `Chart/ChartAxisBinder` — applies the `PenScaleModel` output to ScottPlot Y axes
   (`AddLeftAxis`/`AddRightAxis`, shared-group axis assignment, `SetLimitsY`, shared-X pinning).
 - `Chart/ChartNavigationController` — owns the `TrendNavigationModel`, the layer ladder, the live-edge

@@ -63,6 +63,8 @@ public static class Converge
 			_pollInterval,
 			cancellationToken);
 
+		await AppSettingsFileWriter.WriteAsync(options.ConfigDirectory, cancellationToken);
+
 		return new ConvergeResult(waited, fill.RowsWritten, fill.TagsWritten ?? 0, database);
 	}
 

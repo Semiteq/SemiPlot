@@ -135,7 +135,7 @@ public sealed class StartupProbeTests
 		var result = await StartupProbe.ReadAsync(container, _shortBound);
 
 		result.Errors.Should().ContainSingle().Which.Should().BeOfType<StartupReadTimedOutError>()
-			.Which.Read.Should().Be("archive extent");
+			.Which.Read.Should().Be(StartupRead.ArchiveExtent);
 	}
 
 	// The bound and Npgsql's connect timeout race when equal; the loser decides whether an unreachable

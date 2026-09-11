@@ -104,6 +104,9 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	public int ScalesRevision { get; private set; }
 
+	/// <summary>How many Y axes the scale model has created so far; one per axis key.</summary>
+	public int AxisCount => _axisBinder.AxesByKey.Count;
+
 	public IYAxis? ActivePenAxis =>
 		_settingsById.TryGetValue(ActivePenId, out var settings)
 			? _axisBinder.FindAxis(settings.AxisKey)

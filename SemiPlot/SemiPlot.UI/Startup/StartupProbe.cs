@@ -58,7 +58,7 @@ public static class StartupProbe
 		{
 			var dataProvider = serviceProvider.GetRequiredService<IDataProvider>();
 
-			var pens = await ReadBoundedAsync(dataProvider.QueryPensAsync(), readBound, "pen catalogue")
+			var pens = await ReadBoundedAsync(dataProvider.QueryPensAsync(), readBound, StartupRead.PenCatalogue)
 				.ConfigureAwait(false);
 
 			if (pens.IsFailed)
@@ -66,7 +66,7 @@ public static class StartupProbe
 				return await FailAsync<StartupData>(serviceProvider, pens.Errors).ConfigureAwait(false);
 			}
 
-			var extent = await ReadBoundedAsync(dataProvider.QueryArchiveExtentAsync(), readBound, "archive extent")
+			var extent = await ReadBoundedAsync(dataProvider.QueryArchiveExtentAsync(), readBound, StartupRead.ArchiveExtent)
 				.ConfigureAwait(false);
 
 			if (extent.IsFailed)
@@ -84,17 +84,17 @@ public static class StartupProbe
 
 	// WaitAsync abandons the wait, not the query: the read runs on until the provider's own backstop ends it.
 	private static async Task<Result<TValue>> ReadBoundedAsync<TValue>(
-		Task<Result<TValue>> read,
+		Task<Result<TValue>> query,
 		TimeSpan bound,
-		string description)
+		StartupRead read)
 	{
 		try
 		{
-			return await read.WaitAsync(bound).ConfigureAwait(false);
+			return await query.WaitAsync(bound).ConfigureAwait(false);
 		}
 		catch (TimeoutException)
 		{
-			return Result.Fail<TValue>(new StartupReadTimedOutError(description, bound));
+			return Result.Fail<TValue>(new StartupReadTimedOutError(read, bound));
 		}
 	}
 

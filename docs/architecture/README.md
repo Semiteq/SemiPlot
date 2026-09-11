@@ -11,8 +11,12 @@ implementation plans see `docs/plans/`.
   charting features (pens, multi-axis per-pen scaling, cursor, aggregation layers, time navigation).
 - [trend-interaction.md](./trend-interaction.md) — behavior spec: time navigation, sticky scroll,
   axis management, cursors, decimation, rendering; the locked decisions log.
-- [ui-text.md](./ui-text.md) - the strings the operator reads: the one English `Resources.resx`, the
-  compile-time accessor and why it is a source generator, and what stays a literal in code.
+- [ui-text.md](./ui-text.md) - the strings the operator reads: the English and Russian resource sets,
+  what the `locale` key selects, the compile-time accessor and why it is a source generator, and
+  what stays a literal in code.
+- [ui-theme.md](./ui-theme.md) - the colours the operator sees: the retinted `Semi.Avalonia` tokens,
+  the application's own surface keys, how the `theme` key picks a variant, the four ScottPlot
+  surfaces, and the rule that a colour literal in AXAML is a defect.
 - [data-integration.md](./data-integration.md) — the contract between SemiPlot and the archive
   database: responsibility zones, the `IDataProvider` surface, the statement each operation issues
   and what it must keep, layer selection, the time boundary, gap mapping, error semantics, the
@@ -60,7 +64,7 @@ SemiBase creates `public.trends`, as `bench.md` and `postgres-instance.md` state
 | Area            | Decision                                                                    |
 | --------------- | --------------------------------------------------------------------------- |
 | Platform        | .NET 10 (`net10.0`), ships on Windows, C# 14                                |
-| Desktop shell   | Avalonia 12.0.5 (Win32 + Skia + HarfBuzz + FluentTheme), ReactiveUI MVVM    |
+| Desktop shell   | Avalonia 12.0.5 (Win32 + Skia + HarfBuzz + `Semi.Avalonia`), ReactiveUI MVVM |
 | Chart renderer  | ScottPlot 5 (`ScottPlot.Avalonia` 5.1.59, MIT, SkiaSharp) — native control  |
 | Data source     | One read-only PostgreSQL connection to the Simple-Scada archive (`trends` / `messages`) — history, extent and realtime alike. No application server, no OPC UA client, no local TCP protocol |
 | Wide windows    | The SCADA's own archive layers (`l = 1/2/3`); no summary tables, aggregator service, scheduler or extensions of ours — see `history-read-path-evaluation.md` |

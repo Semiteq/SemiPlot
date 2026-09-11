@@ -9,34 +9,34 @@
              x:Class="SemiPlot.UI.Minimap.MinimapView"
              x:DataType="minimap:MinimapViewModel">
 
-    <Border Background="#252526"
+    <Border Background="{DynamicResource AppPanelBackgroundBrush}"
             BorderThickness="0,1,0,0"
-            BorderBrush="Gray">
+            BorderBrush="{DynamicResource AppBorderBrush}">
         <Canvas Name="StripCanvas"
-                Background="#2D2D30"
+                Background="{DynamicResource AppContentBackgroundBrush}"
                 ClipToBounds="True"
                 Cursor="Hand">
             <Rectangle Name="Baseline"
                        Canvas.Left="0"
                        Height="1"
-                       Fill="#3F3F46" />
+                       Fill="{DynamicResource AppSubtleLineBrush}" />
             <TextBlock Name="ExtentFirstLabel"
                        Canvas.Left="4"
                        FontSize="10"
-                       Foreground="#A0A0A0"
+                       Foreground="{DynamicResource AppSecondaryForegroundBrush}"
                        IsHitTestVisible="False"
                        Text="{Binding ExtentFirstLabel}" />
             <TextBlock Name="ExtentLastLabel"
                        Canvas.Top="0"
                        FontSize="10"
-                       Foreground="#A0A0A0"
+                       Foreground="{DynamicResource AppSecondaryForegroundBrush}"
                        IsHitTestVisible="False"
                        Text="{Binding ExtentLastLabel}" />
             <Border Name="WindowHighlight"
                     Canvas.Top="0"
-                    Background="#603B82F6"
+                    Background="{DynamicResource AppAccentFillBrush}"
                     BorderThickness="2"
-                    BorderBrush="#FF60A5FA" />
+                    BorderBrush="{DynamicResource AppAccentBrush}" />
         </Canvas>
     </Border>
 

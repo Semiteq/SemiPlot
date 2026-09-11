@@ -18,6 +18,7 @@ using Xunit;
 
 namespace SemiPlot.Tests.Unit.UI.Legend;
 
+[Collection(ProcessGlobalStateCollection.Name)]
 [Trait("Component", "UI")]
 [Trait("Area", "Chart")]
 [Trait("Category", "Unit")]

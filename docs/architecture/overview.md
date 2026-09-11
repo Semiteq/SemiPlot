@@ -17,7 +17,7 @@ It must handle two classes of data:
 | Layer            | Choice                                                                 |
 | ---------------- | --------------------------------------------------------------------- |
 | Platform         | .NET 10 (`net10.0`), ships on Windows, C# 14                           |
-| Desktop shell    | Avalonia 12.0.5 (Win32 backend, SkiaSharp render, HarfBuzz shaping, FluentTheme light) |
+| Desktop shell    | Avalonia 12.0.5 (Win32 backend, SkiaSharp render, HarfBuzz shaping, `Semi.Avalonia` 12.0.3 retinted to the JetBrains palette — `ui-theme.md`) |
 | Chart renderer   | ScottPlot 5 (`ScottPlot.Avalonia` 5.1.59, MIT, SkiaSharp) — native control |
 | MVVM             | ReactiveUI (`ReactiveUI.Avalonia` 12.0.3)                             |
 | Backend (in-proc)| .NET data provider abstraction over the data sources                   |
@@ -101,15 +101,23 @@ bridge**: the chart is a native ScottPlot control, fed in-process by `TrendCoord
 - Site paths follow the `C:\DISTR\` convention of the sibling SemiStep installation: configuration
   in `C:\DISTR\Config\SemiPlot`, logs in `C:\DISTR\Logs\SemiPlot\`. Neither sits beside the
   executable and neither is per-user.
-- The connection file `C:\DISTR\Config\SemiPlot\archive-connection.yaml` is required. An
-  installation without one shows the startup failure in the main window instead of a chart — the
-  startup path is in [data-integration.md](./data-integration.md).
+- Two configuration files are required, both under the configuration directory. An installation
+  missing either shows the startup failure in the main window instead of a chart.
+
+  | File | Holds | Read by |
+  | --- | --- | --- |
+  | `ui/app.yaml` | `locale` (`ru` \| `en`) and `theme` (`light` \| `dark`), both required, no default and no fallback | `Startup/AppSettingsLoader`, first — a broken archive cannot mask a broken configuration |
+  | `archive-connection.yaml` | The archive connection | `Startup/StartupProbe`, second — [data-integration.md](./data-integration.md) |
+
+  `locale` is in [ui-text.md](./ui-text.md), `theme` in [ui-theme.md](./ui-theme.md). Neither file is
+  committed: the bench stand gets both from the seeder's `converge` verb, which writes them into
+  `--config-dir` ([bench.md](./bench.md)), and `SemiPlot/Artifacts/bench-config` is gitignored.
 
 ### Command line
 
 | Argument | Effect | Default |
 | --- | --- | --- |
-| `--config-dir <dir>` | Directory holding `archive-connection.yaml` | `C:\DISTR\Config\SemiPlot` |
+| `--config-dir <dir>` | Directory holding `ui/app.yaml` and `archive-connection.yaml` | `C:\DISTR\Config\SemiPlot` |
 | `--log-file <path>` | Log file, rolling 5 MB / 5 files | `C:\DISTR\Logs\SemiPlot\semiplot.log` |
 | `--logging-level <level>` | `verbose` \| `debug` \| `info` (or `information`) \| `warning` \| `error` \| `fatal`, case-insensitive | `warning` |
 

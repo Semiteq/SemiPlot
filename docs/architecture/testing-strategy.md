@@ -48,6 +48,14 @@ boundary.
 A unit test must not open a socket, read the wall clock, or depend on anything the machine resolves —
 `PATH`, an installed service, a display. It runs everywhere, ungated.
 
+Two pieces of state are process-global and the project runs its classes in parallel: the UI culture
+(`CultureInfo.DefaultThreadCurrentUICulture` / `CurrentUICulture`) and the application's theme
+variant. A class that writes either one, **and** a class that reads what either one selects (a
+`Resources` accessor, a control's resolved brush), carries
+`[Collection(ProcessGlobalStateCollection.Name)]` and restores the previous value in a `finally`. A
+write landing between a production read and the test's own read is otherwise an intermittent failure
+with no reproduction.
+
 Statement text is pinned clause by clause, in `ArchiveStatementTextTests.cs` against the constants in
 `ArchiveStatements.cs`: one assertion per guarantee whose loss nothing else catches without a
 container — the sparse history window's outer `ORDER BY id, t`, its strict seam bound and its one-day

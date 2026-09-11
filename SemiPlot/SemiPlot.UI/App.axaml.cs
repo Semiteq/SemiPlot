@@ -1,9 +1,11 @@
+using System.Globalization;
 using System.Reactive.Concurrency;
 
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Styling;
 
 using FluentResults;
 
@@ -11,6 +13,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 using ReactiveUI.Avalonia;
+
+using Semi.Avalonia;
 
 using SemiPlot.Core.Data;
 using SemiPlot.UI.Bridge;
@@ -63,24 +67,49 @@ public class App : Application
 		return new MainWindow.MainWindow { DataContext = mainWindowViewModel };
 	}
 
-	public static void Run(Result<StartupData> startup)
+	/// <summary>
+	/// <paramref name="settings"/> is null only when the settings load itself failed; that window renders
+	/// on the variant <c>App.axaml</c> declares, and every other window follows the configured one.
+	/// </summary>
+	public static void Run(AppSettings? settings, Result<StartupData> startup)
 	{
 		BuildAvaloniaApp()
-			.AfterSetup(builder =>
-			{
-				var app = (App)builder.Instance!;
-
-				if (startup.IsFailed)
-				{
-					app._startupFailure = ArchiveFailureMapper.Map(startup.Errors[0]);
-
-					return;
-				}
-
-				InitializeServices(startup.Value);
-				app._serviceProvider = startup.Value.ServiceProvider;
-			})
+			.AfterSetup(builder => Configure((App)builder.Instance!, settings, startup))
 			.StartWithClassicDesktopLifetime([]);
+	}
+
+	internal static void Configure(App app, AppSettings? settings, Result<StartupData> startup)
+	{
+		// Above the failure return, so an archive failure still renders on the configured variant.
+		if (settings is not null)
+		{
+			app.RequestedThemeVariant = VariantFor(settings.Theme);
+		}
+
+		// A settings failure has no configured locale, and the bootstrap one is what its window is
+		// already read in.
+		SemiTheme.OverrideLocaleResources(
+			app, SemiLocaleFor(settings?.Locale ?? StartupSequence.BootstrapLocale));
+
+		if (startup.IsFailed)
+		{
+			app._startupFailure = ArchiveFailureMapper.Map(startup.Errors[0]);
+
+			return;
+		}
+
+		InitializeServices(startup.Value);
+		app._serviceProvider = startup.Value.ServiceProvider;
+	}
+
+	internal static CultureInfo SemiLocaleFor(UiLanguage locale)
+	{
+		return SettingsVocabulary.Of(locale).SemiCulture;
+	}
+
+	internal static ThemeVariant VariantFor(AppThemeVariant theme)
+	{
+		return SettingsVocabulary.Of(theme).Variant;
 	}
 
 	internal static AppBuilder BuildAvaloniaApp()

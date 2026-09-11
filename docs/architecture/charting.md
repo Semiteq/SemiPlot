@@ -200,11 +200,18 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   grouped mini-legend: checkbox visibility, color, name, current value, value-at-cursor, scale range.
 - `Minimap/MinimapView` + `MinimapViewModel` — Canvas-based archive-overview strip; navigates via the
   shared `ChartNavigationController` (see trend-interaction.md).
-- `Localization/Resources.resx` + the generated `SemiPlot.UI.Localization.Resources` - every string
-  the operator reads on the trend screen, in one neutral English set; the failure window's strings
-  stay literals. `Microsoft.CodeAnalysis.ResxSourceGenerator` writes the accessor at compile time;
-  C# reads `Resources.Key` and AXAML `{x:Static text:Resources.Key}`. The delta labels and the
-  no-value placeholder live there because the source is ASCII (see ui-text.md).
+- `Localization/Resources.resx` + `Resources.ru.resx` and the generated
+  `SemiPlot.UI.Localization.Resources` - every string the operator reads, the startup failure window
+  included, in two sets the `locale` key of `ui/app.yaml` selects between.
+  `Microsoft.CodeAnalysis.ResxSourceGenerator` writes the accessor at compile time; C# reads
+  `Resources.Key` and AXAML `{x:Static text:Resources.Key}`. The delta labels and the no-value
+  placeholder live there because the source is ASCII. What stays a literal, and why, is in
+  `ui-text.md`.
+- `Startup/AppSettings` + `AppSettingsLoader` + `StartupSequence` - the required
+  `<config-dir>/ui/app.yaml`, its two keys and the ordered startup steps that read it before the
+  connection file (`data-integration.md`, Startup).
+- `Styles/Palette.axaml` + `Chart/ChartPalette` - the two theme variants, and the four ScottPlot
+  surfaces painted from them (`ui-theme.md`).
 
 **Core models (`SemiPlot.Core.Trends`, renderer-agnostic, unit-tested):**
 

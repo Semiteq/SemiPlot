@@ -5,6 +5,7 @@ using Npgsql;
 using SemiPlot.DataSource.Postgres.Configuration;
 
 using SemiPlot.Tools.ArchiveSeeder;
+using SemiPlot.UI.Startup;
 
 using Xunit;
 
@@ -48,6 +49,11 @@ public sealed class ConvergeTests(PostgresContainerFixture postgresContainerFixt
 			loaded.Value.Database.Should().Be(database);
 			loaded.Value.Username.Should().Be(BenchRoles.ReaderRole);
 			loaded.Value.SourceTimeZone.Id.Should().Be(TimeZoneInfo.Local.Id);
+
+			var settings = AppSettingsLoader.Load(StartupSequence.SettingsPath(configDirectory));
+
+			settings.IsSuccess.Should().BeTrue();
+			settings.Value.Should().Be(new AppSettings(UiLanguage.Ru, AppThemeVariant.Light));
 
 			var oidBefore = await DatabaseOidAsync(server, database);
 

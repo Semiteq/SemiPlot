@@ -220,7 +220,18 @@ the change interval; the AppHost passes the writer's 0.5 s so the seeded day and
 one density) up to `--end` or this machine's
 clock, fills `semiplot_tags` through `--admin-connection` re-pointed at the stand database, and
 writes `archive-connection.yaml` with the bench reader role's fixed password and
-`TimeZoneInfo.Local.Id`. `BenchRoles` in the seeder is the one place the bench's role names and
+`TimeZoneInfo.Local.Id`.
+
+It writes a second file into the same directory, `ui/app.yaml`, carrying `locale: ru` and
+`theme: light`. The application requires it, and `SemiPlot/Artifacts/bench-config` is ignored by
+`.gitignore`, so converge is the only mechanism that delivers it to the stand.
+
+The seeder cannot reference the application, so `AppSettingsFileWriter` spells `ui` and `app.yaml`
+a second time. `AppSettingsFileWriterTests.TheWriterTargetsThePathTheApplicationReads` pins the two
+halves equal against `StartupSequence.SettingsPath`; without it a drift would put the file where
+nothing reads it and only a bench run would notice.
+
+`BenchRoles` in the seeder is the one place the bench's role names and
 passwords live; the container fixture reads them from there, and the AppHost repeats the same fixed
 values as environment variables for the container, because an Aspire AppHost project cannot compile
 against a project resource's own assembly.

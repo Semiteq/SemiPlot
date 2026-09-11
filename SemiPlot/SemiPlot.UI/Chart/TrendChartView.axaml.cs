@@ -4,6 +4,7 @@ using System.Reactive.Disposables;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Threading;
 
 using ReactiveUI;
@@ -11,6 +12,8 @@ using ReactiveUI;
 using ScottPlot;
 using ScottPlot.Plottables;
 using ScottPlot.TickGenerators;
+
+using Serilog;
 
 using Cursor = Avalonia.Input.Cursor;
 
@@ -38,6 +41,9 @@ public partial class TrendChartView : UserControl
 	// bound plot changes so the first frame of the new plot always reports.
 	private float _lastRenderedDataAreaWidth = float.NaN;
 
+	// -1 until the bound plot is painted once, so the first scale revision always repaints.
+	private int _paintedAxisCount = -1;
+
 	private TrendChartViewModel? _viewModel;
 
 	public TrendChartView()
@@ -62,6 +68,61 @@ public partial class TrendChartView : UserControl
 		PlotControl.SizeChanged += (_, _) => RepositionCursorOverlay();
 	}
 
+	protected override void OnLoaded(RoutedEventArgs e)
+	{
+		base.OnLoaded(e);
+
+		if (Application.Current is { } application)
+		{
+			application.ActualThemeVariantChanged += OnActualThemeVariantChanged;
+		}
+
+		RepaintChart();
+	}
+
+	protected override void OnUnloaded(RoutedEventArgs e)
+	{
+		if (Application.Current is { } application)
+		{
+			application.ActualThemeVariantChanged -= OnActualThemeVariantChanged;
+		}
+
+		base.OnUnloaded(e);
+	}
+
+	private void OnActualThemeVariantChanged(object? sender, EventArgs eventArgs)
+	{
+		RepaintChart();
+	}
+
+	private void RepaintChart()
+	{
+		ApplyChartPalette();
+		PlotControl.Refresh();
+	}
+
+	// docs/architecture/ui-theme.md#the-plot
+	private void PaintAxesAddedSinceLastPaint()
+	{
+		if (_viewModel is null || _viewModel.AxisCount == _paintedAxisCount)
+		{
+			return;
+		}
+
+		ApplyChartPalette();
+	}
+
+	private void ApplyChartPalette()
+	{
+		if (Application.Current is not { } application)
+		{
+			return;
+		}
+
+		ChartPalette.Apply(PlotControl.Plot, application, application.ActualThemeVariant);
+		_paintedAxisCount = _viewModel?.AxisCount ?? -1;
+	}
+
 	// This runs on the render thread, so the report is posted back to the UI thread against the view model
 	// the frame was drawn for, not whichever one is bound when the post is dispatched.
 	private void OnPlotRenderFinished(object? sender, RenderDetails renderDetails)
@@ -80,6 +141,7 @@ public partial class TrendChartView : UserControl
 	private void OnDataContextChanged(object? sender, EventArgs eventArgs)
 	{
 		_disposables.Clear();
+		_paintedAxisCount = -1;
 		_viewModel = DataContext as TrendChartViewModel;
 
 		if (_viewModel is null)
@@ -110,18 +172,34 @@ public partial class TrendChartView : UserControl
 
 		_disposables.Add(_viewModel
 			.WhenAnyValue(viewModel => viewModel.IsDeltaModeEnabled)
-			.Subscribe(_ =>
-			{
-				UpdateDeltaCursorLines();
-				RepositionCursorOverlay();
-			}));
+			.Subscribe(
+				_ =>
+				{
+					UpdateDeltaCursorLines();
+					RepositionCursorOverlay();
+				},
+				ReportFailureOf(nameof(TrendChartViewModel.IsDeltaModeEnabled))));
+
+		_disposables.Add(_viewModel
+			.WhenAnyValue(viewModel => viewModel.ScalesRevision)
+			.Subscribe(
+				_ => PaintAxesAddedSinceLastPaint(),
+				ReportFailureOf(nameof(TrendChartViewModel.ScalesRevision))));
 
 		_disposables.Add(_viewModel.RedrawRequested
-			.Subscribe(_ =>
-			{
-				PlotControl.Refresh();
-				RepositionCursorOverlay();
-			}));
+			.Subscribe(
+				_ =>
+				{
+					PlotControl.Refresh();
+					RepositionCursorOverlay();
+				},
+				ReportFailureOf(nameof(TrendChartViewModel.RedrawRequested))));
+	}
+
+	// ChartPalette.Resolve throws on a dropped key.
+	private static Action<Exception> ReportFailureOf(string pipeline)
+	{
+		return failure => Log.Error(failure, "The chart view's {Pipeline} subscription ended on a failure", pipeline);
 	}
 
 	// X-limit-only; repaint goes through RedrawRequested.

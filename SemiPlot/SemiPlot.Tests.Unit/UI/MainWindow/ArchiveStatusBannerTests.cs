@@ -6,6 +6,7 @@ using AwesomeAssertions;
 
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
+using SemiPlot.UI.Localization;
 using SemiPlot.UI.MainWindow;
 
 using Xunit;
@@ -16,6 +17,7 @@ namespace SemiPlot.Tests.Unit.UI.MainWindow;
 /// The archive-connection row of the main window: written by the poll's connection stream alone, and
 /// withdrawn by it on the next successful tick.
 /// </summary>
+[Collection(ProcessGlobalStateCollection.Name)]
 [Trait("Component", "UI")]
 [Trait("Area", "Chart")]
 [Trait("Category", "Unit")]
@@ -58,11 +60,11 @@ public sealed class ArchiveStatusBannerTests
 
 		states.OnNext(_lost);
 
-		viewModel.ArchiveConnectionMessage.Should()
-			.Contain("semiplot_dev").And.Contain("bench:5432")
-			.And.Contain("stopped answering after 3 consecutive failed reads")
-			.And.Contain("history already drawn is unaffected")
-			.And.Contain("SemiPlot keeps polling and clears this by itself once the archive answers again.");
+		var archive = Resources.FormatFailureArchiveNameFormat("semiplot_dev", "bench:5432");
+		viewModel.ArchiveConnectionMessage.Should().Be(
+			Resources.FormatFailureArchiveConnectionLostDetail(archive, "3")
+			+ " "
+			+ Resources.FailureArchiveConnectionLostRemedy);
 		viewModel.ArchiveConnectionMessage.Should().NotBe(
 			_lost.Fault!.Message, "the raw error sentence names a state and no action");
 		viewModel.HasArchiveConnectionMessage.Should().BeTrue();

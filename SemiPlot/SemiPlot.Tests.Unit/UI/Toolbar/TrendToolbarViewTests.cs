@@ -13,6 +13,7 @@ using Xunit;
 
 namespace SemiPlot.Tests.Unit.UI.Toolbar;
 
+[Collection(ProcessGlobalStateCollection.Name)]
 [Trait("Component", "UI")]
 [Trait("Area", "Chart")]
 [Trait("Category", "Unit")]

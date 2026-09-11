@@ -366,17 +366,24 @@ first query. The password is stored in plain text; the mitigation is the read-on
 ## Startup
 
 Startup splits at the Avalonia boundary because `AfterSetup` is synchronous: a blocking read inside
-it would hold Avalonia's setup. `StartupProbe` (`SemiPlot.UI/Startup/StartupProbe.cs`) therefore
-runs in `Program`, ahead of `BuildAvaloniaApp()`, and the reads `InitializeServices` starts inside
-`AfterSetup` are asynchronous:
+it would hold Avalonia's setup. `StartupSequence.Run` (`SemiPlot.UI/Startup/StartupSequence.cs`)
+therefore holds the ordered blocking steps and `Program.Main` calls it ahead of
+`BuildAvaloniaApp()`, while the reads `InitializeServices` starts inside `AfterSetup` are
+asynchronous:
 
-1. Load `<ConfigDir>/archive-connection.yaml` and register `AddPostgresData(settings)`.
-2. Resolve `IDataProvider`, read the pen catalogue, then the archive extent.
+1. Set the bootstrap UI culture to Russian, so a failure naming the settings file itself can be read.
+2. Load `<ConfigDir>/ui/app.yaml` and apply its `locale`. A failure here short-circuits with null
+   settings, before the connection file is touched, so a broken archive cannot mask a broken
+   configuration (`ui-text.md`, `ui-theme.md`).
+3. `StartupProbe.Run`: load `<ConfigDir>/archive-connection.yaml` and register
+   `AddPostgresData(settings)`.
+4. Resolve `IDataProvider`, read the pen catalogue, then the archive extent.
 
 The container, the pens and the extent cross the boundary in a `StartupData` record inside a
-`Result`, so `App.InitializeServices` awaits nothing. `Program.Main` passes that `Result` to
-`App.Run` unconditionally: on success it runs as today; on failure `App` maps the error through
-`ArchiveFailureMapper` and opens the main window with `MainWindowViewModel.StartupFailure` set — the
+`Result`, so `App.InitializeServices` awaits nothing. `Program.Main` passes the settings and that
+`Result` to `App.Run(AppSettings?, Result<StartupData>)` unconditionally: on success it runs as
+today; on failure `App` maps the error through `ArchiveFailureMapper` and opens the main window with
+`MainWindowViewModel.StartupFailure` set — the
 message panel names what broke and what to do, and the chart, legend and minimap bind to null and
 render empty, because `CreateMainWindow` builds that view model without a service provider. There is
 no second data source to fall back to: synthetic data would let an operator read invented numbers as

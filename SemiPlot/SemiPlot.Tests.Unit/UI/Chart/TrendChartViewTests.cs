@@ -1,12 +1,18 @@
 using System.Reactive.Concurrency;
 
+using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
+using Avalonia.Styling;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 using AwesomeAssertions;
 
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Reactive.Testing;
+
+using ScottPlot.Avalonia;
 
 using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.UI.Bridge;
@@ -16,6 +22,7 @@ using Xunit;
 
 namespace SemiPlot.Tests.Unit.UI.Chart;
 
+[Collection(ProcessGlobalStateCollection.Name)]
 [Trait("Component", "UI")]
 [Trait("Area", "Chart")]
 [Trait("Category", "Unit")]
@@ -62,6 +69,81 @@ public sealed class TrendChartViewTests
 		Dispatcher.UIThread.RunJobs();
 
 		viewModel.Navigation.TargetColumnCount.Should().Be(HistoryColumnTarget.MinColumns);
+	}
+
+	[AvaloniaFact]
+	public void ALoadedView_RepaintsThePlotWhenTheApplicationVariantChanges()
+	{
+		using var scope = ThemeProbe.PreserveVariant();
+		var application = Application.Current!;
+		using var viewModel = CreateViewModel();
+		var window = new Window { Content = new TrendChartView { DataContext = viewModel } };
+		try
+		{
+			application.RequestedThemeVariant = ThemeVariant.Light;
+			window.Show();
+			Dispatcher.UIThread.RunJobs();
+			var light = viewModel.Plot.FigureBackground.Color;
+
+			application.RequestedThemeVariant = ThemeVariant.Dark;
+			Dispatcher.UIThread.RunJobs();
+
+			viewModel.Plot.FigureBackground.Color.Should().NotBe(light);
+			viewModel.Plot.FigureBackground.Color.Should().Be(FigureBackgroundUnder(ThemeVariant.Dark));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[AvaloniaFact]
+	public void AViewWithNoViewModel_StillPaintsTheChartAreaFromThePalette()
+	{
+		using var scope = ThemeProbe.PreserveVariant();
+		var application = Application.Current!;
+		var window = new Window { Content = new TrendChartView() };
+		try
+		{
+			application.RequestedThemeVariant = ThemeVariant.Dark;
+			window.Show();
+			Dispatcher.UIThread.RunJobs();
+
+			var plot = window.GetVisualDescendants().OfType<AvaPlot>().Single().Plot;
+
+			plot.FigureBackground.Color.Should().Be(FigureBackgroundUnder(ThemeVariant.Dark));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[AvaloniaFact]
+	public void AnUnloadedView_StopsFollowingTheApplicationVariant()
+	{
+		using var scope = ThemeProbe.PreserveVariant();
+		var application = Application.Current!;
+		using var viewModel = CreateViewModel();
+		var window = new Window { Content = new TrendChartView { DataContext = viewModel } };
+
+		application.RequestedThemeVariant = ThemeVariant.Light;
+		window.Show();
+		Dispatcher.UIThread.RunJobs();
+
+		window.Close();
+		Dispatcher.UIThread.RunJobs();
+		var afterUnload = viewModel.Plot.FigureBackground.Color;
+
+		application.RequestedThemeVariant = ThemeVariant.Dark;
+		Dispatcher.UIThread.RunJobs();
+
+		viewModel.Plot.FigureBackground.Color.Should().Be(afterUnload);
+	}
+
+	private static ScottPlot.Color FigureBackgroundUnder(ThemeVariant variant)
+	{
+		return ThemeProbe.PlotColour("AppPanelBackgroundBrush", variant);
 	}
 
 	// Both schedulers are virtual here, unlike the other chart tests: the view subscribes to

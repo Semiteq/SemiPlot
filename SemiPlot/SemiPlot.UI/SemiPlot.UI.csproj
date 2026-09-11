@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Update="Localization/Resources.resx" GenerateSource="true"/>
+    <EmbeddedResource Update="Localization/Resources.resx" GenerateSource="true" EmitFormatMethods="true"/>
   </ItemGroup>
 
   <ItemGroup>
@@ -20,11 +20,11 @@
     <PackageReference Include="Avalonia"/>
     <PackageReference Include="Avalonia.Desktop"/>
     <PackageReference Include="Avalonia.HarfBuzz"/>
-    <PackageReference Include="Avalonia.Themes.Fluent"/>
     <PackageReference Include="Avalonia.Win32"/>
     <PackageReference Include="Avalonia.Skia"/>
     <PackageReference Include="ReactiveUI.Avalonia"/>
     <PackageReference Include="ScottPlot.Avalonia"/>
+    <PackageReference Include="Semi.Avalonia"/>
     <PackageReference Include="Microsoft.CodeAnalysis.ResxSourceGenerator" PrivateAssets="all"/>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection"/>
     <PackageReference Include="Microsoft.Extensions.Logging"/>
@@ -33,6 +33,7 @@
     <PackageReference Include="Serilog.Sinks.Console"/>
     <PackageReference Include="Serilog.Sinks.File"/>
     <PackageReference Include="System.Reactive"/>
+    <PackageReference Include="YamlDotNet"/>
   </ItemGroup>
 
   <ItemGroup>

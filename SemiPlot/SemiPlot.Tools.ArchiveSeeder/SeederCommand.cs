@@ -82,7 +82,7 @@ public static class SeederCommand
 
 	private static readonly Option<string> _configDir = new("--config-dir")
 	{
-		Description = "Directory archive-connection.yaml is written into.",
+		Description = "Directory archive-connection.yaml and ui/app.yaml are written into.",
 		Required = true
 	};
 

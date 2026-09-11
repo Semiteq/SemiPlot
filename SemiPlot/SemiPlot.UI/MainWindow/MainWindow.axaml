@@ -22,8 +22,9 @@
 
         <Border Grid.Row="0"
                 Name="Toolbar"
+                Background="{DynamicResource AppPanelBackgroundBrush}"
                 BorderThickness="0,0,0,1"
-                BorderBrush="Gray"
+                BorderBrush="{DynamicResource AppBorderBrush}"
                 Padding="8,4">
             <toolbar:TrendToolbarView DataContext="{Binding ToolbarViewModel}" />
         </Border>
@@ -33,15 +34,16 @@
 
             <Border Grid.Column="0"
                     Name="ChartContent"
-                    Background="#1E1E1E">
+                    Background="{DynamicResource AppContentBackgroundBrush}">
                 <chart:TrendChartView DataContext="{Binding ChartViewModel}" />
             </Border>
 
             <Border Grid.Column="1"
                     Name="LegendPanel"
+                    Background="{DynamicResource AppPanelBackgroundBrush}"
                     Width="280"
                     BorderThickness="1,0,0,0"
-                    BorderBrush="Gray"
+                    BorderBrush="{DynamicResource AppBorderBrush}"
                     Padding="4">
                 <legend:TrendLegendView DataContext="{Binding LegendViewModel}" />
             </Border>
@@ -55,8 +57,9 @@
 
         <Border Grid.Row="3"
                 Name="MessagePanel"
+                Background="{DynamicResource AppPanelBackgroundBrush}"
                 BorderThickness="0,1,0,0"
-                BorderBrush="Gray"
+                BorderBrush="{DynamicResource AppBorderBrush}"
                 Padding="8,4"
                 IsVisible="{Binding IsCatalogueEmpty}">
             <TextBlock Text="{x:Static text:Resources.EmptyCatalogueMessage}"
@@ -66,8 +69,9 @@
 
         <Border Grid.Row="4"
                 Name="ArchiveConnectionPanel"
+                Background="{DynamicResource AppPanelBackgroundBrush}"
                 BorderThickness="0,1,0,0"
-                BorderBrush="Gray"
+                BorderBrush="{DynamicResource AppBorderBrush}"
                 Padding="8,4"
                 IsVisible="{Binding HasArchiveConnectionMessage}">
             <TextBlock Name="ArchiveConnectionMessage"
@@ -78,8 +82,9 @@
 
         <Border Grid.Row="5"
                 Name="StatusBar"
+                Background="{DynamicResource AppPanelBackgroundBrush}"
                 BorderThickness="0,1,0,0"
-                BorderBrush="Gray"
+                BorderBrush="{DynamicResource AppBorderBrush}"
                 Padding="8,4"
                 IsVisible="{Binding !HasStartupFailure}">
             <TextBlock Text="{Binding PenCount, StringFormat={x:Static text:Resources.StatusPenCountFormat}}"
@@ -88,8 +93,9 @@
 
         <Border Grid.Row="6"
                 Name="StartupFailurePanel"
+                Background="{DynamicResource AppPanelBackgroundBrush}"
                 BorderThickness="0,1,0,0"
-                BorderBrush="Gray"
+                BorderBrush="{DynamicResource AppBorderBrush}"
                 Padding="8,4"
                 IsVisible="{Binding HasStartupFailure}">
             <StackPanel>

@@ -46,12 +46,14 @@ operator interaction.
   (`ReactiveObject` / `ReactiveCommand` / `AvaloniaScheduler.Instance` = `RxApp.MainThreadScheduler` /
   `CompositeDisposable`; `RxSchedulers.MainThreadScheduler` also ships in 12.0.3 and is not used),
   **Microsoft.Extensions.DependencyInjection** (extension methods, primary constructors), **Serilog**
-  (file, rolling 5 MB / 5 files), **FluentTheme** (light). Rationale for ReactiveUI: the data layer is
+  (file, rolling 5 MB / 5 files), **Semi.Avalonia** 12.0.3 retinted to the JetBrains palette
+  (`ui-theme.md`). Rationale for ReactiveUI: the data layer is
   Rx-native and the VMs are derived-state-heavy (sticky, cursor, active-pen) — a fit for
   `WhenAnyValue`/OAPH/`ReactiveCommand`; CommunityToolkit.Mvvm is an acceptable lower-friction
   alternative. The Core `IDataProvider` / DTO / stub layer is retained.
-- **Visual language:** JetBrains / IntelliJ look is a **north-star, not MVP** — MVP uses the
-  stock FluentTheme (as SemiStep does); IJ-style theming is a later, separate effort.
+- **Visual language:** superseded. The JetBrains / IntelliJ look was recorded as a north-star and
+  `FluentTheme` as the MVP; `Semi.Avalonia` retinted to the JetBrains palette shipped instead, and
+  `ui-theme.md` is the record of what it does and how far it reaches.
 - **Scheduler seam:** Core keeps the bare `IScheduler` (`DefaultScheduler.Instance`) for data timing;
   the UI scheduler (`AvaloniaScheduler.Instance`) is captured in `AfterSetup` and passed explicitly to
   the coordinator — `TrendCoordinator(IDataProvider dataProvider, IReadOnlyList<Pen> pens,
@@ -291,8 +293,8 @@ and fast navigation across long archives.
   envelope; a NaN column segments the line at gaps; `DataLogger` is prior art, not the pattern. Shared-X
   invariant: all pens pinned to `plot.Axes.Bottom`.
 - **Avalonia 12.0.5 / net10** (as-built): hosts `ScottPlot.Avalonia` 5.1.59, which depends on Avalonia
-  12.0.0. Mirrors SemiStep's patterns (ReactiveUI + MS.DI + Serilog + FluentTheme) and now its versions
-  too. `Avalonia.HarfBuzz` 12.0.5 is referenced and `UseHarfBuzz()` is called explicitly; Skia carries
+  12.0.0. Mirrors SemiStep's patterns (ReactiveUI + MS.DI + Serilog + Semi.Avalonia) and now its
+  versions too. `Avalonia.HarfBuzz` 12.0.5 is referenced and `UseHarfBuzz()` is called explicitly; Skia carries
   no text shaper.
 - No qualifying open-source .NET SCADA trend-viewer reference repo exists; built from library
   primitives, with ScottPlot's `DataLogger` demo as the nearest realtime pattern.

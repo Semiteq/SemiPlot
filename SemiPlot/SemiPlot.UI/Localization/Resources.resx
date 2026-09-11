@@ -54,4 +54,175 @@
   <data name="EmptyCatalogueMessage" xml:space="preserve">
     <value>Pen catalogue is empty: the archive answered and semiplot_tags holds no pens. Ask whoever commissions this tool to fill it.</value>
   </data>
+  <data name="FailureGenericTitle" xml:space="preserve">
+    <value>Startup failed</value>
+  </data>
+  <data name="FailureUnknownRemedy" xml:space="preserve">
+    <value>This build has no named handling for this failure. Report the SemiPlot log file, which carries the full entry.</value>
+  </data>
+  <data name="FailureThrownTitle" xml:space="preserve">
+    <value>Startup failed unexpectedly</value>
+  </data>
+  <data name="FailureThrownDetail" xml:space="preserve">
+    <value>The startup sequence ended with {0}: {1}</value>
+  </data>
+  <data name="FailureThrownRemedy" xml:space="preserve">
+    <value>This build has no named handling for this failure. Report the SemiPlot log file, which carries the entry and its stack trace.</value>
+  </data>
+  <data name="FailureConnectionFileNotFoundTitle" xml:space="preserve">
+    <value>Connection file not found</value>
+  </data>
+  <data name="FailureConnectionFileNotFoundDetail" xml:space="preserve">
+    <value>SemiPlot looked for the archive connection file at '{0}' and found nothing there.</value>
+  </data>
+  <data name="FailureConnectionFileNotFoundRemedy" xml:space="preserve">
+    <value>Create that file, or start SemiPlot with --config-dir naming the directory that holds it.</value>
+  </data>
+  <data name="FailureConnectionFileRejectedTitle" xml:space="preserve">
+    <value>Connection file cannot be read</value>
+  </data>
+  <data name="FailureConnectionFileRejectedDetail" xml:space="preserve">
+    <value>The connection file '{0}' exists but was rejected: {1}</value>
+  </data>
+  <data name="FailureConnectionFileRejectedRemedy" xml:space="preserve">
+    <value>Correct the file at the path above; the reason names what was rejected.</value>
+  </data>
+  <data name="FailureConnectionFileUnreadableRemedy" xml:space="preserve">
+    <value>Give the account running SemiPlot read access to the file and close whatever holds it open.</value>
+  </data>
+  <data name="FailureConnectionFileUnparseableRemedy" xml:space="preserve">
+    <value>Repair the YAML syntax of the file; the reason above names the position that failed.</value>
+  </data>
+  <data name="FailureConnectionFileMissingFieldRemedy" xml:space="preserve">
+    <value>Add the field the reason names to the file. Every field of the format is required.</value>
+  </data>
+  <data name="FailureConnectionFileOutOfRangeRemedy" xml:space="preserve">
+    <value>Correct the value the reason names to one inside the range it states.</value>
+  </data>
+  <data name="FailureConnectionFileUnknownTimeZoneRemedy" xml:space="preserve">
+    <value>Set the time zone to an identifier this machine knows: IANA, or the id 'tzutil /g' prints.</value>
+  </data>
+  <data name="FailureArchiveNameFormat" xml:space="preserve">
+    <value>'{0}' at {1}</value>
+  </data>
+  <data name="FailureArchiveUnreachableTitle" xml:space="preserve">
+    <value>No connection to the archive</value>
+  </data>
+  <data name="FailureArchiveUnreachableDetail" xml:space="preserve">
+    <value>SemiPlot could not open a connection to {0}.</value>
+  </data>
+  <data name="FailureArchiveUnreachableRemedy" xml:space="preserve">
+    <value>Check that the PostgreSQL server is running and that the host and port in the connection file are reachable from this machine: route, firewall and the server's listen address.</value>
+  </data>
+  <data name="FailureArchiveAccessDeniedTitle" xml:space="preserve">
+    <value>The archive refused the credentials</value>
+  </data>
+  <data name="FailureArchiveAccessDeniedDetail" xml:space="preserve">
+    <value>The server at {0} answered, but refused user '{1}' on '{2}'.</value>
+  </data>
+  <data name="FailureArchiveAccessDeniedRemedy" xml:space="preserve">
+    <value>Correct the user name and password in the connection file, or grant that role SELECT on the archive tables. The network is not the problem. Leave the host and port alone.</value>
+  </data>
+  <data name="FailureArchiveNotProvisionedTitle" xml:space="preserve">
+    <value>The archive is not provisioned</value>
+  </data>
+  <data name="FailureArchiveDatabaseMissingDetail" xml:space="preserve">
+    <value>The server at {0} answers, but holds no database '{1}'.</value>
+  </data>
+  <data name="FailureArchiveDatabaseMissingRemedy" xml:space="preserve">
+    <value>Run 'semibase site' against this server to provision the database, or correct the database name in the connection file.</value>
+  </data>
+  <data name="FailureArchiveTableMissingDetail" xml:space="preserve">
+    <value>The archive {0} holds no table '{1}'.</value>
+  </data>
+  <data name="FailureArchiveTableMissingRemedy" xml:space="preserve">
+    <value>Table '{0}' is created by provisioning. Run 'semibase site' against this database to finish provisioning it.</value>
+  </data>
+  <data name="FailureArchiveConnectionLostTitle" xml:space="preserve">
+    <value>The archive stopped answering</value>
+  </data>
+  <data name="FailureArchiveConnectionLostDetail" xml:space="preserve">
+    <value>The live edge of {0} stopped answering after {1} consecutive failed reads. The history already drawn is unaffected.</value>
+  </data>
+  <data name="FailureArchiveConnectionLostRemedy" xml:space="preserve">
+    <value>Check that the PostgreSQL server is still running and still reachable from this machine. SemiPlot keeps polling and clears this by itself once the archive answers again.</value>
+  </data>
+  <data name="FailureArchiveShapeUnexpectedTitle" xml:space="preserve">
+    <value>The archive has an unexpected shape</value>
+  </data>
+  <data name="FailureArchiveShapeUnexpectedDetail" xml:space="preserve">
+    <value>The archive {0} holds the tables SemiPlot reads, but not the columns they are expected to carry. The server answered: {1}</value>
+  </data>
+  <data name="FailureArchiveShapeUnexpectedRemedy" xml:space="preserve">
+    <value>Table 'public.trends' and its columns are created by provisioning. Run 'semibase site' against this database to bring it to the shape this build reads, and check that nothing else has altered the table since.</value>
+  </data>
+  <data name="FailureArchiveQueryTimedOutTitle" xml:space="preserve">
+    <value>The archive ended the read</value>
+  </data>
+  <data name="FailureArchiveQueryTimedOutDetail" xml:space="preserve">
+    <value>The read of {0} was ended by the server (SQLSTATE 57014).</value>
+  </data>
+  <data name="FailureArchiveQueryTimedOutRemedy" xml:space="preserve">
+    <value>Check statement_timeout for the reader role on the server and raise it, or narrow the window SemiPlot opens on; if the bound is not the cause, check whether an administrator cancelled the read.</value>
+  </data>
+  <data name="FailureArchiveReadFailedTitle" xml:space="preserve">
+    <value>The archive rejected the read</value>
+  </data>
+  <data name="FailureArchiveReadFailedDetail" xml:space="preserve">
+    <value>The archive {0} rejected the read (SQLSTATE {1}).</value>
+  </data>
+  <data name="FailureArchiveReadFailedRemedy" xml:space="preserve">
+    <value>This build has no named handling for SQLSTATE {0}. Find the matching entry in the PostgreSQL server log and report it with the SemiPlot log file.</value>
+  </data>
+  <data name="FailureArchiveReadUnnamedDetail" xml:space="preserve">
+    <value>The read of {0} failed before the server answered, so it carries no SQLSTATE.</value>
+  </data>
+  <data name="FailureArchiveReadUnnamedRemedy" xml:space="preserve">
+    <value>The failure came from the client side. Report the SemiPlot log file, which carries the exception this build could not name.</value>
+  </data>
+  <data name="FailureStartupReadTimedOutTitle" xml:space="preserve">
+    <value>The archive did not answer in time</value>
+  </data>
+  <data name="FailureStartupReadTimedOutDetail" xml:space="preserve">
+    <value>The startup read of the {0} did not answer within {1} s. SemiPlot stopped waiting; the query is still running on the server.</value>
+  </data>
+  <data name="FailureStartupReadTimedOutRemedy" xml:space="preserve">
+    <value>The connection was accepted, so the host and port are right. Check whether the server is overloaded and whether the archive is indexed on its time column.</value>
+  </data>
+  <data name="FailureStartupReadPenCatalogue" xml:space="preserve">
+    <value>pen catalogue</value>
+  </data>
+  <data name="FailureStartupReadArchiveExtent" xml:space="preserve">
+    <value>archive extent</value>
+  </data>
+  <data name="FailureAppSettingsNotFoundTitle" xml:space="preserve">
+    <value>Interface settings file not found</value>
+  </data>
+  <data name="FailureAppSettingsNotFoundDetail" xml:space="preserve">
+    <value>SemiPlot looked for the interface settings file at '{0}' and found nothing there.</value>
+  </data>
+  <data name="FailureAppSettingsNotFoundRemedy" xml:space="preserve">
+    <value>Create that file with a 'locale' and a 'theme' key, or start SemiPlot with --config-dir naming the directory that holds it.</value>
+  </data>
+  <data name="FailureAppSettingsRejectedTitle" xml:space="preserve">
+    <value>Interface settings file cannot be read</value>
+  </data>
+  <data name="FailureAppSettingsUnreadableDetail" xml:space="preserve">
+    <value>The interface settings file '{0}' exists but could not be read or parsed.</value>
+  </data>
+  <data name="FailureAppSettingsUnreadableRemedy" xml:space="preserve">
+    <value>Give the account running SemiPlot read access to the file and repair its YAML syntax.</value>
+  </data>
+  <data name="FailureAppSettingsKeyMissingDetail" xml:space="preserve">
+    <value>The interface settings file '{0}' carries no '{1}' key.</value>
+  </data>
+  <data name="FailureAppSettingsKeyMissingRemedy" xml:space="preserve">
+    <value>Add the key the detail names to the file. Both keys of the format are required.</value>
+  </data>
+  <data name="FailureAppSettingsValueInvalidDetail" xml:space="preserve">
+    <value>The interface settings file '{0}' holds a '{1}' outside its values. Accepted: {2}.</value>
+  </data>
+  <data name="FailureAppSettingsValueInvalidRemedy" xml:space="preserve">
+    <value>Set that key to one of the accepted values and restart SemiPlot.</value>
+  </data>
 </root>

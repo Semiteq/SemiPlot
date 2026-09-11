@@ -52,8 +52,9 @@ produce the same archive. `--admin-connection` is optional and only fills `semip
 `converge` is a separate, bench-only subcommand: unlike the seeding run above, it does issue `DROP
 DATABASE ... WITH (FORCE)`. It waits for `--admin-connection` up to 60 s, recreates the database
 `--connection` names from `semiplot_provisioned`, seeds it up to `--end` or this machine's clock,
-fills the tag catalogue and writes `archive-connection.yaml` into `--config-dir` with the bench
-reader role's fixed password (`docs/architecture/bench.md#the-converge-verb`):
+fills the tag catalogue and writes `archive-connection.yaml` plus `ui/app.yaml` into `--config-dir`,
+the first with the bench reader role's fixed password
+(`docs/architecture/bench.md#the-converge-verb`):
 
 ```powershell
 dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.ArchiveSeeder.csproj -- converge `
@@ -203,10 +204,11 @@ No abbreviations in names.
   scheduler is not a second container registration: `App` reads the static
   `AvaloniaScheduler.Instance` (= `RxApp.MainThreadScheduler`) and passes it explicitly to the
   coordinator constructor and the chart/minimap factories.
-- `.AfterSetup(...)` is synchronous, so no blocking call belongs in it. `StartupProbe` does its
-  blocking reads in `Program`, ahead of `BuildAvaloniaApp()`, and hands `App.Run` a
-  `Result<StartupData>`; the reads `InitializeServices` starts inside the callback are asynchronous
-  and return through the schedulers (`docs/architecture/data-integration.md`).
+- `.AfterSetup(...)` is synchronous, so no blocking call belongs in it. `StartupSequence.Run` holds
+  the ordered blocking steps and `Program.Main` calls it ahead of `BuildAvaloniaApp()`, handing
+  `App.Run(AppSettings?, Result<StartupData>)` both results; the reads `InitializeServices` starts
+  inside the callback are asynchronous and return through the schedulers
+  (`docs/architecture/data-integration.md`).
 
 ### Interface Design
 
@@ -233,10 +235,12 @@ No abbreviations in names.
 - ScottPlot is a thin render target: renderer-agnostic logic (navigation, scale, cursor) lives in
   unit-tested Core models; only views touch `AvaPlot`. The data hub (`TrendCoordinator`) feeds the
   chart VM via `IObservable`/awaitables (see `docs/architecture/data-integration.md`).
-- Every string the operator reads on the trend screen lives in
-  `SemiPlot.UI/Localization/Resources.resx`; C# reads `Resources.Key`, AXAML
-  `{x:Static text:Resources.Key}`. The failure-window strings stay literals
-  (`docs/architecture/ui-text.md`).
+- Every string the operator reads lives in `SemiPlot.UI/Localization/Resources.resx` and
+  `Resources.ru.resx`; C# reads `Resources.Key` or `Resources.FormatKey(...)`, AXAML
+  `{x:Static text:Resources.Key}` (`docs/architecture/ui-text.md`).
+- Every colour this tree's AXAML paints resolves to a key in `SemiPlot.UI/Styles/Palette.axaml`; a
+  literal in AXAML is a defect. Semi's own surfaces outside that key set keep Semi's variant-aware
+  stock brushes (`docs/architecture/ui-theme.md`).
 - The left-button gesture is one state, never overlapping branches: a `Chart/LeftButtonTool`
   (`Pan | DeltaPlacement`) enum sourced from the toolbar delta toggle decides pan vs delta placement,
   and the axis-region edit is a pre-branch ahead of it. Toolbar `IsSticky` has a single writer (the

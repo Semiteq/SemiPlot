@@ -22,12 +22,12 @@ public static class Program
 
 		try
 		{
-			var startup = StartupProbe.Run(options);
+			var (settings, startup) = StartupSequence.Run(options);
 
 			if (startup.IsFailed)
 			{
 				LogStartupFailure(startup.Errors);
-				App.Run(startup);
+				App.Run(settings, startup);
 
 				return FailedExitCode;
 			}
@@ -35,7 +35,7 @@ public static class Program
 			// Held for its disposal alone: the scope closes when Main returns, after App.Run.
 			using var serviceProvider = startup.Value.ServiceProvider;
 
-			App.Run(startup);
+			App.Run(settings, startup);
 
 			return 0;
 		}

@@ -4,7 +4,9 @@ using AwesomeAssertions;
 
 using FluentResults;
 
+using SemiPlot.Core.Configuration;
 using SemiPlot.Core.Data.Errors;
+using SemiPlot.UI;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Startup;
@@ -22,24 +24,243 @@ namespace SemiPlot.Tests.Unit.UI.MainWindow;
 [Trait("Category", "Unit")]
 public sealed class ArchiveFailureMapperTests
 {
-	[Fact]
-	public void AppSettingsNotFound_SendsTheOperatorToTheFile()
+	[Theory]
+	[InlineData(
+		StartupArgumentsProblem.Missing, nameof(Resources.FailureStartupArgumentsMissingRemedy))]
+	[InlineData(
+		StartupArgumentsProblem.ValueMissing, nameof(Resources.FailureStartupArgumentsValueMissingRemedy))]
+	[InlineData(
+		StartupArgumentsProblem.Unknown, nameof(Resources.FailureStartupArgumentsUnknownRemedy))]
+	[InlineData(
+		StartupArgumentsProblem.ValueInvalid, nameof(Resources.FailureStartupArgumentsValueInvalidRemedy))]
+	public void StartupArguments_EveryProblemNamesTheKeyUnderOneTitle(
+		StartupArgumentsProblem kind,
+		string expectedRemedyKey)
 	{
 		var view = ArchiveFailureMapper.Map(
-			new AppSettingsError(@"C:\DISTR\Config\SemiPlot\ui\app.yaml", AppSettingsProblem.NotFound));
+			new StartupArgumentsError(kind, "--config-dir", StartupOptions.LoggingLevelValues));
 
-		view.Title.Should().Be(Resources.FailureAppSettingsNotFoundTitle);
-		view.Detail.Should().Contain(@"C:\DISTR\Config\SemiPlot\ui\app.yaml");
-		view.Remedy.Should().Be(Resources.FailureAppSettingsNotFoundRemedy);
+		view.Title.Should().Be(Resources.FailureStartupArgumentsTitle);
+		view.Detail.Should().Contain("--config-dir");
+		view.Remedy.Should().Be(Text(expectedRemedyKey));
 	}
 
 	[Fact]
-	public void AppSettingsUnreadable_SendsTheOperatorToTheFileItself()
+	public void StartupArguments_UnderTheBootstrapCulture_ReadInTheBootstrapLanguage()
 	{
-		var view = ArchiveFailureMapper.Map(new AppSettingsError("app.yaml", AppSettingsProblem.Unreadable));
+		var previous = CultureInfo.CurrentUICulture;
+		try
+		{
+			CultureInfo.CurrentUICulture = CultureInfo.InvariantCulture;
+			var neutral = ArgumentsTitle();
+
+			CultureInfo.CurrentUICulture = StartupSequence.CultureFor(StartupSequence.BootstrapLocale);
+
+			ArgumentsTitle().Should().NotBe(neutral);
+		}
+		finally
+		{
+			CultureInfo.CurrentUICulture = previous;
+		}
+	}
+
+	[Fact]
+	public void ApplyBootstrapCulture_SetsTheLanguageThoseWindowsAreReadIn()
+	{
+		var previous = CultureInfo.DefaultThreadCurrentUICulture;
+		try
+		{
+			StartupSequence.ApplyBootstrapCulture();
+
+			CultureInfo.DefaultThreadCurrentUICulture.Should()
+				.Be(StartupSequence.CultureFor(StartupSequence.BootstrapLocale));
+		}
+		finally
+		{
+			CultureInfo.DefaultThreadCurrentUICulture = previous;
+		}
+	}
+
+	[Fact]
+	public void StartupArguments_EveryProblemCarriesItsOwnRemedy()
+	{
+		StartupArgumentsProblem[] problems =
+		[
+			StartupArgumentsProblem.Missing,
+			StartupArgumentsProblem.ValueMissing,
+			StartupArgumentsProblem.Unknown,
+			StartupArgumentsProblem.ValueInvalid
+		];
+
+		var remedies = problems
+			.Select(kind => ArchiveFailureMapper.Map(new StartupArgumentsError(kind, "--log-file")).Remedy)
+			.ToList();
+
+		remedies.Should().OnlyHaveUniqueItems();
+	}
+
+	[Fact]
+	public void StartupArgumentsValueInvalid_CarriesTheAcceptedSetIntoTheText()
+	{
+		var view = ArchiveFailureMapper.Map(
+			new StartupArgumentsError(
+				StartupArgumentsProblem.ValueInvalid,
+				StartupOptions.LoggingLevelKey,
+				StartupOptions.LoggingLevelValues));
+
+		view.Detail.Should()
+			.Contain(StartupOptions.LoggingLevelKey)
+			.And.Contain(StartupOptions.LoggingLevelValues);
+	}
+
+	[Fact]
+	public void StartupArgumentsUnknown_NamesWhatWasGivenRatherThanAKnownKey()
+	{
+		var view = ArchiveFailureMapper.Map(
+			new StartupArgumentsError(StartupArgumentsProblem.Unknown, "--nonsense"));
+
+		view.Detail.Should().Contain("--nonsense");
+		view.Remedy.Should().Be(Resources.FailureStartupArgumentsUnknownRemedy);
+	}
+
+	[Fact]
+	public void LogFile_NamesThePathAndTheReasonUnderItsOwnRemedy()
+	{
+		var view = ArchiveFailureMapper.Map(new LogFileError(@"Q:\Logs\semiplot.log", "the drive is missing"));
+
+		view.Title.Should().Be(Resources.FailureLogFileTitle);
+		view.Detail.Should().Contain(@"Q:\Logs\semiplot.log").And.Contain("the drive is missing");
+		view.Remedy.Should().Be(Resources.FailureLogFileRemedy);
+	}
+
+	[Theory]
+	[InlineData(ConfigurationSectionName.App, nameof(Resources.FailureConfigurationSectionAppTitle))]
+	[InlineData(
+		ConfigurationSectionName.Connection,
+		nameof(Resources.FailureConfigurationSectionConnectionTitle))]
+	public void ConfigurationSection_TitleNamesTheSection(ConfigurationSectionName section, string expectedKey)
+	{
+		var view = ArchiveFailureMapper.Map(
+			new ConfigurationSectionError(section, @"C:\Config\app", SectionProblem.DirectoryMissing));
+
+		view.Title.Should().Be(Text(expectedKey));
+	}
+
+	[Fact]
+	public void ConfigurationSectionDirectoryMissing_NamesTheFolderAndTheKeysItMustCarry()
+	{
+		var view = ArchiveFailureMapper.Map(
+			new ConfigurationSectionError(
+				ConfigurationSectionName.App, @"C:\Config\app", SectionProblem.DirectoryMissing));
+
+		view.Detail.Should().Contain(@"C:\Config\app");
+		view.Remedy.Should().Be(Resources.FailureConfigurationSectionAppDirectoryMissingRemedy);
+	}
+
+	[Fact]
+	public void ConfigurationSectionDirectoryMissing_TheRemedyDiffersBetweenTheSections()
+	{
+		var app = ArchiveFailureMapper.Map(
+			new ConfigurationSectionError(
+				ConfigurationSectionName.App, @"C:\Config\app", SectionProblem.DirectoryMissing));
+		var connection = ArchiveFailureMapper.Map(
+			new ConfigurationSectionError(
+				ConfigurationSectionName.Connection,
+				@"C:\Config\connection",
+				SectionProblem.DirectoryMissing));
+
+		app.Remedy.Should().NotBe(connection.Remedy);
+	}
+
+	[Theory]
+	[InlineData(
+		ConfigurationSectionName.App,
+		@"C:\Config\app",
+		nameof(Resources.FailureConfigurationSectionAppNoFilesRemedy))]
+	[InlineData(
+		ConfigurationSectionName.Connection,
+		@"C:\Config\connection",
+		nameof(Resources.FailureConfigurationSectionConnectionNoFilesRemedy))]
+	public void ConfigurationSectionNoFiles_SendsTheOperatorToTheFileTheFolderNeeds(
+		ConfigurationSectionName section,
+		string directory,
+		string expectedKey)
+	{
+		var view = ArchiveFailureMapper.Map(
+			new ConfigurationSectionError(section, directory, SectionProblem.NoFiles));
+
+		view.Detail.Should().Contain(directory);
+		view.Remedy.Should().Be(Text(expectedKey));
+	}
+
+	[Fact]
+	public void ConfigurationSectionDuplicateKey_NamesTheKeyAndTheOneFile()
+	{
+		var view = ArchiveFailureMapper.Map(
+			new ConfigurationSectionError(
+				ConfigurationSectionName.App,
+				@"C:\Config\app",
+				SectionProblem.DuplicateKey,
+				"locale",
+				["app.yaml"]));
+
+		view.Detail.Should().Contain("locale").And.Contain("app.yaml").And.Contain(@"C:\Config\app");
+		view.Remedy.Should().Be(Resources.FailureConfigurationSectionDuplicateKeyRemedy);
+	}
+
+	[Fact]
+	public void ConfigurationSectionKeyConflict_NamesTheKeyAndBothFiles()
+	{
+		var view = ArchiveFailureMapper.Map(
+			new ConfigurationSectionError(
+				ConfigurationSectionName.App,
+				@"C:\Config\app",
+				SectionProblem.KeyConflict,
+				"locale",
+				["app.yaml", "site.yaml"]));
+
+		view.Detail.Should()
+			.Contain("locale")
+			.And.Contain("app.yaml")
+			.And.Contain("site.yaml")
+			.And.Contain(@"C:\Config\app");
+		view.Remedy.Should().Be(Resources.FailureConfigurationSectionKeyConflictRemedy);
+	}
+
+	[Fact]
+	public void ConfigurationSectionUnreadable_NamesTheFileThatFailed()
+	{
+		var view = ArchiveFailureMapper.Map(
+			new ConfigurationSectionError(
+				ConfigurationSectionName.Connection,
+				@"C:\Config\connection",
+				SectionProblem.Unreadable,
+				fileNames: ["connection.yaml"]));
+
+		view.Detail.Should().Contain("connection.yaml").And.Contain(@"C:\Config\connection");
+		view.Remedy.Should().Be(Resources.FailureConfigurationSectionUnreadableRemedy);
+	}
+
+	[Fact]
+	public void ConfigurationSectionUnlistable_TalksAboutTheFolderRatherThanAFile()
+	{
+		var view = ArchiveFailureMapper.Map(
+			new ConfigurationSectionError(
+				ConfigurationSectionName.Connection, @"C:\Config\connection", SectionProblem.Unlistable));
+
+		view.Detail.Should().Be(
+			Resources.FormatFailureConfigurationSectionUnlistableDetail(@"C:\Config\connection"));
+		view.Remedy.Should().Be(Resources.FailureConfigurationSectionUnreadableRemedy);
+	}
+
+	[Fact]
+	public void AppSettingsUnreadable_SendsTheOperatorToTheSectionFolder()
+	{
+		var view = ArchiveFailureMapper.Map(
+			new AppSettingsError(@"C:\Config\app", AppSettingsProblem.Unreadable));
 
 		view.Title.Should().Be(Resources.FailureAppSettingsRejectedTitle);
-		view.Detail.Should().Contain("app.yaml");
+		view.Detail.Should().Contain(@"C:\Config\app");
 		view.Remedy.Should().Be(Resources.FailureAppSettingsUnreadableRemedy);
 	}
 
@@ -47,10 +268,10 @@ public sealed class ArchiveFailureMapperTests
 	public void AppSettingsKeyMissing_NamesTheKey()
 	{
 		var view = ArchiveFailureMapper.Map(
-			new AppSettingsError("app.yaml", AppSettingsProblem.KeyMissing, AppSettingsLoader.ThemeKey));
+			new AppSettingsError(@"C:\Config\app", AppSettingsProblem.KeyMissing, AppSettingsLoader.ThemeKey));
 
 		view.Title.Should().Be(Resources.FailureAppSettingsRejectedTitle);
-		view.Detail.Should().Contain("app.yaml").And.Contain(AppSettingsLoader.ThemeKey);
+		view.Detail.Should().Contain(@"C:\Config\app").And.Contain(AppSettingsLoader.ThemeKey);
 		view.Remedy.Should().Be(Resources.FailureAppSettingsKeyMissingRemedy);
 	}
 
@@ -58,36 +279,29 @@ public sealed class ArchiveFailureMapperTests
 	public void AppSettingsValueInvalid_NamesTheKeyAndItsAcceptedValues()
 	{
 		var view = ArchiveFailureMapper.Map(
-			new AppSettingsError("app.yaml", AppSettingsProblem.ValueInvalid, AppSettingsLoader.LocaleKey, "ru, en"));
+			new AppSettingsError(
+				@"C:\Config\app",
+				AppSettingsProblem.ValueInvalid,
+				AppSettingsLoader.LocaleKey,
+				"ru, en"));
 
 		view.Title.Should().Be(Resources.FailureAppSettingsRejectedTitle);
 		view.Detail.Should().Contain(AppSettingsLoader.LocaleKey).And.Contain("ru, en");
 		view.Remedy.Should().Be(Resources.FailureAppSettingsValueInvalidRemedy);
 	}
 
-	[Fact]
-	public void ConnectionFileNotFound_SendsTheOperatorToTheFile()
-	{
-		var view = ArchiveFailureMapper.Map(
-			new ConnectionFileError(@"C:\DISTR\Config\SemiPlot\a.yaml", ConnectionFileProblem.NotFound));
-
-		view.Title.Should().Be(Resources.FailureConnectionFileNotFoundTitle);
-		view.Detail.Should().Contain(@"C:\DISTR\Config\SemiPlot\a.yaml");
-		view.Remedy.Should().Be(Resources.FailureConnectionFileNotFoundRemedy);
-	}
-
 	[Theory]
-	[InlineData(ConnectionFileProblem.Unreadable, nameof(Resources.FailureConnectionFileUnreadableRemedy))]
 	[InlineData(ConnectionFileProblem.Unparseable, nameof(Resources.FailureConnectionFileUnparseableRemedy))]
 	[InlineData(ConnectionFileProblem.MissingField, nameof(Resources.FailureConnectionFileMissingFieldRemedy))]
 	[InlineData(ConnectionFileProblem.OutOfRange, nameof(Resources.FailureConnectionFileOutOfRangeRemedy))]
 	[InlineData(ConnectionFileProblem.UnknownTimeZone, nameof(Resources.FailureConnectionFileUnknownTimeZoneRemedy))]
 	public void ConnectionFileInvalid_RemedyFollowsTheProblem(ConnectionFileProblem kind, string expectedKey)
 	{
-		var view = ArchiveFailureMapper.Map(new ConnectionFileError("a.yaml", kind, "the reason"));
+		var view = ArchiveFailureMapper.Map(
+			new ConnectionFileError(@"C:\Config\connection", kind, "the reason"));
 
 		view.Title.Should().Be(Resources.FailureConnectionFileRejectedTitle);
-		view.Detail.Should().Contain("a.yaml").And.Contain("the reason");
+		view.Detail.Should().Contain(@"C:\Config\connection").And.Contain("the reason");
 		view.Remedy.Should().Be(Text(expectedKey));
 	}
 
@@ -259,6 +473,12 @@ public sealed class ArchiveFailureMapperTests
 		view.Title.Should().Be(Resources.FailureGenericTitle);
 		view.Detail.Should().Be("something this build never named");
 		view.Remedy.Should().Be(Resources.FailureUnknownRemedy);
+	}
+
+	private static string ArgumentsTitle()
+	{
+		return ArchiveFailureMapper.Map(
+			new StartupArgumentsError(StartupArgumentsProblem.Missing, StartupOptions.ConfigDirKey)).Title;
 	}
 
 	private static string ArchiveName => Resources.FormatFailureArchiveNameFormat("semiplot", "scada-host:5432");

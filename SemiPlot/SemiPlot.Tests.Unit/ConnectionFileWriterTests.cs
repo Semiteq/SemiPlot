@@ -34,7 +34,8 @@ public sealed class ConnectionFileWriterTests : IDisposable
 			TimeSpan.FromSeconds(1),
 			TestContext.Current.CancellationToken);
 
-		var result = PostgresConnectionLoader.Load(Path.Combine(_directory, ConnectionFileWriter.FileName));
+		var result = PostgresConnectionLoader.Load(
+			Path.Combine(_directory, ConnectionFileWriter.DirectoryName));
 
 		result.IsSuccess.Should().BeTrue();
 		result.Value.Host.Should().Be("scada-01");
@@ -47,7 +48,7 @@ public sealed class ConnectionFileWriterTests : IDisposable
 	}
 
 	[Fact]
-	public async Task TheConfigDirectoryIsCreatedWhenItDoesNotExist()
+	public async Task TheSectionDirectoryIsCreatedWhenItDoesNotExist()
 	{
 		var nested = Path.Combine(_directory, "nested");
 
@@ -55,6 +56,7 @@ public sealed class ConnectionFileWriterTests : IDisposable
 			nested, "localhost", 5432, "db", "user", "pw", "UTC", TimeSpan.FromSeconds(1),
 			TestContext.Current.CancellationToken);
 
-		File.Exists(Path.Combine(nested, ConnectionFileWriter.FileName)).Should().BeTrue();
+		File.Exists(Path.Combine(nested, ConnectionFileWriter.DirectoryName, ConnectionFileWriter.FileName))
+			.Should().BeTrue();
 	}
 }

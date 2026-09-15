@@ -39,7 +39,10 @@ implementation plans see `docs/plans/`.
   projects are two, the ownership map for every piece of the bench, and what pins each kind of
   dependency.
 
-The one data file referenced from the docs above is the committed 140-row real-archive slice,
+Two tracked data sets are referenced from the docs above. One is the shipped configuration set,
+[`ConfigFiles/`](../../ConfigFiles) - `app/app.yaml` and `connection/connection.yaml`, read by the
+production loaders from the test output directory; `overview.md` holds the section-folder rule.
+The other is the committed 140-row real-archive slice,
 [`SemiPlot.Tests.Unit/Fixtures/real-archive-rows.csv`](../../SemiPlot/SemiPlot.Tests.Unit/Fixtures).
 The README beside it records where it came from. No archive schema is carried in this repository:
 SemiBase creates `public.trends`, as `bench.md` and `postgres-instance.md` state.

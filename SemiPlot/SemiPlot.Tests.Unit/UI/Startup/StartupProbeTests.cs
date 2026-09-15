@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 using Npgsql;
 
+using SemiPlot.Core.Configuration;
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
@@ -15,6 +16,8 @@ using SemiPlot.Tests.Unit.Postgres;
 using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.UI;
 using SemiPlot.UI.Startup;
+
+using Serilog.Events;
 
 using Xunit;
 
@@ -192,19 +195,22 @@ public sealed class StartupProbeTests
 		resolve.Should().Throw<ObjectDisposedException>();
 	}
 
-	// Run reads the connection file before it builds anything, and a missing file ends startup there. There
-	// is no second data source to fall back to, and there must not be one: substituting invented numbers
-	// would let an operator read them as process data.
 	[Fact]
-	public void Run_WithNoConnectionFile_EndsStartup()
+	public void Run_WithNoConnectionSection_EndsStartup()
 	{
 		var emptyConfigDir = Path.Combine(Path.GetTempPath(), $"semiplot-probe-{Guid.NewGuid():N}");
 
-		var result = StartupProbe.Run(StartupOptions.Parse(["--config-dir", emptyConfigDir]));
+		var result = StartupProbe.Run(
+			new StartupOptions(
+				emptyConfigDir,
+				Path.Combine(emptyConfigDir, "semiplot.log"),
+				LogEventLevel.Fatal));
 
 		result.IsFailed.Should().BeTrue();
-		result.Errors.Should().ContainSingle().Which.Should().BeOfType<ConnectionFileError>()
-			.Which.Path.Should().Be(Path.Combine(emptyConfigDir, StartupProbe.ConnectionFileName));
+
+		var error = result.Errors.Should().ContainSingle().Which.Should().BeOfType<ConfigurationSectionError>().Which;
+		error.Problem.Should().Be(SectionProblem.DirectoryMissing);
+		error.Directory.Should().Be(Path.Combine(emptyConfigDir, StartupProbe.ConnectionDirectoryName));
 	}
 
 	private static FakeDataProvider NewProvider(IReadOnlyList<Pen>? pens = null)

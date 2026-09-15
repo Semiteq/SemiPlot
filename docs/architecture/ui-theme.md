@@ -3,7 +3,7 @@
 Every colour this tree's own AXAML paints resolves to a key in
 `SemiPlot/SemiPlot.UI/Styles/Palette.axaml`, and so does every Semi surface the key table below
 names. Two variants are defined, `Light` and `Dark`, both carrying the same key set; the `theme` key
-of `ui/app.yaml` chooses which one the application runs on. The values are the JetBrains palette, the
+of the `app/` section chooses which one the application runs on. The values are the JetBrains palette, the
 same one the sibling SemiStep installation uses. What the palette does not cover keeps Semi's own
 variant-aware colour, which the section below states.
 

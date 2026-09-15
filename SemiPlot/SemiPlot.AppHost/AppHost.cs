@@ -1,3 +1,8 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+
+using SemiPlot.AppHost;
+
 var builder = DistributedApplication.CreateBuilder(args);
 
 // The Aspire AppHost SDK does not add a project resource's assembly as a compile reference, so the
@@ -16,8 +21,11 @@ const ushort ContainerPort = 5432;
 // One density for the seeded day and the live tail, so the chart shows no seam between them.
 const string ChangeSeconds = "0.5";
 
-var configDirectory = Path.Combine(builder.AppHostDirectory, "..", "Artifacts", "bench-config");
-var logFilePath = Path.Combine(configDirectory, "semiplot.log");
+// AppHostDirectory is SemiPlot/SemiPlot.AppHost, so the tracked set sits two levels above it.
+var trackedConfiguration = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "..", "..", "ConfigFiles"));
+var demoDirectories = DemoDirectories.Prepare(trackedConfiguration);
+var configDirectory = demoDirectories.ConfigurationDirectory;
+var logFilePath = demoDirectories.LogFilePath;
 
 var bench = builder.AddDockerfile("bench", "../bench")
 	.WithEnvironment("POSTGRES_PASSWORD", SuperuserPassword)
@@ -45,7 +53,15 @@ builder.AddProject<Projects.SemiPlot_Tools_ArchiveSeeder>("writer")
 	.WaitForCompletion(converge);
 
 builder.AddProject<Projects.SemiPlot_UI>("viewer")
-	.WithArgs("--config-dir", configDirectory, "--log-file", logFilePath)
+	.WithArgs(
+		"--config-dir", configDirectory,
+		"--log-file", logFilePath,
+		"--logging-level", "information")
 	.WaitForCompletion(converge);
 
-builder.Build().Run();
+var stand = builder.Build();
+
+stand.Services.GetRequiredService<IHostApplicationLifetime>()
+	.ApplicationStopping.Register(demoDirectories.RemoveConfiguration);
+
+stand.Run();

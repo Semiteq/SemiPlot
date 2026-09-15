@@ -23,7 +23,8 @@ It must handle two classes of data:
 | Backend (in-proc)| .NET data provider abstraction over the data sources                   |
 | Data source      | One read-only PostgreSQL connection to the Simple-Scada archive — history, extent and realtime alike (`data-integration.md`) |
 | Coarse resolutions | The SCADA's own archive layers; nothing of ours runs in or beside the database (`history-read-path-evaluation.md`) |
-| Logging          | Serilog (`C:\DISTR\Logs\SemiPlot\`, rolling 5 MB / 5 files, `Warning` by default) |
+| Logging          | Serilog, path and level from the launch keys, rolling 5 MB / 5 files (`data-integration.md`) |
+| Configuration    | YAML (YamlDotNet 18.1.0), one folder per section merged by `SemiPlot.Core/Configuration/ConfigurationSection` |
 
 Constraint: **$0 budget** — only free/OSS components.
 
@@ -60,6 +61,7 @@ Constraint: **$0 budget** — only free/OSS components.
 |     ArchiveExtent, …)                                       |
 |   - renderer-agnostic models (navigation, scale, cursor, …) |
 |   - MinMaxDecimator, shared by the coarse-layer reads       |
+|   - ConfigurationSection, the section-folder merge          |
 +-------------------------------------------------------------+
               │ implemented by a SemiPlot.DataSource.* project
               ▼
@@ -100,32 +102,60 @@ bridge**: the chart is a native ScottPlot control, fed in-process by `TrendCoord
 - Auto-update of the app itself via Velopack if/when needed.
 - Site paths follow the `C:\DISTR\` convention of the sibling SemiStep installation: configuration
   in `C:\DISTR\Config\SemiPlot`, logs in `C:\DISTR\Logs\SemiPlot\`. Neither sits beside the
-  executable and neither is per-user.
-- Two configuration files are required, both under the configuration directory. An installation
-  missing either shows the startup failure in the main window instead of a chart.
+  executable and neither is per-user. Nothing in the application knows those paths: the three launch
+  keys carry them, and the installer is what fills them in.
+- **Configuration is a tree of section folders.** A section is one folder under `--config-dir`, and
+  every section folder behaves the same way: the loader reads every `*.yaml` in it, parses each file
+  on its own and merges them at the key level. A key carried by two files of one folder stops the
+  start and names the key and both files; a key repeated inside one file stops it naming that file.
+  Files are read in `StringComparer.Ordinal` order, which decides only which file an error names
+  first, because a conflict fails rather than resolves.
 
-  | File | Holds | Read by |
+  | Section folder | Holds | Read by |
   | --- | --- | --- |
-  | `ui/app.yaml` | `locale` (`ru` \| `en`) and `theme` (`light` \| `dark`), both required, no default and no fallback | `Startup/AppSettingsLoader`, first — a broken archive cannot mask a broken configuration |
-  | `archive-connection.yaml` | The archive connection | `Startup/StartupProbe`, second — [data-integration.md](./data-integration.md) |
+  | `app/` | `locale` (`ru` \| `en`) and `theme` (`light` \| `dark`), both required, no default and no fallback | `Startup/AppSettingsLoader`, first — a broken archive cannot mask a broken configuration |
+  | `connection/` | The archive connection | `Startup/StartupProbe`, second — [data-integration.md](./data-integration.md) |
 
-  `locale` is in [ui-text.md](./ui-text.md), `theme` in [ui-theme.md](./ui-theme.md). Neither file is
-  committed: the bench stand gets both from the seeder's `converge` verb, which writes them into
-  `--config-dir` ([bench.md](./bench.md)), and `SemiPlot/Artifacts/bench-config` is gitignored.
+  `SemiPlot.Core/Configuration/ConfigurationSection.Read` is the one merge both loaders call. It
+  returns the merged mapping as one YAML text, which the caller hands to its own typed deserializer
+  unchanged. An absent folder and a folder holding no `*.yaml` are separate failures with separate
+  remedies; every failure opens the startup window rather than escaping as an exception.
+
+  `locale` is in [ui-text.md](./ui-text.md), `theme` in [ui-theme.md](./ui-theme.md). The set that
+  ships is tracked at `ConfigFiles/` in the repository — `ConfigFiles/app/app.yaml` and
+  `ConfigFiles/connection/connection.yaml` — and `SemiPlot.Tests.Unit/DeliveredConfigurationTests`
+  runs the production loaders over it, so a broken delivered file fails the build.
+  `connection/connection.yaml` ships with an empty `password`, which is already a named startup
+  failure, so the repository carries no credential and a forgotten edit fails loudly.
 
 ### Command line
 
-| Argument | Effect | Default |
-| --- | --- | --- |
-| `--config-dir <dir>` | Directory holding `ui/app.yaml` and `archive-connection.yaml` | `C:\DISTR\Config\SemiPlot` |
-| `--log-file <path>` | Log file, rolling 5 MB / 5 files | `C:\DISTR\Logs\SemiPlot\semiplot.log` |
-| `--logging-level <level>` | `verbose` \| `debug` \| `info` (or `information`) \| `warning` \| `error` \| `fatal`, case-insensitive | `warning` |
+All three keys are required and none carries a default.
 
-An argument the table does not name is ignored, and so is a valued argument given last with nothing
-after it; the default stands in both cases. An unrecognised logging level reads as `warning` and says
-so on the standard error stream — parsing runs before the logger exists, so it has no other route. A log
-directory that cannot be created disables file logging and leaves the console sink, rather than
-failing the start; that is the file sink's own fallback.
+| Argument | Effect |
+| --- | --- |
+| `--config-dir <dir>` | Directory holding the `app/` and `connection/` section folders |
+| `--log-file <path>` | Log file, rolling 5 MB / 5 files |
+| `--logging-level <level>` | `verbose` \| `debug` \| `info` (or `information`) \| `warning` \| `error` \| `fatal`, case-insensitive |
+
+`StartupOptions.Parse` returns `Result<StartupOptions>`. A missing key, a key the parser does not
+know, a valued key given last with nothing after it, and an unusable logging level are each a
+`StartupArgumentsError` naming the key. `Program.Main` parses ahead of everything else, because the
+logger's own path is an argument, and reports a failure the way a configuration failure is reported:
+`ArchiveFailureMapper`, the failure window, exit 1. `SemiPlot.UI` is a `WinExe`, so its standard
+error stream reaches nobody and the window is the whole report; that path applies the bootstrap
+locale itself, since it never enters `StartupSequence.Run`.
+
+`LogFileTarget.Prepare` runs next, creating the folder and opening the file `--log-file` names
+before the logger exists. A path that cannot be opened is a `LogFileError` taking the same route:
+the failure window, exit 1. Serilog's file sink reports its own open failure only to
+`Serilog.Debugging.SelfLog`, so without this step a mistyped path would start the viewer with no log
+and no report.
+
+The file therefore exists from `Prepare` onward and is empty until something writes to it. A
+successful parse is followed by one Information line naming the configuration directory and the
+level; at `information` or below that line is the only one a healthy run writes, and at `warning`,
+`error` or `fatal` the file stays empty until the first failure.
 
 The process exits `0` when the main window opened and closed normally, and `1` when the start failed —
 the startup failure and the fatal catch alike — so a launcher can tell one from the other.

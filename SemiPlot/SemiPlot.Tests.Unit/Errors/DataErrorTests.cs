@@ -13,14 +13,12 @@ namespace SemiPlot.Tests.Unit.Errors;
 [Trait("Category", "Unit")]
 public sealed class DataErrorTests
 {
-	private const string ConnectionFilePath = @"C:\etc\semiplot\archive-connection.yaml";
+	private const string ConnectionSectionPath = @"C:\etc\semiplot\connection";
 	private const string Host = "scada-01";
 	private const int Port = 5432;
 	private const string Database = "semiplot_dev";
 
 	[Theory]
-	[InlineData(ConnectionFileProblem.NotFound)]
-	[InlineData(ConnectionFileProblem.Unreadable)]
 	[InlineData(ConnectionFileProblem.Unparseable)]
 	[InlineData(ConnectionFileProblem.MissingField)]
 	[InlineData(ConnectionFileProblem.OutOfRange)]
@@ -29,12 +27,12 @@ public sealed class DataErrorTests
 	{
 		const string Reason = "source_time_zone is blank";
 
-		var error = new ConnectionFileError(ConnectionFilePath, kind, Reason);
+		var error = new ConnectionFileError(ConnectionSectionPath, kind, Reason);
 
-		error.Path.Should().Be(ConnectionFilePath);
+		error.Path.Should().Be(ConnectionSectionPath);
 		error.Kind.Should().Be(kind);
 		error.Reason.Should().Be(Reason);
-		error.Message.Should().Contain(ConnectionFilePath);
+		error.Message.Should().Contain(ConnectionSectionPath);
 	}
 
 	[Theory]

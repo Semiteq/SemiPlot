@@ -40,10 +40,11 @@ and built from the commit under test. Its value is diagnosis.
 | The provider's statement text and its binder | `SemiPlot.Tests.Unit/Postgres/ArchiveStatementTextTests.cs` |
 | The live edge's own rules, and the fresh tail's bound | `SemiPlot.Tests.Unit/Postgres/RealtimePollTests.cs`, `Postgres/FreshTailBoundTests.cs` |
 | The vendor's observed row shape | `SemiPlot.Tests.Unit/Fixtures/RealArchiveFixtureTests.cs` over `Fixtures/real-archive-rows.csv` |
+| The shipped configuration set | `SemiPlot.Tests.Unit/DeliveredConfigurationTests.cs` over `ConfigFiles/**`, linked into the output directory by `SemiPlot.Tests.Unit.csproj` |
 
-The last row is the one that misleads. A test reading a committed CSV is still a unit test: the file
-is data, versioned by git, and cannot change underneath the test. Touching a file is not crossing a
-boundary.
+The last two rows are the ones that mislead. A test reading a committed CSV, or the tracked YAML the
+installation ships, is still a unit test: the file is data, versioned by git, and cannot change
+underneath the test. Touching a file is not crossing a boundary.
 
 A unit test must not open a socket, read the wall clock, or depend on anything the machine resolves —
 `PATH`, an installed service, a display. It runs everywhere, ungated.
@@ -207,6 +208,10 @@ correctness.
 | Code in this repository — the seeder, the provider, the models | git: a project reference means the code under test *is* the commit |
 | Third-party libraries | NuGet versions in `Directory.Packages.props`, the SDK in `global.json` |
 | Dependencies with an independent release cycle — PostgreSQL, `semibase` | a container image |
+
+The delivered configuration set is pinned by the production loaders rather than by a copy of their
+rules: `DeliveredConfigurationTests` runs `AppSettingsLoader` and `PostgresConnectionLoader` over the
+tracked `ConfigFiles/` tree, so a delivered file that stopped parsing fails the build.
 
 This repository's own generator output is pinned by properties rather than by a digest:
 `RawLayerGeneratorTests` asserts that the same options generate the same rows twice, that every row

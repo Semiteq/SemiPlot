@@ -1,9 +1,16 @@
 namespace SemiPlot.Tools.ArchiveSeeder;
 
-// Writes the YAML PostgresConnectionLoader reads.
 public static class ConnectionFileWriter
 {
-	public const string FileName = "archive-connection.yaml";
+	public const string DirectoryName = "connection";
+
+	public const string FileName = "connection.yaml";
+
+	/// <summary>The file this writer targets under a configuration root.</summary>
+	public static string PathFor(string configDirectory)
+	{
+		return Path.Combine(configDirectory, DirectoryName, FileName);
+	}
 
 	public static async Task WriteAsync(
 		string configDirectory,
@@ -16,7 +23,9 @@ public static class ConnectionFileWriter
 		TimeSpan pollInterval,
 		CancellationToken cancellationToken = default)
 	{
-		Directory.CreateDirectory(configDirectory);
+		var path = PathFor(configDirectory);
+
+		Directory.CreateDirectory(Path.Combine(configDirectory, DirectoryName));
 
 		var content =
 			$"""
@@ -29,6 +38,6 @@ public static class ConnectionFileWriter
 			poll_interval_ms: {(int)pollInterval.TotalMilliseconds}
 			""" + Environment.NewLine;
 
-		await File.WriteAllTextAsync(Path.Combine(configDirectory, FileName), content, cancellationToken);
+		await File.WriteAllTextAsync(path, content, cancellationToken);
 	}
 }

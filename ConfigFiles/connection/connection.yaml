@@ -1,0 +1,7 @@
+host: localhost
+port: 5432
+database: semiplot
+user: semiplot_reader
+password: ""
+source_time_zone: Europe/Moscow
+poll_interval_ms: 1000

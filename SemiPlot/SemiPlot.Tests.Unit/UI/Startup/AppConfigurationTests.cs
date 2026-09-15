@@ -81,7 +81,7 @@ public sealed class AppConfigurationTests
 	private static Result<StartupData> FailedStartup()
 	{
 		return Result.Fail<StartupData>(
-			new AppSettingsError("ui/app.yaml", AppSettingsProblem.NotFound));
+			new AppSettingsError("app", AppSettingsProblem.KeyMissing, AppSettingsLoader.LocaleKey));
 	}
 
 	private static object? SemiCopyStringOf(UiLanguage language)

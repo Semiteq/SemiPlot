@@ -12,12 +12,12 @@ namespace SemiPlot.UI.Startup;
 
 /// <summary>
 /// The startup sequence that runs in <see cref="Program"/>, before Avalonia is configured: load the
-/// connection file, build the container, read the pen catalogue and the archive extent.
+/// connection section, build the container, read the pen catalogue and the archive extent.
 /// </summary>
 public static class StartupProbe
 {
-	/// <summary>The connection file's name inside <see cref="StartupOptions.ConfigDir"/>.</summary>
-	public const string ConnectionFileName = "archive-connection.yaml";
+	/// <summary>The connection section's folder inside <see cref="StartupOptions.ConfigDir"/>.</summary>
+	public const string ConnectionDirectoryName = "connection";
 
 	// Must stay above PostgresConnectionSettings.ConnectTimeoutSeconds, or an unreachable host reads as
 	// an accepted connection that timed out.
@@ -25,7 +25,7 @@ public static class StartupProbe
 
 	public static Result<StartupData> Run(StartupOptions options)
 	{
-		var settings = PostgresConnectionLoader.Load(Path.Combine(options.ConfigDir, ConnectionFileName));
+		var settings = PostgresConnectionLoader.Load(Path.Combine(options.ConfigDir, ConnectionDirectoryName));
 
 		if (settings.IsFailed)
 		{

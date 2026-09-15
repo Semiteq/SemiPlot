@@ -49,7 +49,8 @@ SemiPlot — приложение для просмотра графиков и 
 | ОС              | Windows 10 или Windows 11 (64-bit)                            |
 | Среда сборки    | .NET 10 SDK                                                   |
 | Источник данных | Архив PostgreSQL от Simple-Scada 2, подготовленный SemiBase. Без него приложение показывает ошибку старта в главном окне вместо графика |
-| Конфигурация    | В каталоге конфигурации (`--config-dir`, по умолчанию `C:\DISTR\Config\SemiPlot`) обязателен файл `ui/app.yaml` с ключами `locale` (`ru` \| `en`) и `theme` (`light` \| `dark`). Оба ключа обязательны, значений по умолчанию нет: без файла приложение показывает ошибку старта вместо графика. Для стенда его пишет `converge` |
+| Конфигурация    | Каталог `--config-dir` с папками-секциями `app/` и `connection/`. Папка секции читается целиком: каждый `*.yaml` в ней разбирается отдельно, а ключи сливаются в одно отображение; ключ, который лежит сразу в двух файлах одной папки, роняет старт и называет оба. Поставляемый набор лежит в репозитории в `ConfigFiles/`; запускать надо по его копии (`SemiPlot/Artifacts/dev-config`, туда же смотрят конфигурации запуска из `.zed/` и `.run/`), в отслеживаемые файлы ничего не вписывают. `app/app.yaml` держит `locale` (`ru` \| `en`) и `theme` (`light` \| `dark`), оба обязательны и без значений по умолчанию; `connection/connection.yaml` — подключение к архиву, и `password` в нём пустой, так что его надо заполнить. Любая из этих ошибок открывает окно ошибки старта вместо графика |
+| Ключи запуска   | `--config-dir`, `--log-file` и `--logging-level` обязательны, значений по умолчанию нет ни у одного. `--logging-level` принимает `verbose`, `debug`, `info` (или `information`), `warning`, `error`, `fatal`. Пропущенный ключ, незнакомый ключ, ключ с пустым значением и негодный уровень логирования открывают окно ошибки старта и дают код возврата 1 |
 | Тестовый стенд  | Только для интеграционных тестов: Docker (или иная среда контейнеров). `semibase` приходит слоем образа из `ghcr.io/semiteq/semibase`, ставить его на машину не нужно; без среды контейнеров эти тесты падают, а не пропускаются |
 
 ---
@@ -60,8 +61,21 @@ SemiPlot — приложение для просмотра графиков и 
 # Сборка
 dotnet build SemiPlot/SemiPlot.UI/SemiPlot.UI.csproj
 
-# Запуск. Требует ui/app.yaml в каталоге конфигурации, см. "Требования"
-dotnet run --project SemiPlot/SemiPlot.UI/SemiPlot.UI.csproj
+# Запуск. Все три ключа обязательны, см. "Требования".
+# Запускаем по копии набора, а не по отслеживаемому. SemiPlot\Artifacts\ лежит в .gitignore,
+# а %TEMP%\SemiPlot принадлежит демо-стенду, который чистит его на старте.
+New-Item -ItemType Directory -Force SemiPlot\Artifacts\dev-config | Out-Null
+Copy-Item ConfigFiles\* SemiPlot\Artifacts\dev-config -Recurse -Force
+
+# В connection.yaml пароль пустой, и до заполнения это ошибка старта.
+$connection = 'SemiPlot\Artifacts\dev-config\connection\connection.yaml'
+$password = Read-Host 'пароль архива'
+(Get-Content $connection) -replace '^password: ""$', ('password: "' + $password + '"') |
+  Set-Content $connection
+
+dotnet run --project SemiPlot/SemiPlot.UI/SemiPlot.UI.csproj -- `
+  --config-dir SemiPlot\Artifacts\dev-config `
+  --log-file SemiPlot\Artifacts\dev-logs\semiplot.log --logging-level information
 
 # Тесты
 dotnet test SemiPlot.slnx
@@ -77,6 +91,10 @@ dotnet test SemiPlot.slnx
 Демо-стенд с одноразовым архивом и живой записью поднимается одной командой:
 `dotnet run --project SemiPlot/SemiPlot.AppHost` — контейнер PostgreSQL, `converge`, писатель и
 вьювер стартуют в порядке зависимостей и останавливаются вместе (см. `docs/architecture/bench.md`).
+Стенд работает с копией: он кладёт `ConfigFiles/` в `%TEMP%\SemiPlot\ConfigFiles`, пишет лог в
+`%TEMP%\SemiPlot\Logs` и убирает копию конфигурации на остановке. Логи чистятся при следующем
+старте, потому что вьювер ещё может держать `semiplot.log` открытым. В отслеживаемый набор ничего
+не пишется.
 
 Весь проект `SemiPlot.Tests.Integration` — тесты стенда и сквозные сценарии — поднимает PostgreSQL
 в контейнере. Образ стенда собирается из `SemiPlot/bench/Dockerfile`:

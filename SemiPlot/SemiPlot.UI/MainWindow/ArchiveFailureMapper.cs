@@ -1,5 +1,6 @@
 using FluentResults;
 
+using SemiPlot.Core.Configuration;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.Startup;
@@ -26,6 +27,9 @@ public static class ArchiveFailureMapper
 	{
 		return error switch
 		{
+			StartupArgumentsError arguments => MapStartupArguments(arguments),
+			LogFileError logFile => MapLogFile(logFile),
+			ConfigurationSectionError section => ConfigurationSectionFailureMapper.Map(section),
 			AppSettingsError settings => MapAppSettings(settings),
 			ConnectionFileError file => MapConnectionFile(file),
 			ArchiveError archive => MapArchive(archive),
@@ -35,17 +39,50 @@ public static class ArchiveFailureMapper
 		};
 	}
 
-	// This window is read in the bootstrap language: no locale exists yet when the settings file itself
-	// is what failed.
+	// A windowed executable has no standard error stream an operator ever sees, so a wrong shortcut is
+	// reported here like every other startup failure.
+	private static ArchiveFailureView MapStartupArguments(StartupArgumentsError error)
+	{
+		return error.Kind switch
+		{
+			StartupArgumentsProblem.Missing => new ArchiveFailureView(
+				Resources.FailureStartupArgumentsTitle,
+				Resources.FormatFailureStartupArgumentsMissingDetail(error.Key),
+				Resources.FailureStartupArgumentsMissingRemedy),
+
+			StartupArgumentsProblem.ValueMissing => new ArchiveFailureView(
+				Resources.FailureStartupArgumentsTitle,
+				Resources.FormatFailureStartupArgumentsValueMissingDetail(error.Key),
+				Resources.FailureStartupArgumentsValueMissingRemedy),
+
+			StartupArgumentsProblem.ValueInvalid => new ArchiveFailureView(
+				Resources.FailureStartupArgumentsTitle,
+				Resources.FormatFailureStartupArgumentsValueInvalidDetail(error.Key, error.AcceptedValues),
+				Resources.FailureStartupArgumentsValueInvalidRemedy),
+
+			StartupArgumentsProblem.Unknown => new ArchiveFailureView(
+				Resources.FailureStartupArgumentsTitle,
+				Resources.FormatFailureStartupArgumentsUnknownDetail(error.Key),
+				Resources.FailureStartupArgumentsUnknownRemedy),
+
+			_ => throw new ArgumentOutOfRangeException(nameof(error), error.Kind, null)
+		};
+	}
+
+	private static ArchiveFailureView MapLogFile(LogFileError error)
+	{
+		return new ArchiveFailureView(
+			Resources.FailureLogFileTitle,
+			Resources.FormatFailureLogFileDetail(error.FilePath, error.Reason),
+			Resources.FailureLogFileRemedy);
+	}
+
+	// This window is read in the bootstrap language: no locale exists yet when the settings section
+	// itself is what failed.
 	private static ArchiveFailureView MapAppSettings(AppSettingsError error)
 	{
 		return error.Kind switch
 		{
-			AppSettingsProblem.NotFound => new ArchiveFailureView(
-				Resources.FailureAppSettingsNotFoundTitle,
-				Resources.FormatFailureAppSettingsNotFoundDetail(error.Path),
-				Resources.FailureAppSettingsNotFoundRemedy),
-
 			AppSettingsProblem.KeyMissing => new ArchiveFailureView(
 				Resources.FailureAppSettingsRejectedTitle,
 				Resources.FormatFailureAppSettingsKeyMissingDetail(error.Path, error.Key),
@@ -67,20 +104,11 @@ public static class ArchiveFailureMapper
 
 	private static ArchiveFailureView MapConnectionFile(ConnectionFileError error)
 	{
-		if (error.Kind == ConnectionFileProblem.NotFound)
-		{
-			return new ArchiveFailureView(
-				Resources.FailureConnectionFileNotFoundTitle,
-				Resources.FormatFailureConnectionFileNotFoundDetail(error.Path),
-				Resources.FailureConnectionFileNotFoundRemedy);
-		}
-
 		return new ArchiveFailureView(
 			Resources.FailureConnectionFileRejectedTitle,
 			Resources.FormatFailureConnectionFileRejectedDetail(error.Path, error.Reason),
 			error.Kind switch
 			{
-				ConnectionFileProblem.Unreadable => Resources.FailureConnectionFileUnreadableRemedy,
 				ConnectionFileProblem.Unparseable => Resources.FailureConnectionFileUnparseableRemedy,
 				ConnectionFileProblem.MissingField => Resources.FailureConnectionFileMissingFieldRemedy,
 				ConnectionFileProblem.OutOfRange => Resources.FailureConnectionFileOutOfRangeRemedy,

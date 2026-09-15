@@ -204,13 +204,19 @@ session left, so a volume would carry nothing across runs. Every stand start pay
 ### The converge verb
 
 `converge` is the seeder's own bench-only verb, and it is what the AppHost runs to bring the stand's
-archive up before the writer and the viewer start.
+archive up before the writer and the viewer start. Run by hand it needs a `--config-dir` that already
+holds a copy of the tracked set, because it writes the connection section and nothing else. The copy
+goes to the developer's own directory, not to the stand's `%TEMP%\SemiPlot\ConfigFiles`, which the
+next stand start sweeps:
 
 ```powershell
+New-Item -ItemType Directory -Force SemiPlot\Artifacts\dev-config | Out-Null
+Copy-Item ConfigFiles\* SemiPlot\Artifacts\dev-config -Recurse -Force
+
 dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder -- converge `
   --connection "Host=localhost;Port=55432;Database=semiplot_app;Username=scada_writer;Password=<writer>" `
   --admin-connection "Host=localhost;Port=55432;Database=postgres;Username=postgres;Password=<super>" `
-  --config-dir SemiPlot/Artifacts/bench-config
+  --config-dir SemiPlot\Artifacts\dev-config
 ```
 
 It waits for the admin connection up to 60 s, then unconditionally `DROP DATABASE IF EXISTS ...
@@ -219,22 +225,43 @@ WITH (FORCE)` and `CREATE DATABASE ... TEMPLATE semiplot_provisioned` against th
 the change interval; the AppHost passes the writer's 0.5 s so the seeded day and the live tail share
 one density) up to `--end` or this machine's
 clock, fills `semiplot_tags` through `--admin-connection` re-pointed at the stand database, and
-writes `archive-connection.yaml` with the bench reader role's fixed password and
-`TimeZoneInfo.Local.Id`.
+writes `connection/connection.yaml` under `--config-dir` with the bench reader role's fixed password
+and `TimeZoneInfo.Local.Id`.
 
-It writes a second file into the same directory, `ui/app.yaml`, carrying `locale: ru` and
-`theme: light`. The application requires it, and `SemiPlot/Artifacts/bench-config` is ignored by
-`.gitignore`, so converge is the only mechanism that delivers it to the stand.
-
-The seeder cannot reference the application, so `AppSettingsFileWriter` spells `ui` and `app.yaml`
-a second time. `AppSettingsFileWriterTests.TheWriterTargetsThePathTheApplicationReads` pins the two
-halves equal against `StartupSequence.SettingsPath`; without it a drift would put the file where
-nothing reads it and only a bench run would notice.
+That one file is all it writes. It overwrites the delivered `connection/connection.yaml` by name
+rather than adding a second file beside it, because two files of one section folder carrying the
+same keys is exactly what the section rule rejects (`overview.md`). The `app/` section it leaves
+alone: `locale: ru` and `theme: light` come from the tracked set the AppHost copied in.
 
 `BenchRoles` in the seeder is the one place the bench's role names and
 passwords live; the container fixture reads them from there, and the AppHost repeats the same fixed
 values as environment variables for the container, because an Aspire AppHost project cannot compile
 against a project resource's own assembly.
+
+### The demo's directories
+
+The stand consumes a copy of the tracked configuration set, never the original. `DemoDirectories`
+(`SemiPlot/SemiPlot.AppHost/`) owns two fixed paths under the temporary directory, so a crashed run
+is cleaned by the next start and no per-run suffix is needed — one stand runs at a time by
+construction, on a fixed host port with `isProxied: false` and one database name.
+
+| Path | Holds | Lifecycle |
+| --- | --- | --- |
+| `%TEMP%\SemiPlot\ConfigFiles` | A copy of the repository's `ConfigFiles/`, `converge`'s rewritten `connection/connection.yaml` included | Swept and recreated at start, removed on `ApplicationStopping` |
+| `%TEMP%\SemiPlot\Logs` | `semiplot.log` | Swept and recreated at start, kept after the stand stops |
+
+`DemoDirectories.Prepare` resolves the tracked set two levels above `builder.AppHostDirectory` and
+throws `DirectoryNotFoundException` when it is absent, so a missing source fails the AppHost at once
+rather than producing an empty copy the viewer reports later. The AppHost passes
+`%TEMP%\SemiPlot\ConfigFiles` as `--config-dir` to both `converge` and the viewer, and the log path
+plus `--logging-level information` to the viewer, which needs all three keys.
+
+`Logs` is swept at the next start rather than on stop: the viewer holds `semiplot.log` open through a
+Serilog file sink declared `shared: true`, so deleting the directory during shutdown would race that
+handle, and the log of a run that failed is the one thing worth keeping after the stand is gone. The
+sweep deletes file by file and tolerates a file still held open, so a viewer that outlived its stand
+cannot stop the next one from starting. `ApplicationStopping` does not fire when the AppHost is
+killed rather than stopped; the sweep at the next start is the backstop for that path.
 
 What the server can be asked afterwards, which needs no screen:
 
@@ -244,7 +271,7 @@ What the server can be asked afterwards, which needs no screen:
 | Did it read the catalogue? | `pg_stat_user_tables.idx_scan` on `semiplot_tags` |
 | Did it read history from the seeded span? | `idx_tup_fetch` on the partitions the fill landed in, `tp<YYYY>m<MM>d<DD>` |
 | Did any read fall back to a sequential scan? | `seq_scan` on the same partitions, which `ExplainPlanTests` forbids |
-| Which failure did the operator get? | `C:\DISTR\Logs\SemiPlot\semiplot.log`; every startup failure writes its error and a `[FTL]` line |
+| Which failure did the operator get? | `%TEMP%\SemiPlot\Logs\semiplot.log` on the stand, `C:\DISTR\Logs\SemiPlot\semiplot.log` on an installation. A startup failure writes its error and a `[FTL]` line, except the two that happen before the logger exists: a bad launch argument and an unusable `--log-file` are reported in the failure window alone (`SemiPlot/SemiPlot.UI/Program.cs`) |
 | Did the live edge reach the chart? | Run `--follow 1` against the same database and watch the chart with **Sticky** on; at `--logging-level debug` the log carries one realtime line per tick |
 
 The failure states are forced from outside the application: stop the container for an unreachable
@@ -252,9 +279,17 @@ server, rename `semiplot_tags` for an unfinished provisioning, change the passwo
 file for a refused login, delete the catalogue rows for an empty catalogue.
 
 Nothing machine-dependent lives in `AppHost.cs`: the role passwords are `BenchRoles`' public
-constants, the port is 55432, and the time zone lives only in the generated connection file. The
+constants, the port is 55432, the configuration and log paths come from `DemoDirectories`, and the
+time zone lives only in the generated connection file. The
 `Live demo` run configuration at the repository root's `.run/` is a `DotNetProject` configuration
 over `SemiPlot.AppHost`, in the shape of `Debug.run.xml`.
+
+The launchers that start the viewer alone - `.run/Debug.run.xml` and the `.zed/` run and debug
+entries - point `--config-dir` at `SemiPlot/Artifacts/dev-config` through `$PROJECT_DIR$` and
+`$ZED_WORKTREE_ROOT`, never at the stand's copy: `%TEMP%\SemiPlot\ConfigFiles` exists only while the
+stand runs, and the stand has already started its own viewer against it. The developer creates that
+directory once from `ConfigFiles/`, as `readme.md` and `CLAUDE.md` spell out; `SemiPlot/Artifacts/`
+is gitignored, so the password filled in there stays out of the repository.
 
 ## The headless render and input guards
 

@@ -2,6 +2,7 @@ using AwesomeAssertions;
 
 using FluentResults;
 
+using SemiPlot.Core.Configuration;
 using SemiPlot.UI.Startup;
 
 using Xunit;
@@ -23,11 +24,11 @@ public sealed class AppSettingsLoaderTests : IDisposable
 	[Theory]
 	[InlineData("ru", UiLanguage.Ru)]
 	[InlineData("en", UiLanguage.En)]
-	public void AValidFileCarriesTheConfiguredLocale(string text, UiLanguage expected)
+	public void AValidSectionCarriesTheConfiguredLocale(string text, UiLanguage expected)
 	{
-		var path = WriteFile($"locale: {text}\ntheme: light\n");
+		WriteFile($"locale: {text}\ntheme: light\n");
 
-		var result = AppSettingsLoader.Load(path);
+		var result = AppSettingsLoader.Load(_directory);
 
 		result.IsSuccess.Should().BeTrue(Describe(result));
 		result.Value.Locale.Should().Be(expected);
@@ -36,11 +37,11 @@ public sealed class AppSettingsLoaderTests : IDisposable
 	[Theory]
 	[InlineData("light", AppThemeVariant.Light)]
 	[InlineData("dark", AppThemeVariant.Dark)]
-	public void AValidFileCarriesTheConfiguredTheme(string text, AppThemeVariant expected)
+	public void AValidSectionCarriesTheConfiguredTheme(string text, AppThemeVariant expected)
 	{
-		var path = WriteFile($"locale: ru\ntheme: {text}\n");
+		WriteFile($"locale: ru\ntheme: {text}\n");
 
-		var result = AppSettingsLoader.Load(path);
+		var result = AppSettingsLoader.Load(_directory);
 
 		result.IsSuccess.Should().BeTrue(Describe(result));
 		result.Value.Theme.Should().Be(expected);
@@ -49,24 +50,58 @@ public sealed class AppSettingsLoaderTests : IDisposable
 	[Fact]
 	public void AKeyTheFormatDoesNotNameIsIgnored()
 	{
-		var path = WriteFile("locale: ru\ntheme: dark\nwindow_width: 800\n");
+		WriteFile("locale: ru\ntheme: dark\nwindow_width: 800\n");
 
-		var result = AppSettingsLoader.Load(path);
+		var result = AppSettingsLoader.Load(_directory);
 
 		result.IsSuccess.Should().BeTrue(Describe(result));
 		result.Value.Should().Be(new AppSettings(UiLanguage.Ru, AppThemeVariant.Dark));
 	}
 
 	[Fact]
-	public void AnAbsentFileYieldsTheNotFoundError()
+	public void TwoFilesOfTheSectionAreMergedIntoOneSettings()
 	{
-		var path = Path.Combine(_directory, "app.yaml");
+		WriteFile("locale: ru\n", "a.yaml");
+		WriteFile("theme: dark\n", "b.yaml");
 
-		var result = AppSettingsLoader.Load(path);
+		var result = AppSettingsLoader.Load(_directory);
 
-		var error = ErrorOf(result);
-		error.Kind.Should().Be(AppSettingsProblem.NotFound);
-		error.Path.Should().Be(path);
+		result.IsSuccess.Should().BeTrue(Describe(result));
+		result.Value.Should().Be(new AppSettings(UiLanguage.Ru, AppThemeVariant.Dark));
+	}
+
+	[Fact]
+	public void AnAbsentSectionYieldsASectionErrorRatherThanAThrow()
+	{
+		var absent = Path.Combine(_directory, "app");
+
+		var result = AppSettingsLoader.Load(absent);
+
+		var error = SectionErrorOf(result);
+		error.Problem.Should().Be(SectionProblem.DirectoryMissing);
+		error.Section.Should().Be(ConfigurationSectionName.App);
+	}
+
+	[Fact]
+	public void ASectionWithNoFileYieldsTheNoFilesProblem()
+	{
+		var result = AppSettingsLoader.Load(_directory);
+
+		SectionErrorOf(result).Problem.Should().Be(SectionProblem.NoFiles);
+	}
+
+	[Fact]
+	public void AKeyCarriedByTwoFilesYieldsTheKeyConflictProblem()
+	{
+		WriteFile("locale: ru\ntheme: light\n", "a.yaml");
+		WriteFile("locale: en\n", "b.yaml");
+
+		var result = AppSettingsLoader.Load(_directory);
+
+		var error = SectionErrorOf(result);
+		error.Problem.Should().Be(SectionProblem.KeyConflict);
+		error.Key.Should().Be("locale");
+		error.FileNames.Should().Equal("a.yaml", "b.yaml");
 	}
 
 	[Theory]
@@ -76,13 +111,25 @@ public sealed class AppSettingsLoaderTests : IDisposable
 	{
 		var result = AppSettingsLoader.Load(path);
 
-		ErrorOf(result).Path.Should().Be(path);
+		SectionErrorOf(result).Problem.Should().Be(SectionProblem.DirectoryMissing);
 	}
 
-	// A directory stands in for every path that exists and cannot be read.
 	[Fact]
-	public void APathThatCannotBeOpenedYieldsTheUnreadableDiscriminator()
+	public void AMalformedDocumentYieldsTheSectionUnreadableProblem()
 	{
+		WriteFile("locale: [ru\ntheme: :\n");
+
+		var result = AppSettingsLoader.Load(_directory);
+
+		SectionErrorOf(result).Problem.Should().Be(SectionProblem.Unreadable);
+	}
+
+	// The merged text is well-formed YAML; a key whose shape the DTO cannot take is what still throws here.
+	[Fact]
+	public void AKeyWhoseShapeTheFormatRejectsYieldsTheUnreadableDiscriminator()
+	{
+		WriteFile("locale:\n  nested: ru\ntheme: light\n");
+
 		var result = AppSettingsLoader.Load(_directory);
 
 		var error = ErrorOf(result);
@@ -91,23 +138,11 @@ public sealed class AppSettingsLoaderTests : IDisposable
 	}
 
 	[Fact]
-	public void AMalformedDocumentYieldsTheUnreadableDiscriminator()
+	public void AKeyWhoseShapeTheFormatRejectsCarriesItsCausingException()
 	{
-		var path = WriteFile("locale: [ru\ntheme: :\n");
+		WriteFile("locale:\n  nested: ru\ntheme: light\n");
 
-		var result = AppSettingsLoader.Load(path);
-
-		var error = ErrorOf(result);
-		error.Kind.Should().Be(AppSettingsProblem.Unreadable);
-		error.Path.Should().Be(path);
-	}
-
-	[Fact]
-	public void AMalformedDocumentCarriesItsCausingException()
-	{
-		var path = WriteFile("locale: [ru\ntheme: :\n");
-
-		var result = AppSettingsLoader.Load(path);
+		var result = AppSettingsLoader.Load(_directory);
 
 		ErrorOf(result).Reasons.OfType<ExceptionalError>().Should().ContainSingle();
 	}
@@ -117,9 +152,9 @@ public sealed class AppSettingsLoaderTests : IDisposable
 	[InlineData("locale: ru\n", "theme")]
 	public void AnAbsentKeyYieldsTheKeyMissingDiscriminator(string content, string key)
 	{
-		var path = WriteFile(content);
+		WriteFile(content);
 
-		var result = AppSettingsLoader.Load(path);
+		var result = AppSettingsLoader.Load(_directory);
 
 		var error = ErrorOf(result);
 		error.Kind.Should().Be(AppSettingsProblem.KeyMissing);
@@ -131,9 +166,9 @@ public sealed class AppSettingsLoaderTests : IDisposable
 	[InlineData("locale: ru\ntheme: \"   \"\n", "theme")]
 	public void ABlankKeyYieldsTheKeyMissingDiscriminator(string content, string key)
 	{
-		var path = WriteFile(content);
+		WriteFile(content);
 
-		var result = AppSettingsLoader.Load(path);
+		var result = AppSettingsLoader.Load(_directory);
 
 		var error = ErrorOf(result);
 		error.Kind.Should().Be(AppSettingsProblem.KeyMissing);
@@ -143,9 +178,9 @@ public sealed class AppSettingsLoaderTests : IDisposable
 	[Fact]
 	public void AnEmptyFileYieldsTheKeyMissingDiscriminator()
 	{
-		var path = WriteFile(string.Empty);
+		WriteFile(string.Empty);
 
-		var result = AppSettingsLoader.Load(path);
+		var result = AppSettingsLoader.Load(_directory);
 
 		var error = ErrorOf(result);
 		error.Kind.Should().Be(AppSettingsProblem.KeyMissing);
@@ -161,9 +196,9 @@ public sealed class AppSettingsLoaderTests : IDisposable
 		string firstAccepted,
 		string secondAccepted)
 	{
-		var path = WriteFile(content);
+		WriteFile(content);
 
-		var result = AppSettingsLoader.Load(path);
+		var result = AppSettingsLoader.Load(_directory);
 
 		var error = ErrorOf(result);
 		error.Kind.Should().Be(AppSettingsProblem.ValueInvalid);
@@ -174,9 +209,9 @@ public sealed class AppSettingsLoaderTests : IDisposable
 	[Fact]
 	public void AnInvalidLocaleIsReportedBeforeAnInvalidTheme()
 	{
-		var path = WriteFile("locale: klingon\ntheme: sepia\n");
+		WriteFile("locale: klingon\ntheme: sepia\n");
 
-		var result = AppSettingsLoader.Load(path);
+		var result = AppSettingsLoader.Load(_directory);
 
 		result.Errors.Should().ContainSingle();
 		ErrorOf(result).Key.Should().Be("locale");
@@ -187,9 +222,9 @@ public sealed class AppSettingsLoaderTests : IDisposable
 	[InlineData("locale: \"  ru  \"")]
 	public void AValueIsTrimmedAndMatchedWithoutCase(string localeLine)
 	{
-		var path = WriteFile(localeLine + "\ntheme: LIGHT\n");
+		WriteFile(localeLine + "\ntheme: LIGHT\n");
 
-		var result = AppSettingsLoader.Load(path);
+		var result = AppSettingsLoader.Load(_directory);
 
 		result.IsSuccess.Should().BeTrue(Describe(result));
 		result.Value.Should().Be(new AppSettings(UiLanguage.Ru, AppThemeVariant.Light));
@@ -202,17 +237,20 @@ public sealed class AppSettingsLoaderTests : IDisposable
 		return result.Errors.OfType<AppSettingsError>().Should().ContainSingle().Which;
 	}
 
+	private static ConfigurationSectionError SectionErrorOf(Result<AppSettings> result)
+	{
+		result.IsFailed.Should().BeTrue();
+
+		return result.Errors.OfType<ConfigurationSectionError>().Should().ContainSingle().Which;
+	}
+
 	private static string Describe(Result<AppSettings> result)
 	{
 		return string.Join("; ", result.Errors.Select(error => error.Message));
 	}
 
-	private string WriteFile(string content)
+	private void WriteFile(string content, string name = "app.yaml")
 	{
-		var path = Path.Combine(_directory, $"app-{Guid.NewGuid():N}.yaml");
-
-		File.WriteAllText(path, content);
-
-		return path;
+		File.WriteAllText(Path.Combine(_directory, name), content);
 	}
 }

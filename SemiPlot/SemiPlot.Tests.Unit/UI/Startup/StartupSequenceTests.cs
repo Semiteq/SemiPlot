@@ -2,7 +2,7 @@ using System.Globalization;
 
 using AwesomeAssertions;
 
-using SemiPlot.Core.Data.Errors;
+using SemiPlot.Core.Configuration;
 using SemiPlot.UI;
 using SemiPlot.UI.Startup;
 
@@ -12,8 +12,8 @@ using Xunit;
 
 namespace SemiPlot.Tests.Unit.UI.Startup;
 
-// Every case leaves the connection file absent, so the probe fails at PostgresConnectionLoader and no
-// connection is opened. A ConnectionFileError where the settings are broken proves the order is wrong.
+// Every case leaves the connection section absent, so the probe fails at PostgresConnectionLoader and
+// no connection is opened. A connection failure where the settings are broken proves the order is wrong.
 [Collection(ProcessGlobalStateCollection.Name)]
 [Trait("Component", "UI")]
 [Trait("Area", "Di")]
@@ -42,12 +42,12 @@ public sealed class StartupSequenceTests : IDisposable
 	}
 
 	[Fact]
-	public void AMissingSettingsFile_FailsBeforeTheConnectionFileIsRead()
+	public void AMissingSettingsSection_FailsBeforeTheConnectionSectionIsRead()
 	{
 		var outcome = StartupSequence.Run(Options());
 
-		outcome.Startup.Errors.Should().ContainSingle().Which.Should().BeOfType<AppSettingsError>()
-			.Which.Kind.Should().Be(AppSettingsProblem.NotFound);
+		outcome.Startup.Errors.Should().ContainSingle().Which.Should().BeOfType<ConfigurationSectionError>()
+			.Which.Problem.Should().Be(SectionProblem.DirectoryMissing);
 	}
 
 	[Fact]
@@ -61,13 +61,14 @@ public sealed class StartupSequenceTests : IDisposable
 	}
 
 	[Fact]
-	public void ReadableSettings_ReachTheConnectionFileAndSurviveItsFailure()
+	public void ReadableSettings_ReachTheConnectionSectionAndSurviveItsFailure()
 	{
 		WriteSettings("locale: en\ntheme: dark\n");
 
 		var outcome = StartupSequence.Run(Options());
 
-		outcome.Startup.Errors.Should().ContainSingle().Which.Should().BeOfType<ConnectionFileError>();
+		outcome.Startup.Errors.Should().ContainSingle().Which.Should().BeOfType<ConfigurationSectionError>()
+			.Which.Section.Should().Be(ConfigurationSectionName.Connection);
 		outcome.Settings.Should().Be(new AppSettings(UiLanguage.En, AppThemeVariant.Dark));
 	}
 
@@ -110,6 +111,6 @@ public sealed class StartupSequenceTests : IDisposable
 
 		Directory.CreateDirectory(directory);
 
-		File.WriteAllText(Path.Combine(directory, StartupSequence.SettingsFileName), content);
+		File.WriteAllText(Path.Combine(directory, "app.yaml"), content);
 	}
 }

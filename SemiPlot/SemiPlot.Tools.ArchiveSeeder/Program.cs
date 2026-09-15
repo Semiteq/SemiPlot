@@ -134,7 +134,7 @@ public static class Program
 		Console.WriteLine($"database        {result.Database}, ready in {result.ReadinessWait.TotalSeconds:0.#} s");
 		Console.WriteLine($"rows written    {result.RowsWritten}");
 		Console.WriteLine($"tags written    {result.TagsWritten}");
-		Console.WriteLine($"config          {Path.Combine(options.ConfigDirectory, ConnectionFileWriter.FileName)}");
+		Console.WriteLine($"config          {ConnectionFileWriter.PathFor(options.ConfigDirectory)}");
 
 		return 0;
 	}

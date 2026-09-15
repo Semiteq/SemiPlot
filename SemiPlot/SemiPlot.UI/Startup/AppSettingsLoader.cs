@@ -1,5 +1,7 @@
 using FluentResults;
 
+using SemiPlot.Core.Configuration;
+
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -14,9 +16,9 @@ internal sealed class AppSettingsDto
 }
 
 /// <summary>
-/// Reads the interface settings file into <see cref="AppSettings"/>. Every failure is an
-/// <see cref="AppSettingsError"/> in the returned <see cref="Result{TValue}"/>; nothing escapes as an
-/// exception, for any input including a blank path. Keys the format does not name are ignored.
+/// Reads the interface settings section folder into <see cref="AppSettings"/>. Every failure is an
+/// <see cref="AppSettingsError"/> or a <see cref="ConfigurationSectionError"/> in the result; nothing
+/// escapes as an exception, and keys the format does not name are ignored.
 /// </summary>
 public static class AppSettingsLoader
 {
@@ -35,23 +37,30 @@ public static class AppSettingsLoader
 		.IgnoreUnmatchedProperties()
 		.Build();
 
-	public static Result<AppSettings> Load(string filePath)
+	public static Result<AppSettings> Load(string sectionDirectory)
 	{
-		var read = Read(filePath);
+		var section = ConfigurationSection.Read(sectionDirectory, ConfigurationSectionName.App);
+
+		if (section.IsFailed)
+		{
+			return Result.Fail<AppSettings>(section.Errors);
+		}
+
+		var read = Deserialize(sectionDirectory, section.Value);
 
 		if (read.IsFailed)
 		{
 			return Result.Fail<AppSettings>(read.Errors);
 		}
 
-		var locale = ParseKey(filePath, LocaleKey, read.Value.Locale, _languages);
+		var locale = ParseKey(sectionDirectory, LocaleKey, read.Value.Locale, _languages);
 
 		if (locale.IsFailed)
 		{
 			return Result.Fail<AppSettings>(locale.Errors);
 		}
 
-		var theme = ParseKey(filePath, ThemeKey, read.Value.Theme, _themes);
+		var theme = ParseKey(sectionDirectory, ThemeKey, read.Value.Theme, _themes);
 
 		if (theme.IsFailed)
 		{
@@ -61,36 +70,21 @@ public static class AppSettingsLoader
 		return Result.Ok(new AppSettings(locale.Value, theme.Value));
 	}
 
-	// An empty document parses to no DTO, which is every key absent rather than an unreadable file.
-	private static Result<AppSettingsDto> Read(string filePath)
+	// An empty section parses to no DTO, which is every key absent rather than an unreadable section.
+	private static Result<AppSettingsDto> Deserialize(string sectionDirectory, string content)
 	{
-		string content;
-
-		try
-		{
-			content = File.ReadAllText(filePath);
-		}
-		catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
-		{
-			return Fail<AppSettingsDto>(filePath, AppSettingsProblem.NotFound, cause: exception);
-		}
-		catch (Exception exception)
-		{
-			return Fail<AppSettingsDto>(filePath, AppSettingsProblem.Unreadable, cause: exception);
-		}
-
 		try
 		{
 			return Result.Ok(_deserializer.Deserialize<AppSettingsDto?>(content) ?? new AppSettingsDto());
 		}
 		catch (Exception exception)
 		{
-			return Fail<AppSettingsDto>(filePath, AppSettingsProblem.Unreadable, cause: exception);
+			return Fail<AppSettingsDto>(sectionDirectory, AppSettingsProblem.Unreadable, cause: exception);
 		}
 	}
 
 	private static Result<TValue> ParseKey<TValue>(
-		string filePath,
+		string sectionDirectory,
 		string key,
 		string? value,
 		(string Text, TValue Value)[] accepted)
@@ -98,7 +92,7 @@ public static class AppSettingsLoader
 	{
 		if (string.IsNullOrWhiteSpace(value))
 		{
-			return Fail<TValue>(filePath, AppSettingsProblem.KeyMissing, key);
+			return Fail<TValue>(sectionDirectory, AppSettingsProblem.KeyMissing, key);
 		}
 
 		foreach (var (text, parsed) in accepted)
@@ -109,7 +103,7 @@ public static class AppSettingsLoader
 			}
 		}
 
-		return Fail<TValue>(filePath, AppSettingsProblem.ValueInvalid, key, Describe(accepted));
+		return Fail<TValue>(sectionDirectory, AppSettingsProblem.ValueInvalid, key, Describe(accepted));
 	}
 
 	private static string Describe<TValue>((string Text, TValue Value)[] accepted)
@@ -118,13 +112,13 @@ public static class AppSettingsLoader
 	}
 
 	private static Result<TValue> Fail<TValue>(
-		string filePath,
+		string sectionDirectory,
 		AppSettingsProblem kind,
 		string key = "",
 		string acceptedValues = "",
 		Exception? cause = null)
 	{
-		var error = new AppSettingsError(filePath, kind, key, acceptedValues);
+		var error = new AppSettingsError(sectionDirectory, kind, key, acceptedValues);
 
 		return Result.Fail<TValue>(cause is null ? error : error.CausedBy(new ExceptionalError(cause)));
 	}

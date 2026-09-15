@@ -69,32 +69,20 @@
   <data name="FailureThrownRemedy" xml:space="preserve">
     <value>This build has no named handling for this failure. Report the SemiPlot log file, which carries the entry and its stack trace.</value>
   </data>
-  <data name="FailureConnectionFileNotFoundTitle" xml:space="preserve">
-    <value>Connection file not found</value>
-  </data>
-  <data name="FailureConnectionFileNotFoundDetail" xml:space="preserve">
-    <value>SemiPlot looked for the archive connection file at '{0}' and found nothing there.</value>
-  </data>
-  <data name="FailureConnectionFileNotFoundRemedy" xml:space="preserve">
-    <value>Create that file, or start SemiPlot with --config-dir naming the directory that holds it.</value>
-  </data>
   <data name="FailureConnectionFileRejectedTitle" xml:space="preserve">
-    <value>Connection file cannot be read</value>
+    <value>Archive connection settings cannot be read</value>
   </data>
   <data name="FailureConnectionFileRejectedDetail" xml:space="preserve">
-    <value>The connection file '{0}' exists but was rejected: {1}</value>
+    <value>The connection folder '{0}' was rejected: {1}</value>
   </data>
   <data name="FailureConnectionFileRejectedRemedy" xml:space="preserve">
-    <value>Correct the file at the path above; the reason names what was rejected.</value>
-  </data>
-  <data name="FailureConnectionFileUnreadableRemedy" xml:space="preserve">
-    <value>Give the account running SemiPlot read access to the file and close whatever holds it open.</value>
+    <value>Correct the files in the folder above; the reason names what was rejected.</value>
   </data>
   <data name="FailureConnectionFileUnparseableRemedy" xml:space="preserve">
-    <value>Repair the YAML syntax of the file; the reason above names the position that failed.</value>
+    <value>Repair the YAML syntax in that folder; the reason above names the position that failed.</value>
   </data>
   <data name="FailureConnectionFileMissingFieldRemedy" xml:space="preserve">
-    <value>Add the field the reason names to the file. Every field of the format is required.</value>
+    <value>Add the field the reason names to a file in that folder. Every field of the format is required.</value>
   </data>
   <data name="FailureConnectionFileOutOfRangeRemedy" xml:space="preserve">
     <value>Correct the value the reason names to one inside the range it states.</value>
@@ -195,34 +183,106 @@
   <data name="FailureStartupReadArchiveExtent" xml:space="preserve">
     <value>archive extent</value>
   </data>
-  <data name="FailureAppSettingsNotFoundTitle" xml:space="preserve">
-    <value>Interface settings file not found</value>
-  </data>
-  <data name="FailureAppSettingsNotFoundDetail" xml:space="preserve">
-    <value>SemiPlot looked for the interface settings file at '{0}' and found nothing there.</value>
-  </data>
-  <data name="FailureAppSettingsNotFoundRemedy" xml:space="preserve">
-    <value>Create that file with a 'locale' and a 'theme' key, or start SemiPlot with --config-dir naming the directory that holds it.</value>
-  </data>
   <data name="FailureAppSettingsRejectedTitle" xml:space="preserve">
-    <value>Interface settings file cannot be read</value>
+    <value>Interface settings cannot be read</value>
   </data>
   <data name="FailureAppSettingsUnreadableDetail" xml:space="preserve">
-    <value>The interface settings file '{0}' exists but could not be read or parsed.</value>
+    <value>The interface settings folder '{0}' was read but could not be parsed.</value>
   </data>
   <data name="FailureAppSettingsUnreadableRemedy" xml:space="preserve">
-    <value>Give the account running SemiPlot read access to the file and repair its YAML syntax.</value>
+    <value>Give the account running SemiPlot read access to that folder and repair the YAML syntax of its files.</value>
   </data>
   <data name="FailureAppSettingsKeyMissingDetail" xml:space="preserve">
-    <value>The interface settings file '{0}' carries no '{1}' key.</value>
+    <value>The interface settings folder '{0}' carries no '{1}' key.</value>
   </data>
   <data name="FailureAppSettingsKeyMissingRemedy" xml:space="preserve">
-    <value>Add the key the detail names to the file. Both keys of the format are required.</value>
+    <value>Add the key the detail names to a file in that folder. Both keys of the format are required.</value>
   </data>
   <data name="FailureAppSettingsValueInvalidDetail" xml:space="preserve">
-    <value>The interface settings file '{0}' holds a '{1}' outside its values. Accepted: {2}.</value>
+    <value>The interface settings folder '{0}' holds a '{1}' outside its values. Accepted: {2}.</value>
   </data>
   <data name="FailureAppSettingsValueInvalidRemedy" xml:space="preserve">
     <value>Set that key to one of the accepted values and restart SemiPlot.</value>
+  </data>
+  <data name="FailureConfigurationSectionAppTitle" xml:space="preserve">
+    <value>Interface settings folder cannot be read</value>
+  </data>
+  <data name="FailureConfigurationSectionConnectionTitle" xml:space="preserve">
+    <value>Archive connection folder cannot be read</value>
+  </data>
+  <data name="FailureConfigurationSectionDirectoryMissingDetail" xml:space="preserve">
+    <value>SemiPlot looked for the configuration folder '{0}' and found nothing there.</value>
+  </data>
+  <data name="FailureConfigurationSectionNoFilesDetail" xml:space="preserve">
+    <value>The configuration folder '{0}' holds no '*.yaml' file.</value>
+  </data>
+  <data name="FailureConfigurationSectionUnreadableDetail" xml:space="preserve">
+    <value>The file '{1}' in the configuration folder '{0}' could not be read or parsed.</value>
+  </data>
+  <data name="FailureConfigurationSectionUnlistableDetail" xml:space="preserve">
+    <value>The configuration folder '{0}' exists but its files could not be listed.</value>
+  </data>
+  <data name="FailureConfigurationSectionKeyConflictDetail" xml:space="preserve">
+    <value>The key '{0}' is carried by both '{1}' and '{2}' in the configuration folder '{3}'.</value>
+  </data>
+  <data name="FailureConfigurationSectionDuplicateKeyDetail" xml:space="preserve">
+    <value>The key '{0}' is carried twice by '{1}' in the configuration folder '{2}'.</value>
+  </data>
+  <data name="FailureConfigurationSectionAppDirectoryMissingRemedy" xml:space="preserve">
+    <value>Create that folder with a '*.yaml' file carrying a 'locale' and a 'theme' key, or start SemiPlot with --config-dir naming the directory that holds it.</value>
+  </data>
+  <data name="FailureConfigurationSectionConnectionDirectoryMissingRemedy" xml:space="preserve">
+    <value>Create that folder with a '*.yaml' file carrying the archive connection fields, or start SemiPlot with --config-dir naming the directory that holds it.</value>
+  </data>
+  <data name="FailureConfigurationSectionAppNoFilesRemedy" xml:space="preserve">
+    <value>Add a '*.yaml' file carrying a 'locale' and a 'theme' key to that folder.</value>
+  </data>
+  <data name="FailureConfigurationSectionConnectionNoFilesRemedy" xml:space="preserve">
+    <value>Add a '*.yaml' file carrying the archive connection fields to that folder.</value>
+  </data>
+  <data name="FailureConfigurationSectionUnreadableRemedy" xml:space="preserve">
+    <value>Give the account running SemiPlot read access to that folder and repair the YAML syntax of its files.</value>
+  </data>
+  <data name="FailureConfigurationSectionKeyConflictRemedy" xml:space="preserve">
+    <value>Remove that key from one of the two files. Only one file of a folder may carry a key.</value>
+  </data>
+  <data name="FailureConfigurationSectionDuplicateKeyRemedy" xml:space="preserve">
+    <value>Leave one such key in that file. A key may be carried once in a folder.</value>
+  </data>
+  <data name="FailureStartupArgumentsTitle" xml:space="preserve">
+    <value>SemiPlot was started with wrong arguments</value>
+  </data>
+  <data name="FailureStartupArgumentsMissingDetail" xml:space="preserve">
+    <value>SemiPlot was started without the required key '{0}'.</value>
+  </data>
+  <data name="FailureStartupArgumentsMissingRemedy" xml:space="preserve">
+    <value>Add that key with its value to the SemiPlot shortcut. All of --config-dir, --log-file and --logging-level are required.</value>
+  </data>
+  <data name="FailureStartupArgumentsValueMissingDetail" xml:space="preserve">
+    <value>The key '{0}' was given without a usable value.</value>
+  </data>
+  <data name="FailureStartupArgumentsValueMissingRemedy" xml:space="preserve">
+    <value>Put the value that key needs after it in the SemiPlot shortcut.</value>
+  </data>
+  <data name="FailureStartupArgumentsUnknownDetail" xml:space="preserve">
+    <value>SemiPlot does not know the argument '{0}'.</value>
+  </data>
+  <data name="FailureStartupArgumentsUnknownRemedy" xml:space="preserve">
+    <value>Remove that argument from the SemiPlot shortcut. SemiPlot reads only --config-dir, --log-file and --logging-level.</value>
+  </data>
+  <data name="FailureStartupArgumentsValueInvalidDetail" xml:space="preserve">
+    <value>The key '{0}' holds a value outside its set. Accepted: {1}.</value>
+  </data>
+  <data name="FailureStartupArgumentsValueInvalidRemedy" xml:space="preserve">
+    <value>Set that key to one of the accepted values in the SemiPlot shortcut.</value>
+  </data>
+  <data name="FailureLogFileTitle" xml:space="preserve">
+    <value>The SemiPlot log file could not be opened</value>
+  </data>
+  <data name="FailureLogFileDetail" xml:space="preserve">
+    <value>The file '{0}' named by --log-file could not be opened for writing: {1}</value>
+  </data>
+  <data name="FailureLogFileRemedy" xml:space="preserve">
+    <value>Correct the --log-file path in the SemiPlot shortcut. Its drive has to exist, its folder has to be writable, and the path has to name a file rather than a folder.</value>
   </data>
 </root>

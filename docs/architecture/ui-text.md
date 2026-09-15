@@ -16,19 +16,22 @@ compiles to a `ru` satellite; the SDK takes the culture from the file name, so t
 `EmbeddedResource` item for it. Only the neutral set carries the `GenerateSource` item, because one
 accessor serves both.
 
-The `locale` key of `ui/app.yaml` selects between them. `Startup/StartupSequence.Run` sets
-`CultureInfo.DefaultThreadCurrentUICulture` twice: to `ru` before the settings file is read
-(`StartupSequence.cs:18`, `:29`), and to the configured language immediately after
-(`:38`). Both writes happen before Avalonia is configured, so no window exists on the
-wrong language. `ui-theme.md` owns the other half of the same file, the `theme` key.
+The `locale` key of the `app/` section selects between them. `Startup/StartupSequence.Run` sets
+`CultureInfo.DefaultThreadCurrentUICulture` twice: to `ru` before the settings section is read
+(`StartupSequence.cs:22`, `:37`), and to the configured language immediately after (`:31`). Both
+writes happen before Avalonia is configured, so no window exists on the wrong language. The argument
+failure path never reaches `Run`, so `Program.Main` calls `ApplyBootstrapCulture` itself; without
+that its window would fall back to the neutral English set while every other failure window is
+Russian. `ui-theme.md` owns the other half of the same section, the `theme` key.
 
 `Resources.Culture` stays unassigned. The generated accessor reads
 `ResourceManager.GetString(key, Culture)`, and a null `Culture` falls through to
 `CultureInfo.CurrentUICulture`, which leaves the thread culture the single writer.
 
-A failure reporting the settings file itself is emitted before any `locale` is known, so that window
-is read in the bootstrap language, Russian. `MainWindow/ArchiveFailureMapper.cs:38-39` states the
-same in one line.
+A failure reporting the settings section itself, and a failure reporting the launch arguments, are
+both emitted before any `locale` is known, so those windows are read in the bootstrap language,
+Russian. The comment above `ArchiveFailureMapper.MapAppSettings` states the settings half in one
+line; the arguments half is `Program.ReportStartupFailure`, which applies the culture itself.
 
 Number and timestamp formatting is a separate question and stays on `CultureInfo.CurrentCulture`:
 `Chart/ChartHoverReadout`, `Chart/ChartDeltaCursorReader` and `Legend/TrendLegendRowViewModel` format

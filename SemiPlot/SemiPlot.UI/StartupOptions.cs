@@ -1,3 +1,5 @@
+using FluentResults;
+
 using Serilog.Events;
 
 namespace SemiPlot.UI;
@@ -7,50 +9,102 @@ public sealed record StartupOptions(
 	string LogFilePath,
 	LogEventLevel LoggingLevel)
 {
-	public const string DefaultConfigDir =
-		@"C:\DISTR\Config\SemiPlot";
+	public const string ConfigDirKey = "--config-dir";
 
-	public const string DefaultLogFilePath =
-		@"C:\DISTR\Logs\SemiPlot\semiplot.log";
+	public const string LogFileKey = "--log-file";
 
-	public const LogEventLevel DefaultLoggingLevel =
-		LogEventLevel.Warning;
+	public const string LoggingLevelKey = "--logging-level";
 
-	public static StartupOptions Parse(string[] args)
+	/// <summary>What ParseLogLevel accepts.</summary>
+	public const string LoggingLevelValues =
+		"verbose, debug, info, information, warning, error, fatal";
+
+	public static Result<StartupOptions> Parse(string[] args)
 	{
-		var configDir = DefaultConfigDir;
-		var logFilePath = DefaultLogFilePath;
-		var logLevel = DefaultLoggingLevel;
+		string? configDir = null;
+		string? logFilePath = null;
+		LogEventLevel? loggingLevel = null;
 
 		for (var i = 0; i < args.Length; i++)
 		{
-			switch (args[i])
+			var key = args[i];
+
+			if (key is not (ConfigDirKey or LogFileKey or LoggingLevelKey))
 			{
-				case "--config-dir" when i + 1 < args.Length:
-					configDir = args[++i];
+				return Fail(StartupArgumentsProblem.Unknown, key);
+			}
+
+			if (i + 1 >= args.Length)
+			{
+				return Fail(StartupArgumentsProblem.ValueMissing, key);
+			}
+
+			var value = args[++i];
+
+			if (string.IsNullOrWhiteSpace(value))
+			{
+				return Fail(StartupArgumentsProblem.ValueMissing, key);
+			}
+
+			switch (key)
+			{
+				case ConfigDirKey:
+					configDir = value;
 					break;
 
-				case "--log-file" when i + 1 < args.Length:
-					logFilePath = args[++i];
+				case LogFileKey:
+					logFilePath = value;
 					break;
 
-				case "--logging-level" when i + 1 < args.Length:
-					logLevel = ParseLogLevel(args[++i]);
+				default:
+					loggingLevel = ParseLogLevel(value);
+
+					if (loggingLevel is null)
+					{
+						return Fail(StartupArgumentsProblem.ValueInvalid, key, LoggingLevelValues);
+					}
+
 					break;
 			}
 		}
 
-		return new StartupOptions(
-			configDir,
-			logFilePath,
-			logLevel);
+		return Compose(configDir, logFilePath, loggingLevel);
 	}
 
-	// Parsing runs before CreateLogger, so an unrecognised level cannot be reported through Serilog and
-	// goes to the standard error stream instead.
-	private static LogEventLevel ParseLogLevel(string value)
+	private static Result<StartupOptions> Compose(
+		string? configDir,
+		string? logFilePath,
+		LogEventLevel? loggingLevel)
 	{
-		var level = value.ToLowerInvariant() switch
+		if (configDir is null)
+		{
+			return Fail(StartupArgumentsProblem.Missing, ConfigDirKey);
+		}
+
+		if (logFilePath is null)
+		{
+			return Fail(StartupArgumentsProblem.Missing, LogFileKey);
+		}
+
+		if (loggingLevel is null)
+		{
+			return Fail(StartupArgumentsProblem.Missing, LoggingLevelKey);
+		}
+
+		return Result.Ok(new StartupOptions(configDir, logFilePath, loggingLevel.Value));
+	}
+
+	private static Result<StartupOptions> Fail(
+		StartupArgumentsProblem kind,
+		string key,
+		string acceptedValues = "")
+	{
+		return Result.Fail<StartupOptions>(new StartupArgumentsError(kind, key, acceptedValues));
+	}
+
+	private static LogEventLevel? ParseLogLevel(string value)
+	{
+		return value.ToLowerInvariant() switch
 		{
 			"verbose" => LogEventLevel.Verbose,
 			"debug" => LogEventLevel.Debug,
@@ -58,16 +112,7 @@ public sealed record StartupOptions(
 			"warning" => LogEventLevel.Warning,
 			"error" => LogEventLevel.Error,
 			"fatal" => LogEventLevel.Fatal,
-			_ => (LogEventLevel?)null
+			_ => null
 		};
-
-		if (level is null)
-		{
-			Console.Error.WriteLine(
-				$"Unrecognised --logging-level '{value}'. Use verbose, debug, info, warning, error or "
-				+ $"fatal. Falling back to {DefaultLoggingLevel}.");
-		}
-
-		return level ?? DefaultLoggingLevel;
 	}
 }

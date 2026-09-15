@@ -4,6 +4,7 @@ using FluentResults;
 
 using Npgsql;
 
+using SemiPlot.Core.Configuration;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.DataSource.Postgres.Configuration;
 
@@ -39,11 +40,11 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	}
 
 	[Fact]
-	public void AValidFilePopulatesEveryField()
+	public void AValidSectionPopulatesEveryField()
 	{
-		var path = WriteFile(Compose(_validFields));
+		WriteFile(Compose(_validFields));
 
-		var result = PostgresConnectionLoader.Load(path);
+		var result = PostgresConnectionLoader.Load(_directory);
 
 		result.IsSuccess.Should().BeTrue(Describe(result));
 		result.Value.Host.Should().Be("scada-01");
@@ -56,11 +57,11 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	}
 
 	[Fact]
-	public void AValidFileCarriesAResolvedTimeZone()
+	public void AValidSectionCarriesAResolvedTimeZone()
 	{
-		var path = WriteFile(Compose(_validFields));
+		WriteFile(Compose(_validFields));
 
-		var result = PostgresConnectionLoader.Load(path);
+		var result = PostgresConnectionLoader.Load(_directory);
 
 		result.IsSuccess.Should().BeTrue(Describe(result));
 		result.Value.SourceTimeZone.Should().Be(TimeZoneInfo.FindSystemTimeZoneById(ZoneIdentifier));
@@ -69,72 +70,105 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	[Fact]
 	public void ASchemaFieldAbsentDefaultsToPublic()
 	{
-		var path = WriteFile(Compose(_validFields.Where(pair => pair.Field != "schema")));
+		WriteFile(Compose(_validFields.Where(pair => pair.Field != "schema")));
 
-		var result = PostgresConnectionLoader.Load(path);
+		var result = PostgresConnectionLoader.Load(_directory);
 
 		result.IsSuccess.Should().BeTrue(Describe(result));
 		result.Value.Schema.Should().Be("public");
 	}
 
 	[Fact]
-	public void AnAbsentFileYieldsTheNotFoundError()
+	public void TwoFilesOfTheSectionAreMergedIntoOneSettings()
 	{
-		var path = Path.Combine(_directory, "archive-connection.yaml");
+		WriteFile(Compose(_validFields.Take(4)), "a.yaml");
+		WriteFile(Compose(_validFields.Skip(4)), "b.yaml");
 
-		var result = PostgresConnectionLoader.Load(path);
+		var result = PostgresConnectionLoader.Load(_directory);
 
-		var error = result.Errors.OfType<ConnectionFileError>().Should().ContainSingle().Which;
-		result.IsFailed.Should().BeTrue();
-		error.Kind.Should().Be(ConnectionFileProblem.NotFound);
-		error.Path.Should().Be(path);
+		result.IsSuccess.Should().BeTrue(Describe(result));
+		result.Value.Host.Should().Be("scada-01");
+		result.Value.Password.Should().Be("s3cret");
+	}
+
+	[Fact]
+	public void AnAbsentSectionYieldsASectionErrorRatherThanAThrow()
+	{
+		var absent = Path.Combine(_directory, "connection");
+
+		var result = PostgresConnectionLoader.Load(absent);
+
+		var error = SectionErrorOf(result);
+		error.Problem.Should().Be(SectionProblem.DirectoryMissing);
+		error.Section.Should().Be(ConfigurationSectionName.Connection);
+		error.Directory.Should().Be(absent);
+	}
+
+	[Fact]
+	public void ASectionWithNoFileYieldsTheNoFilesProblem()
+	{
+		var result = PostgresConnectionLoader.Load(_directory);
+
+		SectionErrorOf(result).Problem.Should().Be(SectionProblem.NoFiles);
+	}
+
+	[Fact]
+	public void AFieldCarriedByTwoFilesYieldsTheKeyConflictProblem()
+	{
+		WriteFile(Compose(_validFields), "a.yaml");
+		WriteFile("host: \"scada-02\"\n", "b.yaml");
+
+		var result = PostgresConnectionLoader.Load(_directory);
+
+		var error = SectionErrorOf(result);
+		error.Problem.Should().Be(SectionProblem.KeyConflict);
+		error.Key.Should().Be("host");
+		error.FileNames.Should().Equal("a.yaml", "b.yaml");
 	}
 
 	[Theory]
 	[InlineData("")]
 	[InlineData("   ")]
-	public void ABlankPathYieldsTheNotFoundErrorRatherThanAThrow(string path)
+	public void ABlankPathYieldsASectionErrorRatherThanAThrow(string path)
 	{
 		var result = PostgresConnectionLoader.Load(path);
 
-		var error = result.Errors.OfType<ConnectionFileError>().Should().ContainSingle().Which;
-		error.Kind.Should().Be(ConnectionFileProblem.NotFound);
-		error.Path.Should().Be(path);
+		SectionErrorOf(result).Problem.Should().Be(SectionProblem.DirectoryMissing);
 	}
 
-	// A directory stands in for every path that exists and cannot be read: the file is there, so telling
-	// the operator the YAML is malformed would send them to fix the wrong thing.
 	[Fact]
-	public void APathThatCannotBeOpenedYieldsTheUnreadableDiscriminator()
+	public void UnreadableYamlYieldsTheSectionUnreadableProblem()
 	{
+		WriteFile("host: [scada-01\nport: :\n");
+
 		var result = PostgresConnectionLoader.Load(_directory);
 
-		var error = result.Errors.OfType<ConnectionFileError>().Should().ContainSingle().Which;
+		var error = SectionErrorOf(result);
+		error.Problem.Should().Be(SectionProblem.Unreadable);
+		error.FileNames.Should().Equal("connection.yaml");
+	}
+
+	// The merged text is well-formed YAML; a value the DTO's own type cannot take is what still throws here.
+	[Fact]
+	public void AFieldWhoseValueTheFormatRejectsYieldsTheUnparseableDiscriminator()
+	{
+		WriteFile(Compose(Replace("port", "\"not-a-number\"")));
+
+		var result = PostgresConnectionLoader.Load(_directory);
+
+		var error = ErrorOf(result);
 		error.Path.Should().Be(_directory);
-		error.Kind.Should().Be(ConnectionFileProblem.Unreadable);
-	}
-
-	[Fact]
-	public void UnreadableYamlYieldsTheUnparseableDiscriminator()
-	{
-		var path = WriteFile("host: [scada-01\nport: :\n");
-
-		var result = PostgresConnectionLoader.Load(path);
-
-		var error = result.Errors.OfType<ConnectionFileError>().Should().ContainSingle().Which;
-		error.Path.Should().Be(path);
 		error.Kind.Should().Be(ConnectionFileProblem.Unparseable);
 	}
 
 	[Fact]
-	public void AnEmptyFileYieldsTheUnparseableDiscriminator()
+	public void AnEmptyFileYieldsTheMissingFieldDiscriminator()
 	{
-		var path = WriteFile(string.Empty);
+		WriteFile(string.Empty);
 
-		var result = PostgresConnectionLoader.Load(path);
+		var result = PostgresConnectionLoader.Load(_directory);
 
-		var error = result.Errors.OfType<ConnectionFileError>().Should().ContainSingle().Which;
-		error.Kind.Should().Be(ConnectionFileProblem.Unparseable);
+		ErrorOf(result).Kind.Should().Be(ConnectionFileProblem.MissingField);
 	}
 
 	[Theory]
@@ -147,12 +181,12 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	[InlineData("poll_interval_ms")]
 	public void AnAbsentRequiredFieldYieldsTheMissingFieldDiscriminator(string field)
 	{
-		var path = WriteFile(Compose(_validFields.Where(pair => pair.Field != field)));
+		WriteFile(Compose(_validFields.Where(pair => pair.Field != field)));
 
-		var result = PostgresConnectionLoader.Load(path);
+		var result = PostgresConnectionLoader.Load(_directory);
 
-		var error = result.Errors.OfType<ConnectionFileError>().Should().ContainSingle().Which;
-		error.Path.Should().Be(path);
+		var error = ErrorOf(result);
+		error.Path.Should().Be(_directory);
 		error.Kind.Should().Be(ConnectionFileProblem.MissingField);
 		error.Reason.Should().Contain(field);
 	}
@@ -160,11 +194,11 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	[Fact]
 	public void ABlankRequiredFieldYieldsTheMissingFieldDiscriminator()
 	{
-		var path = WriteFile(Compose(Replace("host", "\"   \"")));
+		WriteFile(Compose(Replace("host", "\"   \"")));
 
-		var result = PostgresConnectionLoader.Load(path);
+		var result = PostgresConnectionLoader.Load(_directory);
 
-		var error = result.Errors.OfType<ConnectionFileError>().Should().ContainSingle().Which;
+		var error = ErrorOf(result);
 		error.Kind.Should().Be(ConnectionFileProblem.MissingField);
 		error.Reason.Should().Contain("host");
 	}
@@ -172,12 +206,12 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	[Fact]
 	public void AnUnknownTimeZoneYieldsTheUnknownTimeZoneDiscriminator()
 	{
-		var path = WriteFile(Compose(Replace("source_time_zone", "\"Mars/Olympus_Mons\"")));
+		WriteFile(Compose(Replace("source_time_zone", "\"Mars/Olympus_Mons\"")));
 
-		var result = PostgresConnectionLoader.Load(path);
+		var result = PostgresConnectionLoader.Load(_directory);
 
-		var error = result.Errors.OfType<ConnectionFileError>().Should().ContainSingle().Which;
-		error.Path.Should().Be(path);
+		var error = ErrorOf(result);
+		error.Path.Should().Be(_directory);
 		error.Kind.Should().Be(ConnectionFileProblem.UnknownTimeZone);
 		error.Reason.Should().Contain("Mars/Olympus_Mons");
 	}
@@ -186,11 +220,11 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	public void EveryAbsentFieldIsReportedInOneError()
 	{
 		var absent = new[] { "host", "poll_interval_ms" };
-		var path = WriteFile(Compose(_validFields.Where(pair => !absent.Contains(pair.Field))));
+		WriteFile(Compose(_validFields.Where(pair => !absent.Contains(pair.Field))));
 
-		var result = PostgresConnectionLoader.Load(path);
+		var result = PostgresConnectionLoader.Load(_directory);
 
-		var error = result.Errors.OfType<ConnectionFileError>().Should().ContainSingle().Which;
+		var error = ErrorOf(result);
 		error.Kind.Should().Be(ConnectionFileProblem.MissingField);
 		absent.Should().AllSatisfy(field => error.Reason.Should().Contain(field));
 	}
@@ -203,12 +237,12 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	[InlineData("poll_interval_ms", "-1")]
 	public void AValueOutsideItsRangeYieldsTheOutOfRangeDiscriminator(string field, string value)
 	{
-		var path = WriteFile(Compose(Replace(field, value)));
+		WriteFile(Compose(Replace(field, value)));
 
-		var result = PostgresConnectionLoader.Load(path);
+		var result = PostgresConnectionLoader.Load(_directory);
 
-		var error = result.Errors.OfType<ConnectionFileError>().Should().ContainSingle().Which;
-		error.Path.Should().Be(path);
+		var error = ErrorOf(result);
+		error.Path.Should().Be(_directory);
 		error.Kind.Should().Be(ConnectionFileProblem.OutOfRange);
 		error.Reason.Should().Contain(field);
 	}
@@ -218,27 +252,25 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	[InlineData("65535")]
 	public void APortAtTheEdgeOfItsRangeIsAccepted(string value)
 	{
-		var path = WriteFile(Compose(Replace("port", value)));
+		WriteFile(Compose(Replace("port", value)));
 
-		var result = PostgresConnectionLoader.Load(path);
+		var result = PostgresConnectionLoader.Load(_directory);
 
 		result.IsSuccess.Should().BeTrue(Describe(result));
 	}
 
 	[Fact]
-	public void TheFourInvalidStatesAreSeparatedByTheirDiscriminator()
+	public void TheThreeInvalidStatesAreSeparatedByTheirDiscriminator()
 	{
 		var kinds = new[]
 		{
-			KindOf(WriteFile("host: [scada-01\n")),
-			KindOf(WriteFile(Compose(_validFields.Where(pair => pair.Field != "host")))),
-			KindOf(WriteFile(Compose(Replace("port", "0")))),
-			KindOf(WriteFile(Compose(Replace("source_time_zone", "\"Mars/Olympus_Mons\""))))
+			KindOf(Compose(_validFields.Where(pair => pair.Field != "host"))),
+			KindOf(Compose(Replace("port", "0"))),
+			KindOf(Compose(Replace("source_time_zone", "\"Mars/Olympus_Mons\"")))
 		};
 
 		kinds.Should().Equal(
 			[
-				ConnectionFileProblem.Unparseable,
 				ConnectionFileProblem.MissingField,
 				ConnectionFileProblem.OutOfRange,
 				ConnectionFileProblem.UnknownTimeZone
@@ -247,13 +279,13 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 	// A parser message embeds the offending scalar, and the password is a scalar.
 	[Fact]
-	public void AnUnparseableFileCarriesItsCausingExceptionAndNotItsText()
+	public void AnUnparseableSectionCarriesItsCausingExceptionAndNotItsText()
 	{
-		var path = WriteFile("host: [scada-01\nport: :\n");
+		WriteFile(Compose(Replace("port", "\"scada-01\"")));
 
-		var result = PostgresConnectionLoader.Load(path);
+		var result = PostgresConnectionLoader.Load(_directory);
 
-		var error = result.Errors.OfType<ConnectionFileError>().Should().ContainSingle().Which;
+		var error = ErrorOf(result);
 		var caused = error.Reasons.OfType<ExceptionalError>().Should().ContainSingle().Which;
 
 		caused.Exception.Should().NotBeNull();
@@ -264,11 +296,11 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	[Fact]
 	public void AnUnknownTimeZoneCarriesItsCausingException()
 	{
-		var path = WriteFile(Compose(Replace("source_time_zone", "\"Mars/Olympus_Mons\"")));
+		WriteFile(Compose(Replace("source_time_zone", "\"Mars/Olympus_Mons\"")));
 
-		var result = PostgresConnectionLoader.Load(path);
+		var result = PostgresConnectionLoader.Load(_directory);
 
-		var error = result.Errors.OfType<ConnectionFileError>().Should().ContainSingle().Which;
+		var error = ErrorOf(result);
 		var caused = error.Reasons.OfType<ExceptionalError>().Should().ContainSingle().Which;
 
 		caused.Exception.Should().BeOfType<TimeZoneNotFoundException>();
@@ -278,9 +310,9 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	public void APasswordCarryingSeparatorsRoundTripsThroughTheBuilder()
 	{
 		const string Password = "pa;ss'word";
-		var path = WriteFile(Compose(Replace("password", $"\"{Password}\"")));
+		WriteFile(Compose(Replace("password", $"\"{Password}\"")));
 
-		var result = PostgresConnectionLoader.Load(path);
+		var result = PostgresConnectionLoader.Load(_directory);
 
 		result.IsSuccess.Should().BeTrue(Describe(result));
 
@@ -299,9 +331,9 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	[Fact]
 	public void TheConnectionStringSendsNoStatementTimeoutAndCarriesTheClientBackstop()
 	{
-		var path = WriteFile(Compose(_validFields));
+		WriteFile(Compose(_validFields));
 
-		var result = PostgresConnectionLoader.Load(path);
+		var result = PostgresConnectionLoader.Load(_directory);
 
 		result.IsSuccess.Should().BeTrue(Describe(result));
 
@@ -319,9 +351,9 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	public void TheSettingsNeverPrintThePassword()
 	{
 		const string Password = "pa;ss'word";
-		var path = WriteFile(Compose(Replace("password", $"\"{Password}\"")));
+		WriteFile(Compose(Replace("password", $"\"{Password}\"")));
 
-		var result = PostgresConnectionLoader.Load(path);
+		var result = PostgresConnectionLoader.Load(_directory);
 
 		result.IsSuccess.Should().BeTrue(Describe(result));
 
@@ -346,17 +378,38 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 		return string.Join("; ", result.Errors.Select(error => error.Message));
 	}
 
-	private static ConnectionFileProblem KindOf(string path)
+	private static ConnectionFileError ErrorOf(Result<PostgresConnectionSettings> result)
 	{
-		return PostgresConnectionLoader.Load(path).Errors.OfType<ConnectionFileError>().Single().Kind;
+		result.IsFailed.Should().BeTrue();
+
+		return result.Errors.OfType<ConnectionFileError>().Should().ContainSingle().Which;
 	}
 
-	private string WriteFile(string content)
+	private static ConfigurationSectionError SectionErrorOf(Result<PostgresConnectionSettings> result)
 	{
-		var path = Path.Combine(_directory, $"{Guid.NewGuid():N}.yaml");
+		result.IsFailed.Should().BeTrue();
 
-		File.WriteAllText(path, content);
+		return result.Errors.OfType<ConfigurationSectionError>().Should().ContainSingle().Which;
+	}
 
-		return path;
+	private static ConnectionFileProblem KindOf(string content)
+	{
+		var section = Directory.CreateTempSubdirectory("semiplot-connection-kind-").FullName;
+
+		File.WriteAllText(Path.Combine(section, "connection.yaml"), content);
+
+		try
+		{
+			return PostgresConnectionLoader.Load(section).Errors.OfType<ConnectionFileError>().Single().Kind;
+		}
+		finally
+		{
+			Directory.Delete(section, recursive: true);
+		}
+	}
+
+	private void WriteFile(string content, string name = "connection.yaml")
+	{
+		File.WriteAllText(Path.Combine(_directory, name), content);
 	}
 }

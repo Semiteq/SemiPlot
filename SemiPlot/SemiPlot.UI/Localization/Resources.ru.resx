@@ -69,32 +69,20 @@
   <data name="FailureThrownRemedy" xml:space="preserve">
     <value>Эта сборка не разбирает такой отказ отдельно. Передайте журнал SemiPlot: в нём есть запись и трассировка стека.</value>
   </data>
-  <data name="FailureConnectionFileNotFoundTitle" xml:space="preserve">
-    <value>Файл подключения не найден</value>
-  </data>
-  <data name="FailureConnectionFileNotFoundDetail" xml:space="preserve">
-    <value>SemiPlot искал файл подключения к архиву по пути «{0}» и ничего там не нашёл.</value>
-  </data>
-  <data name="FailureConnectionFileNotFoundRemedy" xml:space="preserve">
-    <value>Создайте этот файл или запустите SemiPlot с --config-dir, указав каталог, где он лежит.</value>
-  </data>
   <data name="FailureConnectionFileRejectedTitle" xml:space="preserve">
-    <value>Файл подключения не читается</value>
+    <value>Настройки подключения к архиву не читаются</value>
   </data>
   <data name="FailureConnectionFileRejectedDetail" xml:space="preserve">
-    <value>Файл подключения «{0}» есть на месте, но отклонён: {1}</value>
+    <value>Каталог подключения «{0}» отклонён: {1}</value>
   </data>
   <data name="FailureConnectionFileRejectedRemedy" xml:space="preserve">
-    <value>Исправьте файл по пути выше: причина называет, что именно отклонено.</value>
-  </data>
-  <data name="FailureConnectionFileUnreadableRemedy" xml:space="preserve">
-    <value>Дайте учётной записи, под которой работает SemiPlot, право на чтение файла и закройте программу, которая его держит.</value>
+    <value>Исправьте файлы в каталоге выше: причина называет, что именно отклонено.</value>
   </data>
   <data name="FailureConnectionFileUnparseableRemedy" xml:space="preserve">
-    <value>Исправьте синтаксис YAML в файле: причина выше называет место, на котором разбор остановился.</value>
+    <value>Исправьте синтаксис YAML в файлах этого каталога: причина выше называет место, на котором разбор остановился.</value>
   </data>
   <data name="FailureConnectionFileMissingFieldRemedy" xml:space="preserve">
-    <value>Добавьте в файл поле, названное в причине. Обязательны все поля формата.</value>
+    <value>Добавьте в файл этого каталога поле, названное в причине. Обязательны все поля формата.</value>
   </data>
   <data name="FailureConnectionFileOutOfRangeRemedy" xml:space="preserve">
     <value>Приведите значение, названное в причине, к диапазону, который она указывает.</value>
@@ -195,34 +183,106 @@
   <data name="FailureStartupReadArchiveExtent" xml:space="preserve">
     <value>границы архива</value>
   </data>
-  <data name="FailureAppSettingsNotFoundTitle" xml:space="preserve">
-    <value>Файл настроек интерфейса не найден</value>
-  </data>
-  <data name="FailureAppSettingsNotFoundDetail" xml:space="preserve">
-    <value>SemiPlot искал файл настроек интерфейса по пути «{0}» и ничего там не нашёл.</value>
-  </data>
-  <data name="FailureAppSettingsNotFoundRemedy" xml:space="preserve">
-    <value>Создайте этот файл с ключами «locale» и «theme» или запустите SemiPlot с --config-dir, указав каталог, где он лежит.</value>
-  </data>
   <data name="FailureAppSettingsRejectedTitle" xml:space="preserve">
-    <value>Файл настроек интерфейса не читается</value>
+    <value>Настройки интерфейса не читаются</value>
   </data>
   <data name="FailureAppSettingsUnreadableDetail" xml:space="preserve">
-    <value>Файл настроек интерфейса «{0}» есть на месте, но прочитать или разобрать его не удалось.</value>
+    <value>Каталог настроек интерфейса «{0}» прочитан, но разобрать его не удалось.</value>
   </data>
   <data name="FailureAppSettingsUnreadableRemedy" xml:space="preserve">
-    <value>Дайте учётной записи, под которой работает SemiPlot, право на чтение файла и исправьте синтаксис YAML.</value>
+    <value>Дайте учётной записи, под которой работает SemiPlot, право на чтение этого каталога и исправьте синтаксис YAML в его файлах.</value>
   </data>
   <data name="FailureAppSettingsKeyMissingDetail" xml:space="preserve">
-    <value>В файле настроек интерфейса «{0}» нет ключа «{1}».</value>
+    <value>В каталоге настроек интерфейса «{0}» нет ключа «{1}».</value>
   </data>
   <data name="FailureAppSettingsKeyMissingRemedy" xml:space="preserve">
-    <value>Добавьте в файл ключ, названный выше. Обязательны оба ключа формата.</value>
+    <value>Добавьте ключ, названный выше, в файл этого каталога. Обязательны оба ключа формата.</value>
   </data>
   <data name="FailureAppSettingsValueInvalidDetail" xml:space="preserve">
-    <value>В файле настроек интерфейса «{0}» ключ «{1}» имеет значение вне своего набора. Допустимые: {2}.</value>
+    <value>В каталоге настроек интерфейса «{0}» ключ «{1}» имеет значение вне своего набора. Допустимые: {2}.</value>
   </data>
   <data name="FailureAppSettingsValueInvalidRemedy" xml:space="preserve">
     <value>Задайте этому ключу одно из допустимых значений и перезапустите SemiPlot.</value>
+  </data>
+  <data name="FailureConfigurationSectionAppTitle" xml:space="preserve">
+    <value>Каталог настроек интерфейса не читается</value>
+  </data>
+  <data name="FailureConfigurationSectionConnectionTitle" xml:space="preserve">
+    <value>Каталог подключения к архиву не читается</value>
+  </data>
+  <data name="FailureConfigurationSectionDirectoryMissingDetail" xml:space="preserve">
+    <value>SemiPlot искал каталог настроек «{0}» и ничего там не нашёл.</value>
+  </data>
+  <data name="FailureConfigurationSectionNoFilesDetail" xml:space="preserve">
+    <value>В каталоге настроек «{0}» нет ни одного файла «*.yaml».</value>
+  </data>
+  <data name="FailureConfigurationSectionUnreadableDetail" xml:space="preserve">
+    <value>Файл «{1}» в каталоге настроек «{0}» не удалось прочитать или разобрать.</value>
+  </data>
+  <data name="FailureConfigurationSectionUnlistableDetail" xml:space="preserve">
+    <value>Каталог настроек «{0}» есть на месте, но получить список его файлов не удалось.</value>
+  </data>
+  <data name="FailureConfigurationSectionKeyConflictDetail" xml:space="preserve">
+    <value>Ключ «{0}» есть сразу в «{1}» и «{2}» в каталоге настроек «{3}».</value>
+  </data>
+  <data name="FailureConfigurationSectionDuplicateKeyDetail" xml:space="preserve">
+    <value>Ключ «{0}» дважды задан в файле «{1}» в каталоге настроек «{2}».</value>
+  </data>
+  <data name="FailureConfigurationSectionAppDirectoryMissingRemedy" xml:space="preserve">
+    <value>Создайте этот каталог с файлом «*.yaml», в котором заданы ключи «locale» и «theme», или запустите SemiPlot с --config-dir, указав каталог, где он лежит.</value>
+  </data>
+  <data name="FailureConfigurationSectionConnectionDirectoryMissingRemedy" xml:space="preserve">
+    <value>Создайте этот каталог с файлом «*.yaml», в котором заданы поля подключения к архиву, или запустите SemiPlot с --config-dir, указав каталог, где он лежит.</value>
+  </data>
+  <data name="FailureConfigurationSectionAppNoFilesRemedy" xml:space="preserve">
+    <value>Положите в этот каталог файл «*.yaml» с ключами «locale» и «theme».</value>
+  </data>
+  <data name="FailureConfigurationSectionConnectionNoFilesRemedy" xml:space="preserve">
+    <value>Положите в этот каталог файл «*.yaml» с полями подключения к архиву.</value>
+  </data>
+  <data name="FailureConfigurationSectionUnreadableRemedy" xml:space="preserve">
+    <value>Дайте учётной записи, под которой работает SemiPlot, право на чтение этого каталога и исправьте синтаксис YAML в его файлах.</value>
+  </data>
+  <data name="FailureConfigurationSectionKeyConflictRemedy" xml:space="preserve">
+    <value>Уберите этот ключ из одного из двух файлов. Ключ может нести только один файл каталога.</value>
+  </data>
+  <data name="FailureConfigurationSectionDuplicateKeyRemedy" xml:space="preserve">
+    <value>Оставьте в файле один такой ключ. Ключ может быть задан в каталоге только один раз.</value>
+  </data>
+  <data name="FailureStartupArgumentsTitle" xml:space="preserve">
+    <value>SemiPlot запущен с неверными аргументами</value>
+  </data>
+  <data name="FailureStartupArgumentsMissingDetail" xml:space="preserve">
+    <value>SemiPlot запущен без обязательного ключа «{0}».</value>
+  </data>
+  <data name="FailureStartupArgumentsMissingRemedy" xml:space="preserve">
+    <value>Добавьте этот ключ со значением в ярлык SemiPlot. Обязательны все три: --config-dir, --log-file и --logging-level.</value>
+  </data>
+  <data name="FailureStartupArgumentsValueMissingDetail" xml:space="preserve">
+    <value>Ключ «{0}» задан без пригодного значения.</value>
+  </data>
+  <data name="FailureStartupArgumentsValueMissingRemedy" xml:space="preserve">
+    <value>Укажите после этого ключа значение в ярлыке SemiPlot.</value>
+  </data>
+  <data name="FailureStartupArgumentsUnknownDetail" xml:space="preserve">
+    <value>SemiPlot не знает аргумент «{0}».</value>
+  </data>
+  <data name="FailureStartupArgumentsUnknownRemedy" xml:space="preserve">
+    <value>Уберите этот аргумент из ярлыка SemiPlot. SemiPlot читает только --config-dir, --log-file и --logging-level.</value>
+  </data>
+  <data name="FailureStartupArgumentsValueInvalidDetail" xml:space="preserve">
+    <value>Ключ «{0}» имеет значение вне своего набора. Допустимые: {1}.</value>
+  </data>
+  <data name="FailureStartupArgumentsValueInvalidRemedy" xml:space="preserve">
+    <value>Задайте этому ключу одно из допустимых значений в ярлыке SemiPlot.</value>
+  </data>
+  <data name="FailureLogFileTitle" xml:space="preserve">
+    <value>Не удалось открыть файл журнала SemiPlot</value>
+  </data>
+  <data name="FailureLogFileDetail" xml:space="preserve">
+    <value>Файл «{0}», заданный ключом --log-file, не открывается на запись: {1}</value>
+  </data>
+  <data name="FailureLogFileRemedy" xml:space="preserve">
+    <value>Исправьте путь в ключе --log-file ярлыка SemiPlot. Диск должен существовать, каталог должен быть доступен на запись, а путь должен указывать на файл, а не на каталог.</value>
   </data>
 </root>

@@ -18,11 +18,24 @@ public static class Program
 	{
 		var options = StartupOptions.Parse(args);
 
-		CreateLogger(options.LogFilePath, options.LoggingLevel);
+		if (options.IsFailed)
+		{
+			return ReportStartupFailure(options.Errors);
+		}
+
+		var logFile = LogFileTarget.Prepare(options.Value.LogFilePath);
+
+		if (logFile.IsFailed)
+		{
+			return ReportStartupFailure(logFile.Errors);
+		}
+
+		CreateLogger(options.Value.LogFilePath, options.Value.LoggingLevel);
+		LogStart(options.Value);
 
 		try
 		{
-			var (settings, startup) = StartupSequence.Run(options);
+			var (settings, startup) = StartupSequence.Run(options.Value);
 
 			if (startup.IsFailed)
 			{
@@ -49,6 +62,24 @@ public static class Program
 		{
 			Log.CloseAndFlush();
 		}
+	}
+
+	// docs/architecture/data-integration.md#startup
+	private static int ReportStartupFailure(IReadOnlyList<IError> errors)
+	{
+		StartupSequence.ApplyBootstrapCulture();
+
+		App.Run(null, Result.Fail<StartupData>(errors));
+
+		return FailedExitCode;
+	}
+
+	private static void LogStart(StartupOptions options)
+	{
+		Log.Information(
+			"SemiPlot starting; configuration {ConfigDir}, logging level {LoggingLevel}",
+			options.ConfigDir,
+			options.LoggingLevel);
 	}
 
 	private static void LogStartupFailure(IReadOnlyList<IError> errors)

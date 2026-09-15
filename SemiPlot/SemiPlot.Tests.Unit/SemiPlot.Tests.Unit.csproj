@@ -27,6 +27,13 @@
     <None Update="Fixtures\real-archive-rows.csv" CopyToOutputDirectory="PreserveNewest"/>
   </ItemGroup>
 
+  <!-- The shipped set is gated by the production loaders reading it out of the test output. -->
+  <ItemGroup>
+    <None Include="..\..\ConfigFiles\**\*"
+          Link="ConfigFiles\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest"/>
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\SemiPlot.Core\SemiPlot.Core.csproj"/>
     <ProjectReference Include="..\SemiPlot.DataSource.Postgres\SemiPlot.DataSource.Postgres.csproj"/>

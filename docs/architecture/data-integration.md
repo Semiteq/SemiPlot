@@ -317,8 +317,14 @@ empty window, an empty `semiplot_tags` — travel in the success channel.
 
 | Type | Fields |
 | --- | --- |
-| `ConnectionFileError` | path, kind (`NotFound` \| `Unreadable` \| `Unparseable` \| `MissingField` \| `OutOfRange` \| `UnknownTimeZone`), reason |
+| `ConnectionFileError` | path, kind (`Unparseable` \| `MissingField` \| `OutOfRange` \| `UnknownTimeZone`), reason |
+| `ConfigurationSectionError` | section (`App` \| `Connection`), directory, problem (`DirectoryMissing` \| `NoFiles` \| `Unlistable` \| `Unreadable` \| `DuplicateKey` \| `KeyConflict`), key, file names |
 | `ArchiveError` | kind (`ArchiveFault`), host, port, database, detail |
+
+`ConfigurationSectionError` lives in `SemiPlot.Core/Configuration/` and is raised by the section
+reader, ahead of any typed deserialize, so reaching the archive at all is not a precondition for it.
+Reading a section folder is the only file access left on the connection path, which is why
+`ConnectionFileError` no longer carries a file-access kind.
 
 | `ArchiveFault` | Raised by | Detail |
 | --- | --- | --- |
@@ -341,9 +347,10 @@ cancellation raises `OperationCanceledException`, which the mapper rethrows.
 
 ## Configuration
 
-A YAML file named `archive-connection.yaml`, read from `C:\DISTR\Config\SemiPlot` unless
-`--config-dir` names another directory. Every key but `schema` is required; an absent required key is
-reported, an unknown key ignored. `schema` defaults to `public` when absent:
+The `connection/` section folder under `--config-dir`, which is a required launch key with no
+default (`overview.md`). `ConfigurationSection.Read` merges every `*.yaml` in that folder into one
+mapping and `PostgresConnectionLoader` deserializes it. Every key but `schema` is required; an
+absent required key is reported, an unknown key ignored. `schema` defaults to `public` when absent:
 
 ```yaml
 host: scada-01
@@ -354,6 +361,10 @@ password: "change me"
 source_time_zone: Europe/Berlin
 poll_interval_ms: 1000
 ```
+
+The set that ships is `ConfigFiles/connection/connection.yaml` in the repository, with an empty
+`password` so it cannot start unedited, and `SemiPlot.Tests.Unit/DeliveredConfigurationTests` runs
+this loader over it.
 
 `source_time_zone` takes any identifier `TimeZoneInfo.FindSystemTimeZoneById` resolves on the
 machine running the viewer: an IANA name such as `Europe/Berlin`, or on Windows the id `tzutil /g`
@@ -369,13 +380,27 @@ Startup splits at the Avalonia boundary because `AfterSetup` is synchronous: a b
 it would hold Avalonia's setup. `StartupSequence.Run` (`SemiPlot.UI/Startup/StartupSequence.cs`)
 therefore holds the ordered blocking steps and `Program.Main` calls it ahead of
 `BuildAvaloniaApp()`, while the reads `InitializeServices` starts inside `AfterSetup` are
-asynchronous:
+asynchronous.
 
-1. Set the bootstrap UI culture to Russian, so a failure naming the settings file itself can be read.
-2. Load `<ConfigDir>/ui/app.yaml` and apply its `locale`. A failure here short-circuits with null
-   settings, before the connection file is touched, so a broken archive cannot mask a broken
+`StartupOptions.Parse(args)` runs ahead of all of it, because the logger's own path is an argument.
+It returns `Result<StartupOptions>`, and on failure `Program.Main` applies the bootstrap culture,
+creates no logger, opens the failure window through `App.Run(null, failure)` and returns 1. On
+success `LogFileTarget.Prepare` opens the file that `--log-file` names, creating its folder, and
+takes the same route on failure: Serilog's file sink reports its own open failure only to
+`Serilog.Debugging.SelfLog` and then writes nowhere, so a mistyped path would otherwise start the
+viewer with no log and no report. Only then is the logger created, and `Program.Main` writes one
+Information line naming the configuration directory and the logging level; a healthy run reaches
+Information nowhere else, so above that level the file `Prepare` opened stays empty until the first
+failure.
+
+`StartupSequence.Run` then takes these steps in order:
+
+1. Set the bootstrap UI culture to Russian, so a failure naming the settings section itself can be
+   read.
+2. Load the `<ConfigDir>/app` section and apply its `locale`. A failure here short-circuits with null
+   settings, before the connection section is touched, so a broken archive cannot mask a broken
    configuration (`ui-text.md`, `ui-theme.md`).
-3. `StartupProbe.Run`: load `<ConfigDir>/archive-connection.yaml` and register
+3. `StartupProbe.Run`: load the `<ConfigDir>/connection` section and register
    `AddPostgresData(settings)`.
 4. Resolve `IDataProvider`, read the pen catalogue, then the archive extent.
 

@@ -4,15 +4,14 @@ namespace SemiPlot.UI.Startup;
 
 public enum AppSettingsProblem
 {
-	NotFound,
 	Unreadable,
 	KeyMissing,
 	ValueInvalid
 }
 
 /// <summary>
-/// The interface settings file could not be turned into settings. <see cref="Kind"/> is what the
-/// operator's remedy routes on; <see cref="Key"/> names the offending key, never the file's own values.
+/// The interface settings section could not be turned into settings. <see cref="Kind"/> is what the
+/// operator's remedy routes on; <see cref="Key"/> names the offending key, never the section's own values.
 /// </summary>
 public sealed class AppSettingsError(
 	string path,
@@ -33,14 +32,12 @@ public sealed class AppSettingsError(
 	{
 		return kind switch
 		{
-			AppSettingsProblem.NotFound =>
-				$"The interface settings file '{path}' does not exist.",
 			AppSettingsProblem.KeyMissing =>
-				$"The interface settings file '{path}' carries no '{key}' key.",
+				$"The interface settings folder '{path}' carries no '{key}' key.",
 			AppSettingsProblem.ValueInvalid =>
-				$"The interface settings file '{path}' holds a '{key}' outside its values ({acceptedValues}).",
+				$"The interface settings folder '{path}' holds a '{key}' outside its values ({acceptedValues}).",
 			_ =>
-				$"The interface settings file '{path}' cannot be read."
+				$"The interface settings folder '{path}' cannot be read."
 		};
 	}
 }

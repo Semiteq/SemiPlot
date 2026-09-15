@@ -10,25 +10,18 @@ internal sealed record StartupOutcome(AppSettings? Settings, Result<StartupData>
 /// <summary>docs/architecture/data-integration.md#startup</summary>
 internal static class StartupSequence
 {
-	internal const string SettingsDirectoryName = "ui";
+	internal const string SettingsDirectoryName = "app";
 
-	internal const string SettingsFileName = "app.yaml";
-
-	/// <summary>The language a failure reporting the settings file itself is read in.</summary>
+	/// <summary>The language a failure reporting the settings section itself is read in.</summary>
 	internal const UiLanguage BootstrapLocale = UiLanguage.Ru;
 
 	private static readonly CultureInfo _bootstrapCulture = CultureFor(BootstrapLocale);
 
-	internal static string SettingsPath(string configDirectory)
-	{
-		return Path.Combine(configDirectory, SettingsDirectoryName, SettingsFileName);
-	}
-
 	internal static StartupOutcome Run(StartupOptions options)
 	{
-		ApplyCulture(_bootstrapCulture);
+		ApplyBootstrapCulture();
 
-		var settings = AppSettingsLoader.Load(SettingsPath(options.ConfigDir));
+		var settings = AppSettingsLoader.Load(Path.Combine(options.ConfigDir, SettingsDirectoryName));
 
 		if (settings.IsFailed)
 		{
@@ -38,6 +31,11 @@ internal static class StartupSequence
 		ApplyCulture(CultureFor(settings.Value.Locale));
 
 		return new StartupOutcome(settings.Value, StartupProbe.Run(options));
+	}
+
+	internal static void ApplyBootstrapCulture()
+	{
+		ApplyCulture(_bootstrapCulture);
 	}
 
 	internal static CultureInfo CultureFor(UiLanguage locale)

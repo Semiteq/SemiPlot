@@ -12,9 +12,22 @@ Solution: `SemiPlot.slnx`. All commands run from repository root.
 ```powershell
 dotnet build SemiPlot/SemiPlot.UI/SemiPlot.UI.csproj    # recommended (entry executable)
 dotnet build SemiPlot.slnx                     # all projects
-dotnet run   --project SemiPlot/SemiPlot.UI/SemiPlot.UI.csproj
 dotnet format SemiPlot.slnx                    # pre-commit hook enforces this
 ```
+
+`dotnet run` on the viewer needs all three launch keys — `--config-dir`, `--log-file` and
+`--logging-level` — and none has a default; a missing or bad one opens the failure window and exits
+1. The run reads a copy of the tracked set, never the tracked set itself: `readme.md` holds the
+copy-and-fill-the-password recipe that produces `SemiPlot/Artifacts/dev-config`, which is also where
+the `.zed/` and `.run/` launchers point `--config-dir`.
+
+Configuration is a tree of section folders under `--config-dir`: `app/` and `connection/`. Every
+section folder is read whole — each `*.yaml` in it parsed on its own and merged at the key level —
+and a key carried by two files of one folder is a startup failure naming both. The set that ships is
+tracked at `ConfigFiles/` and gated by the production loaders in
+`SemiPlot.Tests.Unit/DeliveredConfigurationTests`; `ConfigFiles/connection/connection.yaml` carries
+an empty `password`, which is a named startup failure. The password goes into the copy, never into
+the tracked file (`docs/architecture/overview.md`).
 
 `.editorconfig`'s style and quality analyzer rules fail `dotnet build` (`TreatWarningsAsErrors`,
 `EnforceCodeStyleInBuild`) and `dotnet format SemiPlot.slnx --verify-no-changes` alike, so a
@@ -52,15 +65,18 @@ produce the same archive. `--admin-connection` is optional and only fills `semip
 `converge` is a separate, bench-only subcommand: unlike the seeding run above, it does issue `DROP
 DATABASE ... WITH (FORCE)`. It waits for `--admin-connection` up to 60 s, recreates the database
 `--connection` names from `semiplot_provisioned`, seeds it up to `--end` or this machine's clock,
-fills the tag catalogue and writes `archive-connection.yaml` plus `ui/app.yaml` into `--config-dir`,
-the first with the bench reader role's fixed password
-(`docs/architecture/bench.md#the-converge-verb`):
+fills the tag catalogue and writes `connection/connection.yaml` into `--config-dir` with the bench
+reader role's fixed password. That one file is all it writes, so run it against a directory that
+already holds a copy of the tracked set (`docs/architecture/bench.md#the-converge-verb`):
 
 ```powershell
+New-Item -ItemType Directory -Force SemiPlot\Artifacts\dev-config | Out-Null
+Copy-Item ConfigFiles\* SemiPlot\Artifacts\dev-config -Recurse -Force
+
 dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.ArchiveSeeder.csproj -- converge `
   --connection "Host=localhost;Port=55432;Database=semiplot_app;Username=scada_writer;Password=<writer>" `
   --admin-connection "Host=localhost;Port=55432;Database=postgres;Username=postgres;Password=<super>" `
-  --config-dir SemiPlot/Artifacts/bench-config
+  --config-dir SemiPlot\Artifacts\dev-config
 ```
 
 The demo writer is the same seeder run with `--follow <seconds>` instead of `--end`: it appends to
@@ -73,6 +89,12 @@ the viewer — in dependency order and stops them together:
 ```powershell
 dotnet run --project SemiPlot/SemiPlot.AppHost
 ```
+
+The stand copies `ConfigFiles/` into `%TEMP%\SemiPlot\ConfigFiles`, points the log at
+`%TEMP%\SemiPlot\Logs`, hands both to the processes it launches, and removes the configuration copy
+when it stops; the logs are swept at the next start instead, because the viewer may still hold
+`semiplot.log` open (`docs/architecture/bench.md#the-demos-directories`). Nothing writes into the
+tracked set.
 
 ## Test
 

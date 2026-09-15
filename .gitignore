@@ -406,3 +406,6 @@ FodyWeavers.xsd
 *.local.json
 
 .claude/worktrees/
+
+# Build output and the per-developer launch directories the .zed/ and .run/ launchers point at
+SemiPlot/Artifacts/

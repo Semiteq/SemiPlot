@@ -93,10 +93,10 @@ flowchart TB
         ds["NpgsqlDataSource<br/>pooled connections"]
         conv["ArchiveTimeConverter<br/>naive local ⇄ UTC"]
         mapper["ArchiveExceptionMapper<br/>SQLSTATE → typed error"]
-        loader["PostgresConnectionLoader<br/>archive-connection.yaml<br/>eight keys"]
+        loader["PostgresConnectionLoader<br/>the connection/ section<br/>eight keys"]
     end
 
-    errs["SemiPlot.Core/Data/Errors<br/>ten sealed types"]
+    errs["SemiPlot.Core/Data/Errors<br/>two sealed errors, two enums"]
 
     ui --> coord --> iface
     iface --> pg

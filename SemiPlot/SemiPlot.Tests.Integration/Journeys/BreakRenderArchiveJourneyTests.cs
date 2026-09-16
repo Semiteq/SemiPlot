@@ -16,6 +16,7 @@ using SemiPlot.DataSource.Postgres;
 using SemiPlot.Tools.ArchiveSeeder;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
+using SemiPlot.UI.Messages;
 
 using Xunit;
 
@@ -74,7 +75,11 @@ public sealed class BreakRenderArchiveJourneyTests(
 		using var coordinator = new TrendCoordinator(
 			dataProvider, catalogue.Value, dataScheduler, ImmediateScheduler.Instance);
 		using var chart = new TrendChartViewModel(
-			coordinator, dataScheduler, ImmediateScheduler.Instance, NullLogger<TrendChartViewModel>.Instance);
+			coordinator,
+			dataScheduler,
+			ImmediateScheduler.Instance,
+			new MessagePanelViewModel(),
+			NullLogger<TrendChartViewModel>.Instance);
 
 		foreach (var pen in catalogue.Value)
 		{

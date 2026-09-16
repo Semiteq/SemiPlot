@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
@@ -91,6 +92,14 @@ internal sealed class FakeDataProvider(
 	// share a timestamp.
 	public bool StaggerRealtimeTimestamps { get; set; }
 
+	// A window the batch projection cannot build: enumerating it throws, which is what a defect inside
+	// TrendCoordinator.BuildRealtimeBatch looks like from the pipeline's side.
+	public bool PoisonRealtimeWindow { get; set; }
+
+	// A provider that ends the live edge with OnError, the one terminal message TrendCoordinator.Start
+	// has to survive. The real provider catches everything inside its poll, so only this fake reaches it.
+	public Exception? RealtimeStreamFailure { get; set; }
+
 	public IObservable<ArchiveConnectionState> ConnectionFaults => _connectionFaults;
 
 	// The seam a test drives the connection banner from: the fake runs no poll, so nothing else would ever
@@ -102,11 +111,18 @@ internal sealed class FakeDataProvider(
 
 	public IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<int> penIds)
 	{
+		if (RealtimeStreamFailure is { } failure)
+		{
+			return Observable.Throw<IReadOnlyList<Sample>>(failure, _scheduler);
+		}
+
 		var subscribed = penIds.Where(id => Pens.Any(pen => pen.PenId == id)).ToArray();
 
 		return Observable
 			.Interval(_realtimeInterval, _scheduler)
-			.Select(tick => (IReadOnlyList<Sample>)[.. subscribed
+			.Select(tick => PoisonRealtimeWindow
+				? (IReadOnlyList<Sample>)new PoisonedSampleList()
+				: [.. subscribed
 				.Select((id, index) => new Sample(
 					id,
 					_realtimeEpoch
@@ -186,5 +202,22 @@ internal sealed class FakeDataProvider(
 		}
 
 		return Task.FromResult(Result.Ok(ArchiveExtentOverride ?? new ArchiveExtent(ArchiveFirstUtc, ArchiveLastUtc)));
+	}
+
+	private sealed class PoisonedSampleList : IReadOnlyList<Sample>
+	{
+		public int Count => 1;
+
+		public Sample this[int index] => throw new InvalidOperationException("Poisoned realtime window.");
+
+		public IEnumerator<Sample> GetEnumerator()
+		{
+			throw new InvalidOperationException("Poisoned realtime window.");
+		}
+
+		IEnumerator IEnumerable.GetEnumerator()
+		{
+			return GetEnumerator();
+		}
 	}
 }

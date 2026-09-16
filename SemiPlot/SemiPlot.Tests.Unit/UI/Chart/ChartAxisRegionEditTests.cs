@@ -13,6 +13,7 @@ using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
+using SemiPlot.UI.Messages;
 
 using Xunit;
 
@@ -92,6 +93,22 @@ public sealed class ChartAxisRegionEditTests
 		viewModel.IsDragging.Should().BeFalse();
 	}
 
+	// The axis click editor is the one path that sets a pen's two bounds, and the axis has to carry them.
+	[AvaloniaFact]
+	public void AxisEditorPath_PutsBothBoundsOnTheRenderedAxis()
+	{
+		var viewModel = CreateLoadedViewModel();
+		var (region, dataRect) = RenderRegion(viewModel);
+
+		ApplyEdit(viewModel, typedBound: 120.0, editsMax: region.IsUpperHalf(dataRect.Top + 1f));
+		ApplyEdit(viewModel, typedBound: -20.0, editsMax: region.IsUpperHalf(dataRect.Bottom - 1f));
+
+		viewModel.Plot.RenderInMemory(PlotWidth, PlotHeight);
+		var axis = viewModel.ActivePenAxis!;
+		axis.Range.Min.Should().Be(-20.0);
+		axis.Range.Max.Should().Be(120.0);
+	}
+
 	[AvaloniaFact]
 	public void ActivePenAxis_ResolvesToTheInstanceThePenRendersAgainst()
 	{
@@ -129,7 +146,11 @@ public sealed class ChartAxisRegionEditTests
 			ImmediateScheduler.Instance,
 			_batchWindow);
 		var viewModel = new TrendChartViewModel(
-			coordinator, scheduler, ImmediateScheduler.Instance, NullLogger<TrendChartViewModel>.Instance);
+			coordinator,
+			scheduler,
+			ImmediateScheduler.Instance,
+			new MessagePanelViewModel(),
+			NullLogger<TrendChartViewModel>.Instance);
 		var state = viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
 		state.LoadHistory(new PenHistoryEnvelope(
 			1,

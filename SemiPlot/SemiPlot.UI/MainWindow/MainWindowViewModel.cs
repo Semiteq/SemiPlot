@@ -1,29 +1,64 @@
+using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
+using System.Reactive.Subjects;
+
+using FluentResults;
+
+using Microsoft.Extensions.Logging;
 
 using ReactiveUI;
 
-using SemiPlot.Core.Data;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.Legend;
+using SemiPlot.UI.Messages;
 using SemiPlot.UI.Minimap;
-using SemiPlot.UI.Toolbar;
+using SemiPlot.UI.Navigation;
 
 namespace SemiPlot.UI.MainWindow;
 
 public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 {
-	private readonly CompositeDisposable _subscriptions = [];
+	private readonly Subject<AboutInfo> _aboutRequests = new();
+	private readonly CompositeDisposable _disposables = [];
+	private readonly Subject<Unit> _exitRequests = new();
 
-	private ObservableAsPropertyHelper<string?>? _archiveConnectionMessage;
+	private readonly ILogger<MainWindowViewModel> _logger;
 
-	// Not re-notified when pens change after assignment.
-	public int PenCount => ChartViewModel?.Pens.Count ?? 0;
+	public MainWindowViewModel(
+		MessagePanelViewModel messagePanel,
+		AppStatusBarViewModel statusBar,
+		ILogger<MainWindowViewModel> logger)
+	{
+		MessagePanel = messagePanel;
+		StatusBar = statusBar;
+		_logger = logger;
 
-	/// <summary>
-	/// Chart built, no pens: unfinished provisioning shown as a state, not an error.
-	/// </summary>
-	public bool IsCatalogueEmpty => ChartViewModel is not null && PenCount == 0;
+		_disposables.Add(_aboutRequests);
+		_disposables.Add(_exitRequests);
+
+		_disposables.Add(ToggleNavigationBarCommand = ReactiveCommand.Create(
+			() => { IsNavigationBarVisible = !IsNavigationBarVisible; }));
+		_disposables.Add(ToggleLegendCommand = ReactiveCommand.Create(
+			() => { IsLegendVisible = !IsLegendVisible; }));
+		_disposables.Add(ToggleMinimapCommand = ReactiveCommand.Create(
+			() => { IsMinimapVisible = !IsMinimapVisible; }));
+		_disposables.Add(ExitCommand = ReactiveCommand.Create(
+			() => _exitRequests.OnNext(Unit.Default)));
+		_disposables.Add(ShowAboutCommand = ReactiveCommand.Create(
+			() => _aboutRequests.OnNext(AboutInfo.ForCurrentProcess())));
+	}
+
+	/// <summary>The process-wide panel, owned by the container and shown in the window's panel row.</summary>
+	public MessagePanelViewModel MessagePanel { get; }
+
+	/// <summary>The bar's connection state and layer, owned by the container and shown in the status row.</summary>
+	public AppStatusBarViewModel StatusBar { get; }
+
+	/// <summary>Opening a window is view work, so the window listens and this view model only asks.</summary>
+	public IObservable<AboutInfo> AboutRequests => _aboutRequests.AsObservable();
+
+	public IObservable<Unit> ExitRequests => _exitRequests.AsObservable();
 
 	/// <summary>
 	/// Set only on a failed startup, before a chart is ever built: the message panel shows it and the
@@ -41,60 +76,31 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 
 	public bool HasStartupFailure => StartupFailure is not null;
 
-	/// <summary>
-	/// What the live-edge poll reports about its own connection: null while the archive answers. Its only
-	/// writer is the stream <see cref="ObserveArchiveConnection"/> binds.
-	/// </summary>
-	public string? ArchiveConnectionMessage => _archiveConnectionMessage?.Value;
-
-	public bool HasArchiveConnectionMessage => ArchiveConnectionMessage is not null;
-
-	/// <summary>
-	/// Binds the connection row to the coordinator's republished state stream, which already arrives on
-	/// the UI scheduler. Called once, at startup: a second bind would give the row a second writer.
-	/// </summary>
-	public void ObserveArchiveConnection(IObservable<ArchiveConnectionState> connectionStates)
+	public bool IsNavigationBarVisible
 	{
-		if (_archiveConnectionMessage is not null)
-		{
-			throw new InvalidOperationException(
-				"The archive connection row is already bound. It has one writer, bound once.");
-		}
+		get;
+		private set => this.RaiseAndSetIfChanged(ref field, value);
+	} = true;
 
-		_archiveConnectionMessage = connectionStates
-			.Select(state => state.Fault is { } fault ? ArchiveFailureMapper.Describe(fault) : null)
-			.ToProperty(this, viewModel => viewModel.ArchiveConnectionMessage);
-		_subscriptions.Add(_archiveConnectionMessage);
+	public bool IsLegendVisible
+	{
+		get;
+		private set => this.RaiseAndSetIfChanged(ref field, value);
+	} = true;
 
-		_subscriptions.Add(this
-			.WhenAnyValue(viewModel => viewModel.ArchiveConnectionMessage)
-			.Subscribe(_ => this.RaisePropertyChanged(nameof(HasArchiveConnectionMessage))));
-	}
+	public bool IsMinimapVisible
+	{
+		get;
+		private set => this.RaiseAndSetIfChanged(ref field, value);
+	} = true;
 
 	public TrendChartViewModel? ChartViewModel
 	{
 		get;
-		set
-		{
-			if (ReferenceEquals(field, value))
-			{
-				return;
-			}
-
-			ToolbarViewModel?.Dispose();
-			LegendViewModel?.Dispose();
-			field?.Dispose();
-
-			this.RaiseAndSetIfChanged(ref field, value);
-			this.RaisePropertyChanged(nameof(PenCount));
-			this.RaisePropertyChanged(nameof(IsCatalogueEmpty));
-
-			ToolbarViewModel = value is null ? null : new TrendToolbarViewModel(value);
-			LegendViewModel = value is null ? null : new TrendLegendViewModel(value);
-		}
+		private set => this.RaiseAndSetIfChanged(ref field, value);
 	}
 
-	public TrendToolbarViewModel? ToolbarViewModel
+	public NavigationBarViewModel? NavigationBarViewModel
 	{
 		get;
 		private set => this.RaiseAndSetIfChanged(ref field, value);
@@ -109,17 +115,65 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 	public MinimapViewModel? MinimapViewModel
 	{
 		get;
-		set
+		private set => this.RaiseAndSetIfChanged(ref field, value);
+	}
+
+	public ReactiveCommand<Unit, Unit> ToggleNavigationBarCommand { get; }
+
+	public ReactiveCommand<Unit, Unit> ToggleLegendCommand { get; }
+
+	public ReactiveCommand<Unit, Unit> ToggleMinimapCommand { get; }
+
+	public ReactiveCommand<Unit, Unit> ExitCommand { get; }
+
+	public ReactiveCommand<Unit, Unit> ShowAboutCommand { get; }
+
+	/// <summary>
+	/// Replaces the chart and the two view models built from it, and re-points the status bar at its layer.
+	/// A method rather than a setter: a binding write must not dispose a chart or reach into another bar.
+	/// </summary>
+	public void SetChart(TrendChartViewModel? chartViewModel)
+	{
+		if (ReferenceEquals(ChartViewModel, chartViewModel))
 		{
-			field?.Dispose();
-			this.RaiseAndSetIfChanged(ref field, value);
+			return;
 		}
+
+		NavigationBarViewModel?.Dispose();
+		LegendViewModel?.Dispose();
+		ChartViewModel?.Dispose();
+
+		ChartViewModel = chartViewModel;
+
+		NavigationBarViewModel = chartViewModel is null ? null : new NavigationBarViewModel(chartViewModel);
+		LegendViewModel = chartViewModel is null ? null : new TrendLegendViewModel(chartViewModel);
+		StatusBar.TrackLayer(chartViewModel?.Navigation);
+	}
+
+	/// <summary>
+	/// Replaces the minimap and disposes the one it replaces, for the reason <see cref="SetChart"/> carries.
+	/// </summary>
+	public void SetMinimap(MinimapViewModel? minimapViewModel)
+	{
+		if (ReferenceEquals(MinimapViewModel, minimapViewModel))
+		{
+			return;
+		}
+
+		MinimapViewModel?.Dispose();
+		MinimapViewModel = minimapViewModel;
+	}
+
+	/// <summary>The window's own code-behind route to the panel, for a throw it cannot let escape.</summary>
+	public void ReportFailure(Exception failure)
+	{
+		MessagePanel.TryReportFailure(new ExceptionalError(failure), _logger);
 	}
 
 	public void Dispose()
 	{
-		_subscriptions.Dispose();
-		ToolbarViewModel?.Dispose();
+		_disposables.Dispose();
+		NavigationBarViewModel?.Dispose();
 		LegendViewModel?.Dispose();
 		MinimapViewModel?.Dispose();
 		ChartViewModel?.Dispose();

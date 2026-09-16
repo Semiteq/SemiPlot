@@ -1,33 +1,26 @@
 using System.Reactive;
 using System.Reactive.Disposables;
+using System.Reactive.Linq;
 
 using ReactiveUI;
 
-using SemiPlot.Core.Trends;
 using SemiPlot.UI.Chart;
 
-namespace SemiPlot.UI.Toolbar;
+namespace SemiPlot.UI.Navigation;
 
 // The sticky and delta-mode flags mirror their single sources of truth (the navigation controller and
 // the chart view model).
-public sealed class TrendToolbarViewModel : ReactiveObject, IDisposable
+public sealed class NavigationBarViewModel : ReactiveObject, IDisposable
 {
 	private readonly TrendChartViewModel _chartViewModel;
 	private readonly CompositeDisposable _disposables = [];
+	private readonly ObservableAsPropertyHelper<string> _deltaReadoutText;
 
-	private AggregationLayer _activeLayer;
-	private bool _isSticky;
-
-	public TrendToolbarViewModel(TrendChartViewModel chartViewModel)
+	public NavigationBarViewModel(TrendChartViewModel chartViewModel)
 	{
 		_chartViewModel = chartViewModel;
-		_isSticky = chartViewModel.Navigation.IsSticky;
-		_activeLayer = chartViewModel.Navigation.ActiveLayer;
+		IsSticky = chartViewModel.Navigation.IsSticky;
 
-		_disposables.Add(AutoscaleActiveAxisCommand = ReactiveCommand.Create(
-			() => { _chartViewModel.AutoscaleAxis(_chartViewModel.ActivePenId); }));
-		_disposables.Add(SetActiveAxisLimitsCommand = ReactiveCommand.Create(
-			() => { _chartViewModel.SetAxisLimits(_chartViewModel.ActivePenId, ManualMin, ManualMax); }));
 		_disposables.Add(JumpToNowCommand = ReactiveCommand.Create(_chartViewModel.Navigation.JumpToNow));
 		_disposables.Add(ToggleStickyCommand = ReactiveCommand.Create(
 			() => _chartViewModel.Navigation.SetSticky(!_chartViewModel.Navigation.IsSticky)));
@@ -40,16 +33,12 @@ public sealed class TrendToolbarViewModel : ReactiveObject, IDisposable
 
 		_disposables.Add(_chartViewModel
 			.WhenAnyValue(viewModel => viewModel.DeltaReadoutText)
-			.Subscribe(_ => this.RaisePropertyChanged(nameof(DeltaReadoutText))));
+			.ToProperty(this, bar => bar.DeltaReadoutText, out _deltaReadoutText));
 
 		_disposables.Add(_chartViewModel
 			.WhenAnyValue(viewModel => viewModel.IsDeltaModeEnabled)
 			.Subscribe(isEnabled => IsDeltaModeEnabled = isEnabled));
 	}
-
-	public ReactiveCommand<Unit, Unit> AutoscaleActiveAxisCommand { get; }
-
-	public ReactiveCommand<Unit, Unit> SetActiveAxisLimitsCommand { get; }
 
 	public ReactiveCommand<Unit, Unit> JumpToNowCommand { get; }
 
@@ -57,28 +46,10 @@ public sealed class TrendToolbarViewModel : ReactiveObject, IDisposable
 
 	public ReactiveCommand<Unit, Unit> ToggleDeltaModeCommand { get; }
 
-	public AggregationLayer ActiveLayer
-	{
-		get => _activeLayer;
-		private set => this.RaiseAndSetIfChanged(ref _activeLayer, value);
-	}
-
-	public double ManualMin
-	{
-		get;
-		set => this.RaiseAndSetIfChanged(ref field, value);
-	}
-
-	public double ManualMax
-	{
-		get;
-		set => this.RaiseAndSetIfChanged(ref field, value);
-	} = 1.0;
-
 	public bool IsSticky
 	{
-		get => _isSticky;
-		private set => this.RaiseAndSetIfChanged(ref _isSticky, value);
+		get;
+		private set => this.RaiseAndSetIfChanged(ref field, value);
 	}
 
 	public bool IsDeltaModeEnabled
@@ -87,7 +58,7 @@ public sealed class TrendToolbarViewModel : ReactiveObject, IDisposable
 		private set => this.RaiseAndSetIfChanged(ref field, value);
 	}
 
-	public string DeltaReadoutText => _chartViewModel.DeltaReadoutText;
+	public string DeltaReadoutText => _deltaReadoutText.Value;
 
 	public void Dispose()
 	{
@@ -96,7 +67,6 @@ public sealed class TrendToolbarViewModel : ReactiveObject, IDisposable
 
 	private void OnNavigationWindowChanged(object? sender, NavigationWindow window)
 	{
-		ActiveLayer = window.Layer;
 		IsSticky = _chartViewModel.Navigation.IsSticky;
 	}
 }

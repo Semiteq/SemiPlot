@@ -5,24 +5,14 @@ using SemiPlot.Core.Data.Errors;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.Startup;
 
-namespace SemiPlot.UI.MainWindow;
+namespace SemiPlot.UI.Messages;
 
 /// <summary>
-/// Turns an <see cref="IError"/> into the state the operator reads: three blocks through <see cref="Map"/>,
-/// one line through <see cref="Describe"/>. The only place a remedy is written.
+/// Turns an <see cref="IError"/> into the state the operator reads: a title, a detail and a remedy.
+/// The only place a remedy is written.
 /// </summary>
 public static class ArchiveFailureMapper
 {
-	/// <summary>
-	/// One error as a single line: what happened, then what to do about it.
-	/// </summary>
-	public static string Describe(IError error)
-	{
-		var view = Map(error);
-
-		return $"{view.Detail} {view.Remedy}";
-	}
-
 	public static ArchiveFailureView Map(IError error)
 	{
 		return error switch
@@ -48,22 +38,26 @@ public static class ArchiveFailureMapper
 			StartupArgumentsProblem.Missing => new ArchiveFailureView(
 				Resources.FailureStartupArgumentsTitle,
 				Resources.FormatFailureStartupArgumentsMissingDetail(error.Key),
-				Resources.FailureStartupArgumentsMissingRemedy),
+				Resources.FailureStartupArgumentsMissingRemedy,
+				MessageSeverity.Error),
 
 			StartupArgumentsProblem.ValueMissing => new ArchiveFailureView(
 				Resources.FailureStartupArgumentsTitle,
 				Resources.FormatFailureStartupArgumentsValueMissingDetail(error.Key),
-				Resources.FailureStartupArgumentsValueMissingRemedy),
+				Resources.FailureStartupArgumentsValueMissingRemedy,
+				MessageSeverity.Error),
 
 			StartupArgumentsProblem.ValueInvalid => new ArchiveFailureView(
 				Resources.FailureStartupArgumentsTitle,
 				Resources.FormatFailureStartupArgumentsValueInvalidDetail(error.Key, error.AcceptedValues),
-				Resources.FailureStartupArgumentsValueInvalidRemedy),
+				Resources.FailureStartupArgumentsValueInvalidRemedy,
+				MessageSeverity.Error),
 
 			StartupArgumentsProblem.Unknown => new ArchiveFailureView(
 				Resources.FailureStartupArgumentsTitle,
 				Resources.FormatFailureStartupArgumentsUnknownDetail(error.Key),
-				Resources.FailureStartupArgumentsUnknownRemedy),
+				Resources.FailureStartupArgumentsUnknownRemedy,
+				MessageSeverity.Error),
 
 			_ => throw new ArgumentOutOfRangeException(nameof(error), error.Kind, null)
 		};
@@ -74,7 +68,8 @@ public static class ArchiveFailureMapper
 		return new ArchiveFailureView(
 			Resources.FailureLogFileTitle,
 			Resources.FormatFailureLogFileDetail(error.FilePath, error.Reason),
-			Resources.FailureLogFileRemedy);
+			Resources.FailureLogFileRemedy,
+			MessageSeverity.Error);
 	}
 
 	// This window is read in the bootstrap language: no locale exists yet when the settings section
@@ -86,17 +81,20 @@ public static class ArchiveFailureMapper
 			AppSettingsProblem.KeyMissing => new ArchiveFailureView(
 				Resources.FailureAppSettingsRejectedTitle,
 				Resources.FormatFailureAppSettingsKeyMissingDetail(error.Path, error.Key),
-				Resources.FailureAppSettingsKeyMissingRemedy),
+				Resources.FailureAppSettingsKeyMissingRemedy,
+				MessageSeverity.Error),
 
 			AppSettingsProblem.ValueInvalid => new ArchiveFailureView(
 				Resources.FailureAppSettingsRejectedTitle,
 				Resources.FormatFailureAppSettingsValueInvalidDetail(error.Path, error.Key, error.AcceptedValues),
-				Resources.FailureAppSettingsValueInvalidRemedy),
+				Resources.FailureAppSettingsValueInvalidRemedy,
+				MessageSeverity.Error),
 
 			AppSettingsProblem.Unreadable => new ArchiveFailureView(
 				Resources.FailureAppSettingsRejectedTitle,
 				Resources.FormatFailureAppSettingsUnreadableDetail(error.Path),
-				Resources.FailureAppSettingsUnreadableRemedy),
+				Resources.FailureAppSettingsUnreadableRemedy,
+				MessageSeverity.Error),
 
 			_ => throw new ArgumentOutOfRangeException(nameof(error), error.Kind, null)
 		};
@@ -114,7 +112,8 @@ public static class ArchiveFailureMapper
 				ConnectionFileProblem.OutOfRange => Resources.FailureConnectionFileOutOfRangeRemedy,
 				ConnectionFileProblem.UnknownTimeZone => Resources.FailureConnectionFileUnknownTimeZoneRemedy,
 				_ => Resources.FailureConnectionFileRejectedRemedy
-			});
+			},
+			MessageSeverity.Error);
 	}
 
 	private static ArchiveFailureView MapArchive(ArchiveError error)
@@ -127,44 +126,51 @@ public static class ArchiveFailureMapper
 			ArchiveFault.Unreachable => new ArchiveFailureView(
 				Resources.FailureArchiveUnreachableTitle,
 				Resources.FormatFailureArchiveUnreachableDetail(archive),
-				Resources.FailureArchiveUnreachableRemedy),
+				Resources.FailureArchiveUnreachableRemedy,
+				MessageSeverity.Warning),
 
 			// 28P01 and 28000 are raised before PostgreSQL looks at the database name, so the archive was
 			// never confirmed to exist.
 			ArchiveFault.AccessDenied => new ArchiveFailureView(
 				Resources.FailureArchiveAccessDeniedTitle,
 				Resources.FormatFailureArchiveAccessDeniedDetail(address, error.Detail, error.Database),
-				Resources.FailureArchiveAccessDeniedRemedy),
+				Resources.FailureArchiveAccessDeniedRemedy,
+				MessageSeverity.Error),
 
 			// A wrong database name reaches the server and looks the same as an unprovisioned one.
 			ArchiveFault.DatabaseMissing => new ArchiveFailureView(
 				Resources.FailureArchiveNotProvisionedTitle,
 				Resources.FormatFailureArchiveDatabaseMissingDetail(address, error.Database),
-				Resources.FailureArchiveDatabaseMissingRemedy),
+				Resources.FailureArchiveDatabaseMissingRemedy,
+				MessageSeverity.Error),
 
 			// One provisioning run creates every table SemiPlot reads, so the remedy never depends on which
 			// table is absent.
 			ArchiveFault.TableMissing => new ArchiveFailureView(
 				Resources.FailureArchiveNotProvisionedTitle,
 				Resources.FormatFailureArchiveTableMissingDetail(archive, error.Detail),
-				Resources.FormatFailureArchiveTableMissingRemedy(error.Detail)),
+				Resources.FormatFailureArchiveTableMissingRemedy(error.Detail),
+				MessageSeverity.Error),
 
-			// A lost live edge never opens the startup failure panel: it is drawn as a banner over a chart
-			// that keeps its history, so the words say what is still true as well as what failed.
+			// A lost live edge never opens the startup failure panel: it is drawn over a chart that keeps
+			// its history, so the words say what is still true as well as what failed.
 			ArchiveFault.ConnectionLost => new ArchiveFailureView(
 				Resources.FailureArchiveConnectionLostTitle,
 				Resources.FormatFailureArchiveConnectionLostDetail(archive, error.Detail),
-				Resources.FailureArchiveConnectionLostRemedy),
+				Resources.FailureArchiveConnectionLostRemedy,
+				MessageSeverity.Warning),
 
 			ArchiveFault.ShapeUnexpected => new ArchiveFailureView(
 				Resources.FailureArchiveShapeUnexpectedTitle,
 				Resources.FormatFailureArchiveShapeUnexpectedDetail(archive, error.Detail),
-				Resources.FailureArchiveShapeUnexpectedRemedy),
+				Resources.FailureArchiveShapeUnexpectedRemedy,
+				MessageSeverity.Error),
 
 			ArchiveFault.QueryTimedOut => new ArchiveFailureView(
 				Resources.FailureArchiveQueryTimedOutTitle,
 				Resources.FormatFailureArchiveQueryTimedOutDetail(archive),
-				Resources.FailureArchiveQueryTimedOutRemedy),
+				Resources.FailureArchiveQueryTimedOutRemedy,
+				MessageSeverity.Warning),
 
 			_ => MapReadFailed(error, archive)
 		};
@@ -177,13 +183,15 @@ public static class ArchiveFailureMapper
 			return new ArchiveFailureView(
 				Resources.FailureArchiveReadFailedTitle,
 				Resources.FormatFailureArchiveReadUnnamedDetail(archive),
-				Resources.FailureArchiveReadUnnamedRemedy);
+				Resources.FailureArchiveReadUnnamedRemedy,
+				MessageSeverity.Warning);
 		}
 
 		return new ArchiveFailureView(
 			Resources.FailureArchiveReadFailedTitle,
 			Resources.FormatFailureArchiveReadFailedDetail(archive, error.Detail),
-			Resources.FormatFailureArchiveReadFailedRemedy(error.Detail));
+			Resources.FormatFailureArchiveReadFailedRemedy(error.Detail),
+			MessageSeverity.Warning);
 	}
 
 	private static ArchiveFailureView MapStartupReadTimedOut(StartupReadTimedOutError error)
@@ -191,7 +199,8 @@ public static class ArchiveFailureMapper
 		return new ArchiveFailureView(
 			Resources.FailureStartupReadTimedOutTitle,
 			Resources.FormatFailureStartupReadTimedOutDetail(NameOf(error.Read), error.Bound.TotalSeconds),
-			Resources.FailureStartupReadTimedOutRemedy);
+			Resources.FailureStartupReadTimedOutRemedy,
+			MessageSeverity.Error);
 	}
 
 	private static string NameOf(StartupRead read)
@@ -209,7 +218,8 @@ public static class ArchiveFailureMapper
 		return new ArchiveFailureView(
 			Resources.FailureThrownTitle,
 			Resources.FormatFailureThrownDetail(error.Exception.GetType().Name, error.Exception.Message),
-			Resources.FailureThrownRemedy);
+			Resources.FailureThrownRemedy,
+			MessageSeverity.Error);
 	}
 
 	private static ArchiveFailureView MapUnknown(IError error)
@@ -217,6 +227,7 @@ public static class ArchiveFailureMapper
 		return new ArchiveFailureView(
 			Resources.FailureGenericTitle,
 			error.Message,
-			Resources.FailureUnknownRemedy);
+			Resources.FailureUnknownRemedy,
+			MessageSeverity.Error);
 	}
 }

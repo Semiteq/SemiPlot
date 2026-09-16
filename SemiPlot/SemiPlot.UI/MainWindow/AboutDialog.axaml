@@ -1,0 +1,63 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:SemiPlot.UI.MainWindow"
+        xmlns:text="clr-namespace:SemiPlot.UI.Localization"
+        mc:Ignorable="d"
+        d:DesignWidth="420"
+        d:DesignHeight="180"
+        x:Class="SemiPlot.UI.MainWindow.AboutDialog"
+        x:DataType="local:AboutInfo"
+        Title="{x:Static text:Resources.AboutTitle}"
+        SizeToContent="WidthAndHeight"
+        CanResize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+
+    <StackPanel Margin="16"
+                MinWidth="360"
+                Spacing="12">
+
+        <TextBlock Name="AboutApplicationName"
+                   Text="{Binding ApplicationName}"
+                   FontWeight="Bold"
+                   TextWrapping="Wrap" />
+
+        <Grid ColumnDefinitions="Auto,*"
+              RowDefinitions="Auto,Auto">
+
+            <TextBlock Grid.Row="0"
+                       Grid.Column="0"
+                       Text="{x:Static text:Resources.AboutVersionLabel}"
+                       Margin="0,0,8,0" />
+
+            <TextBlock Grid.Row="0"
+                       Grid.Column="1"
+                       Name="AboutVersion"
+                       Text="{Binding Version}"
+                       TextWrapping="Wrap" />
+
+            <TextBlock Grid.Row="1"
+                       Grid.Column="0"
+                       Text="{x:Static text:Resources.AboutConfigurationLabel}"
+                       Margin="0,4,8,0" />
+
+            <TextBlock Grid.Row="1"
+                       Grid.Column="1"
+                       Name="AboutConfigurationDirectory"
+                       Text="{Binding ConfigurationDirectory}"
+                       TextWrapping="Wrap"
+                       Margin="0,4,0,0" />
+
+        </Grid>
+
+        <Button Name="AboutClose"
+                Content="{x:Static text:Resources.AboutClose}"
+                HorizontalAlignment="Right"
+                Click="OnCloseClick"
+                Padding="12,2" />
+
+    </StackPanel>
+
+</Window>

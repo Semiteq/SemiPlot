@@ -82,7 +82,7 @@ variable list, or it cannot use the key and reads every partition instead.
 
 ```mermaid
 flowchart TB
-    ui["Chart · minimap · toolbar"]
+    ui["Chart · minimap · navigation bar"]
     coord["TrendCoordinator"]
     iface{{"IDataProvider"}}
     pg["PostgresDataProvider<br/>the only implementation"]
@@ -109,11 +109,12 @@ flowchart TB
 ```
 
 The composition root resolves `PostgresDataProvider`, and there is nothing else to resolve: an
-archive that does not answer opens the main window with its message panel filled rather than
+archive that does not answer opens the main window with its startup-failure panel filled rather than
 falling back to invented data, which `data-integration.md` states under **Startup**.
 `ArchiveFailureMapper` turns each public error type into a title, a detail and a remedy — Core's ten
 plus the UI-local `StartupReadTimedOutError`, eleven in all; two of them reach the operator as a
-banner row over a working chart rather than as the startup panel. Every member of `IDataProvider` is
+message-panel entry under a working chart rather than as the startup panel. Every member of
+`IDataProvider` is
 implemented — the pen catalogue, the archive extent, the windowed history read and the live-edge
 poll.
 

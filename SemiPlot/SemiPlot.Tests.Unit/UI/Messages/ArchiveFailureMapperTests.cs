@@ -8,19 +8,19 @@ using SemiPlot.Core.Configuration;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.UI;
 using SemiPlot.UI.Localization;
-using SemiPlot.UI.MainWindow;
+using SemiPlot.UI.Messages;
 using SemiPlot.UI.Startup;
 
 using Xunit;
 
-namespace SemiPlot.Tests.Unit.UI.MainWindow;
+namespace SemiPlot.Tests.Unit.UI.Messages;
 
 // The mapper is a pure function over IError and touches no Avalonia type, so these are plain [Fact].
 // Every expected string is read from the resource set, so the assertions hold under either locale;
 // the substituted arguments are asserted on their own, because no locale may drop one.
 [Collection(ProcessGlobalStateCollection.Name)]
 [Trait("Component", "UI")]
-[Trait("Area", "Di")]
+[Trait("Area", "Messages")]
 [Trait("Category", "Unit")]
 public sealed class ArchiveFailureMapperTests
 {

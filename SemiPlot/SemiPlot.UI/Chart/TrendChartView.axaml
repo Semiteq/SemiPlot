@@ -4,6 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:scottplot="clr-namespace:ScottPlot.Avalonia;assembly=ScottPlot.Avalonia"
              xmlns:chart="clr-namespace:SemiPlot.UI.Chart"
+             xmlns:text="clr-namespace:SemiPlot.UI.Localization"
              mc:Ignorable="d"
              d:DesignWidth="1280"
              d:DesignHeight="600"
@@ -12,6 +13,14 @@
 
     <Panel>
         <scottplot:AvaPlot Name="PlotControl" />
+        <TextBlock Name="EmptyCatalogueMessage"
+                   Text="{x:Static text:Resources.EmptyCatalogueMessage}"
+                   IsVisible="{Binding HasNoPens, FallbackValue=False}"
+                   Foreground="{DynamicResource AppSecondaryForegroundBrush}"
+                   TextWrapping="Wrap"
+                   MaxWidth="480"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center" />
         <Canvas Name="CursorOverlay" IsHitTestVisible="False">
             <Line Name="CrosshairLine"
                   IsVisible="False"

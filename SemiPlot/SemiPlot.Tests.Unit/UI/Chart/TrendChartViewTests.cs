@@ -14,9 +14,12 @@ using Microsoft.Reactive.Testing;
 
 using ScottPlot.Avalonia;
 
+using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
+using SemiPlot.UI.Localization;
+using SemiPlot.UI.Messages;
 
 using Xunit;
 
@@ -141,6 +144,36 @@ public sealed class TrendChartViewTests
 		viewModel.Plot.FigureBackground.Color.Should().Be(afterUnload);
 	}
 
+	// The empty catalogue is a state of the chart area, driven by the chart's own pen collection: the
+	// sentence withdraws as soon as a pen arrives, and it does not depend on the window that hosts the view.
+	[AvaloniaFact]
+	public void EmptyCatalogueMessage_ShowsWithNoPensAndWithdrawsWhenOneArrives()
+	{
+		using var viewModel = CreateViewModel();
+		var window = new Window { Content = new TrendChartView { DataContext = viewModel } };
+		try
+		{
+			window.Show();
+			Dispatcher.UIThread.RunJobs();
+			var message = window
+				.GetVisualDescendants()
+				.OfType<TextBlock>()
+				.Single(block => block.Name == "EmptyCatalogueMessage");
+
+			message.IsVisible.Should().BeTrue();
+			message.Text.Should().Be(Resources.EmptyCatalogueMessage);
+
+			viewModel.AddPen(new Pen(7, "Chamber pressure", "Pressure", "#3574F0"));
+			Dispatcher.UIThread.RunJobs();
+
+			message.IsVisible.Should().BeFalse();
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
 	private static ScottPlot.Color FigureBackgroundUnder(ThemeVariant variant)
 	{
 		return ThemeProbe.PlotColour("AppPanelBackgroundBrush", variant);
@@ -161,6 +194,10 @@ public sealed class TrendChartViewTests
 			_batchWindow);
 
 		return new TrendChartViewModel(
-			coordinator, scheduler, scheduler, NullLogger<TrendChartViewModel>.Instance);
+			coordinator,
+			scheduler,
+			scheduler,
+			new MessagePanelViewModel(),
+			NullLogger<TrendChartViewModel>.Instance);
 	}
 }

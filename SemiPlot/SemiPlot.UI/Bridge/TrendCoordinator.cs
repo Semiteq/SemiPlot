@@ -24,6 +24,10 @@ public sealed class TrendCoordinator : IDisposable
 	// Own subject so disposal stops forwarding to every consumer.
 	private readonly Subject<ArchiveConnectionState> _connectionFaults = new();
 
+	// Written from the data scheduler (a failed window, a provider that ends the stream) and completed from
+	// the UI thread at disposal, so the subject serializes its callers.
+	private readonly ISubject<Exception> _realtimeFailures = Subject.Synchronize(new Subject<Exception>());
+
 	private readonly IDisposable _connectionSubscription;
 
 	// pens must be dataProvider's own catalogue: the coordinator subscribes to these identifiers without
@@ -40,13 +44,24 @@ public sealed class TrendCoordinator : IDisposable
 		_uiScheduler = uiScheduler;
 		_batchWindow = batchWindow ?? _defaultBatchWindow;
 		RealtimeBatches = BuildRealtimeBatches(pens);
+		RealtimeFailures = _realtimeFailures.ObserveOn(_uiScheduler);
 		ConnectionFaults = _connectionFaults.AsObservable();
 		_connectionSubscription = dataProvider.ConnectionFaults
 			.ObserveOn(_uiScheduler)
 			.Subscribe(_connectionFaults.OnNext);
 	}
 
+	/// <summary>
+	/// The live edge. It never faults: a provider that ends the stream is reported through
+	/// <see cref="RealtimeFailures"/> and this stream completes instead.
+	/// </summary>
 	public IObservable<RealtimeBatch> RealtimeBatches { get; }
+
+	/// <summary>
+	/// Every realtime failure once: a throw inside the batch projection, which the pipeline skips, and a
+	/// provider that ends the stream. Republished on the UI scheduler, like <see cref="ConnectionFaults"/>.
+	/// </summary>
+	public IObservable<Exception> RealtimeFailures { get; }
 
 	/// <summary>
 	/// The provider's connection state, republished on the UI scheduler so a view model binds to it directly.
@@ -65,12 +80,18 @@ public sealed class TrendCoordinator : IDisposable
 		_realtimeSubscription?.Dispose();
 		_realtimeSubscription = null;
 		_connectionSubscription.Dispose();
+
+		// Never disposed: a buffer flush still running on the data scheduler would throw out of
+		// TryBuildRealtimeBatch, and Rx would turn that into the OnError the catch exists to prevent.
+		_realtimeFailures.OnCompleted();
 	}
 
 	public void Start()
 	{
 		ObjectDisposedException.ThrowIf(_isDisposed, this);
 
+		// The keep-alive holds the RefCount open across a chart being replaced. The stream cannot fault, so
+		// this observer has nothing to handle.
 		_realtimeSubscription ??= RealtimeBatches.Subscribe();
 	}
 
@@ -100,11 +121,34 @@ public sealed class TrendCoordinator : IDisposable
 		return _dataProvider
 			.Subscribe(penIds)
 			.Buffer(_batchWindow, _dataScheduler)
-			.Select(BuildRealtimeBatch)
-			.Where(batch => batch.Timestamps.Count > 0)
+			.Select(TryBuildRealtimeBatch)
+			.Where(batch => batch is { Timestamps.Count: > 0 })
+			.Select(batch => batch!)
+			.Catch<RealtimeBatch, Exception>(ReportTerminalFailure)
 			.ObserveOn(_uiScheduler)
 			.Publish()
 			.RefCount();
+	}
+
+	private IObservable<RealtimeBatch> ReportTerminalFailure(Exception streamFailure)
+	{
+		_realtimeFailures.OnNext(streamFailure);
+
+		return Observable.Empty<RealtimeBatch>();
+	}
+
+	private RealtimeBatch? TryBuildRealtimeBatch(IList<IReadOnlyList<Sample>> window)
+	{
+		try
+		{
+			return BuildRealtimeBatch(window);
+		}
+		catch (Exception buildFailure)
+		{
+			_realtimeFailures.OnNext(buildFailure);
+
+			return null;
+		}
 	}
 
 	private static RealtimeBatch BuildRealtimeBatch(IList<IReadOnlyList<Sample>> window)

@@ -47,10 +47,14 @@ Constraint: **$0 budget** — only free/OSS components.
 +-------------------------------------------------------------+
 |  SemiPlot.UI (Avalonia 12.0 + ScottPlot 5)                 |
 |                                                             |
-|   App / MainWindow (Grid: toolbar / chart / legend / status)|
-|     ├── TrendChartView ──hosts──► ScottPlot AvaPlot control |
-|     ├── TrendToolbarView    (layer, autoscale, sticky, …)   |
-|     └── TrendLegendView     (grouped pen rows)              |
+|   App / MainWindow (Grid: seven rows, table below)          |
+|     +-- AppMenuBar          File / View / Help              |
+|     +-- NavigationBarView   jump to now, sticky, delta      |
+|     +-- TrendChartView ---hosts--> ScottPlot AvaPlot        |
+|     +-- TrendLegendView     grouped pen rows                |
+|     +-- MinimapView         archive-overview strip          |
+|     +-- MessagePanelView    every failure lands here        |
+|     +-- AppStatusBar        connection state, layer         |
 |   ViewModels (ReactiveUI) ◄── TrendCoordinator (Rx hub)     |
 +----------------------────────────────────────--------------+
               │ IDataProvider (subscribe realtime, query history)
@@ -79,14 +83,82 @@ startup failure in the main window rather than falling back to invented data. Th
 bridge**: the chart is a native ScottPlot control, fed in-process by `TrendCoordinator` over
 `IObservable`/awaitable seams.
 
+### The window's rows
+
+`MainWindow.axaml` is one `Grid` of seven rows, six `Auto` and the chart row taking the rest
+(`RowDefinitions="Auto,Auto,*,Auto,Auto,Auto,Auto"`). Each row either collapses on a flag or is
+always there.
+
+| Row | Content | Collapses |
+| --- | --- | --- |
+| 0 | Menu bar (`AppMenuBar`) | no |
+| 1 | Navigation bar (`NavigationBarView`) | `IsNavigationBarVisible` |
+| 2 | Chart and legend | the legend column on `IsLegendVisible` |
+| 3 | Minimap | `IsMinimapVisible` |
+| 4 | Message panel (`MessagePanelView`) | `MessagePanel.IsVisible` |
+| 5 | Status bar (`AppStatusBar`) | `HasStartupFailure` |
+| 6 | Startup-failure panel | `HasStartupFailure` |
+
+The `View` menu writes rows 1, 3 and 4; row 2's legend column has its own item. Each flag has one
+writer, the command the menu item invokes, and the item reads back that same flag `Mode=OneWay` — a
+`MenuItem` whose `IsChecked` were two-way would have the control as a second writer, and one reading
+back a property the command does not write would let a click move nothing on screen.
+
+Row 4 is the one whose flag the operator is not the only source of. `MessagePanel.IsVisible` starts
+closed, so a session that never fails is never given the row, and `MessagePanelViewModel.Report`
+opens it for a failure the list does not already carry — an entry that landed off screen would be a
+failure nobody is shown. A repeat of the entry on top does not reopen a panel the operator closed.
+The row, the `View` item's check state and the status bar's connection indicator all read the same
+flag, so one click always moves the row and the check state always describes it.
+
+The status bar carries current state only: whether the archive answers, and the layer the chart
+reads, named from resx rather than from `AggregationLayer.ToString()`. It holds no pen count and no
+history; the legend lists the pens and the message panel holds what happened.
+
+### Where a failure goes
+
+One route, and the mapper is on it. `Messages/ArchiveFailureMapper.Map` turns any `IError` into a
+title, a detail, a remedy and a `MessageSeverity`, and `Messages/MessagePanelViewModel` is the one
+bounded, timestamped list the operator reads them in. A repeated failure is counted against the
+newest entry rather than prepended again, so an outage that reissues a history query on every pan
+produces one entry with a repeat count. The startup-failure panel is separate on purpose: it renders
+before configuration exists and answers a different question.
+
+`Messages/UnhandledErrorObserver` is the last-resort route under it — what ReactiveUI raises through
+its own machinery (a `ReactiveCommand`'s unobserved `ThrownExceptions`, a faulting `ToProperty`, a
+binding). It reports through `AvaloniaScheduler.Instance`, because ReactiveUI raises on the scheduler
+that failed and the panel edits a bound collection, and the log line travels with the report so a
+failure repeating per redraw is demoted to `Debug` rather than rolling the capped log files away. A
+failure raised before the window exists has no panel to reach and is logged on the spot. The report
+runs as a dispatcher job, where a throw is unhandled and would end the process, so it goes through
+`ResultReporting.TryReportFailure`. Its reach stops there: an
+`async void` handler, a `Dispatcher.UIThread.Post` body and a throw inside a raw `Subscribe`'s
+`onNext` are guarded where they occur instead.
+
+**Nothing may construct a ReactiveUI object before `AppBuilder.Setup()`.** The observer is installed
+in the builder lambda, `.UseReactiveUI(builder => builder.WithExceptionHandler(...))`, and
+`RxState.DefaultExceptionHandler` initialises itself on first read — `InitializeExceptionHandler`
+then no-ops. So one `ReactiveCommand`, one `ObservableAsPropertyHelper` or one read of that property
+built ahead of `Setup()` turns the install into a silent no-op, with no error and no log line. This
+is why `StartupSequence.Run` touches no ReactiveUI type and why `MessagePanelViewModel`, which builds
+two `ReactiveCommand`s, is resolved from the container inside `.AfterSetup(...)` and never before it.
+`RxApp` itself is gone from the installed ReactiveUI 23.2.28; the schedulers live on `RxSchedulers`
+and the handler on `RxState`.
+
+The same ordering forces the one service-locator lookup this tree allows. The handler is taken before
+any container exists, so it cannot be given a panel by constructor injection; `App.ResolveMessagePanel`
+reaches `Application.Current`'s own service provider on first use and returns null until one exists.
+That is the declared exception to the constructor-injection rule in `CLAUDE.md`, and it covers this
+one method: nothing else may resolve a service through a static.
+
 ## Data flow
 
 - **Realtime:** the provider polls the raw layer for the samples written past the last one it saw →
   `TrendCoordinator` buffers them on the data scheduler into a coalesced `RealtimeBatch`
   (≤ 10 Hz / 100 ms), crosses to the UI scheduler via `ObserveOn`, and exposes them as
   `IObservable<RealtimeBatch>`; the chart view model subscribes and appends to the per-pen
-  plottables. The same provider reports its own connection state, which the main window draws as a
-  banner row over the chart.
+  plottables. The same provider reports its own connection state, which the status bar shows and the
+  message panel records.
 - **History:** the chart requests a window → `TrendCoordinator.QueryHistoryAsync` (the single history
   query, reached through the debouncer by the initial load and every gesture alike) → provider
   returns one decimated `PenHistoryEnvelope` per pen (ascending `X` + `Min`/`Max`/`Center`) → the view

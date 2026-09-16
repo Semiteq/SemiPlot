@@ -13,6 +13,7 @@ using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.Legend;
 using SemiPlot.UI.Localization;
+using SemiPlot.UI.Messages;
 
 using Xunit;
 
@@ -162,6 +163,10 @@ public sealed class TrendLegendViewModelTests
 			_batchWindow);
 
 		return new TrendChartViewModel(
-			coordinator, _scheduler, ImmediateScheduler.Instance, NullLogger<TrendChartViewModel>.Instance);
+			coordinator,
+			_scheduler,
+			ImmediateScheduler.Instance,
+			new MessagePanelViewModel(),
+			NullLogger<TrendChartViewModel>.Instance);
 	}
 }

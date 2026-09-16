@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Shapes;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
 using Avalonia.Styling;
@@ -140,6 +141,61 @@ public sealed class ThemeTests
 		}
 	}
 
+	// The menu strip, its open submenu and its separator, read back off a realised menu:
+	// docs/architecture/ui-theme.md, How the retint reaches a control.
+	[AvaloniaTheory]
+	[InlineData(AppThemeVariant.Light, "#000000", "#F7F8FA", "#EBECF0")]
+	[InlineData(AppThemeVariant.Dark, "#DFE1E5", "#2B2D30", "#393B40")]
+	public void EveryMenuSurface_PaintsItselfFromThePalette(
+		AppThemeVariant theme, string text, string flyoutBackground, string border)
+	{
+		using var scope = ThemeProbe.ApplyVariant(App.VariantFor(theme));
+		Dispatcher.UIThread.RunJobs();
+
+		var leaf = new MenuItem { Header = "leaf" };
+		var separator = new Separator();
+		var checkable = new MenuItem
+		{
+			Header = "checkable",
+			ToggleType = MenuItemToggleType.CheckBox,
+			IsChecked = true
+		};
+		var top = new MenuItem { Header = "top" };
+		top.Items.Add(leaf);
+		top.Items.Add(separator);
+		top.Items.Add(checkable);
+		var menu = new Menu();
+		menu.Items.Add(top);
+		var items = new ItemsControl { ItemsSource = new[] { "row" } };
+		var window = new Window { Content = Stacked(menu, items) };
+		try
+		{
+			window.Show();
+			Dispatcher.UIThread.RunJobs();
+
+			ColourOf(TextOf(top)).Should().Be(Color.Parse(text), "the resting caption");
+
+			top.Open();
+			Dispatcher.UIThread.RunJobs();
+
+			// An open top-level item takes MenuItemPointeroverForeground, which Semi ships brighter than its
+			// own text colour, so the palette has to carry that key too.
+			ColourOf(TextOf(top)).Should().Be(Color.Parse(text), "the open caption");
+			ColourOf(TextOf(leaf)).Should().Be(Color.Parse(text));
+			ColourOf(TextOf(checkable)).Should().Be(Color.Parse(text));
+			ColourOf(CheckGlyphOf(checkable)).Should().Be(Color.Parse(text));
+			ColourOf(SeparatorFillOf(separator)).Should().Be(Color.Parse(border));
+			ColourOf(FlyoutBorderOf(top).Background).Should().Be(Color.Parse(flyoutBackground));
+			ColourOf(FlyoutBorderOf(top).BorderBrush).Should().Be(Color.Parse(border));
+			ColourOf(TextOf(items)).Should().Be(Color.Parse(text), "an ItemsControl row inherits the text colour");
+		}
+		finally
+		{
+			top.Close();
+			window.Close();
+		}
+	}
+
 	[AvaloniaFact]
 	public void APaletteKeyCarryingOpacity_KeepsItUnderBothVariants()
 	{
@@ -220,6 +276,30 @@ public sealed class ThemeTests
 			.SelectMany(thumb => thumb.GetVisualDescendants().OfType<Border>())
 			.Select(border => border.Background)
 			.First(brush => brush is ISolidColorBrush { Color.A: > 0 });
+	}
+
+	// The separator and the flyout chrome are unnamed template parts, so each is found by its own shape.
+	private static IBrush? SeparatorFillOf(Separator separator)
+	{
+		return separator.GetSelfAndVisualDescendants()
+			.OfType<Border>()
+			.Select(border => border.Background)
+			.First(brush => brush is ISolidColorBrush { Color.A: > 0 });
+	}
+
+	private static Border FlyoutBorderOf(MenuItem item)
+	{
+		return item.GetVisualDescendants()
+			.OfType<Popup>()
+			.Select(popup => popup.Child)
+			.OfType<Visual>()
+			.SelectMany(child => child.GetSelfAndVisualDescendants().OfType<Border>())
+			.First(border => border.Background is ISolidColorBrush { Color.A: 255 });
+	}
+
+	private static IBrush? CheckGlyphOf(MenuItem item)
+	{
+		return item.GetVisualDescendants().OfType<Shape>().First(shape => shape.Fill is not null).Fill;
 	}
 
 	private static IBrush? TextOf(Control control)

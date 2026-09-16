@@ -14,6 +14,7 @@ using ScottPlot;
 
 using SemiPlot.Core.Trends;
 using SemiPlot.UI.Bridge;
+using SemiPlot.UI.Messages;
 
 namespace SemiPlot.UI.Chart;
 
@@ -31,6 +32,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	private readonly Dictionary<int, PenHistoryEnvelope> _envelopesById = [];
 	private readonly ChartHistoryRequestDebouncer _historyDebouncer;
 	private readonly ILogger<TrendChartViewModel> _logger;
+	private readonly MessagePanelViewModel _messagePanel;
 	private readonly Dictionary<int, TrendPenState> _pensById = [];
 	private readonly ChartRealtimeApplier _realtimeApplier;
 	private readonly Subject<Unit> _redrawRequests = new();
@@ -51,9 +53,11 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		TrendCoordinator coordinator,
 		IScheduler dataScheduler,
 		IScheduler uiScheduler,
+		MessagePanelViewModel messagePanel,
 		ILogger<TrendChartViewModel> logger)
 	{
 		_coordinator = coordinator;
+		_messagePanel = messagePanel;
 		_logger = logger;
 		_axisBinder = new ChartAxisBinder(Plot);
 		_cursorReader = new ChartCursorReader(_pensById, _envelopesById);
@@ -75,6 +79,8 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 		_disposables.Add(_coordinator.RealtimeBatches
 			.Subscribe(ApplyRealtimeBatch));
+		_disposables.Add(_coordinator.RealtimeFailures
+			.Subscribe(ReportFailure));
 
 		_disposables.Add(_coordinator);
 
@@ -101,6 +107,11 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	public IObservable<Unit> HistoryApplied => _historyApplied;
 
 	public IReadOnlyCollection<TrendPenState> Pens => _pensById.Values;
+
+	/// <summary>
+	/// No pen to draw: unfinished provisioning shown as the chart area's own empty state, not an error.
+	/// </summary>
+	public bool HasNoPens => _pensById.Count == 0;
 
 	public int ScalesRevision { get; private set; }
 
@@ -219,6 +230,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		var state = BuildPenState(pen);
 		_pensById.Add(pen.PenId, state);
 		_settingsById.Add(pen.PenId, new PenScaleSettings(pen.PenId, pen.Group));
+		this.RaisePropertyChanged(nameof(HasNoPens));
 
 		if (ActivePenId == 0)
 		{
@@ -242,6 +254,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 		_settingsById.Remove(penId);
 		_envelopesById.Remove(penId);
+		this.RaisePropertyChanged(nameof(HasNoPens));
 
 		if (ActivePenId == penId)
 		{
@@ -476,13 +489,19 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	// range there is until a read succeeds.
 	private void OnHistoryQueryFailed(IReadOnlyList<IError> errors)
 	{
-		_logger.LogWarning(
-			errors.OfType<ExceptionalError>().FirstOrDefault()?.Exception,
-			"History query failed: {Reasons}",
-			string.Join("; ", errors.Select(error => error.Message)));
+		// Runs as the failure branch of the debouncer's onNext and as its onError, so a throw out of here
+		// would end the one subscription that issues every history query for the rest of the session.
+		try
+		{
+			_messagePanel.ReportFailure(errors, _logger);
 
-		ApplyAxisModel();
-		RequestRedraw();
+			ApplyAxisModel();
+			RequestRedraw();
+		}
+		catch (Exception reportFailure)
+		{
+			_messagePanel.TryReportFailure(new ExceptionalError(reportFailure), _logger);
+		}
 	}
 
 	// Only the identifiers the request carried are considered: a pen added while the query was in flight was
@@ -553,9 +572,22 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	private void ApplyRealtimeBatch(RealtimeBatch batch)
 	{
-		var foldIntoColumn = Navigation.ActiveLayer != AggregationLayer.Raw;
-		_realtimeApplier.Apply(batch, foldIntoColumn);
-		RequestRedraw();
+		try
+		{
+			var foldIntoColumn = Navigation.ActiveLayer != AggregationLayer.Raw;
+			_realtimeApplier.Apply(batch, foldIntoColumn);
+			RequestRedraw();
+		}
+		catch (Exception applyFailure)
+		{
+			ReportFailure(applyFailure);
+		}
+	}
+
+	/// <summary>The chart's own Rx pipelines, the view's included, route a terminal failure here.</summary>
+	public void ReportFailure(Exception failure)
+	{
+		_messagePanel.TryReportFailure(new ExceptionalError(failure), _logger);
 	}
 
 	private void RequestRedraw()

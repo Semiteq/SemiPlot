@@ -21,268 +21,331 @@
   <data name="NoValuePlaceholder" xml:space="preserve">
     <value>—</value>
   </data>
-  <data name="ToolbarAutoscale" xml:space="preserve">
-    <value>Автомасштаб</value>
+  <data name="NavigationJumpToNow" xml:space="preserve">
+    <value>Перейти к текущему времени</value>
   </data>
-  <data name="ToolbarMinPlaceholder" xml:space="preserve">
-    <value>Мин</value>
+  <data name="NavigationSticky" xml:space="preserve">
+    <value>Следовать за текущим временем</value>
   </data>
-  <data name="ToolbarMaxPlaceholder" xml:space="preserve">
-    <value>Макс</value>
+  <data name="NavigationDelta" xml:space="preserve">
+    <value>Приращение</value>
   </data>
-  <data name="ToolbarSetLimits" xml:space="preserve">
-    <value>Задать пределы</value>
+  <data name="StatusConnectionOk" xml:space="preserve">
+    <value>Связь с базой данных установлена</value>
   </data>
-  <data name="ToolbarLayerFormat" xml:space="preserve">
-    <value>Слой: {0}</value>
+  <data name="StatusConnectionFault" xml:space="preserve">
+    <value>База данных не отвечает</value>
   </data>
-  <data name="ToolbarJumpToNow" xml:space="preserve">
-    <value>К текущему моменту</value>
+  <data name="StatusConnectionRestoredTitle" xml:space="preserve">
+    <value>Связь с базой данных восстановлена</value>
   </data>
-  <data name="ToolbarSticky" xml:space="preserve">
-    <value>Слежение</value>
+  <data name="StatusConnectionRestoredDetail" xml:space="preserve">
+    <value>SemiPlot снова опрашивает базу данных.</value>
   </data>
-  <data name="ToolbarDelta" xml:space="preserve">
-    <value>Дельта</value>
+  <data name="StatusLayerFormat" xml:space="preserve">
+    <value>Детализация: {0}</value>
   </data>
-  <data name="StatusPenCountFormat" xml:space="preserve">
-    <value>Перьев: {0}</value>
+  <data name="StatusLayerRaw" xml:space="preserve">
+    <value>исходная</value>
+  </data>
+  <data name="StatusLayerMinute" xml:space="preserve">
+    <value>минутная</value>
+  </data>
+  <data name="StatusLayerHour" xml:space="preserve">
+    <value>часовая</value>
+  </data>
+  <data name="StatusLayerDay" xml:space="preserve">
+    <value>суточная</value>
+  </data>
+  <data name="MenuFile" xml:space="preserve">
+    <value>Файл</value>
+  </data>
+  <data name="MenuFileExit" xml:space="preserve">
+    <value>Выход</value>
+  </data>
+  <data name="MenuView" xml:space="preserve">
+    <value>Вид</value>
+  </data>
+  <data name="MenuViewNavigationBar" xml:space="preserve">
+    <value>Панель навигации</value>
+  </data>
+  <data name="MenuViewLegend" xml:space="preserve">
+    <value>Условные обозначения</value>
+  </data>
+  <data name="MenuViewMinimap" xml:space="preserve">
+    <value>Обзорная полоса</value>
+  </data>
+  <data name="MenuViewMessagePanel" xml:space="preserve">
+    <value>Панель сообщений</value>
+  </data>
+  <data name="MenuHelp" xml:space="preserve">
+    <value>Справка</value>
+  </data>
+  <data name="MenuHelpAbout" xml:space="preserve">
+    <value>О программе</value>
+  </data>
+  <data name="AboutTitle" xml:space="preserve">
+    <value>О программе SemiPlot</value>
+  </data>
+  <data name="AboutVersionLabel" xml:space="preserve">
+    <value>Версия:</value>
+  </data>
+  <data name="AboutConfigurationLabel" xml:space="preserve">
+    <value>Настройки:</value>
+  </data>
+  <data name="AboutConfigurationUnknown" xml:space="preserve">
+    <value>не определены</value>
+  </data>
+  <data name="AboutClose" xml:space="preserve">
+    <value>Закрыть</value>
   </data>
   <data name="WindowTitle" xml:space="preserve">
-    <value>SemiPlot — просмотр трендов</value>
+    <value>SemiPlot — просмотр графиков изменений</value>
   </data>
   <data name="EmptyCatalogueMessage" xml:space="preserve">
-    <value>Каталог перьев пуст: архив ответил, но в semiplot_tags нет ни одного пера. Попросите заполнить его тех, кто вводит инструмент в эксплуатацию.</value>
+    <value>Каталог параметров пуст: таблица semiplot_tags не содержит ни одного параметра. Каталог заполняется при вводе инструмента в эксплуатацию.</value>
+  </data>
+  <data name="MessagePanelTitle" xml:space="preserve">
+    <value>Сообщения</value>
+  </data>
+  <data name="MessagePanelClear" xml:space="preserve">
+    <value>Очистить</value>
+  </data>
+  <data name="MessagePanelRepeatFormat" xml:space="preserve">
+    <value>повторений: {0}</value>
+  </data>
+  <data name="MessagePanelEmpty" xml:space="preserve">
+    <value>Сообщений нет</value>
   </data>
   <data name="FailureGenericTitle" xml:space="preserve">
-    <value>Запуск не удался</value>
+    <value>Не удалось запустить программу</value>
   </data>
   <data name="FailureUnknownRemedy" xml:space="preserve">
-    <value>Эта сборка не разбирает такой отказ отдельно. Передайте журнал SemiPlot: в нём есть полная запись.</value>
+    <value>Передайте файл журнала SemiPlot: в нём записаны подробности отказа.</value>
   </data>
   <data name="FailureThrownTitle" xml:space="preserve">
-    <value>Запуск прервался неожиданно</value>
+    <value>Произошла непредвиденная ошибка</value>
   </data>
   <data name="FailureThrownDetail" xml:space="preserve">
-    <value>Последовательность запуска завершилась исключением {0}: {1}</value>
+    <value>В работе SemiPlot возникла ошибка {0}: {1}</value>
   </data>
   <data name="FailureThrownRemedy" xml:space="preserve">
-    <value>Эта сборка не разбирает такой отказ отдельно. Передайте журнал SemiPlot: в нём есть запись и трассировка стека.</value>
+    <value>Перезапустите SemiPlot. Если отказ повторится, передайте файл журнала SemiPlot.</value>
   </data>
   <data name="FailureConnectionFileRejectedTitle" xml:space="preserve">
-    <value>Настройки подключения к архиву не читаются</value>
+    <value>Не удаётся прочитать настройки подключения к базе данных</value>
   </data>
   <data name="FailureConnectionFileRejectedDetail" xml:space="preserve">
-    <value>Каталог подключения «{0}» отклонён: {1}</value>
+    <value>SemiPlot отклонил каталог подключения «{0}»: {1}</value>
   </data>
   <data name="FailureConnectionFileRejectedRemedy" xml:space="preserve">
-    <value>Исправьте файлы в каталоге выше: причина называет, что именно отклонено.</value>
+    <value>Исправьте в файлах этого каталога значение, названное в причине.</value>
   </data>
   <data name="FailureConnectionFileUnparseableRemedy" xml:space="preserve">
-    <value>Исправьте синтаксис YAML в файлах этого каталога: причина выше называет место, на котором разбор остановился.</value>
+    <value>Исправьте синтаксис в файле конфигурации этого каталога.</value>
   </data>
   <data name="FailureConnectionFileMissingFieldRemedy" xml:space="preserve">
-    <value>Добавьте в файл этого каталога поле, названное в причине. Обязательны все поля формата.</value>
+    <value>Все поля обязательны. Добавьте в файл этого каталога поле, названное в причине.</value>
   </data>
   <data name="FailureConnectionFileOutOfRangeRemedy" xml:space="preserve">
-    <value>Приведите значение, названное в причине, к диапазону, который она указывает.</value>
+    <value>Задайте значение из диапазона, указанного в причине.</value>
   </data>
   <data name="FailureConnectionFileUnknownTimeZoneRemedy" xml:space="preserve">
-    <value>Задайте часовой пояс идентификатором, который знает эта машина: IANA или тот, что печатает «tzutil /g».</value>
+    <value>Укажите часовой пояс.</value>
   </data>
   <data name="FailureArchiveNameFormat" xml:space="preserve">
     <value>«{0}» на {1}</value>
   </data>
   <data name="FailureArchiveUnreachableTitle" xml:space="preserve">
-    <value>Нет связи с архивом</value>
+    <value>Нет связи с базой данных</value>
   </data>
   <data name="FailureArchiveUnreachableDetail" xml:space="preserve">
-    <value>SemiPlot не смог открыть соединение с {0}.</value>
+    <value>Не удалось подключиться к {0}.</value>
   </data>
   <data name="FailureArchiveUnreachableRemedy" xml:space="preserve">
-    <value>Проверьте, что сервер PostgreSQL запущен, а хост и порт из файла подключения достижимы с этой машины: маршрут, межсетевой экран и адрес, который слушает сервер.</value>
+    <value>Проверьте, что сервер PostgreSQL запущен. Проверьте, что хост и порт из файла подключения доступны с этой машины. Проверьте маршрут и межсетевой экран.</value>
   </data>
   <data name="FailureArchiveAccessDeniedTitle" xml:space="preserve">
-    <value>Архив отклонил учётные данные</value>
+    <value>База данных отклонила учётные данные</value>
   </data>
   <data name="FailureArchiveAccessDeniedDetail" xml:space="preserve">
-    <value>Сервер {0} ответил, но отказал пользователю «{1}» в базе «{2}».</value>
+    <value>Сервер {0} ответил, но отказал пользователю «{1}» в доступе к базе данных «{2}».</value>
   </data>
   <data name="FailureArchiveAccessDeniedRemedy" xml:space="preserve">
-    <value>Исправьте имя пользователя и пароль в файле подключения или выдайте этой роли SELECT на таблицы архива. Сеть тут ни при чём, хост и порт менять не нужно.</value>
+    <value>При попытке подключения получена ошибка в правах доступа. Проверьте имя пользователя и пароль. Проверьте права доступа операции SELECT.</value>
   </data>
   <data name="FailureArchiveNotProvisionedTitle" xml:space="preserve">
-    <value>Архив не развёрнут</value>
+    <value>База данных не настроена</value>
   </data>
   <data name="FailureArchiveDatabaseMissingDetail" xml:space="preserve">
-    <value>Сервер {0} отвечает, но базы «{1}» на нём нет.</value>
+    <value>Сервер {0} отвечает, но база данных «{1}» на нём отсутствует.</value>
   </data>
   <data name="FailureArchiveDatabaseMissingRemedy" xml:space="preserve">
-    <value>Разверните базу командой «semibase site» на этом сервере или исправьте имя базы в файле подключения.</value>
+    <value>Выполните команду «semibase site» для этого сервера, чтобы создать базу данных. Проверьте имя базы данных в файле подключения.</value>
   </data>
   <data name="FailureArchiveTableMissingDetail" xml:space="preserve">
-    <value>В архиве {0} нет таблицы «{1}».</value>
+    <value>В базе данных {0} отсутствует таблица «{1}».</value>
   </data>
   <data name="FailureArchiveTableMissingRemedy" xml:space="preserve">
-    <value>Таблицу «{0}» создаёт развёртывание. Выполните «semibase site» на этой базе, чтобы довести развёртывание до конца.</value>
+    <value>Таблица «{0}» создаётся при первоначальной настройке. Выполните команду «semibase site» для этой базы данных, чтобы завершить её настройку.</value>
   </data>
   <data name="FailureArchiveConnectionLostTitle" xml:space="preserve">
-    <value>Архив перестал отвечать</value>
+    <value>База данных перестала отвечать</value>
   </data>
   <data name="FailureArchiveConnectionLostDetail" xml:space="preserve">
-    <value>Живой край {0} перестал отвечать после {1} неудачных чтений подряд. Уже нарисованная история не затронута.</value>
+    <value>База данных {0} перестала отвечать после {1} неудачных чтений подряд. Отображённые ранее данные не изменены.</value>
   </data>
   <data name="FailureArchiveConnectionLostRemedy" xml:space="preserve">
-    <value>Проверьте, что сервер PostgreSQL всё ещё запущен и достижим с этой машины. SemiPlot продолжает опрос и сам снимет это сообщение, как только архив ответит снова.</value>
+    <value>SemiPlot продолжает опрашивать базу данных и снимет это сообщение, когда она ответит. Проверьте, что сервер PostgreSQL запущен. Проверьте, что он доступен с этой машины.</value>
   </data>
   <data name="FailureArchiveShapeUnexpectedTitle" xml:space="preserve">
-    <value>У архива неожиданная структура</value>
+    <value>Структура базы данных не соответствует ожидаемой</value>
   </data>
   <data name="FailureArchiveShapeUnexpectedDetail" xml:space="preserve">
-    <value>В архиве {0} есть таблицы, которые читает SemiPlot, но нет ожидаемых столбцов. Сервер ответил: {1}</value>
+    <value>В базе данных {0} не хватает столбцов, которые читает SemiPlot. Сервер ответил: {1}</value>
   </data>
   <data name="FailureArchiveShapeUnexpectedRemedy" xml:space="preserve">
-    <value>Таблицу «public.trends» и её столбцы создаёт развёртывание. Выполните «semibase site» на этой базе, чтобы привести её к структуре, которую читает эта сборка, и проверьте, не менял ли таблицу кто-то ещё.</value>
+    <value>Таблица «public.trends» и её столбцы создаются при первоначальной настройке. Выполните команду «semibase site» для этой базы данных. Проверьте, не изменяли ли таблицу после настройки.</value>
   </data>
   <data name="FailureArchiveQueryTimedOutTitle" xml:space="preserve">
-    <value>Архив прервал чтение</value>
+    <value>База данных прервала чтение</value>
   </data>
   <data name="FailureArchiveQueryTimedOutDetail" xml:space="preserve">
-    <value>Чтение {0} прервал сам сервер (SQLSTATE 57014).</value>
+    <value>Сервер прервал чтение {0} (SQLSTATE 57014).</value>
   </data>
   <data name="FailureArchiveQueryTimedOutRemedy" xml:space="preserve">
-    <value>Посмотрите statement_timeout у роли чтения на сервере и поднимите его или сузьте окно, которое открывает SemiPlot. Если дело не в этом ограничении, выясните, не отменил ли чтение администратор.</value>
+    <value>Проверьте настройку statement_timeout для роли чтения на сервере. Сократите интервал времени на графике. Проверьте, не отменил ли чтение администратор.</value>
   </data>
   <data name="FailureArchiveReadFailedTitle" xml:space="preserve">
-    <value>Архив отклонил чтение</value>
+    <value>База данных отклонила чтение</value>
   </data>
   <data name="FailureArchiveReadFailedDetail" xml:space="preserve">
-    <value>Архив {0} отклонил чтение (SQLSTATE {1}).</value>
+    <value>База данных {0} отклонила чтение (SQLSTATE {1}).</value>
   </data>
   <data name="FailureArchiveReadFailedRemedy" xml:space="preserve">
-    <value>Эта сборка не разбирает SQLSTATE {0} отдельно. Найдите соответствующую запись в журнале сервера PostgreSQL и передайте её вместе с журналом SemiPlot.</value>
+    <value>Найдите запись с SQLSTATE {0} в журнале сервера PostgreSQL. Передайте её вместе с файлом журнала SemiPlot.</value>
   </data>
   <data name="FailureArchiveReadUnnamedDetail" xml:space="preserve">
-    <value>Чтение {0} сорвалось до ответа сервера, поэтому SQLSTATE у него нет.</value>
+    <value>Чтение {0} завершилось ошибкой, прежде чем сервер ответил.</value>
   </data>
   <data name="FailureArchiveReadUnnamedRemedy" xml:space="preserve">
-    <value>Отказ пришёл со стороны клиента. Передайте журнал SemiPlot: в нём есть исключение, которое эта сборка не смогла назвать.</value>
+    <value>Если сообщение повторяется, передайте файл журнала SemiPlot.</value>
   </data>
   <data name="FailureStartupReadTimedOutTitle" xml:space="preserve">
-    <value>Архив не ответил вовремя</value>
+    <value>База данных не ответила вовремя</value>
   </data>
   <data name="FailureStartupReadTimedOutDetail" xml:space="preserve">
-    <value>Стартовое чтение «{0}» не получило ответа за {1} с. SemiPlot перестал ждать, запрос всё ещё выполняется на сервере.</value>
+    <value>SemiPlot не получил ответа на первое чтение {0} за {1} с и прекратил ожидание.</value>
   </data>
   <data name="FailureStartupReadTimedOutRemedy" xml:space="preserve">
-    <value>Соединение было принято, значит хост и порт верны. Проверьте, не перегружен ли сервер и есть ли у архива индекс по столбцу времени.</value>
+    <value>Проверьте загрузку сервера. Проверьте, есть ли в таблице индекс по столбцу времени.</value>
   </data>
   <data name="FailureStartupReadPenCatalogue" xml:space="preserve">
-    <value>каталог перьев</value>
+    <value>каталог параметров</value>
   </data>
   <data name="FailureStartupReadArchiveExtent" xml:space="preserve">
-    <value>границы архива</value>
+    <value>период записанных данных</value>
   </data>
   <data name="FailureAppSettingsRejectedTitle" xml:space="preserve">
-    <value>Настройки интерфейса не читаются</value>
+    <value>Не удаётся прочитать настройки интерфейса</value>
   </data>
   <data name="FailureAppSettingsUnreadableDetail" xml:space="preserve">
-    <value>Каталог настроек интерфейса «{0}» прочитан, но разобрать его не удалось.</value>
+    <value>SemiPlot прочитал каталог настроек интерфейса «{0}», но не смог разобрать его файлы.</value>
   </data>
   <data name="FailureAppSettingsUnreadableRemedy" xml:space="preserve">
-    <value>Дайте учётной записи, под которой работает SemiPlot, право на чтение этого каталога и исправьте синтаксис YAML в его файлах.</value>
+    <value>Предоставьте учётной записи, от имени которой работает SemiPlot, право на чтение этого каталога. Исправьте синтаксис в файлах каталога.</value>
   </data>
   <data name="FailureAppSettingsKeyMissingDetail" xml:space="preserve">
-    <value>В каталоге настроек интерфейса «{0}» нет ключа «{1}».</value>
+    <value>В настройках интерфейса «{0}» отсутствует «{1}».</value>
   </data>
   <data name="FailureAppSettingsKeyMissingRemedy" xml:space="preserve">
-    <value>Добавьте ключ, названный выше, в файл этого каталога. Обязательны оба ключа формата.</value>
+    <value>Обязательны обе настройки: «locale» и «theme». Добавьте недостающую в файл «*.yaml» этого каталога.</value>
   </data>
   <data name="FailureAppSettingsValueInvalidDetail" xml:space="preserve">
-    <value>В каталоге настроек интерфейса «{0}» ключ «{1}» имеет значение вне своего набора. Допустимые: {2}.</value>
+    <value>В настройках интерфейса «{0}» настройка «{1}» имеет недопустимое значение. Допустимые значения: {2}.</value>
   </data>
   <data name="FailureAppSettingsValueInvalidRemedy" xml:space="preserve">
-    <value>Задайте этому ключу одно из допустимых значений и перезапустите SemiPlot.</value>
+    <value>Задайте для этой настройки одно из допустимых значений. Перезапустите SemiPlot.</value>
   </data>
   <data name="FailureConfigurationSectionAppTitle" xml:space="preserve">
-    <value>Каталог настроек интерфейса не читается</value>
+    <value>Не удаётся прочитать каталог настроек интерфейса</value>
   </data>
   <data name="FailureConfigurationSectionConnectionTitle" xml:space="preserve">
-    <value>Каталог подключения к архиву не читается</value>
+    <value>Не удаётся прочитать каталог подключения к базе данных</value>
   </data>
   <data name="FailureConfigurationSectionDirectoryMissingDetail" xml:space="preserve">
-    <value>SemiPlot искал каталог настроек «{0}» и ничего там не нашёл.</value>
+    <value>SemiPlot не нашёл каталог настроек «{0}».</value>
   </data>
   <data name="FailureConfigurationSectionNoFilesDetail" xml:space="preserve">
-    <value>В каталоге настроек «{0}» нет ни одного файла «*.yaml».</value>
+    <value>В каталоге настроек «{0}» нет файлов «*.yaml».</value>
   </data>
   <data name="FailureConfigurationSectionUnreadableDetail" xml:space="preserve">
     <value>Файл «{1}» в каталоге настроек «{0}» не удалось прочитать или разобрать.</value>
   </data>
   <data name="FailureConfigurationSectionUnlistableDetail" xml:space="preserve">
-    <value>Каталог настроек «{0}» есть на месте, но получить список его файлов не удалось.</value>
+    <value>SemiPlot не смог получить список файлов каталога настроек «{0}».</value>
   </data>
   <data name="FailureConfigurationSectionKeyConflictDetail" xml:space="preserve">
-    <value>Ключ «{0}» есть сразу в «{1}» и «{2}» в каталоге настроек «{3}».</value>
+    <value>Ключ «{0}» задан одновременно в файлах «{1}» и «{2}» каталога настроек «{3}».</value>
   </data>
   <data name="FailureConfigurationSectionDuplicateKeyDetail" xml:space="preserve">
-    <value>Ключ «{0}» дважды задан в файле «{1}» в каталоге настроек «{2}».</value>
+    <value>Ключ «{0}» дважды задан в файле «{1}» каталога настроек «{2}».</value>
   </data>
   <data name="FailureConfigurationSectionAppDirectoryMissingRemedy" xml:space="preserve">
-    <value>Создайте этот каталог с файлом «*.yaml», в котором заданы ключи «locale» и «theme», или запустите SemiPlot с --config-dir, указав каталог, где он лежит.</value>
+    <value>Создайте этот каталог и поместите в него файл «*.yaml» с настройками «locale» и «theme». Или запустите SemiPlot с аргументом --config-dir, указав каталог, в котором этот файл уже есть.</value>
   </data>
   <data name="FailureConfigurationSectionConnectionDirectoryMissingRemedy" xml:space="preserve">
-    <value>Создайте этот каталог с файлом «*.yaml», в котором заданы поля подключения к архиву, или запустите SemiPlot с --config-dir, указав каталог, где он лежит.</value>
+    <value>Создайте этот каталог и поместите в него файл «*.yaml» с настройками подключения к базе данных. Или запустите SemiPlot с аргументом --config-dir, указав каталог, в котором этот файл уже есть.</value>
   </data>
   <data name="FailureConfigurationSectionAppNoFilesRemedy" xml:space="preserve">
-    <value>Положите в этот каталог файл «*.yaml» с ключами «locale» и «theme».</value>
+    <value>Добавьте в этот каталог файл «*.yaml» с настройками «locale» и «theme».</value>
   </data>
   <data name="FailureConfigurationSectionConnectionNoFilesRemedy" xml:space="preserve">
-    <value>Положите в этот каталог файл «*.yaml» с полями подключения к архиву.</value>
+    <value>Добавьте в этот каталог файл «*.yaml» с настройками подключения к базе данных.</value>
   </data>
   <data name="FailureConfigurationSectionUnreadableRemedy" xml:space="preserve">
-    <value>Дайте учётной записи, под которой работает SemiPlot, право на чтение этого каталога и исправьте синтаксис YAML в его файлах.</value>
+    <value>Предоставьте учётной записи, от имени которой работает SemiPlot, право на чтение этого каталога. Исправьте синтаксис в файлах каталога.</value>
   </data>
   <data name="FailureConfigurationSectionKeyConflictRemedy" xml:space="preserve">
-    <value>Уберите этот ключ из одного из двух файлов. Ключ может нести только один файл каталога.</value>
+    <value>В каталоге ключ может быть задан только в одном файле. Удалите его из одного из двух файлов.</value>
   </data>
   <data name="FailureConfigurationSectionDuplicateKeyRemedy" xml:space="preserve">
-    <value>Оставьте в файле один такой ключ. Ключ может быть задан в каталоге только один раз.</value>
+    <value>В каталоге ключ может быть задан только один раз. Оставьте в этом файле одну строку с ключом.</value>
   </data>
   <data name="FailureStartupArgumentsTitle" xml:space="preserve">
-    <value>SemiPlot запущен с неверными аргументами</value>
+    <value>SemiPlot запущен с недопустимыми аргументами</value>
   </data>
   <data name="FailureStartupArgumentsMissingDetail" xml:space="preserve">
-    <value>SemiPlot запущен без обязательного ключа «{0}».</value>
+    <value>SemiPlot запущен без обязательного аргумента «{0}».</value>
   </data>
   <data name="FailureStartupArgumentsMissingRemedy" xml:space="preserve">
-    <value>Добавьте этот ключ со значением в ярлык SemiPlot. Обязательны все три: --config-dir, --log-file и --logging-level.</value>
+    <value>Обязательны все три аргумента: --config-dir, --log-file и --logging-level. Добавьте недостающий с его значением в ярлык SemiPlot.</value>
   </data>
   <data name="FailureStartupArgumentsValueMissingDetail" xml:space="preserve">
-    <value>Ключ «{0}» задан без пригодного значения.</value>
+    <value>Аргумент «{0}» задан без допустимого значения.</value>
   </data>
   <data name="FailureStartupArgumentsValueMissingRemedy" xml:space="preserve">
-    <value>Укажите после этого ключа значение в ярлыке SemiPlot.</value>
+    <value>Укажите значение после этого аргумента в ярлыке SemiPlot.</value>
   </data>
   <data name="FailureStartupArgumentsUnknownDetail" xml:space="preserve">
-    <value>SemiPlot не знает аргумент «{0}».</value>
+    <value>SemiPlot не распознаёт аргумент «{0}».</value>
   </data>
   <data name="FailureStartupArgumentsUnknownRemedy" xml:space="preserve">
-    <value>Уберите этот аргумент из ярлыка SemiPlot. SemiPlot читает только --config-dir, --log-file и --logging-level.</value>
+    <value>SemiPlot принимает только --config-dir, --log-file и --logging-level. Удалите этот аргумент из ярлыка SemiPlot.</value>
   </data>
   <data name="FailureStartupArgumentsValueInvalidDetail" xml:space="preserve">
-    <value>Ключ «{0}» имеет значение вне своего набора. Допустимые: {1}.</value>
+    <value>Аргумент «{0}» имеет недопустимое значение. Допустимые значения: {1}.</value>
   </data>
   <data name="FailureStartupArgumentsValueInvalidRemedy" xml:space="preserve">
-    <value>Задайте этому ключу одно из допустимых значений в ярлыке SemiPlot.</value>
+    <value>Задайте для этого аргумента одно из допустимых значений в ярлыке SemiPlot.</value>
   </data>
   <data name="FailureLogFileTitle" xml:space="preserve">
     <value>Не удалось открыть файл журнала SemiPlot</value>
   </data>
   <data name="FailureLogFileDetail" xml:space="preserve">
-    <value>Файл «{0}», заданный ключом --log-file, не открывается на запись: {1}</value>
+    <value>Файл «{0}», указанный аргументом --log-file, не удалось открыть для записи: {1}</value>
   </data>
   <data name="FailureLogFileRemedy" xml:space="preserve">
-    <value>Исправьте путь в ключе --log-file ярлыка SemiPlot. Диск должен существовать, каталог должен быть доступен на запись, а путь должен указывать на файл, а не на каталог.</value>
+    <value>Путь должен указывать на файл в существующем каталоге, доступном для записи. Проверьте путь, заданный аргументом --log-file в ярлыке SemiPlot.</value>
   </data>
 </root>

@@ -23,6 +23,7 @@ using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
+using SemiPlot.UI.Messages;
 
 using Xunit;
 
@@ -199,7 +200,11 @@ public sealed class ChartPointerInputTests
 		// would block the calling thread inside SchedulePeriodic. The periodic timer it starts lives on the
 		// shared headless dispatcher until the view model is disposed, which every test here does.
 		var viewModel = new TrendChartViewModel(
-			coordinator, scheduler, AvaloniaScheduler.Instance, NullLogger<TrendChartViewModel>.Instance);
+			coordinator,
+			scheduler,
+			AvaloniaScheduler.Instance,
+			new MessagePanelViewModel(),
+			NullLogger<TrendChartViewModel>.Instance);
 		var state = viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
 		state.LoadHistory(new PenHistoryEnvelope(
 			1,

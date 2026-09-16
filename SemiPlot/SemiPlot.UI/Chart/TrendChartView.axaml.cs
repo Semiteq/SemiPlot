@@ -196,10 +196,15 @@ public partial class TrendChartView : UserControl
 				ReportFailureOf(nameof(TrendChartViewModel.RedrawRequested))));
 	}
 
-	// ChartPalette.Resolve throws on a dropped key.
-	private static Action<Exception> ReportFailureOf(string pipeline)
+	// ChartPalette.Resolve throws on a dropped key. A pipeline that ends stops repainting the chart, so the
+	// operator is told through the panel as well as the log.
+	private Action<Exception> ReportFailureOf(string pipeline)
 	{
-		return failure => Log.Error(failure, "The chart view's {Pipeline} subscription ended on a failure", pipeline);
+		return failure =>
+		{
+			Log.Error(failure, "The chart view's {Pipeline} subscription ended on a failure", pipeline);
+			_viewModel?.ReportFailure(failure);
+		};
 	}
 
 	// X-limit-only; repaint goes through RedrawRequested.

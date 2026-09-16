@@ -13,9 +13,11 @@ using Microsoft.Reactive.Testing;
 
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Bridge;
+using SemiPlot.Tests.Unit.UI.Messages;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.Localization;
+using SemiPlot.UI.Messages;
 
 using Xunit;
 
@@ -1131,6 +1133,171 @@ public sealed class TrendChartViewModelTests
 		lateState.CurrentValue.Should().Be(4.0);
 	}
 
+	[AvaloniaFact]
+	public void AFailedHistoryQueryReachesTheMessagePanelAndStillRedraws()
+	{
+		var (viewModel, scheduler, panel) = CreateReportingViewModel(TimeSpan.FromHours(1.0), out var provider);
+		using var chart = viewModel;
+		using var messagePanel = panel;
+		chart.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+		var redraws = 0;
+		using var redrawSubscription = chart.RedrawRequested.Subscribe(_ => redraws++);
+		provider.FailHistory = true;
+
+		chart.RequestInitialHistory();
+		// Past the debounce window and the one sample period the recovery redraw falls into, and short of the
+		// 400 ms cap interval, which would admit a second query for the same window.
+		scheduler.AdvanceBy(TimeSpan.FromMilliseconds(200.0).Ticks);
+
+		messagePanel.Entries.Should().ContainSingle()
+			.Which.View.Should().Be(ArchiveFailureMapper.Map(new Error("Forced history failure.")));
+		redraws.Should().Be(1, "the failure path keeps the deliberate ApplyAxisModel and RequestRedraw recovery");
+	}
+
+	[AvaloniaFact]
+	public void RealtimeApplyReportsAThrowingConsumerAndKeepsTheSubscription()
+	{
+		var (viewModel, scheduler, panel) = CreateReportingViewModel(TimeSpan.FromMilliseconds(10.0), out _);
+		using var chart = viewModel;
+		using var messagePanel = panel;
+		var state = chart.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+		var throwsOnNextWindow = true;
+		void FailOnce(object? sender, NavigationWindow window)
+		{
+			if (!throwsOnNextWindow)
+			{
+				return;
+			}
+
+			throwsOnNextWindow = false;
+
+			throw new InvalidOperationException("Realtime consumer failure.");
+		}
+
+		chart.Navigation.WindowChanged += FailOnce;
+
+		// Without the guard the throw leaves ApplyRealtimeBatch, and Rx rethrows it out of this advance.
+		scheduler.AdvanceBy(_batchWindow.Ticks + 1);
+		var valueWhenTheApplyThrew = state.CurrentValue;
+		scheduler.AdvanceBy(TimeSpan.FromMilliseconds(200.0).Ticks);
+
+		throwsOnNextWindow.Should().BeFalse("the throwing handler has to have run");
+		messagePanel.Entries.Should().ContainSingle()
+			.Which.View.Should().Be(ArchiveFailureMapper.Map(
+				new ExceptionalError(new InvalidOperationException("Realtime consumer failure."))));
+		state.CurrentValue.Should().NotBe(
+			valueWhenTheApplyThrew, "the batches after the throw still reach the pen");
+	}
+
+	// Rx turns a throwing projection into OnError, which would end the Publish().RefCount() stream for both
+	// subscribers and rethrow out of this advance instead of reaching the panel.
+	[AvaloniaFact]
+	public void AThrowInTheBatchProjectionIsReportedAndTheRealtimeApplyContinues()
+	{
+		var (viewModel, scheduler, panel) = CreateReportingViewModel(TimeSpan.FromMilliseconds(10.0), out var provider);
+		using var chart = viewModel;
+		using var messagePanel = panel;
+		var state = chart.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+		provider.PoisonRealtimeWindow = true;
+
+		scheduler.AdvanceBy(_batchWindow.Ticks + 1);
+
+		messagePanel.Entries.Should().ContainSingle()
+			.Which.View.Should().Be(ArchiveFailureMapper.Map(
+				new ExceptionalError(new InvalidOperationException("Poisoned realtime window."))));
+		var valueWhenTheWindowFailed = state.CurrentValue;
+
+		provider.PoisonRealtimeWindow = false;
+		scheduler.AdvanceBy(TimeSpan.FromMilliseconds(200.0).Ticks);
+
+		state.CurrentValue.Should().NotBe(
+			valueWhenTheWindowFailed, "the batches after the failed window still reach the pen");
+	}
+
+	// Publish().RefCount() hands a terminal failure to every subscriber at once, so a chart and the
+	// coordinator's keep-alive each reporting it would coalesce into one entry counted twice.
+	[AvaloniaFact]
+	public void AProviderThatEndsTheLiveEdge_IsReportedOnce()
+	{
+		var scheduler = new TestScheduler();
+		var provider = new FakeDataProvider(scheduler, TimeSpan.FromMilliseconds(10.0))
+		{
+			RealtimeStreamFailure = new InvalidOperationException("the provider ended the live edge")
+		};
+		var coordinator = new TrendCoordinator(provider, provider.Pens, scheduler, scheduler, _batchWindow);
+		using var panel = new MessagePanelViewModel();
+		using var chart = new TrendChartViewModel(
+			coordinator,
+			scheduler,
+			scheduler,
+			panel,
+			NullLogger<TrendChartViewModel>.Instance);
+		coordinator.Start();
+
+		var advance = () => scheduler.AdvanceBy(_batchWindow.Ticks * 2);
+
+		advance.Should().NotThrow();
+		panel.Entries.Should().ContainSingle().Which.RepeatCount.Should()
+			.Be(1, "the one failure reaches the operator as one occurrence");
+		panel.Entries[0].View.Detail.Should().Contain("the provider ended the live edge");
+	}
+
+	// The report edits a bound collection, the likeliest thrower on the hop. Without the guard the throw
+	// leaves the realtime subscription this method is the observer of and ends the live edge for the session.
+	// The log carries both halves: the failure that was being reported, and the panel refusing it.
+	[AvaloniaFact]
+	public void AThrowOutOfTheMessagePanel_IsLoggedAndTheRealtimeApplyContinues()
+	{
+		var scheduler = new TestScheduler();
+		var provider = new FakeDataProvider(scheduler, TimeSpan.FromMilliseconds(10.0));
+		var coordinator = new TrendCoordinator(provider, provider.Pens, scheduler, scheduler, _batchWindow);
+		var logger = new RecordingLogger<TrendChartViewModel>();
+		using var panel = new MessagePanelViewModel();
+		using var chart = new TrendChartViewModel(coordinator, scheduler, scheduler, panel, logger);
+		var state = chart.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+		var poison = ReportingTestDoubles.PoisonEntries(panel);
+
+		provider.PoisonRealtimeWindow = true;
+
+		scheduler.AdvanceBy(_batchWindow.Ticks + 1);
+
+		logger.Failures.Select(entry => entry.Message).Should().Equal(
+			"Poisoned realtime window.",
+			"the bound list threw");
+
+		poison.Dispose();
+		provider.PoisonRealtimeWindow = false;
+		var valueWhenTheReportThrew = state.CurrentValue;
+		scheduler.AdvanceBy(TimeSpan.FromMilliseconds(200.0).Ticks);
+
+		state.CurrentValue.Should().NotBe(
+			valueWhenTheReportThrew, "the batches after the failed report still reach the pen");
+	}
+
+	// Both schedulers are virtual, unlike CreateViewModel's: these tests subscribe to RedrawRequested, whose
+	// Sample never returns on ImmediateScheduler, and they drive the realtime stream by advancing time.
+	private static (TrendChartViewModel ViewModel, TestScheduler Scheduler, MessagePanelViewModel Panel)
+		CreateReportingViewModel(TimeSpan realtimeInterval, out FakeDataProvider provider)
+	{
+		var scheduler = new TestScheduler();
+		provider = new FakeDataProvider(scheduler, realtimeInterval);
+		var coordinator = new TrendCoordinator(
+			provider,
+			provider.Pens,
+			scheduler,
+			scheduler,
+			_batchWindow);
+		var panel = new MessagePanelViewModel();
+		var viewModel = new TrendChartViewModel(
+			coordinator,
+			scheduler,
+			scheduler,
+			panel,
+			NullLogger<TrendChartViewModel>.Instance);
+
+		return (viewModel, scheduler, panel);
+	}
+
 	// The value a held query carries, distinct from every value the fake answers with, so the assertion says
 	// which of the two results the chart ended up holding.
 	private static Result<IReadOnlyList<PenHistoryEnvelope>> StaleEnvelopes()
@@ -1200,7 +1367,11 @@ public sealed class TrendChartViewModelTests
 			ImmediateScheduler.Instance,
 			_batchWindow);
 		var viewModel = new TrendChartViewModel(
-			coordinator, scheduler, ImmediateScheduler.Instance, NullLogger<TrendChartViewModel>.Instance);
+			coordinator,
+			scheduler,
+			ImmediateScheduler.Instance,
+			new MessagePanelViewModel(),
+			NullLogger<TrendChartViewModel>.Instance);
 
 		return (viewModel, scheduler, coordinator, provider);
 	}

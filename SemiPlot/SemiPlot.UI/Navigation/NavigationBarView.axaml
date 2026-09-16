@@ -1,0 +1,39 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:navigation="clr-namespace:SemiPlot.UI.Navigation"
+             xmlns:text="clr-namespace:SemiPlot.UI.Localization"
+             mc:Ignorable="d"
+             d:DesignWidth="900"
+             d:DesignHeight="40"
+             x:Class="SemiPlot.UI.Navigation.NavigationBarView"
+             x:DataType="navigation:NavigationBarViewModel">
+
+    <StackPanel Orientation="Horizontal"
+                Spacing="8"
+                VerticalAlignment="Center">
+
+        <Button Content="{x:Static text:Resources.NavigationJumpToNow}"
+                Command="{Binding JumpToNowCommand}" />
+
+        <ToggleButton Content="{x:Static text:Resources.NavigationSticky}"
+                      IsChecked="{Binding IsSticky, Mode=OneWay}"
+                      Command="{Binding ToggleStickyCommand}" />
+
+        <Border Name="GroupSeparator"
+                Width="1"
+                Margin="4,3"
+                Background="{DynamicResource AppSubtleLineBrush}" />
+
+        <ToggleButton Content="{x:Static text:Resources.NavigationDelta}"
+                      IsChecked="{Binding IsDeltaModeEnabled, Mode=OneWay}"
+                      Command="{Binding ToggleDeltaModeCommand}" />
+
+        <TextBlock Text="{Binding DeltaReadoutText}"
+                   IsVisible="{Binding IsDeltaModeEnabled}"
+                   VerticalAlignment="Center" />
+
+    </StackPanel>
+
+</UserControl>

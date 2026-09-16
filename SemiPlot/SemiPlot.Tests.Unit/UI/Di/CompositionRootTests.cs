@@ -9,6 +9,7 @@ using SemiPlot.Core.Data;
 using SemiPlot.DataSource.Postgres;
 using SemiPlot.Tests.Unit.Postgres;
 using SemiPlot.UI.MainWindow;
+using SemiPlot.UI.Messages;
 using SemiPlot.UI.Startup;
 
 using Xunit;
@@ -61,6 +62,17 @@ public sealed class CompositionRootTests
 		using var provider = BuildContainer();
 
 		provider.GetRequiredService<MainWindowViewModel>().Should().NotBeNull();
+	}
+
+	// One panel for the process: every reporter writes into the list the window shows.
+	[Fact]
+	public void Container_ResolvesTheMessagePanelAsOneInstance()
+	{
+		using var provider = BuildContainer();
+
+		var panel = provider.GetRequiredService<MessagePanelViewModel>();
+
+		panel.Should().BeSameAs(provider.GetRequiredService<MessagePanelViewModel>());
 	}
 
 	private static ServiceProvider BuildContainer()

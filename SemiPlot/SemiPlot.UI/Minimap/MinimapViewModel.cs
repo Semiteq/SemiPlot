@@ -12,6 +12,7 @@ using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
+using SemiPlot.UI.Messages;
 
 namespace SemiPlot.UI.Minimap;
 
@@ -20,6 +21,7 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 	private readonly TrendCoordinator _coordinator;
 	private readonly CompositeDisposable _disposables = [];
 	private readonly ILogger<MinimapViewModel> _logger;
+	private readonly MessagePanelViewModel _messagePanel;
 	private readonly ChartNavigationController _navigation;
 	private readonly IScheduler _uiScheduler;
 
@@ -29,11 +31,13 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 		TrendCoordinator coordinator,
 		ChartNavigationController navigation,
 		IScheduler uiScheduler,
+		MessagePanelViewModel messagePanel,
 		ILogger<MinimapViewModel> logger)
 	{
 		_coordinator = coordinator;
 		_navigation = navigation;
 		_uiScheduler = uiScheduler;
+		_messagePanel = messagePanel;
 		_logger = logger;
 
 		_navigation.WindowChanged += OnNavigationWindowChanged;
@@ -102,30 +106,37 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 			return;
 		}
 
-		if (result.IsFailed)
+		// A dispatcher job LoadExtentAsync posted and let go of, so a throw out of here reaches no caller.
+		try
 		{
-			_logger.LogWarning(
-				"Archive extent query failed; the minimap strip will not reflect the archive depth: {Errors}",
-				string.Join("; ", result.Errors.Select(error => error.Message)));
+			if (result.IsFailed)
+			{
+				_messagePanel.ReportFailure(result, _logger);
 
-			return;
+				return;
+			}
+
+			// An empty extent is a normal state of a fresh archive: leave HasExtent false so the strip stays
+			// blank.
+			if (result.Value.IsEmpty)
+			{
+				return;
+			}
+
+			ExtentFirst = result.Value.FirstUtc;
+			ExtentLast = result.Value.LastUtc;
+			HasExtent = true;
+			this.RaisePropertyChanged(nameof(ExtentFirst));
+			this.RaisePropertyChanged(nameof(ExtentLast));
+			this.RaisePropertyChanged(nameof(HasExtent));
+			this.RaisePropertyChanged(nameof(ExtentFirstLabel));
+			this.RaisePropertyChanged(nameof(ExtentLastLabel));
+			RefreshWindowFraction(_navigation.From, _navigation.To);
 		}
-
-		// An empty extent is a normal state of a fresh archive: leave HasExtent false so the strip stays blank.
-		if (result.Value.IsEmpty)
+		catch (Exception applyFailure)
 		{
-			return;
+			_messagePanel.TryReportFailure(new ExceptionalError(applyFailure), _logger);
 		}
-
-		ExtentFirst = result.Value.FirstUtc;
-		ExtentLast = result.Value.LastUtc;
-		HasExtent = true;
-		this.RaisePropertyChanged(nameof(ExtentFirst));
-		this.RaisePropertyChanged(nameof(ExtentLast));
-		this.RaisePropertyChanged(nameof(HasExtent));
-		this.RaisePropertyChanged(nameof(ExtentFirstLabel));
-		this.RaisePropertyChanged(nameof(ExtentLastLabel));
-		RefreshWindowFraction(_navigation.From, _navigation.To);
 	}
 
 	private static string FormatEndpoint(DateTime utc)

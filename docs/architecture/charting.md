@@ -5,7 +5,7 @@
 The chart is rendered with **ScottPlot 5** (`ScottPlot.Avalonia` 5.1.59, MIT, SkiaSharp) — a
 native Avalonia control (`AvaPlot`), no web view. It was chosen over OxyPlot for built-in
 independent multi-axis; the prior uPlot/WebView2 stack is removed. The surrounding UI (legend,
-toolbar, axes UX, theming) is ours; ScottPlot is only the plotting core.
+navigation bar, axes UX, theming) is ours; ScottPlot is only the plotting core.
 
 ### Per-pen plottable: `EnvelopeLine`
 
@@ -91,9 +91,11 @@ Elements to reproduce and improve:
 - **Mini-legend** with columns: checkbox / color / name / current value
   (trend-feature-spec.md §PN-8). Pens are logically grouped (ICP, RIE, pressures, gases,
   temperatures).
-- **Aggregation layer selector** ("Слой": raw / minute / hour / day) — switches the resolution
-  of historical data; maps to the archive `l` column (see data-integration.md). Behavior in
-  trend-feature-spec.md §DA-2, §DA-4.
+- **Aggregation layer** ("Слой": raw / minute / hour / day) — the resolution the history read
+  asks for; maps to the archive `l` column (see data-integration.md). The legacy window lets the
+  operator pick it. SemiPlot does not: the zoom width picks the layer and the status bar shows the
+  name read-only, named from resx rather than from `AggregationLayer.ToString()`. The manual pin is
+  trend-feature-spec.md §DA-4 and is not built; the automatic selection is §DA-2.
 - **Cursor** with value readout at a point (trend-feature-spec.md §CU-1, §CU-2).
 - **Time navigation:** zoom/pan, jump to start/end, range selection
   (trend-feature-spec.md §TM-1 … §TM-4).
@@ -144,7 +146,7 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   two with its own 10% deadband; it selects the layer only, never the query resolution. **Single
   writer:** `TrendChartViewModel.ReportDataAreaWidth`, called from `TrendChartView`'s
   `Plot.RenderManager.RenderFinished` handler — do not call `SetTargetColumnCount` from anywhere else,
-  in the same style as the toolbar's `IsSticky`. That seam carries the `DataRect` of the frame just
+  in the same style as the navigation bar's `IsSticky`. That seam carries the `DataRect` of the frame just
   rasterised; `Plot.LastRender` read after `Refresh()` would still describe the previous frame, so a
   resize could leave the layer computed for the old canvas with nothing scheduled to correct it.
   `RenderFinished` fires on Avalonia's render thread, so the report is posted to the UI thread, and only
@@ -190,16 +192,40 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   The view (`TrendChartView`) renders the result onto a transparent overlay `Canvas` (crosshair `Line` +
   readout `Border`), suppressed during drag / delta mode.
 - `Chart/LeftButtonTool` (enum `Pan | DeltaPlacement`) — the single left-button gesture state, sourced
-  from the toolbar delta toggle.
+  from the navigation bar's delta toggle.
 - `Chart/ChartAxisRegion` + `ChartAxisEdit` — Y-axis click-region hit-test (panel band, upper/lower
   split, pixel→value with Y inversion) and the seed-untouched-bound helper for inline range edits.
 - `Chart/LocalTimeAxis` — UTC↔local-OADate conversion at every render boundary.
-- `Toolbar/TrendToolbarView` + `TrendToolbarViewModel` — autoscale, set-limits, layer selector,
-  jump-to-now, sticky toggle, delta-mode toggle + inline Δt/Δy readout (ReactiveUI commands).
+- `Navigation/NavigationBarView` + `NavigationBarViewModel` — time navigation only: jump-to-now,
+  sticky toggle, delta-mode toggle + inline Δt/Δy readout (ReactiveUI commands). Autoscale, the two
+  limit boxes and set-limits left with the axis click editor taking them over; the layer label left
+  for the status bar.
 - `Legend/TrendLegendView` + `TrendLegendViewModel` (+ group / row VMs and two converters) — the
   grouped mini-legend: checkbox visibility, color, name, current value, value-at-cursor, scale range.
 - `Minimap/MinimapView` + `MinimapViewModel` — Canvas-based archive-overview strip; navigates via the
   shared `ChartNavigationController` (see trend-interaction.md).
+- `MainWindow/MainWindow` + `MainWindowViewModel` — the seven-row window grid and the flags its View
+  menu writes; the window's code-behind owns the two view-side requests (close, About dialog).
+- `MainWindow/AppMenuBar` — the File / View / Help menu. Each checkable item reads its flag
+  `Mode=OneWay` and writes it only through the command it invokes (`CLAUDE.md`, UI).
+- `MainWindow/AppStatusBar` + `AppStatusBarViewModel` — current connection state and the active
+  aggregation layer, named from resx. Owns the bind-once subscription to the coordinator's connection
+  stream and writes the fault and recovery entries (`data-integration.md`).
+- `MainWindow/AboutDialog` + `AboutInfo` — the modal naming the product, the assembly version and the
+  configuration directory this run read.
+- `Messages/MessagePanelView` + `MessagePanelViewModel` — the bounded, newest-first list every failure
+  lands in, capped at `MessagePanelViewModel.MaximumEntries` (200) with the oldest dropped.
+  `IsVisible` decides the row, an empty list included, and the empty list carries its own line;
+  `ToggleCommand` is the single writer of `IsVisible` and has two callers, the View menu and the
+  status bar's connection indicator, both of which read that same flag back.
+- `Messages/MessageEntry` + `MessageSeverity` — one row: the mapped failure, the UTC last-seen stamp
+  the view renders as local time, and the repeat count coalescing produces.
+- `Messages/ArchiveFailureMapper` + `ArchiveFailureView` + `ConfigurationSectionFailureMapper` — the
+  one place an `IError` becomes a title, a detail, a remedy and a severity (`ui-text.md`).
+- `Messages/ResultReporting` — the two extension methods over the panel that write the entry and one
+  log line; the log line carries the exception object when the error has one.
+- `Messages/UnhandledErrorObserver` — the `IObserver<Exception>` ReactiveUI's builder takes, holding a
+  panel factory and the UI scheduler (`overview.md`).
 - `Localization/Resources.resx` + `Resources.ru.resx` and the generated
   `SemiPlot.UI.Localization.Resources` - every string the operator reads, the startup failure window
   included, in two sets the `locale` key of the `app/` section selects between.
@@ -251,8 +277,9 @@ view model:
   the full stored time span. `TrendCoordinator.QueryArchiveExtentAsync()` is a pass-through to the
   provider (mirroring `QueryHistoryAsync`); the minimap consumes it (see trend-interaction.md).
 - **Connection state:** `TrendCoordinator.ConnectionFaults` republishes the provider's own
-  `IObservable<ArchiveConnectionState>` on the UI scheduler. `MainWindowViewModel` binds it once and
-  draws it as a banner row over a chart that keeps its history (see data-integration.md).
+  `IObservable<ArchiveConnectionState>` on the UI scheduler. `MainWindow/AppStatusBarViewModel` binds
+  it once and shows it in the status bar, over a chart that keeps its history; every fault it carries
+  becomes a message-panel entry (see data-integration.md).
 
 These records are the plottables' input shape after the view model maps them onto `EnvelopeColumn`
 buffers; there is no serialization step.

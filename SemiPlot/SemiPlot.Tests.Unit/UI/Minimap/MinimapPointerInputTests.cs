@@ -20,6 +20,7 @@ using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
+using SemiPlot.UI.Messages;
 using SemiPlot.UI.Minimap;
 
 using Xunit;
@@ -130,7 +131,11 @@ public sealed class MinimapPointerInputTests
 	private static TrendChartViewModel CreateChartViewModel(TrendCoordinator coordinator, TestScheduler scheduler)
 	{
 		return new TrendChartViewModel(
-			coordinator, scheduler, AvaloniaScheduler.Instance, NullLogger<TrendChartViewModel>.Instance);
+			coordinator,
+			scheduler,
+			AvaloniaScheduler.Instance,
+			new MessagePanelViewModel(),
+			NullLogger<TrendChartViewModel>.Instance);
 	}
 
 	private static async Task<(Window Window, Canvas StripCanvas)> ShowMinimapAsync(
@@ -140,6 +145,7 @@ public sealed class MinimapPointerInputTests
 			coordinator,
 			navigation,
 			ImmediateScheduler.Instance,
+			new MessagePanelViewModel(),
 			NullLogger<MinimapViewModel>.Instance);
 		await viewModel.LoadExtentAsync();
 		viewModel.HasExtent.Should().BeTrue("without an extent the strip ignores every pointer position");

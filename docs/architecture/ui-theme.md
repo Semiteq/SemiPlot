@@ -34,13 +34,14 @@ control, in each state the tree can reach.
 | `TextBoxForeground` | `TextBox` | `#000000` | `#DFE1E5` |
 | `CheckBoxForeground` | `CheckBox` | `#000000` | `#DFE1E5` |
 | `WindowDefaultForeground` | `Window`, and every control inheriting from it | `#000000` | `#DFE1E5` |
-| `MenuItemForeground` | The `TextBox` context menu | `#000000` | `#DFE1E5` |
-| `TextBoxPlaceholderForeground` | The toolbar's two placeholders | `#818594` | `#6F737A` |
+| `MenuItemForeground` | Every menu caption at rest: the menu bar's File, View and Help, their items, the check glyph, and the `TextBox` context menu | `#000000` | `#DFE1E5` |
+| `MenuItemPointeroverForeground` | A menu caption while its submenu is open or the pointer is over it; Semi ships this brighter than its own text colour | `#000000` | `#DFE1E5` |
+| `TextBoxPlaceholderForeground` | A `TextBox` watermark; no control in this tree shows one since the navigation bar lost its limit boxes | `#818594` | `#6F737A` |
 | `TextBlockDisabledForeground` | Disabled `TextBlock` | `#A8ADBD` | `#5A5D63` |
 | `TextBoxDisabledForeground` | Disabled `TextBox` | `#A8ADBD` | `#5A5D63` |
-| `ButtonDefaultDisabledForeground` | A toolbar button whose command cannot execute | `#A8ADBD` | `#5A5D63` |
-| `ButtonDefaultPrimaryForeground` | Every toolbar button's caption, and an unchecked `ToggleButton` | `#3574F0` | `#3574F0` |
-| `ButtonSolidPrimaryBackground` | A checked `ToggleButton`, which the toolbar's Sticky toggle is on the first frame | `#3574F0` | `#3574F0` |
+| `ButtonDefaultDisabledForeground` | A button whose command cannot execute | `#A8ADBD` | `#5A5D63` |
+| `ButtonDefaultPrimaryForeground` | Every navigation-bar button's caption, and an unchecked `ToggleButton` | `#3574F0` | `#3574F0` |
+| `ButtonSolidPrimaryBackground` | A checked `ToggleButton`, which the navigation bar's Sticky toggle is on the first frame | `#3574F0` | `#3574F0` |
 | `ButtonSolidPrimaryBorderBrush` | The same control's border | `#3574F0` | `#3574F0` |
 | `CheckBoxDefaultBorderBrush` | The legend's unchecked box, one per pen | `#EBECF0` | `#393B40` |
 | `ScrollBarThumbForeground` | The legend's scrollbar thumb | `#A8ADBD` | `#5A5D63` |
@@ -49,8 +50,9 @@ control, in each state the tree can reach.
 | `CheckBoxPointeroverBorderBrush` | The legend's hovered box | `#3574F0` | `#3574F0` |
 | `TextBoxFocusBorderBrush` | The focused axis-bound editor | `#3574F0` | `#3574F0` |
 | `WindowDefaultBackground` | The window ground | `#FFFFFF` | `#1E1F22` |
-| `MenuFlyoutBackground` | The `TextBox` context menu | `#F7F8FA` | `#2B2D30` |
-| `MenuFlyoutBorderBrush` | The `TextBox` context menu | `#EBECF0` | `#393B40` |
+| `MenuFlyoutBackground` | Every open submenu, the `TextBox` context menu included | `#F7F8FA` | `#2B2D30` |
+| `MenuFlyoutBorderBrush` | The same submenu's border | `#EBECF0` | `#393B40` |
+| `MenuItemSeparatorBackground` | The `Separator` in the View menu | `#EBECF0` | `#393B40` |
 
 The accent is the one value deliberately equal across the variants: it does not change with the
 ground it sits on.
@@ -66,7 +68,11 @@ Adding a control means running the same marker probe for it, not copying a key l
 `ThemeTests.EverySemiControl_PaintsItselfFromThePalette` shows a real `Button`, `TextBlock`, `TextBox`
 and checked `CheckBox` under both variants and reads their resolved brushes back;
 `ThemeTests.EveryToggleAndScrollSurface_PaintsItselfFromThePalette` covers the rest of what the window
-holds, a `ToggleButton` in both check states, an unchecked `CheckBox` and a `ScrollViewer` thumb.
+holds, a `ToggleButton` in both check states, an unchecked `CheckBox` and a `ScrollViewer` thumb;
+`ThemeTests.EveryMenuSurface_PaintsItselfFromThePalette` opens a real `Menu` and reads the caption at
+rest and open, a leaf, a checked item's glyph, a `Separator`, the flyout chrome and an `ItemsControl`
+row. The `Ellipse` of a message-panel row carries no Semi key: its fill is one of this tree's own
+severity brushes, gated by `MessagePanelViewTests`.
 Resolving a key through `Application.TryGetResource` cannot fail while an override is inert, so a test
 written that way proves nothing about the retint. A control the tree gains is added to one of those two
 tests in every state it reaches.
@@ -76,12 +82,12 @@ tests in every state it reaches.
 `SemiTheme` keys its built-in strings by specific culture and falls through to `zh-CN` for a neutral
 one, so `App.Configure` calls `SemiTheme.OverrideLocaleResources` with
 `App.SemiLocaleFor(settings?.Locale ?? StartupSequence.BootstrapLocale)`, outside the
-`settings is not null` guard that the variant sits inside (`App.axaml.cs:91-92`): a settings failure
+`settings is not null` guard that the variant sits inside (`App.axaml.cs:112-113`): a settings failure
 has no configured locale and reads its window in the bootstrap one.
 `AppConfigurationTests.ASettingsFailure_StillHandsSemiTheBootstrapLocale` calls `App.Configure` with
 null settings and reads `STRING_MENU_COPY` back off `Application.Resources`, so moving the call
-inside the guard turns it red. The surface this tree shows is the context menu of the axis-bound
-editor's `TextBox`.
+inside the guard turns it red. The surfaces this tree shows are the window's own `Menu` and the
+context menu of the axis-bound editor's `TextBox`.
 
 ## Corner radius sits outside the theme dictionaries
 
@@ -98,17 +104,22 @@ The three keys are the controls this tree has. A control the tree gains brings i
 
 ## The application's own surfaces
 
-Semi owns the controls; these seven keys are ours, and each exists in both variants.
+Semi owns the controls; these twelve keys are ours, and each exists in both variants.
 
 | Key | Consumers | Light | Dark |
 | --- | --- | --- | --- |
-| `AppPanelBackgroundBrush` | Toolbar, legend panel, message panel, connection banner, status bar, startup failure panel, minimap frame, chart hover readout | `#F7F8FA` | `#2B2D30` |
+| `AppPanelBackgroundBrush` | Navigation bar, legend panel, message panel, status bar, startup failure panel, minimap frame, chart hover readout | `#F7F8FA` | `#2B2D30` |
 | `AppContentBackgroundBrush` | Chart area, minimap strip canvas | `#FFFFFF` | `#1E1F22` |
 | `AppBorderBrush` | Every separator in the three views | `#EBECF0` | `#393B40` |
 | `AppSubtleLineBrush` | Minimap baseline, plot grid | `#EBECF0` | `#393B40` |
 | `AppSecondaryForegroundBrush` | Minimap extent labels, chart crosshair, plot axis furniture | `#818594` | `#6F737A` |
 | `AppAccentBrush` | Minimap window highlight border | `#3574F0` | `#3574F0` |
 | `AppAccentFillBrush` | Minimap window highlight fill | `#3574F0` at 0.25 opacity | `#3574F0` at 0.25 opacity |
+| `AppSeverityErrorBrush` | The message panel's dot on an `Error` entry | `#DB3B4B` | `#E55765` |
+| `AppSeverityWarningBrush` | The same dot on a `Warning` entry | `#E3AE4D` | `#F2C55C` |
+| `AppSeverityInfoBrush` | The same dot on an `Info` entry | `#3574F0` | `#3574F0` |
+| `AppConnectionOkBrush` | The status bar's connection indicator, `connection-ok` | `#208A3C` | `#5FAD65` |
+| `AppConnectionFaultBrush` | The same indicator, `connection-fault` | `#DB3B4B` | `#E55765` |
 
 Pen colours are not theme keys. They come from the archive with the pen and stay per pen under both
 variants.
@@ -117,7 +128,7 @@ variants.
 
 `Startup/AppSettingsLoader` reads `theme` into `AppSettings.Theme`
 (`Startup/AppSettings.cs:14-19`), and `App.Configure`, which `App.Run` hands to `AfterSetup`,
-assigns `RequestedThemeVariant` from it at `App.axaml.cs:84-87`, above the failure return. So an
+assigns `RequestedThemeVariant` from it at `App.axaml.cs:107`, above the failure return. So an
 archive failure still renders on the configured variant. `settings` is null only when the settings load
 itself failed; that window renders on the `Light` variant `App.axaml:5` declares, which is also
 what the headless test builders see, since they construct `App` directly and never call `App.Run`.

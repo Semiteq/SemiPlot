@@ -1,19 +1,15 @@
-using System.Reactive.Concurrency;
-
-using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 
 using AwesomeAssertions;
 
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Reactive.Testing;
 
-using SemiPlot.Tests.Unit.UI.Bridge;
-using SemiPlot.UI.Bridge;
-using SemiPlot.UI.Chart;
 using SemiPlot.UI.MainWindow;
+using SemiPlot.UI.Messages;
 
 using Xunit;
+
+using static SemiPlot.Tests.Unit.UI.MainWindow.MainWindowTestBuilder;
 
 namespace SemiPlot.Tests.Unit.UI.MainWindow;
 
@@ -22,172 +18,92 @@ namespace SemiPlot.Tests.Unit.UI.MainWindow;
 [Trait("Category", "Unit")]
 public sealed class MainWindowViewModelTests
 {
-	private static readonly TimeSpan _batchWindow = TimeSpan.FromMilliseconds(33);
-
-	[Fact]
-	public void PenCount_WithoutChart_IsZero()
+	[AvaloniaFact]
+	public void SetChart_BuildsTheNavigationBarAndTheLegend()
 	{
-		using var viewModel = new MainWindowViewModel();
+		using var viewModel = NewViewModel();
+		var chart = CreateChartWithPens();
 
-		viewModel.PenCount.Should().Be(0);
+		viewModel.SetChart(chart);
+
+		viewModel.NavigationBarViewModel.Should().NotBeNull();
+		viewModel.LegendViewModel.Should().NotBeNull();
 	}
 
 	[AvaloniaFact]
-	public void ChartViewModel_WhenAssigned_PublishesThePenCount()
+	public void SetChart_WithNull_DropsTheNavigationBarAndTheLegend()
 	{
-		using var viewModel = new MainWindowViewModel();
-		var (chart, expectedPenCount) = CreateChartWithPens();
-		var observedPenCounts = ObservePenCount(viewModel);
+		using var viewModel = NewViewModel();
+		viewModel.SetChart(CreateChartWithPens());
 
-		viewModel.ChartViewModel = chart;
+		viewModel.SetChart(null);
 
-		viewModel.PenCount.Should().Be(expectedPenCount);
-		observedPenCounts.Should().Equal(expectedPenCount);
+		viewModel.NavigationBarViewModel.Should().BeNull();
+		viewModel.LegendViewModel.Should().BeNull();
 	}
 
 	[AvaloniaFact]
-	public void ChartViewModel_WhenReassigned_PublishesTheNewPenCount()
+	public void SetChart_WithTheSameInstance_KeepsTheChartAlive()
 	{
-		using var viewModel = new MainWindowViewModel();
-		var (first, firstPenCount) = CreateChartWithPens();
-		var (second, secondPenCount) = CreateChartWithPens(1);
-		secondPenCount.Should().NotBe(firstPenCount);
-		viewModel.ChartViewModel = first;
-		var observedPenCounts = ObservePenCount(viewModel);
-
-		viewModel.ChartViewModel = second;
-
-		viewModel.PenCount.Should().Be(secondPenCount);
-		observedPenCounts.Should().Equal(secondPenCount);
-	}
-
-	[AvaloniaFact]
-	public void ChartViewModel_WhenClearedToNull_PublishesAZeroPenCount()
-	{
-		using var viewModel = new MainWindowViewModel();
-		var (chart, _) = CreateChartWithPens();
-		viewModel.ChartViewModel = chart;
-		var observedPenCounts = ObservePenCount(viewModel);
-
-		viewModel.ChartViewModel = null;
-
-		viewModel.PenCount.Should().Be(0);
-		observedPenCounts.Should().Equal(0);
-	}
-
-	[AvaloniaFact]
-	public void ChartViewModel_WhenAssignedTheSameInstance_KeepsTheChartAlive()
-	{
-		using var viewModel = new MainWindowViewModel();
-		var (chart, _) = CreateChartWithPens();
-		viewModel.ChartViewModel = chart;
+		using var viewModel = NewViewModel();
+		var chart = CreateChartWithPens();
+		viewModel.SetChart(chart);
 		var activePenId = chart.ActivePenId;
-		var observedPenCounts = ObservePenCount(viewModel);
+		var navigationBar = viewModel.NavigationBarViewModel;
 
-		viewModel.ChartViewModel = chart;
+		viewModel.SetChart(chart);
 
 		// Every mutating member throws ObjectDisposedException once the chart is disposed.
 		chart.SetActivePen(activePenId).Should().BeTrue();
-		observedPenCounts.Should().BeEmpty();
+		viewModel.NavigationBarViewModel.Should().BeSameAs(navigationBar);
 	}
 
-	// The empty-catalogue sentence is bound, so it appears only if the property publishes on the same
-	// assignment PenCount publishes on.
+	// The status bar outlives the chart, so the bar follows whichever chart is in force rather than being
+	// rebuilt with it: a rebuilt bar would lose the connection stream bound once at startup.
 	[AvaloniaFact]
-	public void ChartViewModel_WhenAssignedWithNoPens_PublishesTheEmptyCatalogueState()
+	public void SetChart_PointsTheStatusBarAtItsLayer()
 	{
-		using var viewModel = new MainWindowViewModel();
-		viewModel.IsCatalogueEmpty.Should().BeFalse();
-		var (chart, penCount) = CreateChartWithPens(0);
-		penCount.Should().Be(0);
-		var observed = ObserveEmptyCatalogueState(viewModel);
+		using var panel = new MessagePanelViewModel();
+		var statusBar = NewStatusBar(panel);
+		using var viewModel = new MainWindowViewModel(
+			panel, statusBar, NullLogger<MainWindowViewModel>.Instance);
+		var chart = CreateChartWithPens();
 
-		viewModel.ChartViewModel = chart;
+		viewModel.SetChart(chart);
 
-		viewModel.IsCatalogueEmpty.Should().BeTrue();
-		observed.Should().Equal(true);
+		statusBar.ActiveLayer.Should().Be(chart.Navigation.ActiveLayer);
+		viewModel.StatusBar.Should().BeSameAs(statusBar);
 	}
 
 	[AvaloniaFact]
 	public void StartupFailure_WhenSet_MakesThePanelVisibleAndTheChartNull()
 	{
-		var failure = new ArchiveFailureView("Startup failed", "detail", "remedy");
+		var failure = new ArchiveFailureView(
+			"Startup failed",
+			"detail",
+			"remedy",
+			MessageSeverity.Error);
 
-		using var viewModel = new MainWindowViewModel { StartupFailure = failure };
+		using var viewModel = NewViewModel();
+		viewModel.StartupFailure = failure;
 
 		viewModel.HasStartupFailure.Should().BeTrue();
 		viewModel.ChartViewModel.Should().BeNull();
 	}
 
+	// The code-behind route: the About dialog's throw cannot escape an async void handler, so it reports
+	// through the view model rather than through a logger the view would have to hold itself.
 	[AvaloniaFact]
-	public void MainWindow_WithAStartupFailure_ShowsItsThreeTexts()
+	public void ReportFailure_PutsTheThrowInThePanel()
 	{
-		var failure = new ArchiveFailureView(
-			"No connection to the archive",
-			"SemiPlot could not open a connection to 'semiplot' at scada-host:5432.",
-			"Check that the PostgreSQL server is running.");
-		using var viewModel = new MainWindowViewModel { StartupFailure = failure };
-		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
+		using var panel = new MessagePanelViewModel();
+		using var viewModel = new MainWindowViewModel(
+			panel, NewStatusBar(panel), NullLogger<MainWindowViewModel>.Instance);
 
-		window.Show();
+		viewModel.ReportFailure(new InvalidOperationException("the dialog refused"));
 
-		ReadText(window, "StartupFailureTitle").Should().Be(failure.Title);
-		ReadText(window, "StartupFailureDetail").Should().Be(failure.Detail);
-		ReadText(window, "StartupFailureRemedy").Should().Be(failure.Remedy);
-	}
-
-	private static string? ReadText(Window window, string name)
-	{
-		return window.FindControl<TextBlock>(name)?.Text;
-	}
-
-	private static List<bool> ObserveEmptyCatalogueState(MainWindowViewModel viewModel)
-	{
-		var observed = new List<bool>();
-		viewModel.PropertyChanged += (_, args) =>
-		{
-			if (args.PropertyName == nameof(MainWindowViewModel.IsCatalogueEmpty))
-			{
-				observed.Add(viewModel.IsCatalogueEmpty);
-			}
-		};
-
-		return observed;
-	}
-
-	private static List<int> ObservePenCount(MainWindowViewModel viewModel)
-	{
-		var observed = new List<int>();
-		viewModel.PropertyChanged += (_, args) =>
-		{
-			if (args.PropertyName == nameof(MainWindowViewModel.PenCount))
-			{
-				observed.Add(viewModel.PenCount);
-			}
-		};
-
-		return observed;
-	}
-
-	private static (TrendChartViewModel Chart, int PenCount) CreateChartWithPens(int? penLimit = null)
-	{
-		var scheduler = new TestScheduler();
-		var provider = new FakeDataProvider(scheduler, TimeSpan.FromMilliseconds(10));
-		var coordinator = new TrendCoordinator(
-			provider,
-			provider.Pens,
-			scheduler,
-			ImmediateScheduler.Instance,
-			_batchWindow);
-		var chart = new TrendChartViewModel(
-			coordinator, scheduler, ImmediateScheduler.Instance, NullLogger<TrendChartViewModel>.Instance);
-		var pens = provider.Pens.Take(penLimit ?? provider.Pens.Count).ToArray();
-
-		foreach (var pen in pens)
-		{
-			chart.AddPen(pen);
-		}
-
-		return (chart, pens.Length);
+		panel.Entries.Should().ContainSingle();
+		panel.Entries[0].View.Detail.Should().Contain("the dialog refused");
+		panel.IsVisible.Should().BeTrue();
 	}
 }

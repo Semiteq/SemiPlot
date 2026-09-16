@@ -15,6 +15,7 @@ using SemiPlot.DataSource.Postgres;
 using SemiPlot.Tools.ArchiveSeeder;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
+using SemiPlot.UI.Messages;
 
 using Xunit;
 
@@ -60,7 +61,11 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 		// have nothing left to wait for and would never complete.
 		using var armed = new ArmedGate(coordinator.ConnectionFaults);
 		using var chart = new TrendChartViewModel(
-			coordinator, dataScheduler, ImmediateScheduler.Instance, NullLogger<TrendChartViewModel>.Instance);
+			coordinator,
+			dataScheduler,
+			ImmediateScheduler.Instance,
+			new MessagePanelViewModel(),
+			NullLogger<TrendChartViewModel>.Instance);
 		using var batches = new BatchCollector(coordinator.RealtimeBatches);
 
 		foreach (var pen in catalogue.Value)
@@ -147,7 +152,11 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 
 		using var armed = new ArmedGate(coordinator.ConnectionFaults);
 		using var chart = new TrendChartViewModel(
-			coordinator, dataScheduler, ImmediateScheduler.Instance, NullLogger<TrendChartViewModel>.Instance);
+			coordinator,
+			dataScheduler,
+			ImmediateScheduler.Instance,
+			new MessagePanelViewModel(),
+			NullLogger<TrendChartViewModel>.Instance);
 		using var batches = new BatchCollector(coordinator.RealtimeBatches);
 
 		foreach (var pen in catalogue.Value)

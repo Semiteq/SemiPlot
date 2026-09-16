@@ -89,7 +89,8 @@ the naive-local-to-UTC conversion, partition pruning, and the grant chain — re
 commissioning. The container is the delivery mechanism for a real server, nothing more.
 
 **Against a real Avalonia** — `SemiPlot.Tests.Unit/UI/`, under `[AvaloniaFact]`:
-`ChartPointerInputTests`, `MinimapPointerInputTests`, `TrendChartViewTests`, `TrendToolbarViewTests`,
+`ChartPointerInputTests`, `MinimapPointerInputTests`, `TrendChartViewTests`, `NavigationBarViewTests`,
+`AppMenuBarTests`, `AppStatusBarViewTests`, `MainWindowViewTests`, `MessagePanelViewTests`, `ThemeTests`,
 `TrendCoordinatorTests` with `FakeDataProvider`. Seams guarded: the dispatcher, layout, hit-testing,
 pointer capture and event routing. Real framework, synthetic data. These are what catch a rendering-stack version bump.
 

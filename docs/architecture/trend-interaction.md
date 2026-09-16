@@ -43,11 +43,13 @@ operator interaction.
   `AvaloniaScheduler` / `UseReactiveUI` live in namespace `ReactiveUI.Avalonia` (NOT
   `Avalonia.ReactiveUI`), and `UseReactiveUI` takes a mandatory `Action<ReactiveUIBuilder>`.
   Stack: **ReactiveUI** MVVM
-  (`ReactiveObject` / `ReactiveCommand` / `AvaloniaScheduler.Instance` = `RxApp.MainThreadScheduler` /
-  `CompositeDisposable`; `RxSchedulers.MainThreadScheduler` also ships in 12.0.3 and is not used),
+  (`ReactiveObject` / `ReactiveCommand` / `AvaloniaScheduler.Instance` / `CompositeDisposable`),
   **Microsoft.Extensions.DependencyInjection** (extension methods, primary constructors), **Serilog**
   (file, rolling 5 MB / 5 files), **Semi.Avalonia** 12.0.3 retinted to the JetBrains palette
-  (`ui-theme.md`). Rationale for ReactiveUI: the data layer is
+  (`ui-theme.md`). `RxApp` is gone from the installed ReactiveUI 23.2.28: its schedulers are
+  `RxSchedulers.MainThreadScheduler` and `RxSchedulers.TaskpoolScheduler`, its exception handler is
+  `RxState.DefaultExceptionHandler`, and this repository reads neither — the UI scheduler it passes
+  around is `AvaloniaScheduler.Instance`. Rationale for ReactiveUI: the data layer is
   Rx-native and the VMs are derived-state-heavy (sticky, cursor, active-pen) — a fit for
   `WhenAnyValue`/OAPH/`ReactiveCommand`; CommunityToolkit.Mvvm is an acceptable lower-friction
   alternative. The Core `IDataProvider` / DTO / stub layer is retained.
@@ -73,7 +75,9 @@ operator interaction.
 - **Many-axes management:** **single active Y axis + per-pen autoscale** (legacy SCADA model);
   clicking a pen makes it active. A shared common scale for a *group* of pens is supported on top.
 - **Axis scaling gestures:** double-click axis = autoscale; entering values = fixed manual
-  limits. Basic actions are also **duplicated in a toolbar** (not only axis gestures).
+  limits. The second half — the same actions **duplicated in a toolbar** — is superseded: the
+  autoscale button, the two limit boxes and Set Limits left the bar with the navigation-bar change,
+  and the axis click editor is the only way to set a pen's limits.
 - **Log axis:** values ≤ 0 are **sanitized** (dropped) before log scaling.
 - **Time display:** **computer local time** (machine local), not UTC.
 - **Line style:** both stepped and interpolated, **configurable per pen**.
@@ -124,7 +128,8 @@ as-built mechanics that realize them:
   that path, so the initial load and gestures share one latest-wins history path; the first-snap
   `TrackDataExtents` path stays non-requerying (single initial load).
 - **Axis scaling gestures (as-built):** double-click an axis = autoscale (§AY-4); entering min/max =
-  fixed manual limits (§AY-3); the same actions are duplicated in a toolbar. The scale modes are
+  fixed manual limits (§AY-3). The axis itself is the only place that sets them: the navigation bar
+  carries time navigation only. The scale modes are
   `auto`, which ranges over the columns inside the visible window, and `manual` (§AY-3, §AY-4); the
   logarithmic axis is an axis *type* with values ≤ 0 sanitized before scaling (§AY-6).
 
@@ -158,7 +163,7 @@ never sees it. `TrendChartView.InitializeComponent` therefore also sets
 `_plotControl.HandleMouseWheelEvent = false`, which is what keeps wheel zoom working; the view's own
 handler is then the only writer of `Handled` for the wheel. The left button is a
 single tool with an explicit state (`Chart/LeftButtonTool` = `Pan` | `DeltaPlacement`); the active
-tool is sourced from the toolbar delta-mode toggle (`TrendChartViewModel.ActiveLeftButtonTool`),
+tool is sourced from the navigation bar's delta-mode toggle (`TrendChartViewModel.ActiveLeftButtonTool`),
 so there is one left-button gesture, not overlapping hidden branches.
 
 - **Scroll = zoom about the cursor anchor; left-drag = hand pan.** Press captures the pointer and
@@ -166,8 +171,8 @@ so there is one left-button gesture, not overlapping hidden branches.
   `TrendNavigationModel.Pan`; release ends the drag and restores the hand cursor. The hover readout
   and crosshair (an Avalonia overlay) are suppressed for the duration of the drag.
 - **Sticky to real-time by default.** A button detaches sticky (pan into the past); clicking it
-  again re-attaches and returns to real-time. `WindowChanged` is the single writer of the toolbar
-  `IsSticky` (refreshed from `Navigation.IsSticky`), so auto-detach and `JumpToNow` re-attach stay
+  again re-attaches and returns to real-time. `WindowChanged` is the single writer of the navigation
+  bar's `IsSticky` (refreshed from `Navigation.IsSticky`), so auto-detach and `JumpToNow` re-attach stay
   in sync with the button — no double write path.
 - **Panning so the live edge scrolls out of the view** auto-detaches sticky.
 - **Hover readout + crosshair (X-trace) live in an Avalonia overlay, not on the plot.** Moving the
@@ -181,11 +186,11 @@ so there is one left-button gesture, not overlapping hidden branches.
   is in progress or delta mode is active (`IsDragging || IsDeltaModeEnabled`) and is repositioned from
   the throttled `RedrawRequested` seam (after `Refresh()`) and on `SizeChanged` so it tracks
   pan/zoom/resize/live-edge without per-event re-renders.
-- **Delta cursors (Δt / Δy) via an explicit toolbar mode.** A toolbar "Delta" toggle
-  (`TrendToolbarViewModel.IsDeltaModeEnabled`) sets the chart into `DeltaPlacement`: two left clicks
+- **Delta cursors (Δt / Δy) via an explicit navigation-bar mode.** The bar's "Delta" toggle
+  (`NavigationBarViewModel.IsDeltaModeEnabled`) sets the chart into `DeltaPlacement`: two left clicks
   place the cursors and drag does NOT pan; toggling off clears the placed cursors and hides the
   lines. Δt and the **active-pen** Δy (`Core/Trends/DeltaCursorModel` → `DeltaReadout`) are shown in
-  an inline toolbar readout next to the toggle. (The legacy `DeltaCursorsEnabled` flag and the hidden
+  an inline readout next to the toggle. (The legacy `DeltaCursorsEnabled` flag and the hidden
   left-click hijack branch were deleted.)
 - **Y-axis click-region range edit.** A press on the active pen's Y-axis panel band
   (`Chart/ChartAxisRegion`, computed from the last render layout) is handled before pan/delta routing:

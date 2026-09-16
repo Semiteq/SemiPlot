@@ -1,0 +1,56 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:local="clr-namespace:SemiPlot.UI.MainWindow"
+             xmlns:text="clr-namespace:SemiPlot.UI.Localization"
+             mc:Ignorable="d"
+             d:DesignWidth="1280"
+             d:DesignHeight="28"
+             x:Class="SemiPlot.UI.MainWindow.AppMenuBar"
+             x:DataType="local:MainWindowViewModel">
+
+    <Menu Name="MainMenu">
+
+        <MenuItem Name="FileMenu"
+                  Header="{x:Static text:Resources.MenuFile}">
+            <MenuItem Name="FileExit"
+                      Header="{x:Static text:Resources.MenuFileExit}"
+                      Command="{Binding ExitCommand}" />
+        </MenuItem>
+
+        <MenuItem Name="ViewMenu"
+                  Header="{x:Static text:Resources.MenuView}">
+            <MenuItem Name="ViewNavigationBar"
+                      Header="{x:Static text:Resources.MenuViewNavigationBar}"
+                      Command="{Binding ToggleNavigationBarCommand}"
+                      ToggleType="CheckBox"
+                      IsChecked="{Binding IsNavigationBarVisible, Mode=OneWay}" />
+            <MenuItem Name="ViewLegend"
+                      Header="{x:Static text:Resources.MenuViewLegend}"
+                      Command="{Binding ToggleLegendCommand}"
+                      ToggleType="CheckBox"
+                      IsChecked="{Binding IsLegendVisible, Mode=OneWay}" />
+            <MenuItem Name="ViewMinimap"
+                      Header="{x:Static text:Resources.MenuViewMinimap}"
+                      Command="{Binding ToggleMinimapCommand}"
+                      ToggleType="CheckBox"
+                      IsChecked="{Binding IsMinimapVisible, Mode=OneWay}" />
+            <Separator />
+            <MenuItem Name="ViewMessagePanel"
+                      Header="{x:Static text:Resources.MenuViewMessagePanel}"
+                      Command="{Binding MessagePanel.ToggleCommand}"
+                      ToggleType="CheckBox"
+                      IsChecked="{Binding MessagePanel.IsVisible, Mode=OneWay}" />
+        </MenuItem>
+
+        <MenuItem Name="HelpMenu"
+                  Header="{x:Static text:Resources.MenuHelp}">
+            <MenuItem Name="HelpAbout"
+                      Header="{x:Static text:Resources.MenuHelpAbout}"
+                      Command="{Binding ShowAboutCommand}" />
+        </MenuItem>
+
+    </Menu>
+
+</UserControl>

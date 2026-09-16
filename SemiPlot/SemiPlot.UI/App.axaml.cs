@@ -20,13 +20,23 @@ using SemiPlot.Core.Data;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.MainWindow;
+using SemiPlot.UI.Messages;
 using SemiPlot.UI.Minimap;
 using SemiPlot.UI.Startup;
+
+using Serilog.Extensions.Logging;
 
 namespace SemiPlot.UI;
 
 public class App : Application
 {
+	// Process lifetime by design: ReactiveUI takes its exception handler once, before any service
+	// provider exists, so the observer outlives every window and resolves the panel on first use.
+	private static readonly UnhandledErrorObserver _unhandledErrors = new(
+		ResolveMessagePanel,
+		AvaloniaScheduler.Instance,
+		new SerilogLoggerFactory().CreateLogger(nameof(UnhandledErrorObserver)));
+
 	private IServiceProvider? _serviceProvider;
 
 	private ArchiveFailureView? _startupFailure;
@@ -50,9 +60,22 @@ public class App : Application
 	{
 		if (_startupFailure is not null)
 		{
+			// This path runs before any container exists, so the window gets a panel and a status bar of its
+			// own. ResolveMessagePanel finds no container and returns null, so the About-dialog failure is the
+			// only one that can open this panel; the startup-failure row shows the failure and hides the bar.
+			var startupPanel = new MessagePanelViewModel();
+			var startupLoggers = new SerilogLoggerFactory();
+
 			return new MainWindow.MainWindow
 			{
-				DataContext = new MainWindowViewModel { StartupFailure = _startupFailure }
+				DataContext = new MainWindowViewModel(
+					startupPanel,
+					new AppStatusBarViewModel(
+						startupPanel, startupLoggers.CreateLogger<AppStatusBarViewModel>()),
+					startupLoggers.CreateLogger<MainWindowViewModel>())
+				{
+					StartupFailure = _startupFailure
+				}
 			};
 		}
 
@@ -120,55 +143,103 @@ public class App : Application
 			// Avalonia 12: Skia no longer brings a text shaper with it. Without UseHarfBuzz the desktop
 			// application fails at AppBuilder.Setup with "No text shaping system configured".
 			.UseHarfBuzz()
-			.UseReactiveUI(_ => { })
+			// docs/architecture/overview.md#where-a-failure-goes
+			.UseReactiveUI(builder => builder.WithExceptionHandler(_unhandledErrors))
 			.LogToTrace();
+	}
+
+	/// <summary>The panel exists only once the container does; before that a failure is logged and nothing more.</summary>
+	private static MessagePanelViewModel? ResolveMessagePanel()
+	{
+		return (Current as App)?._serviceProvider?.GetService<MessagePanelViewModel>();
 	}
 
 	internal static void InitializeServices(StartupData startupData)
 	{
 		var uiScheduler = AvaloniaScheduler.Instance;
 		var serviceProvider = startupData.ServiceProvider;
-		var dataProvider = serviceProvider.GetRequiredService<IDataProvider>();
-		var pens = startupData.Pens;
+		var messagePanel = serviceProvider.GetRequiredService<MessagePanelViewModel>();
 
 		var coordinator = new TrendCoordinator(
-			dataProvider,
-			pens,
+			serviceProvider.GetRequiredService<IDataProvider>(),
+			startupData.Pens,
 			serviceProvider.GetRequiredService<IScheduler>(),
 			uiScheduler);
+
+		var chartViewModel = BuildChart(startupData, coordinator, messagePanel, uiScheduler);
+		var minimapViewModel = BuildMinimap(startupData, coordinator, chartViewModel, messagePanel, uiScheduler);
+
+		var mainWindowViewModel = serviceProvider.GetRequiredService<MainWindowViewModel>();
+		mainWindowViewModel.SetChart(chartViewModel);
+		mainWindowViewModel.SetMinimap(minimapViewModel);
+
+		// Before Start, so the first poll tick's state reaches the status bar rather than a stream nothing
+		// is listening to yet: the coordinator's republished stream has no replay.
+		mainWindowViewModel.StatusBar.TrackArchiveConnection(coordinator.ConnectionFaults);
+
+		coordinator.Start();
+
+		chartViewModel.RequestInitialHistory();
+
+		StartExtentLoad(startupData, minimapViewModel, messagePanel, uiScheduler);
+	}
+
+	private static TrendChartViewModel BuildChart(
+		StartupData startupData,
+		TrendCoordinator coordinator,
+		MessagePanelViewModel messagePanel,
+		IScheduler uiScheduler)
+	{
+		var serviceProvider = startupData.ServiceProvider;
 
 		var chartViewModel = new TrendChartViewModel(
 			coordinator,
 			serviceProvider.GetRequiredService<IScheduler>(),
 			uiScheduler,
+			messagePanel,
 			serviceProvider.GetRequiredService<ILogger<TrendChartViewModel>>());
 
 		// Before the first history request and before the minimap exists: RequestInitialHistory queries
 		// whatever window is in force, and the minimap reads it back when its own extent arrives.
 		chartViewModel.Navigation.SeedFromArchiveExtent(startupData.Extent);
 
-		foreach (var pen in pens)
+		foreach (var pen in startupData.Pens)
 		{
 			chartViewModel.AddPen(pen);
 		}
 
-		var mainWindowViewModel = serviceProvider.GetRequiredService<MainWindowViewModel>();
-		mainWindowViewModel.ChartViewModel = chartViewModel;
+		return chartViewModel;
+	}
 
-		var minimapViewModel = new MinimapViewModel(
+	private static MinimapViewModel BuildMinimap(
+		StartupData startupData,
+		TrendCoordinator coordinator,
+		TrendChartViewModel chartViewModel,
+		MessagePanelViewModel messagePanel,
+		IScheduler uiScheduler)
+	{
+		return new MinimapViewModel(
 			coordinator,
 			chartViewModel.Navigation,
 			uiScheduler,
-			serviceProvider.GetRequiredService<ILogger<MinimapViewModel>>());
-		mainWindowViewModel.MinimapViewModel = minimapViewModel;
+			messagePanel,
+			startupData.ServiceProvider.GetRequiredService<ILogger<MinimapViewModel>>());
+	}
 
-		// Before Start, so the first poll tick's state reaches the banner rather than a stream nothing
-		// is listening to yet: the coordinator's republished stream has no replay.
-		mainWindowViewModel.ObserveArchiveConnection(coordinator.ConnectionFaults);
+	private static void StartExtentLoad(
+		StartupData startupData,
+		MinimapViewModel minimapViewModel,
+		MessagePanelViewModel messagePanel,
+		IScheduler uiScheduler)
+	{
+		var minimapLogger = startupData.ServiceProvider.GetRequiredService<ILogger<MinimapViewModel>>();
 
-		coordinator.Start();
-
-		chartViewModel.RequestInitialHistory();
-		_ = minimapViewModel.LoadExtentAsync();
+		// OnlyOnFaulted, so load.Exception is never null.
+		_ = minimapViewModel.LoadExtentAsync().ContinueWith(
+			load => messagePanel.TryReportFailure(
+				new ExceptionalError(load.Exception!.GetBaseException()), minimapLogger, uiScheduler),
+			CancellationToken.None,
+			TaskContinuationOptions.OnlyOnFaulted,
+			TaskScheduler.Default);
 	}
 }

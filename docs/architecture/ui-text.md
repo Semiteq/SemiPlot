@@ -52,18 +52,18 @@ dotnet/roslyn builds its own resources with. `SemiPlot.UI.csproj` carries the re
 The generated type is `internal static class SemiPlot.UI.Localization.Resources`, one
 `public static string` per entry. `EmitFormatMethods` adds, for every value carrying a `{0}`,
 an `internal static string Format<Key>(object? p0, ...)` that calls
-`string.Format(Culture, value, ...)`. `MainWindow/ArchiveFailureMapper` is written in C# and reads
+`string.Format(Culture, value, ...)`. `Messages/ArchiveFailureMapper` is written in C# and reads
 those: `Resources.FormatFailureArchiveUnreachableDetail(archive)`. A label bound in AXAML keeps
 `StringFormat` instead, which is why the property and the `Format*` method both exist for the same
 key. `InternalsVisibleTo` carries it into the two test projects and
 XamlIl rewrites the same assembly, so the item needs no `Public="true"`. C# reads
 `Resources.NoValuePlaceholder`. AXAML declares `xmlns:text="clr-namespace:SemiPlot.UI.Localization"`
-on the root element and reads `Content="{x:Static text:Resources.ToolbarAutoscale}"`. `StringFormat`
+on the root element and reads `Content="{x:Static text:Resources.NavigationJumpToNow}"`. `StringFormat`
 accepts the same value, so a formatted label keeps its binding rather than growing a view-model
 property:
 
 ```xml
-<TextBlock Text="{Binding ActiveLayer, StringFormat={x:Static text:Resources.ToolbarLayerFormat}}"/>
+<TextBlock Text="{Binding RepeatCount, StringFormat={x:Static text:Resources.MessagePanelRepeatFormat}}"/>
 ```
 
 `NeutralLanguage` is not decoration: without it the analyzer baseline fails the build with `CA1824`.
@@ -73,7 +73,7 @@ property:
 The generator runs inside the compiler, so the accessor exists before XamlIl rewrites the assembly
 and `{x:Static}` resolves on a cold build. MSBuild's `StronglyTypedFileName` writes the class between
 targets instead: measured on 2026-09-09, a cold build fails with
-`AVLN2000: Unable to resolve "Resources.ToolbarAutoscale"` and only the second build passes.
+`AVLN2000: Unable to resolve "Resources.NavigationJumpToNow"` and only the second build passes.
 
 ## What stays a literal
 
@@ -89,7 +89,36 @@ targets instead: measured on 2026-09-09, a cold build fails with
 - The one sentence the runtime wrote itself. `ArchiveFailureMapper.MapThrown` puts
   `Exception.Message` inside a resourced detail, and `MapUnknown` renders an unmapped `IError.Message`
   as the detail. Both are the last arm of the switch, both come from a library rather than from this
-  repository, and neither has a Russian form to give. Every mapped arm above them is resourced.
+  repository, and neither has a Russian form to give. Every mapped arm above them is resourced. So a
+  programming error reads as English developer text in a Russian window, the message panel included.
+  That is the trade taken for an error class the operator cannot act on: the alternative is a
+  sentence that says nothing, and the log carries the stack either way. It also widens what the
+  window shows: text these arms used to write only to the log now stands on screen, so a driver-level
+  exception over a malformed connection string can echo the string it was handed. The connection
+  file's own arms name host, port, database and role and never the password.
+
+## What the mapper's two consumers read
+
+`Messages/ArchiveFailureMapper.Map` is the one place operator-facing failure text is written, and two
+surfaces read it: the startup-failure panel, which shows a single `ArchiveFailureView`, and the
+message panel, which keeps a list of them. `Map` yields the title, the detail and the remedy
+separately, and the panel shows all three. The coalescing key is the whole `ArchiveFailureView`:
+`MessagePanelViewModel.Report` compares the incoming view with the newest entry by record equality,
+so two failures sharing a title but differing in detail stay two entries.
+
+Because both surfaces read the same arms, no title may name a phase. `FailureThrownTitle` used to
+read "Startup failed unexpectedly", which was true while the mapper fed the startup window alone and
+false the moment a mid-session ReactiveUI exception reached the panel under it; it now reads
+"Unexpected failure" / "Непредвиденный сбой" and its detail names the exception rather than the startup sequence.
+
+The aggregation layer is named the same way. `AppStatusBarViewModel.LayerNameOf` switches each
+`AggregationLayer` member onto a resx key and the bar reads `StatusLayerFormat` around it, so the
+Russian window reads "Слой: сырой" rather than the `ToString()` of the enum. A switch, not a table,
+and the name is read at each call so the window's language decides. Its `_ => throw` arm suppresses
+CS8509, so no compiler check stands behind it: a fifth `AggregationLayer` member turns
+`Core/Trends/AggregationLayerTests.LayerCodes_KeepTheirOrdinalContract` red, which asserts
+`Enum.GetValues<AggregationLayer>()` against the four members it names.
+`ArchiveFailureMapper.NameOf` for `StartupRead` is the same shape.
 
 ## Adding a key
 

@@ -48,8 +48,7 @@ public sealed class ResourcesTests
 	[Fact]
 	public void CompositeFormats_KeepTheirPlaceholder()
 	{
-		Resources.ToolbarLayerFormat.Should().Contain("{0}");
-		Resources.StatusPenCountFormat.Should().Contain("{0}");
+		Resources.StatusLayerFormat.Should().Contain("{0}");
 	}
 
 	[Fact]
@@ -116,8 +115,8 @@ public sealed class ResourcesTests
 		{
 			CultureInfo.CurrentUICulture = RussianCulture;
 
-			Resources.ToolbarAutoscale.Should().Be(ReadSet(RussianCulture)["ToolbarAutoscale"]);
-			Resources.ToolbarAutoscale.Should().NotBe(ReadSet(CultureInfo.InvariantCulture)["ToolbarAutoscale"]);
+			Resources.NavigationJumpToNow.Should().Be(ReadSet(RussianCulture)["NavigationJumpToNow"]);
+			Resources.NavigationJumpToNow.Should().NotBe(ReadSet(CultureInfo.InvariantCulture)["NavigationJumpToNow"]);
 		}
 		finally
 		{

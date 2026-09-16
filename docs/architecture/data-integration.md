@@ -285,22 +285,27 @@ the local machine's, so a clock difference between the two hosts drops or repeat
 - A self-cancelled read is not a failure: disposal's `OperationCanceledException` ends the loop
   ahead of the mapper.
 
-`MainWindowViewModel` renders the state as one row of the archive banner, through
-`ArchiveFailureMapper.Describe(fault)`; that row has a single writer, the bound stream.
+`MainWindow/AppStatusBarViewModel` renders the state: the indicator reads connected or not, and
+every fault is mapped by `Messages/ArchiveFailureMapper.Map` into an entry in the message panel. The
+bar has a single writer, the stream it binds once through `TrackArchiveConnection`. Because every
+subscription's first tick reports `Connected`, the recovery entry is written only once a fault has
+been seen — otherwise every launch would announce a connection it never lost. The handler is
+wrapped: `TrendCoordinator` forwards this stream with a bare `Subscribe`, so a throw out of the
+handler would end the forwarding for the rest of the session instead of reaching an `onError`.
 
 ## Error semantics
 
 | Situation | Provider result | What the operator sees |
 | --- | --- | --- |
-| Connection refused or DNS failure at startup | failed `Result` | The main window opens with the chart empty and its message panel titled "No connection to the archive", naming the host and port, with a remedy |
+| Connection refused or DNS failure at startup | failed `Result` | The main window opens with the chart empty and its startup-failure panel titled "No connection to the archive", naming the host and port, with a remedy |
 | Connection lost mid-session | failed `Result` on the query; realtime tick dropped | Chart keeps the data it has |
-| Three consecutive realtime ticks fail | `ArchiveFault.ConnectionLost` on `ConnectionFaults`; the observable keeps running | A banner row over the chart, cleared by the first tick that succeeds |
+| Three consecutive realtime ticks fail | `ArchiveFault.ConnectionLost` on `ConnectionFaults`; the observable keeps running | The status indicator turns to the fault state and one `Warning` entry appears; the first tick that succeeds restores the indicator and adds one `Info` entry |
 | A column the read needs is absent (`42703`) | `ArchiveFault.ShapeUnexpected` with the server's detail | "The archive has an unexpected shape" — run `semibase site`, then find what altered the table |
 | Query timeout (`57014`) | `ArchiveFault.QueryTimedOut` | The server ended the read; `statement_timeout` is the reader role's own setting |
 | The database does not exist (`3D000`) | `ArchiveFault.DatabaseMissing` | "The archive is not provisioned" — run `semibase site` |
 | Credentials refused or a grant missing (`28P01`, `28000`, `42501`) | `ArchiveFault.AccessDenied` | "The archive refused the credentials" — the user, password or grants |
 | `trends` or `semiplot_tags` does not exist (`42P01`) | `ArchiveFault.TableMissing` whose detail names the table | "The archive is not provisioned" — run `semibase site`, which creates both |
-| `semiplot_tags` present but empty | empty pen list, success | A row stating the catalogue is empty — commissioning is not finished |
+| `semiplot_tags` present but empty | empty pen list, success | The chart area's own empty state — commissioning is not finished. Not a message-panel entry: an empty catalogue is a state, not something that happened |
 | Archive present but no rows in the window | success, empty envelope list | Empty chart, no error |
 
 ### Two error planes
@@ -337,9 +342,75 @@ Reading a section folder is the only file access left on the connection path, wh
 | `ConnectionLost` | three consecutive failed poll ticks | the number of failures that raised it |
 | `ReadFailed` | any other SQLSTATE, or a client-side throw | the SQLSTATE, or empty |
 
-`ArchiveFailureMapper` (`SemiPlot.UI/MainWindow/`) turns each kind into a title, a detail and a
-remedy, and is the one place a remedy is written. `ConnectionLost` never opens the startup failure
-panel; it is a banner row over a chart that works.
+`ArchiveFailureMapper` (`SemiPlot.UI/Messages/`) turns each kind into a title, a detail, a remedy
+and a `MessageSeverity`, and is the one place a remedy is written. The severity is decided in the
+mapper rather than at the call site, so a future error type gets one from the `MapUnknown` arm
+without anyone remembering: `AccessDenied`, `TableMissing`, `DatabaseMissing` and `ShapeUnexpected`
+are `Error`, because nothing recovers until someone changes a grant, a schema or a provisioning run;
+`Unreachable`, `ConnectionLost`, `QueryTimedOut` and `ReadFailed` are `Warning`, because the poll
+loop retries by itself. `ConnectionLost` never opens the startup failure panel; it is an entry in the
+message panel under a chart that works.
+
+The eight rows above are the `ArchiveError` arm alone. `Map` has eight further arms — the startup
+arguments, the log file, the configuration section, the app settings, the connection file, the
+startup read timeout, an `IExceptionalError` and the `_` fallback — and every one of them is
+`Error`, because each is reachable only at startup, where nothing recovers until the operator edits
+something. `MessageSeverity.Info` has exactly one writer in the whole tree, the connection-restored
+entry `AppStatusBarViewModel` writes. `SemiPlot.Tests.Unit/UI/Messages/FailureSeverityTests.cs`
+holds one table per enum the two mappers switch on and asserts each table covers `Enum.GetValues`,
+so a new member leaves a table short and turns red.
+
+### No failure stops at the log
+
+Every failure on the data path reaches the operator through `Messages/MessagePanelViewModel`, not
+only the log. The three that used to log a warning and return now report as well: the failed history
+query in `Chart/TrendChartViewModel` (which still runs its `ApplyAxisModel` / `RequestRedraw`
+recovery afterwards), the failed extent query in `Minimap/MinimapViewModel`, and the unobserved
+`LoadExtentAsync` task the composition root starts. `ApplyRealtimeBatch` carries the
+try-report-continue shape that `Chart/ChartHistoryRequestDebouncer.Deliver` applies to the history it
+hands on, so one bad batch does not end the realtime subscription. `Deliver` guards that hand-off
+only: the result it reports instead is reported by a handler that guards itself.
+
+`Messages/ResultReporting` treats the log and the panel as two independent sinks: the panel edit runs
+first and the log line from a `finally`, so whichever of the two refuses the failure, the other still
+has it. The panel's `Report` answers whether it coalesced, and that answer picks the log level, so the
+demotion rule lives in one place rather than being evaluated twice. A result carrying several errors
+becomes one entry from `Errors[0]` and the rest reach the log as warnings, which is the overload the
+chart's history failures take as well. `ReportFailure` lets a refusal reach its caller;
+`TryReportFailure` is the form for a caller whose escape would end an Rx stream or a dispatcher job,
+and it logs the refusal once, guarded, because the log sink itself is one of the two things that can
+have thrown. Its scheduler overload carries the report to the UI thread first, for the two callers
+that report from a thread of their own.
+
+A handler that runs detached — an Rx `onNext`, an Rx `onError`, a job posted to the UI scheduler —
+wraps its whole body, not its report alone, and hands the throw to `TryReportFailure`:
+`TrendChartViewModel.OnHistoryQueryFailed`, `Minimap/MinimapViewModel.ApplyExtent` and
+`MainWindow/AppStatusBarViewModel.ApplyConnectionState`. The guard belongs to the handler rather than
+to whoever invokes it, because the recovery around the report would otherwise escape the same way the
+report can. `TrendChartViewModel.ReportFailure`, `MainWindowViewModel.ReportFailure`, the
+`LoadExtentAsync` continuation and the ReactiveUI observer call the guarded form directly.
+
+A history query reissued on every pan is what the panel's coalescing exists for: during an outage a
+ten-second drag produces roughly twenty-five identical failures, and they become one entry with a
+repeat count and a moving last-seen time. Coalescing is against the newest entry only, so a
+different failure in between starts a new one, and the key is the whole mapped view rather than its
+title. The list is capped at `MessagePanelViewModel.MaximumEntries` (200) with the oldest dropped:
+this viewer runs for weeks. The operator's shortest way to it is the status bar's connection
+indicator, a `Button` bound to the panel's own `ToggleCommand` — the same command the View menu
+invokes. `overview.md` holds the panel's place in the window and the reach of the ReactiveUI
+exception observer under it.
+
+`TrendCoordinator.RealtimeBatches` needs one more guard than the connection stream does. Its
+projection runs inside `Select`, and Rx turns a throwing projection into `OnError`, which would end
+the `Publish().RefCount()` stream for every subscriber. `TryBuildRealtimeBatch` catches instead,
+skips the window and publishes the exception on `TrendCoordinator.RealtimeFailures`. A terminal
+failure out of the provider takes the same channel: a `Catch` ahead of the `Publish` turns it into
+one `RealtimeFailures` message and completes the batch stream, so `RealtimeBatches` never faults and
+the one failure is not counted once per subscriber of it. `TrendChartViewModel` is the only reader of
+that channel, and it reports through the guarded `ResultReporting.TryReportFailure` because an escape
+would end the subscription that feeds the live edge. `TrendChartView`'s own three subscriptions report
+through
+`TrendChartViewModel.ReportFailure`, because a pipeline that ends stops repainting the chart.
 
 `57014` maps unconditionally to `QueryTimedOut`: no member of `IDataProvider` takes a
 `CancellationToken`, so no read on the provider path is cancelled by a caller, and a caller's own
@@ -409,7 +480,7 @@ The container, the pens and the extent cross the boundary in a `StartupData` rec
 `Result` to `App.Run(AppSettings?, Result<StartupData>)` unconditionally: on success it runs as
 today; on failure `App` maps the error through `ArchiveFailureMapper` and opens the main window with
 `MainWindowViewModel.StartupFailure` set — the
-message panel names what broke and what to do, and the chart, legend and minimap bind to null and
+startup-failure panel names what broke and what to do, and the chart, legend and minimap bind to null and
 render empty, because `CreateMainWindow` builds that view model without a service provider. There is
 no second data source to fall back to: synthetic data would let an operator read invented numbers as
 process data. `Program.Main` returns 1 once that window closes.
@@ -424,9 +495,10 @@ process data. `Program.Main` returns 1 once that window closes.
   the stack, disposes the container and returns an `ExceptionalError`, which `ArchiveFailureMapper`
   maps through its `IExceptionalError` arm.
 
-An empty pen catalogue is a successful start: the window opens, draws nothing, and states that the
-catalogue is empty (`MainWindowViewModel.IsCatalogueEmpty`). Logging is configured before the probe
-runs; the log path and the argument list are in `overview.md`.
+An empty pen catalogue is a successful start: the window opens, draws nothing, and the chart area
+states that the catalogue is empty (`Chart/TrendChartViewModel.HasNoPens`). It is a state of the
+chart, not an entry in the message panel. Logging is configured before the probe runs; the log path
+and the argument list are in `overview.md`.
 
 ## Field triage
 

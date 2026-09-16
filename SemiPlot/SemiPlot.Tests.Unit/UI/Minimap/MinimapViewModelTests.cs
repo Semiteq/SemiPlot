@@ -9,10 +9,12 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Reactive.Testing;
 
 using SemiPlot.Core.Data;
+using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
+using SemiPlot.UI.Messages;
 using SemiPlot.UI.Minimap;
 
 using Xunit;
@@ -31,7 +33,7 @@ public sealed class MinimapViewModelTests
 	[AvaloniaFact]
 	public async Task LoadExtentAsync_ExposesProviderFirstAndLast()
 	{
-		var (viewModel, _, _) = CreateViewModel();
+		var (viewModel, _, _, _) = CreateViewModel();
 
 		await viewModel.LoadExtentAsync();
 
@@ -43,7 +45,7 @@ public sealed class MinimapViewModelTests
 	[AvaloniaFact]
 	public async Task LoadExtentAsync_WithAnEmptyExtent_LeavesHasExtentFalse()
 	{
-		var (viewModel, _, provider) = CreateViewModel();
+		var (viewModel, _, provider, _) = CreateViewModel();
 		provider.ArchiveExtentOverride = ArchiveExtent.Empty;
 
 		await viewModel.LoadExtentAsync();
@@ -56,7 +58,7 @@ public sealed class MinimapViewModelTests
 	[AvaloniaFact]
 	public void ExtentLabels_BeforeExtentLoaded_AreEmpty()
 	{
-		var (viewModel, _, _) = CreateViewModel();
+		var (viewModel, _, _, _) = CreateViewModel();
 
 		viewModel.HasExtent.Should().BeFalse();
 		viewModel.ExtentFirstLabel.Should().BeEmpty();
@@ -66,7 +68,7 @@ public sealed class MinimapViewModelTests
 	[AvaloniaFact]
 	public async Task ExtentLabels_AfterExtentLoaded_RenderLocalEndpoints()
 	{
-		var (viewModel, _, _) = CreateViewModel();
+		var (viewModel, _, _, _) = CreateViewModel();
 
 		await viewModel.LoadExtentAsync();
 
@@ -77,7 +79,7 @@ public sealed class MinimapViewModelTests
 	[AvaloniaFact]
 	public async Task WindowFraction_MapsTheNavigationWindowOverTheExtent()
 	{
-		var (viewModel, navigation, _) = CreateViewModel();
+		var (viewModel, navigation, _, _) = CreateViewModel();
 		await viewModel.LoadExtentAsync();
 
 		// Seeds the window to [last - width, last], a known sub-span of the extent.
@@ -94,7 +96,7 @@ public sealed class MinimapViewModelTests
 	[AvaloniaFact]
 	public async Task NavigateToFraction_RecentersTheNavigationWindowAtTheMappedTime()
 	{
-		var (viewModel, navigation, _) = CreateViewModel();
+		var (viewModel, navigation, _, _) = CreateViewModel();
 		await viewModel.LoadExtentAsync();
 		navigation.TrackDataExtents(_extentFirst, _extentLast);
 
@@ -108,7 +110,7 @@ public sealed class MinimapViewModelTests
 	[AvaloniaFact]
 	public void NavigateToFraction_BeforeExtentLoaded_DoesNotMoveTheWindow()
 	{
-		var (viewModel, navigation, _) = CreateViewModel();
+		var (viewModel, navigation, _, _) = CreateViewModel();
 		var fromBefore = navigation.From;
 		var toBefore = navigation.To;
 
@@ -118,8 +120,23 @@ public sealed class MinimapViewModelTests
 		navigation.To.Should().Be(toBefore);
 	}
 
-	private static (MinimapViewModel ViewModel, ChartNavigationController Navigation, FakeDataProvider Provider)
-		CreateViewModel()
+	[AvaloniaFact]
+	public async Task AFailedExtentQueryReachesTheMessagePanel()
+	{
+		var (viewModel, _, provider, panel) = CreateViewModel();
+		using var messagePanel = panel;
+		provider.FailExtent = true;
+
+		await viewModel.LoadExtentAsync();
+
+		viewModel.HasExtent.Should().BeFalse();
+		messagePanel.Entries.Should().ContainSingle()
+			.Which.View.Should().Be(ArchiveFailureMapper.Map(
+				new ArchiveError(ArchiveFault.ReadFailed, "bench", 5432, "semiplot_dev", "42601")));
+	}
+
+	private static (MinimapViewModel ViewModel, ChartNavigationController Navigation, FakeDataProvider Provider,
+		MessagePanelViewModel Panel) CreateViewModel()
 	{
 		var scheduler = new TestScheduler();
 		var provider = new FakeDataProvider(scheduler, TimeSpan.FromMilliseconds(10))
@@ -134,12 +151,14 @@ public sealed class MinimapViewModelTests
 			ImmediateScheduler.Instance,
 			_batchWindow);
 		var navigation = new ChartNavigationController();
+		var messagePanel = new MessagePanelViewModel();
 		var viewModel = new MinimapViewModel(
 			coordinator,
 			navigation,
 			ImmediateScheduler.Instance,
+			messagePanel,
 			NullLogger<MinimapViewModel>.Instance);
 
-		return (viewModel, navigation, provider);
+		return (viewModel, navigation, provider, messagePanel);
 	}
 }

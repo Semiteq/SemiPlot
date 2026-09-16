@@ -11,6 +11,7 @@ using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
+using SemiPlot.UI.Messages;
 
 using Xunit;
 
@@ -159,7 +160,11 @@ public sealed class ChartGapRenderTests
 			_batchWindow);
 
 		return new TrendChartViewModel(
-			coordinator, scheduler, ImmediateScheduler.Instance, NullLogger<TrendChartViewModel>.Instance);
+			coordinator,
+			scheduler,
+			ImmediateScheduler.Instance,
+			new MessagePanelViewModel(),
+			NullLogger<TrendChartViewModel>.Instance);
 	}
 
 	private static int ColumnAt(Plot plot, DateTime timestampUtc)

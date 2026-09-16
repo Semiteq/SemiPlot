@@ -135,7 +135,8 @@ the container fixture. A Windows-only API fails
 the Linux leg only once a test executes the call (`CA1416` is a warning); a Windows path used as a
 string does not fail it at all. The fail-only behavior is in `docs/architecture/testing-strategy.md`.
 
-Test traits: `[Trait("Component", "Core|UI")]`, `[Trait("Area", "Data|Bridge|Chart|Di")]`,
+Test traits: `[Trait("Component", "Core|UI")]`,
+`[Trait("Area", "Data|Bridge|Chart|Di|Messages")]`,
 `[Trait("Category", "Unit|Integration")]`. Every test class carries all three.
 
 AwesomeAssertions everywhere. Tests over provider errors assert by error type and structured field,
@@ -224,8 +225,17 @@ No abbreviations in names.
 - Avoid mutable static state.
 - `AddPostgresData()` registers the bare data `IScheduler` (`DefaultScheduler.Instance`). The UI
   scheduler is not a second container registration: `App` reads the static
-  `AvaloniaScheduler.Instance` (= `RxApp.MainThreadScheduler`) and passes it explicitly to the
-  coordinator constructor and the chart/minimap factories.
+  `AvaloniaScheduler.Instance` and passes it explicitly to the coordinator constructor and the
+  chart/minimap factories. `RxApp` does not exist in the installed ReactiveUI 23.2.28 — its
+  schedulers moved to `RxSchedulers` and its exception handler to `RxState`; this repository reads
+  neither.
+- **Nothing may construct a ReactiveUI object before `AppBuilder.Setup()`.** `RxState.DefaultExceptionHandler`
+  initialises itself on first read and `InitializeExceptionHandler` then no-ops, so one
+  `ReactiveCommand` or one `ObservableAsPropertyHelper` built ahead of `Setup()` turns
+  `App.BuildAvaloniaApp`'s `.UseReactiveUI(builder => builder.WithExceptionHandler(...))` into a
+  silent no-op, with no error and no log line. `StartupSequence.Run` touches no ReactiveUI type, and
+  `MessagePanelViewModel` is resolved from the container inside `.AfterSetup(...)`, never before it
+  (`docs/architecture/overview.md`).
 - `.AfterSetup(...)` is synchronous, so no blocking call belongs in it. `StartupSequence.Run` holds
   the ordered blocking steps and `Program.Main` calls it ahead of `BuildAvaloniaApp()`, handing
   `App.Run(AppSettings?, Result<StartupData>)` both results; the reads `InitializeServices` starts
@@ -264,10 +274,23 @@ No abbreviations in names.
   literal in AXAML is a defect. Semi's own surfaces outside that key set keep Semi's variant-aware
   stock brushes (`docs/architecture/ui-theme.md`).
 - The left-button gesture is one state, never overlapping branches: a `Chart/LeftButtonTool`
-  (`Pan | DeltaPlacement`) enum sourced from the toolbar delta toggle decides pan vs delta placement,
-  and the axis-region edit is a pre-branch ahead of it. Toolbar `IsSticky` has a single writer (the
-  `WindowChanged` handler refreshing from `Navigation.IsSticky`) — do not reintroduce imperative
-  `IsSticky =` assignments.
+  (`Pan | DeltaPlacement`) enum sourced from the navigation bar's delta toggle decides pan vs delta
+  placement, and the axis-region edit is a pre-branch ahead of it. The bar's `IsSticky` has a single
+  writer (the `WindowChanged` handler refreshing from `Navigation.IsSticky`) — do not reintroduce
+  imperative `IsSticky =` assignments.
+- A checkable menu item reads its flag `Mode=OneWay` and writes it only through the command it
+  invokes, so the command is the flag's single writer. A two-way `IsChecked` would make the control a
+  second writer and the two halves would drift.
+- A menu item without a command, or without children, is not added. A disabled placeholder renders
+  and does nothing, and it also forces an exemption into `AppMenuBarTests`, which walks the declared
+  `Items` and requires every leaf to carry one or the other.
+- Every failure the operator should see goes to `Messages/MessagePanelViewModel` through
+  `Messages/ArchiveFailureMapper.Map`, which assigns the severity in its own per-kind switch — never
+  at the call site. The one message with no error behind it is
+  `AppStatusBarViewModel.ConnectionRestored`, which builds its own `Info` view because the mapper maps
+  errors. A `catch`, or an Rx `onError`, that only logs is a defect
+  (`docs/architecture/data-integration.md#no-failure-stops-at-the-log`). Code-behind reaches the
+  panel through its view model (`TrendChartViewModel.ReportFailure`, `MainWindowViewModel.ReportFailure`).
 
 ### Data-source projects
 

@@ -212,6 +212,53 @@ public sealed class TrendCoordinatorTests
 		batches.Should().HaveCount(2);
 	}
 
+	// Start subscribes to hold the RefCount open, so the provider ending the stream reaches that observer
+	// too: with no onError Rx rethrows it out of the advance below and takes the emitting thread down.
+	[Fact]
+	public void AFaultingRealtimeStream_ReachesTheFailureChannelInsteadOfTheScheduler()
+	{
+		var scheduler = new TestScheduler();
+		var provider = new FakeDataProvider(scheduler, TimeSpan.FromMilliseconds(10))
+		{
+			RealtimeStreamFailure = new InvalidOperationException("the provider ended the live edge")
+		};
+		using var coordinator = new TrendCoordinator(
+			provider,
+			provider.Pens,
+			scheduler,
+			ImmediateScheduler.Instance,
+			_batchWindow);
+		var failures = new List<Exception>();
+		using var reported = coordinator.RealtimeFailures.Subscribe(failures.Add);
+		coordinator.Start();
+
+		var advance = () => scheduler.AdvanceBy(_batchWindow.Ticks * 2);
+
+		advance.Should().NotThrow();
+		failures.Should().ContainSingle()
+			.Which.Message.Should().Be("the provider ended the live edge");
+	}
+
+	// A window failing while disposal runs: OnNext on a disposed subject throws, and Rx turns that into the
+	// OnError the catch inside TryBuildRealtimeBatch exists to prevent.
+	[Fact]
+	public void AFailedWindowAfterDisposal_LeavesTheStreamAlive()
+	{
+		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: TimeSpan.FromMilliseconds(10));
+		var batches = new List<RealtimeBatch>();
+		var failures = new List<Exception>();
+		coordinator.Start();
+		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add, failures.Add);
+		scheduler.AdvanceBy(_batchWindow.Ticks);
+		coordinator.Dispose();
+		provider.PoisonRealtimeWindow = true;
+
+		var advance = () => scheduler.AdvanceBy(_batchWindow.Ticks * 3);
+
+		advance.Should().NotThrow();
+		failures.Should().BeEmpty("the subject is completed at disposal, not disposed");
+	}
+
 	private static (TrendCoordinator Coordinator, TestScheduler Scheduler, FakeDataProvider Provider)
 		CreateCoordinator(TimeSpan? realtimeInterval = null, IScheduler? uiScheduler = null)
 	{

@@ -1,7 +1,7 @@
 using SemiPlot.Core.Configuration;
 using SemiPlot.UI.Localization;
 
-namespace SemiPlot.UI.MainWindow;
+namespace SemiPlot.UI.Messages;
 
 /// <summary>The section half of <see cref="ArchiveFailureMapper"/>, which is its only caller.</summary>
 public static class ConfigurationSectionFailureMapper
@@ -11,7 +11,8 @@ public static class ConfigurationSectionFailureMapper
 		return new ArchiveFailureView(
 			SectionTitle(error.Section),
 			SectionDetail(error),
-			SectionRemedy(error));
+			SectionRemedy(error),
+			MessageSeverity.Error);
 	}
 
 	private static string SectionTitle(ConfigurationSectionName section)

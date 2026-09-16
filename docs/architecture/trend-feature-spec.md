@@ -64,7 +64,7 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 **Acceptance.** Core/test: `ScaleMode.Manual` returns exactly the given bounds; swapped input is swapped back. UI: a click in an axis zone opens the editor, and entry applies the bounds immediately.
 
 ### AY-4 — Autoscale to the visible window (MUST)
-**Definition.** `Auto` mode: min/max over the columns inside the current `[windowStart, windowEnd]` with 5% padding; a flat range → ±0.5; a window holding no column → the whole fetched envelope, and the default range only when no envelope carries a usable value at all. A one-shot autofit via a button/double-click on the axis.
+**Definition.** `Auto` mode: min/max over the columns inside the current `[windowStart, windowEnd]` with 5% padding; a flat range → ±0.5; a window holding no column → the whole fetched envelope, and the default range only when no envelope carries a usable value at all. A one-shot autofit via a double-click on the axis; the navigation bar carries no autoscale button.
 **Acceptance.** Core/test: `ScaleMode.Auto` — the bounds span min..max of the columns in the window with padding; a flat range gives ±0.5; columns outside the window do not widen the range. UI: a double-click on the axis fits the pen over the window it shows.
 **Note.** The fetched envelope carries a margin on each side of the window, so the bound is what keeps a pan from re-scaling on data the operator cannot see. A window that leaves the fetched band outright shows none of those columns, and the chart view model then skips the axis recompute entirely: the axis holds its last range until the query the pan issued lands. The whole-envelope fallback inside `PenScaleModel` is left for the sticky live edge, where the window runs ahead of the newest fetched column with no query behind it.
 
@@ -171,7 +171,7 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 **Acceptance.** Core/test: `LayerForWidth` — layer transitions at the computed thresholds for a given column count, with hysteresis preventing flicker when the width oscillates around a boundary.
 
 ### DA-4 — Manual layer selection (SHOULD)
-**Definition.** The operator can pin a layer manually (a combo box + a lock button), overriding the automatic selection. Currently the layer in the toolbar is read-only text; an interactive selector is needed.
+**Definition.** The operator can pin a layer manually (a combo box + a lock button), overriding the automatic selection. Currently the layer is read-only text in the status bar; an interactive selector is needed.
 **Acceptance.** UI: a manual layer selection applies to queries and is held until the lock is released; on release the automatic selection returns.
 **Note.** Closes gap (b)1: there is no manual selector, the layer is only auto-by-zoom.
 

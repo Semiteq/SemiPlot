@@ -14,6 +14,7 @@
             <SolidColorBrush x:Key="CheckBoxForeground" Color="#000000" />
             <SolidColorBrush x:Key="WindowDefaultForeground" Color="#000000" />
             <SolidColorBrush x:Key="MenuItemForeground" Color="#000000" />
+            <SolidColorBrush x:Key="MenuItemPointeroverForeground" Color="#000000" />
 
             <SolidColorBrush x:Key="TextBoxPlaceholderForeground" Color="#818594" />
 
@@ -34,6 +35,7 @@
             <SolidColorBrush x:Key="MenuFlyoutBackground" Color="#F7F8FA" />
             <SolidColorBrush x:Key="MenuFlyoutBorderBrush" Color="#EBECF0" />
             <SolidColorBrush x:Key="CheckBoxDefaultBorderBrush" Color="#EBECF0" />
+            <SolidColorBrush x:Key="MenuItemSeparatorBackground" Color="#EBECF0" />
 
             <SolidColorBrush x:Key="AppPanelBackgroundBrush" Color="#F7F8FA" />
             <SolidColorBrush x:Key="AppContentBackgroundBrush" Color="#FFFFFF" />
@@ -42,6 +44,11 @@
             <SolidColorBrush x:Key="AppSecondaryForegroundBrush" Color="#818594" />
             <SolidColorBrush x:Key="AppAccentBrush" Color="#3574F0" />
             <SolidColorBrush x:Key="AppAccentFillBrush" Color="#3574F0" Opacity="0.25" />
+            <SolidColorBrush x:Key="AppSeverityErrorBrush" Color="#DB3B4B" />
+            <SolidColorBrush x:Key="AppSeverityWarningBrush" Color="#E3AE4D" />
+            <SolidColorBrush x:Key="AppSeverityInfoBrush" Color="#3574F0" />
+            <SolidColorBrush x:Key="AppConnectionOkBrush" Color="#208A3C" />
+            <SolidColorBrush x:Key="AppConnectionFaultBrush" Color="#DB3B4B" />
         </ResourceDictionary>
 
         <ResourceDictionary x:Key="Dark">
@@ -50,6 +57,7 @@
             <SolidColorBrush x:Key="CheckBoxForeground" Color="#DFE1E5" />
             <SolidColorBrush x:Key="WindowDefaultForeground" Color="#DFE1E5" />
             <SolidColorBrush x:Key="MenuItemForeground" Color="#DFE1E5" />
+            <SolidColorBrush x:Key="MenuItemPointeroverForeground" Color="#DFE1E5" />
 
             <SolidColorBrush x:Key="TextBoxPlaceholderForeground" Color="#6F737A" />
 
@@ -70,6 +78,7 @@
             <SolidColorBrush x:Key="MenuFlyoutBackground" Color="#2B2D30" />
             <SolidColorBrush x:Key="MenuFlyoutBorderBrush" Color="#393B40" />
             <SolidColorBrush x:Key="CheckBoxDefaultBorderBrush" Color="#393B40" />
+            <SolidColorBrush x:Key="MenuItemSeparatorBackground" Color="#393B40" />
 
             <SolidColorBrush x:Key="AppPanelBackgroundBrush" Color="#2B2D30" />
             <SolidColorBrush x:Key="AppContentBackgroundBrush" Color="#1E1F22" />
@@ -78,6 +87,11 @@
             <SolidColorBrush x:Key="AppSecondaryForegroundBrush" Color="#6F737A" />
             <SolidColorBrush x:Key="AppAccentBrush" Color="#3574F0" />
             <SolidColorBrush x:Key="AppAccentFillBrush" Color="#3574F0" Opacity="0.25" />
+            <SolidColorBrush x:Key="AppSeverityErrorBrush" Color="#E55765" />
+            <SolidColorBrush x:Key="AppSeverityWarningBrush" Color="#F2C55C" />
+            <SolidColorBrush x:Key="AppSeverityInfoBrush" Color="#3574F0" />
+            <SolidColorBrush x:Key="AppConnectionOkBrush" Color="#5FAD65" />
+            <SolidColorBrush x:Key="AppConnectionFaultBrush" Color="#E55765" />
         </ResourceDictionary>
 
     </ResourceDictionary.ThemeDictionaries>

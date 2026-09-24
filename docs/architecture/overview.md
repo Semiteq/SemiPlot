@@ -93,7 +93,7 @@ always there.
 | --- | --- | --- |
 | 0 | Menu bar (`AppMenuBar`) | no |
 | 1 | Navigation bar (`NavigationBarView`) | `IsNavigationBarVisible` |
-| 2 | Chart and legend | the legend column on `IsLegendVisible` |
+| 2 | Chart and legend | the legend column on `IsLegendVisible`; the handle column on `IsLegendVisible` and a non-null `LegendViewModel` |
 | 3 | Minimap | `IsMinimapVisible` |
 | 4 | Message panel (`MessagePanelView`) | `MessagePanel.IsVisible` |
 | 5 | Status bar (`AppStatusBar`) | `HasStartupFailure` |

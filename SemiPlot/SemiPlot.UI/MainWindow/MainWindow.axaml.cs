@@ -1,8 +1,13 @@
 using System.Reactive.Disposables;
 
+using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 
+using ReactiveUI;
 using ReactiveUI.Avalonia;
+
+using SemiPlot.UI.Legend;
 
 namespace SemiPlot.UI.MainWindow;
 
@@ -26,6 +31,9 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 
 		_requests.Add(viewModel.ExitRequests.Subscribe(_ => Close()));
 		_requests.Add(viewModel.AboutRequests.Subscribe(ShowAbout));
+		_requests.Add(viewModel
+			.WhenAnyValue(window => window.LegendViewModel)
+			.Subscribe(legend => legend?.FitPanel(MaximumPanelWidth())));
 	}
 
 	protected override void OnUnloaded(RoutedEventArgs e)
@@ -33,6 +41,27 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 		_requests.Clear();
 
 		base.OnUnloaded(e);
+	}
+
+	private void OnPanelResizeHandleDragDelta(object? sender, VectorEventArgs e)
+	{
+		if (DataContext is MainWindowViewModel { LegendViewModel: { } legend })
+		{
+			legend.ResizePanel(e.Vector.X);
+		}
+	}
+
+	private void OnContentGridSizeChanged(object? sender, SizeChangedEventArgs e)
+	{
+		if (DataContext is MainWindowViewModel { LegendViewModel: { } legend })
+		{
+			legend.FitPanel(MaximumPanelWidth());
+		}
+	}
+
+	private double MaximumPanelWidth()
+	{
+		return ContentGrid.Bounds.Width - TrendLegendViewModel.ChartMinWidth - PanelResizeHandle.Width;
 	}
 
 	private async void ShowAbout(AboutInfo about)

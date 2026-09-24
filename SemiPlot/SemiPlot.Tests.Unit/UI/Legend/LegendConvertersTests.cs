@@ -11,7 +11,7 @@ using Xunit;
 
 namespace SemiPlot.Tests.Unit.UI.Legend;
 
-/// <summary>The row's two conversions, including the arm the provider is meant to make unreachable.</summary>
+/// <summary>The sidebar's two conversions, including the arm the provider is meant to make unreachable.</summary>
 [Collection(ProcessGlobalStateCollection.Name)]
 [Trait("Component", "UI")]
 [Trait("Area", "Chart")]
@@ -42,11 +42,12 @@ public sealed class LegendConvertersTests
 	}
 
 	[AvaloniaTheory]
-	[InlineData(true, FontWeight.Bold)]
-	[InlineData(false, FontWeight.Normal)]
-	public void ActiveToWeight_BoldsTheActiveRow(bool isActive, FontWeight expected)
+	[InlineData("Dampers", "DAMPERS")]
+	[InlineData("\u0417\u0430\u0441\u043b\u043e\u043d\u043a\u0438", "\u0417\u0410\u0421\u041b\u041e\u041d\u041a\u0418")]
+	[InlineData(null, "")]
+	public void ToCapitals_SetsAGroupNameInCapitals(string? name, string expected)
 	{
-		LegendConverters.ActiveToWeight.Convert(isActive, typeof(FontWeight), null, CultureInfo.InvariantCulture)
+		LegendConverters.ToCapitals.Convert(name, typeof(string), null, CultureInfo.InvariantCulture)
 			.Should().Be(expected);
 	}
 }

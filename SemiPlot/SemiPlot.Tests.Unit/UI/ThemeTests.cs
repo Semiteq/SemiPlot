@@ -122,8 +122,9 @@ public sealed class ThemeTests
 		var toggleOff = new ToggleButton { Content = "toggle", IsChecked = false };
 		var toggleOn = new ToggleButton { Content = "toggle", IsChecked = true };
 		var check = new CheckBox { IsChecked = false };
+		var mixed = new CheckBox { IsChecked = null };
 		var scroller = ScrollerWithAThumb();
-		var window = new Window { Content = Stacked(toggleOff, toggleOn, check, scroller) };
+		var window = new Window { Content = Stacked(toggleOff, toggleOn, check, mixed, scroller) };
 		try
 		{
 			window.Show();
@@ -133,6 +134,8 @@ public sealed class ThemeTests
 			ColourOf(toggleOn.Background).Should().Be(Color.Parse(Accent));
 			ColourOf(toggleOn.BorderBrush).Should().Be(Color.Parse(Accent));
 			ColourOf(NamedBorder(check, "NormalRectangle").BorderBrush).Should().Be(Color.Parse(border));
+			ColourOf(NamedBorder(mixed, "NormalRectangle").Background).Should().Be(Color.Parse(Accent));
+			ColourOf(NamedBorder(mixed, "NormalRectangle").BorderBrush).Should().Be(Color.Parse(Accent));
 			ColourOf(ThumbOf(scroller)).Should().Be(Color.Parse(thumb));
 		}
 		finally

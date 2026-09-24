@@ -43,10 +43,10 @@ control, in each state the tree can reach.
 | `ButtonDefaultPrimaryForeground` | Every navigation-bar button's caption, and an unchecked `ToggleButton` | `#3574F0` | `#3574F0` |
 | `ButtonSolidPrimaryBackground` | A checked `ToggleButton`, which the navigation bar's Sticky toggle is on the first frame | `#3574F0` | `#3574F0` |
 | `ButtonSolidPrimaryBorderBrush` | The same control's border | `#3574F0` | `#3574F0` |
-| `CheckBoxDefaultBorderBrush` | The legend's unchecked box, one per pen | `#EBECF0` | `#393B40` |
+| `CheckBoxDefaultBorderBrush` | The legend's unchecked box, one per pen and one per group header | `#EBECF0` | `#393B40` |
 | `ScrollBarThumbForeground` | The legend's scrollbar thumb | `#A8ADBD` | `#5A5D63` |
-| `CheckBoxCheckedDefaultBackground` | The legend's checked box | `#3574F0` | `#3574F0` |
-| `CheckBoxCheckedDefaultBorderBrush` | The legend's checked box | `#3574F0` | `#3574F0` |
+| `CheckBoxCheckedDefaultBackground` | The legend's checked box, and a group header's indeterminate box | `#3574F0` | `#3574F0` |
+| `CheckBoxCheckedDefaultBorderBrush` | The legend's checked box, and a group header's indeterminate box | `#3574F0` | `#3574F0` |
 | `CheckBoxPointeroverBorderBrush` | The legend's hovered box | `#3574F0` | `#3574F0` |
 | `TextBoxFocusBorderBrush` | The focused axis-bound editor | `#3574F0` | `#3574F0` |
 | `WindowDefaultBackground` | The window ground | `#FFFFFF` | `#1E1F22` |
@@ -68,7 +68,8 @@ Adding a control means running the same marker probe for it, not copying a key l
 `ThemeTests.EverySemiControl_PaintsItselfFromThePalette` shows a real `Button`, `TextBlock`, `TextBox`
 and checked `CheckBox` under both variants and reads their resolved brushes back;
 `ThemeTests.EveryToggleAndScrollSurface_PaintsItselfFromThePalette` covers the rest of what the window
-holds, a `ToggleButton` in both check states, an unchecked `CheckBox` and a `ScrollViewer` thumb;
+holds, a `ToggleButton` in both check states, an unchecked and an indeterminate `CheckBox` and a
+`ScrollViewer` thumb;
 `ThemeTests.EveryMenuSurface_PaintsItselfFromThePalette` opens a real `Menu` and reads the caption at
 rest and open, a leaf, a checked item's glyph, a `Separator`, the flyout chrome and an `ItemsControl`
 row. The `Ellipse` of a message-panel row carries no Semi key: its fill is one of this tree's own
@@ -109,12 +110,12 @@ Semi owns the controls; these twelve keys are ours, and each exists in both vari
 | Key | Consumers | Light | Dark |
 | --- | --- | --- | --- |
 | `AppPanelBackgroundBrush` | Navigation bar, legend panel, message panel, status bar, startup failure panel, minimap frame, chart hover readout | `#F7F8FA` | `#2B2D30` |
-| `AppContentBackgroundBrush` | Chart area, minimap strip canvas | `#FFFFFF` | `#1E1F22` |
+| `AppContentBackgroundBrush` | Chart area, minimap strip canvas, the sidebar's resize handle | `#FFFFFF` | `#1E1F22` |
 | `AppBorderBrush` | Every separator in the three views | `#EBECF0` | `#393B40` |
-| `AppSubtleLineBrush` | Minimap baseline, plot grid | `#EBECF0` | `#393B40` |
-| `AppSecondaryForegroundBrush` | Minimap extent labels, chart crosshair, plot axis furniture | `#818594` | `#6F737A` |
-| `AppAccentBrush` | Minimap window highlight border | `#3574F0` | `#3574F0` |
-| `AppAccentFillBrush` | Minimap window highlight fill | `#3574F0` at 0.25 opacity | `#3574F0` at 0.25 opacity |
+| `AppSubtleLineBrush` | Minimap baseline, plot grid, the line above every sidebar group header but the first | `#EBECF0` | `#393B40` |
+| `AppSecondaryForegroundBrush` | Minimap extent labels, chart crosshair, plot axis furniture, the sidebar group header caption and a row's unit | `#818594` | `#6F737A` |
+| `AppAccentBrush` | Minimap window highlight border, the active sidebar row's left bar | `#3574F0` | `#3574F0` |
+| `AppAccentFillBrush` | Minimap window highlight fill, the active sidebar row's background | `#3574F0` at 0.25 opacity | `#3574F0` at 0.25 opacity |
 | `AppSeverityErrorBrush` | The message panel's dot on an `Error` entry | `#DB3B4B` | `#E55765` |
 | `AppSeverityWarningBrush` | The same dot on a `Warning` entry | `#E3AE4D` | `#F2C55C` |
 | `AppSeverityInfoBrush` | The same dot on an `Info` entry | `#3574F0` | `#3574F0` |

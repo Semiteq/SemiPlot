@@ -9,6 +9,24 @@
              x:Class="SemiPlot.UI.Legend.TrendLegendView"
              x:DataType="legend:TrendLegendViewModel">
 
+    <UserControl.Styles>
+        <Style Selector="ContentPresenter:nth-child(1) Border#GroupSeparator">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+        <Style Selector="Grid#RowContent">
+            <Setter Property="Margin" Value="4,2" />
+        </Style>
+        <Style Selector="StackPanel.headed Grid#RowContent">
+            <Setter Property="Margin" Value="24,2,4,2" />
+        </Style>
+        <Style Selector="Border#RowRoot">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Border#RowRoot.active">
+            <Setter Property="Background" Value="{DynamicResource AppAccentFillBrush}" />
+        </Style>
+    </UserControl.Styles>
+
     <DockPanel LastChildFill="True">
 
         <Button Name="PanelStateToggle"
@@ -24,57 +42,87 @@
             <ItemsControl ItemsSource="{Binding Groups}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="legend:TrendLegendGroupViewModel">
-                        <StackPanel Margin="0,0,0,8">
+                        <StackPanel Classes.headed="{Binding HasHeader}"
+                                    Margin="0,0,0,8">
 
-                            <TextBlock Name="GroupHeader"
-                                       Text="{Binding Name}"
-                                       IsVisible="{Binding HasHeader}"
-                                       FontWeight="Bold"
-                                       Margin="4,4,0,2" />
+                            <Border Name="GroupSeparator"
+                                    Height="1"
+                                    Margin="0,0,0,4"
+                                    Background="{DynamicResource AppSubtleLineBrush}" />
+
+                            <Grid Name="GroupHeaderRow"
+                                  ColumnDefinitions="Auto,*"
+                                  IsVisible="{Binding HasHeader}"
+                                  Margin="4,4,0,2">
+
+                                <CheckBox Name="GroupSwitch"
+                                          Grid.Column="0"
+                                          IsChecked="{Binding SwitchState, Mode=OneWay}"
+                                          Command="{Binding SwitchGroupCommand}"
+                                          AutomationProperties.Name="{Binding SwitchName}"
+                                          VerticalAlignment="Center"
+                                          Margin="0,0,4,0" />
+
+                                <TextBlock Name="GroupHeader"
+                                           Grid.Column="1"
+                                           Text="{Binding Name, Converter={x:Static legend:LegendConverters.ToCapitals}}"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource AppSecondaryForegroundBrush}"
+                                           VerticalAlignment="Center" />
+
+                            </Grid>
 
                             <ItemsControl ItemsSource="{Binding Rows}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="legend:TrendLegendRowViewModel">
                                         <Border Name="RowRoot"
-                                                Background="Transparent"
-                                                PointerPressed="OnRowPressed"
-                                                Padding="4,2">
+                                                Classes.active="{Binding IsActive}"
+                                                PointerPressed="OnRowPressed">
+                                            <Grid>
 
-                                            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto"
-                                                  VerticalAlignment="Center">
+                                                <Border Name="ActiveBar"
+                                                        Width="3"
+                                                        HorizontalAlignment="Left"
+                                                        Background="{DynamicResource AppAccentBrush}"
+                                                        IsVisible="{Binding IsActive}" />
 
-                                                <CheckBox Grid.Column="0"
-                                                          IsChecked="{Binding IsVisible}"
-                                                          VerticalAlignment="Center"
-                                                          Margin="0,0,4,0" />
+                                                <Grid Name="RowContent"
+                                                      ColumnDefinitions="Auto,Auto,*,Auto,Auto"
+                                                      VerticalAlignment="Center">
 
-                                                <Border Grid.Column="1"
-                                                        Width="12"
-                                                        Height="12"
-                                                        CornerRadius="6"
-                                                        Margin="0,0,6,0"
-                                                        VerticalAlignment="Center"
-                                                        Background="{Binding ColorHex, Converter={x:Static legend:LegendConverters.HexToBrush}}" />
+                                                    <CheckBox Grid.Column="0"
+                                                              IsChecked="{Binding IsVisible}"
+                                                              VerticalAlignment="Center"
+                                                              Margin="0,0,4,0" />
 
-                                                <TextBlock Grid.Column="2"
-                                                           Text="{Binding Name}"
-                                                           FontWeight="{Binding IsActive, Converter={x:Static legend:LegendConverters.ActiveToWeight}}"
-                                                           VerticalAlignment="Center" />
+                                                    <Border Grid.Column="1"
+                                                            Width="12"
+                                                            Height="12"
+                                                            CornerRadius="6"
+                                                            Margin="0,0,6,0"
+                                                            VerticalAlignment="Center"
+                                                            Background="{Binding ColorHex, Converter={x:Static legend:LegendConverters.HexToBrush}}" />
 
-                                                <TextBlock Grid.Column="3"
-                                                           Name="RowValue"
-                                                           Text="{Binding CurrentValueText}"
-                                                           IsVisible="{Binding $parent[UserControl].DataContext.IsExpanded}"
-                                                           Margin="6,0,0,0"
-                                                           VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="2"
+                                                               Text="{Binding Name}"
+                                                               VerticalAlignment="Center" />
 
-                                                <TextBlock Grid.Column="4"
-                                                           Name="RowUnit"
-                                                           Text="{Binding Unit}"
-                                                           IsVisible="{Binding $parent[UserControl].DataContext.IsExpanded}"
-                                                           Foreground="{DynamicResource AppSecondaryForegroundBrush}"
-                                                           Margin="4,0,0,0"
-                                                           VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="3"
+                                                               Name="RowValue"
+                                                               Text="{Binding CurrentValueText}"
+                                                               IsVisible="{Binding $parent[UserControl].DataContext.IsExpanded}"
+                                                               Margin="6,0,0,0"
+                                                               VerticalAlignment="Center" />
+
+                                                    <TextBlock Grid.Column="4"
+                                                               Name="RowUnit"
+                                                               Text="{Binding Unit}"
+                                                               IsVisible="{Binding $parent[UserControl].DataContext.IsExpanded}"
+                                                               Foreground="{DynamicResource AppSecondaryForegroundBrush}"
+                                                               Margin="4,0,0,0"
+                                                               VerticalAlignment="Center" />
+
+                                                </Grid>
 
                                             </Grid>
                                         </Border>

@@ -146,6 +146,222 @@ public sealed class TrendLegendViewModelTests
 		row.IsVisible.Should().BeTrue("a disposed row no longer mirrors the chart");
 	}
 
+	// The row's own notification still fires after the legend is gone, so only the group's disposal stops
+	// the header re-deriving from it.
+	[AvaloniaFact]
+	public void Dispose_StopsEveryHeaderFollowingItsRows()
+	{
+		var chart = CreateChart();
+		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
+		var legend = new TrendLegendViewModel(chart);
+		var heaters = Group(legend, "Heaters");
+
+		legend.Dispose();
+		heaters.Rows.Single().IsVisible = false;
+
+		heaters.SwitchState.Should().BeTrue("a disposed header no longer follows its rows");
+	}
+
+	[AvaloniaFact]
+	public void TheSwitchOnAGroupNamedLikeTheUngroupedHeader_SwitchesItsGroupedAndItsUngroupedPens()
+	{
+		var chart = CreateChart();
+		chart.AddPen(new Pen(1, "Pen 1", [Resources.LegendUngroupedHeader], "#ff0000"));
+		chart.AddPen(new Pen(2, "Pen 2", [], "#00ff00"));
+		using var legend = new TrendLegendViewModel(chart);
+		var merged = legend.Groups.Single();
+
+		merged.SwitchGroupCommand.Execute().Subscribe();
+
+		chart.FindPen(1)!.IsVisible.Should().BeFalse();
+		chart.FindPen(2)!.IsVisible.Should().BeFalse();
+		merged.SwitchState.Should().BeFalse();
+	}
+
+	[AvaloniaFact]
+	public void SwitchState_IsOnWhenAllRowsAreOnOffWhenAllAreOffAndIndeterminateWhenMixed()
+	{
+		var chart = CreateChart();
+		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
+		chart.AddPen(new Pen(2, "Pen 2", ["Heaters"], "#00ff00"));
+		using var legend = new TrendLegendViewModel(chart);
+		var heaters = Group(legend, "Heaters");
+
+		heaters.SwitchState.Should().BeTrue("every pen starts visible");
+
+		chart.SetPenVisibility(1, false);
+
+		heaters.SwitchState.Should().BeNull();
+
+		chart.SetPenVisibility(2, false);
+
+		heaters.SwitchState.Should().BeFalse();
+	}
+
+	[AvaloniaFact]
+	public void SwitchingOnePen_ReDerivesEveryHeaderItSitsUnder()
+	{
+		var chart = CreateChart();
+		chart.AddPen(new Pen(1, "Pen 1", ["Heaters", "Watchlist"], "#ff0000"));
+		chart.AddPen(new Pen(2, "Pen 2", ["Heaters"], "#00ff00"));
+		chart.AddPen(new Pen(3, "Pen 3", ["Watchlist"], "#0000ff"));
+		using var legend = new TrendLegendViewModel(chart);
+
+		SingleRow(legend, 1).IsVisible = false;
+
+		Group(legend, "Heaters").SwitchState.Should().BeNull();
+		Group(legend, "Watchlist").SwitchState.Should().BeNull();
+	}
+
+	[AvaloniaFact]
+	public void TheSwitchOnAMixedHeader_SwitchesEveryPenOn()
+	{
+		var chart = CreateChart();
+		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
+		chart.AddPen(new Pen(2, "Pen 2", ["Heaters"], "#00ff00"));
+		using var legend = new TrendLegendViewModel(chart);
+		var heaters = Group(legend, "Heaters");
+		chart.SetPenVisibility(1, false);
+
+		heaters.SwitchGroupCommand.Execute().Subscribe();
+
+		chart.FindPen(1)!.IsVisible.Should().BeTrue();
+		chart.FindPen(2)!.IsVisible.Should().BeTrue();
+		heaters.SwitchState.Should().BeTrue();
+	}
+
+	[AvaloniaFact]
+	public void TheSwitchOnAnOffHeader_SwitchesEveryPenOn()
+	{
+		var chart = CreateChart();
+		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
+		chart.AddPen(new Pen(2, "Pen 2", ["Heaters"], "#00ff00"));
+		using var legend = new TrendLegendViewModel(chart);
+		var heaters = Group(legend, "Heaters");
+		chart.SetPenVisibility(1, false);
+		chart.SetPenVisibility(2, false);
+
+		heaters.SwitchGroupCommand.Execute().Subscribe();
+
+		chart.FindPen(1)!.IsVisible.Should().BeTrue();
+		chart.FindPen(2)!.IsVisible.Should().BeTrue();
+		heaters.SwitchState.Should().BeTrue();
+	}
+
+	[AvaloniaFact]
+	public void TheSwitchOnAnOnHeader_SwitchesEveryPenOffAndTheSharedPensOtherHeaderFollows()
+	{
+		var chart = CreateChart();
+		chart.AddPen(new Pen(1, "Pen 1", ["Heaters", "Watchlist"], "#ff0000"));
+		chart.AddPen(new Pen(2, "Pen 2", ["Heaters"], "#00ff00"));
+		chart.AddPen(new Pen(3, "Pen 3", ["Watchlist"], "#0000ff"));
+		using var legend = new TrendLegendViewModel(chart);
+		var heaters = Group(legend, "Heaters");
+
+		heaters.SwitchGroupCommand.Execute().Subscribe();
+
+		chart.FindPen(1)!.IsVisible.Should().BeFalse();
+		chart.FindPen(2)!.IsVisible.Should().BeFalse();
+		chart.FindPen(3)!.IsVisible.Should().BeTrue("the pen sits under Watchlist alone");
+		heaters.SwitchState.Should().BeFalse();
+		Group(legend, "Watchlist").SwitchState.Should().BeNull();
+	}
+
+	[AvaloniaFact]
+	public void TheUngroupedHeader_CarriesItsOwnSwitch()
+	{
+		var chart = CreateChart();
+		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
+		chart.AddPen(new Pen(2, "Pen 2", [], "#00ff00"));
+		using var legend = new TrendLegendViewModel(chart);
+		var ungrouped = Group(legend, Resources.LegendUngroupedHeader);
+
+		ungrouped.SwitchGroupCommand.Execute().Subscribe();
+
+		chart.FindPen(2)!.IsVisible.Should().BeFalse();
+		chart.FindPen(1)!.IsVisible.Should().BeTrue();
+		ungrouped.SwitchState.Should().BeFalse();
+		ungrouped.SwitchName.Should().Be(Resources.FormatLegendGroupSwitch(Resources.LegendUngroupedHeader));
+	}
+
+	// The handle sits on the panel's left edge, so a negative delta widens it.
+	[AvaloniaFact]
+	public void ResizePanel_WritesTheSlotOfTheShownStateAndTheToggleSwitchesSlots()
+	{
+		const double MaximumWidth = 900;
+		var chart = CreateChart();
+		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
+		using var legend = new TrendLegendViewModel(chart);
+		legend.FitPanel(MaximumWidth);
+
+		legend.ResizePanel(-40);
+
+		legend.PanelWidth.Should().Be(TrendLegendViewModel.ExpandedWidth + 40);
+
+		legend.ToggleExpandedCommand.Execute().Subscribe();
+
+		legend.PanelWidth.Should().Be(TrendLegendViewModel.CollapsedWidth, "the collapsed slot was never dragged");
+
+		legend.ResizePanel(20);
+
+		legend.PanelWidth.Should().Be(TrendLegendViewModel.CollapsedWidth - 20);
+
+		legend.ToggleExpandedCommand.Execute().Subscribe();
+
+		legend.PanelWidth.Should().Be(TrendLegendViewModel.ExpandedWidth + 40, "the expanded slot kept its drag");
+
+		legend.ToggleExpandedCommand.Execute().Subscribe();
+
+		legend.PanelWidth.Should().Be(TrendLegendViewModel.CollapsedWidth - 20, "the collapsed slot kept its drag");
+	}
+
+	[AvaloniaFact]
+	public void ResizePanel_StopsAtThePanelFloorAndAtTheMaximumWidth()
+	{
+		const double MaximumWidth = 500;
+		var chart = CreateChart();
+		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
+		using var legend = new TrendLegendViewModel(chart);
+		legend.FitPanel(MaximumWidth);
+
+		legend.ResizePanel(1000);
+
+		legend.PanelWidth.Should().Be(TrendLegendViewModel.PanelMinWidth);
+
+		legend.ResizePanel(-1000);
+
+		legend.PanelWidth.Should().Be(MaximumWidth);
+
+		legend.FitPanel(TrendLegendViewModel.PanelMinWidth / 2);
+
+		legend.PanelWidth.Should().Be(
+			TrendLegendViewModel.PanelMinWidth,
+			"a window too narrow for both floors keeps the panel's");
+	}
+
+	[AvaloniaFact]
+	public void FitPanel_NarrowsTheShownWidthAndKeepsBothSlots()
+	{
+		var chart = CreateChart();
+		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
+		using var legend = new TrendLegendViewModel(chart);
+		legend.FitPanel(900);
+		legend.ResizePanel(-400);
+
+		legend.FitPanel(500);
+
+		legend.PanelWidth.Should().Be(500);
+
+		legend.ToggleExpandedCommand.Execute().Subscribe();
+
+		legend.PanelWidth.Should().Be(TrendLegendViewModel.CollapsedWidth, "the collapsed slot fits the room");
+
+		legend.ToggleExpandedCommand.Execute().Subscribe();
+		legend.FitPanel(900);
+
+		legend.PanelWidth.Should().Be(TrendLegendViewModel.ExpandedWidth + 400);
+	}
+
 	[AvaloniaFact]
 	public void TogglingRowCheckbox_FlipsChartPenVisibility()
 	{
@@ -245,6 +461,11 @@ public sealed class TrendLegendViewModelTests
 			.SelectMany(group => group.Rows)
 			.Distinct()
 			.Single(row => row.Name == $"Pen {penId}");
+	}
+
+	private static TrendLegendGroupViewModel Group(TrendLegendViewModel legend, string name)
+	{
+		return legend.Groups.Single(group => group.Name == name);
 	}
 
 	private TrendChartViewModel CreateChart()

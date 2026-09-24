@@ -8,21 +8,25 @@ using SemiPlot.UI.Localization;
 
 namespace SemiPlot.UI.Legend;
 
-/// <summary>A sidebar header and the rows under it; a catalogue with no group at all draws no header.</summary>
-public sealed record TrendLegendGroupViewModel(
-	string Name,
-	bool HasHeader,
-	IReadOnlyList<TrendLegendRowViewModel> Rows);
-
 public sealed class TrendLegendViewModel : ReactiveObject, IDisposable
 {
-	/// <summary>The sidebar width the panel asks for while expanded; MainWindow.axaml falls back to it.</summary>
+	/// <summary>The expanded width every session starts at; MainWindow.axaml falls back to it.</summary>
 	public const double ExpandedWidth = 280;
 
+	/// <summary>The collapsed width every session starts at.</summary>
 	public const double CollapsedWidth = 168;
+
+	/// <summary>The narrowest panel a drag or a window shrink leaves.</summary>
+	public const double PanelMinWidth = 120;
+
+	/// <summary>The narrowest chart a drag of the panel may leave.</summary>
+	public const double ChartMinWidth = 320;
 
 	private readonly IReadOnlyList<TrendLegendRowViewModel> _rows;
 	private readonly CompositeDisposable _subscriptions = [];
+	private double _expandedWidth = ExpandedWidth;
+	private double _collapsedWidth = CollapsedWidth;
+	private double _maximumWidth = double.PositiveInfinity;
 
 	public TrendLegendViewModel(TrendChartViewModel chartViewModel)
 	{
@@ -43,19 +47,49 @@ public sealed class TrendLegendViewModel : ReactiveObject, IDisposable
 		{
 			this.RaiseAndSetIfChanged(ref field, value);
 			this.RaisePropertyChanged(nameof(ToggleText));
-			this.RaisePropertyChanged(nameof(RequestedWidth));
+			this.RaisePropertyChanged(nameof(PanelWidth));
 		}
 	} = true;
 
-	public double RequestedWidth => IsExpanded ? ExpandedWidth : CollapsedWidth;
+	/// <summary>The shown state's slot, fitted to the room the window leaves; ResizePanel writes a slot.</summary>
+	public double PanelWidth => FitWidth(IsExpanded ? _expandedWidth : _collapsedWidth);
 
 	public string ToggleText => IsExpanded ? Resources.LegendCollapsePanel : Resources.LegendExpandPanel;
 
 	public ReactiveCommand<Unit, Unit> ToggleExpandedCommand { get; }
 
+	/// <summary>Moves the panel's left edge by the drag delta; the panel and the chart each keep a floor.</summary>
+	public void ResizePanel(double delta)
+	{
+		var width = FitWidth(PanelWidth - delta);
+
+		if (IsExpanded)
+		{
+			_expandedWidth = width;
+		}
+		else
+		{
+			_collapsedWidth = width;
+		}
+
+		this.RaisePropertyChanged(nameof(PanelWidth));
+	}
+
+	/// <summary>Records the room the window leaves, the one write of the maximum; both slots keep their value.</summary>
+	public void FitPanel(double maximumWidth)
+	{
+		_maximumWidth = maximumWidth;
+		this.RaisePropertyChanged(nameof(PanelWidth));
+	}
+
 	public void Dispose()
 	{
 		_subscriptions.Dispose();
+
+		foreach (var group in Groups)
+		{
+			group.Dispose();
+		}
 
 		foreach (var row in _rows)
 		{
@@ -63,56 +97,33 @@ public sealed class TrendLegendViewModel : ReactiveObject, IDisposable
 		}
 	}
 
-	// A pen draws once and is listed under every group it carries, so one row view model appears in
-	// several headers and Dispose walks the distinct list above rather than this one. Headers read in
-	// the operator's alphabetical order, the ungrouped one last; the key identity above stays ordinal.
-	private static IReadOnlyList<TrendLegendGroupViewModel> BuildGroups(IReadOnlyList<TrendLegendRowViewModel> rows)
+	// docs/architecture/charting.md#module-layout-avalonia-views--view-models--core-models
+	private double FitWidth(double width)
 	{
-		var ungrouped = rows.Where(row => row.Groups.Count == 0).ToList();
-
-		if (ungrouped.Count == rows.Count)
-		{
-			return rows.Count > 0 ? [new TrendLegendGroupViewModel(string.Empty, HasHeader: false, rows)] : [];
-		}
-
-		List<TrendLegendGroupViewModel> groups =
-		[
-			.. rows
-				.SelectMany(row => row.Groups.Select(name => (Name: name, Row: row)))
-				.GroupBy(entry => entry.Name, StringComparer.Ordinal)
-				.OrderBy(group => group.Key, StringComparer.CurrentCulture)
-				.Select(group => new TrendLegendGroupViewModel(
-					group.Key,
-					HasHeader: true,
-					[.. group.Select(entry => entry.Row)]))
-		];
-
-		if (ungrouped.Count > 0)
-		{
-			AppendUngrouped(groups, ungrouped);
-		}
-
-		return groups;
+		return Math.Max(PanelMinWidth, Math.Min(width, _maximumWidth));
 	}
 
-	// A catalogue is free to hold a group named exactly like the ungrouped header, and two headers of
-	// one text read as a duplicate: the rows join that group instead.
-	private static void AppendUngrouped(
-		List<TrendLegendGroupViewModel> groups,
-		IReadOnlyList<TrendLegendRowViewModel> ungrouped)
+	private static IReadOnlyList<TrendLegendGroupViewModel> BuildGroups(IReadOnlyList<TrendLegendRowViewModel> rows)
 	{
-		var collision = groups.FindIndex(group =>
-			string.Equals(group.Name, Resources.LegendUngroupedHeader, StringComparison.Ordinal));
-
-		if (collision < 0)
+		if (rows.All(row => row.Groups.Count == 0))
 		{
-			groups.Add(new TrendLegendGroupViewModel(Resources.LegendUngroupedHeader, HasHeader: true, ungrouped));
-
-			return;
+			return rows.Count > 0 ? [new TrendLegendGroupViewModel(string.Empty, hasHeader: false, rows)] : [];
 		}
 
-		var merged = groups[collision] with { Rows = [.. groups[collision].Rows, .. ungrouped] };
-		groups.RemoveAt(collision);
-		groups.Add(merged);
+		var ungroupedHeader = Resources.LegendUngroupedHeader;
+
+		return
+		[
+			.. rows
+				.SelectMany(row => (row.Groups.Count == 0 ? [ungroupedHeader] : row.Groups)
+					.Select(name => (Name: name, Row: row)))
+				.GroupBy(entry => entry.Name, StringComparer.Ordinal)
+				.OrderBy(group => string.Equals(group.Key, ungroupedHeader, StringComparison.Ordinal))
+				.ThenBy(group => group.Key, StringComparer.CurrentCulture)
+				.Select(group => new TrendLegendGroupViewModel(
+					group.Key,
+					hasHeader: true,
+					[.. group.Select(entry => entry.Row)]))
+		];
 	}
 }

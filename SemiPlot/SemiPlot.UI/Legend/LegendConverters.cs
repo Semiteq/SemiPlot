@@ -1,3 +1,5 @@
+using System.Globalization;
+
 using Avalonia.Data.Converters;
 using Avalonia.Media;
 
@@ -5,8 +7,9 @@ namespace SemiPlot.UI.Legend;
 
 public static class LegendConverters
 {
-	public static readonly FuncValueConverter<bool, FontWeight> ActiveToWeight =
-		new(isActive => isActive ? FontWeight.Bold : FontWeight.Normal);
+	// A group header is a section caption, and a TextBlock has no text transform to set it in capitals.
+	public static readonly FuncValueConverter<string?, string> ToCapitals =
+		new(text => text?.ToUpper(CultureInfo.CurrentCulture) ?? string.Empty);
 
 	// An unparseable hex draws no dot rather than throwing out of a binding.
 	public static readonly FuncValueConverter<string?, IBrush> HexToBrush =

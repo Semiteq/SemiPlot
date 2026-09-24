@@ -1,5 +1,20 @@
 namespace SemiPlot.DataSource.Postgres;
 
+/// <summary>The column order of <see cref="ArchiveStatements.PenCatalog"/>, named so a transposition shows.</summary>
+internal static class PenCatalogColumn
+{
+	public const int Id = 0;
+	public const int Name = 1;
+	public const int Unit = 2;
+	public const int Format = 3;
+	public const int Color = 4;
+	public const int LineStyle = 5;
+	public const int EnabledOnStart = 6;
+	public const int ScaleMin = 7;
+	public const int ScaleMax = 8;
+	public const int Groups = 9;
+}
+
 /// <summary>
 /// Every statement the provider issues; parameters are bound, never interpolated.
 /// </summary>
@@ -10,18 +25,38 @@ internal static class ArchiveStatements
 	/// </summary>
 	public const string TagCatalogRelation = "semiplot_tags";
 
+	public const string GroupsRelation = "semiplot_groups";
+
+	public const string PenGroupsRelation = "semiplot_pen_groups";
+
 	/// <summary>
 	/// The sample table the SCADA writes rows into.
 	/// </summary>
 	public const string TrendsRelation = "trends";
 
 	/// <summary>
-	/// Coalesce on purpose: nulls sort last, the empty string the read projects sorts first.
+	/// Every relation <see cref="PenCatalog"/> touches, for the detail line of a failed read.
+	/// </summary>
+	public const string PenCatalogRelations = $"{TagCatalogRelation}, {GroupsRelation}, {PenGroupsRelation}";
+
+	/// <summary>
+	/// Every relation <see cref="ArchiveExtent"/> touches, for the detail line of a failed read.
+	/// </summary>
+	public const string ArchiveExtentRelations = $"{TagCatalogRelation}, {TrendsRelation}";
+
+	/// <summary>
+	/// One row per pen whatever its group count. <c>GROUP BY tag.id</c> alone is legal because it is the key.
 	/// </summary>
 	public const string PenCatalog = """
-	                                 SELECT id, name, group_name, color, line_style
-	                                 FROM semiplot_tags
-	                                 ORDER BY coalesce(group_name, ''), name;
+	                                 SELECT tag.id, tag.name, tag.unit, tag.format, tag.color, tag.line_style,
+	                                        tag.enabled_on_start, tag.scale_min, tag.scale_max,
+	                                        coalesce(array_agg(grp.name ORDER BY grp.name)
+	                                                 FILTER (WHERE grp.name IS NOT NULL), '{}') AS groups
+	                                 FROM semiplot_tags tag
+	                                 LEFT JOIN semiplot_pen_groups membership ON membership.pen_id = tag.id
+	                                 LEFT JOIN semiplot_groups grp ON grp.id = membership.group_id
+	                                 GROUP BY tag.id
+	                                 ORDER BY tag.name;
 	                                 """;
 
 	/// <summary>

@@ -86,7 +86,7 @@ constant clause by clause; `ExplainPlanTests` asserts each plan's shape against 
 
 | Operation | Constant | What the statement must keep, and why |
 | --- | --- | --- |
-| Pen catalogue | `PenCatalog` | `ORDER BY coalesce(group_name, ''), name`: `group_name` is nullable and `Pen.Group` is not, so the ordering coalesces the way the read does. An empty table is an empty list; a missing one is `ArchiveFault.TableMissing` naming `semiplot_tags`. |
+| Pen catalogue | `PenCatalog` | `semiplot_tags` left-joined through `semiplot_pen_groups` to `semiplot_groups`, the names aggregated with `array_agg` under `GROUP BY tag.id`: a pen in two groups stays one row and a pen in none survives the outer join. `ORDER BY tag.name`, because a pen has no single group to sort by. An empty table is an empty list; a missing one is `ArchiveFault.TableMissing` naming all three relations. |
 | Archive extent | `ArchiveExtent` | Rooted at `semiplot_tags`, one `min(t)`/`max(t)` subquery pair per configured `id` at `l = 0`. A bare `min(t)` over `trends` cannot use `PRIMARY KEY (id, l, t)` and scans the archive. Nulls map to `ArchiveExtent.Empty`; an empty catalogue over a full archive is also `Empty`, since no pen could draw it. |
 | History, coarse layers | `SparseHistoryWindow` | Two branches under one outer `ORDER BY id, t`: the window rows, and per pen one seed row strictly before `@from`, bounded to the wider of the window and one day. `HistoryRowFold` groups by consecutive identifier, so the single total ordering is what keeps each pen one run; the bound is what prunes older partitions from the seed's `Merge Append`; the seed is what keeps a steady variable on the chart as a horizontal line. |
 | History, Raw | `BucketedRawWindow` | The same seed branch, and a window branch the server reduces to one row per column: `GROUP BY id, segment, date_bin(@bucket, t, @from)`. `segment` counts the `q = 32` markers strictly before each row, so a marker closes its own bucket and no bucket straddles a break. Each bucket carries `min(v)`, `max(v)`, whether it ends in a gap, and the bucket's newest non-null sample as the column's timestamp and value, which is what the legend reads at the cursor. A `q = 32` marker and a null `v` both end the bucket in a gap. Raw by construction: `l = 0`, no `@layer`. `@bucket` is `(to - from) / targetColumnCount`, never below one millisecond, the column's own resolution. |
@@ -301,11 +301,11 @@ handler would end the forwarding for the rest of the session instead of reaching
 | Connection lost mid-session | failed `Result` on the query; realtime tick dropped | Chart keeps the data it has |
 | Three consecutive realtime ticks fail | `ArchiveFault.ConnectionLost` on `ConnectionFaults`; the observable keeps running | The status indicator turns to the fault state and one `Warning` entry appears; the first tick that succeeds restores the indicator and adds one `Info` entry |
 | A column the read needs is absent (`42703`) | `ArchiveFault.ShapeUnexpected` with the server's detail | "The archive has an unexpected shape" — run `semibase site`, then find what altered the table |
-| Query timeout (`57014`) | `ArchiveFault.QueryTimedOut` | The server ended the read; `statement_timeout` is the reader role's own setting |
+| Query timeout (`57014`) | `ArchiveFault.QueryTimedOut` | The server ended the read; `statement_timeout` is the `semiplot` role's own setting |
 | The database does not exist (`3D000`) | `ArchiveFault.DatabaseMissing` | "The archive is not provisioned" — run `semibase site` |
 | Credentials refused or a grant missing (`28P01`, `28000`, `42501`) | `ArchiveFault.AccessDenied` | "The archive refused the credentials" — the user, password or grants |
-| `trends` or `semiplot_tags` does not exist (`42P01`) | `ArchiveFault.TableMissing` whose detail names the table | "The archive is not provisioned" — run `semibase site`, which creates both |
-| `semiplot_tags` present but empty | empty pen list, success | The chart area's own empty state — commissioning is not finished. Not a message-panel entry: an empty catalogue is a state, not something that happened |
+| A relation a read needs does not exist (`42P01`) | `ArchiveFault.TableMissing` whose detail names every relation that read touches | "The archive is not provisioned" — run `semibase site`, which creates them all |
+| `semiplot_tags` present but empty | empty pen list, success | The chart area's own empty state — no key has been registered as a pen yet. Not a message-panel entry: an empty catalogue is a state, not something that happened |
 | Archive present but no rows in the window | success, empty envelope list | Empty chart, no error |
 
 ### Two error planes
@@ -336,7 +336,7 @@ Reading a section folder is the only file access left on the connection path, wh
 | `Unreachable` | a socket failure, a client bound firing, any `NpgsqlException` without a SQLSTATE | empty |
 | `AccessDenied` | `28P01`, `28000`, `42501` | the username |
 | `DatabaseMissing` | `3D000` | empty |
-| `TableMissing` | `42P01` | the relation the failing statement touches |
+| `TableMissing` | `42P01` | every relation the failing statement touches: `trends` for the history and realtime reads, `semiplot_tags, trends` for the archive extent, all three catalogue tables for the pen catalogue |
 | `ShapeUnexpected` | `42703` | the server's own message |
 | `QueryTimedOut` | `57014` | empty |
 | `ConnectionLost` | three consecutive failed poll ticks | the number of failures that raised it |
@@ -427,7 +427,7 @@ absent required key is reported, an unknown key ignored. `schema` defaults to `p
 host: scada-01
 port: 5432
 database: semiplot_dev
-user: semiplot_reader
+user: semiplot
 password: "change me"
 source_time_zone: Europe/Berlin
 poll_interval_ms: 1000
@@ -440,10 +440,11 @@ this loader over it.
 `source_time_zone` takes any identifier `TimeZoneInfo.FindSystemTimeZoneById` resolves on the
 machine running the viewer: an IANA name such as `Europe/Berlin`, or on Windows the id `tzutil /g`
 prints. The file states no query bound: `statement_timeout`
-belongs to the `semiplot_reader` role and SemiBase owns it (`postgres-instance.md`). The connection
+belongs to the `semiplot` role and SemiBase owns it (`postgres-instance.md`). The connection
 string carries `Command Timeout=300` as a client backstop; the live-edge poll uses a 10 s bound of
 its own on every tick. Loading returns a `Result`; a malformed file is reported at startup, not at
-first query. The password is stored in plain text; the mitigation is the read-only role.
+first query. The password is stored in plain text; the mitigation is a role that cannot write the
+archive.
 
 ## Startup
 

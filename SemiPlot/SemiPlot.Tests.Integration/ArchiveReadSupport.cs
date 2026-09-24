@@ -6,7 +6,12 @@ public static class ArchiveReadSupport
 {
 	public const string EmptyCatalogCommand = "DELETE FROM public.semiplot_tags;";
 
-	public const string DropCatalogCommand = "DROP TABLE public.semiplot_tags;";
+	public const string DropCatalogCommand = "DROP TABLE public.semiplot_tags CASCADE;";
+
+	public const string DropPenGroupsCommand = "DROP TABLE public.semiplot_pen_groups;";
+
+	// CASCADE because semiplot_pen_groups references it; the catalogue read then finds neither.
+	public const string DropGroupsCommand = "DROP TABLE public.semiplot_groups CASCADE;";
 
 	// Provisioning creates public.trends, so "provisioned, catalogue present, archive absent" is
 	// reached by cloning the provisioned source and dropping the table again. Issued as scada_writer,

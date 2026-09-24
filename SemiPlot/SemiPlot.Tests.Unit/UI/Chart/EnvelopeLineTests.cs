@@ -42,7 +42,7 @@ public sealed class EnvelopeLineTests
 		line.Axes.XAxis = plot.Axes.Bottom;
 		plot.Add.Plottable(line);
 
-		var state = new TrendPenState(new Pen(PenId, "Pen 1", "Group A", PenColorHex), line);
+		var state = new TrendPenState(new Pen(PenId, "Pen 1", ["Group A"], PenColorHex), line);
 		state.LoadHistory(Envelope(LongColumnCount));
 
 		plot.Axes.SetLimitsX(

@@ -134,7 +134,7 @@ public sealed class PostgresHistoryReadTests(
 	{
 		var window = QuietWindow();
 
-		var result = await ReadHistoryAsync(seededArchive.Database.ReaderConnectionString, window);
+		var result = await ReadHistoryAsync(seededArchive.Database.PlotConnectionString, window);
 
 		AssertMatchesSeededRows(result, window);
 
@@ -153,7 +153,7 @@ public sealed class PostgresHistoryReadTests(
 		(requested.Length < _seededPenIds.Value.Count).Should().BeTrue("The subset must be a strict one.");
 
 		var result = await ReadHistoryAsync(
-			seededArchive.Database.ReaderConnectionString,
+			seededArchive.Database.PlotConnectionString,
 			window,
 			requested,
 			AggregationLayer.Raw);
@@ -168,9 +168,9 @@ public sealed class PostgresHistoryReadTests(
 	{
 		var window = QuietWindow();
 
-		var raw = await ReadHistoryAsync(seededArchive.Database.ReaderConnectionString, window);
+		var raw = await ReadHistoryAsync(seededArchive.Database.PlotConnectionString, window);
 		var minute = await ReadHistoryAsync(
-			seededArchive.Database.ReaderConnectionString,
+			seededArchive.Database.PlotConnectionString,
 			window,
 			_seededPenIds.Value,
 			AggregationLayer.Minute);
@@ -196,7 +196,7 @@ public sealed class PostgresHistoryReadTests(
 			ArchiveTemplate.Slice.Start - TimeSpan.FromHours(1),
 			ArchiveTemplate.Slice.Start);
 
-		var result = await ReadHistoryAsync(seededArchive.Database.ReaderConnectionString, window);
+		var result = await ReadHistoryAsync(seededArchive.Database.PlotConnectionString, window);
 
 		// The seeder writes its first row at Start and the statement's upper bound is exclusive, so the
 		// window really does end before the archive begins.
@@ -214,7 +214,7 @@ public sealed class PostgresHistoryReadTests(
 		var stopped = _breakPlan.Value.Breaks[0];
 		var window = new LocalWindow(stopped.Start - _breakMargin, stopped.End + _breakMargin);
 
-		var result = await ReadHistoryAsync(seededArchive.Database.ReaderConnectionString, window);
+		var result = await ReadHistoryAsync(seededArchive.Database.PlotConnectionString, window);
 
 		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
 
@@ -263,7 +263,7 @@ public sealed class PostgresHistoryReadTests(
 		(window.To < run.End).Should().BeTrue(
 			$"The window has to close before the run's q = 32 marker at {run.End:O}, not at {window.To:O}.");
 
-		var result = await ReadHistoryAsync(seededArchive.Database.ReaderConnectionString, window);
+		var result = await ReadHistoryAsync(seededArchive.Database.PlotConnectionString, window);
 
 		AssertMatchesSeededRows(result, window);
 
@@ -285,7 +285,7 @@ public sealed class PostgresHistoryReadTests(
 				+ $"{BucketedColumnTarget} columns would pass through instead of reducing."));
 
 		var result = await ReadHistoryAsync(
-			seededArchive.Database.ReaderConnectionString,
+			seededArchive.Database.PlotConnectionString,
 			window,
 			_seededPenIds.Value,
 			AggregationLayer.Raw,
@@ -327,7 +327,7 @@ public sealed class PostgresHistoryReadTests(
 		var expected = SeededRowsIn(window);
 
 		var result = await ReadHistoryAsync(
-			seededArchive.Database.ReaderConnectionString,
+			seededArchive.Database.PlotConnectionString,
 			window,
 			_seededPenIds.Value,
 			AggregationLayer.Raw,
@@ -362,7 +362,7 @@ public sealed class PostgresHistoryReadTests(
 			$"A bucket of {BucketFor(window)} merges the anchor and change rows the seeder writes "
 				+ $"{_tightestRowSpacing} apart, so the comparison below would compare buckets, not rows.");
 
-		var result = await ReadHistoryAsync(seededArchive.Database.ReaderConnectionString, window);
+		var result = await ReadHistoryAsync(seededArchive.Database.PlotConnectionString, window);
 
 		AssertMatchesSeededRows(result, window);
 	}
@@ -382,7 +382,7 @@ public sealed class PostgresHistoryReadTests(
 				+ "break, so date_bin alone would keep the marker apart from what follows it.");
 
 		var result = await ReadHistoryAsync(
-			seededArchive.Database.ReaderConnectionString,
+			seededArchive.Database.PlotConnectionString,
 			window,
 			_seededPenIds.Value,
 			AggregationLayer.Raw,
@@ -419,7 +419,7 @@ public sealed class PostgresHistoryReadTests(
 		// stopped writing, and one minute past the end is well inside the statement's look-back floor.
 		_seededRawRows.Value.Should().NotContain(row => row.Timestamp >= window.From);
 
-		var result = await ReadHistoryAsync(seededArchive.Database.ReaderConnectionString, window);
+		var result = await ReadHistoryAsync(seededArchive.Database.PlotConnectionString, window);
 
 		AssertMatchesSeededRows(result, window);
 
@@ -442,7 +442,7 @@ public sealed class PostgresHistoryReadTests(
 		// Every pen fell silent more than the floor ago, so a look-back fixed at the floor returns no row.
 		_seededRawRows.Value.Should().NotContain(row => row.Timestamp >= window.From - _seedLookBackFloor);
 
-		var result = await ReadHistoryAsync(seededArchive.Database.ReaderConnectionString, window);
+		var result = await ReadHistoryAsync(seededArchive.Database.PlotConnectionString, window);
 
 		AssertMatchesSeededRows(result, window);
 
@@ -467,7 +467,7 @@ public sealed class PostgresHistoryReadTests(
 
 		var window = QuietWindow();
 
-		var result = await ReadHistoryAsync(database.ReaderConnectionString, window);
+		var result = await ReadHistoryAsync(database.PlotConnectionString, window);
 
 		result.IsFailed.Should().BeTrue();
 
@@ -605,7 +605,7 @@ public sealed class PostgresHistoryReadTests(
 	// aggregate are the other half of what the read costs.
 	private async Task ReportServerTimeAsync(LocalWindow window, int columnTarget)
 	{
-		await using var connection = new NpgsqlConnection(seededArchive.Database.ReaderConnectionString);
+		await using var connection = new NpgsqlConnection(seededArchive.Database.PlotConnectionString);
 
 		await connection.OpenAsync(TestContext.Current.CancellationToken);
 
@@ -899,7 +899,7 @@ public sealed class PostgresHistoryReadTests(
 		AggregationLayer layer)
 	{
 		return ReadHistoryAsync(
-			database.ReaderConnectionString,
+			database.PlotConnectionString,
 			new LocalWindow(_tailWindowFrom, _tailWindowTo),
 			[FreshPenId, LaggingPenId, ReachingPenId],
 			layer);

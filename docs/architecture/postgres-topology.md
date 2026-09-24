@@ -22,7 +22,7 @@ flowchart TB
         direction TB
         trends[("trends<br/>PARTITION BY RANGE (t)<br/>PK tpk (id, l, t)")]
         msgs[("messages")]
-        tags[("semiplot_tags")]
+        config[("semiplot_tags<br/>semiplot_groups<br/>semiplot_pen_groups<br/>semiplot_meta")]
         roles["roles · grants<br/>default-privileges chain<br/>config deltas"]
     end
 
@@ -33,10 +33,10 @@ flowchart TB
     scada -- "writes rows" --> trends
     scada -- "creates and writes" --> msgs
     prov -- "creates, never writes rows" --> trends
-    prov -- "creates, never writes rows" --> tags
+    prov -- "creates, never writes rows" --> config
     prov -- "creates" --> roles
     prov2 -- "SELECT only" --> trends
-    prov2 -- "SELECT only" --> tags
+    prov2 -- "SELECT only" --> config
 
     classDef write stroke-width:3px
     class scada,prov write
@@ -45,6 +45,14 @@ flowchart TB
 `messages` is created by the SCADA and is not read by any shipped query. SemiPlot creates no object
 inside the database and runs nothing there: no summary table, trigger, function, scheduled job or
 extension. Any write, `ALTER` or `CREATE` it issues is a defect, and the server answers `42501`.
+
+The one exception the grants already allow is the configuration tables: SemiBase gives the `semiplot`
+role a column-level `UPDATE` of the pen settings on `semiplot_tags`, full DML on `semiplot_groups` and
+`semiplot_pen_groups`, and `EXECUTE` on `semiplot_register_new_pens()`, for the pen editor that has not
+been built yet (`Semiteq/SemiPlot#67`). A pen's `id` is the SCADA variable number, so the role never
+inserts, deletes or re-keys a pen; the function registers new keys. The shipped viewer reads the tables
+and writes none of them, so the edge above is `SELECT only` for what the code does rather than for
+what the role may do.
 
 ## What the archive holds
 
@@ -152,14 +160,16 @@ stateDiagram-v2
     end note
 ```
 
-`semibase site` creates `public.trends` and `semiplot_tags` in one run, so `NoTables` is not a
-stage a site passes through — it is a provisioning that stopped part-way, or a table removed after
-one. Both tables are absent for the same reason and both come back from the same command, so the
-client reports whichever table the failing statement names and sends the operator to `semibase site`
-either way.
+`semibase site` creates `public.trends` and the four configuration tables in one run, so `NoTables` is
+not a stage a site passes through — it is a provisioning that stopped part-way, or a table removed
+after one. Every table is absent for the same reason and every one comes back from the same command,
+so the client reports the relations the failing statement touches and sends the operator to
+`semibase site` either way.
 
-The split matters and is settled: a **missing** `semiplot_tags` raises `42P01` and is a typed failure
-carrying the table name, while an **empty** one is a successful read of zero rows. Both stay
+The split matters and is settled: a **missing** catalogue table raises `42P01` and is a typed failure
+naming every relation that statement reads — all three of `semiplot_tags`, `semiplot_groups` and
+`semiplot_pen_groups` for the pen catalogue, because one name would send the operator to a table that
+is still there — while an **empty** catalogue is a successful read of zero rows. Both stay
 distinguishable, which is what SemiBase requires — provisioning skipped versus commissioning
 unfinished — and no error type exists for the empty case, because the database answered correctly and
 nothing is broken.
@@ -190,4 +200,4 @@ flowchart LR
 
 The provisioning creates `public.trends` empty; the seeder writes into it as `scada_writer`, the way
 the SCADA writes its own, and adds only the day partitions its rows land in. Every read in the tests
-connects as `semiplot_reader`. Nothing in this repository defines a table, a role or a grant.
+connects as `semiplot`. Nothing in this repository defines a table, a role or a grant.

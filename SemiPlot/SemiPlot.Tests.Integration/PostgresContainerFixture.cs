@@ -91,7 +91,7 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 			.WithPassword(BenchRoles.SuperuserPassword)
 			.WithDatabase(BenchRoles.MaintenanceDatabase)
 			.WithEnvironment(BenchRoles.WriterPasswordVariable, BenchRoles.WriterPassword)
-			.WithEnvironment(BenchRoles.ReaderPasswordVariable, BenchRoles.ReaderPassword)
+			.WithEnvironment(BenchRoles.PlotPasswordVariable, BenchRoles.PlotPassword)
 			.WithEnvironment(PasswordVariable, BenchRoles.SuperuserPassword)
 			.WithEnvironment(ProvisionedDatabaseVariable, BenchRoles.ProvisionedDatabase)
 			// Replaces the module's own pg_isready wait, which passes on the entrypoint's temporary

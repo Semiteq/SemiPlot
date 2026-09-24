@@ -24,9 +24,9 @@ implementation plans see `docs/plans/`.
 - [scada-archive.md](./scada-archive.md) — the Simple-Scada 2 archive as it exists: tables and
   columns, archive layers, quality marks and gaps, write and retention behaviour, reader hazards,
   and what remains unverified.
-- [postgres-instance.md](./postgres-instance.md) — the instance as SemiPlot consumes it: the reader
-  role's contract, the `semiplot_tags` columns read, the provisioning states the client must
-  survive, retention and capacity. Installation, configuration, provisioning order and the role
+- [postgres-instance.md](./postgres-instance.md) — the instance as SemiPlot consumes it: the `semiplot`
+  role's contract, the configuration tables and the columns read, the provisioning states the client
+  must survive, retention and capacity. Installation, configuration, provisioning order and the role
   definitions are owned by SemiBase (`github.com/Semiteq/SemiBase`) and cross-referenced there.
 - [sources.md](./sources.md) — citation convention and the registry every factual claim resolves
   against: vendor manual pages, vendor forum topics, our own measurements, our own decisions.
@@ -72,6 +72,6 @@ SemiBase creates `public.trends`, as `bench.md` and `postgres-instance.md` state
 | Data source     | One read-only PostgreSQL connection to the Simple-Scada archive (`trends` / `messages`) — history, extent and realtime alike. No application server, no OPC UA client, no local TCP protocol |
 | Wide windows    | The SCADA's own archive layers (`l = 1/2/3`); no summary tables, aggregator service, scheduler or extensions of ours — see `history-read-path-evaluation.md` |
 | Retention       | One depth for all archived data; coarse layers cannot outlive raw data       |
-| Tag names       | Our own `semiplot_tags` table, filled by hand — the archive stores numbers only |
+| Tag names       | Our own `semiplot_tags` table, one row per key SCADA writes, registered by `semiplot_register_new_pens()` — the archive stores numbers only |
 | Budget          | $0 — free / OSS components only                                             |
 | Visualization   | Build SemiPlot (custom); Grafana rejected — see `grafana-vs-build-evaluation.md` |

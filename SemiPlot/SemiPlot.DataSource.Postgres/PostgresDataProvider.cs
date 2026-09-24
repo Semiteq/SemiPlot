@@ -24,6 +24,8 @@ namespace SemiPlot.DataSource.Postgres;
 /// </summary>
 public sealed class PostgresDataProvider : IDataProvider, IDisposable
 {
+	private const string UncommissionedPenColor = "#808080";
+
 	private readonly NpgsqlDataSource _dataSource;
 	private readonly ArchiveTimeConverter _timeConverter;
 	private readonly ArchiveExceptionMapper _exceptionMapper;
@@ -78,7 +80,7 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 	}
 
 	/// <summary>
-	/// Every configured variable, ordered by group then name.
+	/// Every configured variable, ordered by name.
 	/// </summary>
 	public async Task<Result<IReadOnlyList<Pen>>> QueryPensAsync()
 	{
@@ -99,7 +101,7 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		}
 		catch (Exception exception)
 		{
-			return Result.Fail<IReadOnlyList<Pen>>(Map(exception, ArchiveStatements.TagCatalogRelation));
+			return Result.Fail<IReadOnlyList<Pen>>(Map(exception, ArchiveStatements.PenCatalogRelations));
 		}
 	}
 
@@ -176,8 +178,7 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		}
 		catch (Exception exception)
 		{
-			// trends on purpose: the startup catalogue read already reports a missing semiplot_tags.
-			return Result.Fail<ArchiveExtent>(Map(exception, ArchiveStatements.TrendsRelation));
+			return Result.Fail<ArchiveExtent>(Map(exception, ArchiveStatements.ArchiveExtentRelations));
 		}
 	}
 
@@ -436,14 +437,73 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 
 	private Pen ReadPen(NpgsqlDataReader reader)
 	{
-		var penId = reader.GetInt32(0);
+		var penId = reader.GetInt32(PenCatalogColumn.Id);
+		var (scaleMin, scaleMax) = ReadScalePair(reader);
 
 		return new Pen(
 			penId,
-			reader.GetString(1),
-			reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
-			reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
-			ReadLineStyle(reader.GetInt16(4), penId));
+			reader.GetString(PenCatalogColumn.Name),
+			reader.GetFieldValue<string[]>(PenCatalogColumn.Groups),
+			ReadColor(reader, penId),
+			reader.IsDBNull(PenCatalogColumn.Unit) ? null : reader.GetString(PenCatalogColumn.Unit),
+			ReadFormat(reader, penId),
+			reader.GetBoolean(PenCatalogColumn.EnabledOnStart),
+			scaleMin,
+			scaleMax,
+			ReadLineStyle(reader.GetInt16(PenCatalogColumn.LineStyle), penId));
+	}
+
+	// semiplot_tags_scale_paired forbids a half-set pair, so one reaching here is a hand-edited row on an
+	// installation without the constraint: it autoscales rather than opening on a bound with no partner.
+	private static (double? Min, double? Max) ReadScalePair(NpgsqlDataReader reader)
+	{
+		if (reader.IsDBNull(PenCatalogColumn.ScaleMin) || reader.IsDBNull(PenCatalogColumn.ScaleMax))
+		{
+			return (null, null);
+		}
+
+		return (reader.GetDouble(PenCatalogColumn.ScaleMin), reader.GetDouble(PenCatalogColumn.ScaleMax));
+	}
+
+	// The server validates a stored colour against the hex pattern, so only its absence is handled here.
+	private string ReadColor(NpgsqlDataReader reader, int penId)
+	{
+		if (!reader.IsDBNull(PenCatalogColumn.Color))
+		{
+			return reader.GetString(PenCatalogColumn.Color);
+		}
+
+		_logger.LogWarning(
+			"Pen {PenId} carries no colour; it is drawn in {FallbackColor} until one is commissioned.",
+			penId,
+			UncommissionedPenColor);
+
+		return UncommissionedPenColor;
+	}
+
+	// No server-side check can parse a .NET mask, so the character rule runs here and an unusable mask
+	// leaves the record with none.
+	private string? ReadFormat(NpgsqlDataReader reader, int penId)
+	{
+		if (reader.IsDBNull(PenCatalogColumn.Format))
+		{
+			return null;
+		}
+
+		var storedMask = reader.GetString(PenCatalogColumn.Format);
+
+		if (PenValueFormat.IsAcceptable(storedMask))
+		{
+			return storedMask;
+		}
+
+		_logger.LogWarning(
+			"Pen {PenId} carries format {StoredMask}, which cannot render a reading; it is drawn under {FallbackMask}.",
+			penId,
+			storedMask,
+			PenValueFormat.FallbackMask);
+
+		return null;
 	}
 
 	// The stored value is the member's ordinal. An unrecognised value draws interpolated rather than

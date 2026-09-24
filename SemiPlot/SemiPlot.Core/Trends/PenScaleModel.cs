@@ -14,69 +14,49 @@ public sealed class PenScaleModel
 		DateTime windowStart,
 		DateTime windowEnd)
 	{
-		var axisOrder = new List<string>();
-		var axisGroups = new Dictionary<string, List<PenScaleSettings>>();
+		var scales = new List<PenScale>(settings.Count);
 
 		foreach (var setting in settings)
 		{
-			if (!axisGroups.TryGetValue(setting.AxisKey, out var members))
-			{
-				members = [];
-				axisGroups[setting.AxisKey] = members;
-				axisOrder.Add(setting.AxisKey);
-			}
+			var (min, max) = ComputeRange(setting, envelopes, windowStart, windowEnd);
 
-			members.Add(setting);
-		}
-
-		var scales = new List<PenScale>(axisOrder.Count);
-		foreach (var axisKey in axisOrder)
-		{
-			scales.Add(BuildAxisScale(axisKey, axisGroups[axisKey], envelopes, activePenId, windowStart, windowEnd));
+			scales.Add(new PenScale(
+				setting.PenId,
+				min,
+				max,
+				setting.Mode,
+				setting.PenId == activePenId,
+				setting.IsLogarithmic));
 		}
 
 		return scales;
 	}
 
-	private static PenScale BuildAxisScale(
-		string axisKey,
-		IReadOnlyList<PenScaleSettings> members,
+	private static (double Min, double Max) ComputeRange(
+		PenScaleSettings setting,
 		IReadOnlyDictionary<int, PenHistoryEnvelope> envelopes,
-		int activePenId,
 		DateTime windowStart,
 		DateTime windowEnd)
 	{
-		var penIds = members.Select(member => member.PenId).ToArray();
-		var isActive = members.Any(member => member.PenId == activePenId);
-		var isVisible = members.Any(member => member.IsVisible);
-		var isLogarithmic = members.Any(member => member.IsLogarithmic);
-		var mode = members[0].Mode;
+		var isLogarithmic = setting.IsLogarithmic;
 
-		var (min, max) = ComputeRange(members, envelopes, windowStart, windowEnd, mode, isLogarithmic);
-
-		return new PenScale(axisKey, penIds, min, max, mode, isActive, isVisible, isLogarithmic);
-	}
-
-	private static (double Min, double Max) ComputeRange(
-		IReadOnlyList<PenScaleSettings> members,
-		IReadOnlyDictionary<int, PenHistoryEnvelope> envelopes,
-		DateTime windowStart,
-		DateTime windowEnd,
-		ScaleMode mode,
-		bool isLogarithmic)
-	{
-		if (mode == ScaleMode.Manual)
+		if (setting.Mode == ScaleMode.Manual)
 		{
-			return SanitizeManualRange(members[0], isLogarithmic);
+			return SanitizeManualRange(setting, isLogarithmic);
 		}
 
-		if (TryReadRange(members, envelopes, windowStart, windowEnd, isLogarithmic, out var min, out var max))
+		if (!envelopes.TryGetValue(setting.PenId, out var envelope))
+		{
+			return DefaultRange(isLogarithmic);
+		}
+
+		if (TryReadRange(envelope, windowStart, windowEnd, isLogarithmic, out var min, out var max))
 		{
 			return PadRange(min, max, isLogarithmic);
 		}
 
 		// docs/architecture/trend-feature-spec.md, AY-4
-		if (TryReadRange(members, envelopes, DateTime.MinValue, DateTime.MaxValue, isLogarithmic, out min, out max))
+		if (TryReadRange(envelope, DateTime.MinValue, DateTime.MaxValue, isLogarithmic, out min, out max))
 		{
 			return PadRange(min, max, isLogarithmic);
 		}
@@ -103,8 +83,7 @@ public sealed class PenScaleModel
 
 	// Runs once per mouse move over an envelope carrying three visible windows of columns.
 	private static bool TryReadRange(
-		IReadOnlyList<PenScaleSettings> members,
-		IReadOnlyDictionary<int, PenHistoryEnvelope> envelopes,
+		PenHistoryEnvelope envelope,
 		DateTime windowStart,
 		DateTime windowEnd,
 		bool isLogarithmic,
@@ -113,29 +92,7 @@ public sealed class PenScaleModel
 	{
 		min = double.MaxValue;
 		max = double.MinValue;
-		var hasValue = false;
 
-		foreach (var member in members)
-		{
-			if (!envelopes.TryGetValue(member.PenId, out var envelope))
-			{
-				continue;
-			}
-
-			hasValue |= ReadEnvelopeRange(envelope, windowStart, windowEnd, isLogarithmic, ref min, ref max);
-		}
-
-		return hasValue;
-	}
-
-	private static bool ReadEnvelopeRange(
-		PenHistoryEnvelope envelope,
-		DateTime windowStart,
-		DateTime windowEnd,
-		bool isLogarithmic,
-		ref double min,
-		ref double max)
-	{
 		var timestamps = envelope.Timestamps;
 		var hasValue = false;
 

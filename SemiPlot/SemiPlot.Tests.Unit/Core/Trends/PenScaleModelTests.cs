@@ -14,13 +14,13 @@ public sealed class PenScaleModelTests
 	private static readonly DateTime _origin = new(2026, 6, 16, 0, 0, 0, DateTimeKind.Utc);
 
 	[Fact]
-	public void Compute_ActivePenAxis_SurfacesItsRangeAndIsActiveAndVisible()
+	public void Compute_ActivePenAxis_SurfacesItsRangeAndIsActive()
 	{
 		var model = new PenScaleModel();
 		var settings = new[]
 		{
-			new PenScaleSettings(PenId: 1, AxisKey: "pressure"),
-			new PenScaleSettings(PenId: 2, AxisKey: "temperature")
+			new PenScaleSettings(PenId: 1),
+			new PenScaleSettings(PenId: 2)
 		};
 		var envelopes = new Dictionary<int, PenHistoryEnvelope>
 		{
@@ -30,13 +30,12 @@ public sealed class PenScaleModelTests
 
 		var scales = model.Compute(settings, envelopes, activePenId: 1, _origin, _origin.AddHours(1));
 
-		var active = scales.Single(scale => scale.AxisKey == "pressure");
+		var active = scales.Single(scale => scale.PenId == 1);
 		active.IsActive.Should().BeTrue();
-		active.IsVisible.Should().BeTrue();
 		active.Min.Should().BeApproximately(0.0 - (12.0 * 0.05), 1e-9);
 		active.Max.Should().BeApproximately(12.0 + (12.0 * 0.05), 1e-9);
 
-		scales.Single(scale => scale.AxisKey == "temperature").IsActive.Should().BeFalse();
+		scales.Single(scale => scale.PenId == 2).IsActive.Should().BeFalse();
 	}
 
 	[Fact]
@@ -45,8 +44,8 @@ public sealed class PenScaleModelTests
 		var model = new PenScaleModel();
 		var settings = new[]
 		{
-			new PenScaleSettings(PenId: 1, AxisKey: "a"),
-			new PenScaleSettings(PenId: 2, AxisKey: "b")
+			new PenScaleSettings(PenId: 1),
+			new PenScaleSettings(PenId: 2)
 		};
 		var envelopes = new Dictionary<int, PenHistoryEnvelope>
 		{
@@ -57,44 +56,17 @@ public sealed class PenScaleModelTests
 		var scales = model.Compute(settings, envelopes, activePenId: 1, _origin, _origin.AddHours(1));
 
 		scales.Should().HaveCount(2);
-		var axisB = scales.Single(scale => scale.AxisKey == "b");
-		axisB.IsActive.Should().BeFalse();
-		axisB.PenIds.Should().ContainSingle().Which.Should().Be(2);
-		axisB.Min.Should().BeApproximately(-3.0 - (10.0 * 0.05), 1e-9);
-		axisB.Max.Should().BeApproximately(7.0 + (10.0 * 0.05), 1e-9);
-	}
-
-	[Fact]
-	public void Compute_SharedGroup_ProducesOneScaleSpanningAllMembers()
-	{
-		var model = new PenScaleModel();
-		var settings = new[]
-		{
-			new PenScaleSettings(PenId: 1, AxisKey: "heaters"),
-			new PenScaleSettings(PenId: 2, AxisKey: "heaters"),
-			new PenScaleSettings(PenId: 3, AxisKey: "heaters")
-		};
-		var envelopes = new Dictionary<int, PenHistoryEnvelope>
-		{
-			[1] = Envelope(1, (10.0, 20.0)),
-			[2] = Envelope(2, (5.0, 30.0)),
-			[3] = Envelope(3, (15.0, 25.0))
-		};
-
-		var scales = model.Compute(settings, envelopes, activePenId: 1, _origin, _origin.AddHours(1));
-
-		var shared = scales.Should().ContainSingle().Which;
-		shared.AxisKey.Should().Be("heaters");
-		shared.PenIds.Should().BeEquivalentTo([1, 2, 3]);
-		shared.Min.Should().BeApproximately(5.0 - (25.0 * 0.05), 1e-9);
-		shared.Max.Should().BeApproximately(30.0 + (25.0 * 0.05), 1e-9);
+		var second = scales.Single(scale => scale.PenId == 2);
+		second.IsActive.Should().BeFalse();
+		second.Min.Should().BeApproximately(-3.0 - (10.0 * 0.05), 1e-9);
+		second.Max.Should().BeApproximately(7.0 + (10.0 * 0.05), 1e-9);
 	}
 
 	[Fact]
 	public void Compute_AutoMode_FitsOnlyValuesInsideVisibleWindow()
 	{
 		var model = new PenScaleModel();
-		var settings = new[] { new PenScaleSettings(PenId: 1, AxisKey: "a") };
+		var settings = new[] { new PenScaleSettings(PenId: 1) };
 
 		var timestamps = new[] { _origin, _origin.AddHours(1), _origin.AddHours(2), _origin.AddHours(3) };
 		var min = new[] { 0.0, 50.0, 1000.0, -500.0 };
@@ -117,7 +89,7 @@ public sealed class PenScaleModelTests
 	public void Compute_AutoModeWithNoEnvelopeAtAll_FallsBackToTheDefaultRange()
 	{
 		var model = new PenScaleModel();
-		var settings = new[] { new PenScaleSettings(PenId: 1, AxisKey: "a") };
+		var settings = new[] { new PenScaleSettings(PenId: 1) };
 
 		var scales = model.Compute(
 			settings, new Dictionary<int, PenHistoryEnvelope>(), activePenId: 1, _origin, _origin.AddHours(1));
@@ -131,7 +103,7 @@ public sealed class PenScaleModelTests
 	public void Compute_AutoModeOverAStickyWindowPastTheLastColumn_KeepsThePenScale()
 	{
 		var model = new PenScaleModel();
-		var settings = new[] { new PenScaleSettings(PenId: 1, AxisKey: "a") };
+		var settings = new[] { new PenScaleSettings(PenId: 1) };
 		var envelopes = new Dictionary<int, PenHistoryEnvelope>
 		{
 			[1] = Envelope(1, (900.0, 1000.0), (950.0, 1100.0))
@@ -153,7 +125,7 @@ public sealed class PenScaleModelTests
 		var model = new PenScaleModel();
 		var settings = new[]
 		{
-			new PenScaleSettings(PenId: 1, AxisKey: "a", Mode: ScaleMode.Manual, ManualMin: -2.0, ManualMax: 8.0)
+			new PenScaleSettings(PenId: 1, Mode: ScaleMode.Manual, ManualMin: -2.0, ManualMax: 8.0)
 		};
 		var envelopes = new Dictionary<int, PenHistoryEnvelope> { [1] = Envelope(1, (1000.0, 2000.0)) };
 
@@ -169,7 +141,7 @@ public sealed class PenScaleModelTests
 	public void Compute_LogarithmicAxis_DropsNonPositiveValuesBeforeComputingRange()
 	{
 		var model = new PenScaleModel();
-		var settings = new[] { new PenScaleSettings(PenId: 1, AxisKey: "a", IsLogarithmic: true) };
+		var settings = new[] { new PenScaleSettings(PenId: 1, IsLogarithmic: true) };
 
 		var timestamps = new[] { _origin, _origin.AddHours(1), _origin.AddHours(2) };
 		var min = new[] { -5.0, 2.0, 0.0 };
@@ -192,7 +164,7 @@ public sealed class PenScaleModelTests
 	public void Compute_LogarithmicAxisWithNoPositiveValues_FallsBackToPositiveDefaultRange()
 	{
 		var model = new PenScaleModel();
-		var settings = new[] { new PenScaleSettings(PenId: 1, AxisKey: "a", IsLogarithmic: true) };
+		var settings = new[] { new PenScaleSettings(PenId: 1, IsLogarithmic: true) };
 		var envelopes = new Dictionary<int, PenHistoryEnvelope> { [1] = Envelope(1, (-10.0, -1.0)) };
 
 		var scales = model.Compute(settings, envelopes, activePenId: 1, _origin, _origin.AddHours(1));
@@ -203,22 +175,10 @@ public sealed class PenScaleModelTests
 	}
 
 	[Fact]
-	public void Compute_HiddenPen_MarksAxisNotVisible()
-	{
-		var model = new PenScaleModel();
-		var settings = new[] { new PenScaleSettings(PenId: 1, AxisKey: "a", IsVisible: false) };
-		var envelopes = new Dictionary<int, PenHistoryEnvelope> { [1] = Envelope(1, (0.0, 10.0)) };
-
-		var scales = model.Compute(settings, envelopes, activePenId: 1, _origin, _origin.AddHours(1));
-
-		scales.Should().ContainSingle().Which.IsVisible.Should().BeFalse();
-	}
-
-	[Fact]
 	public void Compute_AutoModeIgnoresNaNGapColumns()
 	{
 		var model = new PenScaleModel();
-		var settings = new[] { new PenScaleSettings(PenId: 1, AxisKey: "a") };
+		var settings = new[] { new PenScaleSettings(PenId: 1) };
 
 		var timestamps = new[] { _origin, _origin.AddHours(1), _origin.AddHours(2) };
 		var min = new[] { 4.0, double.NaN, 6.0 };
@@ -241,7 +201,7 @@ public sealed class PenScaleModelTests
 	public void Compute_FlatLine_PadsByHalfAUnitOnEachSide()
 	{
 		var model = new PenScaleModel();
-		var settings = new[] { new PenScaleSettings(PenId: 1, AxisKey: "a") };
+		var settings = new[] { new PenScaleSettings(PenId: 1) };
 		var envelopes = new Dictionary<int, PenHistoryEnvelope> { [1] = Envelope(1, (5.0, 5.0)) };
 
 		var scales = model.Compute(settings, envelopes, activePenId: 1, _origin, _origin.AddHours(1));
@@ -257,7 +217,7 @@ public sealed class PenScaleModelTests
 		var model = new PenScaleModel();
 		var settings = new[]
 		{
-			new PenScaleSettings(PenId: 1, AxisKey: "a", Mode: ScaleMode.Manual, ManualMin: 90.0, ManualMax: 10.0)
+			new PenScaleSettings(PenId: 1, Mode: ScaleMode.Manual, ManualMin: 90.0, ManualMax: 10.0)
 		};
 		var envelopes = new Dictionary<int, PenHistoryEnvelope> { [1] = Envelope(1, (0.0, 1.0)) };
 
@@ -275,7 +235,7 @@ public sealed class PenScaleModelTests
 		var settings = new[]
 		{
 			new PenScaleSettings(
-				PenId: 1, AxisKey: "a", Mode: ScaleMode.Manual, ManualMin: -5.0, ManualMax: 100.0, IsLogarithmic: true)
+				PenId: 1, Mode: ScaleMode.Manual, ManualMin: -5.0, ManualMax: 100.0, IsLogarithmic: true)
 		};
 		var envelopes = new Dictionary<int, PenHistoryEnvelope> { [1] = Envelope(1, (1.0, 50.0)) };
 

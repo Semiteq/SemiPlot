@@ -1,9 +1,9 @@
-using System.Globalization;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
 
 using ReactiveUI;
 
+using SemiPlot.Core.Trends;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.Localization;
 
@@ -12,17 +12,14 @@ namespace SemiPlot.UI.Legend;
 public sealed class TrendLegendRowViewModel : ReactiveObject, IDisposable
 {
 	private readonly TrendChartViewModel _chartViewModel;
-	private readonly ObservableAsPropertyHelper<double?> _currentValue;
-	private readonly ObservableAsPropertyHelper<double?> _cursorValue;
-
-	private readonly ObservableAsPropertyHelper<bool> _isActive;
-	private readonly int _penId;
 	private readonly TrendPenState _penState;
-	private readonly ObservableAsPropertyHelper<(double Min, double Max)?> _scaleRange;
+	private readonly int _penId;
+	private readonly ObservableAsPropertyHelper<double?> _currentValue;
+	private readonly ObservableAsPropertyHelper<string> _currentValueText;
+	private readonly ObservableAsPropertyHelper<bool> _isActive;
 	private readonly CompositeDisposable _subscriptions = [];
-	private bool _isSettingVisibilityFromChart;
-
 	private bool _isVisible;
+	private bool _isSettingVisibilityFromChart;
 
 	public TrendLegendRowViewModel(TrendChartViewModel chartViewModel, TrendPenState penState)
 	{
@@ -36,6 +33,12 @@ public sealed class TrendLegendRowViewModel : ReactiveObject, IDisposable
 			.ToProperty(this, row => row.CurrentValue);
 		_subscriptions.Add(_currentValue);
 
+		_currentValueText = penState
+			.WhenAnyValue(state => state.CurrentValue)
+			.Select(value => FormatReading(value, penState.Pen.Format))
+			.ToProperty(this, row => row.CurrentValueText);
+		_subscriptions.Add(_currentValueText);
+
 		_subscriptions.Add(penState
 			.WhenAnyValue(state => state.IsVisible)
 			.Subscribe(MirrorVisibilityFromChart));
@@ -45,59 +48,21 @@ public sealed class TrendLegendRowViewModel : ReactiveObject, IDisposable
 			.Select(activePenId => activePenId == _penId)
 			.ToProperty(this, row => row.IsActive);
 		_subscriptions.Add(_isActive);
-
-		_cursorValue = chartViewModel
-			.WhenAnyValue(chart => chart.CursorValues)
-			.Select(values => values.TryGetValue(_penId, out var value) ? value : null)
-			.ToProperty(this, row => row.CursorValue);
-		_subscriptions.Add(_cursorValue);
-
-		_scaleRange = chartViewModel
-			.WhenAnyValue(chart => chart.ScalesRevision)
-			.Select(_ => chartViewModel.ScaleRangeForPen(_penId))
-			.ToProperty(this, row => row.ScaleRange);
-		_subscriptions.Add(_scaleRange);
-
-		_subscriptions.Add(this
-			.WhenAnyValue(row => row.CurrentValue)
-			.Subscribe(_ => this.RaisePropertyChanged(nameof(CurrentValueText))));
-		_subscriptions.Add(this
-			.WhenAnyValue(row => row.CursorValue)
-			.Subscribe(_ => this.RaisePropertyChanged(nameof(CursorValueText))));
-		_subscriptions.Add(this
-			.WhenAnyValue(row => row.ScaleRange)
-			.Subscribe(_ => this.RaisePropertyChanged(nameof(ScaleRangeText))));
 	}
 
 	public string Name => _penState.Pen.Name;
 
-	public string GroupName => _penState.Pen.Group;
+	public IReadOnlyList<string> Groups => _penState.Pen.Groups;
 
 	public string ColorHex => _penState.Pen.Color;
+
+	public string Unit => _penState.Pen.Unit ?? string.Empty;
 
 	public bool IsActive => _isActive.Value;
 
 	public double? CurrentValue => _currentValue.Value;
 
-	public double? CursorValue => _cursorValue.Value;
-
-	public (double Min, double Max)? ScaleRange => _scaleRange.Value;
-
-	public string CurrentValueText => FormatValue(CurrentValue);
-
-	public string CursorValueText => FormatValue(CursorValue);
-
-	public string ScaleRangeText
-	{
-		get
-		{
-			var range = ScaleRange;
-
-			return range is { } value
-				? $"{value.Min:0.###}..{value.Max:0.###}"
-				: Resources.NoValuePlaceholder;
-		}
-	}
+	public string CurrentValueText => _currentValueText.Value;
 
 	public bool IsVisible
 	{
@@ -122,11 +87,10 @@ public sealed class TrendLegendRowViewModel : ReactiveObject, IDisposable
 		_chartViewModel.SetActivePen(_penId);
 	}
 
-	private static string FormatValue(double? value)
+	// The provider accepted or dropped the mask already: docs/architecture/charting.md.
+	private static string FormatReading(double? value, string? mask)
 	{
-		return value is { } number
-			? number.ToString("0.###", CultureInfo.CurrentCulture)
-			: Resources.NoValuePlaceholder;
+		return value is { } reading ? PenValueFormat.Format(reading, mask) : Resources.NoValuePlaceholder;
 	}
 
 	private void MirrorVisibilityFromChart(bool isVisible)

@@ -8,8 +8,9 @@ is remains in `scada-archive.md`; what SemiPlot reads from it remains in `data-i
 
 | Piece | Owner |
 | --- | --- |
-| Database, roles, grants, default-privileges chain, `semiplot_tags`, `public.trends` with `tpdefault` | `semibase bench` (`github.com/Semiteq/SemiBase`), carried in the bench image |
+| Database, roles, grants, default-privileges chain, the configuration tables, `public.trends` with `tpdefault` | `semibase bench` (`github.com/Semiteq/SemiBase`), carried in the bench image |
 | The daily partitions and the rows | `SemiPlot.Tools.ArchiveSeeder`, connected as `scada_writer` |
+| The catalogue rows in `semiplot_tags`, `semiplot_groups` and `semiplot_pen_groups` | `SemiPlot.Tools.ArchiveSeeder` over the admin connection, written once when the stand comes up |
 | The moving live edge of a demo archive | `SemiPlot.Tools.ArchiveSeeder --follow`, connected as `scada_writer` |
 | Template build, the clones, teardown | `SemiPlot.Tests.Integration` |
 
@@ -136,8 +137,8 @@ alignment lives.
 - One clone per consumer. `CloneSource` names the source: a class that reads the seeded rows clones
   `semiplot_bench`, a class that writes its own rows clones `semiplot_provisioned`. The `SeededArchive`
   class fixture gives a whole class one clone; `ClonedArchiveTest` gives one per test method.
-- Every read in the container tests connects as `semiplot_reader`, so a grant that never reached the
-  reader fails here instead of on commissioning day.
+- Every read in the container tests connects as `semiplot`, so a grant that never reached the role
+  fails here instead of on commissioning day.
 
 **The container is the only path, and it is disposable.** The resource reaper deletes the built
 image `semiplot-bench:test` with the session; the container, its volume and every database die with
@@ -224,9 +225,26 @@ WITH (FORCE)` and `CREATE DATABASE ... TEMPLATE semiplot_provisioned` against th
 `--connection` names, seeds it with `SeederOptions` at the defaults (`--change-seconds` may override
 the change interval; the AppHost passes the writer's 0.5 s so the seeded day and the live tail share
 one density) up to `--end` or this machine's
-clock, fills `semiplot_tags` through `--admin-connection` re-pointed at the stand database, and
-writes `connection/connection.yaml` under `--config-dir` with the bench reader role's fixed password
-and `TimeZoneInfo.Local.Id`.
+clock, fills the catalogue through `--admin-connection` re-pointed at the stand database, and
+writes `connection/connection.yaml` under `--config-dir` with the bench `semiplot` role's fixed
+password and `TimeZoneInfo.Local.Id`.
+
+The catalogue is written once, here. `TagCatalogWriter` upserts `semiplot_tags`, inserts the group
+names into `semiplot_groups` and replaces each pen's rows in `semiplot_pen_groups`, all three in one
+transaction: a half-written catalogue would draw pens into groups they left. The replacement runs both
+ways — a membership the catalogue stopped stating goes, and a group left with no member goes with it,
+so a rerun after a rename leaves no header with nothing under it. The admin connection is
+what carries it, because `scada_writer` holds no privilege on those tables. Nothing rewrites the
+catalogue afterwards — the demo writer fills none of it, and every test database is a clone of a
+template that was already filled.
+
+`SyntheticPenCatalog.Build` holds 50 pens over six group names, all but one with a unit, a format mask and the
+stored scale pair its waveform walks between. What reaches the table is the slice, not the whole
+catalogue: `SeedFiller` hands the writer `RawLayerGenerator.SelectPens(options.PenCount)`, the
+round-robin slice that is eight pens wide by default. Three pens carry the states that slice would
+otherwise never reach — `TwoGroupPenId` sits in `Heaters` and `Watchlist` at once, `HiddenOnStartPenId`
+has `enabled_on_start = false`, and `UncommissionedPenId` has no group, no unit, no mask and no stored
+pair, so it opens autoscaled.
 
 That one file is all it writes. It overwrites the delivered `connection/connection.yaml` by name
 rather than adding a second file beside it, because two files of one section folder carrying the
@@ -267,7 +285,7 @@ What the server can be asked afterwards, which needs no screen:
 
 | Question | Where the answer is |
 | --- | --- |
-| Did the application reach the archive? | `pg_stat_activity` carries `semiplot_reader` connections while it runs |
+| Did the application reach the archive? | `pg_stat_activity` carries `semiplot` connections while it runs |
 | Did it read the catalogue? | `pg_stat_user_tables.idx_scan` on `semiplot_tags` |
 | Did it read history from the seeded span? | `idx_tup_fetch` on the partitions the fill landed in, `tp<YYYY>m<MM>d<DD>` |
 | Did any read fall back to a sequential scan? | `seq_scan` on the same partitions, which `ExplainPlanTests` forbids |

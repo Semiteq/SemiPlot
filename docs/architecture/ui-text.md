@@ -34,9 +34,12 @@ Russian. The comment above `ArchiveFailureMapper.MapAppSettings` states the sett
 line; the arguments half is `Program.ReportStartupFailure`, which applies the culture itself.
 
 Number and timestamp formatting is a separate question and stays on `CultureInfo.CurrentCulture`:
-`Chart/ChartHoverReadout`, `Chart/ChartDeltaCursorReader` and `Legend/TrendLegendRowViewModel` format
-what the operator reads on their own machine, and the generated `Format*` methods pass the same null
-`Culture` to `string.Format`, so an argument inside a failure detail follows the machine too.
+`Chart/ChartHoverReadout` and `Chart/ChartDeltaCursorReader` format what the operator reads on their own
+machine, and the generated `Format*` methods pass the same null `Culture` to `string.Format`, so an
+argument inside a failure detail follows the machine too. A pen's reading is the one number with a rule
+of its own, and `SemiPlot.Core.Trends.PenValueFormat` is that rule's single home: it applies the pen's
+stored mask under `CultureInfo.CurrentCulture`, and both the sidebar row and the chart's hover readout
+render through it, so one reading never appears in two shapes on one screen.
 
 ## The generated accessor
 

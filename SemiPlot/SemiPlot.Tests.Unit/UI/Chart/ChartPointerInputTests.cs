@@ -196,16 +196,15 @@ public sealed class ChartPointerInputTests
 			scheduler,
 			ImmediateScheduler.Instance,
 			_batchWindow);
-		// AvaloniaScheduler, as in production, so the view's redraw Sample can defer; ImmediateScheduler
-		// would block the calling thread inside SchedulePeriodic. The periodic timer it starts lives on the
-		// shared headless dispatcher until the view model is disposed, which every test here does.
+		// AvaloniaScheduler, as in production, and every test here disposes the view model:
+		// docs/architecture/testing-strategy.md#the-ui-scheduler-in-a-realised-view.
 		var viewModel = new TrendChartViewModel(
 			coordinator,
 			scheduler,
 			AvaloniaScheduler.Instance,
 			new MessagePanelViewModel(),
 			NullLogger<TrendChartViewModel>.Instance);
-		var state = viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+		var state = viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
 		state.LoadHistory(new PenHistoryEnvelope(
 			1,
 			[_from, _from.AddMinutes(1.0)],

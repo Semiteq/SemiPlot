@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 
+using SemiPlot.Core.Trends;
 using SemiPlot.UI.Localization;
 
 namespace SemiPlot.UI.Chart;
@@ -26,7 +27,7 @@ public static class ChartHoverReadout
 			content.Append('\n');
 			content.Append(pen.Pen.Name);
 			content.Append(": ");
-			content.Append(FormatValue(value));
+			content.Append(FormatValue(value, pen.Pen.Format));
 		}
 
 		return content.ToString();
@@ -39,10 +40,10 @@ public static class ChartHoverReadout
 			.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture);
 	}
 
-	private static string FormatValue(double? value)
+	private static string FormatValue(double? value, string? mask)
 	{
 		return value is { } number
-			? number.ToString("0.###", CultureInfo.CurrentCulture)
+			? PenValueFormat.Format(number, mask)
 			: Resources.NoValuePlaceholder;
 	}
 }

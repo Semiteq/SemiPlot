@@ -6,10 +6,8 @@
 # script and the entrypoint -- itself under set -e -- aborts with it: a failed
 # provisioning exits the container instead of publishing an unprovisioned database.
 #
-# The database name and the two role passwords come from the container environment,
-# which the entrypoint passes through unchanged. SEMIPLOT_PROVISIONED_DATABASE is
-# written in C# as BenchRoles.ProvisionedDatabase; semibase fails on its own
-# when either password is missing on a fresh cluster.
+# SEMIPLOT_PROVISIONED_DATABASE is written in C# as BenchRoles.ProvisionedDatabase;
+# semibase fails on its own when a role password is missing on a fresh cluster.
 #
 # No --expected-major: the base image is an argument, and SemiBase enforces its own
 # floor anyway.

@@ -93,6 +93,23 @@ public sealed class ChartHoverReadoutTests
 		content.Should().Contain($"Pen 1: {Resources.NoValuePlaceholder}");
 	}
 
+	// The same rule the sidebar row renders under, so one reading is not shown in two shapes at once.
+	[Fact]
+	public void BuildContent_RendersEachReadingInThatPensOwnMask()
+	{
+		var pens = new[]
+		{
+			new TrendPenState(new Pen(1, "Pen 1", ["Group"], "#ff0000", Format: "0.000"), new EnvelopeLine()),
+			CreatePen(2, "Pen 2")
+		};
+		var values = new Dictionary<int, double?> { [1] = 2.0, [2] = 2.0 };
+
+		var content = ChartHoverReadout.BuildContent(_cursor, values, pens);
+
+		content.Should().Contain($"Pen 1: {PenValueFormat.Format(2.0, "0.000")}");
+		content.Should().Contain($"Pen 2: {PenValueFormat.Format(2.0, PenValueFormat.FallbackMask)}");
+	}
+
 	private static string LocalTimestamp(DateTime cursorUtc)
 	{
 		return cursorUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture);
@@ -100,6 +117,6 @@ public sealed class ChartHoverReadoutTests
 
 	private static TrendPenState CreatePen(int projectVarId, string name)
 	{
-		return new TrendPenState(new Pen(projectVarId, name, "Group", "#ff0000"), new EnvelopeLine());
+		return new TrendPenState(new Pen(projectVarId, name, ["Group"], "#ff0000"), new EnvelopeLine());
 	}
 }

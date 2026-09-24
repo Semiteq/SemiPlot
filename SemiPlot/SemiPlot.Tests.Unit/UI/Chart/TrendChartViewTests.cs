@@ -163,7 +163,7 @@ public sealed class TrendChartViewTests
 			message.IsVisible.Should().BeTrue();
 			message.Text.Should().Be(Resources.EmptyCatalogueMessage);
 
-			viewModel.AddPen(new Pen(7, "Chamber pressure", "Pressure", "#3574F0"));
+			viewModel.AddPen(new Pen(7, "Chamber pressure", ["Pressure"], "#3574F0"));
 			Dispatcher.UIThread.RunJobs();
 
 			message.IsVisible.Should().BeFalse();
@@ -179,9 +179,8 @@ public sealed class TrendChartViewTests
 		return ThemeProbe.PlotColour("AppPanelBackgroundBrush", variant);
 	}
 
-	// Both schedulers are virtual here, unlike the other chart tests: the view subscribes to
-	// RedrawRequested, whose Sample needs a scheduler that can time out. ImmediateScheduler runs a periodic
-	// schedule by sleeping on the calling thread, so subscribing on it never returns.
+	// Both schedulers are virtual here, unlike the other chart tests:
+	// docs/architecture/testing-strategy.md#the-ui-scheduler-in-a-realised-view.
 	private static TrendChartViewModel CreateViewModel()
 	{
 		var scheduler = new TestScheduler();

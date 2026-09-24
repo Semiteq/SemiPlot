@@ -16,7 +16,7 @@ using Xunit;
 namespace SemiPlot.Tests.Integration;
 
 // The catalogue read against the states a real archive is found in. Every read connects as
-// semiplot_reader, the role production uses.
+// semiplot, the role production uses.
 [Collection(ArchiveDatabaseCollection.Name)]
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
@@ -26,38 +26,154 @@ public sealed class PostgresCatalogReadTests(
 	SeededArchive seededArchive)
 	: IClassFixture<SeededArchive>
 {
-	// Both nullable columns of SemiBase's semiplot_tags, written the one way the bench seeder
-	// never writes them.
-	private const string NullColumnTagCommand =
+	private const int ReversedMembershipTagId = 9996;
+
+	// Memberships written in reverse name order, so the array the statement aggregates reads in name
+	// order only because of its own ORDER BY.
+	private const string ReversedMembershipCommand =
 		"""
-		INSERT INTO public.semiplot_tags (id, name, group_name, color, line_style)
-		VALUES (9999, 'Uncommissioned', NULL, NULL, 0);
+		INSERT INTO public.semiplot_tags (id, name, color, line_style)
+		VALUES (9996, 'Reversed memberships', '#123456', 0);
+		INSERT INTO public.semiplot_groups (name) VALUES ('Zulu'), ('Alpha');
+		INSERT INTO public.semiplot_pen_groups (pen_id, group_id)
+		SELECT 9996, id FROM public.semiplot_groups WHERE name = 'Zulu';
+		INSERT INTO public.semiplot_pen_groups (pen_id, group_id)
+		SELECT 9996, id FROM public.semiplot_groups WHERE name = 'Alpha';
 		""";
+
+	private const int ScalingMaskTagId = 9997;
+
+	private const int ShapingMaskTagId = 9998;
+
+	// The per-cent specifier scales the reading by 100, so it is the mistake a try over ToString
+	// cannot catch; the pen beside it proves the rule accepts a mask that only shapes the number.
+	private const string StoredMaskTagsCommand =
+		"""
+		INSERT INTO public.semiplot_tags (id, name, format, color, line_style)
+		VALUES (9997, 'Scaling mask', '%0.0', '#123456', 0),
+		       (9998, 'Shaping mask', '0.##0', '#123456', 0);
+		""";
+
+	private const int NullColumnTagId = 9999;
+
+	// Every nullable column of SemiBase's semiplot_tags at once, and no membership: the state a pen
+	// sits in between the day its number is known and the day it is commissioned.
+	private const string UncommissionedTagCommand =
+		"""
+		INSERT INTO public.semiplot_tags (id, name, unit, format, color, line_style)
+		VALUES (9999, 'Uncommissioned', NULL, NULL, NULL, 0);
+		""";
+
+	// Spelled out rather than read off the provider, so the test pins the delivered colour itself.
+	private const string UncommissionedPenColor = "#808080";
 
 	private const string StoredLineStylesCommand =
 		"SELECT id, line_style FROM public.semiplot_tags ORDER BY id;";
-
-	private const int NullColumnTagId = 9999;
 
 	// The two values the column may hold, written out rather than cast from PenLineStyle.
 	private const short InterpolatedOrdinal = 0;
 
 	private const short SteppedOrdinal = 1;
 
+	// BeEquivalentTo rather than Equal: a record compares IReadOnlyList<string> by reference, so whole
+	// pens would compare unequal for a reason unrelated to the data.
 	[Fact]
-	public async Task SeededCatalogueReadsEveryPenOrderedByGroupThenName()
+	public async Task SeededCatalogueReadsEveryPenOrderedByName()
 	{
-		var result = await ReadCatalogueAsync(seededArchive.Database.ReaderConnectionString);
+		var result = await ReadCatalogueAsync(seededArchive.Database.PlotConnectionString);
 
 		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
-		result.Value.Should().Equal(ExpectedPens());
+		result.Value.Should().BeEquivalentTo(ExpectedPens(), options => options.WithStrictOrdering());
+	}
+
+	// The wholesale comparison above reads ExpectedPens(), which the seeder built from too: a catalogue
+	// state dropped from SyntheticPenCatalog changes both sides and passes. The three cases below name
+	// the states instead, so losing one fails here.
+	[Fact]
+	public async Task SeededCatalogueCarriesTheCommissionedFieldsOfEachPen()
+	{
+		var result = await ReadCatalogueAsync(seededArchive.Database.PlotConnectionString);
+
+		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
+
+		var commissioned = Single(result.Value, SyntheticPenCatalog.TwoGroupPenId);
+
+		commissioned.Unit.Should().Be("degC");
+		commissioned.Format.Should().Be("0.0");
+		commissioned.ScaleMin.Should().Be(20.0);
+		commissioned.ScaleMax.Should().Be(850.0);
+		commissioned.EnabledOnStart.Should().BeTrue();
+
+		Single(result.Value, SyntheticPenCatalog.HiddenOnStartPenId).EnabledOnStart.Should().BeFalse();
+	}
+
+	// One row, not two: the memberships aggregate into the array the record carries.
+	[Fact]
+	public async Task APenInTwoGroupsIsOneRowCarryingBothNames()
+	{
+		var result = await ReadCatalogueAsync(seededArchive.Database.PlotConnectionString);
+
+		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
+
+		Single(result.Value, SyntheticPenCatalog.TwoGroupPenId)
+			.Groups.Should().Equal("Heaters", "Watchlist");
+	}
+
+	[Fact]
+	public async Task AGroupListReadsInNameOrderWhateverOrderTheMembershipsWereWritten()
+	{
+		await using var database = await postgresContainerFixture.CloneTemplateAsync(
+			TestContext.Current.CancellationToken);
+
+		await ArchiveDatabase.ExecuteAsync(
+			database.AdminConnectionString,
+			ReversedMembershipCommand,
+			TestContext.Current.CancellationToken);
+
+		var result = await ReadCatalogueAsync(database.PlotConnectionString);
+
+		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
+		Single(result.Value, ReversedMembershipTagId).Groups.Should().Equal("Alpha", "Zulu");
+	}
+
+	// The outer join is what keeps this pen in the answer at all.
+	[Fact]
+	public async Task APenInNoGroupReadsAsAnEmptyGroupList()
+	{
+		var result = await ReadCatalogueAsync(seededArchive.Database.PlotConnectionString);
+
+		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
+
+		var uncommissioned = Single(result.Value, SyntheticPenCatalog.UncommissionedPenId);
+
+		uncommissioned.Groups.Should().BeEmpty();
+		uncommissioned.ScaleMin.Should().BeNull();
+		uncommissioned.ScaleMax.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task AStoredMaskIsKeptWhenItShapesTheReadingAndDroppedWhenItScalesIt()
+	{
+		await using var database = await postgresContainerFixture.CloneTemplateAsync(
+			TestContext.Current.CancellationToken);
+
+		await ArchiveDatabase.ExecuteAsync(
+			database.AdminConnectionString,
+			StoredMaskTagsCommand,
+			TestContext.Current.CancellationToken);
+
+		var result = await ReadCatalogueAsync(database.PlotConnectionString);
+
+		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
+		Single(result.Value, ShapingMaskTagId).Format.Should().Be("0.##0");
+		Single(result.Value, ScalingMaskTagId).Format.Should().BeNull();
 	}
 
 	[Fact]
 	public async Task SeededCatalogueLineStylesReadBackAsTheStoredOrdinals()
 	{
-		var stored = await StoredLineStylesAsync(seededArchive.Database.ReaderConnectionString);
-		var result = await ReadCatalogueAsync(seededArchive.Database.ReaderConnectionString);
+		var stored = await StoredLineStylesAsync(seededArchive.Database.PlotConnectionString);
+		var result = await ReadCatalogueAsync(seededArchive.Database.PlotConnectionString);
 
 		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
 		stored.Should().AllSatisfy(entry => (entry.LineStyle is InterpolatedOrdinal or SteppedOrdinal).Should().BeTrue(
@@ -70,17 +186,17 @@ public sealed class PostgresCatalogReadTests(
 	}
 
 	[Fact]
-	public async Task ANullGroupNameAndColourReadAsEmptyStrings()
+	public async Task AnUncommissionedPenReadsWithTheFallbackColourAndNoStoredFields()
 	{
 		await using var database = await postgresContainerFixture.CloneTemplateAsync(
 			TestContext.Current.CancellationToken);
 
 		await ArchiveDatabase.ExecuteAsync(
 			database.AdminConnectionString,
-			NullColumnTagCommand,
+			UncommissionedTagCommand,
 			TestContext.Current.CancellationToken);
 
-		var result = await ReadCatalogueAsync(database.ReaderConnectionString);
+		var result = await ReadCatalogueAsync(database.PlotConnectionString);
 
 		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
 
@@ -88,14 +204,13 @@ public sealed class PostgresCatalogReadTests(
 
 		result.Value.Count.Should().Be(expected.Count + 1);
 
-		var uncommissioned = result.Value.Should().ContainSingle(pen => pen.PenId == NullColumnTagId).Which;
+		var uncommissioned = Single(result.Value, NullColumnTagId);
 
-		uncommissioned.Group.Should().Be(string.Empty);
-		uncommissioned.Color.Should().Be(string.Empty);
-		expected.Should().AllSatisfy(pen => result.Value.Should().Contain(pen));
-
-		// Position, not only membership.
-		result.Value[0].Should().BeSameAs(uncommissioned);
+		uncommissioned.Groups.Should().BeEmpty();
+		uncommissioned.Color.Should().Be(UncommissionedPenColor);
+		uncommissioned.Unit.Should().BeNull();
+		uncommissioned.Format.Should().BeNull();
+		result.Value.Should().BeEquivalentTo([.. expected, ExpectedUncommissionedPen()]);
 	}
 
 	[Fact]
@@ -109,31 +224,37 @@ public sealed class PostgresCatalogReadTests(
 			ArchiveReadSupport.EmptyCatalogCommand,
 			TestContext.Current.CancellationToken);
 
-		var result = await ReadCatalogueAsync(database.ReaderConnectionString);
+		var result = await ReadCatalogueAsync(database.PlotConnectionString);
 
 		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
 		result.Value.Should().BeEmpty();
 	}
 
-	[Fact]
-	public async Task ADroppedCatalogueFailsNamingSemiplotTags()
+	// The statement reads three tables, so naming semiplot_tags alone would send the operator to a
+	// table that is still there. Asserted against the three names rather than the constant the
+	// provider passed, which would compare the answer to itself.
+	[Theory]
+	[InlineData(ArchiveReadSupport.DropCatalogCommand)]
+	[InlineData(ArchiveReadSupport.DropPenGroupsCommand)]
+	[InlineData(ArchiveReadSupport.DropGroupsCommand)]
+	public async Task ADroppedCatalogueTableFailsNamingEveryRelationTheReadTouches(string dropCommand)
 	{
 		await using var database = await postgresContainerFixture.CloneTemplateAsync(
 			TestContext.Current.CancellationToken);
 
 		await ArchiveDatabase.ExecuteAsync(
 			database.AdminConnectionString,
-			ArchiveReadSupport.DropCatalogCommand,
+			dropCommand,
 			TestContext.Current.CancellationToken);
 
-		var result = await ReadCatalogueAsync(database.ReaderConnectionString);
+		var result = await ReadCatalogueAsync(database.PlotConnectionString);
 
 		result.IsFailed.Should().BeTrue();
 
 		var error = result.Errors.OfType<ArchiveError>().Should().ContainSingle().Which;
 
 		error.Kind.Should().Be(ArchiveFault.TableMissing);
-		error.Detail.Should().Be("semiplot_tags");
+		error.Detail.Should().ContainAll("semiplot_tags", "semiplot_groups", "semiplot_pen_groups");
 		error.Database.Should().Be(database.Name);
 	}
 
@@ -144,12 +265,40 @@ public sealed class PostgresCatalogReadTests(
 		return await services.GetRequiredService<IDataProvider>().QueryPensAsync();
 	}
 
+	private static Pen Single(IEnumerable<Pen> pens, int penId)
+	{
+		return pens.Should().ContainSingle(pen => pen.PenId == penId).Which;
+	}
+
+	// Ordinal rather than the database collation: every seeded name differs inside its first word and
+	// is ASCII, where the two orderings agree.
 	private static IReadOnlyList<Pen> ExpectedPens()
 	{
 		return [.. RawLayerGenerator.SelectPens(ArchiveTemplate.Slice.PenCount)
-			.Select(pen => pen.ToPen())
-			.OrderBy(pen => pen.Group, StringComparer.Ordinal)
-			.ThenBy(pen => pen.Name, StringComparer.Ordinal)];
+			.Select(ToPen)
+			.OrderBy(pen => pen.Name, StringComparer.Ordinal)];
+	}
+
+	private static Pen ToPen(SyntheticPen pen)
+	{
+		return new Pen(
+			pen.PenId,
+			pen.Name,
+			pen.Groups,
+			pen.Color,
+			pen.Unit,
+			pen.Format,
+			pen.EnabledOnStart,
+			pen.ScaleMin,
+			pen.ScaleMax,
+			pen.LineStyle);
+	}
+
+	// Spelled out rather than taken from the answer: the row inserted above carries every nullable
+	// column empty, so the record the provider must build is fully decided by the statement.
+	private static Pen ExpectedUncommissionedPen()
+	{
+		return new Pen(NullColumnTagId, "Uncommissioned", [], UncommissionedPenColor);
 	}
 
 	private static IReadOnlyList<(int Id, short LineStyle)> ReadLineStyles(IEnumerable<Pen> pens)

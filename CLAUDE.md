@@ -59,14 +59,15 @@ dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.Archiv
 ```
 
 `--connection` and `--end` are required; `--end` carries no time zone, so two runs of the same seed
-produce the same archive. `--admin-connection` is optional and only fills `semiplot_tags`, which
-`scada_writer` holds no privilege on. Run it with `--help` for the option list.
+produce the same archive. `--admin-connection` is optional and only fills the catalogue —
+`semiplot_tags`, `semiplot_groups` and `semiplot_pen_groups` — which `scada_writer` holds no
+privilege on. Run it with `--help` for the option list.
 
 `converge` is a separate, bench-only subcommand: unlike the seeding run above, it does issue `DROP
 DATABASE ... WITH (FORCE)`. It waits for `--admin-connection` up to 60 s, recreates the database
 `--connection` names from `semiplot_provisioned`, seeds it up to `--end` or this machine's clock,
-fills the tag catalogue and writes `connection/connection.yaml` into `--config-dir` with the bench
-reader role's fixed password. That one file is all it writes, so run it against a directory that
+fills the catalogue and writes `connection/connection.yaml` into `--config-dir` with the bench
+`semiplot` role's fixed password. That one file is all it writes, so run it against a directory that
 already holds a copy of the tracked set (`docs/architecture/bench.md#the-converge-verb`):
 
 ```powershell
@@ -114,6 +115,11 @@ Two projects, split on one axis: needs a container or not.
   `SemiPlot.Tests.Integration` carries no `xunit.runner.json`.
 - An xunit v3 test project is an executable: a hung test leaves `SemiPlot.Tests.Unit.exe` locked and
   the next build fails with MSB3027 until it is killed. The container half is bounded at two minutes.
+- The way to hang one: give `TrendChartViewModel` `ImmediateScheduler.Instance` as its UI scheduler and
+  then realise a view that subscribes to `RedrawRequested`. Its `Sample` schedules periodically, and
+  `ImmediateScheduler` runs a periodic schedule by sleeping on the calling thread, so the subscription
+  never returns. A headless test that realises the chart passes both schedulers a `TestScheduler`
+  (`UI/Chart/TrendChartViewTests.cs`, `UI/MainWindow/MainWindowTestBuilder.cs`).
 - A plain `[Fact]` body runs with no `SynchronizationContext`, so an `await` on a
   `TaskCompletionSource` completed by production code resumes inline on the completing thread. A gate
   awaited by the test and completed by production code takes
@@ -284,6 +290,14 @@ No abbreviations in names.
 - A menu item without a command, or without children, is not added. A disabled placeholder renders
   and does nothing, and it also forces an exemption into `AppMenuBarTests`, which walks the declared
   `Items` and requires every leaf to carry one or the other.
+- The sidebar row is read-only but for its visibility box, and `TrendLegendViewTests` gates it as an
+  allowlist over the realised row template: every control in it is a `Border`, `Grid`, `TextBlock` or
+  `CheckBox`, and exactly one `CheckBox` is present. `ThePanel_RealisesNoTextEditor` gates the panel's
+  header the same way. Editing pens belongs to the pen editor (`Semiteq/SemiPlot#67`), so a control
+  added to the row fails the suite rather than quietly shipping a second editor.
+- A pen's reading is rendered through `SemiPlot.Core.Trends.PenValueFormat` and nowhere else: it owns
+  the stored mask's character-and-section rule and the `0.###` fallback, and the sidebar row and the
+  chart's hover readout both go through it (`docs/architecture/ui-text.md`).
 - Every failure the operator should see goes to `Messages/MessagePanelViewModel` through
   `Messages/ArchiveFailureMapper.Map`, which assigns the severity in its own per-kind switch — never
   at the call site. The one message with no error behind it is
@@ -306,11 +320,14 @@ No abbreviations in names.
   both generators**: a change sits at `index * intervalTicks` from absolute tick zero, and
   `RawLayerGenerator` and `LiveTailGenerator` both emit through `RawLayerGenerator.AppendWindow`.
   `SemiPlot.Tests.Unit/SharedLatticeTests.cs` goes red if they are split. `public.trends`,
-  `semiplot_tags`, the two roles and their grants are SemiBase's; the seeder fills the archive table
-  and creates only the day partitions its rows land in (`docs/architecture/bench.md`).
+  the configuration tables, the two roles and their grants are SemiBase's; the seeder fills the
+  archive table and the catalogue, and creates only the day partitions its rows land in
+  (`docs/architecture/bench.md`).
 - The provider runs no cold-path reader: a failed read is mapped by `ArchiveExceptionMapper`, which
   stays synchronous, pure and unit-testable, and nothing opens a second connection to enrich the
-  error. Each read supplies the one relation its statement touches, which the detail line names.
+  error. Each read supplies every relation its statement touches, which the detail line names: one
+  relation for the history and realtime reads, `semiplot_tags, trends` for the archive extent, and all
+  three of `semiplot_tags`, `semiplot_groups` and `semiplot_pen_groups` for the pen catalogue.
 
 ---
 

@@ -13,17 +13,17 @@ public static class BenchRoles
 
 	public const string WriterRole = "scada_writer";
 
-	public const string ReaderRole = "semiplot_reader";
+	public const string PlotRole = "semiplot";
 
 	public const string SuperuserPassword = "semibase-container-superuser";
 
 	public const string WriterPassword = "semibase-container-writer";
 
-	public const string ReaderPassword = "semibase-container-reader";
+	public const string PlotPassword = "semibase-container-plot";
 
 	// Passwords travel through the environment rather than through flags, so they never appear in a
 	// process listing.
 	public const string WriterPasswordVariable = "SEMIBASE_WRITER_PASSWORD";
 
-	public const string ReaderPasswordVariable = "SEMIBASE_READER_PASSWORD";
+	public const string PlotPasswordVariable = "SEMIBASE_PLOT_PASSWORD";
 }

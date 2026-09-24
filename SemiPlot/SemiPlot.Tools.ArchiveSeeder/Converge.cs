@@ -57,8 +57,8 @@ public static class Converge
 			builder.Host!,
 			builder.Port,
 			database,
-			BenchRoles.ReaderRole,
-			BenchRoles.ReaderPassword,
+			BenchRoles.PlotRole,
+			BenchRoles.PlotPassword,
 			TimeZoneInfo.Local.Id,
 			_pollInterval,
 			cancellationToken);

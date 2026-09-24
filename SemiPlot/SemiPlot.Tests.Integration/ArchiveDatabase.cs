@@ -12,7 +12,7 @@ public sealed class ArchiveDatabase(PostgresServer postgresServer, string name) 
 
 	public string WriterConnectionString => postgresServer.WriterConnectionStringFor(Name);
 
-	public string ReaderConnectionString => postgresServer.ReaderConnectionStringFor(Name);
+	public string PlotConnectionString => postgresServer.PlotConnectionStringFor(Name);
 
 	public static async Task<ArchiveDatabase> CloneAsync(
 		PostgresServer postgresServer,

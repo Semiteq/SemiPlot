@@ -106,7 +106,7 @@ public sealed class ExplainPlanTests(
 		await AnalyseAsync(database, TestContext.Current.CancellationToken);
 
 		var plan = await ExplainAsync(
-			database.ReaderConnectionString,
+			database.PlotConnectionString,
 			ArchiveStatements.ArchiveExtent,
 			null,
 			TestContext.Current.CancellationToken);
@@ -130,7 +130,7 @@ public sealed class ExplainPlanTests(
 		await AnalyseAsync(database, TestContext.Current.CancellationToken);
 
 		var plan = await ExplainAsync(
-			database.ReaderConnectionString,
+			database.PlotConnectionString,
 			ArchiveStatements.SparseHistoryWindow,
 			command => BindWindowParametersAt(command, ArchiveTemplate.Slice.Start + _seedProbeOffset),
 			TestContext.Current.CancellationToken);
@@ -168,7 +168,7 @@ public sealed class ExplainPlanTests(
 		await AnalyseAsync(database, TestContext.Current.CancellationToken);
 
 		var plan = await ExplainAsync(
-			database.ReaderConnectionString,
+			database.PlotConnectionString,
 			ArchiveStatements.SparseHistoryWindow,
 			command => BindWindowParametersAt(command, ArchiveTemplate.Slice.Start),
 			TestContext.Current.CancellationToken);
@@ -198,7 +198,7 @@ public sealed class ExplainPlanTests(
 		await AnalyseAsync(database, TestContext.Current.CancellationToken);
 
 		var plan = await ExplainAsync(
-			database.ReaderConnectionString,
+			database.PlotConnectionString,
 			ArchiveStatements.BucketedRawWindow,
 			command => BindBucketedParametersAt(command, ArchiveTemplate.Slice.Start + _seedProbeOffset),
 			TestContext.Current.CancellationToken);
@@ -238,7 +238,7 @@ public sealed class ExplainPlanTests(
 		await AnalyseAsync(database, TestContext.Current.CancellationToken);
 
 		var plan = await ExplainAsync(
-			database.ReaderConnectionString,
+			database.PlotConnectionString,
 			ArchiveStatements.RealtimePoll,
 			command => RealtimePoll.BindPoll(command, ExplainedPenIds(), PolledFrom()),
 			TestContext.Current.CancellationToken);
@@ -263,7 +263,7 @@ public sealed class ExplainPlanTests(
 		await AnalyseAsync(database, TestContext.Current.CancellationToken);
 
 		var plan = await ExplainAsync(
-			database.ReaderConnectionString,
+			database.PlotConnectionString,
 			ArchiveStatements.RealtimeBaseline,
 			command => RealtimePoll.BindBaseline(command, ExplainedPenIds()),
 			TestContext.Current.CancellationToken);
@@ -327,7 +327,7 @@ public sealed class ExplainPlanTests(
 		await ArchiveDatabase.ExecuteAsync(database.AdminConnectionString, AnalyseCatalogCommand, cancellationToken);
 	}
 
-	// EXPLAIN runs as semiplot_reader, the role production reads with. A statement carrying parameters has
+	// EXPLAIN runs as semiplot, the role production reads with. A statement carrying parameters has
 	// to arrive with them bound: Npgsql sends a one-shot extended-protocol statement, so the server plans it
 	// against the actual values rather than against a generic plan no read ever executes.
 	private static async Task<string> ExplainAsync(

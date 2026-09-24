@@ -1,5 +1,9 @@
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
+using Avalonia.Input;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
@@ -127,16 +131,157 @@ public sealed class MainWindowViewTests
 		panel!.Width.Should().Be(
 			TrendLegendViewModel.ExpandedWidth,
 			"no chart is built yet, so the border reads its fallback");
+		panel.Bounds.Width.Should().Be(TrendLegendViewModel.ExpandedWidth);
+		ResizeHandle(window).IsVisible.Should().BeFalse("a window with no legend has nothing to resize");
 
 		viewModel.SetChart(CreateChartWithPens());
 		Dispatcher.UIThread.RunJobs();
 
 		panel.Width.Should().Be(TrendLegendViewModel.ExpandedWidth, "the panel opens expanded");
+		ResizeHandle(window).IsVisible.Should().BeTrue();
 
 		viewModel.LegendViewModel!.ToggleExpandedCommand.Execute().Subscribe();
 		Dispatcher.UIThread.RunJobs();
 
 		panel.Width.Should().Be(TrendLegendViewModel.CollapsedWidth);
+	}
+
+	// The handle sits on the panel's left edge, so a drag to the left widens the panel.
+	[AvaloniaFact]
+	public void ADragOnTheHandle_ResizesThePanelInBothStatesAndEachStateKeepsItsWidth()
+	{
+		using var viewModel = NewViewModel();
+		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
+		window.Show();
+		viewModel.SetChart(CreateChartWithPens());
+		Dispatcher.UIThread.RunJobs();
+		var panel = window.FindControl<Border>("LegendPanel")!;
+		var handle = ResizeHandle(window);
+
+		Drag(window, handle, -60);
+
+		panel.Bounds.Width.Should().Be(TrendLegendViewModel.ExpandedWidth + 60);
+
+		viewModel.LegendViewModel!.ToggleExpandedCommand.Execute().Subscribe();
+		Dispatcher.UIThread.RunJobs();
+
+		panel.Bounds.Width.Should().Be(TrendLegendViewModel.CollapsedWidth);
+
+		Drag(window, handle, 30);
+
+		panel.Bounds.Width.Should().Be(TrendLegendViewModel.CollapsedWidth - 30);
+
+		viewModel.LegendViewModel.ToggleExpandedCommand.Execute().Subscribe();
+		Dispatcher.UIThread.RunJobs();
+
+		panel.Bounds.Width.Should().Be(
+			TrendLegendViewModel.ExpandedWidth + 60,
+			"expanding restores the width the expanded state last had");
+	}
+
+	[AvaloniaFact]
+	public void ADragOnTheHandle_StopsAtThePanelFloorAndAtTheChartFloor()
+	{
+		using var viewModel = NewViewModel();
+		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
+		window.Show();
+		viewModel.SetChart(CreateChartWithPens());
+		Dispatcher.UIThread.RunJobs();
+		var panel = window.FindControl<Border>("LegendPanel")!;
+		var chart = window.FindControl<Border>("ChartContent")!;
+		var handle = ResizeHandle(window);
+
+		Drag(window, handle, 5000);
+
+		panel.Bounds.Width.Should().Be(TrendLegendViewModel.PanelMinWidth);
+
+		Drag(window, handle, -5000);
+
+		chart.Bounds.Width.Should().Be(TrendLegendViewModel.ChartMinWidth);
+	}
+
+	[AvaloniaFact]
+	public void ShrinkingTheWindowAfterADrag_KeepsTheChartFloorAndGrowingItBackRestoresThePanel()
+	{
+		using var viewModel = NewViewModel();
+		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
+		window.Show();
+		viewModel.SetChart(CreateChartWithPens());
+		Dispatcher.UIThread.RunJobs();
+		var panel = window.FindControl<Border>("LegendPanel")!;
+		var chart = window.FindControl<Border>("ChartContent")!;
+		var initialWindowWidth = window.Width;
+		Drag(window, ResizeHandle(window), -400);
+
+		window.Width = 800;
+		Dispatcher.UIThread.RunJobs();
+
+		chart.Bounds.Width.Should().Be(TrendLegendViewModel.ChartMinWidth);
+
+		window.Width = initialWindowWidth;
+		Dispatcher.UIThread.RunJobs();
+
+		panel.Bounds.Width.Should().Be(TrendLegendViewModel.ExpandedWidth + 400);
+	}
+
+	[AvaloniaFact]
+	public void ALegendAssignedToANarrowWindow_KeepsTheChartFloorBeforeAnyDragOrResize()
+	{
+		using var viewModel = NewViewModel();
+		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel, Width = 500 };
+		window.Show();
+		Dispatcher.UIThread.RunJobs();
+		var chart = window.FindControl<Border>("ChartContent")!;
+
+		viewModel.SetChart(CreateChartWithPens());
+		Dispatcher.UIThread.RunJobs();
+
+		chart.Bounds.Width.Should().Be(TrendLegendViewModel.ChartMinWidth);
+	}
+
+	[AvaloniaFact]
+	public void HidingTheLegend_GivesTheChartTheWholeRow()
+	{
+		using var viewModel = NewViewModel();
+		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
+		window.Show();
+		viewModel.SetChart(CreateChartWithPens());
+		Dispatcher.UIThread.RunJobs();
+		var chart = window.FindControl<Border>("ChartContent")!;
+		var contentGrid = window.FindControl<Grid>("ContentGrid")!;
+
+		viewModel.ToggleLegendCommand.Execute().Subscribe();
+		Dispatcher.UIThread.RunJobs();
+
+		ResizeHandle(window).IsVisible.Should().BeFalse();
+		chart.Bounds.Width.Should().Be(contentGrid.Bounds.Width);
+	}
+
+	private static Thumb ResizeHandle(Window window)
+	{
+		var handle = window.FindControl<Thumb>("PanelResizeHandle");
+		handle.Should().NotBeNull("'PanelResizeHandle' is a named control of the window");
+
+		return handle;
+	}
+
+	// Pressed at the handle's centre and moved in two steps: the window hit-tests the press, so a handle
+	// that draws nothing never receives it, and the second step shows the deltas add up.
+	private static void Drag(Window window, Thumb handle, double horizontalDelta)
+	{
+		var start = handle.TranslatePoint(new Point(handle.Bounds.Width / 2, handle.Bounds.Height / 2), window)
+			?? throw new InvalidOperationException("The handle is not in the window's visual tree.");
+		var halfway = start + new Point(horizontalDelta / 2, 0);
+		var end = start + new Point(horizontalDelta, 0);
+
+		window.MouseDown(start, MouseButton.Left);
+		Dispatcher.UIThread.RunJobs();
+		window.MouseMove(halfway, RawInputModifiers.LeftMouseButton);
+		Dispatcher.UIThread.RunJobs();
+		window.MouseMove(end, RawInputModifiers.LeftMouseButton);
+		Dispatcher.UIThread.RunJobs();
+		window.MouseUp(end, MouseButton.Left);
+		Dispatcher.UIThread.RunJobs();
 	}
 
 	private static string? ReadText(Window window, string name)

@@ -30,6 +30,9 @@
   <data name="LegendExpandPanel" xml:space="preserve">
     <value>Expand</value>
   </data>
+  <data name="LegendGroupSwitch" xml:space="preserve">
+    <value>Show or hide every pen of group {0}</value>
+  </data>
   <data name="NavigationJumpToNow" xml:space="preserve">
     <value>Jump to now</value>
   </data>

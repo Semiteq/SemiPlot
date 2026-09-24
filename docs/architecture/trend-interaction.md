@@ -264,10 +264,16 @@ special-casing).
 Required by trend-feature-spec.md §PN-8. As-built: a grouped sidebar whose row carries the on/off
 box, a round colour dot, the name, the current value in the pen's own mask and the unit
 (charting.md). A pen in several groups is listed under each of them and switching it off under one
-header switches it off under all. The panel has two states: collapsed, it narrows and leaves the box,
-the dot and the name. The value at the cursor is the chart's own hover readout (§CU-2) and no longer
-a legend cell; the grey scale range is gone with it — it read as the pen's measured extremes and was
-the padded axis bound.
+header switches it off under all. Every drawn header carries a switch whose state is derived from its
+pens: on when all are on, off when all are off, indeterminate when mixed. A click on a mixed or off
+header switches every pen of the group on, on an all-on header off, and every other header a shared
+pen sits under re-derives. A header reads as a section caption, small grey capitals under a thin line,
+with its rows indented beneath it; the active pen's row is marked by an accent background and an accent
+bar on its left edge, not by bold text. The panel has two states: collapsed, it leaves the box, the dot and the
+name. A handle on the panel's left edge drags its width in either state; each state remembers its own
+width for the session, and a restart returns both to their defaults. The value at the cursor is the
+chart's own hover readout (§CU-2) and no longer a legend cell; the grey scale range is gone with it —
+it read as the pen's measured extremes and was the padded axis bound.
 
 ## Archive-overview minimap
 

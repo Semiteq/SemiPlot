@@ -206,10 +206,33 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
 - `Legend/TrendLegendView` + `TrendLegendViewModel` (+ group / row VMs and the converters) — the
   grouped sidebar. A row carries the on/off box, a round colour dot, the name, the current value in
   the pen's own mask and the unit; nothing in it is editable but the box, which an allowlist test over
-  the built row template holds. A pen draws once and is listed under every group it belongs to, so one
-  row view model appears under several headers and `Dispose` walks the distinct list. `IsExpanded` is
-  the panel's one state flag: collapsed, the row drops the value and the unit and the panel narrows
-  from 280 to 168. Nothing persists the state — every start opens expanded.
+  the built row template holds. A header is a section caption, not a bold name: smaller text in
+  `AppSecondaryForegroundBrush`, set in capitals by `LegendConverters.ToCapitals`, a one-pixel
+  `AppSubtleLineBrush` line above every header but the first (a `:nth-child(1)` style hides the first),
+  and the rows under a header indented so their box starts where the caption starts. The active row
+  keeps the regular weight and is marked by an `AppAccentFillBrush` background and a 3 px `AppAccentBrush`
+  bar on its left edge, both following `IsActive`. A pen draws once and is listed under every group it belongs to, so one
+  row view model appears under several headers and `Dispose` walks the distinct list. Every drawn header,
+  the ungrouped one included, carries a switch box: `TrendLegendGroupViewModel.SwitchState` is derived
+  from its rows (all on true, all off false, mixed null) and stored nowhere, the box reads it
+  `Mode=OneWay`, and `SwitchGroupCommand`, its one writer, switches every row on unless all are on, then
+  off. The rows route to the chart one by one, so every other header a shared pen sits under
+  re-derives. `BuildGroups` keys every row by its groups, an ungrouped row by the ungrouped header, in
+  one ordinal `GroupBy`, so a group named like the ungrouped header takes the ungrouped rows; headers
+  sort alphabetically in the current culture, the ungrouped one last. It constructs every group view
+  model once, because a replaced group would keep its subscriptions on the rows. `IsExpanded` is the
+  panel's one state flag: collapsed, the row drops the value and the unit. The panel keeps two session
+  width slots, expanded (starts at 280) and collapsed (starts at 168), and `PanelWidth` shows the slot
+  of the current state, clamped to at least `PanelMinWidth` (120) and to the room that leaves the chart
+  at least `ChartMinWidth` (320). `FitPanel` is the one writer of that room: `MainWindow.axaml.cs` calls
+  it when the window assigns a legend view model and on every `SizeChanged` of the content grid, so the
+  chart floor holds from the first frame, and a shrink narrows the shown width without writing a slot,
+  so growing the window back restores it. A `Thumb` between the chart and the panel is the drag handle:
+  its `DragDelta` handler calls `ResizePanel`, the only writer of the shown slot, which applies the
+  same clamp. Semi ships no `Thumb` theme, so the handle carries its own template, a `Border` painting
+  its `Background`; without one it draws nothing and a press never reaches it. The handle shows only
+  while the legend is on and a legend view model exists. Nothing persists the state or the widths —
+  every start opens expanded at 280.
 - `Minimap/MinimapView` + `MinimapViewModel` — Canvas-based archive-overview strip; navigates via the
   shared `ChartNavigationController` (see trend-interaction.md).
 - `MainWindow/MainWindow` + `MainWindowViewModel` — the seven-row window grid and the flags its View

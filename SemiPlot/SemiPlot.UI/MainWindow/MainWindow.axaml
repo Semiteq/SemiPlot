@@ -35,7 +35,9 @@
         </Border>
 
         <Grid Grid.Row="2"
-              ColumnDefinitions="*,Auto">
+              Name="ContentGrid"
+              ColumnDefinitions="*,Auto,Auto"
+              SizeChanged="OnContentGridSizeChanged">
 
             <Border Grid.Column="0"
                     Name="ChartContent"
@@ -43,10 +45,30 @@
                 <chart:TrendChartView DataContext="{Binding ChartViewModel}" />
             </Border>
 
-            <Border Grid.Column="1"
+            <Thumb Grid.Column="1"
+                   Name="PanelResizeHandle"
+                   Width="4"
+                   Background="{DynamicResource AppContentBackgroundBrush}"
+                   Cursor="SizeWestEast"
+                   DragDelta="OnPanelResizeHandleDragDelta">
+                <Thumb.Template>
+                    <ControlTemplate>
+                        <Border Background="{TemplateBinding Background}" />
+                    </ControlTemplate>
+                </Thumb.Template>
+                <Thumb.IsVisible>
+                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                        <Binding Path="IsLegendVisible" />
+                        <Binding Path="LegendViewModel"
+                                 Converter="{x:Static ObjectConverters.IsNotNull}" />
+                    </MultiBinding>
+                </Thumb.IsVisible>
+            </Thumb>
+
+            <Border Grid.Column="2"
                     Name="LegendPanel"
                     Background="{DynamicResource AppPanelBackgroundBrush}"
-                    Width="{Binding LegendViewModel.RequestedWidth,
+                    Width="{Binding LegendViewModel.PanelWidth,
                                     FallbackValue={x:Static legend:TrendLegendViewModel.ExpandedWidth}}"
                     BorderThickness="1,0,0,0"
                     BorderBrush="{DynamicResource AppBorderBrush}"

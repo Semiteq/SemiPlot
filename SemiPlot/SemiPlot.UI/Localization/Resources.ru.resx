@@ -30,6 +30,9 @@
   <data name="LegendExpandPanel" xml:space="preserve">
     <value>Развернуть</value>
   </data>
+  <data name="LegendGroupSwitch" xml:space="preserve">
+    <value>Показать или скрыть все перья группы {0}</value>
+  </data>
   <data name="NavigationJumpToNow" xml:space="preserve">
     <value>Перейти к текущему времени</value>
   </data>

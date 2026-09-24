@@ -136,7 +136,7 @@ public sealed class ChartGapRenderTests
 		DateTime windowEnd)
 	{
 		var viewModel = CreateViewModel();
-		var state = viewModel.AddPen(new Pen(PenId, "Pen 1", "Group A", PenColorHex));
+		var state = viewModel.AddPen(new Pen(PenId, "Pen 1", ["Group A"], PenColorHex));
 		state.LoadHistory(MinMaxDecimator.Decimate(PenId, timestamps, values, TargetColumnCount));
 
 		var plot = viewModel.Plot;

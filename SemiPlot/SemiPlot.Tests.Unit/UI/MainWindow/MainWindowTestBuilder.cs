@@ -45,6 +45,7 @@ internal static class MainWindowTestBuilder
 		return navigation;
 	}
 
+	// Both schedulers are virtual: docs/architecture/testing-strategy.md#the-ui-scheduler-in-a-realised-view.
 	public static TrendChartViewModel CreateChartWithPens()
 	{
 		var scheduler = new TestScheduler();
@@ -58,7 +59,7 @@ internal static class MainWindowTestBuilder
 		var chart = new TrendChartViewModel(
 			coordinator,
 			scheduler,
-			ImmediateScheduler.Instance,
+			scheduler,
 			new MessagePanelViewModel(),
 			NullLogger<TrendChartViewModel>.Instance);
 

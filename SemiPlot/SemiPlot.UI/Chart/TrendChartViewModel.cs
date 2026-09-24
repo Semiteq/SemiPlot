@@ -92,7 +92,16 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	public int ActivePenId
 	{
 		get;
-		private set => this.RaiseAndSetIfChanged(ref field, value);
+		private set
+		{
+			if (field == value)
+			{
+				return;
+			}
+
+			this.RaiseAndSetIfChanged(ref field, value);
+			RefreshDeltaReadout();
+		}
 	}
 
 	public ChartNavigationController Navigation { get; } = new();
@@ -115,13 +124,10 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	public int ScalesRevision { get; private set; }
 
-	/// <summary>How many Y axes the scale model has created so far; one per axis key.</summary>
-	public int AxisCount => _axisBinder.AxesByKey.Count;
+	/// <summary>How many Y axes the binder has created so far; one per pen.</summary>
+	public int AxisCount => _axisBinder.AxesByPenId.Count;
 
-	public IYAxis? ActivePenAxis =>
-		_settingsById.TryGetValue(ActivePenId, out var settings)
-			? _axisBinder.FindAxis(settings.AxisKey)
-			: null;
+	public IYAxis? ActivePenAxis => _axisBinder.FindAxis(ActivePenId);
 
 	public DateTime? CursorTime
 	{
@@ -229,7 +235,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 		var state = BuildPenState(pen);
 		_pensById.Add(pen.PenId, state);
-		_settingsById.Add(pen.PenId, new PenScaleSettings(pen.PenId, pen.Group));
+		_settingsById.Add(pen.PenId, BuildScaleSettings(pen));
 		this.RaisePropertyChanged(nameof(HasNoPens));
 
 		if (ActivePenId == 0)
@@ -237,6 +243,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			ActivePenId = pen.PenId;
 		}
 
+		ActivateAVisiblePen();
 		ApplyAxisModel();
 		RequestRedraw();
 
@@ -261,7 +268,9 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			ActivePenId = _pensById.Keys.FirstOrDefault();
 		}
 
+		ActivateAVisiblePen();
 		Plot.Remove(state.Line);
+		_axisBinder.HideAxis(penId);
 		ApplyAxisModel();
 		RequestRedraw();
 
@@ -278,19 +287,20 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		}
 
 		state.IsVisible = isVisible;
-		var settings = _settingsById[penId];
-		_settingsById[penId] = settings with { IsVisible = isVisible };
+		ActivateAVisiblePen();
 		ApplyAxisModel();
 		RequestRedraw();
 
 		return true;
 	}
 
+	// Only a visible pen's axis may be drawn, so a switched-off pen is refused rather than activated:
+	// activating one leaves the plot with no Y axis, its delta readout empty and its axis region unreachable.
 	public bool SetActivePen(int penId)
 	{
 		ObjectDisposedException.ThrowIf(_isDisposed, this);
 
-		if (!_pensById.ContainsKey(penId))
+		if (!_pensById.ContainsKey(penId) || !MayDrawAxisFor(penId))
 		{
 			return false;
 		}
@@ -359,7 +369,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		}
 
 		_deltaCursorReader.Place(cursorTime);
-		DeltaReadout = _deltaCursorReader.Measure(ActivePenId);
+		RefreshDeltaReadout();
 	}
 
 	public bool AutoscaleAxis(int penId)
@@ -386,7 +396,49 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		line.Axes.XAxis = Plot.Axes.Bottom;
 		Plot.Add.Plottable(line);
 
-		return new TrendPenState(pen, line);
+		return new TrendPenState(pen, line) { IsVisible = pen.EnabledOnStart };
+	}
+
+	private static PenScaleSettings BuildScaleSettings(Pen pen)
+	{
+		var settings = new PenScaleSettings(pen.PenId);
+
+		if (pen.ScaleMin is { } min && pen.ScaleMax is { } max)
+		{
+			settings = settings with { Mode = ScaleMode.Manual, ManualMin = min, ManualMax = max };
+		}
+
+		return settings;
+	}
+
+	// Only the active pen's axis is drawn and only a visible pen's axis may be, so an active pen that is
+	// switched off leaves the chart with no Y axis at all.
+	private void ActivateAVisiblePen()
+	{
+		if (_pensById.ContainsKey(ActivePenId) && MayDrawAxisFor(ActivePenId))
+		{
+			return;
+		}
+
+		foreach (var candidate in _pensById.Values)
+		{
+			if (MayDrawAxisFor(candidate.Pen.PenId))
+			{
+				ActivePenId = candidate.Pen.PenId;
+
+				return;
+			}
+		}
+	}
+
+	private bool MayDrawAxisFor(int penId)
+	{
+		return _pensById.TryGetValue(penId, out var state) && state.IsVisible;
+	}
+
+	private void RefreshDeltaReadout()
+	{
+		DeltaReadout = _deltaCursorReader.Measure(ActivePenId);
 	}
 
 	private void OnNavigationWindowChanged(object? sender, NavigationWindow window)
@@ -560,10 +612,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_scalesByPenId.Clear();
 		foreach (var scale in scales)
 		{
-			foreach (var penId in scale.PenIds)
-			{
-				_scalesByPenId[penId] = scale;
-			}
+			_scalesByPenId[scale.PenId] = scale;
 		}
 
 		ScalesRevision++;

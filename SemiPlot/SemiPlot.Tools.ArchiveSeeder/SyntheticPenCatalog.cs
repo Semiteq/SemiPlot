@@ -4,11 +4,22 @@ namespace SemiPlot.Tools.ArchiveSeeder;
 
 public static class SyntheticPenCatalog
 {
+	// The pen in two groups, the pen the operator kept out of the startup set, and the pen nobody
+	// commissioned: the three catalogue states the round-robin slice would otherwise never carry.
+	public const int TwoGroupPenId = 1000;
+
+	public const int HiddenOnStartPenId = 2001;
+
+	public const int UncommissionedPenId = 5001;
+
 	private const string HeatersGroup = "Heaters";
 	private const string DampersGroup = "Dampers";
 	private const string GasLinesGroup = "Gas lines";
 	private const string PressuresGroup = "Pressures";
 	private const string PowersGroup = "Powers";
+
+	// The second group of the two-group pen; it keeps whatever group Build already gave that pen.
+	private const string WatchlistGroup = "Watchlist";
 
 	// Twelve keeps the standard slice's eight round-robin pens on distinct colours.
 	private static readonly string[] _palette =
@@ -21,21 +32,65 @@ public static class SyntheticPenCatalog
 	{
 		var pens = new List<SyntheticPen>();
 
-		AddGroup(pens, HeatersGroup, count: 16, idBase: 1000, "Heater", minValue: 20.0, maxValue: 850.0);
 		AddGroup(
-			pens,
-			DampersGroup,
+			pens: pens,
+			group: HeatersGroup,
+			count: 16,
+			idBase: 1000,
+			namePrefix: "Heater",
+			range: _ => (20.0, 850.0),
+			unit: "degC",
+			format: "0.0");
+		AddGroup(
+			pens: pens,
+			group: DampersGroup,
 			count: 16,
 			idBase: 2000,
-			"Damper",
-			minValue: 0.0,
-			maxValue: 100.0,
+			namePrefix: "Damper",
+			range: _ => (0.0, 100.0),
+			unit: "%",
+			format: "0",
 			lineStyle: PenLineStyle.Stepped);
-		AddGasLines(pens, count: 10, idBase: 3000);
-		AddGroup(pens, PressuresGroup, count: 4, idBase: 4000, "Pressure", minValue: 0.9, maxValue: 1.4);
-		AddGroup(pens, PowersGroup, count: 4, idBase: 5000, "Power", minValue: 0.0, maxValue: 50.0);
+		AddGroup(
+			pens: pens,
+			group: GasLinesGroup,
+			count: 10,
+			idBase: 3000,
+			namePrefix: "Gas line",
+			range: GasLineRange,
+			unit: "sccm",
+			format: "0.00");
+		AddGroup(
+			pens: pens,
+			group: PressuresGroup,
+			count: 4,
+			idBase: 4000,
+			namePrefix: "Pressure",
+			range: _ => (0.9, 1.4),
+			unit: "bar",
+			format: "0.000");
+		AddGroup(
+			pens: pens,
+			group: PowersGroup,
+			count: 4,
+			idBase: 5000,
+			namePrefix: "Power",
+			range: _ => (0.0, 50.0),
+			unit: "kW",
+			format: "0.0");
 
-		return pens;
+		return [.. pens.Select(Commission)];
+	}
+
+	private static SyntheticPen Commission(SyntheticPen pen)
+	{
+		return pen.PenId switch
+		{
+			TwoGroupPenId => pen with { Groups = [.. pen.Groups, WatchlistGroup] },
+			HiddenOnStartPenId => pen with { EnabledOnStart = false },
+			UncommissionedPenId => pen with { Groups = [], Unit = null, Format = null, StoresScale = false },
+			_ => pen
+		};
 	}
 
 	private static void AddGroup(
@@ -44,8 +99,9 @@ public static class SyntheticPenCatalog
 		int count,
 		int idBase,
 		string namePrefix,
-		double minValue,
-		double maxValue,
+		Func<int, (double Min, double Max)> range,
+		string unit,
+		string format,
 		PenLineStyle lineStyle = PenLineStyle.Interpolated)
 	{
 		for (var index = 0; index < count; index++)
@@ -53,21 +109,18 @@ public static class SyntheticPenCatalog
 			var penId = idBase + index;
 			var name = $"{namePrefix} {index + 1:00}";
 			var color = _palette[pens.Count % _palette.Length];
+			var (minValue, maxValue) = range(index);
 
-			pens.Add(new SyntheticPen(penId, name, group, color, minValue, maxValue, lineStyle));
-		}
-	}
-
-	private static void AddGasLines(List<SyntheticPen> pens, int count, int idBase)
-	{
-		for (var index = 0; index < count; index++)
-		{
-			var penId = idBase + index;
-			var name = $"Gas line {index + 1:00}";
-			var color = _palette[pens.Count % _palette.Length];
-			var (rangeMin, rangeMax) = GasLineRange(index);
-
-			pens.Add(new SyntheticPen(penId, name, GasLinesGroup, color, rangeMin, rangeMax));
+			pens.Add(new SyntheticPen(
+				penId,
+				name,
+				[group],
+				color,
+				minValue,
+				maxValue,
+				unit,
+				format,
+				LineStyle: lineStyle));
 		}
 	}
 

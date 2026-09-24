@@ -80,6 +80,18 @@ public sealed class ChartAxisRegionTests
 		region.Contains(dataRect.HorizontalCenter, verticalCenter).Should().BeFalse();
 	}
 
+	// A hidden axis keeps a panel of size 0 at offset 0, whose band collapses onto the data rect's own
+	// left edge and would answer a press there with the bound editor of a pen nothing draws.
+	[Fact]
+	public void TryCreate_ForAHiddenAxis_ReturnsNoRegion()
+	{
+		var (plot, axis) = RenderedPlot();
+		axis.IsVisible = false;
+		plot.RenderInMemory(PlotWidth, PlotHeight);
+
+		ChartAxisRegion.TryCreate(plot, axis).Should().BeNull();
+	}
+
 	[Fact]
 	public void ValueAt_DegenerateHeight_ReturnsTheAxisMaxInsteadOfDividingByZero()
 	{

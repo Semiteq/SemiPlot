@@ -26,7 +26,7 @@ public static class RawLayerGenerator
 		ArgumentOutOfRangeException.ThrowIfLessThan(count, 1);
 
 		var groups = SyntheticPenCatalog.Build()
-			.GroupBy(pen => pen.Group, StringComparer.Ordinal)
+			.GroupBy(pen => pen.PrimaryGroup, StringComparer.Ordinal)
 			.Select(group => group.ToArray())
 			.ToArray();
 

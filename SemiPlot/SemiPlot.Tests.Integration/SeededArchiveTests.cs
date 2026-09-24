@@ -9,7 +9,7 @@ using Xunit;
 namespace SemiPlot.Tests.Integration;
 
 // What a seeded archive actually holds, read the way production reads it: every read connects as
-// semiplot_reader rather than as the superuser, so a grant that never reached the reader fails here
+// semiplot rather than as the superuser, so a grant that never reached semiplot fails here
 // instead of on commissioning day.
 [Collection(ArchiveDatabaseCollection.Name)]
 [Trait("Component", "Core")]
@@ -32,7 +32,7 @@ public sealed class SeededArchiveTests(PostgresContainerFixture postgresContaine
 	{
 		var counts = new List<(short Layer, long Rows)>();
 
-		await using var connection = await OpenReaderAsync();
+		await using var connection = await OpenPlotConnectionAsync();
 		await using var command = new NpgsqlCommand(
 			"SELECT l, count(*) FROM public.trends GROUP BY l ORDER BY l;",
 			connection);
@@ -52,17 +52,17 @@ public sealed class SeededArchiveTests(PostgresContainerFixture postgresContaine
 	[Fact]
 	public async Task TheDefaultPartitionIsEmpty()
 	{
-		(await ReaderScalarAsync<long>("SELECT count(*) FROM public.tpdefault;")).Should().Be(0L);
+		(await PlotScalarAsync<long>("SELECT count(*) FROM public.tpdefault;")).Should().Be(0L);
 	}
 
-	// The insert runs as scada_writer, since semiplot_reader cannot insert at all and would fail on the
+	// The insert runs as scada_writer, since semiplot cannot insert into the archive at all and would fail on the
 	// privilege instead of on the key. The transaction is rolled back in the finally block: the database
 	// is shared by every test in this class and a leaked row would corrupt the counts they assert.
 	[Fact]
 	public async Task ThePrimaryKeyRejectsADuplicateRow()
 	{
 		var row = await FirstRawRowAsync();
-		var before = await ReaderScalarAsync<long>(TotalRowsCommand);
+		var before = await PlotScalarAsync<long>(TotalRowsCommand);
 
 		await using var connection = new NpgsqlConnection(seededArchive.Database.WriterConnectionString);
 
@@ -85,29 +85,29 @@ public sealed class SeededArchiveTests(PostgresContainerFixture postgresContaine
 			await transaction.DisposeAsync();
 		}
 
-		(await ReaderScalarAsync<long>(TotalRowsCommand)).Should().Be(before);
+		(await PlotScalarAsync<long>(TotalRowsCommand)).Should().Be(before);
 	}
 
-	// Asked of the session's own role rather than of a role name, so this fails if the reader connects
-	// as anything other than semiplot_reader.
+	// Asked of the session's own role rather than of a role name, so this fails if the session connects
+	// as anything other than semiplot.
 	[Fact]
-	public async Task TheReaderHoldsSelectAndNotInsert()
+	public async Task ThePlotRoleHoldsSelectAndNotInsert()
 	{
-		(await ReaderScalarAsync<string>("SELECT current_user;")).Should().Be(BenchRoles.ReaderRole);
+		(await PlotScalarAsync<string>("SELECT current_user;")).Should().Be(BenchRoles.PlotRole);
 
-		(await ReaderScalarAsync<bool>("SELECT has_table_privilege('public.trends', 'SELECT');")).Should().BeTrue();
-		(await ReaderScalarAsync<bool>("SELECT has_table_privilege('public.trends', 'INSERT');")).Should().BeFalse();
+		(await PlotScalarAsync<bool>("SELECT has_table_privilege('public.trends', 'SELECT');")).Should().BeTrue();
+		(await PlotScalarAsync<bool>("SELECT has_table_privilege('public.trends', 'INSERT');")).Should().BeFalse();
 	}
 
 	// The catalogue check above is the grant as PostgreSQL records it; this is the grant as a write
 	// attempt meets it. Both are needed: a privilege can be recorded and then shadowed by ownership or
 	// by a row-level policy.
 	[Fact]
-	public async Task TheReaderIsRefusedAWrite()
+	public async Task ThePlotRoleIsRefusedAWrite()
 	{
 		var row = await FirstRawRowAsync() with { Timestamp = new DateTime(2026, 1, 1, 0, 0, 0, 1) };
 
-		await using var connection = await OpenReaderAsync();
+		await using var connection = await OpenPlotConnectionAsync();
 
 		var transaction = await connection.BeginTransactionAsync(TestContext.Current.CancellationToken);
 
@@ -135,7 +135,7 @@ public sealed class SeededArchiveTests(PostgresContainerFixture postgresContaine
 			.OrderBy(pen => pen.PenId)
 			.ToArray();
 
-		(await TagsAsync(seededArchive.Database.ReaderConnectionString)).Should().Equal(expected);
+		(await TagsAsync(seededArchive.Database.PlotConnectionString)).Should().Equal(expected);
 	}
 
 	private static async Task<IReadOnlyList<(int Id, string Name)>> TagsAsync(string connectionString)
@@ -184,7 +184,7 @@ public sealed class SeededArchiveTests(PostgresContainerFixture postgresContaine
 	[Fact]
 	public async Task TheSeederRefusesToWriteIntoASeededDatabase()
 	{
-		var before = await ReaderScalarAsync<long>(TotalRowsCommand);
+		var before = await PlotScalarAsync<long>(TotalRowsCommand);
 
 		var exitCode = await Program.Main(
 		[
@@ -199,16 +199,16 @@ public sealed class SeededArchiveTests(PostgresContainerFixture postgresContaine
 		]);
 
 		exitCode.Should().Be(1);
-		(await ReaderScalarAsync<long>(TotalRowsCommand)).Should().Be(before);
+		(await PlotScalarAsync<long>(TotalRowsCommand)).Should().Be(before);
 	}
 
 	// Production parity rather than a test setting: a slow query fails with 57014 here exactly as it
 	// would on a site, and an abandoned transaction is closed rather than left holding its snapshot.
 	[Fact]
-	public async Task TheReaderCarriesTheProductionTimeouts()
+	public async Task ThePlotRoleCarriesTheProductionTimeouts()
 	{
-		(await ReaderScalarAsync<string>("SHOW statement_timeout;")).Should().Be("30s");
-		(await ReaderScalarAsync<string>("SHOW idle_in_transaction_session_timeout;")).Should().Be("1min");
+		(await PlotScalarAsync<string>("SHOW statement_timeout;")).Should().Be("30s");
+		(await PlotScalarAsync<string>("SHOW idle_in_transaction_session_timeout;")).Should().Be("1min");
 	}
 
 	private static NpgsqlCommand Insert(NpgsqlConnection connection, NpgsqlTransaction transaction, ArchiveRow row)
@@ -236,7 +236,7 @@ public sealed class SeededArchiveTests(PostgresContainerFixture postgresContaine
 
 	private async Task<ArchiveRow> FirstRawRowAsync()
 	{
-		await using var connection = await OpenReaderAsync();
+		await using var connection = await OpenPlotConnectionAsync();
 		await using var command = new NpgsqlCommand(
 			$"SELECT id, l, t, v, q FROM public.trends WHERE l = {ArchiveRow.RawLayer} ORDER BY id, t LIMIT 1;",
 			connection);
@@ -253,17 +253,17 @@ public sealed class SeededArchiveTests(PostgresContainerFixture postgresContaine
 			reader.GetInt32(4));
 	}
 
-	private async Task<T> ReaderScalarAsync<T>(string statement)
+	private async Task<T> PlotScalarAsync<T>(string statement)
 	{
-		await using var connection = await OpenReaderAsync();
+		await using var connection = await OpenPlotConnectionAsync();
 		await using var command = new NpgsqlCommand(statement, connection);
 
 		return (T)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
 	}
 
-	private async Task<NpgsqlConnection> OpenReaderAsync()
+	private async Task<NpgsqlConnection> OpenPlotConnectionAsync()
 	{
-		var connection = new NpgsqlConnection(seededArchive.Database.ReaderConnectionString);
+		var connection = new NpgsqlConnection(seededArchive.Database.PlotConnectionString);
 
 		await connection.OpenAsync(TestContext.Current.CancellationToken);
 

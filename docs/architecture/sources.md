@@ -71,5 +71,5 @@ continuous operation; a restart grants another hour).
 | `[DEC:read-only-consumer]` | SemiPlot is a strict read-only consumer of `trends` and `messages`. No writes, no schema changes, no indexes, no triggers on vendor objects. |
 | `[DEC:vendor-layers]` | Wide time windows are served by the vendor's own archive layers rather than by summary tables of our own. No rollup tables, no aggregator service, no scheduler, no PostgreSQL extensions. Rationale in `history-read-path-evaluation.md`. |
 | `[DEC:common-retention]` | One retention depth applies to all archived data. Raw samples are never dropped earlier than the coarse layers. |
-| `[DEC:semiplot-tags]` | The absent variable-number-to-name mapping is supplied by our own `semiplot_tags` table, populated by hand during commissioning. |
+| `[DEC:semiplot-tags]` | The absent variable-number-to-name mapping is supplied by our own `semiplot_tags` table. SemiBase's `semiplot_register_new_pens()` adds a hidden default row for every key in `trends`; names and settings are edited afterwards. |
 | `[DEC:additive-objects]` | Everything we add to the database is prefixed `semiplot_`. |

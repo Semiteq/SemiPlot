@@ -73,7 +73,8 @@ operator interaction.
 - **Real-time return:** "jump to real-time" re-attaches sticky immediately; now-marker at the
   **right edge** (centering is at most a transient transition animation).
 - **Many-axes management:** **single active Y axis + per-pen autoscale** (legacy SCADA model);
-  clicking a pen makes it active. A shared common scale for a *group* of pens is supported on top.
+  clicking a pen makes it active. Pens that must read against one range carry the same stored
+  `scale_min`/`scale_max`; no two pens share an axis.
 - **Axis scaling gestures:** double-click axis = autoscale; entering values = fixed manual
   limits. The second half — the same actions **duplicated in a toolbar** — is superseded: the
   autoscale button, the two limit boxes and Set Limits left the bar with the navigation-bar change,
@@ -138,13 +139,13 @@ as-built mechanics that realize them:
 Requirements: multiple independent Y axes (trend-feature-spec.md §AY-1), the per-pen "each on its
 own axis" case (§AY-2), and the shared-X / independent-Y invariant (§TM-1). As-built mechanics:
 
-- Plot up to **50 pens** with either a **shared** axis or **separate** scales.
+- Plot up to **50 pens**, each with a scale of its own.
 - **Axis management = single active axis + per-pen autoscale:** the active pen's scale is surfaced
   on the primary axis; non-active pens scale individually with their axes hidden, so many pens do
-  not spill many visible axes. The literal "N lines, each on its own axis" case (§AY-2) requires a
-  per-pen `AxisKey`, not a hard-wired group key.
-- A **shared common scale for a group** of pens (e.g. 16 heaters together; dampers separately) is
-  supported on top of the active-axis model.
+  not spill many visible axes. The literal "N lines, each on its own axis" case (§AY-2) is the
+  as-built shape: `PenScaleSettings` carries no axis key, and the axis is the pen.
+- 16 heaters reading against one range (dampers separately) is the same `scale_min`/`scale_max` pair
+  stored on each of the sixteen, not one axis carrying all of them.
 - When panning/zooming time, **all pens move together** — pens are **always time-synchronized**;
   Y scales are independent (§TM-1).
 
@@ -260,8 +261,13 @@ special-casing).
 
 ## Legend
 
-Required by trend-feature-spec.md §PN-8. As-built: a grouped mini-legend with checkbox / color /
-name / current value (charting.md), plus **value at cursor** and the active pen's **scale range**.
+Required by trend-feature-spec.md §PN-8. As-built: a grouped sidebar whose row carries the on/off
+box, a round colour dot, the name, the current value in the pen's own mask and the unit
+(charting.md). A pen in several groups is listed under each of them and switching it off under one
+header switches it off under all. The panel has two states: collapsed, it narrows and leaves the box,
+the dot and the name. The value at the cursor is the chart's own hover readout (§CU-2) and no longer
+a legend cell; the grey scale range is gone with it — it read as the pen's measured extremes and was
+the padded axis bound.
 
 ## Archive-overview minimap
 
@@ -292,8 +298,8 @@ and fast navigation across long archives.
 
 ## Renderer & UI framework
 
-- **ScottPlot 5** (as-built): MIT; SkiaSharp; each distinct-unit pen gets its own `IYAxis`
-  (`AddLeftAxis`/`AddRightAxis`), same-unit groups share one axis, non-active axes `IsVisible = false`.
+- **ScottPlot 5** (as-built): MIT; SkiaSharp; each pen gets its own `IYAxis` and every one of them is
+  a left axis (`Axes.Left`, then `AddLeftAxis`), non-active axes `IsVisible = false`.
   Trends drawn as one per-pen `EnvelopeLine` — our own `IPlottable` — over a data-layer-decimated
   envelope; a NaN column segments the line at gaps; `DataLogger` is prior art, not the pattern. Shared-X
   invariant: all pens pinned to `plot.Axes.Bottom`.

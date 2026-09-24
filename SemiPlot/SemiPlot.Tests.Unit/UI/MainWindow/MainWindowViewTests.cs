@@ -7,6 +7,7 @@ using AwesomeAssertions;
 
 using Microsoft.Extensions.Logging.Abstractions;
 
+using SemiPlot.UI.Legend;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
 
@@ -108,6 +109,34 @@ public sealed class MainWindowViewTests
 
 			row.IsVisible.Should().BeTrue("'{0}' comes back", name);
 		}
+	}
+
+	// The width comes from a view model the window does not hold until a chart is built, so the fallback
+	// is what a failed startup renders.
+	[AvaloniaFact]
+	public void LegendPanelWidth_ReadsTheFallbackAndThenFollowsThePanelState()
+	{
+		using var viewModel = NewViewModel();
+		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
+		var panel = window.FindControl<Border>("LegendPanel");
+
+		window.Show();
+		Dispatcher.UIThread.RunJobs();
+
+		panel.Should().NotBeNull("'LegendPanel' is a named row of the window");
+		panel!.Width.Should().Be(
+			TrendLegendViewModel.ExpandedWidth,
+			"no chart is built yet, so the border reads its fallback");
+
+		viewModel.SetChart(CreateChartWithPens());
+		Dispatcher.UIThread.RunJobs();
+
+		panel.Width.Should().Be(TrendLegendViewModel.ExpandedWidth, "the panel opens expanded");
+
+		viewModel.LegendViewModel!.ToggleExpandedCommand.Execute().Subscribe();
+		Dispatcher.UIThread.RunJobs();
+
+		panel.Width.Should().Be(TrendLegendViewModel.CollapsedWidth);
 	}
 
 	private static string? ReadText(Window window, string name)

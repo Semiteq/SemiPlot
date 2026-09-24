@@ -67,7 +67,7 @@ public sealed class DeliveredConfigurationTests : IDisposable
 		result.Value.Host.Should().Be("localhost");
 		result.Value.Port.Should().Be(5432);
 		result.Value.Database.Should().Be("semiplot");
-		result.Value.Username.Should().Be("semiplot_reader");
+		result.Value.Username.Should().Be("semiplot");
 		result.Value.Schema.Should().Be("public");
 		result.Value.PollInterval.Should().Be(TimeSpan.FromMilliseconds(1000));
 		result.Value.SourceTimeZone.Should().Be(TimeZoneInfo.FindSystemTimeZoneById("Europe/Moscow"));

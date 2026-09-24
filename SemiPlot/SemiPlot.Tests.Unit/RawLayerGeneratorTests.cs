@@ -184,18 +184,41 @@ public sealed class RawLayerGeneratorTests
 	{
 		var pens = RawLayerGenerator.SelectPens(SeederOptions.DefaultPenCount);
 
-		(pens.Select(pen => pen.Group).Distinct(StringComparer.Ordinal).Count() > 1).Should().BeTrue();
+		(pens.Select(pen => pen.PrimaryGroup).Distinct(StringComparer.Ordinal).Count() > 1).Should().BeTrue();
 		(pens.Select(pen => (pen.MinValue, pen.MaxValue)).Distinct().Count() > 1).Should().BeTrue();
 	}
 
+	// The ungrouped pen is a bucket of its own and the catalogue declares it last, so the round robin
+	// reaches it once every named group has given up its first pen.
 	[Fact]
 	public void PensAreTakenRoundRobinAcrossTheGroupsRatherThanFirstN()
 	{
 		var pens = RawLayerGenerator.SelectPens(6);
 
-		pens.Select(pen => pen.Group).Should().Equal(
-			"Heaters", "Dampers", "Gas lines", "Pressures", "Powers", "Heaters");
-		pens.Select(pen => pen.PenId).Should().Equal(1000, 2000, 3000, 4000, 5000, 1001);
+		pens.Select(pen => pen.PrimaryGroup).Should().Equal(
+			"Heaters", "Dampers", "Gas lines", "Pressures", "Powers", string.Empty);
+		pens.Select(pen => pen.PenId).Should().Equal(
+			1000, 2000, 3000, 4000, 5000, SyntheticPenCatalog.UncommissionedPenId);
+	}
+
+	[Fact]
+	public void TheStandardSliceCarriesTheThreeCommissioningStates()
+	{
+		var pens = RawLayerGenerator.SelectPens(SeederOptions.DefaultPenCount);
+
+		pens.Should().ContainSingle(pen => pen.PenId == SyntheticPenCatalog.TwoGroupPenId)
+			.Which.Groups.Should().HaveCount(2);
+		pens.Should().ContainSingle(pen => pen.PenId == SyntheticPenCatalog.HiddenOnStartPenId)
+			.Which.EnabledOnStart.Should().BeFalse();
+
+		var uncommissioned = pens.Should()
+			.ContainSingle(pen => pen.PenId == SyntheticPenCatalog.UncommissionedPenId).Which;
+
+		uncommissioned.Groups.Should().BeEmpty();
+		uncommissioned.Unit.Should().BeNull();
+		uncommissioned.Format.Should().BeNull();
+		uncommissioned.ScaleMin.Should().BeNull();
+		uncommissioned.ScaleMax.Should().BeNull();
 	}
 
 	[Fact]

@@ -46,7 +46,8 @@
             <Border Grid.Column="1"
                     Name="LegendPanel"
                     Background="{DynamicResource AppPanelBackgroundBrush}"
-                    Width="280"
+                    Width="{Binding LegendViewModel.RequestedWidth,
+                                    FallbackValue={x:Static legend:TrendLegendViewModel.ExpandedWidth}}"
                     BorderThickness="1,0,0,0"
                     BorderBrush="{DynamicResource AppBorderBrush}"
                     Padding="4"

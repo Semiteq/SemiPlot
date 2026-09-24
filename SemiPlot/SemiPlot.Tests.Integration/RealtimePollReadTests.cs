@@ -65,7 +65,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 	[Fact]
 	public async Task TheFirstTickEmitsNoSampleAndReportsTheSubscriptionArmed()
 	{
-		using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
+		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
 		var tick = await NewPoll(services).ReadOnceAsync(TestContext.Current.CancellationToken);
 
@@ -76,7 +76,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 	[Fact]
 	public async Task TheFirstTickTakesItsBaselineFromTheArchivesOwnNewestRow()
 	{
-		using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
+		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
 		var poll = NewPoll(services);
 
@@ -91,7 +91,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var appended = _seededLast.AddSeconds(1);
 
-		using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
+		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
 		var poll = NewPoll(services);
 
@@ -115,7 +115,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 	{
 		var cancellationToken = TestContext.Current.CancellationToken;
 
-		using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
+		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
 		var poll = NewPoll(services);
 
@@ -132,7 +132,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 	{
 		var cancellationToken = TestContext.Current.CancellationToken;
 
-		using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
+		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
 		var poll = NewPoll(services);
 
@@ -156,7 +156,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var appended = _seededLast.AddSeconds(1);
 
-		using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
+		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
 		var poll = NewPoll(services);
 
@@ -177,7 +177,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var appended = _seededLast.AddSeconds(1);
 
-		using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
+		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
 		var poll = NewPoll(services);
 
@@ -203,7 +203,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 		var first = _seededLast.AddSeconds(1);
 		var second = _seededLast.AddSeconds(2);
 
-		using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
+		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
 		var poll = NewPoll(services);
 		var seen = new List<DateTime?>();
@@ -231,7 +231,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 	{
 		var cancellationToken = TestContext.Current.CancellationToken;
 
-		using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
+		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
 		var poll = NewPoll(services);
 		var states = new List<ArchiveConnectionState?>();

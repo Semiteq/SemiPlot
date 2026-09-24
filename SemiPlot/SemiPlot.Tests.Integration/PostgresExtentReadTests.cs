@@ -33,7 +33,7 @@ public sealed class PostgresExtentReadTests(
 	[Fact]
 	public async Task TheSeededExtentMatchesTheSeedersFirstAndLastTimestamps()
 	{
-		var result = await ReadExtentAsync(seededArchive.Database.ReaderConnectionString);
+		var result = await ReadExtentAsync(seededArchive.Database.PlotConnectionString);
 
 		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
 		result.Value.IsEmpty.Should().BeFalse();
@@ -51,7 +51,7 @@ public sealed class PostgresExtentReadTests(
 			ArchiveReadSupport.EmptyCatalogCommand,
 			TestContext.Current.CancellationToken);
 
-		var result = await ReadExtentAsync(database.ReaderConnectionString);
+		var result = await ReadExtentAsync(database.PlotConnectionString);
 
 		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
 		result.Value.IsEmpty.Should().BeTrue();
@@ -69,17 +69,17 @@ public sealed class PostgresExtentReadTests(
 			EmptyTrendsCommand,
 			TestContext.Current.CancellationToken);
 
-		var result = await ReadExtentAsync(database.ReaderConnectionString);
+		var result = await ReadExtentAsync(database.PlotConnectionString);
 
 		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
 		result.Value.IsEmpty.Should().BeTrue();
 		result.Value.Should().Be(ArchiveExtent.Empty);
 	}
 
-	// The extent statement touches both relations and reports its own, so a dropped catalogue is reported
-	// as a missing trends.
+	// The extent statement touches both relations, so either one missing names both: reporting trends
+	// alone would send the operator to a table that is still there.
 	[Fact]
-	public async Task ADroppedCatalogueFailsNamingTheStatementsOwnRelation()
+	public async Task ADroppedCatalogueFailsNamingEveryRelationTheReadTouches()
 	{
 		await using var database = await postgresContainerFixture.CloneTemplateAsync(
 			TestContext.Current.CancellationToken);
@@ -89,19 +89,19 @@ public sealed class PostgresExtentReadTests(
 			ArchiveReadSupport.DropCatalogCommand,
 			TestContext.Current.CancellationToken);
 
-		var result = await ReadExtentAsync(database.ReaderConnectionString);
+		var result = await ReadExtentAsync(database.PlotConnectionString);
 
 		result.IsFailed.Should().BeTrue();
 
 		var error = result.Errors.OfType<ArchiveError>().Should().ContainSingle().Which;
 
 		error.Kind.Should().Be(ArchiveFault.TableMissing);
-		error.Detail.Should().Be("trends");
+		error.Detail.Should().Be("semiplot_tags, trends");
 		error.Database.Should().Be(database.Name);
 	}
 
 	[Fact]
-	public async Task ADroppedTrendsTableFailsNamingTrends()
+	public async Task ADroppedTrendsTableFailsNamingEveryRelationTheReadTouches()
 	{
 		await using var database = await postgresContainerFixture.CloneProvisionedAsync(
 			TestContext.Current.CancellationToken);
@@ -111,14 +111,14 @@ public sealed class PostgresExtentReadTests(
 			ArchiveReadSupport.DropTrendsCommand,
 			TestContext.Current.CancellationToken);
 
-		var result = await ReadExtentAsync(database.ReaderConnectionString);
+		var result = await ReadExtentAsync(database.PlotConnectionString);
 
 		result.IsFailed.Should().BeTrue();
 
 		var error = result.Errors.OfType<ArchiveError>().Should().ContainSingle().Which;
 
 		error.Kind.Should().Be(ArchiveFault.TableMissing);
-		error.Detail.Should().Be("trends");
+		error.Detail.Should().Be("semiplot_tags, trends");
 		error.Database.Should().Be(database.Name);
 	}
 

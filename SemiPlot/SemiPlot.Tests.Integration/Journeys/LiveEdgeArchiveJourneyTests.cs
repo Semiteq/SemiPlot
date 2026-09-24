@@ -36,7 +36,7 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 	[AvaloniaFact]
 	public async Task ARowWrittenAfterStartupReachesTheChartOnceAndMovesItsLiveEdge()
 	{
-		await using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
+		await using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 		var dataProvider = services.GetRequiredService<IDataProvider>();
 		var dataScheduler = services.GetRequiredService<IScheduler>();
 		var catalogue = await dataProvider.QueryPensAsync();
@@ -134,7 +134,7 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 	[AvaloniaFact]
 	public async Task RowsOnAVariableOfTheirOwnReachTheChartWithoutBreakingAnyPen()
 	{
-		await using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
+		await using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 		var dataProvider = services.GetRequiredService<IDataProvider>();
 		var dataScheduler = services.GetRequiredService<IScheduler>();
 		var catalogue = await dataProvider.QueryPensAsync();

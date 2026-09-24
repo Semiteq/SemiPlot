@@ -83,8 +83,8 @@ internal sealed class FakeDataProvider(
 
 	public IReadOnlyList<Pen> Pens { get; } = pens ??
 		[
-			new Pen(1, "Pen 1", "Group A", "#ff0000"),
-			new Pen(2, "Pen 2", "Group A", "#00ff00")
+			new Pen(1, "Pen 1", ["Group A"], "#ff0000"),
+			new Pen(2, "Pen 2", ["Group A"], "#00ff00")
 		];
 
 	// Off by default: every pen shares one timestamp per tick. Set, each pen's sample offsets by its own

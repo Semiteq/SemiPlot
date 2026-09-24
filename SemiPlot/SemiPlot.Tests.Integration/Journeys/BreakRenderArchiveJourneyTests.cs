@@ -60,7 +60,7 @@ public sealed class BreakRenderArchiveJourneyTests(
 	[AvaloniaFact]
 	public async Task TheFirstSeededBreakLeavesTheRenderedCurvesBroken()
 	{
-		await using var services = ArchiveProviderFactory.Build(seededArchive.Database.ReaderConnectionString);
+		await using var services = ArchiveProviderFactory.Build(seededArchive.Database.PlotConnectionString);
 		var dataProvider = services.GetRequiredService<IDataProvider>();
 		var dataScheduler = services.GetRequiredService<IScheduler>();
 		var catalogue = await dataProvider.QueryPensAsync();

@@ -25,12 +25,12 @@ public sealed record PostgresServer(string Host, int Port)
 			BenchRoles.WriterPassword);
 	}
 
-	public string ReaderConnectionStringFor(string database)
+	public string PlotConnectionStringFor(string database)
 	{
 		return ConnectionStringFor(
 			database,
-			BenchRoles.ReaderRole,
-			BenchRoles.ReaderPassword);
+			BenchRoles.PlotRole,
+			BenchRoles.PlotPassword);
 	}
 
 	private string ConnectionStringFor(string database, string user, string password)

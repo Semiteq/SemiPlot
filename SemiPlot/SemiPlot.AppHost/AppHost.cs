@@ -15,7 +15,7 @@ const string SuperuserName = "postgres";
 const string SuperuserPassword = "semibase-container-superuser";
 const string WriterRole = "scada_writer";
 const string WriterPassword = "semibase-container-writer";
-const string ReaderPassword = "semibase-container-reader";
+const string PlotPassword = "semibase-container-plot";
 const ushort HostPort = 55432;
 const ushort ContainerPort = 5432;
 // One density for the seeded day and the live tail, so the chart shows no seam between them.
@@ -30,7 +30,7 @@ var logFilePath = demoDirectories.LogFilePath;
 var bench = builder.AddDockerfile("bench", "../bench")
 	.WithEnvironment("POSTGRES_PASSWORD", SuperuserPassword)
 	.WithEnvironment("SEMIBASE_WRITER_PASSWORD", WriterPassword)
-	.WithEnvironment("SEMIBASE_READER_PASSWORD", ReaderPassword)
+	.WithEnvironment("SEMIBASE_PLOT_PASSWORD", PlotPassword)
 	.WithEnvironment("SEMIPLOT_PROVISIONED_DATABASE", ProvisionedDatabase)
 	.WithEndpoint(port: HostPort, targetPort: ContainerPort, scheme: "tcp", name: "postgres", isProxied: false);
 

@@ -51,13 +51,13 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 ## 2. Y axes and pen scales (multi-axis)
 
 ### AY-1 — Multiple Y axes (MUST)
-**Definition.** Several independent vertical axes; pens are scaled and positioned along Y independently of each other. Axes are placed deterministically (in order of the first appearance of an axis key), alternating left/right sides.
-**Acceptance.** Core/test: `PenScaleModel.Compute` for pens with different axis keys returns one `PenScale` per key, with a stable order. UI: `ChartAxisBinder` renders the first axis as the built-in left axis, then alternates Add(Right/Left)Axis.
+**Definition.** Several independent vertical axes; pens are scaled and positioned along Y independently of each other. Every pen carries an axis of its own, keyed by its pen id. Axes are created deterministically, in order of the first appearance of a pen, and every one of them sits on the left: only the active pen's axis is drawn, so alternating sides would swing that single visible axis across the plot each time the operator changes the active pen.
+**Acceptance.** Core/test: `PenScaleModel.Compute` returns one `PenScale` per pen, in the order the settings arrive. UI: `ChartAxisBinder` renders the first axis as the built-in left axis and every later one through `AddLeftAxis`; no axis is ever added on the right.
 
 ### AY-2 — Per-pen scale ("each on its own axis") (MUST)
-**Definition.** The canonical case "N lines, each with its own min..max scale" must work literally: each such pen gets its own axis with its own range, rather than sharing a common min/max with others. The axis key (`AxisKey`) must be controllable, not hard-wired to the pen's group.
-**Acceptance.** Core/test: when each pen is assigned a unique `AxisKey`, the model builds N axes with independent ranges. UI: after loading the "gas lines" catalog, the operator sees each line on its own scale (this fixes the current discrepancy where all 10 share one axis).
-**Note.** Closes gap (b)4/(b)5 of the current state: `PenScaleSettings.AxisKey` cannot be overridden at runtime, and the catalog places all lines into one group.
+**Definition.** The canonical case "N lines, each with its own min..max scale" must work literally: each such pen gets its own axis with its own range, rather than sharing a common min/max with others. The axis is never hard-wired to the pen's group.
+**Acceptance.** Core/test: N `PenScaleSettings` build N axes with independent ranges. UI: after loading the "gas lines" catalog, the operator sees each line on its own scale.
+**Note.** Closed: `PenScaleSettings` carries no axis key at all — the axis is the pen. The stored `scale_min`/`scale_max` pair is what forced it: seeded into a group-keyed axis, one pen's range would have been applied to the whole group and the rest silently discarded.
 
 ### AY-3 — Manual min/max for an axis (MUST)
 **Definition.** `Manual` mode: fixed `ManualMin/ManualMax` for an axis; on swapped bounds — auto-swap. Bound editing is available from the UI (a click in the upper zone of the axis = MAX, in the lower zone = MIN, inline editor).
@@ -85,7 +85,7 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 ## 3. Pens
 
 ### PN-1 — Pen model and Y layer (MUST)
-**Definition.** A pen: `PenId`, `Name`, `Group`, `Color`, `LineStyle`, axis key. A pen's history is a `PenHistoryEnvelope` (parallel `Timestamps/Min/Max/Center`, strictly increasing timestamps, NaN = gap). Render: one `EnvelopeLine` polyline through each column's Min and Max.
+**Definition.** A pen: `PenId`, `Name`, `Groups`, `Color`, `LineStyle`, `Unit`, `Format`, `EnabledOnStart` and the stored `ScaleMin`/`ScaleMax` pair. A pen's history is a `PenHistoryEnvelope` (parallel `Timestamps/Min/Max/Center`, strictly increasing timestamps, NaN = gap). Render: one `EnvelopeLine` polyline through each column's Min and Max.
 **Acceptance.** Core/test: the envelope constructor throws on unequal lengths and non-increasing timestamps; NaN breaks the line. UI: a column whose Min differs from its Max is drawn as a vertical segment.
 
 ### PN-2 — Resize a pen's Y layer (MUST)
@@ -115,6 +115,7 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 ### PN-8 — Pen label/legend (SHOULD)
 **Definition.** A legend (detailed view): pen name, current value, value at cursor, scale range. A label at the right edge (Name/Value/Name+Value).
 **Acceptance.** UI: the legend shows the current value, value-at-cursor, and range; changing the label mode changes the text at the edge.
+**Note.** As-built the sidebar row carries the on/off box, a colour dot, the name, the current value in the pen's own mask and the unit. The value at the cursor is the chart's own hover readout (§CU-2) rather than a second copy in the row, and the range cell is gone: it showed the padded axis bound over the visible window, not a measurement (trend-interaction.md).
 
 ### PN-9 — kx+b scaling and formatters (NICE)
 **Definition.** A multiplier (k) and offset (b) per pen; value formatters for X and Y (number of digits, exponential / floating-point).
@@ -262,4 +263,4 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 
 **Direct user requirements (all MUST):** continuous time canvas → TM-1; multiple Y axes → AY-1/AY-2; resize a pen's Y layer, min/max, disable → PN-2/PN-3/PN-4; T1/T2 markers → CU-3; pen value at a point → CU-2; source always PostgreSQL → DA-1.
 
-**Known "model exists — UI missing" discrepancies promoted to requirements:** AY-6 (log axis), DA-4 (manual layer), AY-2 (AxisKey ≠ group), DA-7 (X monotonicity), CU-6 (readout at the live edge), DA-6 (column-count stability).
+**Known "model exists — UI missing" discrepancies promoted to requirements:** AY-6 (log axis), DA-4 (manual layer), AY-2 (axis ≠ group), DA-7 (X monotonicity), CU-6 (readout at the live edge), DA-6 (column-count stability).

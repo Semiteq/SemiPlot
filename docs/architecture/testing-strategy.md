@@ -85,7 +85,7 @@ There are three families — the same category with different foreign parties.
 `ExplainPlanTests`. Seams guarded: statement text, type mapping, the demo writer's server-side
 thinning against `LayerThinner`'s own selection,
 the naive-local-to-UTC conversion, partition pruning, and the grant chain — reads run as
-`semiplot_reader`, so a privilege that never reached the reader fails here instead of at
+`semiplot`, so a privilege that never reached the role fails here instead of at
 commissioning. The container is the delivery mechanism for a real server, nothing more.
 
 **Against a real Avalonia** — `SemiPlot.Tests.Unit/UI/`, under `[AvaloniaFact]`:
@@ -145,11 +145,36 @@ dotnet-trace collect -p (Get-Process SemiPlot.UI).Id --format Speedscope --durat
 python scripts/perf/trace-shares.py drag.speedscope.speedscope.json
 ```
 
+`OnNavigationWindowChanged` is the frame that carries `ApplyAxisModel`, whose cost now scales with the
+pen count rather than the group count: one `PenScale` and one `SetLimitsY` per pen per window change,
+50 on the bench catalogue against 5 before the axis became the pen.
+
+A hidden axis costs nothing to render. Measured on 2026-09-17 against ScottPlot 5.1.59, a 800x600
+plot over 30 frames at 0, 7, 49, 99 and 199 hidden axes spent 17.6, 14.3, 14.2, 14.7 and 18.4 ms per
+frame: the count of hidden axes does not move the frame, and one axis per pen does not regress the
+drag responsiveness `013f491` landed. Nothing is to be restructured for that cost without a capture
+that contradicts these numbers.
+
 dotnet-trace names the converted file `<name>.speedscope.json`, so the second argument repeats the
 extension. Six frames are printed: `RenderOnce`, `Polygon.Render` and `SKCanvas.DrawPath` on the
 chart's frame path, `OnNavigationWindowChanged`, `ApplyHistory` and `QueryHistoryAsync` on its
 history path. A 45 s drag capture passes when `RenderOnce` averages 10 ms or less and
 `SKCanvas.DrawPath` totals 1 s or less.
+
+## The UI scheduler in a realised view
+
+A test that realises `TrendChartView` never passes `ImmediateScheduler.Instance` as the chart's UI
+scheduler. The view subscribes to `RedrawRequested`, whose `Sample` schedules periodically, and
+`ImmediateScheduler.SchedulePeriodic` sleeps on the calling thread: the subscription never returns
+and the test hangs. Two schedulers work in its place.
+
+| Scheduler | When | Cost |
+| --- | --- | --- |
+| `TestScheduler` | the test drives time itself | none |
+| `AvaloniaScheduler.Instance` | the test needs the production seam, as `ChartPointerInputTests` does | the periodic timer lives on the shared headless dispatcher until the view model is disposed, so the test disposes it |
+
+The same holds for a window that realises the chart indirectly: `MainWindowTestBuilder` and
+`LegendChartBuilder` hand their charts a virtual UI scheduler for this reason alone.
 
 ## Where the boundaries between projects fall
 
@@ -183,7 +208,7 @@ Each piece lives with the party whose change invalidates it.
 | Piece | Owner | Lives in | Why this boundary |
 | --- | --- | --- | --- |
 | Archive schema, layers, thinning rule | Simple-Scada 2 | the vendor's product; observed in `scada-archive.md` | SemiPlot is a strict read-only consumer. The observation is documented with the consumer because the consumer depends on it, not because anyone here controls it |
-| Instance provisioning: database, roles, grants, default privileges, `semiplot_tags`, `public.trends` | SemiBase | `github.com/Semiteq/SemiBase` | the instance is shared by the SCADA, SemiPlot and future readers. The bench must be provisioned by the same implementation a site is, or it stops testing the grant chain. The archive table is in that list because SemiBase creates it: a second definition here would be the one exercised daily while the real one decayed |
+| Instance provisioning: database, roles, grants, default privileges, the four configuration tables (`semiplot_tags`, `semiplot_groups`, `semiplot_pen_groups`, `semiplot_meta`), `public.trends` | SemiBase | `github.com/Semiteq/SemiBase` | the instance is shared by the SCADA, SemiPlot and future readers. The bench must be provisioned by the same implementation a site is, or it stops testing the grant chain. The archive table is in that list because SemiBase creates it: a second definition here would be the one exercised daily while the real one decayed |
 | `semibase` artifact formats and versions | SemiBase | its release workflow and its published image | the producer owns its artifacts; SemiPlot only consumes them |
 | Synthetic data model, including `LayerThinner` — this project's hypothesis about the vendor's thinning rule | SemiPlot | `SemiPlot.Tools.ArchiveSeeder` | the hypothesis couples to the consumer, not the provisioner: if the rule is refuted, the *read path* changes and SemiBase changes nothing. It must version in lock-step with the code that bets on it, which is why `RawLayerGeneratorTests` lives beside it and why `SyntheticValueWalk`, `SyntheticPenCatalog` and `SyntheticPen` are the seeder's own: the tests pin the generator's shape and later slices develop against its output, so a generator shared with anything evolving for its own reasons would break them |
 | Test harness | SemiPlot tests | `SemiPlot.Tests.Integration/` | the harness serves this repository's tests and nothing else; no other party can decide its shape |

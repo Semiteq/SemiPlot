@@ -54,7 +54,7 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 	{
 		var cancellationToken = TestContext.Current.CancellationToken;
 
-		using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
+		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
 		var provider = services.GetRequiredService<IDataProvider>();
 
@@ -97,7 +97,7 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 		var beforeTheSecondSubscription = _seededLast.AddSeconds(1);
 		var afterBoth = _seededLast.AddSeconds(2);
 
-		using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
+		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
 		var provider = services.GetRequiredService<IDataProvider>();
 
@@ -136,7 +136,7 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 	[Fact]
 	public async Task EverySubscriptionReportsConnectedOnItsOwnFirstTick()
 	{
-		using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
+		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
 		var provider = services.GetRequiredService<IDataProvider>();
 

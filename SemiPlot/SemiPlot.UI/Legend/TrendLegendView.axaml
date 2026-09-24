@@ -9,71 +9,85 @@
              x:Class="SemiPlot.UI.Legend.TrendLegendView"
              x:DataType="legend:TrendLegendViewModel">
 
-    <ScrollViewer>
-        <ItemsControl ItemsSource="{Binding Groups}">
-            <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="legend:TrendLegendGroupViewModel">
-                    <StackPanel Margin="0,0,0,8">
+    <DockPanel LastChildFill="True">
 
-                        <TextBlock Text="{Binding Name}"
-                                   FontWeight="Bold"
-                                   Margin="4,4,0,2" />
+        <Button Name="PanelStateToggle"
+                DockPanel.Dock="Top"
+                HorizontalAlignment="Right"
+                Margin="0,0,0,4"
+                Padding="8,2"
+                Content="{Binding ToggleText}"
+                AutomationProperties.Name="{Binding ToggleText}"
+                Command="{Binding ToggleExpandedCommand}" />
 
-                        <ItemsControl ItemsSource="{Binding Rows}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="legend:TrendLegendRowViewModel">
-                                    <Border Name="RowRoot"
-                                            Background="Transparent"
-                                            PointerPressed="OnRowPressed"
-                                            Padding="4,2">
+        <ScrollViewer>
+            <ItemsControl ItemsSource="{Binding Groups}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="legend:TrendLegendGroupViewModel">
+                        <StackPanel Margin="0,0,0,8">
 
-                                        <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto"
-                                              VerticalAlignment="Center">
+                            <TextBlock Name="GroupHeader"
+                                       Text="{Binding Name}"
+                                       IsVisible="{Binding HasHeader}"
+                                       FontWeight="Bold"
+                                       Margin="4,4,0,2" />
 
-                                            <CheckBox Grid.Column="0"
-                                                      IsChecked="{Binding IsVisible}"
-                                                      VerticalAlignment="Center"
-                                                      Margin="0,0,4,0" />
+                            <ItemsControl ItemsSource="{Binding Rows}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="legend:TrendLegendRowViewModel">
+                                        <Border Name="RowRoot"
+                                                Background="Transparent"
+                                                PointerPressed="OnRowPressed"
+                                                Padding="4,2">
 
-                                            <Border Grid.Column="1"
-                                                    Width="12"
-                                                    Height="12"
-                                                    Margin="0,0,6,0"
-                                                    VerticalAlignment="Center"
-                                                    Background="{Binding ColorHex, Converter={x:Static legend:LegendConverters.HexToBrush}}" />
+                                            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto"
+                                                  VerticalAlignment="Center">
 
-                                            <TextBlock Grid.Column="2"
-                                                       Text="{Binding Name}"
-                                                       FontWeight="{Binding IsActive, Converter={x:Static legend:LegendConverters.ActiveToWeight}}"
-                                                       VerticalAlignment="Center" />
+                                                <CheckBox Grid.Column="0"
+                                                          IsChecked="{Binding IsVisible}"
+                                                          VerticalAlignment="Center"
+                                                          Margin="0,0,4,0" />
 
-                                            <TextBlock Grid.Column="3"
-                                                       Text="{Binding CurrentValueText}"
-                                                       Margin="6,0,0,0"
-                                                       VerticalAlignment="Center" />
+                                                <Border Grid.Column="1"
+                                                        Width="12"
+                                                        Height="12"
+                                                        CornerRadius="6"
+                                                        Margin="0,0,6,0"
+                                                        VerticalAlignment="Center"
+                                                        Background="{Binding ColorHex, Converter={x:Static legend:LegendConverters.HexToBrush}}" />
 
-                                            <TextBlock Grid.Column="4"
-                                                       Text="{Binding CursorValueText}"
-                                                       Opacity="0.7"
-                                                       Margin="6,0,0,0"
-                                                       VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="2"
+                                                           Text="{Binding Name}"
+                                                           FontWeight="{Binding IsActive, Converter={x:Static legend:LegendConverters.ActiveToWeight}}"
+                                                           VerticalAlignment="Center" />
 
-                                            <TextBlock Grid.Column="5"
-                                                       Text="{Binding ScaleRangeText}"
-                                                       Opacity="0.5"
-                                                       Margin="6,0,0,0"
-                                                       VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="3"
+                                                           Name="RowValue"
+                                                           Text="{Binding CurrentValueText}"
+                                                           IsVisible="{Binding $parent[UserControl].DataContext.IsExpanded}"
+                                                           Margin="6,0,0,0"
+                                                           VerticalAlignment="Center" />
 
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                                                <TextBlock Grid.Column="4"
+                                                           Name="RowUnit"
+                                                           Text="{Binding Unit}"
+                                                           IsVisible="{Binding $parent[UserControl].DataContext.IsExpanded}"
+                                                           Foreground="{DynamicResource AppSecondaryForegroundBrush}"
+                                                           Margin="4,0,0,0"
+                                                           VerticalAlignment="Center" />
 
-                    </StackPanel>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
-    </ScrollViewer>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+    </DockPanel>
 
 </UserControl>

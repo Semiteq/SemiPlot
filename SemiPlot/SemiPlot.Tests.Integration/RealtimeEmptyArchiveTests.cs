@@ -36,7 +36,7 @@ public sealed class RealtimeEmptyArchiveTests(PostgresContainerFixture postgresC
 	[Fact]
 	public async Task TheBaselineOverAnArchiveWithNoRowStillArmsTheSubscription()
 	{
-		using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
+		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
 		var tick = await NewPoll(services).ReadOnceAsync(TestContext.Current.CancellationToken);
 
@@ -51,7 +51,7 @@ public sealed class RealtimeEmptyArchiveTests(PostgresContainerFixture postgresC
 	{
 		var cancellationToken = TestContext.Current.CancellationToken;
 
-		using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
+		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
 		var poll = NewPoll(services);
 
@@ -74,7 +74,7 @@ public sealed class RealtimeEmptyArchiveTests(PostgresContainerFixture postgresC
 		var first = _day.AddMinutes(1);
 		var second = _day.AddMinutes(2);
 
-		using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
+		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
 		var poll = NewPoll(services);
 
@@ -99,7 +99,7 @@ public sealed class RealtimeEmptyArchiveTests(PostgresContainerFixture postgresC
 	[Fact]
 	public async Task ASubscriptionOverAnArchiveWithNoRowReportsConnected()
 	{
-		using var services = ArchiveProviderFactory.Build(Database.ReaderConnectionString);
+		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
 		var provider = services.GetRequiredService<IDataProvider>();
 		var armed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

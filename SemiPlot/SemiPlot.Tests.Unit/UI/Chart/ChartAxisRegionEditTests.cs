@@ -151,7 +151,7 @@ public sealed class ChartAxisRegionEditTests
 			ImmediateScheduler.Instance,
 			new MessagePanelViewModel(),
 			NullLogger<TrendChartViewModel>.Instance);
-		var state = viewModel.AddPen(new Pen(1, "Pen 1", "Group A", "#ff0000"));
+		var state = viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
 		state.LoadHistory(new PenHistoryEnvelope(
 			1,
 			[_from, _from.AddMinutes(1.0)],

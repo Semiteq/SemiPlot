@@ -175,7 +175,7 @@ public sealed class ConfigurationSectionTests : IDisposable
 		dto.Host.Should().Be("localhost");
 		dto.Port.Should().Be(5432);
 		dto.Database.Should().Be("semiplot");
-		dto.User.Should().Be("semiplot_reader");
+		dto.User.Should().Be("semiplot");
 		dto.Password.Should().BeEmpty();
 		dto.SourceTimeZone.Should().Be("Europe/Moscow");
 		dto.PollIntervalMs.Should().Be(1000);

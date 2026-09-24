@@ -49,12 +49,12 @@ public sealed class ConvergeTests(PostgresContainerFixture postgresContainerFixt
 
 			loaded.IsSuccess.Should().BeTrue();
 			loaded.Value.Database.Should().Be(database);
-			loaded.Value.Username.Should().Be(BenchRoles.ReaderRole);
+			loaded.Value.Username.Should().Be(BenchRoles.PlotRole);
 			loaded.Value.SourceTimeZone.Id.Should().Be(TimeZoneInfo.Local.Id);
 
 			var oidBefore = await DatabaseOidAsync(server, database);
 
-			await using var held = new NpgsqlConnection(server.ReaderConnectionStringFor(database));
+			await using var held = new NpgsqlConnection(server.PlotConnectionStringFor(database));
 
 			await held.OpenAsync(TestContext.Current.CancellationToken);
 
@@ -91,7 +91,7 @@ public sealed class ConvergeTests(PostgresContainerFixture postgresContainerFixt
 
 	private static Task<long> RowCountAsync(PostgresServer server, string database)
 	{
-		return ScalarAsync<long>(server.ReaderConnectionStringFor(database), "SELECT count(*) FROM public.trends;");
+		return ScalarAsync<long>(server.PlotConnectionStringFor(database), "SELECT count(*) FROM public.trends;");
 	}
 
 	private static Task<long> TagCountAsync(PostgresServer server, string database)

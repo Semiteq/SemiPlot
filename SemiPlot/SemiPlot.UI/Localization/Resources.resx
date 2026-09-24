@@ -21,6 +21,15 @@
   <data name="NoValuePlaceholder" xml:space="preserve">
     <value>—</value>
   </data>
+  <data name="LegendUngroupedHeader" xml:space="preserve">
+    <value>Ungrouped</value>
+  </data>
+  <data name="LegendCollapsePanel" xml:space="preserve">
+    <value>Collapse</value>
+  </data>
+  <data name="LegendExpandPanel" xml:space="preserve">
+    <value>Expand</value>
+  </data>
   <data name="NavigationJumpToNow" xml:space="preserve">
     <value>Jump to now</value>
   </data>

@@ -4,19 +4,26 @@ using SemiPlot.Core.Trends;
 
 namespace SemiPlot.UI.Chart;
 
-// Each axis key owns exactly one IYAxis (the first key reuses the plot's built-in left axis); every pen
-// sharing that key is assigned the same IYAxis. The bottom (time) axis is shared by all plottables and
-// is never replaced here, preserving the shared-X invariant.
 public sealed class ChartAxisBinder(Plot plot)
 {
-	private readonly Dictionary<string, IYAxis> _axesByKey = [];
+	private readonly Dictionary<int, IYAxis> _axesByPenId = [];
 	private readonly Plot _plot = plot;
 
-	public IReadOnlyDictionary<string, IYAxis> AxesByKey => _axesByKey;
+	public IReadOnlyDictionary<int, IYAxis> AxesByPenId => _axesByPenId;
 
-	public IYAxis? FindAxis(string axisKey)
+	public IYAxis? FindAxis(int penId)
 	{
-		return _axesByKey.GetValueOrDefault(axisKey);
+		return _axesByPenId.GetValueOrDefault(penId);
+	}
+
+	// The removed pen's axis stays keyed so re-adding that pen reuses it; hidden meanwhile, because
+	// nothing computes a scale for it any more and it would otherwise keep drawing its last bounds.
+	public void HideAxis(int penId)
+	{
+		if (_axesByPenId.TryGetValue(penId, out var axis))
+		{
+			axis.IsVisible = false;
+		}
 	}
 
 	public void Apply(
@@ -25,49 +32,40 @@ public sealed class ChartAxisBinder(Plot plot)
 	{
 		foreach (var scale in scales)
 		{
-			var axis = ResolveAxis(scale.AxisKey);
-			AssignPensToAxis(scale, pensById, axis);
+			var axis = ResolveAxis(scale.PenId);
+
+			if (pensById.TryGetValue(scale.PenId, out var pen))
+			{
+				pen.Line.Axes.YAxis = axis;
+			}
+
 			_plot.Axes.SetLimitsY(scale.Min, scale.Max, axis);
-			axis.IsVisible = scale.IsVisible && scale.IsActive;
+			axis.IsVisible = scale.IsActive && pen is { IsVisible: true };
+
+			if (axis.IsVisible)
+			{
+				// ScottPlot draws the horizontal gridlines from Grid.YAxis alone and never reads that axis's
+				// own IsVisible, so it keeps the plot's first axis until the drawn one is assigned here.
+				_plot.Grid.YAxis = axis;
+			}
 		}
 	}
 
-	private IYAxis ResolveAxis(string axisKey)
+	private IYAxis ResolveAxis(int penId)
 	{
-		if (_axesByKey.TryGetValue(axisKey, out var existing))
+		if (_axesByPenId.TryGetValue(penId, out var existing))
 		{
 			return existing;
 		}
 
 		var axis = CreateAxis();
-		_axesByKey.Add(axisKey, axis);
+		_axesByPenId.Add(penId, axis);
 
 		return axis;
 	}
 
 	private IYAxis CreateAxis()
 	{
-		if (_axesByKey.Count == 0)
-		{
-			return _plot.Axes.Left;
-		}
-
-		return _axesByKey.Count % 2 == 1 ? _plot.Axes.AddRightAxis() : _plot.Axes.AddLeftAxis();
-	}
-
-	private static void AssignPensToAxis(
-		PenScale scale,
-		IReadOnlyDictionary<int, TrendPenState> pensById,
-		IYAxis axis)
-	{
-		foreach (var penId in scale.PenIds)
-		{
-			if (!pensById.TryGetValue(penId, out var state))
-			{
-				continue;
-			}
-
-			state.Line.Axes.YAxis = axis;
-		}
+		return _axesByPenId.Count == 0 ? _plot.Axes.Left : _plot.Axes.AddLeftAxis();
 	}
 }

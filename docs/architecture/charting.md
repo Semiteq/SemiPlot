@@ -62,8 +62,10 @@ tail appends one degenerate column (`Min == Max == Center == value`) at the live
 (`FoldRealtime` widens that column's `Min`/`Max` and moves its `Center`). Cursor and legend read the
 `Center` channel consistently across the seam.
 
-**Axes / shared-X invariant.** Each distinct-unit pen gets its own `IYAxis`
-(`AddLeftAxis`/`AddRightAxis`); a same-unit group shares one `IYAxis`; non-active axes are
+**Axes / shared-X invariant.** Each pen gets its own `IYAxis`, keyed on the pen id; no two pens ever
+share one, whatever their unit or group. Every axis is a left axis — `Axes.Left` for the first pen,
+`AddLeftAxis()` for the rest — because only the active pen's axis is drawn and alternating sides
+would move it across the plot as the active pen changes. Non-active axes are
 `IsVisible = false`, and the active-pen switch toggles visibility without rebuilding. Scaling is
 driven per-axis via `SetLimitsY(min, max, axis)` from the Core `PenScaleModel` output (no global
 `AutoScale`). Every plottable is pinned to `plot.Axes.Bottom` explicitly at creation, so all pens
@@ -109,17 +111,18 @@ The mapping below routes the major capability groups to their feature IDs:
 
 - **Pens (series)** — runtime add/remove, per-pen visibility, identity/color/group/value:
   trend-feature-spec.md §PN-1, §PN-4.
-- **Y axes / scaling** — per-pen independent min/max, multiple Y axes, shared group scale,
-  active-pen scale on the primary axis: trend-feature-spec.md §AY-1, §AY-2.
+- **Y axes / scaling** — one axis per pen with its own min/max, the active pen's axis on the left:
+  trend-feature-spec.md §AY-1, §AY-2.
 - **Cursor / inspection** — vertical cursor reading every visible pen at the cursor X:
   trend-feature-spec.md §CU-1, §CU-2.
 - **History performance** — smooth zoom/pan over long archives via aggregation layers and
   decimation: trend-feature-spec.md §DA-2, §DA-3, §DA-5.
 - **Grouping / layout** — view pen groups separately or together: trend-feature-spec.md §MS-2.
 
-Canonical use cases (acceptance fixtures): 16 dampers + 16 heat sources (all 16 heaters together
-on one shared scale, dampers viewed separately) and 10 gas lines with different min..max ranges
-(all on one chart, each with its own scale — §AY-2).
+Canonical use cases (acceptance fixtures): 16 dampers + 16 heat sources (dampers viewed separately,
+the 16 heaters reading against the same bounds, which is the same `scale_min`/`scale_max` pair stored
+on each of them rather than a shared axis) and 10 gas lines with different min..max ranges (all on
+one chart, each with its own scale — §AY-2).
 
 ## Module layout (Avalonia views / view models / Core models)
 
@@ -136,8 +139,8 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   search, the min/max point order, the gap break and the step shape.
 - `Chart/TrendPenState` — one pen's `EnvelopeLine`, `IsVisible`, `CurrentValue`, and the
   history-load / realtime-append / fold logic that drives those mutators.
-- `Chart/ChartAxisBinder` — applies the `PenScaleModel` output to ScottPlot Y axes
-  (`AddLeftAxis`/`AddRightAxis`, shared-group axis assignment, `SetLimitsY`, shared-X pinning).
+- `Chart/ChartAxisBinder` — applies the `PenScaleModel` output to ScottPlot Y axes (one left axis per
+  pen, `SetLimitsY`, shared-X pinning).
 - `Chart/ChartNavigationController` — owns the `TrendNavigationModel`, the layer ladder, the live-edge
   advance; raises `WindowChanged` (`NavigationWindow` = `[From, To]` + `Layer` +
   `RequiresHistoryRequery`). A ceiling is derived, not constant:
@@ -200,8 +203,13 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   sticky toggle, delta-mode toggle + inline Δt/Δy readout (ReactiveUI commands). Autoscale, the two
   limit boxes and set-limits left with the axis click editor taking them over; the layer label left
   for the status bar.
-- `Legend/TrendLegendView` + `TrendLegendViewModel` (+ group / row VMs and two converters) — the
-  grouped mini-legend: checkbox visibility, color, name, current value, value-at-cursor, scale range.
+- `Legend/TrendLegendView` + `TrendLegendViewModel` (+ group / row VMs and the converters) — the
+  grouped sidebar. A row carries the on/off box, a round colour dot, the name, the current value in
+  the pen's own mask and the unit; nothing in it is editable but the box, which an allowlist test over
+  the built row template holds. A pen draws once and is listed under every group it belongs to, so one
+  row view model appears under several headers and `Dispose` walks the distinct list. `IsExpanded` is
+  the panel's one state flag: collapsed, the row drops the value and the unit and the panel narrows
+  from 280 to 168. Nothing persists the state — every start opens expanded.
 - `Minimap/MinimapView` + `MinimapViewModel` — Canvas-based archive-overview strip; navigates via the
   shared `ChartNavigationController` (see trend-interaction.md).
 - `MainWindow/MainWindow` + `MainWindowViewModel` — the seven-row window grid and the flags its View
@@ -241,9 +249,17 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
 
 **Core models (`SemiPlot.Core.Trends`, renderer-agnostic, unit-tested):**
 
-- `PenScaleModel` — per-axis `(Min, Max)` + autoscale mode + visibility + axis key (active pen on
-  the primary axis; per-pen or shared-group scaling; Auto over the columns inside
-  `[windowStart, windowEnd]` / Manual; log sanitize).
+- `PenScaleModel` — one `PenScale` per pen: `(Min, Max)` + autoscale mode + the active flag (Auto over
+  the columns inside `[windowStart, windowEnd]` / Manual; log sanitize). A pen whose `scale_min`/`scale_max` are stored
+  opens `Manual` on exactly those bounds; a pen without them opens `Auto`. What the operator then does
+  to the axis rewrites the settings for the session and reaches no database — the only path back into
+  `semiplot_tags` is the pen editor, `Semiteq/SemiPlot#67`.
+- `PenValueFormat` — the `0.###` fallback mask, the character rule that accepts a stored mask, and the
+  render under `CultureInfo.CurrentCulture`. The rule runs once, in `PostgresDataProvider.ReadPen`,
+  which is where the logger is; a rejected mask reaches the record as `null`, so `Pen.Format` in the
+  row is always usable and the row neither validates nor logs. The rule is a character set rather than
+  a `try`/`catch` because .NET throws on almost no bad mask: `qqq` prints literally and `%0.0`
+  multiplies the reading by 100.
 - `TrendNavigationModel` — `[from, to]` window, sticky flag, zoom width; pan / zoom / jump-to-now /
   live-edge advance, clamped 1 s … 1 year, zoom width quantized onto a 1.25 ladder, `From ≥ FirstSample`.
 - `MinMaxDecimator` — samples + target column count → min AND max per column (+ center); NaN-gap anchor

@@ -34,7 +34,10 @@ public sealed class ChartAxisRegion
 		var layout = plot.RenderManager.LastRender.Layout;
 		var dataRect = layout.DataRect;
 
-		if (!dataRect.HasArea
+		// A hidden axis still carries a panel of size 0 at offset 0, whose band collapses onto the data
+		// rect's own edge and would answer a press there with the bound editor of a pen nothing draws.
+		if (!axis.IsVisible
+			|| !dataRect.HasArea
 			|| !layout.PanelSizes.TryGetValue(axis, out var size)
 			|| !layout.PanelOffsets.TryGetValue(axis, out var offset))
 		{

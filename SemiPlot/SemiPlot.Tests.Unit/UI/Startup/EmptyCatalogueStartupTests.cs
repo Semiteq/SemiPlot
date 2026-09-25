@@ -84,7 +84,7 @@ public sealed class EmptyCatalogueStartupTests
 			new ServiceCollection()
 				.AddSingleton<IScheduler>(scheduler)
 				.AddSingleton(dataProvider)
-				.AddUi();
+				.AddUi(AppContext.BaseDirectory);
 
 		services.AddLogging();
 

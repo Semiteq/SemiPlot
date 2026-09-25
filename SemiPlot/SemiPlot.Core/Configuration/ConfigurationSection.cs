@@ -13,7 +13,7 @@ namespace SemiPlot.Core.Configuration;
 /// </summary>
 public static class ConfigurationSection
 {
-	private const string FilePattern = "*.yaml";
+	internal const string FilePattern = "*.yaml";
 
 	private static readonly IDeserializer _deserializer = new DeserializerBuilder()
 		.WithDuplicateKeyChecking()
@@ -21,15 +21,27 @@ public static class ConfigurationSection
 
 	// Quoting keeps a value that also reads as YAML - null, ~, true, a number, a base-60 time - a string
 	// across the round trip, while a typed deserializer still converts the quoted scalar to its own type.
-	private static readonly ISerializer _serializer = new SerializerBuilder()
+	internal static readonly ISerializer Serializer = new SerializerBuilder()
 		.WithQuotingNecessaryStrings(true)
 		.Build();
 
 	public static Result<string> Read(string sectionDirectory, ConfigurationSectionName section)
 	{
+		return Walk(sectionDirectory, section).Map(walked => Serializer.Serialize(walked.Merged));
+	}
+
+	/// <summary>Reads the section like <see cref="Read"/> and keeps each key's owning file.</summary>
+	public static Result<OwnedSection> ReadOwned(string sectionDirectory, ConfigurationSectionName section)
+	{
+		return Walk(sectionDirectory, section)
+			.Map(walked => new OwnedSection(ScalarsOf(walked.Merged), walked.Owners));
+	}
+
+	private static Result<WalkedSection> Walk(string sectionDirectory, ConfigurationSectionName section)
+	{
 		if (string.IsNullOrWhiteSpace(sectionDirectory) || !Directory.Exists(sectionDirectory))
 		{
-			return Fail<string>(section, sectionDirectory, SectionProblem.DirectoryMissing);
+			return Fail(section, sectionDirectory, SectionProblem.DirectoryMissing).ToResult<WalkedSection>();
 		}
 
 		string[] files;
@@ -40,12 +52,13 @@ public static class ConfigurationSection
 		}
 		catch (Exception exception)
 		{
-			return Fail<string>(section, sectionDirectory, SectionProblem.Unlistable, cause: exception);
+			return Fail(section, sectionDirectory, SectionProblem.Unlistable, cause: exception)
+				.ToResult<WalkedSection>();
 		}
 
 		if (files.Length == 0)
 		{
-			return Fail<string>(section, sectionDirectory, SectionProblem.NoFiles);
+			return Fail(section, sectionDirectory, SectionProblem.NoFiles).ToResult<WalkedSection>();
 		}
 
 		Array.Sort(files, StringComparer.Ordinal);
@@ -55,7 +68,7 @@ public static class ConfigurationSection
 
 	// Ownership is case-insensitive because the loaders match their DTO properties case-sensitively: two
 	// files spelling one key differently would otherwise merge and lose whichever the DTO does not match.
-	private static Result<string> Merge(string[] files, ConfigurationSectionName section, string directory)
+	private static Result<WalkedSection> Merge(string[] files, ConfigurationSectionName section, string directory)
 	{
 		var merged = new Dictionary<string, object?>(StringComparer.Ordinal);
 		var owners = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -67,14 +80,15 @@ public static class ConfigurationSection
 
 			if (parsed.IsFailed)
 			{
-				return Result.Fail<string>(parsed.Errors);
+				return Result.Fail<WalkedSection>(parsed.Errors);
 			}
 
 			foreach (var (key, value) in parsed.Value)
 			{
 				if (owners.TryGetValue(key, out var owner))
 				{
-					return Fail<string>(section, directory, SectionProblem.KeyConflict, key, [owner, name]);
+					return Fail(section, directory, SectionProblem.KeyConflict, key, [owner, name])
+						.ToResult<WalkedSection>();
 				}
 
 				owners[key] = name;
@@ -82,11 +96,31 @@ public static class ConfigurationSection
 			}
 		}
 
-		return Result.Ok(_serializer.Serialize(merged));
+		return Result.Ok(new WalkedSection(merged, owners));
+	}
+
+	// A nested value is not a field the window edits.
+	private static Dictionary<string, string> ScalarsOf(Dictionary<string, object?> merged)
+	{
+		var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+		foreach (var (key, value) in merged)
+		{
+			if (value is null)
+			{
+				values[key] = string.Empty;
+			}
+			else if (value is string text)
+			{
+				values[key] = text;
+			}
+		}
+
+		return values;
 	}
 
 	// An empty file deserializes to nothing, which is no keys rather than an unreadable file.
-	private static Result<Dictionary<string, object?>> ParseFile(
+	internal static Result<Dictionary<string, object?>> ParseFile(
 		string file,
 		string name,
 		ConfigurationSectionName section,
@@ -99,16 +133,16 @@ public static class ConfigurationSection
 
 			if (repeated is not null)
 			{
-				return Fail<Dictionary<string, object?>>(
-					section, directory, SectionProblem.DuplicateKey, repeated, [name]);
+				return Fail(section, directory, SectionProblem.DuplicateKey, repeated, [name])
+					.ToResult<Dictionary<string, object?>>();
 			}
 
 			return Result.Ok(_deserializer.Deserialize<Dictionary<string, object?>?>(content) ?? []);
 		}
 		catch (Exception exception)
 		{
-			return Fail<Dictionary<string, object?>>(
-				section, directory, SectionProblem.Unreadable, fileNames: [name], cause: exception);
+			return Fail(section, directory, SectionProblem.Unreadable, fileNames: [name], cause: exception)
+				.ToResult<Dictionary<string, object?>>();
 		}
 	}
 
@@ -141,7 +175,8 @@ public static class ConfigurationSection
 		return null;
 	}
 
-	private static Result<TValue> Fail<TValue>(
+	/// <summary>A failed result carrying one <see cref="ConfigurationSectionError"/> and its cause, if any.</summary>
+	public static Result Fail(
 		ConfigurationSectionName section,
 		string directory,
 		SectionProblem problem,
@@ -151,6 +186,13 @@ public static class ConfigurationSection
 	{
 		var error = new ConfigurationSectionError(section, directory, problem, key, fileNames);
 
-		return Result.Fail<TValue>(cause is null ? error : error.CausedBy(new ExceptionalError(cause)));
+		return Result.Fail(cause is null ? error : error.CausedBy(new ExceptionalError(cause)));
 	}
+
+	private sealed record WalkedSection(Dictionary<string, object?> Merged, Dictionary<string, string> Owners);
 }
+
+/// <summary>A section's scalar values as text and the file that carries each key.</summary>
+public sealed record OwnedSection(
+	IReadOnlyDictionary<string, string> Values,
+	IReadOnlyDictionary<string, string> Owners);

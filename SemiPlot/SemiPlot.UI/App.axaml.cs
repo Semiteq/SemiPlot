@@ -41,6 +41,8 @@ public class App : Application
 
 	private ArchiveFailureView? _startupFailure;
 
+	private string? _configDirectory;
+
 	public override void Initialize()
 	{
 		AvaloniaXamlLoader.Load(this);
@@ -61,8 +63,8 @@ public class App : Application
 		if (_startupFailure is not null)
 		{
 			// This path runs before any container exists, so the window gets a panel and a status bar of its
-			// own. ResolveMessagePanel finds no container and returns null, so the About-dialog failure is the
-			// only one that can open this panel; the startup-failure row shows the failure and hides the bar.
+			// own. ResolveMessagePanel finds no container and returns null, so only what this window
+			// itself opens reports into this panel; the startup-failure row shows the failure and hides the bar.
 			var startupPanel = new MessagePanelViewModel();
 			var startupLoggers = new SerilogLoggerFactory();
 
@@ -72,7 +74,8 @@ public class App : Application
 					startupPanel,
 					new AppStatusBarViewModel(
 						startupPanel, startupLoggers.CreateLogger<AppStatusBarViewModel>()),
-					startupLoggers.CreateLogger<MainWindowViewModel>())
+					_configDirectory,
+					startupLoggers)
 				{
 					StartupFailure = _startupFailure
 				}
@@ -93,15 +96,20 @@ public class App : Application
 	/// <summary>
 	/// <paramref name="settings"/> is null only when the settings load itself failed; that window renders
 	/// on the variant <c>App.axaml</c> declares, and every other window follows the configured one.
+	/// <paramref name="configDirectory"/> is null when the startup failure leaves the settings window nothing to fix.
 	/// </summary>
-	public static void Run(AppSettings? settings, Result<StartupData> startup)
+	public static void Run(AppSettings? settings, Result<StartupData> startup, string? configDirectory)
 	{
 		BuildAvaloniaApp()
-			.AfterSetup(builder => Configure((App)builder.Instance!, settings, startup))
+			.AfterSetup(builder => Configure((App)builder.Instance!, settings, startup, configDirectory))
 			.StartWithClassicDesktopLifetime([]);
 	}
 
-	internal static void Configure(App app, AppSettings? settings, Result<StartupData> startup)
+	internal static void Configure(
+		App app,
+		AppSettings? settings,
+		Result<StartupData> startup,
+		string? configDirectory)
 	{
 		// Above the failure return, so an archive failure still renders on the configured variant.
 		if (settings is not null)
@@ -117,6 +125,7 @@ public class App : Application
 		if (startup.IsFailed)
 		{
 			app._startupFailure = ArchiveFailureMapper.Map(startup.Errors[0]);
+			app._configDirectory = configDirectory;
 
 			return;
 		}

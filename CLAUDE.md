@@ -18,8 +18,8 @@ dotnet format SemiPlot.slnx                    # pre-commit hook enforces this
 `dotnet run` on the viewer needs all three launch keys — `--config-dir`, `--log-file` and
 `--logging-level` — and none has a default; a missing or bad one opens the failure window and exits
 1. The run reads a copy of the tracked set, never the tracked set itself: `readme.md` holds the
-copy-and-fill-the-password recipe that produces `SemiPlot/Artifacts/dev-config`, which is also where
-the `.zed/` and `.run/` launchers point `--config-dir`.
+copy recipe that produces `SemiPlot/Artifacts/dev-config`, which is also where the `.zed/` and `.run/`
+launchers point `--config-dir`, and the password is then filled in the viewer's `Edit` -> `Settings`.
 
 Configuration is a tree of section folders under `--config-dir`: `app/` and `connection/`. Every
 section folder is read whole — each `*.yaml` in it parsed on its own and merged at the key level —
@@ -28,6 +28,11 @@ tracked at `ConfigFiles/` and gated by the production loaders in
 `SemiPlot.Tests.Unit/DeliveredConfigurationTests`; `ConfigFiles/connection/connection.yaml` carries
 an empty `password`, which is a named startup failure. The password goes into the copy, never into
 the tracked file (`docs/architecture/overview.md`).
+
+The settings window (`SemiPlot.UI/Settings`) is the viewer's only writer of the section folders. It
+edits only keys that already exist, each in the file that owns it, and only the keys the operator
+changed; the production loaders validate a staged copy before any file is replaced, and every change
+takes effect at the next start (`docs/architecture/overview.md#the-settings-window`).
 
 `.editorconfig`'s style and quality analyzer rules fail `dotnet build` (`TreatWarningsAsErrors`,
 `EnforceCodeStyleInBuild`) and `dotnet format SemiPlot.slnx --verify-no-changes` alike, so a
@@ -53,8 +58,8 @@ already carries rows or day partitions. It issues no `DROP` anywhere:
 
 ```powershell
 dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.ArchiveSeeder.csproj -- `
-  --connection "Host=localhost;Database=semiplot_dev;Username=scada_writer;Password=<writer>" `
-  --admin-connection "Host=localhost;Database=semiplot_dev;Username=postgres;Password=<super>" `
+  --connection "Host=127.0.0.1;Database=semiplot_dev;Username=scada_writer;Password=<writer>" `
+  --admin-connection "Host=127.0.0.1;Database=semiplot_dev;Username=postgres;Password=<super>" `
   --end 2026-01-02T00:00:00 --days 1 --pens 8 --seed 1
 ```
 
@@ -75,8 +80,8 @@ New-Item -ItemType Directory -Force SemiPlot\Artifacts\dev-config | Out-Null
 Copy-Item ConfigFiles\* SemiPlot\Artifacts\dev-config -Recurse -Force
 
 dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.ArchiveSeeder.csproj -- converge `
-  --connection "Host=localhost;Port=55432;Database=semiplot_app;Username=scada_writer;Password=<writer>" `
-  --admin-connection "Host=localhost;Port=55432;Database=postgres;Username=postgres;Password=<super>" `
+  --connection "Host=127.0.0.1;Port=55432;Database=semiplot_app;Username=scada_writer;Password=<writer>" `
+  --admin-connection "Host=127.0.0.1;Port=55432;Database=postgres;Username=postgres;Password=<super>" `
   --config-dir SemiPlot\Artifacts\dev-config
 ```
 
@@ -225,7 +230,7 @@ No abbreviations in names.
 
 - Constructor injection only (primary constructors preferred). No property injection, no service locator.
 - Register services in extension methods, each named for what it registers: `AddPostgresData()` in
-  `SemiPlot.DataSource.Postgres`, `AddUi()` in `SemiPlot.UI`. A data-source project names its own
+  `SemiPlot.DataSource.Postgres`, `AddUi(string configDirectory)` in `SemiPlot.UI`. A data-source project names its own
   source rather than a bare `AddData()`, so a composition root referencing several
   `SemiPlot.DataSource.*` projects names the one it registers. Core registers nothing.
 - Avoid mutable static state.
@@ -244,7 +249,8 @@ No abbreviations in names.
   (`docs/architecture/overview.md`).
 - `.AfterSetup(...)` is synchronous, so no blocking call belongs in it. `StartupSequence.Run` holds
   the ordered blocking steps and `Program.Main` calls it ahead of `BuildAvaloniaApp()`, handing
-  `App.Run(AppSettings?, Result<StartupData>)` both results; the reads `InitializeServices` starts
+  `App.Run(AppSettings?, Result<StartupData>, string? configDirectory)` both results and the
+  configuration directory the settings window writes into; the reads `InitializeServices` starts
   inside the callback are asynchronous and return through the schedulers
   (`docs/architecture/data-integration.md`).
 
@@ -279,6 +285,8 @@ No abbreviations in names.
 - Every colour this tree's AXAML paints resolves to a key in `SemiPlot.UI/Styles/Palette.axaml`; a
   literal in AXAML is a defect. Semi's own surfaces outside that key set keep Semi's variant-aware
   stock brushes (`docs/architecture/ui-theme.md`).
+- A form never resizes on validation: fixed width, an `invalid` border class, one reserved message line
+  (`docs/architecture/ui-theme.md#a-form-never-resizes-on-validation`).
 - The left-button gesture is one state, never overlapping branches: a `Chart/LeftButtonTool`
   (`Pan | DeltaPlacement`) enum sourced from the navigation bar's delta toggle decides pan vs delta
   placement, and the axis-region edit is a pre-branch ahead of it. The bar's `IsSticky` has a single

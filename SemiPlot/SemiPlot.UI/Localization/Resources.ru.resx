@@ -75,6 +75,12 @@
   <data name="MenuFileExit" xml:space="preserve">
     <value>Выход</value>
   </data>
+  <data name="MenuEdit" xml:space="preserve">
+    <value>Правка</value>
+  </data>
+  <data name="MenuEditSettings" xml:space="preserve">
+    <value>Настройки</value>
+  </data>
   <data name="MenuView" xml:space="preserve">
     <value>Вид</value>
   </data>
@@ -164,6 +170,9 @@
   </data>
   <data name="FailureConnectionFileUnknownTimeZoneRemedy" xml:space="preserve">
     <value>Укажите часовой пояс.</value>
+  </data>
+  <data name="FailureConnectionFileHostNotIPv4Remedy" xml:space="preserve">
+    <value>Укажите в поле host IPv4-адрес из четырёх чисел от 0 до 255, например 192.168.0.10. Имя сервера не принимается.</value>
   </data>
   <data name="FailureArchiveNameFormat" xml:space="preserve">
     <value>«{0}» на {1}</value>
@@ -324,6 +333,18 @@
   <data name="FailureConfigurationSectionDuplicateKeyRemedy" xml:space="preserve">
     <value>В каталоге ключ может быть задан только один раз. Оставьте в этом файле одну строку с ключом.</value>
   </data>
+  <data name="FailureConfigurationSectionUnwritableDetail" xml:space="preserve">
+    <value>SemiPlot не смог записать файл «{1}» в каталоге настроек «{0}».</value>
+  </data>
+  <data name="FailureConfigurationSectionKeyAbsentDetail" xml:space="preserve">
+    <value>Ни один файл каталога настроек «{1}» не содержит ключ «{0}».</value>
+  </data>
+  <data name="FailureConfigurationSectionUnwritableRemedy" xml:space="preserve">
+    <value>Предоставьте учётной записи, от имени которой работает SemiPlot, право на запись в этот каталог и его файлы. Закройте программу, которая держит файл открытым, и сохраните настройки снова.</value>
+  </data>
+  <data name="FailureConfigurationSectionKeyAbsentRemedy" xml:space="preserve">
+    <value>Верните этот ключ в один из файлов каталога и сохраните настройки снова.</value>
+  </data>
   <data name="FailureStartupArgumentsTitle" xml:space="preserve">
     <value>SemiPlot запущен с недопустимыми аргументами</value>
   </data>
@@ -359,5 +380,71 @@
   </data>
   <data name="FailureLogFileRemedy" xml:space="preserve">
     <value>Путь должен указывать на файл в существующем каталоге, доступном для записи. Проверьте путь, заданный аргументом --log-file в ярлыке SemiPlot.</value>
+  </data>
+  <data name="SettingsLanguageRussian" xml:space="preserve">
+    <value>Русский</value>
+  </data>
+  <data name="SettingsLanguageEnglish" xml:space="preserve">
+    <value>Английский</value>
+  </data>
+  <data name="SettingsThemeLight" xml:space="preserve">
+    <value>Светлая</value>
+  </data>
+  <data name="SettingsThemeDark" xml:space="preserve">
+    <value>Тёмная</value>
+  </data>
+  <data name="SettingsTitle" xml:space="preserve">
+    <value>Настройки</value>
+  </data>
+  <data name="SettingsInterfaceHeader" xml:space="preserve">
+    <value>Интерфейс</value>
+  </data>
+  <data name="SettingsLanguageLabel" xml:space="preserve">
+    <value>Язык</value>
+  </data>
+  <data name="SettingsThemeLabel" xml:space="preserve">
+    <value>Тема</value>
+  </data>
+  <data name="SettingsConnectionHeader" xml:space="preserve">
+    <value>Подключение к архиву</value>
+  </data>
+  <data name="SettingsHostLabel" xml:space="preserve">
+    <value>Сервер</value>
+  </data>
+  <data name="SettingsPortLabel" xml:space="preserve">
+    <value>Порт</value>
+  </data>
+  <data name="SettingsDatabaseLabel" xml:space="preserve">
+    <value>База данных</value>
+  </data>
+  <data name="SettingsUserLabel" xml:space="preserve">
+    <value>Пользователь</value>
+  </data>
+  <data name="SettingsPasswordLabel" xml:space="preserve">
+    <value>Пароль</value>
+  </data>
+  <data name="SettingsPollIntervalLabel" xml:space="preserve">
+    <value>Период опроса, мс</value>
+  </data>
+  <data name="SettingsRestartNotice" xml:space="preserve">
+    <value>Сохранено. Вступит в силу после перезапуска.</value>
+  </data>
+  <data name="SettingsSave" xml:space="preserve">
+    <value>Сохранить</value>
+  </data>
+  <data name="SettingsClose" xml:space="preserve">
+    <value>Закрыть</value>
+  </data>
+  <data name="SettingsHostInvalid" xml:space="preserve">
+    <value>Сервер: ожидается IP-адрес вида 127.0.0.1</value>
+  </data>
+  <data name="SettingsPortInvalid" xml:space="preserve">
+    <value>Порт: целое число 1–65535</value>
+  </data>
+  <data name="SettingsPollIntervalInvalid" xml:space="preserve">
+    <value>Период опроса: целое число больше 0</value>
+  </data>
+  <data name="SettingsFieldRequired" xml:space="preserve">
+    <value>{0}: обязательное поле</value>
   </data>
 </root>

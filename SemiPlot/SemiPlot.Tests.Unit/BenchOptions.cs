@@ -8,7 +8,7 @@ namespace SemiPlot.Tests.Unit;
 // tests reach no database, and --end is fixed, so a run of the same seed produces the same rows.
 internal static class BenchOptions
 {
-	public const string ConnectionString = "Host=localhost;Database=archive;Username=scada_writer";
+	public const string ConnectionString = "Host=127.0.0.1;Database=archive;Username=scada_writer";
 
 	// The literal an entry-point test types on a command line, and the DateTime every other test compares
 	// against, parsed from it so the two cannot drift apart.

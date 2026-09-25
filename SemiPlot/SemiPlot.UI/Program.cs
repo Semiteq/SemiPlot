@@ -40,7 +40,7 @@ public static class Program
 			if (startup.IsFailed)
 			{
 				LogStartupFailure(startup.Errors);
-				App.Run(settings, startup);
+				App.Run(settings, startup, options.Value.ConfigDir);
 
 				return FailedExitCode;
 			}
@@ -48,7 +48,7 @@ public static class Program
 			// Held for its disposal alone: the scope closes when Main returns, after App.Run.
 			using var serviceProvider = startup.Value.ServiceProvider;
 
-			App.Run(settings, startup);
+			App.Run(settings, startup, options.Value.ConfigDir);
 
 			return 0;
 		}
@@ -69,7 +69,7 @@ public static class Program
 	{
 		StartupSequence.ApplyBootstrapCulture();
 
-		App.Run(null, Result.Fail<StartupData>(errors));
+		App.Run(null, Result.Fail<StartupData>(errors), configDirectory: null);
 
 		return FailedExitCode;
 	}

@@ -64,7 +64,7 @@ public sealed class DeliveredConfigurationTests : IDisposable
 		var result = PostgresConnectionLoader.Load(_directory);
 
 		result.IsSuccess.Should().BeTrue(Describe(result));
-		result.Value.Host.Should().Be("localhost");
+		result.Value.Host.Should().Be("127.0.0.1");
 		result.Value.Port.Should().Be(5432);
 		result.Value.Database.Should().Be("semiplot");
 		result.Value.Username.Should().Be("semiplot");

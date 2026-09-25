@@ -162,7 +162,7 @@ public sealed class StartupProbeTests
 			new ServiceCollection()
 				.AddSingleton<IScheduler>(CurrentThreadScheduler.Instance)
 				.AddSingleton<IDataProvider>(_ => throw new InvalidOperationException("no data source"))
-				.AddUi();
+				.AddUi(AppContext.BaseDirectory);
 
 		services.AddLogging();
 		var container = services.BuildServiceProvider();
@@ -224,7 +224,7 @@ public sealed class StartupProbeTests
 			new ServiceCollection()
 				.AddSingleton<IScheduler>(CurrentThreadScheduler.Instance)
 				.AddSingleton(dataProvider)
-				.AddUi();
+				.AddUi(AppContext.BaseDirectory);
 
 		services.AddLogging();
 

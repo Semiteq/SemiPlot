@@ -322,12 +322,14 @@ empty window, an empty `semiplot_tags` — travel in the success channel.
 
 | Type | Fields |
 | --- | --- |
-| `ConnectionFileError` | path, kind (`Unparseable` \| `MissingField` \| `OutOfRange` \| `UnknownTimeZone`), reason |
-| `ConfigurationSectionError` | section (`App` \| `Connection`), directory, problem (`DirectoryMissing` \| `NoFiles` \| `Unlistable` \| `Unreadable` \| `DuplicateKey` \| `KeyConflict`), key, file names |
+| `ConnectionFileError` | path, kind (`Unparseable` \| `MissingField` \| `OutOfRange` \| `HostNotIPv4` \| `UnknownTimeZone`), reason |
+| `ConfigurationSectionError` | section (`App` \| `Connection`), directory, problem (`DirectoryMissing` \| `NoFiles` \| `Unlistable` \| `Unreadable` \| `DuplicateKey` \| `KeyConflict` \| `Unwritable` \| `KeyAbsent`), key, file names |
 | `ArchiveError` | kind (`ArchiveFault`), host, port, database, detail |
 
 `ConfigurationSectionError` lives in `SemiPlot.Core/Configuration/` and is raised by the section
-reader, ahead of any typed deserialize, so reaching the archive at all is not a precondition for it.
+reader, ahead of any typed deserialize, so reaching the archive at all is not a precondition for it,
+and by the settings save: `Unwritable` for a target or staging folder it cannot write, `KeyAbsent` for
+an edited key no file carries (`overview.md#the-settings-window`).
 Reading a section folder is the only file access left on the connection path, which is why
 `ConnectionFileError` no longer carries a file-access kind.
 
@@ -424,7 +426,7 @@ mapping and `PostgresConnectionLoader` deserializes it. Every key but `schema` i
 absent required key is reported, an unknown key ignored. `schema` defaults to `public` when absent:
 
 ```yaml
-host: scada-01
+host: 10.20.30.40
 port: 5432
 database: semiplot_dev
 user: semiplot
@@ -436,6 +438,13 @@ poll_interval_ms: 1000
 The set that ships is `ConfigFiles/connection/connection.yaml` in the repository, with an empty
 `password` so it cannot start unedited, and `SemiPlot.Tests.Unit/DeliveredConfigurationTests` runs
 this loader over it.
+
+`host` is an IPv4 address of exactly four decimal numbers from 0 to 255, such as `127.0.0.1`.
+`PostgresConnectionLoader.IsIPv4Address` is the one rule: the loader refuses anything else with
+`HostNotIPv4`, and the settings window disables its save on the same predicate. A host name,
+`localhost` included, an IPv6 address, a shortened form such as `127.1`, and an octet with a leading
+zero, which some resolvers read as octal, are all refused at startup rather than at the first connect.
+`IPAddress.TryParse` is not the rule, because it accepts `1` and `127.1`.
 
 `source_time_zone` takes any identifier `TimeZoneInfo.FindSystemTimeZoneById` resolves on the
 machine running the viewer: an IANA name such as `Europe/Berlin`, or on Windows the id `tzutil /g`
@@ -456,7 +465,8 @@ asynchronous.
 
 `StartupOptions.Parse(args)` runs ahead of all of it, because the logger's own path is an argument.
 It returns `Result<StartupOptions>`, and on failure `Program.Main` applies the bootstrap culture,
-creates no logger, opens the failure window through `App.Run(null, failure)` and returns 1. On
+creates no logger, opens the failure window through `App.Run(null, failure, configDirectory: null)`
+and returns 1. On
 success `LogFileTarget.Prepare` opens the file that `--log-file` names, creating its folder, and
 takes the same route on failure: Serilog's file sink reports its own open failure only to
 `Serilog.Debugging.SelfLog` and then writes nowhere, so a mistyped path would otherwise start the
@@ -478,7 +488,8 @@ failure.
 
 The container, the pens and the extent cross the boundary in a `StartupData` record inside a
 `Result`, so `App.InitializeServices` awaits nothing. `Program.Main` passes the settings and that
-`Result` to `App.Run(AppSettings?, Result<StartupData>)` unconditionally: on success it runs as
+`Result` and the configuration directory to `App.Run(AppSettings?, Result<StartupData>, string?)`
+unconditionally, the directory reaching the settings window on both paths: on success it runs as
 today; on failure `App` maps the error through `ArchiveFailureMapper` and opens the main window with
 `MainWindowViewModel.StartupFailure` set — the
 startup-failure panel names what broke and what to do, and the chart, legend and minimap bind to null and

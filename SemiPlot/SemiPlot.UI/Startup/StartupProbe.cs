@@ -32,16 +32,18 @@ public static class StartupProbe
 			return Result.Fail<StartupData>(settings.Errors);
 		}
 
-		var serviceProvider = BuildArchiveServiceProvider(settings.Value);
+		var serviceProvider = BuildArchiveServiceProvider(settings.Value, options.ConfigDir);
 
 		// Main runs with no SynchronizationContext ahead of BuildAvaloniaApp, so this cannot deadlock.
 		return ReadAsync(serviceProvider, DefaultReadBound).GetAwaiter().GetResult();
 	}
 
 	/// <summary>The container the archive path runs on.</summary>
-	internal static ServiceProvider BuildArchiveServiceProvider(PostgresConnectionSettings settings)
+	internal static ServiceProvider BuildArchiveServiceProvider(
+		PostgresConnectionSettings settings,
+		string configDirectory)
 	{
-		var services = new ServiceCollection().AddPostgresData(settings).AddUi();
+		var services = new ServiceCollection().AddPostgresData(settings).AddUi(configDirectory);
 
 		services.AddLogging(builder => builder.AddSerilog(Log.Logger, dispose: false));
 

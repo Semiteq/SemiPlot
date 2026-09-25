@@ -1,3 +1,5 @@
+using System.Globalization;
+
 using FluentResults;
 
 using SemiPlot.Core.Configuration;
@@ -38,13 +40,27 @@ internal sealed class PostgresConnectionDto
 /// </summary>
 public static class PostgresConnectionLoader
 {
-	private const int LowestPort = 1;
+	public const string HostKey = "host";
 
-	private const int HighestPort = 65535;
+	public const string PortKey = "port";
 
-	private const string PortKey = "port";
+	public const string DatabaseKey = "database";
 
-	private const string PollIntervalKey = "poll_interval_ms";
+	public const string UserKey = "user";
+
+	public const string PasswordKey = "password";
+
+	public const string SourceTimeZoneKey = "source_time_zone";
+
+	public const string PollIntervalKey = "poll_interval_ms";
+
+	public const int LowestPort = 1;
+
+	public const int HighestPort = 65535;
+
+	public const int LowestPollIntervalMs = 1;
+
+	private const int HighestOctet = 255;
 
 	private const string DefaultSchema = "public";
 
@@ -85,6 +101,13 @@ public static class PostgresConnectionLoader
 			return Result.Fail<PostgresConnectionSettings>(ranges.Errors);
 		}
 
+		var host = ValidateHost(sectionDirectory, dto.Host);
+
+		if (host.IsFailed)
+		{
+			return Result.Fail<PostgresConnectionSettings>(host.Errors);
+		}
+
 		var zone = ResolveTimeZone(sectionDirectory, dto.SourceTimeZone!);
 
 		if (zone.IsFailed)
@@ -93,6 +116,29 @@ public static class PostgresConnectionLoader
 		}
 
 		return Result.Ok(Map(dto, zone.Value));
+	}
+
+	/// <summary>
+	/// Four dot-separated decimal octets from 0 to 255 with no leading zero, so no shortened or octal form.
+	/// </summary>
+	public static bool IsIPv4Address(string? text)
+	{
+		if (text is null)
+		{
+			return false;
+		}
+
+		var octets = text.Split('.');
+
+		return octets.Length == 4 && octets.All(IsOctet);
+	}
+
+	private static bool IsOctet(string octet)
+	{
+		return octet.Length is >= 1 and <= 3
+			&& octet.All(char.IsAsciiDigit)
+			&& (octet.Length == 1 || octet[0] != '0')
+			&& int.Parse(octet, CultureInfo.InvariantCulture) <= HighestOctet;
 	}
 
 	private static PostgresConnectionSettings Map(PostgresConnectionDto dto, TimeZoneInfo sourceTimeZone)
@@ -130,11 +176,11 @@ public static class PostgresConnectionLoader
 	{
 		(string Name, string? Value)[] texts =
 		[
-			("host", dto.Host),
-			("database", dto.Database),
-			("user", dto.User),
-			("password", dto.Password),
-			("source_time_zone", dto.SourceTimeZone)
+			(HostKey, dto.Host),
+			(DatabaseKey, dto.Database),
+			(UserKey, dto.User),
+			(PasswordKey, dto.Password),
+			(SourceTimeZoneKey, dto.SourceTimeZone)
 		];
 
 		var missing = new List<string>();
@@ -171,7 +217,7 @@ public static class PostgresConnectionLoader
 			outOfRange.Add(PortKey);
 		}
 
-		if (dto.PollIntervalMs!.Value <= 0)
+		if (dto.PollIntervalMs!.Value < LowestPollIntervalMs)
 		{
 			outOfRange.Add(PollIntervalKey);
 		}
@@ -179,6 +225,16 @@ public static class PostgresConnectionLoader
 		return outOfRange.Count == 0
 			? Result.Ok()
 			: Invalid(sectionDirectory, ConnectionFileProblem.OutOfRange, outOfRange, "outside the range this build accepts");
+	}
+
+	private static Result ValidateHost(string sectionDirectory, string? host)
+	{
+		return IsIPv4Address(host)
+			? Result.Ok()
+			: Result.Fail(new ConnectionFileError(
+				sectionDirectory,
+				ConnectionFileProblem.HostNotIPv4,
+				$"the field '{HostKey}' is not an IPv4 address of four decimal numbers from 0 to 255"));
 	}
 
 	private static Result<TimeZoneInfo> ResolveTimeZone(string sectionDirectory, string identifier)

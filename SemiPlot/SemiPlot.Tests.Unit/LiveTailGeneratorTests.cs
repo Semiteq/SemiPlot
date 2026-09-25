@@ -14,7 +14,7 @@ namespace SemiPlot.Tests.Unit;
 [Trait("Category", "Unit")]
 public sealed class LiveTailGeneratorTests
 {
-	private const string Connection = "Host=localhost;Database=archive;Username=scada_writer";
+	private const string Connection = "Host=127.0.0.1;Database=archive;Username=scada_writer";
 
 	private static readonly DateTime _midnight = new(2026, 1, 2, 0, 0, 0, DateTimeKind.Unspecified);
 

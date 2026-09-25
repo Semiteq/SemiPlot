@@ -43,7 +43,7 @@ public sealed class SeederCommandTests
 		var run = await RunAsync(
 		[
 			"--connection", Connection,
-			"--admin-connection", "Host=localhost;Database=archive;Username=postgres",
+			"--admin-connection", "Host=127.0.0.1;Database=archive;Username=postgres",
 			"--days", "3",
 			"--pens", "12",
 			"--seed", "77",
@@ -55,7 +55,7 @@ public sealed class SeederCommandTests
 
 		var options = run.Seed.Should().BeOfType<SeederOptions>().Which;
 
-		options.AdminConnectionString.Should().Be("Host=localhost;Database=archive;Username=postgres");
+		options.AdminConnectionString.Should().Be("Host=127.0.0.1;Database=archive;Username=postgres");
 		options.Days.Should().Be(3);
 		options.PenCount.Should().Be(12);
 		options.Seed.Should().Be(77L);
@@ -100,7 +100,7 @@ public sealed class SeederCommandTests
 	[Theory]
 	[InlineData("--end", "2026-01-02T00:00:00")]
 	[InlineData("--days", "3")]
-	[InlineData("--admin-connection", "Host=localhost;Database=archive;Username=postgres")]
+	[InlineData("--admin-connection", "Host=127.0.0.1;Database=archive;Username=postgres")]
 	public async Task AFollowRunRejectsASeedingOption(string option, string value)
 	{
 		var run = await RunAsync(["--connection", Connection, "--follow", "1", option, value]);
@@ -225,7 +225,7 @@ public sealed class SeederCommandTests
 	public async Task AConvergeRunAppliesDefaultsWhenOnlyRequiredOptionsAreGiven()
 	{
 		var run = await RunAsync(
-			["converge", "--connection", Connection, "--admin-connection", "Host=localhost;Database=postgres", "--config-dir", "C:\\config"]);
+			["converge", "--connection", Connection, "--admin-connection", "Host=127.0.0.1;Database=postgres", "--config-dir", "C:\\config"]);
 
 		run.ExitCode.Should().Be(0);
 		run.Seed.Should().BeNull();
@@ -234,7 +234,7 @@ public sealed class SeederCommandTests
 		var options = run.Converge.Should().BeOfType<ConvergeOptions>().Which;
 
 		options.ConnectionString.Should().Be(Connection);
-		options.AdminConnectionString.Should().Be("Host=localhost;Database=postgres");
+		options.AdminConnectionString.Should().Be("Host=127.0.0.1;Database=postgres");
 		options.ConfigDirectory.Should().Be("C:\\config");
 		options.End.Should().BeNull();
 		options.ChangeSeconds.Should().Be(SeederOptions.DefaultChangeSeconds);
@@ -245,7 +245,7 @@ public sealed class SeederCommandTests
 	{
 		var run = await RunAsync(
 		[
-			"converge", "--connection", Connection, "--admin-connection", "Host=localhost;Database=postgres",
+			"converge", "--connection", Connection, "--admin-connection", "Host=127.0.0.1;Database=postgres",
 			"--config-dir", "C:\\config", "--change-seconds", "0.5"
 		]);
 
@@ -258,7 +258,7 @@ public sealed class SeederCommandTests
 	{
 		var run = await RunAsync(
 		[
-			"converge", "--connection", Connection, "--admin-connection", "Host=localhost;Database=postgres",
+			"converge", "--connection", Connection, "--admin-connection", "Host=127.0.0.1;Database=postgres",
 			"--config-dir", "C:\\config", "--end", EndText
 		]);
 
@@ -278,7 +278,7 @@ public sealed class SeederCommandTests
 		(string Flag, string Value)[] every =
 		[
 			("--connection", Connection),
-			("--admin-connection", "Host=localhost;Database=postgres"),
+			("--admin-connection", "Host=127.0.0.1;Database=postgres"),
 			("--config-dir", "C:\\config")
 		];
 
@@ -305,7 +305,7 @@ public sealed class SeederCommandTests
 		(string Flag, string Value)[] every =
 		[
 			("--connection", Connection),
-			("--admin-connection", "Host=localhost;Database=postgres"),
+			("--admin-connection", "Host=127.0.0.1;Database=postgres"),
 			("--config-dir", "C:\\config")
 		];
 

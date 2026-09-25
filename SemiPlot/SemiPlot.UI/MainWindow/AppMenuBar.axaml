@@ -19,6 +19,13 @@
                       Command="{Binding ExitCommand}" />
         </MenuItem>
 
+        <MenuItem Name="EditMenu"
+                  Header="{x:Static text:Resources.MenuEdit}">
+            <MenuItem Name="EditSettings"
+                      Header="{x:Static text:Resources.MenuEditSettings}"
+                      Command="{Binding ShowSettingsCommand}" />
+        </MenuItem>
+
         <MenuItem Name="ViewMenu"
                   Header="{x:Static text:Resources.MenuView}">
             <MenuItem Name="ViewNavigationBar"

@@ -21,12 +21,19 @@ internal static class MainWindowTestBuilder
 
 	public static MainWindowViewModel NewViewModel()
 	{
+		return NewViewModel(AppContext.BaseDirectory);
+	}
+
+	/// <summary>A null directory is the startup-failure window's shape after a failed argument parse.</summary>
+	public static MainWindowViewModel NewViewModel(string? configDirectory)
+	{
 		var panel = new MessagePanelViewModel();
 
 		return new MainWindowViewModel(
 			panel,
 			NewStatusBar(panel),
-			NullLogger<MainWindowViewModel>.Instance);
+			configDirectory,
+			NullLoggerFactory.Instance);
 	}
 
 	public static AppStatusBarViewModel NewStatusBar(MessagePanelViewModel panel)

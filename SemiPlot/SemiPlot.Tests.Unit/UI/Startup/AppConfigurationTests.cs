@@ -64,7 +64,7 @@ public sealed class AppConfigurationTests
 		var previousFailure = _startupFailureField.GetValue(application);
 		try
 		{
-			App.Configure(application, settings, FailedStartup());
+			App.Configure(application, settings, FailedStartup(), configDirectory: null);
 
 			application.Resources.TryGetResource(CopyMenuKey, ThemeVariant.Light, out var value);
 

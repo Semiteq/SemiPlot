@@ -39,7 +39,9 @@ public sealed class FailureSeverityTests
 			[SectionProblem.Unlistable] = MessageSeverity.Error,
 			[SectionProblem.Unreadable] = MessageSeverity.Error,
 			[SectionProblem.DuplicateKey] = MessageSeverity.Error,
-			[SectionProblem.KeyConflict] = MessageSeverity.Error
+			[SectionProblem.KeyConflict] = MessageSeverity.Error,
+			[SectionProblem.Unwritable] = MessageSeverity.Error,
+			[SectionProblem.KeyAbsent] = MessageSeverity.Error
 		};
 
 	private static readonly IReadOnlyDictionary<AppSettingsProblem, MessageSeverity> _appSettingsProblems =
@@ -89,7 +91,8 @@ public sealed class FailureSeverityTests
 			[ConnectionFileProblem.Unparseable] = Resources.FailureConnectionFileUnparseableRemedy,
 			[ConnectionFileProblem.MissingField] = Resources.FailureConnectionFileMissingFieldRemedy,
 			[ConnectionFileProblem.OutOfRange] = Resources.FailureConnectionFileOutOfRangeRemedy,
-			[ConnectionFileProblem.UnknownTimeZone] = Resources.FailureConnectionFileUnknownTimeZoneRemedy
+			[ConnectionFileProblem.UnknownTimeZone] = Resources.FailureConnectionFileUnknownTimeZoneRemedy,
+			[ConnectionFileProblem.HostNotIPv4] = Resources.FailureConnectionFileHostNotIPv4Remedy
 		};
 
 	[Fact]

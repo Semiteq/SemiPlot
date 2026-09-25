@@ -8,6 +8,7 @@ using ReactiveUI;
 using ReactiveUI.Avalonia;
 
 using SemiPlot.UI.Legend;
+using SemiPlot.UI.Settings;
 
 namespace SemiPlot.UI.MainWindow;
 
@@ -31,6 +32,7 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 
 		_requests.Add(viewModel.ExitRequests.Subscribe(_ => Close()));
 		_requests.Add(viewModel.AboutRequests.Subscribe(ShowAbout));
+		_requests.Add(viewModel.SettingsRequests.Subscribe(ShowSettings));
 		_requests.Add(viewModel
 			.WhenAnyValue(window => window.LegendViewModel)
 			.Subscribe(legend => legend?.FitPanel(MaximumPanelWidth())));
@@ -74,6 +76,22 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 		{
 			// An async void handler: a throw out of this catch reaches the dispatcher and ends the process.
 			(DataContext as MainWindowViewModel)?.ReportFailure(exception);
+		}
+	}
+
+	private async void ShowSettings(SettingsViewModel settings)
+	{
+		try
+		{
+			await new SettingsDialog { DataContext = settings }.ShowDialog(this);
+		}
+		catch (Exception exception)
+		{
+			(DataContext as MainWindowViewModel)?.ReportFailure(exception);
+		}
+		finally
+		{
+			settings.Dispose();
 		}
 	}
 }

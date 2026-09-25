@@ -108,7 +108,13 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 
 		await container.StartAsync(startup.Token);
 
-		return new PostgresServer(container.Hostname, container.GetMappedPublicPort(PostgresPort));
+		return new PostgresServer(LoopbackAsIPv4(container.Hostname), container.GetMappedPublicPort(PostgresPort));
+	}
+
+	// The viewer's loader accepts only an IPv4 host, and a local runtime reports its host by name.
+	private static string LoopbackAsIPv4(string hostname)
+	{
+		return string.Equals(hostname, "localhost", StringComparison.OrdinalIgnoreCase) ? "127.0.0.1" : hostname;
 	}
 
 	// The query goes over TCP, to exclude the entrypoint's temporary unix-socket server.

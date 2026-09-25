@@ -123,6 +123,31 @@ CS8509, so no compiler check stands behind it: a fifth `AggregationLayer` member
 `Enum.GetValues<AggregationLayer>()` against the four members it names.
 `ArchiveFailureMapper.NameOf` for `StartupRead` is the same shape.
 
+## The settings window's text
+
+The `Edit` menu is `MenuEdit` with one item, `MenuEditSettings`. `Settings/SettingsDialog.axaml` reads
+`SettingsTitle`, the two section headers `SettingsInterfaceHeader` and `SettingsConnectionHeader`, one
+`Settings*Label` per field, `SettingsSave` and `SettingsClose`. The language and theme choices read
+`SettingsLanguageRussian`, `SettingsLanguageEnglish`, `SettingsThemeLight` and `SettingsThemeDark`:
+the combo box shows the label and the file keeps the token `SettingsVocabulary` pairs with it.
+The dialog's message line, left of the buttons, shows the rule the first invalid field breaks, in form
+order: `SettingsHostInvalid`, `SettingsPortInvalid`, `SettingsPollIntervalInvalid`, and
+`SettingsFieldRequired` for a blank database, user or password, which takes the field's label as `{0}`.
+`SettingsViewModel.ValidationMessage` picks it. The line is not under the field, so each message opens
+with the field it names, and each is one short line in both languages ("Host: expected an IP address
+such as 127.0.0.1"); `ui-theme.md#a-form-never-resizes-on-validation` holds the width it has to fit.
+`SettingsRestartNotice` is the dialog's own text after a save that succeeded, on the same line while no
+field is invalid. It is not a panel entry, because the panel carries failures.
+
+A refused save reads the same text as the startup failure for the same value, because both go through
+`ArchiveFailureMapper.Map`. The save adds two `SectionProblem` arms, each with a detail and a remedy
+and the section's existing title: `FailureConfigurationSectionUnwritableDetail` and `...Remedy` for a
+file or staging folder the save cannot write, and `FailureConfigurationSectionKeyAbsentDetail` and
+`...Remedy` for an edited key no file of the folder carries. A host the loader refuses as not IPv4
+reads `FailureConnectionFileHostNotIPv4Remedy`, the remedy of the `HostNotIPv4` arm. A refusal from a loader names the
+operator's section folder, never the staging copy it read; a staging folder that cannot be created is
+the one detail naming `<config-dir>` and the staging folder (`overview.md#the-settings-window`).
+
 ## Adding a key
 
 1. Add the `<data>` entry to `Resources.resx`, value in English, and the same key to

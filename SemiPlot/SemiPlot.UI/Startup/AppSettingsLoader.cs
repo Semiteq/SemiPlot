@@ -97,13 +97,18 @@ public static class AppSettingsLoader
 
 		foreach (var (text, parsed) in accepted)
 		{
-			if (string.Equals(text, value.Trim(), StringComparison.OrdinalIgnoreCase))
+			if (MatchesToken(text, value))
 			{
 				return Result.Ok(parsed);
 			}
 		}
 
 		return Fail<TValue>(sectionDirectory, AppSettingsProblem.ValueInvalid, key, Describe(accepted));
+	}
+
+	internal static bool MatchesToken(string token, string? value)
+	{
+		return string.Equals(token, value?.Trim(), StringComparison.OrdinalIgnoreCase);
 	}
 
 	private static string Describe<TValue>((string Text, TValue Value)[] accepted)

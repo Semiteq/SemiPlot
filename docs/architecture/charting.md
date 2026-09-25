@@ -236,14 +236,17 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
 - `Minimap/MinimapView` + `MinimapViewModel` — Canvas-based archive-overview strip; navigates via the
   shared `ChartNavigationController` (see trend-interaction.md).
 - `MainWindow/MainWindow` + `MainWindowViewModel` — the seven-row window grid and the flags its View
-  menu writes; the window's code-behind owns the two view-side requests (close, About dialog).
-- `MainWindow/AppMenuBar` — the File / View / Help menu. Each checkable item reads its flag
+  menu writes; the window's code-behind owns the three view-side requests (close, About dialog,
+  settings dialog).
+- `MainWindow/AppMenuBar` — the File / Edit / View / Help menu. Each checkable item reads its flag
   `Mode=OneWay` and writes it only through the command it invokes (`CLAUDE.md`, UI).
 - `MainWindow/AppStatusBar` + `AppStatusBarViewModel` — current connection state and the active
   aggregation layer, named from resx. Owns the bind-once subscription to the coordinator's connection
   stream and writes the fault and recovery entries (`data-integration.md`).
 - `MainWindow/AboutDialog` + `AboutInfo` — the modal naming the product, the assembly version and the
   configuration directory this run read.
+- `Settings/SettingsDialog` + `SettingsViewModel` — the modal that edits the `app/` and `connection/`
+  section folders, opened from Edit -> Settings (`overview.md#the-settings-window`).
 - `Messages/MessagePanelView` + `MessagePanelViewModel` — the bounded, newest-first list every failure
   lands in, capped at `MessagePanelViewModel.MaximumEntries` (200) with the oldest dropped.
   `IsVisible` decides the row, an empty list included, and the empty list carries its own line;

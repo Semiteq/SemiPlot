@@ -97,7 +97,7 @@ public sealed class InitializeServicesTests
 			new ServiceCollection()
 				.AddSingleton<IScheduler>(scheduler)
 				.AddSingleton(dataProvider)
-				.AddUi();
+				.AddUi(AppContext.BaseDirectory);
 
 		services.AddLogging();
 

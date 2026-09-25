@@ -16,7 +16,9 @@ public enum SectionProblem
 	Unlistable,
 	Unreadable,
 	DuplicateKey,
-	KeyConflict
+	KeyConflict,
+	Unwritable,
+	KeyAbsent
 }
 
 /// <summary>
@@ -62,6 +64,10 @@ public sealed class ConfigurationSectionError(
 				$"The {section} configuration folder '{directory}' carries '{key}' in both '{files}'.",
 			SectionProblem.Unlistable =>
 				$"The {section} configuration folder '{directory}' could not be listed.",
+			SectionProblem.Unwritable =>
+				$"The {section} configuration folder '{directory}' holds a file '{files}' that could not be written.",
+			SectionProblem.KeyAbsent =>
+				$"The {section} configuration folder '{directory}' carries '{key}' in no file.",
 			_ =>
 				$"The {section} configuration folder '{directory}' holds an unreadable file '{files}'."
 		};

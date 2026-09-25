@@ -48,7 +48,7 @@ Constraint: **$0 budget** — only free/OSS components.
 |  SemiPlot.UI (Avalonia 12.0 + ScottPlot 5)                 |
 |                                                             |
 |   App / MainWindow (Grid: seven rows, table below)          |
-|     +-- AppMenuBar          File / View / Help              |
+|     +-- AppMenuBar          File / Edit / View / Help       |
 |     +-- NavigationBarView   jump to now, sticky, delta      |
 |     +-- TrendChartView ---hosts--> ScottPlot AvaPlot        |
 |     +-- TrendLegendView     grouped pen rows                |
@@ -199,6 +199,84 @@ one method: nothing else may resolve a service through a static.
   runs the production loaders over it, so a broken delivered file fails the build.
   `connection/connection.yaml` ships with an empty `password`, which is already a named startup
   failure, so the repository carries no credential and a forgotten edit fails loudly.
+
+### The settings window
+
+`Edit` -> `Settings` opens `Settings/SettingsDialog`, the viewer's only writer of the section folders.
+It edits `locale` and `theme` in `app/`, and `host`, `port`, `database`, `user`, `password` and
+`poll_interval_ms` in `connection/`. `source_time_zone` is commissioning data about the archive, not an
+operator setting, so the window does not show it; the key stays in its file and survives every rewrite
+like any key the window does not edit. Nothing applies live: the
+dialog shows a restart notice after a save, and the change takes effect at the next start.
+
+Each connection field takes only what its loader accepts. `host` is a text box checked by
+`PostgresConnectionLoader.IsIPv4Address`, the loader's own rule. `port` and `poll_interval_ms` are
+`NumericUpDown` controls held to whole numbers, `port` from `LowestPort` to `HighestPort` and the poll
+interval from `LowestPollIntervalMs`, the loader's constants. `database`, `user` and `password` must not be
+blank. A field that breaks its rule takes the error border, the message line names the first such
+field, and the save stays disabled (`ui-theme.md#a-form-never-resizes-on-validation`). A file value the
+rule refuses opens as an invalid field: a host name stays as text in a field with the error border, and
+a port or poll interval that is not a whole number in range opens empty.
+
+The window reads the files, not the typed settings. `SettingsSave.ReadOwned` runs
+`ConfigurationSection.ReadOwned` over both section folders, which returns each section's scalar values
+as text and the file that owns each key, and the view model fills its fields from that. The typed loaders fail on exactly the values the window is there to fix, such as the
+shipped empty password, so a typed read would open the window empty on the startup-failure path.
+That window carries the menu too: `App.Run` hands the configuration directory to
+`MainWindowViewModel` on both paths. When the argument parse failed, or `LogFileTarget.Prepare` did,
+the directory is null and `ShowSettingsCommand` cannot execute.
+
+A save goes through `Settings/SettingsSave.Save`:
+
+1. The view model sends only the keys whose text differs from what it loaded. A key the file spells in
+   another case, such as `Host:`, counts as changed: the window reads keys ignoring case and the loaders
+   do not, so the save rewrites it under the loader's spelling.
+2. `ReadOwned` re-reads both section folders at save time.
+3. `SettingsSave` creates `<config-dir>/.settings-staging-<random>/` with a folder per section; one
+   that cannot be created fails the save with `Unwritable` naming `<config-dir>` under the `App`
+   title, because that folder belongs to no section.
+   `ConfigurationSectionWriter.Stage` copies every file of a section into it, and rewrites each file
+   that owns an edited key. A key goes into the file that already carries it. A file with no edited
+   key is copied byte for byte and never rewritten.
+4. `AppSettingsLoader.Load` and `PostgresConnectionLoader.Load` run over the staged folders. A refusal
+   is returned with the real section directory in place of the staging one.
+5. Every rewritten target is opened for writing and closed. One that refuses fails the save with
+   `SectionProblem.Unwritable`, and nothing moves.
+6. Each rewritten file replaces its target with `File.Replace`, which keeps the target's ACL and
+   attributes on Windows. On Unix it is a rename, so the target's mode is copied onto the staged file
+   first, and a `0600` `connection.yaml` stays `0600`. The replaced target goes to
+   `<name>.replaced` in the staging folder: `ReplaceFile` can fail after it has moved the target
+   away, and the backup is then the only copy.
+7. The staging directory is removed on every path but one: a failed save that leaves a rewritten
+   target missing keeps it, and the log names it and the missing target. A removal that fails after
+   promotion goes to the log and the save still succeeds. The loaders read only `app/` and `connection/`, so a staging
+   directory left by a killed process is inert.
+
+A failed save reaches the message panel through `ArchiveFailureMapper`, and the dialog stays open. A
+save with no edit writes nothing and shows no restart notice. A section that fails to read is reported
+each time the dialog opens; the panel counts a repeat against its newest entry rather than adding one.
+
+The staging folder inherits the protection of `<config-dir>`, not that of the section folders, and it
+holds the password in plain text while a save runs. One that cannot be removed stays until the operator
+deletes it; the log names it.
+
+The window edits only keys that already exist. Every key it writes is required by its loader, so a
+folder copied from the shipped set has an owner for each one. An edited key no file carries fails
+with `SectionProblem.KeyAbsent`; the writer never picks a file for it.
+
+A rewrite parses the owning file into a mapping, sets the keys and serializes the whole mapping back
+through the serializer `ConfigurationSection` reads with. A key the loaders do not model survives.
+Comments in a rewritten file do not: YamlDotNet does not round-trip them. Scalars round-trip as
+strings, so an untouched `port` or `poll_interval_ms` in a rewritten file may come back as
+`port: "5432"`, and it still loads.
+
+Several viewers may share one configuration directory, and the last write wins per key. A save
+applies only its own changed keys over a read taken at save time, so a key another instance saved
+survives a save of a different key. The span between that read and the move is not locked: a save
+from another instance landing there, on the same file, is overwritten. The cost is one value typed
+again, and a lock file would outlive a killed process. A move can also fail after the write check,
+when another process opens the target between the two; the files moved before it stay promoted, the
+panel reports the failure, and the next save writes again.
 
 ### Command line
 

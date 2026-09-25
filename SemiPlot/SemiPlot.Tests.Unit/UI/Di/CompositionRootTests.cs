@@ -77,6 +77,6 @@ public sealed class CompositionRootTests
 
 	private static ServiceProvider BuildContainer()
 	{
-		return StartupProbe.BuildArchiveServiceProvider(ConnectionSettingsFactory.Create());
+		return StartupProbe.BuildArchiveServiceProvider(ConnectionSettingsFactory.Create(), AppContext.BaseDirectory);
 	}
 }

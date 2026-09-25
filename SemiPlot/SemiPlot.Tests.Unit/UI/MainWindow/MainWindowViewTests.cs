@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.Windows.Input;
+
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -11,9 +14,11 @@ using AwesomeAssertions;
 
 using Microsoft.Extensions.Logging.Abstractions;
 
+using SemiPlot.Tests.Unit.UI.Settings;
 using SemiPlot.UI.Legend;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
+using SemiPlot.UI.Settings;
 
 using Xunit;
 
@@ -27,6 +32,8 @@ namespace SemiPlot.Tests.Unit.UI.MainWindow;
 [Trait("Category", "Unit")]
 public sealed class MainWindowViewTests
 {
+	private static readonly TimeSpan _dialogTimeout = TimeSpan.FromSeconds(30);
+
 	// Every row of the window, not only the one the failure names: this window has no chart and no services,
 	// so a row that defaults to visible renders empty chrome over the one text the operator needs.
 	[AvaloniaFact]
@@ -37,7 +44,7 @@ public sealed class MainWindowViewTests
 			"SemiPlot could not open a connection to 'semiplot' at scada-host:5432.",
 			"Check that the PostgreSQL server is running.",
 			MessageSeverity.Error);
-		using var viewModel = NewViewModel();
+		using var viewModel = NewViewModel(configDirectory: null);
 		viewModel.StartupFailure = failure;
 		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
 
@@ -55,6 +62,69 @@ public sealed class MainWindowViewTests
 			.BeFalse("there is no chart on this path, so there is no empty catalogue either");
 	}
 
+	[AvaloniaFact]
+	public void TheStartupFailureWindowWithNoDirectory_CarriesTheSettingsItemDisabled()
+	{
+		using var viewModel = NewViewModel(configDirectory: null);
+		viewModel.StartupFailure = new ArchiveFailureView("t", "d", "r", MessageSeverity.Error);
+		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
+		window.Show();
+		Dispatcher.UIThread.RunJobs();
+
+		var item = MenuItemNamed(window, "EditSettings");
+
+		item.Command.Should().BeSameAs(viewModel.ShowSettingsCommand);
+		item.IsEffectivelyEnabled.Should().BeFalse("there is no directory to read the settings from");
+	}
+
+	[AvaloniaTheory]
+	[InlineData(false)]
+	[InlineData(true)]
+	public async Task EditSettings_ClickedOnTheRealisedWindow_OpensTheDialogOverIt(bool startupFailure)
+	{
+		var configDirectory = CopyShippedConfiguration();
+		try
+		{
+			using var viewModel = NewViewModel(configDirectory);
+			if (startupFailure)
+			{
+				viewModel.StartupFailure = new ArchiveFailureView("t", "d", "r", MessageSeverity.Error);
+			}
+
+			var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
+			window.Show();
+			Dispatcher.UIThread.RunJobs();
+
+			Click(window, MenuItemNamed(window, "EditMenu"));
+			var settingsItem = MenuItemNamed(window, "EditSettings");
+			Click(
+				TopLevel.GetTopLevel(settingsItem)
+					?? throw new InvalidOperationException("The Edit menu opened no popup."),
+				settingsItem);
+			await WaitUntil(() => window.OwnedWindows.OfType<SettingsDialog>().Any());
+
+			var dialog = window.OwnedWindows.OfType<SettingsDialog>().Single();
+			var settings = dialog.DataContext.Should().BeOfType<SettingsViewModel>().Which;
+			settings.Host.Should().Be("127.0.0.1");
+			dialog.FindControl<TextBox>("SettingsHost")!.Text.Should().Be("127.0.0.1");
+			viewModel.MessagePanel.Entries.Should().BeEmpty();
+
+			dialog.Close();
+			Dispatcher.UIThread.RunJobs();
+
+			window.OwnedWindows.Should().BeEmpty();
+			// A disposed command stops following its inputs, and the shipped blank password left it disabled.
+			settings.Password = "secret";
+			((ICommand)settings.SaveCommand).CanExecute(null).Should()
+				.BeFalse("the window disposes the view model its dialog showed");
+			window.Close();
+		}
+		finally
+		{
+			Directory.Delete(configDirectory, recursive: true);
+		}
+	}
+
 	// The row binds the same flag the View menu writes and reads back, and a failure opens it: an entry that
 	// landed off screen would be a failure the operator is never shown.
 	[AvaloniaFact]
@@ -62,7 +132,7 @@ public sealed class MainWindowViewTests
 	{
 		using var panel = new MessagePanelViewModel();
 		using var viewModel = new MainWindowViewModel(
-			panel, NewStatusBar(panel), NullLogger<MainWindowViewModel>.Instance);
+			panel, NewStatusBar(panel), AppContext.BaseDirectory, NullLoggerFactory.Instance);
 		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
 		window.Show();
 		var row = window.FindControl<Border>("MessagePanel");
@@ -282,6 +352,48 @@ public sealed class MainWindowViewTests
 		Dispatcher.UIThread.RunJobs();
 		window.MouseUp(end, MouseButton.Left);
 		Dispatcher.UIThread.RunJobs();
+	}
+
+	private static MenuItem MenuItemNamed(Window window, string name)
+	{
+		var item = window.FindControl<AppMenuBar>("MenuBar")!.FindControl<MenuItem>(name);
+		item.Should().NotBeNull("'{0}' is a named item of the menu bar", name);
+
+		return item;
+	}
+
+	private static void Click(TopLevel topLevel, Control control)
+	{
+		var center = control.TranslatePoint(new Point(control.Bounds.Width / 2, control.Bounds.Height / 2), topLevel)
+			?? throw new InvalidOperationException("The control is not in the top level's visual tree.");
+
+		topLevel.MouseDown(center, MouseButton.Left);
+		topLevel.MouseUp(center, MouseButton.Left);
+		Dispatcher.UIThread.RunJobs();
+	}
+
+	private static async Task WaitUntil(Func<bool> condition)
+	{
+		var clock = Stopwatch.StartNew();
+
+		while (!condition())
+		{
+			if (clock.Elapsed > _dialogTimeout)
+			{
+				throw new TimeoutException("The settings dialog did not open.");
+			}
+
+			await Task.Delay(10);
+			Dispatcher.UIThread.RunJobs();
+		}
+	}
+
+	private static string CopyShippedConfiguration()
+	{
+		var configDirectory = Directory.CreateTempSubdirectory("semiplot-main-window-settings-").FullName;
+		ShippedConfiguration.CopyTo(configDirectory);
+
+		return configDirectory;
 	}
 
 	private static string? ReadText(Window window, string name)

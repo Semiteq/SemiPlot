@@ -49,6 +49,7 @@ public sealed class ResourcesTests
 	public void CompositeFormats_KeepTheirPlaceholder()
 	{
 		Resources.StatusLayerFormat.Should().Contain("{0}");
+		Resources.SettingsFieldRequired.Should().Contain("{0}");
 	}
 
 	[Fact]

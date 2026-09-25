@@ -25,7 +25,7 @@ public sealed class ConnectionFileWriterTests : IDisposable
 	{
 		await ConnectionFileWriter.WriteAsync(
 			_directory,
-			"scada-01",
+			"10.20.30.40",
 			5433,
 			"semiplot_dev",
 			"semiplot_reader",
@@ -38,7 +38,7 @@ public sealed class ConnectionFileWriterTests : IDisposable
 			Path.Combine(_directory, ConnectionFileWriter.DirectoryName));
 
 		result.IsSuccess.Should().BeTrue();
-		result.Value.Host.Should().Be("scada-01");
+		result.Value.Host.Should().Be("10.20.30.40");
 		result.Value.Port.Should().Be(5433);
 		result.Value.Database.Should().Be("semiplot_dev");
 		result.Value.Username.Should().Be("semiplot_reader");
@@ -53,7 +53,7 @@ public sealed class ConnectionFileWriterTests : IDisposable
 		var nested = Path.Combine(_directory, "nested");
 
 		await ConnectionFileWriter.WriteAsync(
-			nested, "localhost", 5432, "db", "user", "pw", "UTC", TimeSpan.FromSeconds(1),
+			nested, "127.0.0.1", 5432, "db", "user", "pw", "UTC", TimeSpan.FromSeconds(1),
 			TestContext.Current.CancellationToken);
 
 		File.Exists(Path.Combine(nested, ConnectionFileWriter.DirectoryName, ConnectionFileWriter.FileName))

@@ -12,5 +12,6 @@
     </Application.Resources>
     <Application.Styles>
         <semi:SemiTheme />
+        <StyleInclude Source="avares://SemiPlot.UI/Styles/Forms.axaml" />
     </Application.Styles>
 </Application>

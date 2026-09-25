@@ -34,9 +34,9 @@ var bench = builder.AddDockerfile("bench", "../bench")
 	.WithEnvironment("SEMIPLOT_PROVISIONED_DATABASE", ProvisionedDatabase)
 	.WithEndpoint(port: HostPort, targetPort: ContainerPort, scheme: "tcp", name: "postgres", isProxied: false);
 
-var writerConnection = $"Host=localhost;Port={HostPort};Database={StandDatabase};"
+var writerConnection = $"Host=127.0.0.1;Port={HostPort};Database={StandDatabase};"
 	+ $"Username={WriterRole};Password={WriterPassword}";
-var adminConnection = $"Host=localhost;Port={HostPort};Database={MaintenanceDatabase};"
+var adminConnection = $"Host=127.0.0.1;Port={HostPort};Database={MaintenanceDatabase};"
 	+ $"Username={SuperuserName};Password={SuperuserPassword}";
 
 var converge = builder.AddProject<Projects.SemiPlot_Tools_ArchiveSeeder>("converge")

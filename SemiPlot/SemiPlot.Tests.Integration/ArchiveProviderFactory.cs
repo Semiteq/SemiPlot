@@ -35,7 +35,7 @@ public static class ArchiveProviderFactory
 		var builder = new NpgsqlConnectionStringBuilder(connectionString);
 
 		return new PostgresConnectionSettings(
-			Host: builder.Host ?? "localhost",
+			Host: builder.Host ?? "127.0.0.1",
 			Port: builder.Port,
 			Database: builder.Database ?? string.Empty,
 			Username: builder.Username ?? string.Empty,

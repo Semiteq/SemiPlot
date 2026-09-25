@@ -75,6 +75,12 @@
   <data name="MenuFileExit" xml:space="preserve">
     <value>Exit</value>
   </data>
+  <data name="MenuEdit" xml:space="preserve">
+    <value>Edit</value>
+  </data>
+  <data name="MenuEditSettings" xml:space="preserve">
+    <value>Settings</value>
+  </data>
   <data name="MenuView" xml:space="preserve">
     <value>View</value>
   </data>
@@ -164,6 +170,9 @@
   </data>
   <data name="FailureConnectionFileUnknownTimeZoneRemedy" xml:space="preserve">
     <value>Set the time zone to an identifier this machine knows.</value>
+  </data>
+  <data name="FailureConnectionFileHostNotIPv4Remedy" xml:space="preserve">
+    <value>Set the host to an IPv4 address of four numbers from 0 to 255, such as 192.168.0.10. A host name is not accepted.</value>
   </data>
   <data name="FailureArchiveNameFormat" xml:space="preserve">
     <value>'{0}' at {1}</value>
@@ -324,6 +333,18 @@
   <data name="FailureConfigurationSectionDuplicateKeyRemedy" xml:space="preserve">
     <value>A key may be set once in a folder. Leave one of them in that file.</value>
   </data>
+  <data name="FailureConfigurationSectionUnwritableDetail" xml:space="preserve">
+    <value>SemiPlot could not write the file '{1}' in the configuration folder '{0}'.</value>
+  </data>
+  <data name="FailureConfigurationSectionKeyAbsentDetail" xml:space="preserve">
+    <value>No file of the configuration folder '{1}' carries the key '{0}'.</value>
+  </data>
+  <data name="FailureConfigurationSectionUnwritableRemedy" xml:space="preserve">
+    <value>Give the account running SemiPlot write access to that folder and its files. Close any program that holds the file open, then save again.</value>
+  </data>
+  <data name="FailureConfigurationSectionKeyAbsentRemedy" xml:space="preserve">
+    <value>Add that key back to one file of the folder, then save again.</value>
+  </data>
   <data name="FailureStartupArgumentsTitle" xml:space="preserve">
     <value>SemiPlot was started with wrong arguments</value>
   </data>
@@ -359,5 +380,71 @@
   </data>
   <data name="FailureLogFileRemedy" xml:space="preserve">
     <value>The path has to name a file in an existing folder that is writable. Check the path the --log-file argument gives in the SemiPlot shortcut.</value>
+  </data>
+  <data name="SettingsLanguageRussian" xml:space="preserve">
+    <value>Russian</value>
+  </data>
+  <data name="SettingsLanguageEnglish" xml:space="preserve">
+    <value>English</value>
+  </data>
+  <data name="SettingsThemeLight" xml:space="preserve">
+    <value>Light</value>
+  </data>
+  <data name="SettingsThemeDark" xml:space="preserve">
+    <value>Dark</value>
+  </data>
+  <data name="SettingsTitle" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="SettingsInterfaceHeader" xml:space="preserve">
+    <value>Interface</value>
+  </data>
+  <data name="SettingsLanguageLabel" xml:space="preserve">
+    <value>Language</value>
+  </data>
+  <data name="SettingsThemeLabel" xml:space="preserve">
+    <value>Theme</value>
+  </data>
+  <data name="SettingsConnectionHeader" xml:space="preserve">
+    <value>Archive connection</value>
+  </data>
+  <data name="SettingsHostLabel" xml:space="preserve">
+    <value>Host</value>
+  </data>
+  <data name="SettingsPortLabel" xml:space="preserve">
+    <value>Port</value>
+  </data>
+  <data name="SettingsDatabaseLabel" xml:space="preserve">
+    <value>Database</value>
+  </data>
+  <data name="SettingsUserLabel" xml:space="preserve">
+    <value>User</value>
+  </data>
+  <data name="SettingsPasswordLabel" xml:space="preserve">
+    <value>Password</value>
+  </data>
+  <data name="SettingsPollIntervalLabel" xml:space="preserve">
+    <value>Poll interval, ms</value>
+  </data>
+  <data name="SettingsRestartNotice" xml:space="preserve">
+    <value>Saved. Takes effect after a restart.</value>
+  </data>
+  <data name="SettingsSave" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="SettingsClose" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="SettingsHostInvalid" xml:space="preserve">
+    <value>Host: expected an IP address such as 127.0.0.1</value>
+  </data>
+  <data name="SettingsPortInvalid" xml:space="preserve">
+    <value>Port: a whole number 1–65535</value>
+  </data>
+  <data name="SettingsPollIntervalInvalid" xml:space="preserve">
+    <value>Poll interval: a whole number above 0</value>
+  </data>
+  <data name="SettingsFieldRequired" xml:space="preserve">
+    <value>{0}: required</value>
   </data>
 </root>

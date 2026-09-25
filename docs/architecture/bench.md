@@ -78,7 +78,7 @@ rejected in this mode. `--pens`, `--seed` and `--change-seconds` mean what they 
 
 ```powershell
 dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.ArchiveSeeder.csproj -- `
-  --connection "Host=localhost;Port=55432;Database=semiplot_app;Username=scada_writer;Password=<writer>" `
+  --connection "Host=127.0.0.1;Port=55432;Database=semiplot_app;Username=scada_writer;Password=<writer>" `
   --follow 1 --change-seconds 0.5
 ```
 
@@ -164,6 +164,10 @@ start and the readiness wait share one two-minute bound,
 `PostgresContainerFixture._startupBound`, so a bench that never comes up fails rather than hanging
 `SemiPlot.Tests.Integration.exe`.
 
+`PostgresContainerFixture` maps the runtime's `localhost` host to `127.0.0.1` and passes any other host
+through, so a remote `DOCKER_HOST` that reports a hostname is not a supported setup: the connection
+loader accepts only an IPv4 host.
+
 A missing container runtime is never a pass and never a skip: `InitializeAsync` lets the exception
 through, and xunit fails every test of the collection with `TestPipelineException`.
 
@@ -215,8 +219,8 @@ New-Item -ItemType Directory -Force SemiPlot\Artifacts\dev-config | Out-Null
 Copy-Item ConfigFiles\* SemiPlot\Artifacts\dev-config -Recurse -Force
 
 dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder -- converge `
-  --connection "Host=localhost;Port=55432;Database=semiplot_app;Username=scada_writer;Password=<writer>" `
-  --admin-connection "Host=localhost;Port=55432;Database=postgres;Username=postgres;Password=<super>" `
+  --connection "Host=127.0.0.1;Port=55432;Database=semiplot_app;Username=scada_writer;Password=<writer>" `
+  --admin-connection "Host=127.0.0.1;Port=55432;Database=postgres;Username=postgres;Password=<super>" `
   --config-dir SemiPlot\Artifacts\dev-config
 ```
 
@@ -273,6 +277,10 @@ throws `DirectoryNotFoundException` when it is absent, so a missing source fails
 rather than producing an empty copy the viewer reports later. The AppHost passes
 `%TEMP%\SemiPlot\ConfigFiles` as `--config-dir` to both `converge` and the viewer, and the log path
 plus `--logging-level information` to the viewer, which needs all three keys.
+
+A value saved through Edit -> Settings during a stand run does not survive it: `converge` rewrites
+`connection/connection.yaml` on every run (`SemiPlot.Tools.ArchiveSeeder/Converge.cs`) and the stand
+removes the configuration copy when it stops (`DemoDirectories.cs`).
 
 `Logs` is swept at the next start rather than on stop: the viewer holds `semiplot.log` open through a
 Serilog file sink declared `shared: true`, so deleting the directory during shutdown would race that

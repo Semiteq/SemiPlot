@@ -254,6 +254,34 @@ public sealed class ArchiveFailureMapperTests
 	}
 
 	[Fact]
+	public void ConfigurationSectionUnwritable_NamesTheFileThatRefusedTheWrite()
+	{
+		var view = ArchiveFailureMapper.Map(
+			new ConfigurationSectionError(
+				ConfigurationSectionName.Connection,
+				@"C:\Config\connection",
+				SectionProblem.Unwritable,
+				fileNames: ["connection.yaml"]));
+
+		view.Detail.Should().Be(
+			Resources.FormatFailureConfigurationSectionUnwritableDetail(@"C:\Config\connection", "connection.yaml"));
+		view.Detail.Should().Contain("connection.yaml").And.Contain(@"C:\Config\connection");
+		view.Remedy.Should().Be(Resources.FailureConfigurationSectionUnwritableRemedy);
+	}
+
+	[Fact]
+	public void ConfigurationSectionKeyAbsent_NamesTheKeyAndTheFolder()
+	{
+		var view = ArchiveFailureMapper.Map(
+			new ConfigurationSectionError(
+				ConfigurationSectionName.App, @"C:\Config\app", SectionProblem.KeyAbsent, "theme"));
+
+		view.Detail.Should().Be(Resources.FormatFailureConfigurationSectionKeyAbsentDetail("theme", @"C:\Config\app"));
+		view.Detail.Should().Contain("theme").And.Contain(@"C:\Config\app");
+		view.Remedy.Should().Be(Resources.FailureConfigurationSectionKeyAbsentRemedy);
+	}
+
+	[Fact]
 	public void AppSettingsUnreadable_SendsTheOperatorToTheSectionFolder()
 	{
 		var view = ArchiveFailureMapper.Map(
@@ -295,6 +323,7 @@ public sealed class ArchiveFailureMapperTests
 	[InlineData(ConnectionFileProblem.MissingField, nameof(Resources.FailureConnectionFileMissingFieldRemedy))]
 	[InlineData(ConnectionFileProblem.OutOfRange, nameof(Resources.FailureConnectionFileOutOfRangeRemedy))]
 	[InlineData(ConnectionFileProblem.UnknownTimeZone, nameof(Resources.FailureConnectionFileUnknownTimeZoneRemedy))]
+	[InlineData(ConnectionFileProblem.HostNotIPv4, nameof(Resources.FailureConnectionFileHostNotIPv4Remedy))]
 	public void ConnectionFileInvalid_RemedyFollowsTheProblem(ConnectionFileProblem kind, string expectedKey)
 	{
 		var view = ArchiveFailureMapper.Map(

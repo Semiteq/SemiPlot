@@ -97,11 +97,12 @@ public static class Converge
 	}
 
 	// A brief startup FATAL between the entrypoint's temporary server and semibase bench is a Postgres
-	// answer, not a refused socket, and carries the same "not ready yet" meaning.
+	// answer, not a refused socket, and carries the same "not ready yet" meaning. Docker Desktop's port
+	// proxy accepts the TCP connection before Postgres listens and closes it, which reads as an I/O error.
 	private static bool IsRefused(Exception exception)
 	{
 		return exception is SocketException
-			or NpgsqlException { InnerException: SocketException }
+			or NpgsqlException { InnerException: SocketException or IOException }
 			or PostgresException { SqlState: PostgresErrorCodes.CannotConnectNow };
 	}
 

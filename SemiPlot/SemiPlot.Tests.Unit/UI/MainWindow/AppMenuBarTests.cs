@@ -40,12 +40,28 @@ public sealed class AppMenuBarTests
 		leaves
 			.Select(leaf => leaf.Name)
 			.Should()
-			.Contain(["FileExit", "ViewMessagePanel", "HelpAbout"], "the walk descends into every menu");
+			.Contain(
+				["FileExit", "EditSettings", "ViewMessagePanel", "HelpAbout"],
+				"the walk descends into every menu");
 
 		foreach (var leaf in leaves)
 		{
 			leaf.Command.Should().NotBeNull("'{0}' is a menu leaf and has to act", leaf.Name);
 		}
+	}
+
+	[AvaloniaFact]
+	public void EditMenu_HoldsTheSettingsItemBoundToItsCommand()
+	{
+		using var viewModel = NewViewModel();
+		var menuBar = ShowMenuBar(viewModel);
+
+		var editMenu = menuBar.FindControl<MenuItem>("EditMenu");
+		editMenu.Should().NotBeNull();
+
+		var settings = editMenu!.Items.OfType<MenuItem>().Should().ContainSingle().Which;
+		settings.Name.Should().Be("EditSettings");
+		settings.Command.Should().BeSameAs(viewModel.ShowSettingsCommand);
 	}
 
 	[AvaloniaFact]

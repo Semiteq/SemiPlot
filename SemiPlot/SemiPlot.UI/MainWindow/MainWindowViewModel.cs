@@ -14,6 +14,7 @@ using SemiPlot.UI.Legend;
 using SemiPlot.UI.Messages;
 using SemiPlot.UI.Minimap;
 using SemiPlot.UI.Navigation;
+using SemiPlot.UI.Settings;
 
 namespace SemiPlot.UI.MainWindow;
 
@@ -22,20 +23,27 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 	private readonly Subject<AboutInfo> _aboutRequests = new();
 	private readonly CompositeDisposable _disposables = [];
 	private readonly Subject<Unit> _exitRequests = new();
+	private readonly Subject<SettingsViewModel> _settingsRequests = new();
 
+	private readonly string? _configDirectory;
+	private readonly ILoggerFactory _loggerFactory;
 	private readonly ILogger<MainWindowViewModel> _logger;
 
 	public MainWindowViewModel(
 		MessagePanelViewModel messagePanel,
 		AppStatusBarViewModel statusBar,
-		ILogger<MainWindowViewModel> logger)
+		string? configDirectory,
+		ILoggerFactory loggerFactory)
 	{
 		MessagePanel = messagePanel;
 		StatusBar = statusBar;
-		_logger = logger;
+		_configDirectory = configDirectory;
+		_loggerFactory = loggerFactory;
+		_logger = loggerFactory.CreateLogger<MainWindowViewModel>();
 
 		_disposables.Add(_aboutRequests);
 		_disposables.Add(_exitRequests);
+		_disposables.Add(_settingsRequests);
 
 		_disposables.Add(ToggleNavigationBarCommand = ReactiveCommand.Create(
 			() => { IsNavigationBarVisible = !IsNavigationBarVisible; }));
@@ -47,6 +55,9 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 			() => _exitRequests.OnNext(Unit.Default)));
 		_disposables.Add(ShowAboutCommand = ReactiveCommand.Create(
 			() => _aboutRequests.OnNext(AboutInfo.ForCurrentProcess())));
+		_disposables.Add(ShowSettingsCommand = ReactiveCommand.CreateFromTask(
+			RequestSettingsAsync,
+			Observable.Return(configDirectory is not null)));
 	}
 
 	/// <summary>The process-wide panel, owned by the container and shown in the window's panel row.</summary>
@@ -59,6 +70,9 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 	public IObservable<AboutInfo> AboutRequests => _aboutRequests.AsObservable();
 
 	public IObservable<Unit> ExitRequests => _exitRequests.AsObservable();
+
+	/// <summary>Each request carries a view model the listener owns and disposes when its dialog closes.</summary>
+	public IObservable<SettingsViewModel> SettingsRequests => _settingsRequests.AsObservable();
 
 	/// <summary>
 	/// Set only on a failed startup, before a chart is ever built: the message panel shows it and the
@@ -128,6 +142,9 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 
 	public ReactiveCommand<Unit, Unit> ShowAboutCommand { get; }
 
+	/// <summary>Cannot execute without a configuration directory, which a failed argument parse leaves.</summary>
+	public ReactiveCommand<Unit, Unit> ShowSettingsCommand { get; }
+
 	/// <summary>
 	/// Replaces the chart and the two view models built from it, and re-points the status bar at its layer.
 	/// A method rather than a setter: a binding write must not dispose a chart or reach into another bar.
@@ -168,6 +185,19 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 	public void ReportFailure(Exception failure)
 	{
 		MessagePanel.TryReportFailure(new ExceptionalError(failure), _logger);
+	}
+
+	private async Task RequestSettingsAsync()
+	{
+		if (_configDirectory is not { } configDirectory)
+		{
+			return;
+		}
+
+		var (app, connection) = await Task.Run(() => SettingsSave.ReadOwned(configDirectory));
+
+		_settingsRequests.OnNext(new SettingsViewModel(
+			configDirectory, app, connection, MessagePanel, _loggerFactory.CreateLogger<SettingsViewModel>()));
 	}
 
 	public void Dispose()

@@ -55,6 +55,12 @@ public static class ConfigurationSectionFailureMapper
 			SectionProblem.Unreadable => Resources.FormatFailureConfigurationSectionUnreadableDetail(
 				error.Directory, error.FileNames[0]),
 
+			SectionProblem.Unwritable => Resources.FormatFailureConfigurationSectionUnwritableDetail(
+				error.Directory, error.FileNames[0]),
+
+			SectionProblem.KeyAbsent => Resources.FormatFailureConfigurationSectionKeyAbsentDetail(
+				error.Key, error.Directory),
+
 			_ => throw new ArgumentOutOfRangeException(nameof(error), error.Problem, null)
 		};
 	}
@@ -79,6 +85,10 @@ public static class ConfigurationSectionFailureMapper
 
 			SectionProblem.Unlistable or SectionProblem.Unreadable =>
 				Resources.FailureConfigurationSectionUnreadableRemedy,
+
+			SectionProblem.Unwritable => Resources.FailureConfigurationSectionUnwritableRemedy,
+
+			SectionProblem.KeyAbsent => Resources.FailureConfigurationSectionKeyAbsentRemedy,
 
 			_ => throw new ArgumentOutOfRangeException(nameof(error), error.Problem, null)
 		};

@@ -22,7 +22,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 	private static readonly (string Field, string Value)[] _validFields =
 	[
-		("host", "\"scada-01\""),
+		("host", "\"10.20.30.40\""),
 		("port", "5433"),
 		("database", "\"semiplot_dev\""),
 		("user", "\"semiplot_reader\""),
@@ -47,7 +47,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 		var result = PostgresConnectionLoader.Load(_directory);
 
 		result.IsSuccess.Should().BeTrue(Describe(result));
-		result.Value.Host.Should().Be("scada-01");
+		result.Value.Host.Should().Be("10.20.30.40");
 		result.Value.Port.Should().Be(5433);
 		result.Value.Database.Should().Be("semiplot_dev");
 		result.Value.Username.Should().Be("semiplot_reader");
@@ -87,7 +87,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 		var result = PostgresConnectionLoader.Load(_directory);
 
 		result.IsSuccess.Should().BeTrue(Describe(result));
-		result.Value.Host.Should().Be("scada-01");
+		result.Value.Host.Should().Be("10.20.30.40");
 		result.Value.Password.Should().Be("s3cret");
 	}
 
@@ -116,7 +116,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	public void AFieldCarriedByTwoFilesYieldsTheKeyConflictProblem()
 	{
 		WriteFile(Compose(_validFields), "a.yaml");
-		WriteFile("host: \"scada-02\"\n", "b.yaml");
+		WriteFile("host: \"10.20.30.41\"\n", "b.yaml");
 
 		var result = PostgresConnectionLoader.Load(_directory);
 
@@ -214,6 +214,49 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 		error.Path.Should().Be(_directory);
 		error.Kind.Should().Be(ConnectionFileProblem.UnknownTimeZone);
 		error.Reason.Should().Contain("Mars/Olympus_Mons");
+	}
+
+	[Theory]
+	[InlineData("0.0.0.0")]
+	[InlineData("127.0.0.1")]
+	[InlineData("192.168.0.10")]
+	[InlineData("255.255.255.255")]
+	public void AnIPv4AddressOfFourDecimalOctetsIsAHost(string host)
+	{
+		PostgresConnectionLoader.IsIPv4Address(host).Should().BeTrue();
+	}
+
+	[Theory]
+	[InlineData(null)]
+	[InlineData("")]
+	[InlineData("localhost")]
+	[InlineData("::1")]
+	[InlineData("::ffff:127.0.0.1")]
+	[InlineData("127.1")]
+	[InlineData("1.2.3.4.5")]
+	[InlineData("1..2.3")]
+	[InlineData("256.0.0.1")]
+	[InlineData("1.2.3.1000")]
+	[InlineData("010.0.0.1")]
+	[InlineData("+1.2.3.4")]
+	[InlineData(" 127.0.0.1")]
+	[InlineData("\uFF11.2.3.4")]
+	public void AnythingButFourDecimalOctetsIsNotAHost(string? host)
+	{
+		PostgresConnectionLoader.IsIPv4Address(host).Should().BeFalse();
+	}
+
+	[Fact]
+	public void AHostThatIsNotAnIPv4AddressYieldsTheHostNotIPv4Discriminator()
+	{
+		WriteFile(Compose(Replace("host", "scada-01")));
+
+		var result = PostgresConnectionLoader.Load(_directory);
+
+		var error = ErrorOf(result);
+		error.Path.Should().Be(_directory);
+		error.Kind.Should().Be(ConnectionFileProblem.HostNotIPv4);
+		error.Reason.Should().Contain("host");
 	}
 
 	[Fact]
@@ -319,7 +362,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 		var parsed = new NpgsqlConnectionStringBuilder(result.Value.ConnectionString);
 
 		parsed.Password.Should().Be(Password);
-		parsed.Host.Should().Be("scada-01");
+		parsed.Host.Should().Be("10.20.30.40");
 		parsed.Port.Should().Be(5433);
 		parsed.Database.Should().Be("semiplot_dev");
 		parsed.Username.Should().Be("semiplot_reader");
@@ -360,7 +403,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 		var printed = result.Value.ToString();
 
 		printed.Should().NotContain(Password);
-		printed.Should().Contain("scada-01");
+		printed.Should().Contain("10.20.30.40");
 	}
 
 	private static IEnumerable<(string Field, string Value)> Replace(string field, string value)

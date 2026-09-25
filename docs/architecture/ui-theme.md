@@ -8,9 +8,9 @@ same one the sibling SemiStep installation uses. What the palette does not cover
 variant-aware colour, which the section below states.
 
 `Semi.Avalonia` 12.0.3 replaced `FluentTheme`. `App.axaml` is an include manifest and nothing else:
-`<semi:SemiTheme/>` in `Application.Styles`, one `ResourceInclude` pointing at the palette, and
-`RequestedThemeVariant="Light"` as the declared bootstrap variant. No style body lives at the
-application root.
+`<semi:SemiTheme/>` in `Application.Styles` followed by one `StyleInclude` of `Styles/Forms.axaml`, one
+`ResourceInclude` pointing at the palette, and `RequestedThemeVariant="Light"` as the declared bootstrap
+variant. No style body lives at the application root.
 
 ## How the retint reaches a control
 
@@ -34,7 +34,7 @@ control, in each state the tree can reach.
 | `TextBoxForeground` | `TextBox` | `#000000` | `#DFE1E5` |
 | `CheckBoxForeground` | `CheckBox` | `#000000` | `#DFE1E5` |
 | `WindowDefaultForeground` | `Window`, and every control inheriting from it | `#000000` | `#DFE1E5` |
-| `MenuItemForeground` | Every menu caption at rest: the menu bar's File, View and Help, their items, the check glyph, and the `TextBox` context menu | `#000000` | `#DFE1E5` |
+| `MenuItemForeground` | Every menu caption at rest: the menu bar's File, Edit, View and Help, their items, the check glyph, and the `TextBox` context menu | `#000000` | `#DFE1E5` |
 | `MenuItemPointeroverForeground` | A menu caption while its submenu is open or the pointer is over it; Semi ships this brighter than its own text colour | `#000000` | `#DFE1E5` |
 | `TextBoxPlaceholderForeground` | A `TextBox` watermark; no control in this tree shows one since the navigation bar lost its limit boxes | `#818594` | `#6F737A` |
 | `TextBlockDisabledForeground` | Disabled `TextBlock` | `#A8ADBD` | `#5A5D63` |
@@ -116,7 +116,7 @@ Semi owns the controls; these twelve keys are ours, and each exists in both vari
 | `AppSecondaryForegroundBrush` | Minimap extent labels, chart crosshair, plot axis furniture, the sidebar group header caption and a row's unit | `#818594` | `#6F737A` |
 | `AppAccentBrush` | Minimap window highlight border, the active sidebar row's left bar | `#3574F0` | `#3574F0` |
 | `AppAccentFillBrush` | Minimap window highlight fill, the active sidebar row's background | `#3574F0` at 0.25 opacity | `#3574F0` at 0.25 opacity |
-| `AppSeverityErrorBrush` | The message panel's dot on an `Error` entry | `#DB3B4B` | `#E55765` |
+| `AppSeverityErrorBrush` | The message panel's dot on an `Error` entry; a form's invalid field border and its message line | `#DB3B4B` | `#E55765` |
 | `AppSeverityWarningBrush` | The same dot on a `Warning` entry | `#E3AE4D` | `#F2C55C` |
 | `AppSeverityInfoBrush` | The same dot on an `Info` entry | `#3574F0` | `#3574F0` |
 | `AppConnectionOkBrush` | The status bar's connection indicator, `connection-ok` | `#208A3C` | `#5FAD65` |
@@ -124,6 +124,39 @@ Semi owns the controls; these twelve keys are ours, and each exists in both vari
 
 Pen colours are not theme keys. They come from the archive with the pen and stay per pen under both
 variants.
+
+## A form never resizes on validation
+
+Every form in this application follows one layout rule, the settings dialog first. Validation changes
+colour and text, never size:
+
+- The window has a fixed `Width` and `SizeToContent="Height"`. Its height comes from rows that exist in
+  every state; no row appears or disappears with validation.
+- An invalid field is marked by its border alone. The field binds `Classes.invalid` to its `Is*Valid`
+  flag, and `Styles/Forms.axaml` paints that border with `AppSeverityErrorBrush`.
+- One message line sits left of the buttons. It is a `TextBlock.form-message`: two lines of 20 px
+  reserved, wrapped, trimmed past the second. It shows the rule the first invalid field breaks, in form
+  order, and is empty while every field is valid. A notice that is not an error, such as the settings
+  dialog's restart notice, shares the same line and gives way to an error.
+- Each message is one short line in both languages, `ui-text.md#the-settings-windows-text`.
+
+The invalid style targets the template part, not the control. Semi paints a `TextBox` border on
+`Border#PART_ContentPresenterBorder` from its own state styles: `Transparent` at rest and
+`TextBoxFocusBorderBrush` on focus. A setter on `TextBox.BorderBrush` loses to both. A `NumericUpDown`
+draws its border on the same part of its inner `TextBox#PART_TextBox`, so its selector nests two
+`/template/` steps. `Forms.axaml` follows `SemiTheme` in `Application.Styles`, so at equal priority it
+wins. `SettingsViewTests.AnInvalidField_PaintsItsBorderWithTheErrorBrushFocusedOrNot` reads the
+rendered `BorderBrush` of both parts, focused and at rest, under both variants; it fails without the
+include.
+
+The settings dialog is 528 px wide, with a 20 px margin and 10 px between rows. Measured on 2026-09-25
+with Skia and HarfBuzz, every field valid, `SizeToContent="WidthAndHeight"`: 245 px in English and 278 px in
+Russian, so the labels and fields fit either way, and at 440 px the dialog held its size in both languages
+with each field invalid in turn. The width is 1.2 times that measurement, so the message line has about
+88 px more than the 196 px it had there; a message that still does not fit wraps into the second
+reserved line. A longer label, button or message is measured the same way before it ships.
+`SettingsViewTests.TheDialog_KeepsItsSizeAndItsButtonsWhenAFieldTurnsInvalid` gates the rule: the
+dialog's and the save button's `Bounds` are equal before and after an invalid host.
 
 ## How the variant reaches the application
 

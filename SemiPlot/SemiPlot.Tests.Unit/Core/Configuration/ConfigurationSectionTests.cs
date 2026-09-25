@@ -172,13 +172,146 @@ public sealed class ConfigurationSectionTests : IDisposable
 			.Build()
 			.Deserialize<PostgresConnectionDto>(result.Value);
 
-		dto.Host.Should().Be("localhost");
+		dto.Host.Should().Be("127.0.0.1");
 		dto.Port.Should().Be(5432);
 		dto.Database.Should().Be("semiplot");
 		dto.User.Should().Be("semiplot");
 		dto.Password.Should().BeEmpty();
 		dto.SourceTimeZone.Should().Be("Europe/Moscow");
 		dto.PollIntervalMs.Should().Be(1000);
+	}
+
+	[Fact]
+	public void ReadOwnedOverOneFileNamesThatFileForEveryKey()
+	{
+		WriteFile("app.yaml", "locale: ru\ntheme: light\n");
+
+		var owned = OwnedOf(ConfigurationSection.ReadOwned(_directory, ConfigurationSectionName.App));
+
+		owned.Values.Should().HaveCount(2).And.Contain("locale", "ru").And.Contain("theme", "light");
+		owned.Owners.Should().HaveCount(2).And.Contain("locale", "app.yaml").And.Contain("theme", "app.yaml");
+	}
+
+	[Fact]
+	public void ReadOwnedOverSeveralFilesNamesEachKeysOwnFile()
+	{
+		WriteFile("a.yaml", "locale: ru\n");
+		WriteFile("b.yaml", "theme: dark\noperator_note: kept\n");
+
+		var owned = OwnedOf(ConfigurationSection.ReadOwned(_directory, ConfigurationSectionName.App));
+
+		owned.Values.Should().Contain("locale", "ru").And.Contain("theme", "dark").And.Contain("operator_note", "kept");
+		owned.Owners.Should().Contain("locale", "a.yaml").And.Contain("theme", "b.yaml")
+			.And.Contain("operator_note", "b.yaml");
+	}
+
+	[Fact]
+	public void ReadOwnedLooksKeysUpIgnoringCase()
+	{
+		WriteFile("a.yaml", "Locale: ru\n");
+
+		var owned = OwnedOf(ConfigurationSection.ReadOwned(_directory, ConfigurationSectionName.App));
+
+		owned.Values["locale"].Should().Be("ru");
+		owned.Owners["LOCALE"].Should().Be("a.yaml");
+	}
+
+	[Fact]
+	public void ANestedValueIsOwnedButLeftOutOfTheValues()
+	{
+		WriteFile("a.yaml", "locale: ru\nnested:\n  inner: 1\nlisted:\n  - one\n");
+
+		var owned = OwnedOf(ConfigurationSection.ReadOwned(_directory, ConfigurationSectionName.App));
+
+		owned.Values.Keys.Should().Equal("locale");
+		owned.Owners.Should().Contain("nested", "a.yaml").And.Contain("listed", "a.yaml");
+	}
+
+	[Theory]
+	[InlineData("password:\n")]
+	[InlineData("password: ~\n")]
+	[InlineData("password: null\n")]
+	public void ANullScalarReadsAsTheEmptyString(string content)
+	{
+		WriteFile("connection.yaml", content);
+
+		var owned = OwnedOf(ConfigurationSection.ReadOwned(_directory, ConfigurationSectionName.Connection));
+
+		owned.Values.Should().Contain("password", string.Empty);
+	}
+
+	[Fact]
+	public void AQuotedValueThatReadsAsYamlStaysItsTextInTheValues()
+	{
+		WriteFile("connection.yaml", "password: \"null\"\nport: 5432\n");
+
+		var owned = OwnedOf(ConfigurationSection.ReadOwned(_directory, ConfigurationSectionName.Connection));
+
+		owned.Values.Should().Contain("password", "null").And.Contain("port", "5432");
+	}
+
+	[Fact]
+	public void ReadOwnedStillFailsOnOneKeyInTwoCasesAcrossTwoFiles()
+	{
+		WriteFile("one.yaml", "locale: ru\n");
+		WriteFile("two.yaml", "Locale: en\n");
+
+		var error = ErrorOf(ConfigurationSection.ReadOwned(_directory, ConfigurationSectionName.App));
+
+		error.Problem.Should().Be(SectionProblem.KeyConflict);
+		error.FileNames.Should().Equal("one.yaml", "two.yaml");
+	}
+
+	[Theory]
+	[InlineData(SectionProblem.DirectoryMissing)]
+	[InlineData(SectionProblem.NoFiles)]
+	[InlineData(SectionProblem.Unreadable)]
+	[InlineData(SectionProblem.DuplicateKey)]
+	[InlineData(SectionProblem.KeyConflict)]
+	public void ReadOwnedFailsWithTheErrorReadReturns(SectionProblem problem)
+	{
+		var directory = ArrangeFailure(problem);
+
+		var owned = ErrorOf(ConfigurationSection.ReadOwned(directory, ConfigurationSectionName.App));
+		var read = ErrorOf(ConfigurationSection.Read(directory, ConfigurationSectionName.App));
+
+		owned.Problem.Should().Be(problem);
+		owned.Should().BeEquivalentTo(read, options => options.Excluding(error => error.Reasons));
+		owned.Reasons.Select(reason => reason.GetType()).Should()
+			.Equal(read.Reasons.Select(reason => reason.GetType()));
+	}
+
+	private string ArrangeFailure(SectionProblem problem)
+	{
+		switch (problem)
+		{
+			case SectionProblem.DirectoryMissing:
+				return Path.Combine(_directory, "absent");
+			case SectionProblem.NoFiles:
+				WriteFile("app.txt", "locale: ru\n");
+				break;
+			case SectionProblem.Unreadable:
+				WriteFile("a.yaml", "locale: [ru\n");
+				break;
+			case SectionProblem.DuplicateKey:
+				WriteFile("a.yaml", "locale: ru\nlocale: en\n");
+				break;
+			case SectionProblem.KeyConflict:
+				WriteFile("a.yaml", "locale: ru\n");
+				WriteFile("b.yaml", "locale: en\n");
+				break;
+			default:
+				throw new ArgumentOutOfRangeException(nameof(problem), problem, null);
+		}
+
+		return _directory;
+	}
+
+	private static OwnedSection OwnedOf(Result<OwnedSection> result)
+	{
+		result.IsSuccess.Should().BeTrue(Describe(result));
+
+		return result.Value;
 	}
 
 	private static string ShippedConnectionBody()

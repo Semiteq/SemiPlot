@@ -10,6 +10,8 @@ using SemiPlot.DataSource.Postgres.Configuration;
 
 using Xunit;
 
+using YamlDotNet.Core;
+
 namespace SemiPlot.Tests.Unit.Postgres;
 
 // Real files in a temp directory, not a mocked file system.
@@ -18,8 +20,6 @@ namespace SemiPlot.Tests.Unit.Postgres;
 [Trait("Category", "Unit")]
 public sealed class PostgresConnectionLoaderTests : IDisposable
 {
-	private const string ZoneIdentifier = "Europe/Berlin";
-
 	private static readonly (string Field, string Value)[] _validFields =
 	[
 		("host", "\"10.20.30.40\""),
@@ -27,7 +27,6 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 		("database", "\"semiplot_dev\""),
 		("user", "\"semiplot_reader\""),
 		("password", "\"s3cret\""),
-		("source_time_zone", $"\"{ZoneIdentifier}\""),
 		("poll_interval_ms", "1000"),
 		("schema", "\"public\"")
 	];
@@ -57,14 +56,25 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	}
 
 	[Fact]
-	public void AValidSectionCarriesAResolvedTimeZone()
+	public void AValidSectionCarriesTheMachinesTimeZone()
 	{
 		WriteFile(Compose(_validFields));
 
 		var result = PostgresConnectionLoader.Load(_directory);
 
 		result.IsSuccess.Should().BeTrue(Describe(result));
-		result.Value.SourceTimeZone.Should().Be(TimeZoneInfo.FindSystemTimeZoneById(ZoneIdentifier));
+		result.Value.SourceTimeZone.Should().Be(TimeZoneInfo.Local);
+	}
+
+	[Fact]
+	public void ALeftoverTimeZoneKeyIsIgnored()
+	{
+		WriteFile(Compose(_validFields.Append(("source_time_zone", "\"Mars/Olympus_Mons\""))));
+
+		var result = PostgresConnectionLoader.Load(_directory);
+
+		result.IsSuccess.Should().BeTrue(Describe(result));
+		result.Value.SourceTimeZone.Should().Be(TimeZoneInfo.Local);
 	}
 
 	[Fact]
@@ -177,7 +187,6 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	[InlineData("database")]
 	[InlineData("user")]
 	[InlineData("password")]
-	[InlineData("source_time_zone")]
 	[InlineData("poll_interval_ms")]
 	public void AnAbsentRequiredFieldYieldsTheMissingFieldDiscriminator(string field)
 	{
@@ -201,19 +210,6 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 		var error = ErrorOf(result);
 		error.Kind.Should().Be(ConnectionFileProblem.MissingField);
 		error.Reason.Should().Contain("host");
-	}
-
-	[Fact]
-	public void AnUnknownTimeZoneYieldsTheUnknownTimeZoneDiscriminator()
-	{
-		WriteFile(Compose(Replace("source_time_zone", "\"Mars/Olympus_Mons\"")));
-
-		var result = PostgresConnectionLoader.Load(_directory);
-
-		var error = ErrorOf(result);
-		error.Path.Should().Be(_directory);
-		error.Kind.Should().Be(ConnectionFileProblem.UnknownTimeZone);
-		error.Reason.Should().Contain("Mars/Olympus_Mons");
 	}
 
 	[Theory]
@@ -309,14 +305,14 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 		{
 			KindOf(Compose(_validFields.Where(pair => pair.Field != "host"))),
 			KindOf(Compose(Replace("port", "0"))),
-			KindOf(Compose(Replace("source_time_zone", "\"Mars/Olympus_Mons\"")))
+			KindOf(Compose(Replace("host", "scada-01")))
 		};
 
 		kinds.Should().Equal(
 			[
 				ConnectionFileProblem.MissingField,
 				ConnectionFileProblem.OutOfRange,
-				ConnectionFileProblem.UnknownTimeZone
+				ConnectionFileProblem.HostNotIPv4
 			]);
 	}
 
@@ -331,22 +327,9 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 		var error = ErrorOf(result);
 		var caused = error.Reasons.OfType<ExceptionalError>().Should().ContainSingle().Which;
 
-		caused.Exception.Should().NotBeNull();
+		caused.Exception.Should().BeAssignableTo<YamlException>();
 		error.Reason.Should().NotContain("scada-01");
 		error.Message.Should().NotContain("scada-01");
-	}
-
-	[Fact]
-	public void AnUnknownTimeZoneCarriesItsCausingException()
-	{
-		WriteFile(Compose(Replace("source_time_zone", "\"Mars/Olympus_Mons\"")));
-
-		var result = PostgresConnectionLoader.Load(_directory);
-
-		var error = ErrorOf(result);
-		var caused = error.Reasons.OfType<ExceptionalError>().Should().ContainSingle().Which;
-
-		caused.Exception.Should().BeOfType<TimeZoneNotFoundException>();
 	}
 
 	[Fact]

@@ -110,7 +110,6 @@ public static class ArchiveFailureMapper
 				ConnectionFileProblem.Unparseable => Resources.FailureConnectionFileUnparseableRemedy,
 				ConnectionFileProblem.MissingField => Resources.FailureConnectionFileMissingFieldRemedy,
 				ConnectionFileProblem.OutOfRange => Resources.FailureConnectionFileOutOfRangeRemedy,
-				ConnectionFileProblem.UnknownTimeZone => Resources.FailureConnectionFileUnknownTimeZoneRemedy,
 				ConnectionFileProblem.HostNotIPv4 => Resources.FailureConnectionFileHostNotIPv4Remedy,
 				_ => Resources.FailureConnectionFileRejectedRemedy
 			},

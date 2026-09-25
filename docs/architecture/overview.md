@@ -167,9 +167,10 @@ one method: nothing else may resolve a service through a static.
 
 ## Deployment
 
-- Single Windows desktop app, runs on operator PCs next to the SCADA. The projects target plain
-  `net10.0`; `OutputType=WinExe` and the Avalonia Win32 backend are what make the operator PC the
-  deliberate Windows-only target. The plain TFM exists so the test projects build on the Linux CI
+- Single Windows desktop app that runs on the SCADA machine itself, beside the SCADA and its archive
+  (`[DEC:machine-time-zone]` in `sources.md`). The projects target plain `net10.0`;
+  `OutputType=WinExe` and the Avalonia Win32 backend are what make that machine the deliberate
+  Windows-only target. The plain TFM exists so the test projects build on the Linux CI
   runners, and changes nothing about where the application ships.
 - Auto-update of the app itself via Velopack if/when needed.
 - Site paths follow the `C:\DISTR\` convention of the sibling SemiStep installation: configuration
@@ -204,9 +205,8 @@ one method: nothing else may resolve a service through a static.
 
 `Edit` -> `Settings` opens `Settings/SettingsDialog`, the viewer's only writer of the section folders.
 It edits `locale` and `theme` in `app/`, and `host`, `port`, `database`, `user`, `password` and
-`poll_interval_ms` in `connection/`. `source_time_zone` is commissioning data about the archive, not an
-operator setting, so the window does not show it; the key stays in its file and survives every rewrite
-like any key the window does not edit. Nothing applies live: the
+`poll_interval_ms` in `connection/`. A key the window does not show, such as `schema`, stays in its file
+and survives every rewrite. Nothing applies live: the
 dialog shows a restart notice after a save, and the change takes effect at the next start.
 
 Each connection field takes only what its loader accepts. `host` is a text box checked by
@@ -304,8 +304,9 @@ and no report.
 
 The file therefore exists from `Prepare` onward and is empty until something writes to it. A
 successful parse is followed by one Information line naming the configuration directory and the
-level; at `information` or below that line is the only one a healthy run writes, and at `warning`,
-`error` or `fatal` the file stays empty until the first failure.
+level, and a loaded connection section by one naming the time zone the provider reads the archive in
+(`data-integration.md#time-boundary`). At `information` or below those two lines are the only ones a
+healthy run writes, and at `warning`, `error` or `fatal` the file stays empty until the first failure.
 
 The process exits `0` when the main window opened and closed normally, and `1` when the start failed —
 the startup failure and the fatal catch alike — so a launcher can tell one from the other.

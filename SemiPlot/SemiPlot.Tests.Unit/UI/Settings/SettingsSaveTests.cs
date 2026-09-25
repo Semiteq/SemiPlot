@@ -14,6 +14,8 @@ using SemiPlot.UI.Startup;
 
 using Xunit;
 
+using YamlDotNet.Core;
+
 using static SemiPlot.Tests.Unit.UI.Settings.SettingsSaveSandbox;
 
 namespace SemiPlot.Tests.Unit.UI.Settings;
@@ -227,15 +229,15 @@ public sealed class SettingsSaveTests : IDisposable
 	public void ARefusalKeepsTheLoadersCause()
 	{
 		var target = _sandbox.ConnectionFile;
-		File.WriteAllText(target, File.ReadAllText(target).Replace("Europe/Moscow", "Nowhere/Zone"));
+		File.WriteAllText(target, File.ReadAllText(target).Replace("port: 5432", "port: \"scada-01\""));
 
 		var result = _sandbox.Save(Edit(ConfigurationSectionName.Connection, ("host", "10.20.30.40")));
 
 		var error = SingleError<ConnectionFileError>(result);
-		error.Kind.Should().Be(ConnectionFileProblem.UnknownTimeZone);
+		error.Kind.Should().Be(ConnectionFileProblem.Unparseable);
 		error.Path.Should().Be(_sandbox.ConnectionDirectory);
 		error.Reasons.OfType<ExceptionalError>().Should().ContainSingle()
-			.Which.Exception.Should().BeOfType<TimeZoneNotFoundException>();
+			.Which.Exception.Should().BeAssignableTo<YamlException>();
 	}
 
 	[Fact]

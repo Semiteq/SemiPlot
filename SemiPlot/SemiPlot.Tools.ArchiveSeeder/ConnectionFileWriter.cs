@@ -19,7 +19,6 @@ public static class ConnectionFileWriter
 		string database,
 		string user,
 		string password,
-		string sourceTimeZoneId,
 		TimeSpan pollInterval,
 		CancellationToken cancellationToken = default)
 	{
@@ -34,7 +33,6 @@ public static class ConnectionFileWriter
 			database: {database}
 			user: {user}
 			password: "{password}"
-			source_time_zone: {sourceTimeZoneId}
 			poll_interval_ms: {(int)pollInterval.TotalMilliseconds}
 			""" + Environment.NewLine;
 

@@ -231,7 +231,7 @@ the change interval; the AppHost passes the writer's 0.5 s so the seeded day and
 one density) up to `--end` or this machine's
 clock, fills the catalogue through `--admin-connection` re-pointed at the stand database, and
 writes `connection/connection.yaml` under `--config-dir` with the bench `semiplot` role's fixed
-password and `TimeZoneInfo.Local.Id`.
+password.
 
 The catalogue is written once, here. `TagCatalogWriter` upserts `semiplot_tags`, inserts the group
 names into `semiplot_groups` and replaces each pen's rows in `semiplot_pen_groups`, all three in one
@@ -306,7 +306,7 @@ file for a refused login, delete the catalogue rows for an empty catalogue.
 
 Nothing machine-dependent lives in `AppHost.cs`: the role passwords are `BenchRoles`' public
 constants, the port is 55432, the configuration and log paths come from `DemoDirectories`, and the
-time zone lives only in the generated connection file. The
+seeder and the viewer both take the machine's own time zone. The
 `Live demo` run configuration at the repository root's `.run/` is a `DotNetProject` configuration
 over `SemiPlot.AppHost`, in the shape of `Debug.run.xml`.
 

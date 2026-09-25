@@ -22,11 +22,10 @@ public sealed class DataErrorTests
 	[InlineData(ConnectionFileProblem.Unparseable)]
 	[InlineData(ConnectionFileProblem.MissingField)]
 	[InlineData(ConnectionFileProblem.OutOfRange)]
-	[InlineData(ConnectionFileProblem.UnknownTimeZone)]
 	[InlineData(ConnectionFileProblem.HostNotIPv4)]
 	public void ConnectionFileErrorKeepsItsDiscriminator(ConnectionFileProblem kind)
 	{
-		const string Reason = "source_time_zone is blank";
+		const string Reason = "host is blank";
 
 		var error = new ConnectionFileError(ConnectionSectionPath, kind, Reason);
 

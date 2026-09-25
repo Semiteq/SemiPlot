@@ -2,8 +2,7 @@ namespace SemiPlot.DataSource.Postgres;
 
 /// <summary>
 /// The single place that knows the archive's zone: it stores naive local wall-clock time while everything
-/// above the provider works in UTC. Built from the <see cref="TimeZoneInfo"/> the connection loader already
-/// resolved, so neither direction throws.
+/// above the provider works in UTC.
 /// </summary>
 public sealed class ArchiveTimeConverter
 {

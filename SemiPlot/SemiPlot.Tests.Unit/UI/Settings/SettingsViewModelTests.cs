@@ -51,7 +51,7 @@ public sealed class SettingsViewModelTests : IDisposable
 			_connectionDirectory,
 			"connection.yaml",
 			"host: 10.20.30.40\nport: 5433\ndatabase: archive\nuser: viewer\npassword: secret\n"
-			+ "source_time_zone: Europe/Berlin\npoll_interval_ms: 250\n");
+			+ "poll_interval_ms: 250\n");
 
 		using var viewModel = Build();
 
@@ -194,21 +194,6 @@ public sealed class SettingsViewModelTests : IDisposable
 		connection.Port.Should().Be(5433);
 	}
 
-	[AvaloniaFact]
-	public async Task ASaveThatRewritesTheConnectionFileKeepsTheTimeZone()
-	{
-		ShippedConfiguration.FillPassword(_configDirectory, "secret");
-		using var viewModel = Build();
-		viewModel.Port = 5433;
-
-		await viewModel.SaveCommand.Execute();
-
-		_messagePanel.Entries.Should().BeEmpty();
-		var connection = SettingsSave.ReadOwned(_configDirectory).Connection.Value.Values;
-		connection[PostgresConnectionLoader.PortKey].Should().Be("5433");
-		connection[PostgresConnectionLoader.SourceTimeZoneKey].Should().Be("Europe/Moscow");
-	}
-
 	[AvaloniaTheory]
 	[InlineData(nameof(SettingsViewModel.Host), nameof(SettingsViewModel.IsHostValid))]
 	[InlineData(nameof(SettingsViewModel.Database), nameof(SettingsViewModel.IsDatabaseValid))]
@@ -266,7 +251,7 @@ public sealed class SettingsViewModelTests : IDisposable
 			_connectionDirectory,
 			"connection.yaml",
 			$"host: 127.0.0.1\n{port}\ndatabase: archive\nuser: viewer\npassword: secret\n"
-			+ $"source_time_zone: Europe/Berlin\n{pollInterval}\n");
+			+ $"{pollInterval}\n");
 
 		using var viewModel = Build();
 
@@ -282,7 +267,7 @@ public sealed class SettingsViewModelTests : IDisposable
 			_connectionDirectory,
 			"connection.yaml",
 			"host: scada-01\nport: 5432\ndatabase: archive\nuser: viewer\npassword: secret\n"
-			+ "source_time_zone: Europe/Berlin\npoll_interval_ms: 1000\n");
+			+ "poll_interval_ms: 1000\n");
 
 		using var viewModel = Build();
 

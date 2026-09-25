@@ -50,7 +50,6 @@ public sealed class ConvergeTests(PostgresContainerFixture postgresContainerFixt
 			loaded.IsSuccess.Should().BeTrue();
 			loaded.Value.Database.Should().Be(database);
 			loaded.Value.Username.Should().Be(BenchRoles.PlotRole);
-			loaded.Value.SourceTimeZone.Id.Should().Be(TimeZoneInfo.Local.Id);
 
 			var oidBefore = await DatabaseOidAsync(server, database);
 

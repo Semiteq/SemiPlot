@@ -168,11 +168,8 @@
   <data name="FailureConnectionFileOutOfRangeRemedy" xml:space="preserve">
     <value>Correct the value the reason names to one inside the range it states.</value>
   </data>
-  <data name="FailureConnectionFileUnknownTimeZoneRemedy" xml:space="preserve">
-    <value>Set the time zone to an identifier this machine knows.</value>
-  </data>
   <data name="FailureConnectionFileHostNotIPv4Remedy" xml:space="preserve">
-    <value>Set the host to an IPv4 address of four numbers from 0 to 255, such as 192.168.0.10. A host name is not accepted.</value>
+    <value>Set the host to an IPv4 address of four numbers from 0 to 255, such as 127.0.0.1. A host name is not accepted.</value>
   </data>
   <data name="FailureArchiveNameFormat" xml:space="preserve">
     <value>'{0}' at {1}</value>

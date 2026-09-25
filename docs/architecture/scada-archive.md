@@ -97,11 +97,13 @@ source for trends.
 
 ## Time semantics
 
-`t` is naive local wall-clock time of the machine running the SCADA server. The column type carries
-no zone, and the database stores the zone nowhere.
+`t` is naive local wall-clock time of the machine running the SCADA server: the SCADA stamps it on its
+own process clock `[MEAS:dump-20260805]`, and that clock is taken to be in the machine's Windows zone
+`[DEC:machine-time-zone]`. The column type carries no zone, and the database stores the zone nowhere.
 
-The provider converts at its own boundary using a configured source time zone; everything above the
-provider works in UTC. See `data-integration.md`.
+The SCADA, its archive and the viewer share one machine, so the provider converts at its own boundary
+in that machine's zone; everything above the provider works in UTC. See
+`data-integration.md#time-boundary`.
 
 ## Layers
 

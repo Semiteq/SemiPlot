@@ -322,7 +322,6 @@ public sealed class ArchiveFailureMapperTests
 	[InlineData(ConnectionFileProblem.Unparseable, nameof(Resources.FailureConnectionFileUnparseableRemedy))]
 	[InlineData(ConnectionFileProblem.MissingField, nameof(Resources.FailureConnectionFileMissingFieldRemedy))]
 	[InlineData(ConnectionFileProblem.OutOfRange, nameof(Resources.FailureConnectionFileOutOfRangeRemedy))]
-	[InlineData(ConnectionFileProblem.UnknownTimeZone, nameof(Resources.FailureConnectionFileUnknownTimeZoneRemedy))]
 	[InlineData(ConnectionFileProblem.HostNotIPv4, nameof(Resources.FailureConnectionFileHostNotIPv4Remedy))]
 	public void ConnectionFileInvalid_RemedyFollowsTheProblem(ConnectionFileProblem kind, string expectedKey)
 	{

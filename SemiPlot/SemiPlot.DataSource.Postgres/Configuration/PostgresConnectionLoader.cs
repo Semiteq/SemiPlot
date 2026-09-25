@@ -26,8 +26,6 @@ internal sealed class PostgresConnectionDto
 
 	public string? Password { get; set; }
 
-	public string? SourceTimeZone { get; set; }
-
 	public int? PollIntervalMs { get; set; }
 
 	public string? Schema { get; set; }
@@ -49,8 +47,6 @@ public static class PostgresConnectionLoader
 	public const string UserKey = "user";
 
 	public const string PasswordKey = "password";
-
-	public const string SourceTimeZoneKey = "source_time_zone";
 
 	public const string PollIntervalKey = "poll_interval_ms";
 
@@ -108,14 +104,7 @@ public static class PostgresConnectionLoader
 			return Result.Fail<PostgresConnectionSettings>(host.Errors);
 		}
 
-		var zone = ResolveTimeZone(sectionDirectory, dto.SourceTimeZone!);
-
-		if (zone.IsFailed)
-		{
-			return Result.Fail<PostgresConnectionSettings>(zone.Errors);
-		}
-
-		return Result.Ok(Map(dto, zone.Value));
+		return Result.Ok(Map(dto));
 	}
 
 	/// <summary>
@@ -141,7 +130,7 @@ public static class PostgresConnectionLoader
 			&& int.Parse(octet, CultureInfo.InvariantCulture) <= HighestOctet;
 	}
 
-	private static PostgresConnectionSettings Map(PostgresConnectionDto dto, TimeZoneInfo sourceTimeZone)
+	private static PostgresConnectionSettings Map(PostgresConnectionDto dto)
 	{
 		return new PostgresConnectionSettings(
 			dto.Host!,
@@ -149,7 +138,7 @@ public static class PostgresConnectionLoader
 			dto.Database!,
 			dto.User!,
 			dto.Password!,
-			sourceTimeZone,
+			TimeZoneInfo.Local,
 			TimeSpan.FromMilliseconds(dto.PollIntervalMs!.Value),
 			dto.Schema ?? DefaultSchema);
 	}
@@ -164,11 +153,12 @@ public static class PostgresConnectionLoader
 		}
 		catch (Exception exception)
 		{
-			return Fail<PostgresConnectionDto>(
+			var error = new ConnectionFileError(
 				sectionDirectory,
 				ConnectionFileProblem.Unparseable,
-				"a key carries a value this format does not accept",
-				exception);
+				"a key carries a value this format does not accept");
+
+			return Result.Fail<PostgresConnectionDto>(error.CausedBy(new ExceptionalError(exception)));
 		}
 	}
 
@@ -179,8 +169,7 @@ public static class PostgresConnectionLoader
 			(HostKey, dto.Host),
 			(DatabaseKey, dto.Database),
 			(UserKey, dto.User),
-			(PasswordKey, dto.Password),
-			(SourceTimeZoneKey, dto.SourceTimeZone)
+			(PasswordKey, dto.Password)
 		];
 
 		var missing = new List<string>();
@@ -235,33 +224,6 @@ public static class PostgresConnectionLoader
 				sectionDirectory,
 				ConnectionFileProblem.HostNotIPv4,
 				$"the field '{HostKey}' is not an IPv4 address of four decimal numbers from 0 to 255"));
-	}
-
-	private static Result<TimeZoneInfo> ResolveTimeZone(string sectionDirectory, string identifier)
-	{
-		try
-		{
-			return Result.Ok(TimeZoneInfo.FindSystemTimeZoneById(identifier));
-		}
-		catch (Exception exception) when (exception is TimeZoneNotFoundException or InvalidTimeZoneException)
-		{
-			return Fail<TimeZoneInfo>(
-				sectionDirectory,
-				ConnectionFileProblem.UnknownTimeZone,
-				$"'{identifier}' is not a time zone this machine knows",
-				exception);
-		}
-	}
-
-	private static Result<TValue> Fail<TValue>(
-		string sectionDirectory,
-		ConnectionFileProblem kind,
-		string reason,
-		Exception cause)
-	{
-		var error = new ConnectionFileError(sectionDirectory, kind, reason);
-
-		return Result.Fail<TValue>(error.CausedBy(new ExceptionalError(cause)));
 	}
 
 	private static Result Invalid(

@@ -7,7 +7,6 @@ public enum ConnectionFileProblem
 	Unparseable,
 	MissingField,
 	OutOfRange,
-	UnknownTimeZone,
 	HostNotIPv4
 }
 

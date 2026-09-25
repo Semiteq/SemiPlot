@@ -132,7 +132,7 @@ public sealed class MainWindowViewModelTests
 				StartupProbe.ConnectionDirectoryName,
 				"connection.yaml",
 				"host: 10.20.30.40\nport: 5433\ndatabase: archive\nuser: viewer\npassword: secret\n"
-				+ "source_time_zone: Europe/Berlin\npoll_interval_ms: 250\n");
+				+ "poll_interval_ms: 250\n");
 			using var viewModel = NewViewModel(configDirectory);
 			var requests = new List<SettingsViewModel>();
 			using var subscription = viewModel.SettingsRequests.Subscribe(requests.Add);

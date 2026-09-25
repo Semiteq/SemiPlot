@@ -59,7 +59,6 @@ public static class Converge
 			database,
 			BenchRoles.PlotRole,
 			BenchRoles.PlotPassword,
-			TimeZoneInfo.Local.Id,
 			_pollInterval,
 			cancellationToken);
 

@@ -17,7 +17,7 @@ document and the provider code are the entire integration surface.
 | Choosing the retention depth | setting lives in the SCADA project | decision is ours `[DEC:common-retention]` | |
 | PostgreSQL instance: installation, configuration, roles, backup, upgrade | client of it | client of it — provisioned by SemiBase, see `postgres-instance.md` | |
 | Variable number to name mapping | absent | | `semiplot_tags` `[DEC:semiplot-tags]` |
-| Knowledge of the archive's time zone | not stored anywhere | owns, in configuration | |
+| Knowledge of the archive's time zone | not stored anywhere | takes the machine's zone `[DEC:machine-time-zone]` | |
 | Layer choice, decimation, gap rendering, envelope assembly | | owns | |
 | Realtime freshness | write and flush cadence | poll cadence | |
 
@@ -199,13 +199,16 @@ extremes `[FORUM:1974]` — well supported, not yet measured (`scada-archive.md`
 
 The archive stores naive local wall-clock time; everything above the provider is UTC.
 
-- Reading: `t` is interpreted in the configured `source_time_zone` and converted to
+- Reading: `t` is interpreted in the machine's time zone and converted to
   `DateTime(Kind = Utc)` by `ArchiveTimeConverter.ToUtc`.
 - Query bounds: UTC window edges are converted back to naive local (`ToArchiveLocal`) before binding.
 - The conversion happens only at the provider edge. Display-local rendering is a separate, later
   conversion in `LocalTimeAxis`.
 
-The zone lives in configuration because the database does not record it. Daylight-saving
+The database does not record the zone. The SCADA, its archive and the viewer share one machine, so
+the provider converts in that machine's zone `[DEC:machine-time-zone]`: `PostgresConnectionLoader`
+fills `PostgresConnectionSettings.SourceTimeZone` with `TimeZoneInfo.Local`, and no file names a zone.
+Tests that build the settings directly pass a fixed zone through the same property. Daylight-saving
 transitions are accepted as cosmetic, and the archive stores no offset to make them anything else.
 `HistoryRowFold` keeps a row only when its converted timestamp exceeds the previous kept one for
 that pen, which is what keeps the envelope strictly ascending: at the spring gap that drops the one
@@ -322,7 +325,7 @@ empty window, an empty `semiplot_tags` — travel in the success channel.
 
 | Type | Fields |
 | --- | --- |
-| `ConnectionFileError` | path, kind (`Unparseable` \| `MissingField` \| `OutOfRange` \| `HostNotIPv4` \| `UnknownTimeZone`), reason |
+| `ConnectionFileError` | path, kind (`Unparseable` \| `MissingField` \| `OutOfRange` \| `HostNotIPv4`), reason |
 | `ConfigurationSectionError` | section (`App` \| `Connection`), directory, problem (`DirectoryMissing` \| `NoFiles` \| `Unlistable` \| `Unreadable` \| `DuplicateKey` \| `KeyConflict` \| `Unwritable` \| `KeyAbsent`), key, file names |
 | `ArchiveError` | kind (`ArchiveFault`), host, port, database, detail |
 
@@ -426,12 +429,11 @@ mapping and `PostgresConnectionLoader` deserializes it. Every key but `schema` i
 absent required key is reported, an unknown key ignored. `schema` defaults to `public` when absent:
 
 ```yaml
-host: 10.20.30.40
+host: 127.0.0.1
 port: 5432
 database: semiplot_dev
 user: semiplot
 password: "change me"
-source_time_zone: Europe/Berlin
 poll_interval_ms: 1000
 ```
 
@@ -446,10 +448,13 @@ this loader over it.
 zero, which some resolvers read as octal, are all refused at startup rather than at the first connect.
 `IPAddress.TryParse` is not the rule, because it accepts `1` and `127.1`.
 
-`source_time_zone` takes any identifier `TimeZoneInfo.FindSystemTimeZoneById` resolves on the
-machine running the viewer: an IANA name such as `Europe/Berlin`, or on Windows the id `tzutil /g`
-prints. The file states no query bound: `statement_timeout`
-belongs to the `semiplot` role and SemiBase owns it (`postgres-instance.md`). The connection
+The file names no time zone: the provider reads the archive in the machine's zone (Time boundary,
+above). The viewer therefore runs on the SCADA machine, and `host` is normally `127.0.0.1`. A viewer
+pointed at a SCADA machine in another zone shifts every reading by the difference between the two
+zones, and no key overrides the zone `[DEC:machine-time-zone]`.
+
+The file states no query bound: `statement_timeout` belongs to the `semiplot` role and SemiBase owns
+it (`postgres-instance.md`). The connection
 string carries `Command Timeout=300` as a client backstop; the live-edge poll uses a 10 s bound of
 its own on every tick. Loading returns a `Result`; a malformed file is reported at startup, not at
 first query. The password is stored in plain text; the mitigation is a role that cannot write the
@@ -471,8 +476,9 @@ success `LogFileTarget.Prepare` opens the file that `--log-file` names, creating
 takes the same route on failure: Serilog's file sink reports its own open failure only to
 `Serilog.Debugging.SelfLog` and then writes nowhere, so a mistyped path would otherwise start the
 viewer with no log and no report. Only then is the logger created, and `Program.Main` writes one
-Information line naming the configuration directory and the logging level; a healthy run reaches
-Information nowhere else, so above that level the file `Prepare` opened stays empty until the first
+Information line naming the configuration directory and the logging level; `StartupProbe.Run` writes
+one more naming the time zone once the connection section loads. A healthy run reaches Information
+nowhere else, so above that level the file `Prepare` opened stays empty until the first
 failure.
 
 `StartupSequence.Run` then takes these steps in order:
@@ -523,8 +529,11 @@ When a chart is empty, check in this order. Each step distinguishes a different 
 3. `SELECT max(t) FROM trends WHERE id = <one known id> AND l = 0` — if the newest sample is old,
    archiving has stopped and the problem is on the SCADA side.
 4. Is the pen present in `semiplot_tags`? An unmapped variable cannot be drawn.
-5. Does the window overlap the data? Compare against the extent, and suspect a `source_time_zone`
-   mismatch if the offset looks like a whole number of hours.
+5. Does the window overlap the data? Compare against the extent. An offset of a whole number of
+   hours means the SCADA stamps rows in a zone other than the machine's, and
+   `[DEC:machine-time-zone]` does not hold on this installation (`sources.md`). At `information` or more
+   verbose, the startup log line `Reading the archive in the time zone ...` names the zone the viewer
+   applied.
 6. Is `tpdefault` non-empty? Rows there mean the SCADA failed to create a daily partition. They are
    not a cause of an empty chart — every read still returns them — but partition elimination is
    lost for reads that cannot skip that partition.

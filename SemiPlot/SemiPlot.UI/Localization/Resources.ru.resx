@@ -168,11 +168,8 @@
   <data name="FailureConnectionFileOutOfRangeRemedy" xml:space="preserve">
     <value>Задайте значение из диапазона, указанного в причине.</value>
   </data>
-  <data name="FailureConnectionFileUnknownTimeZoneRemedy" xml:space="preserve">
-    <value>Укажите часовой пояс.</value>
-  </data>
   <data name="FailureConnectionFileHostNotIPv4Remedy" xml:space="preserve">
-    <value>Укажите в поле host IPv4-адрес из четырёх чисел от 0 до 255, например 192.168.0.10. Имя сервера не принимается.</value>
+    <value>Укажите в поле host IPv4-адрес из четырёх чисел от 0 до 255, например 127.0.0.1. Имя сервера не принимается.</value>
   </data>
   <data name="FailureArchiveNameFormat" xml:space="preserve">
     <value>«{0}» на {1}</value>

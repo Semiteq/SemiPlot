@@ -177,7 +177,6 @@ public sealed class ConfigurationSectionTests : IDisposable
 		dto.Database.Should().Be("semiplot");
 		dto.User.Should().Be("semiplot");
 		dto.Password.Should().BeEmpty();
-		dto.SourceTimeZone.Should().Be("Europe/Moscow");
 		dto.PollIntervalMs.Should().Be(1000);
 	}
 

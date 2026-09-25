@@ -32,6 +32,8 @@ public static class StartupProbe
 			return Result.Fail<StartupData>(settings.Errors);
 		}
 
+		Log.Information("Reading the archive in the time zone {TimeZone}", settings.Value.SourceTimeZone.Id);
+
 		var serviceProvider = BuildArchiveServiceProvider(settings.Value, options.ConfigDir);
 
 		// Main runs with no SynchronizationContext ahead of BuildAvaloniaApp, so this cannot deadlock.

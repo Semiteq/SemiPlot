@@ -70,7 +70,6 @@ public sealed class DeliveredConfigurationTests : IDisposable
 		result.Value.Username.Should().Be("semiplot");
 		result.Value.Schema.Should().Be("public");
 		result.Value.PollInterval.Should().Be(TimeSpan.FromMilliseconds(1000));
-		result.Value.SourceTimeZone.Should().Be(TimeZoneInfo.FindSystemTimeZoneById("Europe/Moscow"));
 	}
 
 	// converge overwrites this one file inside the demo's copy of the set. A writer aiming anywhere else

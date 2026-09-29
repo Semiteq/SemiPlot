@@ -71,6 +71,24 @@ public sealed class ArchiveDatabase(PostgresServer postgresServer, string name) 
 		await command.ExecuteNonQueryAsync(cancellationToken);
 	}
 
+	/// <summary>Runs a <c>count(*)</c> statement that binds the ids as <c>@ids</c>.</summary>
+	public static async Task<long> CountAsync(
+		string connectionString,
+		string statement,
+		int[] ids,
+		CancellationToken cancellationToken = default)
+	{
+		await using var connection = new NpgsqlConnection(connectionString);
+
+		await connection.OpenAsync(cancellationToken);
+
+		await using var command = new NpgsqlCommand(statement, connection);
+
+		command.Parameters.AddWithValue("ids", ids);
+
+		return (long)(await command.ExecuteScalarAsync(cancellationToken) ?? 0L);
+	}
+
 	public async ValueTask DisposeAsync()
 	{
 		await ExecuteAsync(

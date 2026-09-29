@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 using Npgsql;
 
@@ -20,11 +21,18 @@ public static class ArchiveProviderFactory
 
 	// The caller disposes what comes back, which returns the pooled connections before
 	// ArchiveDatabase.DisposeAsync drops the database, and a pooled connection makes DROP DATABASE refuse.
-	public static ServiceProvider Build(string connectionString)
+	public static ServiceProvider Build(string connectionString, ILoggerProvider? loggerProvider = null)
 	{
 		var services = new ServiceCollection();
 
-		services.AddLogging();
+		services.AddLogging(builder =>
+		{
+			if (loggerProvider is not null)
+			{
+				builder.SetMinimumLevel(LogLevel.Debug);
+				builder.AddProvider(loggerProvider);
+			}
+		});
 		services.AddPostgresData(SettingsFor(connectionString));
 
 		return services.BuildServiceProvider();

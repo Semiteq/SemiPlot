@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
+using SemiPlot.Core.Data;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
 
@@ -19,7 +20,8 @@ public static class UiServiceCollectionExtensions
 			provider.GetRequiredService<MessagePanelViewModel>(),
 			provider.GetRequiredService<AppStatusBarViewModel>(),
 			configDirectory,
-			provider.GetRequiredService<ILoggerFactory>()));
+			provider.GetRequiredService<ILoggerFactory>(),
+			provider.GetRequiredService<IPenCatalogueEditor>()));
 
 		return services;
 	}

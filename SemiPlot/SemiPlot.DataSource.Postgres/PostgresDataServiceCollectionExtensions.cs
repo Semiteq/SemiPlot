@@ -22,7 +22,7 @@ public static class PostgresDataServiceCollectionExtensions
 		services.AddSingleton(new ArchiveTimeConverter(settings.SourceTimeZone));
 		services.AddSingleton(new ArchiveExceptionMapper(settings));
 
-		// Factory, not type activation: the provider's constructor is internal.
+		// Factories, not type activation: both constructors are internal.
 		services.AddSingleton<IDataProvider>(provider => new PostgresDataProvider(
 			provider.GetRequiredService<NpgsqlDataSource>(),
 			provider.GetRequiredService<ArchiveTimeConverter>(),
@@ -30,6 +30,10 @@ public static class PostgresDataServiceCollectionExtensions
 			provider.GetRequiredService<PostgresConnectionSettings>(),
 			provider.GetRequiredService<IScheduler>(),
 			provider.GetRequiredService<ILogger<PostgresDataProvider>>()));
+		services.AddSingleton<IPenCatalogueEditor>(provider => new PostgresPenCatalogueEditor(
+			provider.GetRequiredService<NpgsqlDataSource>(),
+			provider.GetRequiredService<ArchiveExceptionMapper>(),
+			provider.GetRequiredService<ILogger<PostgresPenCatalogueEditor>>()));
 
 		return services;
 	}

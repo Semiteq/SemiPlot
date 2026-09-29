@@ -28,6 +28,7 @@ flowchart TB
 
     subgraph semiplot["SemiPlot — C#, private"]
         prov2["PostgresDataProvider"]
+        editor["PostgresPenCatalogueEditor"]
     end
 
     scada -- "writes rows" --> trends
@@ -37,22 +38,26 @@ flowchart TB
     prov -- "creates" --> roles
     prov2 -- "SELECT only" --> trends
     prov2 -- "SELECT only" --> config
+    editor -- "UPDATE of pen settings · group DML<br/>EXECUTE semiplot_register_new_pens()" --> config
 
     classDef write stroke-width:3px
-    class scada,prov write
+    class scada,prov,editor write
 ```
 
 `messages` is created by the SCADA and is not read by any shipped query. SemiPlot creates no object
 inside the database and runs nothing there: no summary table, trigger, function, scheduled job or
-extension. Any write, `ALTER` or `CREATE` it issues is a defect, and the server answers `42501`.
+extension. Any write outside the configuration tables, and any `ALTER` or `CREATE` it issues, is a
+defect, and the server answers `42501`.
 
-The one exception the grants already allow is the configuration tables: SemiBase gives the `semiplot`
-role a column-level `UPDATE` of the pen settings on `semiplot_tags`, full DML on `semiplot_groups` and
-`semiplot_pen_groups`, and `EXECUTE` on `semiplot_register_new_pens()`, for the pen editor that has not
-been built yet (`Semiteq/SemiPlot#67`). A pen's `id` is the SCADA variable number, so the role never
-inserts, deletes or re-keys a pen; the function registers new keys. The shipped viewer reads the tables
-and writes none of them, so the edge above is `SELECT only` for what the code does rather than for
-what the role may do.
+The configuration tables are the one place SemiPlot writes, and only from the pen editor
+(`Edit` -> `Pens and groups`). SemiBase gives the `semiplot` role a column-level `UPDATE` of the eight
+pen settings on `semiplot_tags`, full DML on `semiplot_groups` and `semiplot_pen_groups`, and `EXECUTE`
+on `semiplot_register_new_pens()`. A pen's `id` is the SCADA variable number, so the role never
+inserts, deletes or re-keys a pen; the function registers new keys, and the editor calls it only from
+its `Refresh pen list` button, never at start (`data-integration.md#the-pen-catalogue-editor`).
+`PostgresDataProvider` stays `SELECT only`: every running viewer reads the catalogue at start, again
+every 5 s, and at once after its own editor writes, so a change the editor writes reaches every chart
+without a restart (`overview.md#the-live-catalogue`).
 
 ## What the archive holds
 
@@ -116,7 +121,8 @@ flowchart TB
     mapper --> errs
 ```
 
-The composition root resolves `PostgresDataProvider`, and there is nothing else to resolve: an
+The composition root resolves `PostgresDataProvider`, and the pen editor's
+`PostgresPenCatalogueEditor` over the same `NpgsqlDataSource`; there is no fallback to resolve: an
 archive that does not answer opens the main window with its startup-failure panel filled rather than
 falling back to invented data, which `data-integration.md` states under **Startup**.
 `ArchiveFailureMapper` turns each public error type into a title, a detail and a remedy — Core's ten

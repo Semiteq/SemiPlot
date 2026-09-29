@@ -30,15 +30,19 @@ public sealed class ArchiveError(ArchiveFault kind, string host, int port, strin
 			ArchiveFault.AccessDenied => $"The {archive} refused user '{detail}'; check the password and the grants.",
 			ArchiveFault.DatabaseMissing => FormattableString.Invariant(
 				$"The server at {host}:{port} answers but holds no database '{database}'."),
-			ArchiveFault.TableMissing => $"The {archive} holds no table '{detail}'.",
+			ArchiveFault.TableMissing => $"The {archive} holds no '{detail}'.",
 			ArchiveFault.ShapeUnexpected =>
 				$"The {archive} does not carry the columns SemiPlot reads (SQLSTATE 42703): {detail}",
-			ArchiveFault.QueryTimedOut => $"The read of the {archive} was ended by the server (SQLSTATE 57014).",
+			ArchiveFault.QueryTimedOut => $"The server ended a statement against the {archive} (SQLSTATE 57014).",
 			ArchiveFault.ConnectionLost =>
 				$"The live edge of the {archive} stopped answering after {detail} consecutive failed reads.",
+			ArchiveFault.ValueRejected =>
+				$"The {archive} refused a value written to pen '{detail}' (SQLSTATE 23514).",
+			ArchiveFault.NameTaken => $"The {archive} already holds a group named '{detail}' (SQLSTATE 23505).",
+			ArchiveFault.RowGone => $"The {archive} no longer holds '{detail}'.",
 			_ => detail.Length == 0
-				? $"The {archive} rejected the read for an unrecognised reason."
-				: $"The {archive} rejected the read for an unrecognised reason (SQLSTATE {detail})."
+				? $"The {archive} rejected a statement for an unrecognised reason."
+				: $"The {archive} rejected a statement for an unrecognised reason (SQLSTATE {detail})."
 		};
 	}
 }

@@ -152,16 +152,102 @@ public sealed class ArchiveExceptionMapperTests
 		cause.Exception.Should().BeSameAs(exception);
 	}
 
+	[Fact]
+	public void AnUndefinedFunctionMapsToTableMissingCarryingTheFunction()
+	{
+		const string Function = "semiplot_register_new_pens()";
+
+		var error = Map(Postgres("42883"), Function);
+
+		error.Kind.Should().Be(ArchiveFault.TableMissing);
+		error.Detail.Should().Be(Function);
+		AssertEndpoint(error);
+	}
+
+	[Theory]
+	[InlineData("23514", ArchiveFault.ValueRejected)]
+	[InlineData("23505", ArchiveFault.NameTaken)]
+	[InlineData("23503", ArchiveFault.RowGone)]
+	public void AWriteRefusalMapsToItsWriteKindCarryingTheSubject(string sqlState, ArchiveFault kind)
+	{
+		const string Subject = "Chamber pressure";
+		var exception = Postgres(sqlState);
+
+		var error = MapWrite(exception, Subject);
+
+		error.Kind.Should().Be(kind);
+		error.Detail.Should().Be(Subject);
+		AssertEndpoint(error);
+		error.Reasons.OfType<ExceptionalError>().Should().ContainSingle().Which.Exception.Should().BeSameAs(exception);
+	}
+
+	[Fact]
+	public void AWriteWithAnUnlistedSqlStateMapsToReadFailedCarryingTheSqlState()
+	{
+		var error = MapWrite(Postgres("22003"), "Chamber pressure");
+
+		error.Kind.Should().Be(ArchiveFault.ReadFailed);
+		error.Detail.Should().Be("22003");
+		AssertEndpoint(error);
+	}
+
+	[Fact]
+	public void AWriteToAMissingRelationNamesEveryCatalogueRelation()
+	{
+		var error = MapWrite(Postgres("42P01"), "Chamber pressure");
+
+		error.Kind.Should().Be(ArchiveFault.TableMissing);
+		error.Detail.Should().Be(ArchiveStatements.PenCatalogRelations);
+	}
+
+	[Theory]
+	[InlineData("42501", ArchiveFault.AccessDenied)]
+	[InlineData("57014", ArchiveFault.QueryTimedOut)]
+	public void AWriteFailureOutsideTheWriteKindsTakesTheReadClassification(string sqlState, ArchiveFault kind)
+	{
+		MapWrite(Postgres(sqlState), "Chamber pressure").Kind.Should().Be(kind);
+	}
+
+	[Fact]
+	public void AWriteCancelledByItsCallerIsRethrownRatherThanMapped()
+	{
+		var exception = new OperationCanceledException("the caller asked");
+
+		var act = () => MapWrite(exception, "Chamber pressure");
+
+		act.Should().Throw<OperationCanceledException>().Which.Should().BeSameAs(exception);
+	}
+
+	[Fact]
+	public void RowGoneCarriesTheSubjectAndTheEndpoint()
+	{
+		const string Subject = "Etch gases";
+
+		var error = Mapper().RowGone(Subject);
+
+		error.Kind.Should().Be(ArchiveFault.RowGone);
+		error.Detail.Should().Be(Subject);
+		AssertEndpoint(error);
+	}
+
 	private static PostgresException Postgres(string sqlState)
 	{
 		return new PostgresException("the server said so", "ERROR", "ERROR", sqlState);
 	}
 
+	private static ArchiveExceptionMapper Mapper()
+	{
+		return new ArchiveExceptionMapper(ConnectionSettingsFactory.Create(host: Host, port: Port));
+	}
+
 	private static ArchiveError Map(Exception exception, string? relation = null)
 	{
-		var mapper = new ArchiveExceptionMapper(ConnectionSettingsFactory.Create(host: Host, port: Port));
+		return Mapper().Map(exception, relation).Should().BeOfType<ArchiveError>().Which;
+	}
 
-		return mapper.Map(exception, relation).Should().BeOfType<ArchiveError>().Which;
+	private static ArchiveError MapWrite(Exception exception, string subject)
+	{
+		return Mapper().MapWrite(exception, subject).Should().BeOfType<ArchiveError>().Which;
 	}
 
 	private static void AssertEndpoint(ArchiveError error)

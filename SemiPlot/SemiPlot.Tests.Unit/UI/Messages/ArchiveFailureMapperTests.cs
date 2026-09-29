@@ -394,7 +394,7 @@ public sealed class ArchiveFailureMapperTests
 	}
 
 	[Fact]
-	public void ArchiveQueryTimedOut_NamesTheSqlStateAndTheReaderRolesBound()
+	public void ArchiveQueryTimedOut_NamesTheSqlStateAndTheRolesBound()
 	{
 		var view = ArchiveFailureMapper.Map(Archive(ArchiveFault.QueryTimedOut));
 
@@ -420,6 +420,39 @@ public sealed class ArchiveFailureMapperTests
 
 		view.Detail.Should().Be(Resources.FormatFailureArchiveReadUnnamedDetail(ArchiveName));
 		view.Remedy.Should().Be(Resources.FailureArchiveReadUnnamedRemedy);
+	}
+
+	[Fact]
+	public void ArchiveValueRejected_NamesThePenAndSendsTheOperatorToAnotherValue()
+	{
+		var view = ArchiveFailureMapper.Map(Archive(ArchiveFault.ValueRejected, "Chamber pressure"));
+
+		view.Title.Should().Be(Resources.FailureArchiveValueRejectedTitle);
+		view.Detail.Should().Be(Resources.FormatFailureArchiveValueRejectedDetail(ArchiveName, "Chamber pressure"));
+		view.Remedy.Should().Be(Resources.FailureArchiveValueRejectedRemedy);
+		view.Severity.Should().Be(MessageSeverity.Warning);
+	}
+
+	[Fact]
+	public void ArchiveNameTaken_NamesTheNameAskedFor()
+	{
+		var view = ArchiveFailureMapper.Map(Archive(ArchiveFault.NameTaken, "Etch gases"));
+
+		view.Title.Should().Be(Resources.FailureArchiveNameTakenTitle);
+		view.Detail.Should().Be(Resources.FormatFailureArchiveNameTakenDetail(ArchiveName, "Etch gases"));
+		view.Remedy.Should().Be(Resources.FailureArchiveNameTakenRemedy);
+		view.Severity.Should().Be(MessageSeverity.Warning);
+	}
+
+	[Fact]
+	public void ArchiveRowGone_NamesWhatIsGoneAndSendsTheOperatorToTheCurrentCatalogue()
+	{
+		var view = ArchiveFailureMapper.Map(Archive(ArchiveFault.RowGone, "Etch gases"));
+
+		view.Title.Should().Be(Resources.FailureArchiveRowGoneTitle);
+		view.Detail.Should().Be(Resources.FormatFailureArchiveRowGoneDetail(ArchiveName, "Etch gases"));
+		view.Remedy.Should().Be(Resources.FailureArchiveRowGoneRemedy);
+		view.Severity.Should().Be(MessageSeverity.Warning);
 	}
 
 	[Fact]

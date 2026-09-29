@@ -39,7 +39,7 @@ archive and it reads and writes the configuration tables.
 
 | Property | Value | What it means for the client |
 | --- | --- | --- |
-| Privileges | `SELECT` on `trends` and `messages`; `SELECT` and a column-level `UPDATE` of the eight settings columns on `semiplot_tags`, never `INSERT` or `DELETE`; `SELECT, INSERT, UPDATE, DELETE` on `semiplot_groups` and `semiplot_pen_groups`; `SELECT` on `semiplot_meta`; `EXECUTE` on `semiplot_register_new_pens()`. Nothing else | Any write to the archive, and any `ALTER` or `CREATE`, is a defect; the server answers `42501` |
+| Privileges | `SELECT` on `trends` and `messages`; `SELECT` and a column-level `UPDATE` of the eight settings columns on `semiplot_tags`, never `INSERT` or `DELETE`; `SELECT, INSERT, UPDATE, DELETE` on `semiplot_groups` and `semiplot_pen_groups`; `SELECT` on `semiplot_meta`; `EXECUTE` on `semiplot_register_new_pens()`. Nothing else | The pen editor uses the configuration-table grants and the `EXECUTE`, and nothing else writes. Any write to the archive, and any `ALTER` or `CREATE`, is a defect; the server answers `42501` |
 | `statement_timeout` | 30 s | A read that exceeds it fails with SQLSTATE `57014`. That is a bug in layer selection, not a slow disk — surface it as a typed error instead of retrying |
 | `idle_in_transaction_session_timeout` | 60 s | A transaction held open is killed rather than blocking vacuum on the partitions |
 
@@ -59,32 +59,41 @@ risk: it grants reading process history and editing the pen catalogue, and no wr
 ## The configuration tables
 
 The archive has no mapping from a variable number to a name, so we supply one `[DEC:semiplot-tags]`.
-`semibase` creates the tables and commissioning fills them. The viewer as built only reads them; the
-pen editor that writes them is `Semiteq/SemiPlot#67` and does not exist yet.
+`semibase` creates the tables. The viewer reads them at start and every 5 s while it runs, and writes
+them from one place, the pen editor (`Edit` -> `Pens and groups`, `overview.md#the-pen-and-group-editor`).
+Its `Refresh pen list` button calls `semiplot_register_new_pens()`, which adds a hidden pen named by its number
+for every key the SCADA writes that has none; the operator then names the pens and switches them on in
+the same window. No startup step registers or writes anything
+(`data-integration.md#registration-from-the-refresh-button-only`), and a change reaches every running
+chart within 5 s (`overview.md#the-live-catalogue`).
 
-`semiplot_tags` is one row per pen, and the catalogue read projects every column of it:
+`semiplot_tags` is one row per pen, and the catalogue read projects every column of it. The role's
+`UPDATE` is column-level: it covers the eight settings columns and never `id`, and the role holds no
+`INSERT` or `DELETE` on the table, because the key is the SCADA variable number.
 
-| Column | Read by SemiPlot | Use |
-| --- | --- | --- |
-| `id` | yes | Joins the pen to `trends.id` |
-| `name` | yes | Pen label, and the catalogue ordering |
-| `unit` | yes | Drawn beside the value in the sidebar row |
-| `format` | yes | The .NET numeric mask the value renders through; no server-side check can parse one |
-| `color` | yes | Pen colour; `NULL` draws in the one fallback colour |
-| `line_style` | yes | Mapped onto the domain line-style enum |
-| `enabled_on_start` | yes | Whether the pen is drawn when the viewer opens |
-| `scale_min`, `scale_max` | yes | The pen's own Y range, set together or not at all; absent means autoscale |
+| Column | Read by SemiPlot | Written by the editor | Use |
+| --- | --- | --- | --- |
+| `id` | yes | no | Joins the pen to `trends.id` |
+| `name` | yes | yes | Pen label, and the catalogue ordering |
+| `unit` | yes | yes | Drawn beside the value in the sidebar row |
+| `format` | yes | yes | The .NET numeric mask the value renders through; no server-side check can parse one |
+| `color` | yes | yes | Pen colour; `NULL` draws in the one fallback colour |
+| `line_style` | yes | yes | Mapped onto the domain line-style enum |
+| `enabled_on_start` | yes | yes | Whether the pen is drawn when the viewer opens |
+| `scale_min`, `scale_max` | yes | yes, in one statement | The pen's own Y range, set together or not at all; absent means autoscale |
 
 Group membership is many-to-many. `semiplot_groups` holds one row per group name,
 `semiplot_pen_groups` one row per membership, and a pen may sit in several groups or in none. The
-catalogue read joins all three tables (`data-integration.md`).
+catalogue read joins all three tables (`data-integration.md`). The editor creates, renames and deletes
+groups and adds and removes memberships; deleting a group removes its memberships through
+`ON DELETE CASCADE` and leaves the pens.
 
 An absent table and an empty catalogue are both normal states with their own message, and neither is
 ever a crash — but they travel in different channels. An empty catalogue is a successful read of zero
 rows, because the database answered correctly and nothing is broken. An absent table is a typed
 failure carrying the relations the statement reads, because provisioning has not finished. Keeping
-the two apart is what lets the operator be sent to the provisioner in one case and to commissioning
-in the other.
+the two apart is what lets the operator be sent to the provisioner in one case and to the editor's
+`Refresh pen list` in the other.
 
 `semiplot_meta` carries the schema version and SemiBase maintains it. SemiPlot reads it nowhere: a
 version gate earns its cost once a delivered installation can be older than the viewer, and while one

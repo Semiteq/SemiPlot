@@ -12,11 +12,12 @@ namespace SemiPlot.UI.Bridge;
 public sealed class TrendCoordinator : IDisposable
 {
 	private static readonly TimeSpan _defaultBatchWindow = TimeSpan.FromMilliseconds(100);
-	private readonly TimeSpan _batchWindow;
 
 	private readonly IDataProvider _dataProvider;
 	private readonly IScheduler _dataScheduler;
 	private readonly IScheduler _uiScheduler;
+	private readonly TimeSpan _batchWindow;
+	private readonly BehaviorSubject<IReadOnlyList<int>> _penIds;
 	private bool _isDisposed;
 
 	private IDisposable? _realtimeSubscription;
@@ -30,8 +31,9 @@ public sealed class TrendCoordinator : IDisposable
 
 	private readonly IDisposable _connectionSubscription;
 
-	// pens must be dataProvider's own catalogue: the coordinator subscribes to these identifiers without
-	// asking the provider whether it knows them, and a provider silently drops the ones it does not.
+	// Every pen set, pens here and each one SetPens pushes, must be dataProvider's own catalogue: the
+	// coordinator subscribes to these identifiers without asking the provider whether it knows them, and a
+	// provider silently drops the ones it does not.
 	public TrendCoordinator(
 		IDataProvider dataProvider,
 		IReadOnlyList<Pen> pens,
@@ -43,7 +45,8 @@ public sealed class TrendCoordinator : IDisposable
 		_dataScheduler = dataScheduler;
 		_uiScheduler = uiScheduler;
 		_batchWindow = batchWindow ?? _defaultBatchWindow;
-		RealtimeBatches = BuildRealtimeBatches(pens);
+		_penIds = new BehaviorSubject<IReadOnlyList<int>>([.. pens.Select(pen => pen.PenId)]);
+		RealtimeBatches = BuildRealtimeBatches();
 		RealtimeFailures = _realtimeFailures.ObserveOn(_uiScheduler);
 		ConnectionFaults = _connectionFaults.AsObservable();
 		_connectionSubscription = dataProvider.ConnectionFaults
@@ -69,6 +72,9 @@ public sealed class TrendCoordinator : IDisposable
 	/// </summary>
 	public IObservable<ArchiveConnectionState> ConnectionFaults { get; }
 
+	/// <summary>The pen set the live edge follows: the constructor's, or the last one handed to SetPens.</summary>
+	public IReadOnlyList<int> PenIds => _penIds.Value;
+
 	public void Dispose()
 	{
 		if (_isDisposed)
@@ -84,6 +90,7 @@ public sealed class TrendCoordinator : IDisposable
 		// Never disposed: a buffer flush still running on the data scheduler would throw out of
 		// TryBuildRealtimeBatch, and Rx would turn that into the OnError the catch exists to prevent.
 		_realtimeFailures.OnCompleted();
+		_penIds.OnCompleted();
 	}
 
 	public void Start()
@@ -93,6 +100,12 @@ public sealed class TrendCoordinator : IDisposable
 		// The keep-alive holds the RefCount open across a chart being replaced. The stream cannot fault, so
 		// this observer has nothing to handle.
 		_realtimeSubscription ??= RealtimeBatches.Subscribe();
+	}
+
+	/// <summary>Moves the live edge onto this pen set; the history query covers rows the switch skips.</summary>
+	public void SetPens(IReadOnlyList<int> penIds)
+	{
+		_penIds.OnNext(penIds);
 	}
 
 	public Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(
@@ -114,12 +127,11 @@ public sealed class TrendCoordinator : IDisposable
 		return _dataProvider.QueryArchiveExtentAsync();
 	}
 
-	private IObservable<RealtimeBatch> BuildRealtimeBatches(IReadOnlyList<Pen> pens)
+	private IObservable<RealtimeBatch> BuildRealtimeBatches()
 	{
-		var penIds = pens.Select(pen => pen.PenId).ToArray();
-
-		return _dataProvider
-			.Subscribe(penIds)
+		return _penIds
+			.Select(_dataProvider.Subscribe)
+			.Switch()
 			.Buffer(_batchWindow, _dataScheduler)
 			.Select(TryBuildRealtimeBatch)
 			.Where(batch => batch is { Timestamps.Count: > 0 })

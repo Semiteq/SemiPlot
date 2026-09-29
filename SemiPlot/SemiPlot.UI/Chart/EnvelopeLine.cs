@@ -13,13 +13,15 @@ public sealed class EnvelopeLine : IPlottable
 {
 	private const int MaxColumns = 100_000;
 
-	private readonly LineStyle _lineStyle = new() { Width = 1f };
+	private readonly LineStyle _stroke = new() { Width = 1f };
 	private readonly List<EnvelopePoint> _pathPoints = [];
 
-	// Written on the UI thread only, through TrendPenState; read on the render thread in Render and
-	// GetAxisLimits. Every access from either thread runs under _columnsLock.
+	// The columns and the style are written on the UI thread only, through TrendPenState; read on the render
+	// thread in Render and GetAxisLimits. Every access from either thread runs under _renderStateLock.
 	private readonly List<EnvelopeColumn> _columns = [];
-	private readonly Lock _columnsLock = new();
+	private readonly Lock _renderStateLock = new();
+	private Color _color = Colors.Black;
+	private PenLineStyle _penLineStyle = PenLineStyle.Interpolated;
 
 	internal IReadOnlyList<EnvelopeColumn> Columns => _columns;
 
@@ -27,25 +29,11 @@ public sealed class EnvelopeLine : IPlottable
 
 	public IAxes Axes { get; set; } = new Axes();
 
-	public Color Color
-	{
-		get => _lineStyle.Color;
-		set => _lineStyle.Color = value;
-	}
-
-	public float LineWidth
-	{
-		get => _lineStyle.Width;
-		set => _lineStyle.Width = value;
-	}
-
-	public PenLineStyle PenLineStyle { get; set; } = PenLineStyle.Interpolated;
-
 	public IEnumerable<LegendItem> LegendItems => [];
 
 	public AxisLimits GetAxisLimits()
 	{
-		lock (_columnsLock)
+		lock (_renderStateLock)
 		{
 			if (_columns.Count == 0)
 			{
@@ -77,10 +65,11 @@ public sealed class EnvelopeLine : IPlottable
 
 	public void Render(RenderPack rp)
 	{
-		lock (_columnsLock)
+		lock (_renderStateLock)
 		{
+			_stroke.Color = _color;
 			var (first, lastExclusive) = EnvelopePath.VisibleRange(_columns, Axes.XAxis.Min, Axes.XAxis.Max);
-			EnvelopePath.Build(_columns, first, lastExclusive, PenLineStyle, _pathPoints);
+			EnvelopePath.Build(_columns, first, lastExclusive, _penLineStyle, _pathPoints);
 		}
 
 		if (_pathPoints.Count < 2)
@@ -102,12 +91,21 @@ public sealed class EnvelopeLine : IPlottable
 			}
 		}
 
-		Drawing.DrawLines(rp.Canvas, rp.Paint, path, _lineStyle);
+		Drawing.DrawLines(rp.Canvas, rp.Paint, path, _stroke);
+	}
+
+	public void Restyle(Color color, PenLineStyle lineStyle)
+	{
+		lock (_renderStateLock)
+		{
+			_color = color;
+			_penLineStyle = lineStyle;
+		}
 	}
 
 	internal void ReplaceColumns(IReadOnlyList<EnvelopeColumn> columns)
 	{
-		lock (_columnsLock)
+		lock (_renderStateLock)
 		{
 			_columns.Clear();
 			_columns.AddRange(columns);
@@ -116,7 +114,7 @@ public sealed class EnvelopeLine : IPlottable
 
 	internal void ClearColumns()
 	{
-		lock (_columnsLock)
+		lock (_renderStateLock)
 		{
 			_columns.Clear();
 		}
@@ -125,7 +123,7 @@ public sealed class EnvelopeLine : IPlottable
 	// A column at or before the last drawn X would render a segment running backwards; rejected instead.
 	internal bool AppendColumn(EnvelopeColumn column)
 	{
-		lock (_columnsLock)
+		lock (_renderStateLock)
 		{
 			if (_columns.Count > 0 && column.X <= _columns[^1].X)
 			{
@@ -146,7 +144,7 @@ public sealed class EnvelopeLine : IPlottable
 
 	internal bool FoldIntoLastColumn(double value)
 	{
-		lock (_columnsLock)
+		lock (_renderStateLock)
 		{
 			if (_columns.Count == 0)
 			{

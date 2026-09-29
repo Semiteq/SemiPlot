@@ -62,7 +62,8 @@ operator interaction.
   IScheduler dataScheduler, IScheduler uiScheduler, TimeSpan? batchWindow = null)`,
   `Buffer` on the data scheduler, `ObserveOn` on the UI one. No second `IScheduler` container registration.
   The pen catalogue is passed in because the coordinator needs the pen identifiers in its constructor
-  and `QueryPensAsync` cannot be awaited there; the composition root reads it once and hands it over.
+  and `QueryPensAsync` cannot be awaited there; the composition root hands over the start sequence's
+  read, and a later pen set arrives through `SetPens` (`data-integration.md#realtime`).
 - **Decimation envelope contract:** history record per pen = ascending `X[]` + `Min[]` + `Max[]` + center
   `Y[]`; realtime stays single-value `double?[]` (null = gap); rendered as one `EnvelopeLine` polyline
   (see Renderer).
@@ -289,6 +290,12 @@ and fast navigation across long archives.
   pass-through (mirroring the `QueryHistoryAsync` seam + UI-scheduler discipline); it never holds the
   `IDataProvider` directly. Extent → strip / window → fractions geometry is pure
   (`Core/Trends/MinimapGeometry`).
+- The strip reads the extent at start (`App.StartExtentLoad`), before a catalogue delta gives an empty
+  chart its first pens, and after a delta adds a pen to a chart that already has some
+  (`overview.md#what-a-read-changes`). `LoadExtentAsync` returns the read once the strip has applied
+  it, so the empty-chart caller seeds the navigation from that same read, and the caller after a delta
+  that adds a pen widens the navigation's first sample to an earlier one in that read
+  (`ChartNavigationController.WidenToArchiveExtent`), so the chart pans back as far as the strip draws.
 - `Minimap/MinimapView` is a Canvas-based strip (not a second `AvaPlot`): a highlight border sized
   from `WindowStartFraction` / `WindowWidthFraction`. Press/drag converts pointer-X to a fraction →
   `NavigateToFraction`, which recenters the window via the **same** `ChartNavigationController` the

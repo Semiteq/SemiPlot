@@ -144,8 +144,8 @@ public static class ArchiveFailureMapper
 				Resources.FailureArchiveDatabaseMissingRemedy,
 				MessageSeverity.Error),
 
-			// One provisioning run creates every table SemiPlot reads, so the remedy never depends on which
-			// table is absent.
+			// One provisioning run creates every relation and function SemiPlot uses, so the remedy never
+			// depends on which one is absent.
 			ArchiveFault.TableMissing => new ArchiveFailureView(
 				Resources.FailureArchiveNotProvisionedTitle,
 				Resources.FormatFailureArchiveTableMissingDetail(archive, error.Detail),
@@ -170,6 +170,24 @@ public static class ArchiveFailureMapper
 				Resources.FailureArchiveQueryTimedOutTitle,
 				Resources.FormatFailureArchiveQueryTimedOutDetail(archive),
 				Resources.FailureArchiveQueryTimedOutRemedy,
+				MessageSeverity.Warning),
+
+			ArchiveFault.ValueRejected => new ArchiveFailureView(
+				Resources.FailureArchiveValueRejectedTitle,
+				Resources.FormatFailureArchiveValueRejectedDetail(archive, error.Detail),
+				Resources.FailureArchiveValueRejectedRemedy,
+				MessageSeverity.Warning),
+
+			ArchiveFault.NameTaken => new ArchiveFailureView(
+				Resources.FailureArchiveNameTakenTitle,
+				Resources.FormatFailureArchiveNameTakenDetail(archive, error.Detail),
+				Resources.FailureArchiveNameTakenRemedy,
+				MessageSeverity.Warning),
+
+			ArchiveFault.RowGone => new ArchiveFailureView(
+				Resources.FailureArchiveRowGoneTitle,
+				Resources.FormatFailureArchiveRowGoneDetail(archive, error.Detail),
+				Resources.FailureArchiveRowGoneRemedy,
 				MessageSeverity.Warning),
 
 			_ => MapReadFailed(error, archive)

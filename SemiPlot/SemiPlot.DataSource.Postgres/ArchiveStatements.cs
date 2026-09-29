@@ -1,6 +1,9 @@
 namespace SemiPlot.DataSource.Postgres;
 
-/// <summary>The column order of <see cref="ArchiveStatements.PenCatalog"/>, named so a transposition shows.</summary>
+/// <summary>
+/// The column order of <see cref="ArchiveStatements.PenCatalog"/> and, up to <see cref="ScaleMax"/>, of
+/// <see cref="ArchiveStatements.StoredPens"/>, named so a transposition shows.
+/// </summary>
 internal static class PenCatalogColumn
 {
 	public const int Id = 0;
@@ -15,8 +18,16 @@ internal static class PenCatalogColumn
 	public const int Groups = 9;
 }
 
+/// <summary>The column order of <see cref="ArchiveStatements.StoredGroups"/>, named so a transposition shows.</summary>
+internal static class StoredGroupColumn
+{
+	public const int Id = 0;
+	public const int Name = 1;
+	public const int Members = 2;
+}
+
 /// <summary>
-/// Every statement the provider issues; parameters are bound, never interpolated.
+/// Every statement the provider and the catalogue editor issue; parameters are bound, never interpolated.
 /// </summary>
 internal static class ArchiveStatements
 {
@@ -45,7 +56,76 @@ internal static class ArchiveStatements
 	public const string ArchiveExtentRelations = $"{TagCatalogRelation}, {TrendsRelation}";
 
 	/// <summary>
-	/// One row per pen whatever its group count. <c>GROUP BY tag.id</c> alone is legal because it is the key.
+	/// SemiBase's registration function, for the detail line of a failed registration.
+	/// </summary>
+	public const string RegisterNewPensFunction = "semiplot_register_new_pens()";
+
+	/// <summary>
+	/// Every pen as stored, for the editor: no value is normalised on the way out.
+	/// </summary>
+	public const string StoredPens = """
+	                                 SELECT id, name, unit, format, color, line_style, enabled_on_start,
+	                                        scale_min, scale_max
+	                                 FROM semiplot_tags
+	                                 ORDER BY id;
+	                                 """;
+
+	public const string StoredGroups = """
+	                                   SELECT grp.id, grp.name,
+	                                          coalesce(array_agg(membership.pen_id ORDER BY membership.pen_id)
+	                                                   FILTER (WHERE membership.pen_id IS NOT NULL), '{}') AS members
+	                                   FROM semiplot_groups grp
+	                                   LEFT JOIN semiplot_pen_groups membership ON membership.group_id = grp.id
+	                                   GROUP BY grp.id
+	                                   ORDER BY grp.name;
+	                                   """;
+
+	public const string RegisterNewPens = "SELECT semiplot_register_new_pens();";
+
+	public const string UpdatePenName = "UPDATE semiplot_tags SET name = @value WHERE id = @id;";
+
+	public const string UpdatePenUnit = "UPDATE semiplot_tags SET unit = @value WHERE id = @id;";
+
+	public const string UpdatePenFormat = "UPDATE semiplot_tags SET format = @value WHERE id = @id;";
+
+	public const string UpdatePenColor = "UPDATE semiplot_tags SET color = @value WHERE id = @id;";
+
+	public const string UpdatePenLineStyle = "UPDATE semiplot_tags SET line_style = @value WHERE id = @id;";
+
+	public const string UpdatePenEnabledOnStart = """
+	                                              UPDATE semiplot_tags SET enabled_on_start = @value WHERE id = @id;
+	                                              """;
+
+	/// <summary>
+	/// Both bounds in one statement: <c>semiplot_tags_scale_paired</c> refuses a half-set pair between two.
+	/// </summary>
+	public const string UpdatePenScale = """
+	                                     UPDATE semiplot_tags SET scale_min = @min, scale_max = @max WHERE id = @id;
+	                                     """;
+
+	public const string CreateGroup = "INSERT INTO semiplot_groups (name) VALUES (@name) RETURNING id;";
+
+	public const string RenameGroup = "UPDATE semiplot_groups SET name = @name WHERE id = @id;";
+
+	public const string DeleteGroup = "DELETE FROM semiplot_groups WHERE id = @id;";
+
+	public const string AddMembership = """
+	                                    INSERT INTO semiplot_pen_groups (pen_id, group_id)
+	                                    VALUES (@pen_id, @group_id)
+	                                    ON CONFLICT (pen_id, group_id) DO NOTHING;
+	                                    """;
+
+	public const string RemoveMembership = """
+	                                       DELETE FROM semiplot_pen_groups
+	                                       WHERE pen_id = @pen_id AND group_id = @group_id;
+	                                       """;
+
+	/// <summary>The name PostgreSQL gives the membership's foreign key to the pen SemiBase declares unnamed.</summary>
+	public const string MembershipPenKey = "semiplot_pen_groups_pen_id_fkey";
+
+	/// <summary>
+	/// One row per pen whatever its group count. <c>GROUP BY tag.id</c> alone is legal because it is the key;
+	/// the id breaks a tie of names, so two pens sharing a name keep one order across reads.
 	/// </summary>
 	public const string PenCatalog = """
 	                                 SELECT tag.id, tag.name, tag.unit, tag.format, tag.color, tag.line_style,
@@ -56,7 +136,7 @@ internal static class ArchiveStatements
 	                                 LEFT JOIN semiplot_pen_groups membership ON membership.pen_id = tag.id
 	                                 LEFT JOIN semiplot_groups grp ON grp.id = membership.group_id
 	                                 GROUP BY tag.id
-	                                 ORDER BY tag.name;
+	                                 ORDER BY tag.name, tag.id;
 	                                 """;
 
 	/// <summary>

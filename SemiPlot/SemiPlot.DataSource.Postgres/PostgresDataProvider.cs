@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Globalization;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
@@ -11,7 +13,6 @@ using Npgsql;
 using NpgsqlTypes;
 
 using SemiPlot.Core.Data;
-using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
 using SemiPlot.DataSource.Postgres.Configuration;
 
@@ -38,6 +39,11 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 	// PollAsync's OnNext and Dispose's OnCompleted run on different threads; Synchronize() serializes them,
 	// as System.Reactive's contract for a multi-writer Subject requires.
 	private readonly ISubject<ArchiveConnectionState> _connectionFaults;
+
+	// docs/architecture/data-integration.md#the-catalogue-while-the-viewer-runs
+	// Written from whichever pool thread a catalogue read resumes on.
+	private readonly ConcurrentDictionary<(int PenId, int Column, string? StoredValue), byte> _warnedNormalisations =
+		new();
 
 	private int _disposed;
 
@@ -80,7 +86,7 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 	}
 
 	/// <summary>
-	/// Every configured variable, ordered by name.
+	/// Every configured variable, ordered by name and then by id.
 	/// </summary>
 	public async Task<Result<IReadOnlyList<Pen>>> QueryPensAsync()
 	{
@@ -450,7 +456,7 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 			reader.GetBoolean(PenCatalogColumn.EnabledOnStart),
 			scaleMin,
 			scaleMax,
-			ReadLineStyle(reader.GetInt16(PenCatalogColumn.LineStyle), penId));
+			ReadLineStyle(reader, penId));
 	}
 
 	// semiplot_tags_scale_paired forbids a half-set pair, so one reaching here is a hand-edited row on an
@@ -473,7 +479,8 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 			return reader.GetString(PenCatalogColumn.Color);
 		}
 
-		_logger.LogWarning(
+		_logger.Log(
+			NormalisationLevel(penId, PenCatalogColumn.Color, null),
 			"Pen {PenId} carries no colour; it is drawn in {FallbackColor} until one is commissioned.",
 			penId,
 			UncommissionedPenColor);
@@ -497,7 +504,8 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 			return storedMask;
 		}
 
-		_logger.LogWarning(
+		_logger.Log(
+			NormalisationLevel(penId, PenCatalogColumn.Format, storedMask),
 			"Pen {PenId} carries format {StoredMask}, which cannot render a reading; it is drawn under {FallbackMask}.",
 			penId,
 			storedMask,
@@ -506,21 +514,23 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		return null;
 	}
 
-	// The stored value is the member's ordinal. An unrecognised value draws interpolated rather than
-	// failing the read: one malformed row must not hide every other pen.
-	private PenLineStyle ReadLineStyle(short storedValue, int penId)
+	private PenLineStyle ReadLineStyle(NpgsqlDataReader reader, int penId)
 	{
-		if (Enum.IsDefined((PenLineStyle)storedValue))
-		{
-			return (PenLineStyle)storedValue;
-		}
+		var storedValue = reader.GetInt16(PenCatalogColumn.LineStyle);
 
-		_logger.LogWarning(
-			"Pen {PenId} carries line_style {StoredValue}, which this build does not recognise; it is drawn interpolated.",
+		return StoredLineStyle.Read(
+			storedValue,
 			penId,
-			storedValue);
+			_logger,
+			() => NormalisationLevel(
+				penId,
+				PenCatalogColumn.LineStyle,
+				storedValue.ToString(CultureInfo.InvariantCulture)));
+	}
 
-		return PenLineStyle.Interpolated;
+	private LogLevel NormalisationLevel(int penId, int column, string? storedValue)
+	{
+		return _warnedNormalisations.TryAdd((penId, column, storedValue), 0) ? LogLevel.Warning : LogLevel.Debug;
 	}
 
 	private async Task<ArchiveExtent> ReadExtentAsync(NpgsqlDataReader reader)
@@ -537,14 +547,6 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 
 	private Error Map(Exception exception, string relation)
 	{
-		var error = _exceptionMapper.Map(exception, relation);
-
-		// An empty-detail ReadFailed is a fault in this code, so it is logged.
-		if (error is ArchiveError { Kind: ArchiveFault.ReadFailed, Detail.Length: 0 })
-		{
-			_logger.LogError(exception, "The archive read failed with an exception the provider did not expect.");
-		}
-
-		return error;
+		return ArchiveFailureLog.LogIfUnexpected(_exceptionMapper.Map(exception, relation), exception, _logger);
 	}
 }

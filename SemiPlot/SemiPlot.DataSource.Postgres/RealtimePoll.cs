@@ -25,9 +25,6 @@ internal readonly record struct RealtimeTick(IReadOnlyList<Sample> Samples, Arch
 /// </summary>
 internal sealed class RealtimePoll
 {
-	// Three: one Npgsql reconnect after a reset is one failed tick, and a fault on one would flap.
-	private const int ConsecutiveFailuresBeforeFault = 3;
-
 	// q = 32 marks the last sample before a break; read for the debug line only
 	// (docs/architecture/scada-archive.md, Quality and gaps).
 	private const int LastBeforeBreakQuality = 32;
@@ -264,7 +261,7 @@ internal sealed class RealtimePoll
 			_consecutiveFailures,
 			error.Message);
 
-		if (_consecutiveFailures < ConsecutiveFailuresBeforeFault || _faultRaised)
+		if (_consecutiveFailures < ArchiveConnectionState.ConsecutiveFailuresBeforeFault || _faultRaised)
 		{
 			return null;
 		}
@@ -276,6 +273,6 @@ internal sealed class RealtimePoll
 			_settings.Host,
 			_settings.Port,
 			_settings.Database,
-			ConsecutiveFailuresBeforeFault.ToString(CultureInfo.InvariantCulture)));
+			ArchiveConnectionState.ConsecutiveFailuresBeforeFault.ToString(CultureInfo.InvariantCulture)));
 	}
 }

@@ -24,6 +24,9 @@
             <MenuItem Name="EditSettings"
                       Header="{x:Static text:Resources.MenuEditSettings}"
                       Command="{Binding ShowSettingsCommand}" />
+            <MenuItem Name="EditPensAndGroups"
+                      Header="{x:Static text:Resources.MenuEditPensAndGroups}"
+                      Command="{Binding ShowPenEditorCommand}" />
         </MenuItem>
 
         <MenuItem Name="ViewMenu"

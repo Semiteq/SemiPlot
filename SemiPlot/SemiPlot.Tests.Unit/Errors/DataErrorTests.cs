@@ -43,6 +43,9 @@ public sealed class DataErrorTests
 	[InlineData(ArchiveFault.ShapeUnexpected, "column \"v\" does not exist")]
 	[InlineData(ArchiveFault.QueryTimedOut, "")]
 	[InlineData(ArchiveFault.ConnectionLost, "3")]
+	[InlineData(ArchiveFault.ValueRejected, "Chamber pressure")]
+	[InlineData(ArchiveFault.NameTaken, "Etch gases")]
+	[InlineData(ArchiveFault.RowGone, "Etch gases")]
 	[InlineData(ArchiveFault.ReadFailed, "42P07")]
 	[InlineData(ArchiveFault.ReadFailed, "")]
 	public void ArchiveErrorKeepsItsDiscriminatorAndNamesTheAddress(ArchiveFault kind, string detail)

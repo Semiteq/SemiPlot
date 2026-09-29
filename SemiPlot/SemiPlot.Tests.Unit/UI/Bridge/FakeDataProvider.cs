@@ -43,6 +43,10 @@ internal sealed class FakeDataProvider(
 
 	public bool FailExtent { get; set; }
 
+	// A catalogue read that throws instead of answering. The real provider answers every failure with a
+	// failed Result, so this is the shape of a defect rather than of an outage.
+	public Exception? PensReadException { get; set; }
+
 	// Held tasks for the catalogue and extent reads, completed by the test or never, to drive a caller's own
 	// bound. Awaited by production code and completed by the test body with an inline continuation, so none
 	// of these gates may take RunContinuationsAsynchronously (the opposite of ChartHistoryRequestDebouncerTests').
@@ -81,7 +85,18 @@ internal sealed class FakeDataProvider(
 
 	public int? LastQueriedTargetColumnCount { get; private set; }
 
-	public IReadOnlyList<Pen> Pens { get; } = pens ??
+	public int PensQueryCount { get; private set; }
+
+	public int ExtentQueryCount { get; private set; }
+
+	public int OpenLiveSubscriptionCount { get; private set; }
+
+	public int LiveSubscriptionsOpened { get; private set; }
+
+	// Runs on the thread that opens or closes a live edge subscription, as it opens or closes it.
+	public Action? LiveSubscriptionChanging { get; set; }
+
+	public IReadOnlyList<Pen> Pens { get; set; } = pens ??
 		[
 			new Pen(1, "Pen 1", ["Group A"], "#ff0000"),
 			new Pen(2, "Pen 2", ["Group A"], "#00ff00")
@@ -111,6 +126,24 @@ internal sealed class FakeDataProvider(
 
 	public IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<int> penIds)
 	{
+		return Observable
+			.Defer(() =>
+			{
+				LiveSubscriptionChanging?.Invoke();
+				OpenLiveSubscriptionCount++;
+				LiveSubscriptionsOpened++;
+
+				return BuildLiveEdge(penIds);
+			})
+			.Finally(() =>
+			{
+				LiveSubscriptionChanging?.Invoke();
+				OpenLiveSubscriptionCount--;
+			});
+	}
+
+	private IObservable<IReadOnlyList<Sample>> BuildLiveEdge(IReadOnlyList<int> penIds)
+	{
 		if (RealtimeStreamFailure is { } failure)
 		{
 			return Observable.Throw<IReadOnlyList<Sample>>(failure, _scheduler);
@@ -133,6 +166,13 @@ internal sealed class FakeDataProvider(
 
 	public Task<Result<IReadOnlyList<Pen>>> QueryPensAsync()
 	{
+		PensQueryCount++;
+
+		if (PensReadException is { } readException)
+		{
+			return Task.FromException<Result<IReadOnlyList<Pen>>>(readException);
+		}
+
 		if (FailPens)
 		{
 			return Task.FromResult(
@@ -190,6 +230,8 @@ internal sealed class FakeDataProvider(
 
 	public Task<Result<ArchiveExtent>> QueryArchiveExtentAsync()
 	{
+		ExtentQueryCount++;
+
 		if (FailExtent)
 		{
 			return Task.FromResult(

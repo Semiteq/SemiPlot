@@ -9,6 +9,9 @@ namespace SemiPlot.Core.Data;
 /// </summary>
 public sealed record ArchiveConnectionState(ArchiveError? Fault)
 {
+	/// <summary>Failed reads in a row that make a fault: one reconnect after a server restart fails one read.</summary>
+	public const int ConsecutiveFailuresBeforeFault = 3;
+
 	public static readonly ArchiveConnectionState Connected = new((ArchiveError?)null);
 
 	public bool IsConnected => Fault is null;

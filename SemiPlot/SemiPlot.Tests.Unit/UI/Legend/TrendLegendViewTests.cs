@@ -3,9 +3,7 @@ using System.Globalization;
 using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
-using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
-using Avalonia.Input;
 using Avalonia.LogicalTree;
 using Avalonia.Media;
 using Avalonia.Styling;
@@ -17,6 +15,7 @@ using AwesomeAssertions;
 using Microsoft.Reactive.Testing;
 
 using SemiPlot.Core.Trends;
+using SemiPlot.Tests.Unit.UI.Chart;
 using SemiPlot.UI;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.Legend;
@@ -280,12 +279,12 @@ public sealed class TrendLegendViewTests
 		var headerSwitch = HeaderSwitches(window).Single();
 		headerSwitch.IsChecked.Should().BeNull();
 
-		Click(window, headerSwitch);
+		HeadlessInput.Click(window, headerSwitch);
 
 		headerSwitch.IsChecked.Should().BeTrue();
 		chart.Pens.Should().AllSatisfy(pen => pen.IsVisible.Should().BeTrue());
 
-		Click(window, headerSwitch);
+		HeadlessInput.Click(window, headerSwitch);
 
 		headerSwitch.IsChecked.Should().BeFalse();
 		chart.Pens.Should().AllSatisfy(pen => pen.IsVisible.Should().BeFalse());
@@ -296,7 +295,7 @@ public sealed class TrendLegendViewTests
 
 		headerSwitch.IsChecked.Should().BeNull();
 
-		Click(window, headerSwitch);
+		HeadlessInput.Click(window, headerSwitch);
 
 		headerSwitch.IsChecked.Should().BeTrue();
 		chart.Pens.Should().AllSatisfy(pen => pen.IsVisible.Should().BeTrue());
@@ -391,6 +390,23 @@ public sealed class TrendLegendViewTests
 		MarkedRows(window, variant).Should().Equal("Damper 02");
 	}
 
+	[AvaloniaFact]
+	public void TheRealisedSidebar_ShowsARenamedPensNewNameAfterARebuild()
+	{
+		var chart = CreateChart();
+		var pen = new Pen(1, "Chamber pressure", ["Pressures"], "#ff0000", "kPa", "0.000");
+		chart.AddPen(pen);
+		using var legend = new TrendLegendViewModel(chart);
+		var window = Realize(legend);
+
+		chart.ApplyCatalogue([pen with { Name = "Chamber pressure A" }]);
+		legend.Rebuild();
+		Dispatcher.UIThread.RunJobs();
+
+		RowName(SingleRow(window)).Text.Should().Be("Chamber pressure A");
+		RowBoxes(window).Single().IsChecked.Should().BeTrue();
+	}
+
 	private static Window Realize(TrendLegendViewModel legend)
 	{
 		var window = new Window { Width = 320, Height = 400, Content = new TrendLegendView { DataContext = legend } };
@@ -414,16 +430,6 @@ public sealed class TrendLegendViewTests
 	private static string? ToggleLabel(Window window)
 	{
 		return Descendants<Button>(window).Single(button => button.Name == "PanelStateToggle").Content as string;
-	}
-
-	private static void Click(Window window, Control control)
-	{
-		var center = control.TranslatePoint(new Point(control.Bounds.Width / 2, control.Bounds.Height / 2), window)
-			?? throw new InvalidOperationException("The control is not in the window's visual tree.");
-
-		window.MouseDown(center, MouseButton.Left);
-		window.MouseUp(center, MouseButton.Left);
-		Dispatcher.UIThread.RunJobs();
 	}
 
 	private static IReadOnlyList<CheckBox> HeaderSwitches(Window window)
@@ -524,6 +530,6 @@ public sealed class TrendLegendViewTests
 
 	private TrendChartViewModel CreateChart()
 	{
-		return LegendChartBuilder.CreateChart(_scheduler);
+		return ChartTestBuilder.CreateChart(_scheduler);
 	}
 }

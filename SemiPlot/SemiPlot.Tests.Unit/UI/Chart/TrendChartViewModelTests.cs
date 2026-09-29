@@ -1,4 +1,3 @@
-using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
 
@@ -21,6 +20,8 @@ using SemiPlot.UI.Messages;
 
 using Xunit;
 
+using static SemiPlot.Tests.Unit.UI.Chart.ChartTestBuilder;
+
 namespace SemiPlot.Tests.Unit.UI.Chart;
 
 [Collection(ProcessGlobalStateCollection.Name)]
@@ -29,46 +30,9 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 [Trait("Category", "Unit")]
 public sealed class TrendChartViewModelTests
 {
-	private static readonly TimeSpan _batchWindow = TimeSpan.FromMilliseconds(33);
-	private static readonly TimeSpan _historyDebounceWindow = TimeSpan.FromMilliseconds(150);
 	private static readonly TimeSpan _testDeadline = TimeSpan.FromSeconds(10.0);
 	private static readonly DateTime _from = new(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
 	private static readonly DateTime _to = new(2026, 6, 15, 9, 0, 0, DateTimeKind.Utc);
-
-	[AvaloniaFact]
-	public void AddPen_RegistersPenStateOnce()
-	{
-		var (viewModel, _, _, _) = CreateViewModel();
-		var pen = new Pen(7, "Heater", ["Group A"], "#ff0000");
-
-		var first = viewModel.AddPen(pen);
-		var second = viewModel.AddPen(pen);
-
-		viewModel.Pens.Should().ContainSingle();
-		viewModel.FindPen(7).Should().BeSameAs(first);
-		second.Should().BeSameAs(first);
-	}
-
-	[AvaloniaFact]
-	public void RemovePen_DropsThePenState()
-	{
-		var (viewModel, _, _, _) = CreateViewModel();
-		viewModel.AddPen(new Pen(7, "Heater", ["Group A"], "#ff0000"));
-
-		var removed = viewModel.RemovePen(7);
-
-		removed.Should().BeTrue();
-		viewModel.Pens.Should().BeEmpty();
-		viewModel.FindPen(7).Should().BeNull();
-	}
-
-	[AvaloniaFact]
-	public void RemovePen_UnknownPen_ReturnsFalse()
-	{
-		var (viewModel, _, _, _) = CreateViewModel();
-
-		viewModel.RemovePen(99).Should().BeFalse();
-	}
 
 	[AvaloniaFact]
 	public void SetPenVisibility_TogglesPenAndPlottableState()
@@ -119,7 +83,7 @@ public sealed class TrendChartViewModelTests
 		viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
 
 		coordinator.Start();
-		scheduler.AdvanceBy(_batchWindow.Ticks);
+		scheduler.AdvanceBy(BatchWindow.Ticks);
 
 		var pen = viewModel.FindPen(1)!;
 		pen.CurrentValue.Should().NotBeNull();
@@ -329,7 +293,7 @@ public sealed class TrendChartViewModelTests
 		viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
 
 		viewModel.Navigation.ZoomAt(48.0, viewModel.Navigation.To);
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		viewModel.Navigation.ActiveLayer.Should().Be(AggregationLayer.Minute);
 		provider.LastQueriedLayer.Should().Be(AggregationLayer.Minute);
@@ -356,7 +320,10 @@ public sealed class TrendChartViewModelTests
 
 		var state = viewModel.AddPen(new Pen(7, "Damper", ["Dampers"], "#ff0000", LineStyle: PenLineStyle.Stepped));
 
-		state.Line.PenLineStyle.Should().Be(PenLineStyle.Stepped);
+		var (onDiagonal, onHeldStep) = RenderedRise.Draw(viewModel, state, RenderedRise.Red);
+
+		onDiagonal.Should().BeFalse();
+		onHeldStep.Should().BeTrue();
 	}
 
 	[AvaloniaFact]
@@ -366,7 +333,10 @@ public sealed class TrendChartViewModelTests
 
 		var state = viewModel.AddPen(new Pen(7, "Heater", ["Heaters"], "#ff0000"));
 
-		state.Line.PenLineStyle.Should().Be(PenLineStyle.Interpolated);
+		var (onDiagonal, onHeldStep) = RenderedRise.Draw(viewModel, state, RenderedRise.Red);
+
+		onDiagonal.Should().BeTrue();
+		onHeldStep.Should().BeFalse();
 	}
 
 	[AvaloniaFact]
@@ -411,7 +381,7 @@ public sealed class TrendChartViewModelTests
 		provider.HistoryQueryCount.Should().Be(0);
 
 		viewModel.RequestInitialHistory();
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		provider.HistoryQueryCount.Should().BeGreaterThan(0);
 		provider.LastQueriedPenIds.Should().Contain(1);
@@ -425,7 +395,7 @@ public sealed class TrendChartViewModelTests
 		provider.HistoryQueryCount.Should().Be(0);
 
 		viewModel.RequestInitialHistory();
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		// Seed query loads once; the first-data snap must not trigger a second re-query.
 		provider.HistoryQueryCount.Should().Be(1);
@@ -437,7 +407,7 @@ public sealed class TrendChartViewModelTests
 		var (viewModel, scheduler, _, provider) = CreateViewModel();
 
 		viewModel.RequestInitialHistory();
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		provider.HistoryQueryCount.Should().Be(0);
 	}
@@ -632,7 +602,7 @@ public sealed class TrendChartViewModelTests
 		var columnsBefore = state.Line.Columns.Count;
 
 		coordinator.Start();
-		scheduler.AdvanceBy(_batchWindow.Ticks);
+		scheduler.AdvanceBy(BatchWindow.Ticks);
 
 		state.Line.Columns.Count.Should().Be(columnsBefore);
 	}
@@ -647,7 +617,7 @@ public sealed class TrendChartViewModelTests
 		var columnsBefore = state.Line.Columns.Count;
 
 		coordinator.Start();
-		scheduler.AdvanceBy(_batchWindow.Ticks);
+		scheduler.AdvanceBy(BatchWindow.Ticks);
 
 		state.Line.Columns.Count.Should().BeGreaterThan(columnsBefore);
 	}
@@ -666,7 +636,7 @@ public sealed class TrendChartViewModelTests
 		viewModel.Navigation.ActiveLayer.Should().Be(AggregationLayer.Raw);
 
 		coordinator.Start();
-		scheduler.AdvanceBy(_batchWindow.Ticks);
+		scheduler.AdvanceBy(BatchWindow.Ticks);
 
 		first.Line.Columns.Should().NotBeEmpty();
 		second.Line.Columns.Should().NotBeEmpty();
@@ -703,7 +673,7 @@ public sealed class TrendChartViewModelTests
 
 		provider.HistoryQueryCount.Should().Be(0);
 
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		provider.HistoryQueryCount.Should().Be(1);
 	}
@@ -724,7 +694,7 @@ public sealed class TrendChartViewModelTests
 		var lastLayer = viewModel.Navigation.ActiveLayer;
 		var lastWidth = lastTo - lastFrom;
 
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		provider.LastQueriedFromUtc.Should().Be(lastFrom - lastWidth);
 		provider.LastQueriedToUtc.Should().Be(lastTo + lastWidth);
@@ -741,7 +711,7 @@ public sealed class TrendChartViewModelTests
 
 		// Half a window width: the margin the first query fetched still holds every column.
 		viewModel.Navigation.PanBy(TimeSpan.FromMinutes(-30.0));
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		provider.HistoryQueryCount.Should().Be(1);
 	}
@@ -757,7 +727,7 @@ public sealed class TrendChartViewModelTests
 
 		viewModel.ReportDataAreaWidth(704.0);
 		viewModel.Navigation.PanBy(TimeSpan.FromMinutes(-30.0));
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		viewModel.Navigation.TargetColumnCount.Should().Be(512);
 		provider.HistoryQueryCount.Should().Be(1);
@@ -776,7 +746,7 @@ public sealed class TrendChartViewModelTests
 
 		viewModel.ScalesRevision.Should().Be(revisionBefore);
 
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		provider.HistoryQueryCount.Should().Be(2);
 		viewModel.ScalesRevision.Should().BeGreaterThan(revisionBefore);
@@ -795,7 +765,7 @@ public sealed class TrendChartViewModelTests
 
 		// The same half-window pan APanInsideThePrefetchedBandIssuesNoHistoryQuery answers with no query.
 		viewModel.Navigation.PanBy(TimeSpan.FromMinutes(-30.0));
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		provider.HistoryQueryCount.Should().Be(2);
 	}
@@ -814,19 +784,19 @@ public sealed class TrendChartViewModelTests
 
 		provider.GatedLayer = viewModel.Navigation.ActiveLayer;
 		viewModel.Navigation.PanBy(-4 * width);
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		provider.HistoryQueryCount.Should().Be(2);
 
 		provider.GatedLayer = null;
 		viewModel.Navigation.PanBy(4 * width);
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		viewModel.Navigation.From.Should().Be(windowFrom);
 		provider.HistoryQueryCount.Should().Be(2);
 
 		await ReleaseAndAwaitResults(viewModel, 1, () => provider.HistoryGate.SetResult(StaleEnvelopes()));
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		await AwaitQueryCount(provider, 3);
 		provider.LastQueriedFromUtc.Should().Be(windowFrom - width);
@@ -846,11 +816,11 @@ public sealed class TrendChartViewModelTests
 
 		provider.GatedLayer = viewModel.Navigation.ActiveLayer;
 		viewModel.Navigation.PanBy(-4 * width);
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		provider.GatedLayer = null;
 		viewModel.Navigation.PanBy(4 * width);
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 		var revisionBefore = viewModel.ScalesRevision;
 
 		await ReleaseAndAwaitResults(viewModel, 1, () => provider.HistoryGate.SetResult(StaleEnvelopes()));
@@ -871,7 +841,7 @@ public sealed class TrendChartViewModelTests
 		provider.FailHistory = true;
 
 		viewModel.Navigation.PanBy(-4 * width);
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		provider.HistoryQueryCount.Should().Be(2);
 		viewModel.ScalesRevision.Should().BeGreaterThan(revisionBefore);
@@ -886,7 +856,7 @@ public sealed class TrendChartViewModelTests
 		provider.HistoryQueryCount.Should().Be(1);
 
 		viewModel.Navigation.PanBy(TimeSpan.FromMinutes(-60.0));
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		provider.HistoryQueryCount.Should().Be(2);
 		var width = viewModel.Navigation.To - viewModel.Navigation.From;
@@ -965,11 +935,11 @@ public sealed class TrendChartViewModelTests
 
 		// Roughly four hours: the raw layer at 2048 columns, the minute layer at 256.
 		viewModel.Navigation.ZoomAt(TimeSpan.FromHours(4.0) / currentWidth, viewModel.Navigation.To);
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 		provider.LastQueriedLayer.Should().Be(AggregationLayer.Raw);
 
 		viewModel.ReportDataAreaWidth(256.0);
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		provider.LastQueriedLayer.Should().Be(AggregationLayer.Minute);
 		provider.LastQueriedTargetColumnCount.Should().Be(HistoryPrefetch.MarginColumnFactor * 256);
@@ -986,12 +956,12 @@ public sealed class TrendChartViewModelTests
 		provider.GatedLayer = AggregationLayer.Raw;
 
 		viewModel.RequestInitialHistory();
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 		provider.HistoryQueryCount.Should().Be(1);
 
 		viewModel.ReportDataAreaWidth(256.0);
 		provider.GatedLayer = null;
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		provider.HistoryQueryCount.Should().Be(1);
 
@@ -1089,7 +1059,7 @@ public sealed class TrendChartViewModelTests
 
 		viewModel.BeginDrag();
 		viewModel.Navigation.PanBy(TimeSpan.FromMinutes(-10.0));
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 		viewModel.EndDrag();
 
 		viewModel.ActiveLeftButtonTool.Should().Be(LeftButtonTool.Pan);
@@ -1144,7 +1114,7 @@ public sealed class TrendChartViewModelTests
 		// A zoom-out gesture re-queries the coarser layer through the debouncer.
 		viewModel.Navigation.ZoomAt(48.0, viewModel.Navigation.To);
 		viewModel.Navigation.ActiveLayer.Should().Be(AggregationLayer.Minute);
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		viewModel.FindPen(1)!.CurrentValue.Should().Be(5.0);
 	}
@@ -1160,11 +1130,11 @@ public sealed class TrendChartViewModelTests
 
 		provider.GatedLayer = AggregationLayer.Raw;
 		viewModel.RequestInitialHistory();
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		viewModel.Navigation.ZoomAt(48.0, viewModel.Navigation.To);
 		viewModel.Navigation.ActiveLayer.Should().NotBe(AggregationLayer.Raw);
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		provider.HistoryQueryCount.Should().Be(1);
 
@@ -1186,7 +1156,7 @@ public sealed class TrendChartViewModelTests
 		var pen = viewModel.FindPen(1)!;
 
 		viewModel.RequestInitialHistory();
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		viewModel.Dispose();
 
@@ -1212,7 +1182,7 @@ public sealed class TrendChartViewModelTests
 		// The next window holds no row for pen 2, so the provider answers with no envelope for it at all.
 		provider.OmittedPenIds.Add(2);
 		viewModel.Navigation.ZoomAt(48.0, viewModel.Navigation.To);
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		viewModel.FindPen(2)!.Line.Columns.Should().BeEmpty();
 		viewModel.FindPen(2)!.CurrentValue.Should().BeNull();
@@ -1232,7 +1202,7 @@ public sealed class TrendChartViewModelTests
 
 		provider.GatedLayer = AggregationLayer.Raw;
 		viewModel.RequestInitialHistory();
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		var lateState = viewModel.AddPen(new Pen(2, "Pen 2", ["Group A"], "#00ff00"));
 		lateState.LoadHistory(new PenHistoryEnvelope(2, [_from, _to], [4.0, 4.0], [4.0, 4.0], [4.0, 4.0]));
@@ -1292,7 +1262,7 @@ public sealed class TrendChartViewModelTests
 		chart.Navigation.WindowChanged += FailOnce;
 
 		// Without the guard the throw leaves ApplyRealtimeBatch, and Rx rethrows it out of this advance.
-		scheduler.AdvanceBy(_batchWindow.Ticks + 1);
+		scheduler.AdvanceBy(BatchWindow.Ticks + 1);
 		var valueWhenTheApplyThrew = state.CurrentValue;
 		scheduler.AdvanceBy(TimeSpan.FromMilliseconds(200.0).Ticks);
 
@@ -1315,7 +1285,7 @@ public sealed class TrendChartViewModelTests
 		var state = chart.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
 		provider.PoisonRealtimeWindow = true;
 
-		scheduler.AdvanceBy(_batchWindow.Ticks + 1);
+		scheduler.AdvanceBy(BatchWindow.Ticks + 1);
 
 		messagePanel.Entries.Should().ContainSingle()
 			.Which.View.Should().Be(ArchiveFailureMapper.Map(
@@ -1339,7 +1309,7 @@ public sealed class TrendChartViewModelTests
 		{
 			RealtimeStreamFailure = new InvalidOperationException("the provider ended the live edge")
 		};
-		var coordinator = new TrendCoordinator(provider, provider.Pens, scheduler, scheduler, _batchWindow);
+		var coordinator = new TrendCoordinator(provider, provider.Pens, scheduler, scheduler, BatchWindow);
 		using var panel = new MessagePanelViewModel();
 		using var chart = new TrendChartViewModel(
 			coordinator,
@@ -1349,7 +1319,7 @@ public sealed class TrendChartViewModelTests
 			NullLogger<TrendChartViewModel>.Instance);
 		coordinator.Start();
 
-		var advance = () => scheduler.AdvanceBy(_batchWindow.Ticks * 2);
+		var advance = () => scheduler.AdvanceBy(BatchWindow.Ticks * 2);
 
 		advance.Should().NotThrow();
 		panel.Entries.Should().ContainSingle().Which.RepeatCount.Should()
@@ -1365,7 +1335,7 @@ public sealed class TrendChartViewModelTests
 	{
 		var scheduler = new TestScheduler();
 		var provider = new FakeDataProvider(scheduler, TimeSpan.FromMilliseconds(10.0));
-		var coordinator = new TrendCoordinator(provider, provider.Pens, scheduler, scheduler, _batchWindow);
+		var coordinator = new TrendCoordinator(provider, provider.Pens, scheduler, scheduler, BatchWindow);
 		var logger = new RecordingLogger<TrendChartViewModel>();
 		using var panel = new MessagePanelViewModel();
 		using var chart = new TrendChartViewModel(coordinator, scheduler, scheduler, panel, logger);
@@ -1374,7 +1344,7 @@ public sealed class TrendChartViewModelTests
 
 		provider.PoisonRealtimeWindow = true;
 
-		scheduler.AdvanceBy(_batchWindow.Ticks + 1);
+		scheduler.AdvanceBy(BatchWindow.Ticks + 1);
 
 		logger.Failures.Select(entry => entry.Message).Should().Equal(
 			"Poisoned realtime window.",
@@ -1401,7 +1371,7 @@ public sealed class TrendChartViewModelTests
 			provider.Pens,
 			scheduler,
 			scheduler,
-			_batchWindow);
+			BatchWindow);
 		var panel = new MessagePanelViewModel();
 		var viewModel = new TrendChartViewModel(
 			coordinator,
@@ -1449,45 +1419,5 @@ public sealed class TrendChartViewModelTests
 		release();
 
 		await applied.WaitAsync(_testDeadline, TestContext.Current.CancellationToken);
-	}
-
-	// Drives the production initial-load path: snaps the navigation window through the real first-data
-	// extents path, requests initial history and advances the test scheduler past the throttle window.
-	// firstSample is the pan-backward floor; pass a value before the window start when a test pans into the past.
-	private static Task LoadInitialHistory(
-		TrendChartViewModel viewModel,
-		TestScheduler scheduler,
-		DateTime firstSample,
-		DateTime to)
-	{
-		viewModel.Navigation.TrackDataExtents(firstSample, to);
-		viewModel.RequestInitialHistory();
-		scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
-
-		return Task.CompletedTask;
-	}
-
-	private static (TrendChartViewModel ViewModel, TestScheduler Scheduler, TrendCoordinator Coordinator,
-		FakeDataProvider Provider)
-		CreateViewModel(TimeSpan? realtimeInterval = null)
-	{
-		// Realtime stays quiet unless a test asks for it: advancing the scheduler past the history throttle
-		// must not also pump realtime samples into a pen whose history the test asserts on.
-		var scheduler = new TestScheduler();
-		var provider = new FakeDataProvider(scheduler, realtimeInterval ?? TimeSpan.FromHours(1));
-		var coordinator = new TrendCoordinator(
-			provider,
-			provider.Pens,
-			scheduler,
-			ImmediateScheduler.Instance,
-			_batchWindow);
-		var viewModel = new TrendChartViewModel(
-			coordinator,
-			scheduler,
-			ImmediateScheduler.Instance,
-			new MessagePanelViewModel(),
-			NullLogger<TrendChartViewModel>.Instance);
-
-		return (viewModel, scheduler, coordinator, provider);
 	}
 }

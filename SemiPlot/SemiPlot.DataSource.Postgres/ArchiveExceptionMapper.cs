@@ -10,7 +10,7 @@ using SemiPlot.DataSource.Postgres.Configuration;
 namespace SemiPlot.DataSource.Postgres;
 
 /// <summary>
-/// Translates everything a read can throw into an <see cref="ArchiveError"/>; a caller's
+/// Translates everything a statement can throw into an <see cref="ArchiveError"/>; a caller's
 /// <see cref="OperationCanceledException"/> leaves as it arrived, while the server's own <c>57014</c>
 /// maps to <see cref="ArchiveFault.QueryTimedOut"/>.
 /// </summary>
@@ -18,8 +18,9 @@ internal sealed class ArchiveExceptionMapper(PostgresConnectionSettings settings
 {
 	private readonly PostgresConnectionSettings _settings = settings;
 
-	/// <param name="exception">What the read threw.</param>
-	/// <param name="relation">The relation the calling statement touches, read on the <c>42P01</c> path only.</param>
+	/// <summary>
+	/// <paramref name="relation"/> is what the statement touches, read on <c>42P01</c> and <c>42883</c> only.
+	/// </summary>
 	public Error Map(Exception exception, string? relation)
 	{
 		if (exception is OperationCanceledException)
@@ -28,6 +29,37 @@ internal sealed class ArchiveExceptionMapper(PostgresConnectionSettings settings
 		}
 
 		return Classify(exception, relation).CausedBy(exception);
+	}
+
+	/// <summary>
+	/// <paramref name="subject"/> is the pen or group name the three write kinds carry as their detail.
+	/// </summary>
+	public Error MapWrite(Exception exception, string subject)
+	{
+		if (exception is PostgresException postgres && WriteFaultOf(postgres.SqlState) is { } kind)
+		{
+			return Fault(kind, subject).CausedBy(exception);
+		}
+
+		// docs/architecture/data-integration.md#two-error-planes
+		return Map(exception, ArchiveStatements.PenCatalogRelations);
+	}
+
+	/// <summary>A write that touched no row: the pen or group it names is gone.</summary>
+	public ArchiveError RowGone(string subject)
+	{
+		return Fault(ArchiveFault.RowGone, subject);
+	}
+
+	private static ArchiveFault? WriteFaultOf(string sqlState)
+	{
+		return sqlState switch
+		{
+			PostgresErrorCodes.CheckViolation => ArchiveFault.ValueRejected,
+			PostgresErrorCodes.UniqueViolation => ArchiveFault.NameTaken,
+			PostgresErrorCodes.ForeignKeyViolation => ArchiveFault.RowGone,
+			_ => null
+		};
 	}
 
 	// Everything Npgsql raises that is not a server-delivered error is a connection-level failure: a
@@ -52,7 +84,8 @@ internal sealed class ArchiveExceptionMapper(PostgresConnectionSettings settings
 		return postgres.SqlState switch
 		{
 			PostgresErrorCodes.InvalidCatalogName => Fault(ArchiveFault.DatabaseMissing),
-			PostgresErrorCodes.UndefinedTable => Fault(ArchiveFault.TableMissing, relation ?? string.Empty),
+			PostgresErrorCodes.UndefinedTable or PostgresErrorCodes.UndefinedFunction
+				=> Fault(ArchiveFault.TableMissing, relation ?? string.Empty),
 			PostgresErrorCodes.InvalidPassword
 				or PostgresErrorCodes.InvalidAuthorizationSpecification
 				or PostgresErrorCodes.InsufficientPrivilege

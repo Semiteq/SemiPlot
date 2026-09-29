@@ -81,6 +81,9 @@
   <data name="MenuEditSettings" xml:space="preserve">
     <value>Настройки</value>
   </data>
+  <data name="MenuEditPensAndGroups" xml:space="preserve">
+    <value>Перья и группы</value>
+  </data>
   <data name="MenuView" xml:space="preserve">
     <value>Вид</value>
   </data>
@@ -121,7 +124,58 @@
     <value>SemiPlot — просмотр графиков изменений</value>
   </data>
   <data name="EmptyCatalogueMessage" xml:space="preserve">
-    <value>Каталог параметров пуст: таблица semiplot_tags не содержит ни одного параметра. Каталог заполняется при вводе инструмента в эксплуатацию.</value>
+    <value>Каталог перьев пуст. Откройте {0} > {1}, нажмите «{2}», затем задайте имена нужным перьям и включите их.</value>
+  </data>
+  <data name="PenEditorRefresh" xml:space="preserve">
+    <value>Обновить список перьев</value>
+  </data>
+  <data name="PenEditorAddedCount" xml:space="preserve">
+    <value>Добавлено перьев: {0}</value>
+  </data>
+  <data name="PenEditorTitle" xml:space="preserve">
+    <value>Перья и группы</value>
+  </data>
+  <data name="PenEditorPensTab" xml:space="preserve">
+    <value>Перья</value>
+  </data>
+  <data name="PenEditorGroupsTab" xml:space="preserve">
+    <value>Группы</value>
+  </data>
+  <data name="PenEditorColumnId" xml:space="preserve">
+    <value>Номер</value>
+  </data>
+  <data name="PenEditorColumnOnStart" xml:space="preserve">
+    <value>При запуске</value>
+  </data>
+  <data name="PenEditorColumnColor" xml:space="preserve">
+    <value>Цвет</value>
+  </data>
+  <data name="PenEditorColumnName" xml:space="preserve">
+    <value>Имя</value>
+  </data>
+  <data name="PenEditorColumnUnit" xml:space="preserve">
+    <value>Ед. изм.</value>
+  </data>
+  <data name="PenEditorColumnMask" xml:space="preserve">
+    <value>Маска</value>
+  </data>
+  <data name="PenEditorColumnLineStyle" xml:space="preserve">
+    <value>Линия</value>
+  </data>
+  <data name="PenEditorColumnScaleMin" xml:space="preserve">
+    <value>Шкала от</value>
+  </data>
+  <data name="PenEditorColumnScaleMax" xml:space="preserve">
+    <value>Шкала до</value>
+  </data>
+  <data name="PenEditorColumnGroups" xml:space="preserve">
+    <value>Группы</value>
+  </data>
+  <data name="PenLineStyleInterpolated" xml:space="preserve">
+    <value>Линейная</value>
+  </data>
+  <data name="PenLineStyleStepped" xml:space="preserve">
+    <value>Ступенчатая</value>
   </data>
   <data name="MessagePanelTitle" xml:space="preserve">
     <value>Сообщения</value>
@@ -184,13 +238,13 @@
     <value>Проверьте, что сервер PostgreSQL запущен. Проверьте, что хост и порт из файла подключения доступны с этой машины. Проверьте маршрут и межсетевой экран.</value>
   </data>
   <data name="FailureArchiveAccessDeniedTitle" xml:space="preserve">
-    <value>База данных отклонила учётные данные</value>
+    <value>База данных отказала в доступе</value>
   </data>
   <data name="FailureArchiveAccessDeniedDetail" xml:space="preserve">
     <value>Сервер {0} ответил, но отказал пользователю «{1}» в доступе к базе данных «{2}».</value>
   </data>
   <data name="FailureArchiveAccessDeniedRemedy" xml:space="preserve">
-    <value>При попытке подключения получена ошибка в правах доступа. Проверьте имя пользователя и пароль. Проверьте права доступа операции SELECT.</value>
+    <value>Проверьте имя пользователя и пароль в файле подключения. Проверьте права, которые SemiBase выдаёт роли.</value>
   </data>
   <data name="FailureArchiveNotProvisionedTitle" xml:space="preserve">
     <value>База данных не настроена</value>
@@ -202,10 +256,10 @@
     <value>Выполните команду «semibase site» для этого сервера, чтобы создать базу данных. Проверьте имя базы данных в файле подключения.</value>
   </data>
   <data name="FailureArchiveTableMissingDetail" xml:space="preserve">
-    <value>В базе данных {0} отсутствует таблица «{1}».</value>
+    <value>В базе данных {0} отсутствует «{1}».</value>
   </data>
   <data name="FailureArchiveTableMissingRemedy" xml:space="preserve">
-    <value>Таблица «{0}» создаётся при первоначальной настройке. Выполните команду «semibase site» для этой базы данных, чтобы завершить её настройку.</value>
+    <value>«{0}» создаётся при первоначальной настройке. Выполните команду «semibase site» для этой базы данных, чтобы завершить её настройку.</value>
   </data>
   <data name="FailureArchiveConnectionLostTitle" xml:space="preserve">
     <value>База данных перестала отвечать</value>
@@ -226,28 +280,55 @@
     <value>Таблица «public.trends» и её столбцы создаются при первоначальной настройке. Выполните команду «semibase site» для этой базы данных. Проверьте, не изменяли ли таблицу после настройки.</value>
   </data>
   <data name="FailureArchiveQueryTimedOutTitle" xml:space="preserve">
-    <value>База данных прервала чтение</value>
+    <value>База данных прервала запрос</value>
   </data>
   <data name="FailureArchiveQueryTimedOutDetail" xml:space="preserve">
-    <value>Сервер прервал чтение {0} (SQLSTATE 57014).</value>
+    <value>Сервер прервал запрос к {0} (SQLSTATE 57014).</value>
   </data>
   <data name="FailureArchiveQueryTimedOutRemedy" xml:space="preserve">
-    <value>Проверьте настройку statement_timeout для роли чтения на сервере. Сократите интервал времени на графике. Проверьте, не отменил ли чтение администратор.</value>
+    <value>Проверьте настройку statement_timeout для роли на сервере. Если данные читал график, сократите его интервал времени. Проверьте, не отменил ли запрос администратор.</value>
   </data>
   <data name="FailureArchiveReadFailedTitle" xml:space="preserve">
-    <value>База данных отклонила чтение</value>
+    <value>База данных отклонила запрос</value>
   </data>
   <data name="FailureArchiveReadFailedDetail" xml:space="preserve">
-    <value>База данных {0} отклонила чтение (SQLSTATE {1}).</value>
+    <value>База данных {0} отклонила запрос (SQLSTATE {1}).</value>
   </data>
   <data name="FailureArchiveReadFailedRemedy" xml:space="preserve">
     <value>Найдите запись с SQLSTATE {0} в журнале сервера PostgreSQL. Передайте её вместе с файлом журнала SemiPlot.</value>
   </data>
   <data name="FailureArchiveReadUnnamedDetail" xml:space="preserve">
-    <value>Чтение {0} завершилось ошибкой, прежде чем сервер ответил.</value>
+    <value>Запрос к {0} завершился ошибкой, прежде чем сервер ответил.</value>
   </data>
   <data name="FailureArchiveReadUnnamedRemedy" xml:space="preserve">
     <value>Если сообщение повторяется, передайте файл журнала SemiPlot.</value>
+  </data>
+  <data name="FailureArchiveValueRejectedTitle" xml:space="preserve">
+    <value>База данных отклонила значение</value>
+  </data>
+  <data name="FailureArchiveValueRejectedDetail" xml:space="preserve">
+    <value>База данных {0} отклонила значение, записанное для пера «{1}».</value>
+  </data>
+  <data name="FailureArchiveValueRejectedRemedy" xml:space="preserve">
+    <value>Введите другое значение. Шкала задаётся обеими границами, минимум меньше максимума. Цвет задаётся в виде #RRGGBB.</value>
+  </data>
+  <data name="FailureArchiveNameTakenTitle" xml:space="preserve">
+    <value>Имя уже занято</value>
+  </data>
+  <data name="FailureArchiveNameTakenDetail" xml:space="preserve">
+    <value>В базе данных {0} уже есть группа «{1}».</value>
+  </data>
+  <data name="FailureArchiveNameTakenRemedy" xml:space="preserve">
+    <value>Выберите имя, которого нет у других групп.</value>
+  </data>
+  <data name="FailureArchiveRowGoneTitle" xml:space="preserve">
+    <value>Запись больше не существует</value>
+  </data>
+  <data name="FailureArchiveRowGoneDetail" xml:space="preserve">
+    <value>В базе данных {0} больше нет «{1}». Её удалил другой экземпляр SemiPlot или администратор.</value>
+  </data>
+  <data name="FailureArchiveRowGoneRemedy" xml:space="preserve">
+    <value>Перечитайте каталог, чтобы увидеть его текущее содержимое. Повторите изменение, если оно ещё нужно.</value>
   </data>
   <data name="FailureStartupReadTimedOutTitle" xml:space="preserve">
     <value>База данных не ответила вовремя</value>
@@ -259,7 +340,7 @@
     <value>Проверьте загрузку сервера. Проверьте, есть ли в таблице индекс по столбцу времени.</value>
   </data>
   <data name="FailureStartupReadPenCatalogue" xml:space="preserve">
-    <value>каталог параметров</value>
+    <value>каталог перьев</value>
   </data>
   <data name="FailureStartupReadArchiveExtent" xml:space="preserve">
     <value>период записанных данных</value>
@@ -443,5 +524,50 @@
   </data>
   <data name="SettingsFieldRequired" xml:space="preserve">
     <value>{0}: обязательное поле</value>
+  </data>
+  <data name="PenFormNameRequired" xml:space="preserve">
+    <value>Имя: обязательное поле</value>
+  </data>
+  <data name="PenFormMaskInvalid" xml:space="preserve">
+    <value>Маска: числовая маска, например 0.00 или #,##0.0, без букв и без %</value>
+  </data>
+  <data name="PenFormColorInvalid" xml:space="preserve">
+    <value>Цвет: #RRGGBB, например #1F77B4</value>
+  </data>
+  <data name="PenFormScaleBoundInvalid" xml:space="preserve">
+    <value>Шкала: каждая граница — число или пусто</value>
+  </data>
+  <data name="PenFormScaleHalfSet" xml:space="preserve">
+    <value>Шкала: задайте обе границы или ни одной</value>
+  </data>
+  <data name="PenFormScaleInverted" xml:space="preserve">
+    <value>Шкала: минимум должен быть меньше максимума</value>
+  </data>
+  <data name="PenFormMaskPreviewLabel" xml:space="preserve">
+    <value>Пример</value>
+  </data>
+  <data name="PenGroupsNameRequired" xml:space="preserve">
+    <value>Имя группы: обязательное поле</value>
+  </data>
+  <data name="PenGroupsDeleteConfirmation" xml:space="preserve">
+    <value>Удалить группу «{0}»? Перьев в группе: {1}. Сами перья останутся.</value>
+  </data>
+  <data name="PenGroupsNewNamePlaceholder" xml:space="preserve">
+    <value>Имя новой группы</value>
+  </data>
+  <data name="PenGroupsCreate" xml:space="preserve">
+    <value>Создать</value>
+  </data>
+  <data name="PenGroupsNameLabel" xml:space="preserve">
+    <value>Имя группы</value>
+  </data>
+  <data name="PenGroupsDelete" xml:space="preserve">
+    <value>Удалить</value>
+  </data>
+  <data name="PenGroupsCancel" xml:space="preserve">
+    <value>Отмена</value>
+  </data>
+  <data name="PenGroupsMembersHeader" xml:space="preserve">
+    <value>Перья выбранной группы</value>
   </data>
 </root>

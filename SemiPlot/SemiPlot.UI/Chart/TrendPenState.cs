@@ -1,5 +1,7 @@
 using ReactiveUI;
 
+using ScottPlot;
+
 using SemiPlot.Core.Trends;
 
 namespace SemiPlot.UI.Chart;
@@ -10,10 +12,14 @@ public sealed class TrendPenState : ReactiveObject
 	{
 		Pen = pen;
 		Line = line;
-		Line.PenLineStyle = pen.LineStyle;
+		RestyleLine();
 	}
 
-	public Pen Pen { get; }
+	public Pen Pen
+	{
+		get;
+		private set => this.RaiseAndSetIfChanged(ref field, value);
+	}
 
 	public EnvelopeLine Line { get; }
 
@@ -31,6 +37,13 @@ public sealed class TrendPenState : ReactiveObject
 	{
 		get;
 		private set => this.RaiseAndSetIfChanged(ref field, value);
+	}
+
+	/// <summary>Takes a stored revision of the pen; visibility and the loaded history stay.</summary>
+	public void Revise(Pen pen)
+	{
+		Pen = pen;
+		RestyleLine();
 	}
 
 	public void LoadHistory(PenHistoryEnvelope envelope)
@@ -75,6 +88,11 @@ public sealed class TrendPenState : ReactiveObject
 		{
 			CurrentValue = value;
 		}
+	}
+
+	private void RestyleLine()
+	{
+		Line.Restyle(new Color(Pen.Color), Pen.LineStyle);
 	}
 
 	private static double? LastNonGapCenter(List<EnvelopeColumn> columns)

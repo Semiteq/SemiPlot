@@ -121,6 +121,7 @@ public sealed class PostgresCompositionTests
 	// cannot tell the two apart.
 	[Theory]
 	[InlineData(typeof(IDataProvider))]
+	[InlineData(typeof(IPenCatalogueEditor))]
 	[InlineData(typeof(IScheduler))]
 	[InlineData(typeof(NpgsqlDataSource))]
 	[InlineData(typeof(ArchiveExceptionMapper))]

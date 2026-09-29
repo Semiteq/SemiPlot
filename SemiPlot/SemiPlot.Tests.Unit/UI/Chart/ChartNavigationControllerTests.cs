@@ -393,6 +393,39 @@ public sealed class ChartNavigationControllerTests
 		controller.From.Should().Be(_last - TimeSpan.FromHours(1.0));
 	}
 
+	[Fact]
+	public void WidenToArchiveExtent_WithAnEarlierFirstSample_MovesThePanFloorAndNotTheWindow()
+	{
+		var controller = new ChartNavigationController();
+		controller.SeedFromArchiveExtent(new ArchiveExtent(_first, _last));
+		var raised = 0;
+		controller.WindowChanged += (_, _) => raised++;
+		var earlier = _first - TimeSpan.FromDays(10.0);
+
+		controller.WidenToArchiveExtent(new ArchiveExtent(earlier, _last));
+
+		raised.Should().Be(0);
+		controller.To.Should().Be(_last);
+		controller.IsSticky.Should().BeTrue();
+		controller.FirstSample.Should().Be(earlier);
+
+		controller.PanBy(TimeSpan.FromDays(-30.0));
+
+		controller.From.Should().Be(earlier);
+	}
+
+	[Fact]
+	public void WidenToArchiveExtent_WithALaterOrAnEmptyExtent_KeepsThePanFloor()
+	{
+		var controller = new ChartNavigationController();
+		controller.SeedFromArchiveExtent(new ArchiveExtent(_first, _last));
+
+		controller.WidenToArchiveExtent(new ArchiveExtent(_first.AddHours(1.0), _last));
+		controller.WidenToArchiveExtent(ArchiveExtent.Empty);
+
+		controller.FirstSample.Should().Be(_first);
+	}
+
 	// ceiling(layer) = nextCoarser(layer).ToPointSpacing() * columns. The spacings are spelled out rather
 	// than read back from the production helper, so a wrong spacing or a wrong next-coarser rule fails these
 	// tests instead of moving with them.

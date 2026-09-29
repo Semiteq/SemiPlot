@@ -70,7 +70,7 @@ public sealed class TrendLegendRowViewModel : ReactiveObject, IDisposable
 		set
 		{
 			this.RaiseAndSetIfChanged(ref _isVisible, value);
-			if (!_isSettingVisibilityFromChart)
+			if (!_isSettingVisibilityFromChart && !_subscriptions.IsDisposed)
 			{
 				_chartViewModel.SetPenVisibility(_penId, value);
 			}

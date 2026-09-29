@@ -8,7 +8,9 @@ same one the sibling SemiStep installation uses. What the palette does not cover
 variant-aware colour, which the section below states.
 
 `Semi.Avalonia` 12.0.3 replaced `FluentTheme`. `App.axaml` is an include manifest and nothing else:
-`<semi:SemiTheme/>` in `Application.Styles` followed by one `StyleInclude` of `Styles/Forms.axaml`, one
+`<semi:SemiTheme/>` and `<semi:ColorPickerSemiTheme/>` (`Semi.Avalonia.ColorPicker` 12.0.3, the theme
+of the pen editor's `ColorPicker` from `Avalonia.Controls.ColorPicker` 12.0.5) in `Application.Styles`
+followed by one `StyleInclude` of `Styles/Forms.axaml`, one
 `ResourceInclude` pointing at the palette, and `RequestedThemeVariant="Light"` as the declared bootstrap
 variant. No style body lives at the application root.
 
@@ -36,7 +38,7 @@ control, in each state the tree can reach.
 | `WindowDefaultForeground` | `Window`, and every control inheriting from it | `#000000` | `#DFE1E5` |
 | `MenuItemForeground` | Every menu caption at rest: the menu bar's File, Edit, View and Help, their items, the check glyph, and the `TextBox` context menu | `#000000` | `#DFE1E5` |
 | `MenuItemPointeroverForeground` | A menu caption while its submenu is open or the pointer is over it; Semi ships this brighter than its own text colour | `#000000` | `#DFE1E5` |
-| `TextBoxPlaceholderForeground` | A `TextBox` watermark; no control in this tree shows one since the navigation bar lost its limit boxes | `#818594` | `#6F737A` |
+| `TextBoxPlaceholderForeground` | A `TextBox` watermark: the new-group-name field on the pen editor's `Groups` tab | `#818594` | `#6F737A` |
 | `TextBlockDisabledForeground` | Disabled `TextBlock` | `#A8ADBD` | `#5A5D63` |
 | `TextBoxDisabledForeground` | Disabled `TextBox` | `#A8ADBD` | `#5A5D63` |
 | `ButtonDefaultDisabledForeground` | A button whose command cannot execute | `#A8ADBD` | `#5A5D63` |
@@ -53,6 +55,31 @@ control, in each state the tree can reach.
 | `MenuFlyoutBackground` | Every open submenu, the `TextBox` context menu included | `#F7F8FA` | `#2B2D30` |
 | `MenuFlyoutBorderBrush` | The same submenu's border | `#EBECF0` | `#393B40` |
 | `MenuItemSeparatorBackground` | The `Separator` in the View menu | `#EBECF0` | `#393B40` |
+| `TabItemLineHeaderForeground` | A pen editor tab header at rest | `#818594` | `#6F737A` |
+| `TabItemLineHeaderPointeroverForeground`, `TabItemLineHeaderSelectedForeground` | A hovered tab header, and the selected one | `#000000` | `#DFE1E5` |
+| `TabItemLinePipeSelectedBackground` | The selected tab's underline | `#3574F0` | `#3574F0` |
+| `TabControlSeparatorBorderBrush` | The line under the tab headers | `#EBECF0` | `#393B40` |
+| `ListBoxItemPointeroverForeground`, `ListBoxItemPressedForeground`, `ListBoxItemSelectedForeground` | A hovered, pressed or selected row of the pen table and the group list | `#000000` | `#DFE1E5` |
+| `ListBoxItemSelectedBackground`, `ListBoxItemSelectedPointeroverBackground` | The selected row, hovered or not; the same fill as the sidebar's active row | `#3574F0` at 0.25 opacity | `#3574F0` at 0.25 opacity |
+| `ComboBoxItemForeground`, `ComboBoxItemFocusForeground`, `ComboBoxItemPointeroverForeground`, `ComboBoxItemSelectedForeground` | An item of the open line-style list at rest, focused, hovered and selected | `#000000` | `#DFE1E5` |
+| `ComboBoxIconPointeroverForeground` | The line-style box's arrow under the pointer | `#000000` | `#DFE1E5` |
+| `ComboBoxDisabledForeground` | The line-style box's value while no pen is selected | `#A8ADBD` | `#5A5D63` |
+| `ComboBoxSelectorPressedBorderBrush` | The line-style box's border while its list is open | `#3574F0` | `#3574F0` |
+| `ComboBoxItemSelectedBackground` | The selected item of the open line-style list | `#3574F0` at 0.25 opacity | `#3574F0` at 0.25 opacity |
+| `ComboBoxPopupBackground` | The open line-style list | `#F7F8FA` | `#2B2D30` |
+| `ComboBoxPopupBorderBrush` | The same list's border | `#EBECF0` | `#393B40` |
+| `CheckBoxDefaultDisabledBorderBrush` | The form's "on start" box while no pen is selected | `#EBECF0` | `#393B40` |
+| `FlyoutForeground` | Text in the colour picker's flyout | `#000000` | `#DFE1E5` |
+| `FlyoutBackground` | The colour picker's flyout | `#F7F8FA` | `#2B2D30` |
+| `FlyoutBorderBrush` | The same flyout's border | `#EBECF0` | `#393B40` |
+| `ColorSpectrumBorderBrush` | The picker spectrum's edge | `#EBECF0` | `#393B40` |
+| `ColorViewTabItemSelectedForeground` | The icon of the picker's selected tab | `#3574F0` | `#3574F0` |
+| `ColorViewRadioButtonCheckedBackground` | The chosen colour model on the picker's components tab | `#3574F0` | `#3574F0` |
+| `ColorViewRadioButtonForeground` | The other colour model's caption | `#3574F0` | `#3574F0` |
+| `ColorViewRadioButtonBackground` | The other colour model's ground | `#FFFFFF` | `#1E1F22` |
+| `CheckBoxCheckedPointeroverBackground`, `CheckBoxCheckedPointeroverBorderBrush` | A hovered checked box: a membership box, the form's "on start" box, a legend box | `#3574F0` | `#3574F0` |
+| `CheckBoxCheckedPressedBackground`, `CheckBoxCheckedPressedBorderBrush`, `CheckBoxPressedBorderBrush` | A pressed box, checked or not | `#3574F0` | `#3574F0` |
+| `CheckBoxCheckedDisabledBackground`, `CheckBoxCheckedDisabledBorderBrush` | A checked box that is disabled: a membership box while its write runs | `#A8ADBD` | `#5A5D63` |
 
 The accent is the one value deliberately equal across the variants: it does not change with the
 ground it sits on.
@@ -63,6 +90,10 @@ Measured on 2026-09-11 off real controls in a headless window: `Button.Backgroun
 under `Light` and `#FFFFFF` at 0.12 under `Dark`; the `PART_ClearButton` and `PART_RevealButton`
 glyph foregrounds of a `TextBox` are `#1C1F23` at 0.62 and `#F9F9F9` at 0.6. They are correct as they
 stand; the palette overrides a key only where Semi's stock value does not match the JetBrains one.
+The pen editor's controls keep Semi's value in the same places, measured on 2026-09-28: the
+translucent hover and press overlays of tabs, list rows, combo items and checkboxes, the picker's icons
+at 0.62 and 0.35, the white check glyphs, and the black and white contrast edges of the picker's
+sliders.
 Adding a control means running the same marker probe for it, not copying a key list.
 
 `ThemeTests.EverySemiControl_PaintsItselfFromThePalette` shows a real `Button`, `TextBlock`, `TextBox`
@@ -74,8 +105,17 @@ holds, a `ToggleButton` in both check states, an unchecked and an indeterminate 
 rest and open, a leaf, a checked item's glyph, a `Separator`, the flyout chrome and an `ItemsControl`
 row. The `Ellipse` of a message-panel row carries no Semi key: its fill is one of this tree's own
 severity brushes, gated by `MessagePanelViewTests`.
+The pen editor's controls have four tests of their own: `EveryTabAndListSurface_PaintsItselfFromThePalette`
+(a `TabControl` and a `ListBox` at rest, hovered, pressed and selected),
+`EveryComboBoxSurface_PaintsItselfFromThePalette` (the line-style list open, hovered and disabled, and
+a disabled `CheckBox`), `EveryColourPickerSurface_PaintsItselfFromThePalette` (the picker's flyout on
+the spectrum and on the components tab) and
+`EveryCheckBoxStateAMembershipBoxReaches_PaintsItselfFromThePalette` (a box checked and hovered,
+pressed checked and unchecked, and checked while disabled).
+`APaletteKeyCarryingOpacity_KeepsItUnderBothVariants` reads the 0.25 opacity of the four translucent
+keys back under both variants.
 Resolving a key through `Application.TryGetResource` cannot fail while an override is inert, so a test
-written that way proves nothing about the retint. A control the tree gains is added to one of those two
+written that way proves nothing about the retint. A control the tree gains is added to one of those
 tests in every state it reaches.
 
 ## Semi's own control strings
@@ -92,16 +132,19 @@ context menu of the axis-bound editor's `TextBox`.
 
 ## Corner radius sits outside the theme dictionaries
 
-`Styles/Palette.axaml` overrides `ButtonCornerRadius`, `TextBoxDefaultCornerRadius` and
-`CheckBoxBoxCornerRadius` at the top level of the dictionary, not inside
+`Styles/Palette.axaml` overrides five keys at 4 px: `ButtonCornerRadius`,
+`TextBoxDefaultCornerRadius`, `CheckBoxBoxCornerRadius`, `ComboBoxSelectorCornerRadius` and
+`ColorPickerCornerRadius`. They sit at the top level of the dictionary, not inside
 `ResourceDictionary.ThemeDictionaries`: a radius does not change with the variant. The same
 `StaticResource` alias as above is why the component keys are overridden and `SemiBorderRadiusSmall`
 is not.
-`ThemeTests.EveryCornerRadius_ComesFromThePalette` reads all three back off a real `Button`, `TextBox`
-and `CheckBox` under both variants. Semi paints 3 without the overrides, so the control is what proves
-them live.
+`ThemeTests.EveryCornerRadius_ComesFromThePalette` reads all five back off a real `Button`, `TextBox`,
+`CheckBox`, `ComboBox` (its `Background` border) and `ColorPicker` (its `PART_Background` border) under
+both variants. Semi paints 3 without the overrides, so the control is what proves them live.
 
-The three keys are the controls this tree has. A control the tree gains brings its own key.
+A control the tree gains brings its own key, with two exceptions that carry none. A `ListBoxItem` and a
+line-style `TabItem` paint 0 px in Semi, square as the surfaces around them. The combo box's drop-down
+and the picker's flyout keep Semi's 6 px, as the menu flyout does.
 
 ## The application's own surfaces
 
@@ -123,15 +166,17 @@ Semi owns the controls; these twelve keys are ours, and each exists in both vari
 | `AppConnectionFaultBrush` | The same indicator, `connection-fault` | `#DB3B4B` | `#E55765` |
 
 Pen colours are not theme keys. They come from the archive with the pen and stay per pen under both
-variants.
+variants. The pen editor's colour swatch is the pen's own colour through `LegendConverters.HexToBrush`,
+the converter the sidebar dot uses, and a pen with no colour shows a transparent swatch.
 
 ## A form never resizes on validation
 
 Every form in this application follows one layout rule, the settings dialog first. Validation changes
 colour and text, never size:
 
-- The window has a fixed `Width` and `SizeToContent="Height"`. Its height comes from rows that exist in
-  every state; no row appears or disappears with validation.
+- A dialog has a fixed `Width` and `SizeToContent="Height"`. Its height comes from rows that exist in
+  every state; no row appears or disappears with validation. A window the operator may resize keeps
+  the same rule for every part but its lists (A resizable window keeps its fixed parts, below).
 - An invalid field is marked by its border alone. The field binds `Classes.invalid` to its `Is*Valid`
   flag, and `Styles/Forms.axaml` paints that border with `AppSeverityErrorBrush`.
 - One message line sits left of the buttons. It is a `TextBlock.form-message`: two lines of 20 px
@@ -157,6 +202,44 @@ with each field invalid in turn. The width is 1.2 times that measurement, so the
 reserved line. A longer label, button or message is measured the same way before it ships.
 `SettingsViewTests.TheDialog_KeepsItsSizeAndItsButtonsWhenAFieldTurnsInvalid` gates the rule: the
 dialog's and the save button's `Bounds` are equal before and after an invalid host.
+
+### A resizable window keeps its fixed parts
+
+The pen editor is the one form the operator may resize, because its table grows with the catalogue.
+`PenEditor/PenEditorWindow.axaml` opens at a fixed `Width` and `Height`, 1180 x 720 px, with
+`SizeToContent="Manual"` and `CanResize="True"`: the operator may widen it, and nothing inside it sizes
+the window. The rule above holds for every part but the two lists:
+
+- Resizing grows the pen table and the membership list only. The form panel
+  (240 px high), the `Groups` tab's side panel (320 px wide), its confirmation row (32 px high) and the
+  bottom bar keep fixed sizes, made of rows that
+  exist in every state.
+- A pen row, a group row and a membership row are each `RowHeight`, 28 px, and all three lists
+  virtualise.
+- The pen table's header row and its row template read one column list, the window's
+  `PenTableColumns` resource: 72, 112, 68, 220, 96, 96, 104, 104 and 104 px, and the groups column takes
+  the rest. The resource is `x:Shared="False"`, so every grid gets its own copy. The membership row's id
+  column reads the same `IdColumnWidth`.
+- The bottom bar, on both tabs, holds the added count and the refresh button in a right-aligned `Auto,Auto`
+  grid, 12 px apart, and carries no notice. Each tab has its own reserved `form-message` line.
+- An invalid field is marked by the `invalid` class alone. The line-style combo box and the "on start"
+  checkbox refuse no value, and `Forms.axaml` styles `invalid` on `TextBox` and `NumericUpDown` only, so
+  a failed write of either shows on the message line and in the panel only.
+
+Measured on 2026-09-28 with Skia and HarfBuzz, every field valid. The widest Russian headers are
+`PenEditorColumnOnStart` at 101 px and `PenEditorColumnScaleMax` at 82 px, and the widest line-style
+label is `PenLineStyleStepped` at 69 px. Each fixed column is at least 1.1 times its widest header or
+fixed-vocabulary cell, plus the 12 px cell margin, which gives the widths above and leaves the groups
+column 180 px at the opening width. At 1180 x 720 px the table shows 12 rows. The form's natural size
+is 597 x 195 px in English and 635 x 195 px in Russian, inside a 1156 x 232 px area. The longest form
+message is 379 px on a 1156 px line. Measured on 2026-09-29, with a three-digit added count the bottom
+bar needs 472 px in English, 210 px for the count, 12 px between and 250 px for "Refresh pen list", and
+640 px in Russian, 294 + 12 + 334 px for «Обновить список перьев»; both fit the 1180 px opening width.
+The side panel's 320 px and the confirmation row's 32 px are chosen, not measured; the confirmation
+text spans the tab's width and trims only past it.
+`PenEditorViewTests.AnUnusableMask_WritesNothingRevertsMarksAndSaysWhyWithoutResizing` gates the size
+half of the rule: the window's and the form panel's `Bounds` are equal before and after the mask turns
+invalid.
 
 ## How the variant reaches the application
 

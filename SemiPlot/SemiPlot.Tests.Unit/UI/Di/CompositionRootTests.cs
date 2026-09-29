@@ -41,6 +41,14 @@ public sealed class CompositionRootTests
 	}
 
 	[Fact]
+	public void Container_ResolvesThePenCatalogueEditor()
+	{
+		using var provider = BuildContainer();
+
+		provider.GetRequiredService<IPenCatalogueEditor>().Should().BeOfType<PostgresPenCatalogueEditor>();
+	}
+
+	[Fact]
 	public void Container_ResolvesDataScheduler()
 	{
 		using var provider = BuildContainer();

@@ -17,11 +17,11 @@ It must handle two classes of data:
 | Layer            | Choice                                                                 |
 | ---------------- | --------------------------------------------------------------------- |
 | Platform         | .NET 10 (`net10.0`), ships on Windows, C# 14                           |
-| Desktop shell    | Avalonia 12.0.5 (Win32 backend, SkiaSharp render, HarfBuzz shaping, `Semi.Avalonia` 12.0.3 retinted to the JetBrains palette — `ui-theme.md`) |
+| Desktop shell    | Avalonia 12.0.5 (Win32 backend, SkiaSharp render, HarfBuzz shaping, `Semi.Avalonia` 12.0.3 retinted to the JetBrains palette — `ui-theme.md`); the pen editor's picker from `Avalonia.Controls.ColorPicker` 12.0.5 with `Semi.Avalonia.ColorPicker` 12.0.3 |
 | Chart renderer   | ScottPlot 5 (`ScottPlot.Avalonia` 5.1.59, MIT, SkiaSharp) — native control |
 | MVVM             | ReactiveUI (`ReactiveUI.Avalonia` 12.0.3)                             |
 | Backend (in-proc)| .NET data provider abstraction over the data sources                   |
-| Data source      | One read-only PostgreSQL connection to the Simple-Scada archive — history, extent and realtime alike (`data-integration.md`) |
+| Data source      | One PostgreSQL role on the Simple-Scada archive: history, extent and realtime read it, and the pen editor alone writes the catalogue tables (`data-integration.md`) |
 | Coarse resolutions | The SCADA's own archive layers; nothing of ours runs in or beside the database (`history-read-path-evaluation.md`) |
 | Logging          | Serilog, path and level from the launch keys, rolling 5 MB / 5 files (`data-integration.md`) |
 | Configuration    | YAML (YamlDotNet 18.1.0), one folder per section merged by `SemiPlot.Core/Configuration/ConfigurationSection` |
@@ -30,7 +30,7 @@ Constraint: **$0 budget** — only free/OSS components.
 
 > Version note: SemiPlot pins **Avalonia 12.0.5** with `ScottPlot.Avalonia` 5.1.59 (which depends on
 > Avalonia 12.0.0) and `ReactiveUI.Avalonia` 12.0.3 — the pairing the sibling repository `SemiStep`
-> already ships. Both test projects sit on `xunit.v3` 3.2.2 and both target plain
+> already ships. `Avalonia.Controls.ColorPicker` is part of Avalonia and moves in lock-step with it. Both test projects sit on `xunit.v3` 3.2.2 and both target plain
 > `net10.0`; what keeps them separate is the dependency graph, not the target framework
 > (`testing-strategy.md`).
 > `SemiPlot.UI` references `Avalonia.HarfBuzz` 12.0.5 and `App.BuildAvaloniaApp` calls `UseHarfBuzz()`
@@ -55,14 +55,19 @@ Constraint: **$0 budget** — only free/OSS components.
 |     +-- MinimapView         archive-overview strip          |
 |     +-- MessagePanelView    every failure lands here        |
 |     +-- AppStatusBar        connection state, layer         |
+|     +-- PenEditorWindow     pens and groups dialog          |
 |   ViewModels (ReactiveUI) ◄── TrendCoordinator (Rx hub)     |
+|                           ◄── PenCatalogueSync (5 s reads)  |
 +----------------------────────────────────────--------------+
-              │ IDataProvider (subscribe realtime, query history)
+              │ IDataProvider (subscribe realtime, query history,
+              │                re-read the catalogue)
+              │ IPenCatalogueEditor (the pen editor's writes)
               ▼
 +-------------------------------------------------------------+
 |  SemiPlot.Core                                              |
 |   - IDataProvider abstraction + records (Pen, envelope,     |
 |     ArchiveExtent, …)                                       |
+|   - IPenCatalogueEditor + records, the catalogue writes     |
 |   - renderer-agnostic models (navigation, scale, cursor, …) |
 |   - MinMaxDecimator, shared by the coarse-layer reads       |
 |   - ConfigurationSection, the section-folder merge          |
@@ -70,14 +75,15 @@ Constraint: **$0 budget** — only free/OSS components.
               │ implemented by a SemiPlot.DataSource.* project
               ▼
 +-------------------------------------------------------------+
-|  SemiPlot.DataSource.Postgres  (the only one, read-only)    |
+|  SemiPlot.DataSource.Postgres  (the only one)               |
 |   - PostgresDataProvider over the Simple-Scada archive      |
 |   - history, extent, catalogue and the live-edge poll       |
+|   - PostgresPenCatalogueEditor, the catalogue writes        |
 +-------------------------------------------------------------+
 ```
 
-The UI never talks to a data source directly; it depends only on `IDataProvider`
-(see [data-integration.md](./data-integration.md)). The composition root resolves the PostgreSQL
+The UI never talks to a data source directly. It reads through `IDataProvider`, and the pen editor
+alone writes, through `IPenCatalogueEditor` (see [data-integration.md](./data-integration.md)). The composition root resolves the PostgreSQL
 provider, which is the only one the application ships; an archive that does not answer shows the
 startup failure in the main window rather than falling back to invented data. There is **no web
 bridge**: the chart is a native ScottPlot control, fed in-process by `TrendCoordinator` over
@@ -278,6 +284,217 @@ again, and a lock file would outlive a killed process. A move can also fail afte
 when another process opens the target between the two; the files moved before it stay promoted, the
 panel reports the failure, and the next save writes again.
 
+### The pen and group editor
+
+`Edit` -> `Pens and groups` opens `PenEditor/PenEditorWindow`, the viewer's only writer of the pen
+catalogue. It writes `semiplot_tags`, `semiplot_groups` and `semiplot_pen_groups` through
+`IPenCatalogueEditor` and nothing else (`data-integration.md#the-pen-catalogue-editor`). It never adds a
+pen by hand, deletes one or changes an `id`, because the key is the SCADA variable number.
+
+The window is a `TabControl` of two tabs over a bottom bar that both tabs share:
+
+| Part | Holds |
+| --- | --- |
+| `Pens` tab | A read-only table of every pen: a click on a column header sorts by that column, a second click reverses. Under it, the form of the selected pen: name, unit, mask with a live preview, colour as a `#RRGGBB` text box beside a `ColorPicker`, line style, "on start", and the scale pair. A pen's groups show in the table as text and are not edited there. |
+| `Groups` tab | The group list with a new-name field, a create button, one rename field and a delete button. Beside it, every pen of the catalogue as a checkbox, checked where the pen is a member of the selected group. Membership is edited here only. A delete asks once, in a row the tab always reserves, naming the group and how many pens it holds. |
+| Bottom bar | The number of pens the last refresh added and `Refresh pen list`, right-aligned. `Refresh pen list` registers the keys the SCADA writes as hidden pens and reads the catalogue again. |
+
+The editor reads fresh from the tables when it opens and after each refresh, and shows the values as
+stored: a pen with no colour opens with an empty, invalid colour field
+(`data-integration.md#the-stored-read`). It keeps that snapshot while it is open and reads again only on
+`Refresh pen list`, so no periodic read rebuilds a form under the operator's hands. The visibility column and
+field read "on start": the flag is the visibility a pen starts with, and a change of it switches nothing
+on a running chart. What the editor writes reaches the running chart as The live catalogue, below,
+states. Several viewers may run on one machine, and the last write wins per column. The layout is in
+`ui-theme.md#a-resizable-window-keeps-its-fixed-parts`, the text in `ui-text.md#the-pen-editors-text`.
+
+#### Where the view model is built
+
+The editor copies the settings request path. `MainWindowViewModel` takes a trailing
+`IPenCatalogueEditor? penCatalogueEditor = null`. `AddUi` passes the container's editor; the
+startup-failure path leaves it out, because a failed start disposes the container and leaves no data
+source to write through. `ShowPenEditorCommand` is built with `CreateFromTask` and the availability
+`Observable.Return(penCatalogueEditor is not null)`, decided once at construction, so the item exists
+on both windows and is disabled on the startup-failure one. A connection lost after start does not
+disable it: the read fails, `ArchiveFailureMapper` reports it as an `Unreachable` warning, and no
+window opens.
+
+On a successful read the command emits a `PenEditorViewModel` over the catalogue on
+`PenEditorRequests`. `MainWindow` shows `PenEditorWindow` with `ShowDialog` and disposes the view model
+in `finally`, as it does for the settings dialog. No startup code calls the editor
+(`data-integration.md#startup`).
+
+#### One queue for every call
+
+`PenEditorViewModel` owns one `EditorCallQueue`, and every call to `IPenCatalogueEditor` runs through
+it: pen commits, the scale pair, membership toggles, group create, rename and delete, and refresh. The
+queue is a task chain, first in, first out. Each call starts after the one before it has finished, a
+commit issued while another is in flight waits instead of being dropped, and a refresh reads only after
+every commit issued before it. A refresh reads again while a call waits behind its read, because a write
+queued there would land on a row the rebuild replaces. A call that throws reaches only its own awaiter
+and never stops the next. `WhenIdleAsync` also waits for a call queued while it waits. Every caller runs
+on the UI thread, so the queue takes no lock.
+
+While a refresh runs, the pen form and the whole groups tab are disabled, because the rebuild replaces
+the view models they edit: text typed then would end its edit on a form or group nobody shows any more.
+A click on `Refresh pen list` takes the focus first, so the edit in progress ends, and is queued, before
+the registration.
+
+#### A field writes when its edit ends
+
+There is no save button.
+
+- A text field's edit ends on Tab, on Enter, on a click on another control, on a click on empty space
+  (a label, the empty area of a form or of the groups tab) and on the window's close, and the field
+  writes then. The edit ends on the form that owned the field when focus entered it, so a click on another row writes to the pen the
+  field was showing. A field compares its draft with the value it holds once every write of it still
+  queued succeeds, so a second end of an unchanged edit writes nothing and an edit back to the stored
+  value while a write is in flight is written.
+- The queued writes belong to the row, not to the form: a new form is built on every selection, so a
+  form built while a write of its row is in flight seeds from the pen as queued. The selected form
+  follows the row: a draft still showing the queued value takes the new one when a write is queued,
+  lands or fails, and a draft the operator changed stays as typed.
+- The group rename keeps its own list of queued names on `PenGroupViewModel` instead of sharing the
+  row's. The row's list holds changes of seven settings, folds them over the stored pen and counts a
+  later write only when it changes the same setting; the rename list holds one field, its queued value
+  is the last name, and any queued name is a later write. The two share only the append and the removal
+  of the settled entry, and a common type would take both differences as parameters.
+- The scale pair writes only when focus leaves the pair, so tabbing from the minimum to the maximum
+  writes no half pair; both bounds go in one statement.
+- The line-style combo box and the "on start" checkbox write only a value that differs from the draft,
+  so a binding that pushes a newly selected pen's values into them writes nothing. The colour picker
+  writes when its flyout closes on a colour other than the one it opened with.
+- A value the form refuses, or one the write fails on, reverts to the value the field holds once its
+  other queued writes land, marks the field with the `invalid` class and fills the form's message
+  line: the first rule a draft breaks, in form order, otherwise the last refusal. A failed write also
+  adds one entry to the message panel.
+- A membership checkbox reads `IsMember` one way and writes only through its own
+  `ToggleMembershipCommand`. A failed toggle raises `PropertyChanged(nameof(IsMember))` with the value
+  unchanged, and the binding puts the box back. A group keeps one entry per pen for the life of the
+  groups tab, so the box shown after the group is selected again is the entry whose toggle may still
+  run: it stays disabled until the toggle lands and then shows it.
+
+The routing is input interop in `PenEditorWindow.axaml.cs`; each decision stays in a view model.
+An edit ends when its field loses the focus, and a label or an empty area takes no focus on a click.
+So the window handles every pointer press in the tunnel phase, handled ones too: a press on an element
+with no focusable, enabled ancestor inside the window clears the focus through the window's
+`FocusManager`, and the field's `LostFocus`, or the scale pair losing the focus within, ends the edit as
+a click on another control does. A press on a field, a button, a row of the pen table or the group list,
+or any other focusable control passes untouched, because that control takes the focus itself. The two
+lists themselves, their scroll bars and their empty area below the rows take no focus in Avalonia 12.0.5,
+so a press there ends the edit as a press on a label does. `FocusManager` moves the focus only on a left press, while the handler clears it on any
+button, so a right or middle press on a label or an empty area ends the edit too. Closing the window drains: `Closing` is cancelled until the recorded edits have ended and the queue is
+idle, and then the window closes itself. `MainWindow` disposes the view model only after `ShowDialog`
+returns, so a name typed just before the close is written once and nothing is disposed under a write
+in flight.
+
+### The live catalogue
+
+Every viewer re-reads the pen catalogue while it runs, so a change the pen editor stores reaches the
+chart and the sidebar of every running viewer without a restart. `Bridge/PenCatalogueSync` is the one
+route a stored change takes into the running chart. The settings window does not take this route: the
+connection it edits is the one every read runs over (`#the-settings-window`).
+
+#### The read
+
+`PenCatalogueSync` reads through `IDataProvider.QueryPensAsync`, the statement the start sequence
+reads, so the read carries the provider's normalisation and nothing repeats it. Its loop waits for
+`ReadInterval`, 5 s, or for a `ReadNow()`, whichever comes first, and then reads:
+
+- the first read comes one interval after `Start`, because the start sequence has just read the same
+  catalogue;
+- reads never overlap;
+- `ReadNow()` during the wait starts a read at once; during a read it makes exactly one more read
+  follow it; the wait after any read is a full interval.
+
+The loop runs on the UI scheduler through `ScheduleAsync`. The read is asynchronous I/O and holds no
+thread, and the loop, `ReadNow`, the snapshot and `Dispose` all run on the UI thread, so nothing is
+locked. `App.InitializeServices` builds the sync from the pens the start sequence read, after the
+minimap, hands it to `MainWindowViewModel.SetCatalogueSync`, and starts it after `coordinator.Start()`.
+`Dispose` cancels the wait, and a read that lands after it emits nothing.
+
+The editor asks for a read after every write it lands. `EditorCallQueue` invokes its success callback
+on the UI thread after a call whose result succeeded, and a failed or thrown call invokes nothing.
+`MainWindowViewModel` builds the editor's view model with a callback that calls the sync's `ReadNow()`,
+so an edit reaches the chart of the instance that made it within a second, while the editor is still
+open, and every other instance within 5 s. A burst of writes asks for many reads, and `ReadNow` keeps
+them to the read in flight and one after it. Refresh's own read succeeds too and asks for one more
+read, which costs one statement. The startup-failure window has no sync, and the callback does nothing
+there.
+
+#### What a read changes
+
+A read is compared with the previous successful read through `PenListDelta.Between`, never with the
+chart's state, so a read carries only what someone stored. The one exception follows an apply that
+threw, below. `Pen` compares its `Groups` element by
+element, so two reads of one stored pen are equal. A read that changes nothing emits no delta.
+
+| The read carries | The running chart |
+| --- | --- |
+| The same pens as the previous read, in any order | Nothing changes: chart, axes and sidebar stay untouched. |
+| A changed name, unit, mask, colour, line style or group list | That pen changes in place. |
+| A changed stored scale pair | That pen's axis is replaced, also one the operator set in this session. A read with the pair unchanged leaves a session axis alone. |
+| A changed `enabled_on_start` | Nothing changes on screen: the flag is the visibility a pen starts with. |
+| A new pen | It joins with the visibility its `enabled_on_start` gives it, with its history and its live edge. |
+| A pen gone from the catalogue | It leaves the chart. When it was the active pen, the first visible pen in catalogue order takes the slot. |
+
+A delta also puts the chart's pens in the order of the read, and any change rebuilds the sidebar from
+the chart's pens. The sidebar keeps its width and its expanded state, and every pen keeps its
+visibility.
+
+`MainWindowViewModel.SetCatalogueSync` takes the sync, disposes one it replaces, as `SetChart` disposes
+a replaced chart, and hands it to `MainWindow/PenCatalogueApplier`. The applier applies the sync's
+`Deltas` one at a time, in order, through `Select(delta => Observable.FromAsync(..., uiScheduler))` and
+`Concat()`. The scheduler is required: `FromAsync` without one completes an apply that awaited on the
+thread pool, and the delta queued behind it would start there. Each apply takes four steps:
+
+1. When the chart has no pens and the delta adds some, it reads the extent through
+   `MinimapViewModel.LoadExtentAsync` and seeds `Navigation.SeedFromArchiveExtent` with a successful
+   one before anything else. The navigation latches on the first data it sees, and a history envelope
+   would otherwise latch the first sample of a one-hour window, so the operator could not reach the
+   archive's first day.
+2. `TrendChartViewModel.ApplyCatalogue(delta.Current)` (`charting.md#applying-a-catalogue-read`).
+3. `TrendLegendViewModel.Rebuild()`.
+4. When the delta added a pen to a chart that already had some, `LoadExtentAsync` again, because the
+   extent read at start does not know the new pen. A successful read whose first sample is earlier
+   than the navigation's goes to `Navigation.WidenToArchiveExtent`, which moves the pan floor back and
+   leaves the window: the navigation latches its first sample once, so the minimap would otherwise draw
+   rows the chart cannot pan to.
+
+The body is one `try/catch`, and a throw goes to the message panel through `ReportFailure`, so the
+next delta still applies. A throw ahead of the end of step 3 also rebases the sync on the pens the
+chart showed before the delta (`PenCatalogueSync.Rebase`): the next read is compared with those, so it
+emits again and the chart and the sidebar catch up instead of staying diverged for the session. The
+chart takes a read whatever baseline it was compared with, because `ApplyCatalogue` compares the read
+with the pens the chart shows: a pen it holds is revised when the read differs, a pen it lacks joins,
+and a pen the read does not name leaves. So the repeat is safe, and so is a delta queued behind the one
+that threw, which was read against a catalogue the chart never took. A throw out of step 4 comes after
+the chart and the sidebar took the delta and rebases nothing. The subscription's `onError` reports the
+same way. `Dispose` disposes the applier, which cancels an apply still waiting for the extent in step
+1, and the sync ahead of the chart; the cancelled apply returns without touching the chart.
+
+#### A failed read
+
+A failed read keeps the snapshot, so the next success carries everything since. The first two failures
+in a row write a warning to the log. The third failure in a row and every one after it go to the
+message panel, and a success resets the count. Three is the live edge's threshold, one constant for
+both (`ArchiveConnectionState.ConsecutiveFailuresBeforeFault`), so one reconnect after a server restart
+opens no panel. A read that throws instead of answering is a defect, not an
+outage: it adds one panel entry at once and leaves the count as it was. A subscriber that throws adds
+one panel entry, and the loop reads on; the read it threw on is the baseline all the same.
+
+#### Why nothing is pushed and nothing is rebuilt whole
+
+Nothing is pushed between instances. `LISTEN/NOTIFY` loses what is sent while an instance is
+disconnected, so the periodic read would stay as the fallback in that design too. One statement of a
+few hundred rows every 5 s costs less than the live edge's statement per second, and the live edge
+itself arrives 1 to 2 s after the SCADA writes, so 5 s between stations reads as immediate.
+
+The chart applies the delta to the pens it has and is never rebuilt whole. The status bar binds to one
+coordinator's connection stream once (`AppStatusBarViewModel.TrackArchiveConnection`), the navigation
+controller has no way to take a window back, and a gesture started on the old chart would end on a
+disposed one.
+
 ### Command line
 
 All three keys are required and none carries a default.
@@ -316,5 +533,7 @@ the startup failure and the fatal catch alike — so a launcher can tell one fro
 The application reads the real archive and nothing else: the composition root registers
 `AddPostgresData`, and every member of `IDataProvider` is implemented over it — the pen catalogue,
 the archive extent, the windowed history read and the live-edge poll. The chart draws history and
-follows the archive as it grows. See [data-integration.md](./data-integration.md) for the contract
-and `docs/plans/` for the remaining work.
+follows the archive as it grows. The pen editor writes the catalogue through `IPenCatalogueEditor`,
+and every running chart follows what it writes within 5 s (`#the-live-catalogue`). See
+[data-integration.md](./data-integration.md)
+for the contract and `docs/plans/` for the remaining work.

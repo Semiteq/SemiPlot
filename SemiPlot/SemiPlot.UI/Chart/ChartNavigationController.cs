@@ -72,6 +72,18 @@ public sealed class ChartNavigationController
 		TrackDataExtents(extent.FirstUtc, extent.LastUtc);
 	}
 
+	/// <summary>Moves the pan floor back to an earlier first sample and leaves the window where it is.</summary>
+	public void WidenToArchiveExtent(ArchiveExtent extent)
+	{
+		if (extent.IsEmpty || extent.FirstUtc >= _navigation.FirstSample)
+		{
+			return;
+		}
+
+		_navigation = new TrendNavigationModel(
+			_navigation.From, _navigation.To, extent.FirstUtc, _navigation.IsSticky);
+	}
+
 	public void TrackDataExtents(DateTime firstSample, DateTime lastSample)
 	{
 		if (_hasData)

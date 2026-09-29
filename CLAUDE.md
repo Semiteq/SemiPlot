@@ -114,6 +114,12 @@ Two projects, split on one axis: needs a container or not.
 - Each project carries its own `TestAppBuilder.cs` with `[assembly: AvaloniaTestApplication]`. Pure
   logic uses plain `[Fact]`; tests touching ReactiveUI/ScottPlot/Avalonia use
   `[AvaloniaFact]`/`[AvaloniaTheory]`.
+- Every click, clear, typed text and key press in a headless view test goes through
+  `SemiPlot.Tests.Unit/UI/HeadlessInput.cs` (`Click`, `Clear`, `Type`, `Press`) on the `TopLevel` that
+  shows the control; no test class carries a helper of its own for these four gestures.
+  `git grep -nE "static void (Click|Clear|Type|Press)\(" -- SemiPlot/SemiPlot.Tests.Unit` prints only
+  `HeadlessInput.cs` lines. A hover or a held mouse button, which only `ThemeTests` drives, is outside
+  the rule.
 - Neither project references the other. Core, `SemiPlot.DataSource.Postgres` and `SemiPlot.UI` each
   name both in `InternalsVisibleTo`.
 - `SemiPlot.Tests.Unit` sets `failSkips` in `xunit.runner.json`, so no gated test may live there.
@@ -124,7 +130,10 @@ Two projects, split on one axis: needs a container or not.
   then realise a view that subscribes to `RedrawRequested`. Its `Sample` schedules periodically, and
   `ImmediateScheduler` runs a periodic schedule by sleeping on the calling thread, so the subscription
   never returns. A headless test that realises the chart passes both schedulers a `TestScheduler`
-  (`UI/Chart/TrendChartViewTests.cs`, `UI/MainWindow/MainWindowTestBuilder.cs`).
+  (`UI/Chart/TrendChartViewTests.cs`, `UI/MainWindow/MainWindowTestBuilder.cs`). `PenCatalogueSync`
+  hangs the same way: its loop runs through `ScheduleAsync` and waits on `Schedule(ReadInterval)`, so a
+  test builds it over a `TestScheduler` and advances one tick after `Start()`
+  (`UI/MainWindow/MainWindowTestBuilder.cs`).
 - A plain `[Fact]` body runs with no `SynchronizationContext`, so an `await` on a
   `TaskCompletionSource` completed by production code resumes inline on the completing thread. A gate
   awaited by the test and completed by production code takes
@@ -236,10 +245,10 @@ No abbreviations in names.
 - Avoid mutable static state.
 - `AddPostgresData()` registers the bare data `IScheduler` (`DefaultScheduler.Instance`). The UI
   scheduler is not a second container registration: `App` reads the static
-  `AvaloniaScheduler.Instance` and passes it explicitly to the coordinator constructor and the
-  chart/minimap factories. `RxApp` does not exist in the installed ReactiveUI 23.2.28 — its
-  schedulers moved to `RxSchedulers` and its exception handler to `RxState`; this repository reads
-  neither.
+  `AvaloniaScheduler.Instance` and passes it explicitly to the coordinator constructor, the
+  chart/minimap factories, `PenCatalogueSync` and `MainWindowViewModel.SetCatalogueSync`. `RxApp` does
+  not exist in the installed ReactiveUI 23.2.28 — its schedulers moved to `RxSchedulers` and its
+  exception handler to `RxState`; this repository reads neither.
 - **Nothing may construct a ReactiveUI object before `AppBuilder.Setup()`.** `RxState.DefaultExceptionHandler`
   initialises itself on first read and `InitializeExceptionHandler` then no-ops, so one
   `ReactiveCommand` or one `ObservableAsPropertyHelper` built ahead of `Setup()` turns
@@ -301,8 +310,14 @@ No abbreviations in names.
 - The sidebar row is read-only but for its visibility box, and `TrendLegendViewTests` gates it as an
   allowlist over the realised row template: every control in it is a `Border`, `Grid`, `TextBlock` or
   `CheckBox`, and exactly one `CheckBox` is present. `ThePanel_RealisesNoTextEditor` gates the panel's
-  header the same way. Editing pens belongs to the pen editor (`Semiteq/SemiPlot#67`), so a control
+  header the same way. Editing pens belongs to the pen editor (`PenEditor/PenEditorWindow`, `Edit` ->
+  `Pens and groups`, `docs/architecture/overview.md#the-pen-and-group-editor`), so a control
   added to the row fails the suite rather than quietly shipping a second editor.
+- A stored pen change reaches the running chart through `Bridge/PenCatalogueSync` and no other route: it
+  re-reads `IDataProvider.QueryPensAsync` every 5 s and on `ReadNow()` after each write the editor lands,
+  and `MainWindow/PenCatalogueApplier` hands each read to the chart, which compares it with the pens it
+  shows, then rebuilds the sidebar. The chart is never rebuilt whole
+  (`docs/architecture/overview.md#the-live-catalogue`).
 - A pen's reading is rendered through `SemiPlot.Core.Trends.PenValueFormat` and nowhere else: it owns
   the stored mask's character-and-section rule and the `0.###` fallback, and the sidebar row and the
   chart's hover readout both go through it (`docs/architecture/ui-text.md`).
@@ -312,13 +327,25 @@ No abbreviations in names.
   `AppStatusBarViewModel.ConnectionRestored`, which builds its own `Info` view because the mapper maps
   errors. A `catch`, or an Rx `onError`, that only logs is a defect
   (`docs/architecture/data-integration.md#no-failure-stops-at-the-log`). Code-behind reaches the
-  panel through its view model (`TrendChartViewModel.ReportFailure`, `MainWindowViewModel.ReportFailure`).
+  panel through its view model (`TrendChartViewModel.ReportFailure`, `MainWindowViewModel.ReportFailure`,
+  `PenEditorViewModel.ReportFailure`).
 
 ### Data-source projects
 
 - `IDataProvider` + its DTOs stay in `SemiPlot.Core`; every concrete provider lives in its own
   `SemiPlot.DataSource.*` project (`SemiPlot.DataSource.Postgres` is the only one). Core must not
   reference a data-source project; a further provider slots in as a sibling without touching Core.
+- The write path is its own interface and `IDataProvider` stays read-only. `IPenCatalogueEditor`,
+  `PenCatalogue` and `PenSettingChange` live in `SemiPlot.Core/Data`; `PostgresPenCatalogueEditor` lives
+  in `SemiPlot.DataSource.Postgres`, which `AddPostgresData()` registers beside the provider over the
+  one `NpgsqlDataSource` (`docs/architecture/data-integration.md#the-pen-catalogue-editor`). The chart
+  never writes, and this prints nothing:
+  `git grep -l "IPenCatalogueEditor" -- SemiPlot/SemiPlot.UI/Chart SemiPlot/SemiPlot.UI/Legend`.
+- No startup code calls `IPenCatalogueEditor`. The container constructs it with `MainWindowViewModel`,
+  which `App.InitializeServices` resolves, and its constructor issues no statement.
+  `RegisterNewPensAsync` has one caller, `PenEditorViewModel`:
+  `git grep -l "RegisterNewPensAsync" -- SemiPlot/SemiPlot.UI` prints only
+  `SemiPlot/SemiPlot.UI/PenEditor/PenEditorViewModel.cs`.
 - `MinMaxDecimator` lives in `SemiPlot.Core/Trends` beside `PenHistoryEnvelope` and is shared by the
   coarse-layer read path of every provider; each provider translates its own rows into the
   decimator's input vocabulary, which `docs/architecture/charting.md` states.

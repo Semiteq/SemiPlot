@@ -1,9 +1,7 @@
 using System.Diagnostics;
 
-using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
-using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -92,12 +90,12 @@ public sealed class SettingsViewTests : IDisposable
 			var host = Named<TextBox>(dialog, "SettingsHost");
 			save.IsEffectivelyEnabled.Should().BeTrue();
 
-			Clear(dialog, host);
+			HeadlessInput.Clear(dialog, host);
 
 			host.Text.Should().BeEmpty();
 			save.IsEffectivelyEnabled.Should().BeFalse("a blank host cannot be saved");
 
-			Type(dialog, host, "10.20.30.40");
+			HeadlessInput.Type(dialog, host, "10.20.30.40");
 
 			viewModel.Host.Should().Be("10.20.30.40");
 			save.IsEffectivelyEnabled.Should().BeTrue();
@@ -120,8 +118,8 @@ public sealed class SettingsViewTests : IDisposable
 			var message = Named<TextBlock>(dialog, "SettingsValidationMessage");
 			message.Text.Should().BeEmpty();
 
-			Clear(dialog, host);
-			Type(dialog, host, "scada-01");
+			HeadlessInput.Clear(dialog, host);
+			HeadlessInput.Type(dialog, host, "scada-01");
 
 			viewModel.Host.Should().Be("scada-01");
 			message.Text.Should().Be(Resources.SettingsHostInvalid);
@@ -145,21 +143,21 @@ public sealed class SettingsViewTests : IDisposable
 			var port = Named<NumericUpDown>(dialog, "SettingsPort");
 			var textBox = Part<TextBox>(port, "PART_TextBox");
 
-			Type(dialog, textBox, "abc");
-			Commit(dialog);
+			HeadlessInput.Type(dialog, textBox, "abc");
+			HeadlessInput.Press(dialog, PhysicalKey.Enter);
 
 			viewModel.Port.Should().Be(5432, "text is not a port");
 			port.Value.Should().Be(5432);
 			save.IsEffectivelyEnabled.Should().BeTrue();
 
-			Clear(dialog, textBox);
+			HeadlessInput.Clear(dialog, textBox);
 
 			viewModel.Port.Should().BeNull();
 			port.Classes.Should().Contain(InvalidClass);
 			save.IsEffectivelyEnabled.Should().BeFalse("an empty port cannot be saved");
 
-			Clear(dialog, textBox);
-			Type(dialog, textBox, "5433");
+			HeadlessInput.Clear(dialog, textBox);
+			HeadlessInput.Type(dialog, textBox, "5433");
 
 			viewModel.Port.Should().Be(5433);
 			port.Classes.Should().NotContain(InvalidClass);
@@ -185,7 +183,7 @@ public sealed class SettingsViewTests : IDisposable
 			Pick(dialog, Named<ComboBox>(dialog, "SettingsTheme"), dark);
 			viewModel.SelectedTheme!.Token.Should().Be("dark");
 
-			Click(dialog, Named<Button>(dialog, "SettingsSaveButton"));
+			HeadlessInput.Click(dialog, Named<Button>(dialog, "SettingsSaveButton"));
 			await WaitUntil(() => viewModel.IsRestartPending);
 
 			notice.IsEffectivelyVisible.Should().BeTrue();
@@ -209,10 +207,10 @@ public sealed class SettingsViewTests : IDisposable
 			var message = Named<TextBlock>(dialog, "SettingsValidationMessage");
 			var dark = viewModel.Themes.Single(choice => choice.Token == "dark");
 			Pick(dialog, Named<ComboBox>(dialog, "SettingsTheme"), dark);
-			Click(dialog, Named<Button>(dialog, "SettingsSaveButton"));
+			HeadlessInput.Click(dialog, Named<Button>(dialog, "SettingsSaveButton"));
 			await WaitUntil(() => viewModel.IsRestartPending);
 
-			Clear(dialog, Named<TextBox>(dialog, "SettingsHost"));
+			HeadlessInput.Clear(dialog, Named<TextBox>(dialog, "SettingsHost"));
 
 			notice.IsEffectivelyVisible.Should().BeFalse("one line carries one message");
 			message.Text.Should().Be(Resources.SettingsHostInvalid);
@@ -236,8 +234,8 @@ public sealed class SettingsViewTests : IDisposable
 			var validBounds = dialog.Bounds;
 			var validSaveBounds = save.Bounds;
 
-			Clear(dialog, host);
-			Type(dialog, host, "scada-01");
+			HeadlessInput.Clear(dialog, host);
+			HeadlessInput.Type(dialog, host, "scada-01");
 
 			dialog.Bounds.Should().Be(validBounds, "a message never resizes the form");
 			save.Bounds.Should().Be(validSaveBounds, "a message never moves the buttons");
@@ -264,19 +262,19 @@ public sealed class SettingsViewTests : IDisposable
 			BorderColourOf(host).Should().NotBe(error);
 			BorderColourOf(port).Should().NotBe(error);
 
-			Clear(dialog, host);
-			Type(dialog, host, "scada-01");
+			HeadlessInput.Clear(dialog, host);
+			HeadlessInput.Type(dialog, host, "scada-01");
 
 			host.IsFocused.Should().BeTrue();
 			BorderColourOf(host).Should().Be(error, "the invalid border wins over Semi's focus border");
 
-			Clear(dialog, port);
+			HeadlessInput.Clear(dialog, port);
 
 			port.IsFocused.Should().BeTrue();
 			BorderColourOf(port).Should().Be(error, "the invalid border reaches the number field's text box");
 			BorderColourOf(host).Should().Be(error, "the invalid border wins over Semi's resting border");
 
-			Type(dialog, port, "5432");
+			HeadlessInput.Type(dialog, port, "5432");
 
 			BorderColourOf(port).Should().NotBe(error);
 		}
@@ -328,45 +326,9 @@ public sealed class SettingsViewTests : IDisposable
 		return border.BorderBrush.Should().BeAssignableTo<ISolidColorBrush>().Subject.Color;
 	}
 
-	private static void Commit(SettingsDialog dialog)
-	{
-		dialog.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
-		dialog.KeyReleaseQwerty(PhysicalKey.Enter, RawInputModifiers.None);
-		Dispatcher.UIThread.RunJobs();
-	}
-
-	private static void Click(TopLevel topLevel, Control control)
-	{
-		var center = control.TranslatePoint(new Point(control.Bounds.Width / 2, control.Bounds.Height / 2), topLevel)
-			?? throw new InvalidOperationException("The control is not in the top level's visual tree.");
-
-		topLevel.MouseDown(center, MouseButton.Left);
-		topLevel.MouseUp(center, MouseButton.Left);
-		Dispatcher.UIThread.RunJobs();
-	}
-
-	private static void Clear(SettingsDialog dialog, TextBox textBox)
-	{
-		Click(dialog, textBox);
-		textBox.IsFocused.Should().BeTrue("a click on the field gives it the keyboard");
-
-		dialog.KeyPressQwerty(PhysicalKey.A, RawInputModifiers.Control);
-		dialog.KeyReleaseQwerty(PhysicalKey.A, RawInputModifiers.Control);
-		dialog.KeyPressQwerty(PhysicalKey.Backspace, RawInputModifiers.None);
-		dialog.KeyReleaseQwerty(PhysicalKey.Backspace, RawInputModifiers.None);
-		Dispatcher.UIThread.RunJobs();
-	}
-
-	private static void Type(SettingsDialog dialog, TextBox textBox, string text)
-	{
-		Click(dialog, textBox);
-		dialog.KeyTextInput(text);
-		Dispatcher.UIThread.RunJobs();
-	}
-
 	private static void Pick(SettingsDialog dialog, ComboBox comboBox, SettingsChoice choice)
 	{
-		Click(dialog, comboBox);
+		HeadlessInput.Click(dialog, comboBox);
 		comboBox.IsDropDownOpen.Should().BeTrue("a click on the box opens its list");
 
 		var item = comboBox.ContainerFromItem(choice)
@@ -374,7 +336,7 @@ public sealed class SettingsViewTests : IDisposable
 		var popup = TopLevel.GetTopLevel(item)
 			?? throw new InvalidOperationException("The open list is not in a top level.");
 
-		Click(popup, item);
+		HeadlessInput.Click(popup, item);
 		comboBox.IsDropDownOpen.Should().BeFalse("a click on an entry picks it and closes the list");
 	}
 

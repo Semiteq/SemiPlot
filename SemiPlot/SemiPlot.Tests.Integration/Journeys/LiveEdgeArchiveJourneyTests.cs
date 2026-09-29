@@ -68,10 +68,7 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 			NullLogger<TrendChartViewModel>.Instance);
 		using var batches = new BatchCollector(coordinator.RealtimeBatches);
 
-		foreach (var pen in catalogue.Value)
-		{
-			chart.AddPen(pen);
-		}
+		chart.ApplyCatalogue(catalogue.Value);
 
 		chart.Navigation.SeedFromArchiveExtent(extent.Value);
 		coordinator.Start();
@@ -159,10 +156,7 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 			NullLogger<TrendChartViewModel>.Instance);
 		using var batches = new BatchCollector(coordinator.RealtimeBatches);
 
-		foreach (var pen in catalogue.Value)
-		{
-			chart.AddPen(pen);
-		}
+		chart.ApplyCatalogue(catalogue.Value);
 
 		chart.Navigation.SeedFromArchiveExtent(extent.Value);
 		coordinator.Start();

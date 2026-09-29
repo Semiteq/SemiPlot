@@ -81,6 +81,9 @@
   <data name="MenuEditSettings" xml:space="preserve">
     <value>Settings</value>
   </data>
+  <data name="MenuEditPensAndGroups" xml:space="preserve">
+    <value>Pens and groups</value>
+  </data>
   <data name="MenuView" xml:space="preserve">
     <value>View</value>
   </data>
@@ -121,7 +124,58 @@
     <value>SemiPlot trend viewer</value>
   </data>
   <data name="EmptyCatalogueMessage" xml:space="preserve">
-    <value>The pen catalogue is empty: the table semiplot_tags holds no pens. The catalogue is filled when the tool is commissioned.</value>
+    <value>The pen catalogue is empty. Open {0} > {1}, press {2}, then name and switch on the pens you need.</value>
+  </data>
+  <data name="PenEditorRefresh" xml:space="preserve">
+    <value>Refresh pen list</value>
+  </data>
+  <data name="PenEditorAddedCount" xml:space="preserve">
+    <value>Pens added: {0}</value>
+  </data>
+  <data name="PenEditorTitle" xml:space="preserve">
+    <value>Pens and groups</value>
+  </data>
+  <data name="PenEditorPensTab" xml:space="preserve">
+    <value>Pens</value>
+  </data>
+  <data name="PenEditorGroupsTab" xml:space="preserve">
+    <value>Groups</value>
+  </data>
+  <data name="PenEditorColumnId" xml:space="preserve">
+    <value>Id</value>
+  </data>
+  <data name="PenEditorColumnOnStart" xml:space="preserve">
+    <value>On start</value>
+  </data>
+  <data name="PenEditorColumnColor" xml:space="preserve">
+    <value>Colour</value>
+  </data>
+  <data name="PenEditorColumnName" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="PenEditorColumnUnit" xml:space="preserve">
+    <value>Unit</value>
+  </data>
+  <data name="PenEditorColumnMask" xml:space="preserve">
+    <value>Mask</value>
+  </data>
+  <data name="PenEditorColumnLineStyle" xml:space="preserve">
+    <value>Line</value>
+  </data>
+  <data name="PenEditorColumnScaleMin" xml:space="preserve">
+    <value>Scale min</value>
+  </data>
+  <data name="PenEditorColumnScaleMax" xml:space="preserve">
+    <value>Scale max</value>
+  </data>
+  <data name="PenEditorColumnGroups" xml:space="preserve">
+    <value>Groups</value>
+  </data>
+  <data name="PenLineStyleInterpolated" xml:space="preserve">
+    <value>Interpolated</value>
+  </data>
+  <data name="PenLineStyleStepped" xml:space="preserve">
+    <value>Stepped</value>
   </data>
   <data name="MessagePanelTitle" xml:space="preserve">
     <value>Messages</value>
@@ -184,13 +238,13 @@
     <value>Check that the PostgreSQL server is running. Check that the host and port in the connection file are reachable from this machine. Check the route and the firewall.</value>
   </data>
   <data name="FailureArchiveAccessDeniedTitle" xml:space="preserve">
-    <value>The archive refused the credentials</value>
+    <value>The archive refused access</value>
   </data>
   <data name="FailureArchiveAccessDeniedDetail" xml:space="preserve">
     <value>The server at {0} answered, but refused user '{1}' access to '{2}'.</value>
   </data>
   <data name="FailureArchiveAccessDeniedRemedy" xml:space="preserve">
-    <value>Check the user name and password in the connection file. Check that the role holds SELECT on the archive tables.</value>
+    <value>Check the user name and password in the connection file. Check the grants SemiBase gives the role.</value>
   </data>
   <data name="FailureArchiveNotProvisionedTitle" xml:space="preserve">
     <value>The archive is not provisioned</value>
@@ -202,10 +256,10 @@
     <value>Run 'semibase site' against this server to create the database. Check the database name in the connection file.</value>
   </data>
   <data name="FailureArchiveTableMissingDetail" xml:space="preserve">
-    <value>The archive {0} holds no table '{1}'.</value>
+    <value>The archive {0} holds no '{1}'.</value>
   </data>
   <data name="FailureArchiveTableMissingRemedy" xml:space="preserve">
-    <value>Table '{0}' is created by provisioning. Run 'semibase site' against this database to finish provisioning it.</value>
+    <value>'{0}' is created by provisioning. Run 'semibase site' against this database to finish provisioning it.</value>
   </data>
   <data name="FailureArchiveConnectionLostTitle" xml:space="preserve">
     <value>The archive stopped answering</value>
@@ -226,28 +280,55 @@
     <value>Table 'public.trends' and its columns are created by provisioning. Run 'semibase site' against this database. Check whether anything has altered the table since.</value>
   </data>
   <data name="FailureArchiveQueryTimedOutTitle" xml:space="preserve">
-    <value>The archive ended the read</value>
+    <value>The archive ended the statement</value>
   </data>
   <data name="FailureArchiveQueryTimedOutDetail" xml:space="preserve">
-    <value>The server ended the read of {0} (SQLSTATE 57014).</value>
+    <value>The server ended a statement against {0} (SQLSTATE 57014).</value>
   </data>
   <data name="FailureArchiveQueryTimedOutRemedy" xml:space="preserve">
-    <value>Check statement_timeout for the reader role on the server. Narrow the time window on the chart. Check whether an administrator cancelled the read.</value>
+    <value>Check statement_timeout for the role on the server. If the chart was reading, narrow its time window. Check whether an administrator cancelled the statement.</value>
   </data>
   <data name="FailureArchiveReadFailedTitle" xml:space="preserve">
-    <value>The archive rejected the read</value>
+    <value>The archive rejected the statement</value>
   </data>
   <data name="FailureArchiveReadFailedDetail" xml:space="preserve">
-    <value>The archive {0} rejected the read (SQLSTATE {1}).</value>
+    <value>The archive {0} rejected a statement (SQLSTATE {1}).</value>
   </data>
   <data name="FailureArchiveReadFailedRemedy" xml:space="preserve">
     <value>Find the entry for SQLSTATE {0} in the PostgreSQL server log. Report it with the SemiPlot log file.</value>
   </data>
   <data name="FailureArchiveReadUnnamedDetail" xml:space="preserve">
-    <value>The read of {0} failed before the server answered.</value>
+    <value>A statement against {0} failed before the server answered.</value>
   </data>
   <data name="FailureArchiveReadUnnamedRemedy" xml:space="preserve">
     <value>If this message repeats, report the SemiPlot log file.</value>
+  </data>
+  <data name="FailureArchiveValueRejectedTitle" xml:space="preserve">
+    <value>The archive refused the value</value>
+  </data>
+  <data name="FailureArchiveValueRejectedDetail" xml:space="preserve">
+    <value>The archive {0} refused the value written to pen '{1}'.</value>
+  </data>
+  <data name="FailureArchiveValueRejectedRemedy" xml:space="preserve">
+    <value>Enter another value. A scale takes both bounds with the minimum below the maximum. A colour takes the form #RRGGBB.</value>
+  </data>
+  <data name="FailureArchiveNameTakenTitle" xml:space="preserve">
+    <value>The name is already taken</value>
+  </data>
+  <data name="FailureArchiveNameTakenDetail" xml:space="preserve">
+    <value>The archive {0} already holds a group named '{1}'.</value>
+  </data>
+  <data name="FailureArchiveNameTakenRemedy" xml:space="preserve">
+    <value>Choose a name no other group carries.</value>
+  </data>
+  <data name="FailureArchiveRowGoneTitle" xml:space="preserve">
+    <value>The entry no longer exists</value>
+  </data>
+  <data name="FailureArchiveRowGoneDetail" xml:space="preserve">
+    <value>The archive {0} no longer holds '{1}'. Another SemiPlot instance or an administrator removed it.</value>
+  </data>
+  <data name="FailureArchiveRowGoneRemedy" xml:space="preserve">
+    <value>Read the catalogue again to see what it holds now. Repeat the edit if it still applies.</value>
   </data>
   <data name="FailureStartupReadTimedOutTitle" xml:space="preserve">
     <value>The archive did not answer in time</value>
@@ -443,5 +524,50 @@
   </data>
   <data name="SettingsFieldRequired" xml:space="preserve">
     <value>{0}: required</value>
+  </data>
+  <data name="PenFormNameRequired" xml:space="preserve">
+    <value>Name: required</value>
+  </data>
+  <data name="PenFormMaskInvalid" xml:space="preserve">
+    <value>Mask: a number mask such as 0.00 or #,##0.0, with no letters and no %</value>
+  </data>
+  <data name="PenFormColorInvalid" xml:space="preserve">
+    <value>Colour: #RRGGBB, such as #1F77B4</value>
+  </data>
+  <data name="PenFormScaleBoundInvalid" xml:space="preserve">
+    <value>Scale: each bound is a number or empty</value>
+  </data>
+  <data name="PenFormScaleHalfSet" xml:space="preserve">
+    <value>Scale: set both bounds or neither</value>
+  </data>
+  <data name="PenFormScaleInverted" xml:space="preserve">
+    <value>Scale: the minimum must be below the maximum</value>
+  </data>
+  <data name="PenFormMaskPreviewLabel" xml:space="preserve">
+    <value>Preview</value>
+  </data>
+  <data name="PenGroupsNameRequired" xml:space="preserve">
+    <value>Group name: required</value>
+  </data>
+  <data name="PenGroupsDeleteConfirmation" xml:space="preserve">
+    <value>Delete group '{0}'? Pens in the group: {1}. The pens themselves stay.</value>
+  </data>
+  <data name="PenGroupsNewNamePlaceholder" xml:space="preserve">
+    <value>New group name</value>
+  </data>
+  <data name="PenGroupsCreate" xml:space="preserve">
+    <value>Create</value>
+  </data>
+  <data name="PenGroupsNameLabel" xml:space="preserve">
+    <value>Group name</value>
+  </data>
+  <data name="PenGroupsDelete" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="PenGroupsCancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="PenGroupsMembersHeader" xml:space="preserve">
+    <value>Pens in the selected group</value>
   </data>
 </root>

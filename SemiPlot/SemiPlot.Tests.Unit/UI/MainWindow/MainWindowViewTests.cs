@@ -12,12 +12,18 @@ using Avalonia.VisualTree;
 
 using AwesomeAssertions;
 
+using FluentResults;
+
 using Microsoft.Extensions.Logging.Abstractions;
 
+using SemiPlot.Core.Data;
+using SemiPlot.Core.Trends;
+using SemiPlot.Tests.Unit.UI.PenEditor;
 using SemiPlot.Tests.Unit.UI.Settings;
 using SemiPlot.UI.Legend;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
+using SemiPlot.UI.PenEditor;
 using SemiPlot.UI.Settings;
 
 using Xunit;
@@ -77,6 +83,58 @@ public sealed class MainWindowViewTests
 		item.IsEffectivelyEnabled.Should().BeFalse("there is no directory to read the settings from");
 	}
 
+	[AvaloniaFact]
+	public void TheStartupFailureWindow_CarriesThePenEditorItemDisabled()
+	{
+		using var viewModel = NewViewModel(AppContext.BaseDirectory);
+		viewModel.StartupFailure = new ArchiveFailureView("t", "d", "r", MessageSeverity.Error);
+		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
+		window.Show();
+		Dispatcher.UIThread.RunJobs();
+
+		var item = MenuItemNamed(window, "EditPensAndGroups");
+
+		item.Command.Should().BeSameAs(viewModel.ShowPenEditorCommand);
+		item.IsEffectivelyEnabled.Should().BeFalse("a failed startup leaves no editor to write through");
+	}
+
+	[AvaloniaFact]
+	public async Task EditPensAndGroups_ClickedOnTheRealisedWindow_OpensTheEditorOverIt()
+	{
+		var pen = new StoredPen(
+			7, "Chamber pressure", "Pa", null, "#1F77B4", PenLineStyle.Interpolated, true, null, null);
+		var penCatalogueEditor = new FakePenCatalogueEditor
+		{
+			ReadResult = Result.Ok(new PenCatalogue([pen], []))
+		};
+		using var viewModel = NewViewModel(AppContext.BaseDirectory, penCatalogueEditor);
+		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
+		window.Show();
+		Dispatcher.UIThread.RunJobs();
+
+		HeadlessInput.Click(window, MenuItemNamed(window, "EditMenu"));
+		var editorItem = MenuItemNamed(window, "EditPensAndGroups");
+		HeadlessInput.Click(
+			TopLevel.GetTopLevel(editorItem) ?? throw new InvalidOperationException("The Edit menu opened no popup."),
+			editorItem);
+		await WaitUntil(() => window.OwnedWindows.OfType<PenEditorWindow>().Any());
+
+		var editorWindow = window.OwnedWindows.OfType<PenEditorWindow>().Single();
+		var penEditor = editorWindow.DataContext.Should().BeOfType<PenEditorViewModel>().Which;
+		penEditor.Rows.Select(row => row.Pen).Should().Equal(pen);
+		viewModel.MessagePanel.Entries.Should().BeEmpty();
+
+		editorWindow.Close();
+		Dispatcher.UIThread.RunJobs();
+
+		window.OwnedWindows.Should().BeEmpty();
+		// A disposed command stops following its inputs, and the blank new-group name left it disabled.
+		penEditor.Groups.NewGroupName = "Gas";
+		((ICommand)penEditor.Groups.CreateGroupCommand).CanExecute(null).Should()
+			.BeFalse("the window disposes the view model its editor showed");
+		window.Close();
+	}
+
 	[AvaloniaTheory]
 	[InlineData(false)]
 	[InlineData(true)]
@@ -95,9 +153,9 @@ public sealed class MainWindowViewTests
 			window.Show();
 			Dispatcher.UIThread.RunJobs();
 
-			Click(window, MenuItemNamed(window, "EditMenu"));
+			HeadlessInput.Click(window, MenuItemNamed(window, "EditMenu"));
 			var settingsItem = MenuItemNamed(window, "EditSettings");
-			Click(
+			HeadlessInput.Click(
 				TopLevel.GetTopLevel(settingsItem)
 					?? throw new InvalidOperationException("The Edit menu opened no popup."),
 				settingsItem);
@@ -362,16 +420,6 @@ public sealed class MainWindowViewTests
 		return item;
 	}
 
-	private static void Click(TopLevel topLevel, Control control)
-	{
-		var center = control.TranslatePoint(new Point(control.Bounds.Width / 2, control.Bounds.Height / 2), topLevel)
-			?? throw new InvalidOperationException("The control is not in the top level's visual tree.");
-
-		topLevel.MouseDown(center, MouseButton.Left);
-		topLevel.MouseUp(center, MouseButton.Left);
-		Dispatcher.UIThread.RunJobs();
-	}
-
 	private static async Task WaitUntil(Func<bool> condition)
 	{
 		var clock = Stopwatch.StartNew();
@@ -380,7 +428,7 @@ public sealed class MainWindowViewTests
 		{
 			if (clock.Elapsed > _dialogTimeout)
 			{
-				throw new TimeoutException("The settings dialog did not open.");
+				throw new TimeoutException("The dialog did not open.");
 			}
 
 			await Task.Delay(10);

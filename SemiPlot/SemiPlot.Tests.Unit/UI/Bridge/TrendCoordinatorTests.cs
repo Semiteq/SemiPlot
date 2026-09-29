@@ -259,6 +259,62 @@ public sealed class TrendCoordinatorTests
 		failures.Should().BeEmpty("the subject is completed at disposal, not disposed");
 	}
 
+	[Fact]
+	public void SetPens_WithAnAddedId_ReachesTheOneSubscriberOfTheLiveEdge()
+	{
+		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: TimeSpan.FromMilliseconds(10));
+		using var ownedCoordinator = coordinator;
+		var batches = new List<RealtimeBatch>();
+		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
+		coordinator.Start();
+		scheduler.AdvanceBy(_batchWindow.Ticks);
+		batches.Should().ContainSingle().Which.Pens.Select(values => values.PenId).Should().Equal(1, 2);
+
+		provider.Pens = [.. provider.Pens, new Pen(3, "Pen 3", ["Group B"], "#0000ff")];
+		coordinator.SetPens([1, 2, 3]);
+		scheduler.AdvanceBy(_batchWindow.Ticks);
+
+		batches.Should().HaveCount(2);
+		batches[1].Pens.Select(values => values.PenId).Should().Equal(1, 2, 3);
+	}
+
+	[Fact]
+	public void SetPens_LeavesTheProviderHoldingExactlyOneLiveSubscription()
+	{
+		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: TimeSpan.FromMilliseconds(10));
+		using var ownedCoordinator = coordinator;
+		using var subscription = coordinator.RealtimeBatches.Subscribe(_ => { });
+		coordinator.Start();
+		scheduler.AdvanceBy(_batchWindow.Ticks);
+		provider.OpenLiveSubscriptionCount.Should().Be(1);
+
+		coordinator.SetPens([1]);
+		scheduler.AdvanceBy(_batchWindow.Ticks);
+		coordinator.SetPens([1, 2]);
+		scheduler.AdvanceBy(_batchWindow.Ticks);
+
+		provider.OpenLiveSubscriptionCount.Should().Be(1);
+	}
+
+	[Fact]
+	public void AProviderFailureAfterASwitch_ReachesRealtimeFailuresOnce()
+	{
+		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: TimeSpan.FromMilliseconds(10));
+		using var ownedCoordinator = coordinator;
+		var failures = new List<Exception>();
+		using var reported = coordinator.RealtimeFailures.Subscribe(failures.Add);
+		coordinator.Start();
+		scheduler.AdvanceBy(_batchWindow.Ticks);
+
+		var streamFailure = new InvalidOperationException("the provider ended the switched live edge");
+		provider.RealtimeStreamFailure = streamFailure;
+		coordinator.SetPens([1]);
+		var advance = () => scheduler.AdvanceBy(_batchWindow.Ticks * 3);
+
+		advance.Should().NotThrow();
+		failures.Should().ContainSingle().Which.Should().BeSameAs(streamFailure);
+	}
+
 	private static (TrendCoordinator Coordinator, TestScheduler Scheduler, FakeDataProvider Provider)
 		CreateCoordinator(TimeSpan? realtimeInterval = null, IScheduler? uiScheduler = null)
 	{

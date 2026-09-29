@@ -25,6 +25,9 @@ public sealed class FailureSeverityTests
 			[ArchiveFault.ConnectionLost] = MessageSeverity.Warning,
 			[ArchiveFault.QueryTimedOut] = MessageSeverity.Warning,
 			[ArchiveFault.ReadFailed] = MessageSeverity.Warning,
+			[ArchiveFault.ValueRejected] = MessageSeverity.Warning,
+			[ArchiveFault.NameTaken] = MessageSeverity.Warning,
+			[ArchiveFault.RowGone] = MessageSeverity.Warning,
 			[ArchiveFault.AccessDenied] = MessageSeverity.Error,
 			[ArchiveFault.DatabaseMissing] = MessageSeverity.Error,
 			[ArchiveFault.TableMissing] = MessageSeverity.Error,
@@ -229,12 +232,19 @@ public sealed class FailureSeverityTests
 			ArchiveFault.TableMissing,
 			ArchiveFault.ShapeUnexpected
 		];
+		ArchiveFault[] editRefused =
+		[
+			ArchiveFault.ValueRejected,
+			ArchiveFault.NameTaken,
+			ArchiveFault.RowGone
+		];
 
-		retried.Concat(actedOn).Should().BeEquivalentTo(
+		retried.Concat(actedOn).Concat(editRefused).Should().BeEquivalentTo(
 			Enum.GetValues<ArchiveFault>(),
-			"every fault is either retried or acted on, and a new member belongs to one of them");
+			"every fault is retried, acted on, or the operator's own edit refused, and a new member belongs to one");
 		retried.Select(Severity).Should().AllBeEquivalentTo(MessageSeverity.Warning);
 		actedOn.Select(Severity).Should().AllBeEquivalentTo(MessageSeverity.Error);
+		editRefused.Select(Severity).Should().AllBeEquivalentTo(MessageSeverity.Warning);
 	}
 
 	private static MessageSeverity Severity(ArchiveFault fault)

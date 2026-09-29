@@ -24,6 +24,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	private static readonly TimeSpan _historyDebounceWindow = TimeSpan.FromMilliseconds(150);
 	private static readonly TimeSpan _historyCapInterval = TimeSpan.FromMilliseconds(400);
 	private readonly ChartAxisBinder _axisBinder;
+	private readonly ChartPenSet _penSet;
 
 	private readonly TrendCoordinator _coordinator;
 	private readonly ChartCursorReader _cursorReader;
@@ -33,15 +34,14 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	private readonly ChartHistoryRequestDebouncer _historyDebouncer;
 	private readonly ILogger<TrendChartViewModel> _logger;
 	private readonly MessagePanelViewModel _messagePanel;
-	private readonly Dictionary<int, TrendPenState> _pensById = [];
 	private readonly ChartRealtimeApplier _realtimeApplier;
 	private readonly Subject<Unit> _redrawRequests = new();
 	private readonly PenScaleModel _scaleModel = new();
 
 	private readonly Dictionary<int, PenScale> _scalesByPenId = [];
-	private readonly Dictionary<int, PenScaleSettings> _settingsById = [];
 	private readonly Subject<Unit> _historyApplied = new();
 	private bool _isDisposed;
+	private bool _isHistoryStarted;
 	// Decimation width of every history query, in columns: the last width the render seam reported. The
 	// maximum stands until the first report so the initial query is not starved of resolution.
 	private int _reportedColumnTarget = HistoryColumnTarget.MaxColumns;
@@ -60,9 +60,10 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_messagePanel = messagePanel;
 		_logger = logger;
 		_axisBinder = new ChartAxisBinder(Plot);
-		_cursorReader = new ChartCursorReader(_pensById, _envelopesById);
+		_penSet = new ChartPenSet(Plot, _axisBinder);
+		_cursorReader = new ChartCursorReader(_penSet.ById, _envelopesById);
 		_deltaCursorReader = new ChartDeltaCursorReader(_envelopesById);
-		_realtimeApplier = new ChartRealtimeApplier(_pensById, Navigation);
+		_realtimeApplier = new ChartRealtimeApplier(_penSet.ById, Navigation);
 		_historyDebouncer = new ChartHistoryRequestDebouncer(
 			QueryHistoryAsync,
 			ApplyHistory,
@@ -71,6 +72,8 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			_historyCapInterval,
 			dataScheduler,
 			uiScheduler);
+		_windowStart = Navigation.From;
+		_windowEnd = Navigation.To;
 		Navigation.WindowChanged += OnNavigationWindowChanged;
 
 		RedrawRequested = _redrawRequests
@@ -106,7 +109,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	public ChartNavigationController Navigation { get; } = new();
 
-	public IReadOnlyDictionary<int, PenScaleSettings> ScaleSettings => _settingsById;
+	public IReadOnlyDictionary<int, PenScaleSettings> ScaleSettings => _penSet.ScaleSettings;
 
 	public IObservable<Unit> RedrawRequested { get; }
 
@@ -115,12 +118,16 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	/// </summary>
 	public IObservable<Unit> HistoryApplied => _historyApplied;
 
-	public IReadOnlyCollection<TrendPenState> Pens => _pensById.Values;
+	/// <summary>The pens in catalogue order; a new list, and a change notification, per catalogue applied.</summary>
+	public IReadOnlyList<TrendPenState> Pens => _penSet.Ordered;
+
+	/// <summary>The stored settings of every pen shown, as the last catalogue applied named them.</summary>
+	public IReadOnlyList<Pen> Catalogue => _penSet.Catalogue;
 
 	/// <summary>
 	/// No pen to draw: unfinished provisioning shown as the chart area's own empty state, not an error.
 	/// </summary>
-	public bool HasNoPens => _pensById.Count == 0;
+	public bool HasNoPens => Pens.Count == 0;
 
 	public int ScalesRevision { get; private set; }
 
@@ -187,7 +194,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	public TrendPenState? FindPen(int penId)
 	{
-		return _pensById.GetValueOrDefault(penId);
+		return _penSet.ById.GetValueOrDefault(penId);
 	}
 
 	// Disposal is tolerated silently because a render can still deliver a width after the window has closed.
@@ -203,85 +210,48 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	}
 
 	/// <summary>
-	/// The first history request, for whatever window is in force. It is an ordinary request on the one
-	/// history path, so a gesture or a resize report arriving while it is in flight supersedes it.
+	/// The first history request, for whatever window is in force; a gesture or a resize report arriving while
+	/// it is in flight supersedes it. Until it, a catalogue applied queries nothing: this request covers every pen.
 	/// </summary>
 	public void RequestInitialHistory()
 	{
 		ObjectDisposedException.ThrowIf(_isDisposed, this);
 
-		if (_pensById.Count == 0)
-		{
-			return;
-		}
-
-		_windowStart = Navigation.From;
-		_windowEnd = Navigation.To;
-
-		if (!IsWindowFetched(Navigation.From, Navigation.To, Navigation.ActiveLayer))
-		{
-			RequestHistory(Navigation.From, Navigation.To, Navigation.ActiveLayer);
-		}
+		_isHistoryStarted = true;
+		RequestWindowInForce();
 	}
 
-	public TrendPenState AddPen(Pen pen)
+	/// <summary>
+	/// Shows exactly <paramref name="catalogue"/>, compared against the pens shown rather than against the read
+	/// before it, so a pen named again with other settings is revised whatever that read said.
+	/// </summary>
+	public void ApplyCatalogue(IReadOnlyList<Pen> catalogue)
 	{
 		ObjectDisposedException.ThrowIf(_isDisposed, this);
 
-		if (_pensById.TryGetValue(pen.PenId, out var existing))
+		// docs/architecture/charting.md#applying-a-catalogue-read
+		lock (Plot.Sync)
 		{
-			return existing;
+			foreach (var penId in _penSet.Apply(catalogue).RemovedPenIds)
+			{
+				_envelopesById.Remove(penId);
+			}
+
+			SettleActivePen();
+			ApplyAxisModel();
 		}
 
-		var state = BuildPenState(pen);
-		_pensById.Add(pen.PenId, state);
-		_settingsById.Add(pen.PenId, BuildScaleSettings(pen));
+		MoveTheLiveEdgeOntoThePensShown();
+		this.RaisePropertyChanged(nameof(Pens));
 		this.RaisePropertyChanged(nameof(HasNoPens));
-
-		if (ActivePenId == 0)
-		{
-			ActivePenId = pen.PenId;
-		}
-
-		ActivateAVisiblePen();
-		ApplyAxisModel();
 		RequestRedraw();
-
-		return state;
-	}
-
-	public bool RemovePen(int penId)
-	{
-		ObjectDisposedException.ThrowIf(_isDisposed, this);
-
-		if (!_pensById.Remove(penId, out var state))
-		{
-			return false;
-		}
-
-		_settingsById.Remove(penId);
-		_envelopesById.Remove(penId);
-		this.RaisePropertyChanged(nameof(HasNoPens));
-
-		if (ActivePenId == penId)
-		{
-			ActivePenId = _pensById.Keys.FirstOrDefault();
-		}
-
-		ActivateAVisiblePen();
-		Plot.Remove(state.Line);
-		_axisBinder.HideAxis(penId);
-		ApplyAxisModel();
-		RequestRedraw();
-
-		return true;
 	}
 
 	public bool SetPenVisibility(int penId, bool isVisible)
 	{
 		ObjectDisposedException.ThrowIf(_isDisposed, this);
 
-		if (!_pensById.TryGetValue(penId, out var state))
+		if (FindPen(penId) is not { } state)
 		{
 			return false;
 		}
@@ -300,7 +270,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	{
 		ObjectDisposedException.ThrowIf(_isDisposed, this);
 
-		if (!_pensById.ContainsKey(penId) || !MayDrawAxisFor(penId))
+		if (!MayDrawAxisFor(penId))
 		{
 			return false;
 		}
@@ -388,39 +358,55 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			settings => settings with { Mode = ScaleMode.Manual, ManualMin = min, ManualMax = max });
 	}
 
-	private TrendPenState BuildPenState(Pen pen)
+	private void MoveTheLiveEdgeOntoThePensShown()
 	{
-		var line = new EnvelopeLine { Color = new Color(pen.Color) };
-
-		// Shared-X invariant: every plottable is pinned to the single bottom (time) axis.
-		line.Axes.XAxis = Plot.Axes.Bottom;
-		Plot.Add.Plottable(line);
-
-		return new TrendPenState(pen, line) { IsVisible = pen.EnabledOnStart };
-	}
-
-	private static PenScaleSettings BuildScaleSettings(Pen pen)
-	{
-		var settings = new PenScaleSettings(pen.PenId);
-
-		if (pen.ScaleMin is { } min && pen.ScaleMax is { } max)
+		if (_coordinator.PenIds.ToHashSet().SetEquals(_penSet.ById.Keys))
 		{
-			settings = settings with { Mode = ScaleMode.Manual, ManualMin = min, ManualMax = max };
+			return;
 		}
 
-		return settings;
+		_coordinator.SetPens([.. Pens.Select(state => state.Pen.PenId)]);
+
+		if (_isHistoryStarted)
+		{
+			RequeryAllPens();
+		}
+	}
+
+	private void RequeryAllPens()
+	{
+		_lastFetch = null;
+		RequestWindowInForce();
+	}
+
+	private void RequestWindowInForce()
+	{
+		if (Pens.Count > 0 && !IsWindowFetched(Navigation.From, Navigation.To, Navigation.ActiveLayer))
+		{
+			RequestHistory(Navigation.From, Navigation.To, Navigation.ActiveLayer);
+		}
+	}
+
+	private void SettleActivePen()
+	{
+		if (FindPen(ActivePenId) is null)
+		{
+			ActivePenId = Pens.Count > 0 ? Pens[0].Pen.PenId : 0;
+		}
+
+		ActivateAVisiblePen();
 	}
 
 	// Only the active pen's axis is drawn and only a visible pen's axis may be, so an active pen that is
 	// switched off leaves the chart with no Y axis at all.
 	private void ActivateAVisiblePen()
 	{
-		if (_pensById.ContainsKey(ActivePenId) && MayDrawAxisFor(ActivePenId))
+		if (MayDrawAxisFor(ActivePenId))
 		{
 			return;
 		}
 
-		foreach (var candidate in _pensById.Values)
+		foreach (var candidate in Pens)
 		{
 			if (MayDrawAxisFor(candidate.Pen.PenId))
 			{
@@ -433,7 +419,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	private bool MayDrawAxisFor(int penId)
 	{
-		return _pensById.TryGetValue(penId, out var state) && state.IsVisible;
+		return FindPen(penId) is { IsVisible: true };
 	}
 
 	private void RefreshDeltaReadout()
@@ -480,7 +466,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			fromUtc, toUtc, layer, Navigation.TargetColumnCount, Navigation.FirstSample);
 
 		_historyDebouncer.Request(new HistoryRequest(
-			[.. _pensById.Keys],
+			[.. _penSet.ById.Keys],
 			range,
 			HistoryPrefetch.ScaleColumnTarget(_reportedColumnTarget)));
 	}
@@ -503,6 +489,12 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 		foreach (var envelope in envelopes)
 		{
+			// docs/architecture/charting.md#applying-a-catalogue-read
+			if (FindPen(envelope.PenId) is not { } state)
+			{
+				continue;
+			}
+
 			_envelopesById[envelope.PenId] = envelope;
 
 			if (envelope.Timestamps.Count > 0)
@@ -510,10 +502,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 				Navigation.TrackDataExtents(envelope.Timestamps[0], envelope.Timestamps[^1]);
 			}
 
-			if (_pensById.TryGetValue(envelope.PenId, out var state))
-			{
-				state.LoadHistory(envelope);
-			}
+			state.LoadHistory(envelope);
 		}
 
 		DropPensMissingFromHistory(envelopes, request.PenIds);
@@ -571,18 +560,17 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			}
 
 			_envelopesById.Remove(penId);
-			_pensById.GetValueOrDefault(penId)?.ClearHistory();
+			FindPen(penId)?.ClearHistory();
 		}
 	}
 
 	private bool UpdateAxisSettings(int penId, Func<PenScaleSettings, PenScaleSettings> update)
 	{
-		if (!_settingsById.TryGetValue(penId, out var settings))
+		if (!_penSet.UpdateScaleSettings(penId, update))
 		{
 			return false;
 		}
 
-		_settingsById[penId] = update(settings);
 		ApplyAxisModel();
 		RequestRedraw();
 
@@ -591,19 +579,14 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	private void ApplyAxisModel()
 	{
-		if (_settingsById.Count == 0)
-		{
-			return;
-		}
-
 		var scales = _scaleModel.Compute(
-			[.. _settingsById.Values],
+			[.. _penSet.ScaleSettings.Values],
 			_envelopesById,
 			ActivePenId,
 			_windowStart,
 			_windowEnd);
 
-		_axisBinder.Apply(scales, _pensById);
+		_axisBinder.Apply(scales, _penSet.ById);
 		StoreScales(scales);
 	}
 

@@ -36,7 +36,7 @@ public sealed class EnvelopeLineTests
 	[Fact(Timeout = TestTimeoutMilliseconds)]
 	public async Task Render_WhileTheUiThreadRewritesTheColumns_DoesNotThrow()
 	{
-		var line = new EnvelopeLine { Color = new Color(PenColorHex) };
+		var line = new EnvelopeLine();
 
 		using var plot = new Plot();
 		line.Axes.XAxis = plot.Axes.Bottom;

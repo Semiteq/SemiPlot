@@ -81,10 +81,7 @@ public sealed class BreakRenderArchiveJourneyTests(
 			new MessagePanelViewModel(),
 			NullLogger<TrendChartViewModel>.Instance);
 
-		foreach (var pen in catalogue.Value)
-		{
-			chart.AddPen(pen);
-		}
+		chart.ApplyCatalogue(catalogue.Value);
 
 		var stopped = FirstBreak();
 		OpenWindowOn(chart.Navigation, extent.Value.FirstUtc, stopped);

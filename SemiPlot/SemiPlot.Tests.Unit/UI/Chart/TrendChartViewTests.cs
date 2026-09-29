@@ -161,7 +161,13 @@ public sealed class TrendChartViewTests
 				.Single(block => block.Name == "EmptyCatalogueMessage");
 
 			message.IsVisible.Should().BeTrue();
-			message.Text.Should().Be(Resources.EmptyCatalogueMessage);
+			message.Text.Should().Be(Resources.FormatEmptyCatalogueMessage(
+				Resources.MenuEdit,
+				Resources.MenuEditPensAndGroups,
+				Resources.PenEditorRefresh));
+			message.Text.Should().Contain(Resources.MenuEdit)
+				.And.Contain(Resources.MenuEditPensAndGroups)
+				.And.Contain(Resources.PenEditorRefresh);
 
 			viewModel.AddPen(new Pen(7, "Chamber pressure", ["Pressure"], "#3574F0"));
 			Dispatcher.UIThread.RunJobs();

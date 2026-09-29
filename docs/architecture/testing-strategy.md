@@ -82,10 +82,10 @@ There are three families — the same category with different foreign parties.
 `PostgresExtentReadTests`, `PostgresHistoryReadTests`, `RealtimePollReadTests`,
 `RealtimeSubscriptionTests`, `RealtimeEmptyArchiveTests`,
 `ArchiveWriterTransactionTests`, `CoarseFlushTests`,
-`ExplainPlanTests`. Seams guarded: statement text, type mapping, the demo writer's server-side
+`ExplainPlanTests`, `PenCatalogueEditorTests`, `PenRegistrationTests`, `LiveCatalogueTests`. Seams guarded: statement text, type mapping, the demo writer's server-side
 thinning against `LayerThinner`'s own selection,
-the naive-local-to-UTC conversion, partition pruning, and the grant chain — reads run as
-`semiplot`, so a privilege that never reached the role fails here instead of at
+the naive-local-to-UTC conversion, partition pruning, and the grant chain — reads and the editor's
+writes run as `semiplot`, so a privilege that never reached the role fails here instead of at
 commissioning. The container is the delivery mechanism for a real server, nothing more.
 
 **Against a real Avalonia** — `SemiPlot.Tests.Unit/UI/`, under `[AvaloniaFact]`:
@@ -173,8 +173,10 @@ and the test hangs. Two schedulers work in its place.
 | `TestScheduler` | the test drives time itself | none |
 | `AvaloniaScheduler.Instance` | the test needs the production seam, as `ChartPointerInputTests` does | the periodic timer lives on the shared headless dispatcher until the view model is disposed, so the test disposes it |
 
-The same holds for a window that realises the chart indirectly: `MainWindowTestBuilder` and
-`LegendChartBuilder` hand their charts a virtual UI scheduler for this reason alone.
+The same holds for a window that realises the chart indirectly: `ChartTestBuilder.CreateChart`, which
+`MainWindowTestBuilder` and the sidebar tests build on, hands its charts a virtual UI scheduler for this
+reason alone. Its `CreateViewModel` takes the immediate UI scheduler and so serves only tests that
+realise no view.
 
 ## Where the boundaries between projects fall
 

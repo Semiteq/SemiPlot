@@ -8,6 +8,7 @@ using ReactiveUI;
 using ReactiveUI.Avalonia;
 
 using SemiPlot.UI.Legend;
+using SemiPlot.UI.PenEditor;
 using SemiPlot.UI.Settings;
 
 namespace SemiPlot.UI.MainWindow;
@@ -33,6 +34,7 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 		_requests.Add(viewModel.ExitRequests.Subscribe(_ => Close()));
 		_requests.Add(viewModel.AboutRequests.Subscribe(ShowAbout));
 		_requests.Add(viewModel.SettingsRequests.Subscribe(ShowSettings));
+		_requests.Add(viewModel.PenEditorRequests.Subscribe(ShowPenEditor));
 		_requests.Add(viewModel
 			.WhenAnyValue(window => window.LegendViewModel)
 			.Subscribe(legend => legend?.FitPanel(MaximumPanelWidth())));
@@ -92,6 +94,22 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 		finally
 		{
 			settings.Dispose();
+		}
+	}
+
+	private async void ShowPenEditor(PenEditorViewModel penEditor)
+	{
+		try
+		{
+			await new PenEditorWindow { DataContext = penEditor }.ShowDialog(this);
+		}
+		catch (Exception exception)
+		{
+			(DataContext as MainWindowViewModel)?.ReportFailure(exception);
+		}
+		finally
+		{
+			penEditor.Dispose();
 		}
 	}
 }

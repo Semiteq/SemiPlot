@@ -11,6 +11,7 @@ using Microsoft.Reactive.Testing;
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Bridge;
+using SemiPlot.Tests.Unit.UI.PenEditor;
 using SemiPlot.UI;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.MainWindow;
@@ -84,6 +85,7 @@ public sealed class EmptyCatalogueStartupTests
 			new ServiceCollection()
 				.AddSingleton<IScheduler>(scheduler)
 				.AddSingleton(dataProvider)
+				.AddSingleton<IPenCatalogueEditor>(new FakePenCatalogueEditor())
 				.AddUi(AppContext.BaseDirectory);
 
 		services.AddLogging();

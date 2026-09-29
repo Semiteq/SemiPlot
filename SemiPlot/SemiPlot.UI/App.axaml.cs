@@ -178,15 +178,24 @@ public class App : Application
 		var chartViewModel = BuildChart(startupData, coordinator, messagePanel, uiScheduler);
 		var minimapViewModel = BuildMinimap(startupData, coordinator, chartViewModel, messagePanel, uiScheduler);
 
+		var catalogueSync = new PenCatalogueSync(
+			serviceProvider.GetRequiredService<IDataProvider>(),
+			startupData.Pens,
+			messagePanel,
+			uiScheduler,
+			serviceProvider.GetRequiredService<ILogger<PenCatalogueSync>>());
+
 		var mainWindowViewModel = serviceProvider.GetRequiredService<MainWindowViewModel>();
 		mainWindowViewModel.SetChart(chartViewModel);
 		mainWindowViewModel.SetMinimap(minimapViewModel);
+		mainWindowViewModel.SetCatalogueSync(catalogueSync, uiScheduler);
 
 		// Before Start, so the first poll tick's state reaches the status bar rather than a stream nothing
 		// is listening to yet: the coordinator's republished stream has no replay.
 		mainWindowViewModel.StatusBar.TrackArchiveConnection(coordinator.ConnectionFaults);
 
 		coordinator.Start();
+		catalogueSync.Start();
 
 		chartViewModel.RequestInitialHistory();
 
@@ -211,11 +220,7 @@ public class App : Application
 		// Before the first history request and before the minimap exists: RequestInitialHistory queries
 		// whatever window is in force, and the minimap reads it back when its own extent arrives.
 		chartViewModel.Navigation.SeedFromArchiveExtent(startupData.Extent);
-
-		foreach (var pen in startupData.Pens)
-		{
-			chartViewModel.AddPen(pen);
-		}
+		chartViewModel.ApplyCatalogue(startupData.Pens);
 
 		return chartViewModel;
 	}

@@ -27,10 +27,12 @@ Two rules follow and are not negotiable: SemiPlot never writes to vendor objects
 
 ## The provider surface
 
-The UI depends only on `IDataProvider` (`SemiPlot.Core/Data/IDataProvider.cs`). The interface and
-its DTOs live in `SemiPlot.Core`; each concrete provider is a sibling `SemiPlot.DataSource.*`
+The UI reads through `IDataProvider` (`SemiPlot.Core/Data/IDataProvider.cs`) and the pen editor alone
+writes, through `IPenCatalogueEditor` (The pen catalogue editor, below). Both interfaces and their
+DTOs live in `SemiPlot.Core`; each concrete provider is a sibling `SemiPlot.DataSource.*`
 project, so Core never references a data source. `PostgresDataProvider` in
-`SemiPlot.DataSource.Postgres` is the only implementation; tests build fakes against the interface.
+`SemiPlot.DataSource.Postgres` is the only implementation of `IDataProvider`; tests build fakes
+against the interface.
 
 ```csharp
 public interface IDataProvider
@@ -56,7 +58,7 @@ public interface IDataProvider
 
 | Type | Shape | Notes |
 | --- | --- | --- |
-| `Pen` | `PenId`, `Name`, `Group`, `Color`, `LineStyle` | `PenId` is the archive's `trends.id`. |
+| `Pen` | `PenId`, `Name`, `Groups`, `Color`, `Unit`, `Format`, `EnabledOnStart`, `ScaleMin`, `ScaleMax`, `LineStyle` | `PenId` is the archive's `trends.id`. Equality compares `Groups` element by element, ordinal, so two reads of one stored pen are equal. |
 | `Sample` | `PenId`, `TimestampUtc`, `Value` | Realtime element. Timestamps are UTC by the time they leave the provider. |
 | `PenHistoryEnvelope` | parallel `Timestamps` / `Min` / `Max` / `Center`, strictly ascending, `NaN` marks a gap | One per pen per history query. |
 | `ArchiveExtent` | `FirstUtc`, `LastUtc`, `IsEmpty` | The span of the configured variables, consumed by the minimap (`TM-4`). `ArchiveExtent.Empty` is the no-span form. |
@@ -77,16 +79,136 @@ Contract points every implementation keeps:
 - An inverted window, a target column count below one, or a pen identifier outside the archive's
   32-bit range is a failed `Result` with a plain message.
 
+## The pen catalogue editor
+
+The write path is a second interface, `IPenCatalogueEditor` (`SemiPlot.Core/Data/IPenCatalogueEditor.cs`),
+and `IDataProvider` stays read-only. The interface declares everything the editor window may do and
+nothing more:
+
+```csharp
+public interface IPenCatalogueEditor
+{
+    Task<Result<PenCatalogue>> ReadAsync();
+    Task<Result<int>> RegisterNewPensAsync();
+    Task<Result> ChangeAsync(StoredPen pen, PenSettingChange change);
+    Task<Result<int>> CreateGroupAsync(string name);
+    Task<Result> RenameGroupAsync(StoredGroup group, string name);
+    Task<Result> DeleteGroupAsync(StoredGroup group);
+    Task<Result> SetMembershipAsync(StoredPen pen, StoredGroup group, bool isMember);
+}
+```
+
+No member adds a pen by hand, deletes one or changes an `id`: the key is the SCADA variable number and
+belongs to the SCADA. The `semiplot` role draws the same line, with a column-level `UPDATE` of the eight
+settings columns and no `INSERT` or `DELETE` on `semiplot_tags` (`postgres-instance.md`).
+`PenCatalogueEditorSurfaceTests` pins the seven method names.
+
+The read interface stays read-only because the chart consumes it. A write member on `IDataProvider`
+would put a write in reach of every chart consumer; with the write path apart, `Chart/` and `Legend/`
+never name `IPenCatalogueEditor`, `IDataProvider` carries no `Insert`, `Update`, `Write` or `Save`, and
+two greps in `CLAUDE.md` hold both. An axis the operator rescales stays a session edit (`charting.md`).
+
+`PostgresPenCatalogueEditor` in `SemiPlot.DataSource.Postgres` is the only implementation.
+`AddPostgresData()` registers it by factory beside `IDataProvider`, over the same `NpgsqlDataSource`
+singleton, so one role and one connection string serve reads and writes.
+
+| Type | Shape | Notes |
+| --- | --- | --- |
+| `PenCatalogue` | `Pens`, `Groups` | The catalogue as stored. |
+| `StoredPen` | `Id`, `Name`, `Unit`, `Format`, `Color`, `LineStyle`, `EnabledOnStart`, `ScaleMin`, `ScaleMax` | One `semiplot_tags` row; a null field is a stored `NULL`. |
+| `StoredGroup` | `Id`, `Name`, `MemberPenIds` | Member ids ascending; the member count is `MemberPenIds.Count`. |
+| `PenSettingChange` | `Name`, `Unit`, `Format`, `Color`, `LineStyle`, `EnabledOnStart`, `Scale(Min, Max)` | A closed family, one arm per column; the scale pair is one arm. |
+
+A parameter record carries the id the statement binds and the name a fault names. The implementation
+reads only `Id` and `Name` from it, and no statement compares old values in its `WHERE`.
+
+### The stored read
+
+`ReadAsync` runs `StoredPens` and `StoredGroups` on one connection, with `PenCatalogRelations` as the
+failure detail. It returns the values as stored, not as `PostgresDataProvider.ReadPen` normalises them:
+a `NULL` colour stays null instead of `#808080`, and a mask `PenValueFormat.IsAcceptable` refuses comes
+back as written instead of null. The form opens such a value as an invalid field, the way the settings
+window opens a file value its rule refuses (`overview.md#the-settings-window`). `line_style` goes
+through `StoredLineStyle.Read`, which the provider's read calls too; a value it does not recognise reads
+as interpolated and is logged at the level the caller's function gives, asked only for such a value.
+The editor gives `Warning` on every read, and the provider gives `Warning` once per pen and stored value
+and `Debug` after that (`#the-catalogue-while-the-viewer-runs`, below).
+
+The editor reads fresh when its window opens and after every refresh, never from the startup
+catalogue: a form seeded from the startup read would revert a field to a value another instance has
+already replaced.
+
+### One setting, one column, one statement
+
+| Operation | Constant | What the statement keeps |
+| --- | --- | --- |
+| `ChangeAsync`, every arm but `Scale` | `UpdatePenName`, `UpdatePenUnit`, `UpdatePenFormat`, `UpdatePenColor`, `UpdatePenLineStyle`, `UpdatePenEnabledOnStart` | `UPDATE semiplot_tags SET <column> = @value WHERE id = @id`, the column fixed in the constant and never interpolated. A null unit or mask binds `NULL`; the form turns an empty field into null. |
+| `ChangeAsync`, `Scale` | `UpdatePenScale` | Both bounds in one statement: `semiplot_tags_scale_paired` refuses a half-set pair between two. |
+| `CreateGroupAsync` | `CreateGroup` | `INSERT ... RETURNING id`; the result is the new group's id. |
+| `RenameGroupAsync` | `RenameGroup` | One row by id. |
+| `DeleteGroupAsync` | `DeleteGroup` | `ON DELETE CASCADE` on `semiplot_pen_groups.group_id` removes the memberships. The pens stay, and a pen left in no group falls under the Ungrouped header at the next catalogue read. |
+| `SetMembershipAsync` | `AddMembership`, `RemoveMembership` | Idempotent: adding a membership that exists is `ON CONFLICT (pen_id, group_id) DO NOTHING`, and removing one that does not touches no row and succeeds. |
+| `RegisterNewPensAsync` | `RegisterNewPens` | `SELECT semiplot_register_new_pens();`, whose answer is the number of pens added. |
+
+Every update, rename and delete must touch exactly one row. None touched means the pen or group is
+gone, and the editor returns `ArchiveFault.RowGone`, never success. A change carries one column, so two
+instances editing different settings of one pen never overwrite each other; two writes of the same
+column keep the last one. Every parameter is bound with its type and every `NOT NULL` column the
+editor writes takes a non-null value, so no statement it issues can raise `23502` or `22P02`.
+`ArchiveStatementTextTests` does not pin these constants; `PenCatalogueEditorTests` runs every one of
+them as `semiplot` against a container clone, which also proves the grant.
+
+### Registration from the refresh button only
+
+`semiplot_register_new_pens()` is SemiBase's (`sql/semiplot_register.sql`: `SECURITY DEFINER`,
+`EXECUTE` for `semiplot` and none for `PUBLIC`). It adds a pen for every key in `trends` that has none:
+named by its number, one of twelve colours by `id % 12`, `enabled_on_start = false`, no unit, no mask
+and no scale.
+
+The viewer calls it from one place, `PenEditorViewModel.RefreshCommand`, and never at start:
+
+- A registered pen is hidden and named by its number, so the chart has nothing new to draw after it.
+  The operator opens the editor to name and switch the pen on either way.
+- The function finds the keys by a loose index scan whose cost grows with keys times partitions.
+  SemiBase measures 119.0 ms for 50 keys over 91 partitions and extrapolates, without measuring,
+  2.6 s to 4.8 s for 500 keys over 365 partitions (SemiBase `docs/architecture/provisioning.md:294-314`).
+  At start, that cost would land on every start.
+- A database whose provisioning lacks the function answers `42883`. At start that would fail every
+  start; behind the button it fails the one refresh the operator pressed.
+
+Two refreshes from two instances do not conflict. A call started while another is uncommitted waits on
+the first call's keys, then skips them under `ON CONFLICT (id) DO NOTHING` and returns 0 with no fault.
+`PenRegistrationTests` holds the first call's transaction open from a second connection and checks
+exactly that, so the editor takes no advisory lock.
+
+### The catalogue while the viewer runs
+
+The editor writes the tables, and every running viewer reads them again: `Bridge/PenCatalogueSync`
+issues `QueryPensAsync` every 5 s and at once after each write the editor lands, and the chart and the
+sidebar apply what changed (`overview.md#the-live-catalogue`). Several instances may run on one
+machine, and the last write wins per column. The read side keeps three rules for that loop:
+
+- `PenCatalog` orders by `tag.name, tag.id`, so two pens that share a name keep one order across reads.
+- `QueryPensAsync` builds a new group list per row, and `Pen` compares `Groups` element by element, so
+  an unchanged catalogue reads as unchanged.
+- `PostgresDataProvider` warns about a stored value it normalises, a `NULL` colour, a mask the rule
+  refuses or an unknown `line_style`, once per process for each pen, column and stored value, and logs
+  a repeat at `Debug`. The provider keeps the set of warned triples. A hand-edited row would otherwise
+  write a warning every 5 s.
+
+A read that adds or removes a pen moves the live edge onto the new pen set (Realtime, below).
+
 ## Operation to statement
 
-Every statement on the provider path is a constant in
+Every statement the provider and the editor issue is a constant in
 `SemiPlot.DataSource.Postgres/ArchiveStatements.cs`; parameters are always bound. The bench seeder
 and the test harness own SQL of their own (`bench.md`). `ArchiveStatementTextTests` pins each
-constant clause by clause; `ExplainPlanTests` asserts each plan's shape against a container.
+provider constant below clause by clause; `ExplainPlanTests` asserts each plan's shape against a
+container. The editor's statements are in the table above.
 
 | Operation | Constant | What the statement must keep, and why |
 | --- | --- | --- |
-| Pen catalogue | `PenCatalog` | `semiplot_tags` left-joined through `semiplot_pen_groups` to `semiplot_groups`, the names aggregated with `array_agg` under `GROUP BY tag.id`: a pen in two groups stays one row and a pen in none survives the outer join. `ORDER BY tag.name`, because a pen has no single group to sort by. An empty table is an empty list; a missing one is `ArchiveFault.TableMissing` naming all three relations. |
+| Pen catalogue | `PenCatalog` | `semiplot_tags` left-joined through `semiplot_pen_groups` to `semiplot_groups`, the names aggregated with `array_agg` under `GROUP BY tag.id`: a pen in two groups stays one row and a pen in none survives the outer join. `ORDER BY tag.name, tag.id`, because a pen has no single group to sort by, and the id keeps two pens that share a name in one order across reads. An empty table is an empty list; a missing one is `ArchiveFault.TableMissing` naming all three relations. |
 | Archive extent | `ArchiveExtent` | Rooted at `semiplot_tags`, one `min(t)`/`max(t)` subquery pair per configured `id` at `l = 0`. A bare `min(t)` over `trends` cannot use `PRIMARY KEY (id, l, t)` and scans the archive. Nulls map to `ArchiveExtent.Empty`; an empty catalogue over a full archive is also `Empty`, since no pen could draw it. |
 | History, coarse layers | `SparseHistoryWindow` | Two branches under one outer `ORDER BY id, t`: the window rows, and per pen one seed row strictly before `@from`, bounded to the wider of the window and one day. `HistoryRowFold` groups by consecutive identifier, so the single total ordering is what keeps each pen one run; the bound is what prunes older partitions from the seed's `Merge Append`; the seed is what keeps a steady variable on the chart as a horizontal line. |
 | History, Raw | `BucketedRawWindow` | The same seed branch, and a window branch the server reduces to one row per column: `GROUP BY id, segment, date_bin(@bucket, t, @from)`. `segment` counts the `q = 32` markers strictly before each row, so a marker closes its own bucket and no bucket straddles a break. Each bucket carries `min(v)`, `max(v)`, whether it ends in a gap, and the bucket's newest non-null sample as the column's timestamp and value, which is what the legend reads at the cursor. A `q = 32` marker and a null `v` both end the bucket in a gap. Raw by construction: `l = 0`, no `@layer`. `@bucket` is `(to - from) / targetColumnCount`, never below one millisecond, the column's own resolution. |
@@ -265,6 +387,19 @@ The first tick reads the baseline and emits nothing; every later tick reads the 
 `lastSeen`, converts them to UTC and emits them. `lastSeen` is the archive's own naive clock, not
 the local machine's, so a clock difference between the two hosts drops or repeats nothing.
 
+The pen set can change while the viewer runs. `TrendCoordinator` holds it in a
+`BehaviorSubject<IReadOnlyList<int>>` seeded from its constructor's pens and subscribes through
+`Select(_dataProvider.Subscribe)` and `Switch()`, ahead of the `Buffer`. `SetPens` pushes the list it
+is handed, which the chart builds fresh for each call, and the chart calls it only when the id set it
+shows differs from `PenIds`, the subject's current set, so the coordinator carries no change check of its
+own.
+`RealtimeBatches` stays one published stream: the chart's one subscription and the coordinator's
+keep-alive see no change. A switch disposes the old subscription and starts a new poll, whose first
+tick reads the baseline and emits nothing. The rows written between the old poll's last tick and the
+new baseline, at most one poll interval, are not delivered live; the history query the chart issues on
+every set change covers them. Every set the chart pushes holds only pens of the provider's own
+catalogue. `Dispose` completes the subject.
+
 - **The sequence never completes and never faults.** A query error logs, drops that tick's rows and
   leaves the observable running.
 - **No timestamp is emitted at or before the last one already delivered** (`DA-7`).
@@ -304,12 +439,16 @@ handler would end the forwarding for the rest of the session instead of reaching
 | Connection lost mid-session | failed `Result` on the query; realtime tick dropped | Chart keeps the data it has |
 | Three consecutive realtime ticks fail | `ArchiveFault.ConnectionLost` on `ConnectionFaults`; the observable keeps running | The status indicator turns to the fault state and one `Warning` entry appears; the first tick that succeeds restores the indicator and adds one `Info` entry |
 | A column the read needs is absent (`42703`) | `ArchiveFault.ShapeUnexpected` with the server's detail | "The archive has an unexpected shape" — run `semibase site`, then find what altered the table |
-| Query timeout (`57014`) | `ArchiveFault.QueryTimedOut` | The server ended the read; `statement_timeout` is the `semiplot` role's own setting |
+| Query timeout (`57014`) | `ArchiveFault.QueryTimedOut` | "The archive ended the statement"; `statement_timeout` is the `semiplot` role's own setting |
 | The database does not exist (`3D000`) | `ArchiveFault.DatabaseMissing` | "The archive is not provisioned" — run `semibase site` |
-| Credentials refused or a grant missing (`28P01`, `28000`, `42501`) | `ArchiveFault.AccessDenied` | "The archive refused the credentials" — the user, password or grants |
-| A relation a read needs does not exist (`42P01`) | `ArchiveFault.TableMissing` whose detail names every relation that read touches | "The archive is not provisioned" — run `semibase site`, which creates them all |
-| `semiplot_tags` present but empty | empty pen list, success | The chart area's own empty state — no key has been registered as a pen yet. Not a message-panel entry: an empty catalogue is a state, not something that happened |
+| Credentials refused or a grant missing (`28P01`, `28000`, `42501`) | `ArchiveFault.AccessDenied` | "The archive refused access" — the user, password or grants |
+| A relation or function a statement needs does not exist (`42P01`, `42883`) | `ArchiveFault.TableMissing` whose detail names every relation that statement touches, or `semiplot_register_new_pens()` | "The archive is not provisioned" — run `semibase site`, which creates them all |
+| The catalogue re-read fails mid-session | failed `Result`; `PenCatalogueSync` keeps its snapshot | Nothing for the first two failures in a row, one log warning each; from the third one panel entry, coalesced with the ones after it. The next success applies everything stored since the last success |
+| `semiplot_tags` present but empty | empty pen list, success | The chart area's own empty state, naming `Edit` -> `Pens and groups` -> `Refresh pen list`: no key has been registered as a pen yet. Not a message-panel entry: an empty catalogue is a state, not something that happened |
 | Archive present but no rows in the window | success, empty envelope list | Empty chart, no error |
+| A check constraint refuses a written value (`23514`) | `ArchiveFault.ValueRejected` | "The archive refused the value"; the field reverts, and the message line says why |
+| A group name another group already carries (`23505`) | `ArchiveFault.NameTaken` | "The name is already taken" |
+| A write names a pen or group that is gone (`23503`, or no row touched) | `ArchiveFault.RowGone` | "The entry no longer exists"; a refresh shows what the catalogue holds now |
 
 ### Two error planes
 
@@ -341,11 +480,33 @@ Reading a section folder is the only file access left on the connection path, wh
 | `Unreachable` | a socket failure, a client bound firing, any `NpgsqlException` without a SQLSTATE | empty |
 | `AccessDenied` | `28P01`, `28000`, `42501` | the username |
 | `DatabaseMissing` | `3D000` | empty |
-| `TableMissing` | `42P01` | every relation the failing statement touches: `trends` for the history and realtime reads, `semiplot_tags, trends` for the archive extent, all three catalogue tables for the pen catalogue |
+| `TableMissing` | `42P01`, `42883` | every relation the failing statement touches: `trends` for the history and realtime reads, `semiplot_tags, trends` for the archive extent, all three catalogue tables for the pen catalogue and every editor write; `semiplot_register_new_pens()` for the registration |
 | `ShapeUnexpected` | `42703` | the server's own message |
 | `QueryTimedOut` | `57014` | empty |
 | `ConnectionLost` | three consecutive failed poll ticks | the number of failures that raised it |
-| `ReadFailed` | any other SQLSTATE, or a client-side throw | the SQLSTATE, or empty |
+| `ValueRejected` | `23514` on an editor write | the pen's name |
+| `NameTaken` | `23505` on an editor write | the group name asked for |
+| `RowGone` | `23503` on an editor write, or an update, rename or delete that touched no row | the pen or group name |
+| `ReadFailed` | any other SQLSTATE, or a client-side throw, on a read or a write | the SQLSTATE, or empty |
+
+The write kinds come from `ArchiveExceptionMapper.MapWrite(exception, subject)`. It maps `23514`,
+`23505` and `23503` to `ValueRejected`, `NameTaken` and `RowGone` carrying `subject`, and sends every
+other exception to the read classification with `PenCatalogRelations` as its relation: every write
+touches one of those three relations, and one provisioning run creates all three. `RowGone(subject)`
+is the form for an update that touched no row. The subject is the pen's committed name for a pen
+change, including a `Name` change; for a rename it is the new name when the server refuses it and the
+stored name when the group is gone; a delete names the group; a membership names the pen when the
+server reports the pen's key `semiplot_pen_groups_pen_id_fkey` violated, and the group otherwise. No word of either language lives in `Detail`: the mapper wraps the
+subject in each kind's resourced detail. A `ReadFailed` with no detail is a fault in this code:
+`ArchiveFailureLog.LogIfUnexpected`, which the provider and the editor both call, logs it with the
+exception.
+
+`AccessDenied`, `Unreachable`, `QueryTimedOut`, `TableMissing` and `ReadFailed` serve reads and writes
+alike, so their operator text and their `ArchiveError.Describe` lines name a statement, never a read
+(`ui-text.md#the-pen-editors-failure-text`). `ReadFailed` stays the default arm of both mappings and
+keeps its name, which the operator never reads. There is no `WriteFailed` kind: its title, detail and
+remedy would repeat the reworded `ReadFailed` ones. A missing registration function is a missing
+relation to the operator, so `42883` takes the `TableMissing` remedy, "run semibase site".
 
 `ArchiveFailureMapper` (`SemiPlot.UI/Messages/`) turns each kind into a title, a detail, a remedy
 and a `MessageSeverity`, and is the one place a remedy is written. The severity is decided in the
@@ -353,10 +514,13 @@ mapper rather than at the call site, so a future error type gets one from the `M
 without anyone remembering: `AccessDenied`, `TableMissing`, `DatabaseMissing` and `ShapeUnexpected`
 are `Error`, because nothing recovers until someone changes a grant, a schema or a provisioning run;
 `Unreachable`, `ConnectionLost`, `QueryTimedOut` and `ReadFailed` are `Warning`, because the poll
-loop retries by itself. `ConnectionLost` never opens the startup failure panel; it is an entry in the
-message panel under a chart that works.
+loop retries by itself. `ValueRejected`, `NameTaken` and `RowGone` are `Warning` too: the operator's
+own edit was refused, and the next edit is the remedy.
+`FailureSeverityTests.ArchiveFaults_SplitIntoWhatRetriesAndWhatNeedsTheOperator` holds them as a third
+bucket. `ConnectionLost` never opens the startup failure panel; it is an entry in the message panel
+under a chart that works.
 
-The eight rows above are the `ArchiveError` arm alone. `Map` has eight further arms — the startup
+The eleven rows above are the `ArchiveError` arm alone. `Map` has eight further arms — the startup
 arguments, the log file, the configuration section, the app settings, the connection file, the
 startup read timeout, an `IExceptionalError` and the `_` fallback — and every one of them is
 `Error`, because each is reachable only at startup, where nothing recovers until the operator edits
@@ -374,7 +538,10 @@ recovery afterwards), the failed extent query in `Minimap/MinimapViewModel`, and
 `LoadExtentAsync` task the composition root starts. `ApplyRealtimeBatch` carries the
 try-report-continue shape that `Chart/ChartHistoryRequestDebouncer.Deliver` applies to the history it
 hands on, so one bad batch does not end the realtime subscription. `Deliver` guards that hand-off
-only: the result it reports instead is reported by a handler that guards itself.
+only: the result it reports instead is reported by a handler that guards itself. The catalogue read
+loop reports from the third failure in a row, the live edge's threshold
+(`ArchiveConnectionState.ConsecutiveFailuresBeforeFault`); the first two log a warning
+(`overview.md#a-failed-read`).
 
 `Messages/ResultReporting` treats the log and the panel as two independent sinks: the panel edit runs
 first and the log line from a `finally`, so whichever of the two refuses the failure, the other still
@@ -389,11 +556,15 @@ that report from a thread of their own.
 
 A handler that runs detached — an Rx `onNext`, an Rx `onError`, a job posted to the UI scheduler —
 wraps its whole body, not its report alone, and hands the throw to `TryReportFailure`:
-`TrendChartViewModel.OnHistoryQueryFailed`, `Minimap/MinimapViewModel.ApplyExtent` and
-`MainWindow/AppStatusBarViewModel.ApplyConnectionState`. The guard belongs to the handler rather than
-to whoever invokes it, because the recovery around the report would otherwise escape the same way the
-report can. `TrendChartViewModel.ReportFailure`, `MainWindowViewModel.ReportFailure`, the
-`LoadExtentAsync` continuation and the ReactiveUI observer call the guarded form directly.
+`TrendChartViewModel.OnHistoryQueryFailed`, `MainWindow/AppStatusBarViewModel.ApplyConnectionState`,
+`Bridge/PenCatalogueSync.RunAsync` and `MainWindow/PenCatalogueApplier.ApplyAsync`, the last through
+`MainWindowViewModel.ReportFailure`. The guard belongs to the handler rather than to whoever invokes
+it, because the recovery around the report would otherwise escape the same way the report can.
+`Minimap/MinimapViewModel.LoadExtentAsync` carries no guard of its own: its apply runs through
+`Observable.Start` on the UI scheduler and awaits it, so a throw reaches the awaiter, and both awaiters
+report it, the composition root's continuation and `PenCatalogueApplier.ApplyAsync`'s catch.
+`TrendChartViewModel.ReportFailure`, `MainWindowViewModel.ReportFailure`, the `LoadExtentAsync`
+continuation and the ReactiveUI observer call the guarded form directly.
 
 A history query reissued on every pan is what the panel's coalescing exists for: during an outage a
 ten-second drag produces roughly twenty-five identical failures, and they become one entry with a
@@ -417,9 +588,15 @@ would end the subscription that feeds the live edge. `TrendChartView`'s own thre
 through
 `TrendChartViewModel.ReportFailure`, because a pipeline that ends stops repainting the chart.
 
-`57014` maps unconditionally to `QueryTimedOut`: no member of `IDataProvider` takes a
-`CancellationToken`, so no read on the provider path is cancelled by a caller, and a caller's own
-cancellation raises `OperationCanceledException`, which the mapper rethrows.
+The pen editor reports the same way. A failed write reverts its field, puts the title
+`ArchiveFailureMapper.Map` gives the error on the form's message line, and adds the full entry to the
+panel through `ResultReporting.ReportFailure`; a failed refresh reports and leaves the tables as they
+were. The window's code-behind handlers are `async void` with the whole body in `try/catch`, and the
+`catch` reaches the panel through `PenEditorViewModel.ReportFailure`, which takes the guarded form.
+
+`57014` maps unconditionally to `QueryTimedOut`: no member of `IDataProvider` or `IPenCatalogueEditor`
+takes a `CancellationToken`, so no statement is cancelled by a caller, and a caller's own cancellation
+raises `OperationCanceledException`, which the mapper rethrows.
 
 ## Configuration
 
@@ -514,9 +691,15 @@ process data. `Program.Main` returns 1 once that window closes.
   maps through its `IExceptionalError` arm.
 
 An empty pen catalogue is a successful start: the window opens, draws nothing, and the chart area
-states that the catalogue is empty (`Chart/TrendChartViewModel.HasNoPens`). It is a state of the
+states that the catalogue is empty and names the way in, `Edit` -> `Pens and groups` ->
+`Refresh pen list` (`Chart/TrendChartViewModel.HasNoPens`, `ui-text.md#the-pen-editors-text`). It is a state of the
 chart, not an entry in the message panel. Logging is configured before the probe runs; the log path
 and the argument list are in `overview.md`.
+
+No startup code calls `IPenCatalogueEditor`. The container constructs it with `MainWindowViewModel`,
+which `App.InitializeServices` resolves inside `.AfterSetup(...)`, and its constructor issues no
+statement. `RegisterNewPensAsync` has one caller, `PenEditorViewModel`, so every write the viewer
+issues follows an operator action.
 
 ## Field triage
 
@@ -529,6 +712,8 @@ When a chart is empty, check in this order. Each step distinguishes a different 
 3. `SELECT max(t) FROM trends WHERE id = <one known id> AND l = 0` — if the newest sample is old,
    archiving has stopped and the problem is on the SCADA side.
 4. Is the pen present in `semiplot_tags`? An unmapped variable cannot be drawn.
+   `Refresh pen list` in `Edit` -> `Pens and groups` registers it as a hidden pen, which every running viewer lists within
+   5 s, switched off, and draws once it is switched on.
 5. Does the window overlap the data? Compare against the extent. An offset of a whole number of
    hours means the SCADA stamps rows in a zone other than the machine's, and
    `[DEC:machine-time-zone]` does not hold on this installation (`sources.md`). At `information` or more

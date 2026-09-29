@@ -8,6 +8,9 @@ a glyph with no ASCII form is a resource value: the delta labels (`U+0394` plus 
 no-value placeholder (`U+2014`) and the window title all sit in the resx. The Russian set is
 Cyrillic throughout, and the same rule is what keeps it out of the code.
 
+The Russian set calls a pen «перо» (plural «перья») everywhere: the sidebar, the editor, the menu
+and the failure texts. «Параметр» is not used for a pen.
+
 ## Two sets, one selector
 
 `SemiPlot.UI.csproj:7` sets `<NeutralLanguage>en</NeutralLanguage>`, so the neutral set is English
@@ -107,7 +110,9 @@ surfaces read it: the startup-failure panel, which shows a single `ArchiveFailur
 message panel, which keeps a list of them. `Map` yields the title, the detail and the remedy
 separately, and the panel shows all three. The coalescing key is the whole `ArchiveFailureView`:
 `MessagePanelViewModel.Report` compares the incoming view with the newest entry by record equality,
-so two failures sharing a title but differing in detail stay two entries.
+so two failures sharing a title but differing in detail stay two entries. The pen editor's message
+lines read the title alone, beside the panel entry the same failure adds
+(`#the-pen-editors-text`).
 
 Because both surfaces read the same arms, no title may name a phase. `FailureThrownTitle` used to
 read "Startup failed unexpectedly", which was true while the mapper fed the startup window alone and
@@ -125,7 +130,8 @@ CS8509, so no compiler check stands behind it: a fifth `AggregationLayer` member
 
 ## The settings window's text
 
-The `Edit` menu is `MenuEdit` with one item, `MenuEditSettings`. `Settings/SettingsDialog.axaml` reads
+The `Edit` menu is `MenuEdit` with two items, `MenuEditSettings` and `MenuEditPensAndGroups`
+(`#the-pen-editors-text`). `Settings/SettingsDialog.axaml` reads
 `SettingsTitle`, the two section headers `SettingsInterfaceHeader` and `SettingsConnectionHeader`, one
 `Settings*Label` per field, `SettingsSave` and `SettingsClose`. The language and theme choices read
 `SettingsLanguageRussian`, `SettingsLanguageEnglish`, `SettingsThemeLight` and `SettingsThemeDark`:
@@ -147,6 +153,65 @@ file or staging folder the save cannot write, and `FailureConfigurationSectionKe
 reads `FailureConnectionFileHostNotIPv4Remedy`, the remedy of the `HostNotIPv4` arm. A refusal from a loader names the
 operator's section folder, never the staging copy it read; a staging folder that cannot be created is
 the one detail naming `<config-dir>` and the staging folder (`overview.md#the-settings-window`).
+
+## The pen editor's text
+
+`MenuEditPensAndGroups` is the `Edit` menu's second item, "Pens and groups" / "Перья и группы", and
+carries no ellipsis, as `MenuEditSettings` carries none. `PenEditor/PenEditorWindow.axaml` reads
+`PenEditorTitle`, the tab headers `PenEditorPensTab` and `PenEditorGroupsTab`, and the ten column
+headers `PenEditorColumn*`. The form's labels reuse the column-header keys, one term per concept; its
+one label of its own is `PenFormMaskPreviewLabel`. The line-style cell and the combo box read
+`PenLineStyleInterpolated` and `PenLineStyleStepped` through `PenLineStyleConverters.ToLabel`, a
+`FuncValueConverter` consumed through `{x:Static}`. The visibility column and field read
+`PenEditorColumnOnStart`, "On start" / "При запуске", because the flag is the visibility a pen starts
+with and a change of it switches nothing on a running chart.
+
+The bottom bar reads the button `PenEditorRefresh`, "Refresh pen list" / «Обновить список перьев», which
+names what it refreshes, and `PenEditorAddedCount`, "Pens added: {0}" /
+"Добавлено перьев: {0}", empty until the first successful refresh. It carries no notice: every running
+chart follows what the editor writes through the catalogue read (`overview.md#the-live-catalogue`),
+so there is nothing to wait for. The `Groups` tab reads
+`PenGroupsNewNamePlaceholder`, the one watermark in the tree, `PenGroupsCreate`, `PenGroupsNameLabel`,
+`PenGroupsDelete`, which is also the confirm button's caption, `PenGroupsCancel` and
+`PenGroupsMembersHeader`. `PenGroupsDeleteConfirmation` takes the group name as `{0}` and its member
+count as `{1}`, and is a snapshot taken when delete is pressed. The added count and the confirmation put
+the counted noun first in both languages, "Pens in the group: {1}" / "Перьев в группе: {1}", so neither
+needs a plural form.
+
+The pen form's message line shows the first rule a draft breaks, in form order: `PenFormNameRequired`,
+`PenFormMaskInvalid`, `PenFormColorInvalid`, `PenFormScaleBoundInvalid`, `PenFormScaleHalfSet` and
+`PenFormScaleInverted`. The `Groups` tab's line shows `PenGroupsNameRequired`. The line is not under
+the field, so each message opens with the field it names, as the settings messages do. With every
+draft valid, a line shows the last refusal, and for a failed write that text is the title
+`ArchiveFailureMapper.Map` gives the error: the mapper stays the one owner of failure wording, and the
+full entry goes to the message panel.
+
+`EmptyCatalogueMessage`, the chart area's text over an empty catalogue, names the way in: open the
+editor, press "Refresh pen list", then name and switch on the pens. It is a
+format over the three labels the operator clicks: `{0}` is `MenuEdit`, `{1}` `MenuEditPensAndGroups`
+and `{2}` `PenEditorRefresh`. The text withdraws when a catalogue read gives the chart its first
+pens, in the same session (`TrendChartViewModel.HasNoPens`). `Chart/TrendChartView.axaml` reads it through a `MultiBinding` whose
+`StringFormat` is `{x:Static text:Resources.EmptyCatalogueMessage}` over three `x:Static` sources, the
+AXAML form The generated accessor states, so a relabelled menu item or button changes the sentence
+with it. `TrendChartViewTests.EmptyCatalogueMessage_ShowsWithNoPensAndWithdrawsWhenOneArrives` compares
+the realised text with `Resources.FormatEmptyCatalogueMessage(...)` over the three labels.
+
+### The pen editor's failure text
+
+The editor adds three `ArchiveFault` kinds, each with a title, a detail and a remedy in both sets:
+`FailureArchiveValueRejected*`, `FailureArchiveNameTaken*` and `FailureArchiveRowGone*`. Each detail
+wraps `{0}`, the archive, and `{1}`, the pen or group name `ArchiveError.Detail` carries, so no word of
+either language lives in `Detail`. Each is a `Warning`, because the operator's next edit is the remedy.
+
+The kinds a write shares with a read name a statement, never a read, because the same text now serves
+both. The reworded keys are `FailureArchiveAccessDeniedTitle` and `...Remedy`,
+`FailureArchiveTableMissingDetail` and `...Remedy`, `FailureArchiveQueryTimedOutTitle`, `...Detail` and
+`...Remedy`, `FailureArchiveReadFailedTitle` and `...Detail`, and `FailureArchiveReadUnnamedDetail`.
+The `TableMissing` pair drops the word "table", because a missing function takes the same arm. The
+placeholders did not move, which
+`ResourcesTests.EveryRussianValue_UsesThePlaceholderIndicesOfTheNeutralOne` gates, and the timed-out
+detail keeps `(SQLSTATE 57014)`, which `ArchiveFailureMapperTests` asserts. `ArchiveError.Describe`, the
+English log line, names a statement the same way (`data-integration.md#two-error-planes`).
 
 ## Adding a key
 

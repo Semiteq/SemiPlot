@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Reactive.Concurrency;
 using System.Reactive.Disposables;
+using System.Reactive.Linq;
 
 using FluentResults;
 
@@ -77,12 +78,15 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 		_disposables.Dispose();
 	}
 
-	public async Task LoadExtentAsync()
+	/// <summary>Reads the archive's extent and returns the read once the strip has applied it.</summary>
+	public async Task<Result<ArchiveExtent>> LoadExtentAsync()
 	{
 		ObjectDisposedException.ThrowIf(_isDisposed, this);
 
 		var result = await _coordinator.QueryArchiveExtentAsync();
-		_uiScheduler.Schedule(() => ApplyExtent(result));
+		await Observable.Start(() => ApplyExtent(result), _uiScheduler);
+
+		return result;
 	}
 
 	public void NavigateToFraction(double fraction)
@@ -106,37 +110,29 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 			return;
 		}
 
-		// A dispatcher job LoadExtentAsync posted and let go of, so a throw out of here reaches no caller.
-		try
+		if (result.IsFailed)
 		{
-			if (result.IsFailed)
-			{
-				_messagePanel.ReportFailure(result, _logger);
+			_messagePanel.ReportFailure(result, _logger);
 
-				return;
-			}
-
-			// An empty extent is a normal state of a fresh archive: leave HasExtent false so the strip stays
-			// blank.
-			if (result.Value.IsEmpty)
-			{
-				return;
-			}
-
-			ExtentFirst = result.Value.FirstUtc;
-			ExtentLast = result.Value.LastUtc;
-			HasExtent = true;
-			this.RaisePropertyChanged(nameof(ExtentFirst));
-			this.RaisePropertyChanged(nameof(ExtentLast));
-			this.RaisePropertyChanged(nameof(HasExtent));
-			this.RaisePropertyChanged(nameof(ExtentFirstLabel));
-			this.RaisePropertyChanged(nameof(ExtentLastLabel));
-			RefreshWindowFraction(_navigation.From, _navigation.To);
+			return;
 		}
-		catch (Exception applyFailure)
+
+		// An empty extent is a normal state of a fresh archive: leave HasExtent false so the strip stays
+		// blank.
+		if (result.Value.IsEmpty)
 		{
-			_messagePanel.TryReportFailure(new ExceptionalError(applyFailure), _logger);
+			return;
 		}
+
+		ExtentFirst = result.Value.FirstUtc;
+		ExtentLast = result.Value.LastUtc;
+		HasExtent = true;
+		this.RaisePropertyChanged(nameof(ExtentFirst));
+		this.RaisePropertyChanged(nameof(ExtentLast));
+		this.RaisePropertyChanged(nameof(HasExtent));
+		this.RaisePropertyChanged(nameof(ExtentFirstLabel));
+		this.RaisePropertyChanged(nameof(ExtentLastLabel));
+		RefreshWindowFraction(_navigation.From, _navigation.To);
 	}
 
 	private static string FormatEndpoint(DateTime utc)

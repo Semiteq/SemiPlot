@@ -1,4 +1,5 @@
 using System.Reactive.Concurrency;
+using System.Reactive.Linq;
 
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
@@ -13,10 +14,12 @@ using Microsoft.Reactive.Testing;
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.Tests.Unit.UI.Bridge;
+using SemiPlot.Tests.Unit.UI.PenEditor;
 using SemiPlot.UI;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
+using SemiPlot.UI.PenEditor;
 using SemiPlot.UI.Startup;
 
 using Xunit;
@@ -84,6 +87,36 @@ public sealed class InitializeServicesTests
 			"the fault reaches the one panel the window shows");
 	}
 
+	// The window takes the read loop and the loop is started at the wiring site; without either line no editor
+	// write reaches the running chart.
+	[AvaloniaFact]
+	public async Task AnEditorWrite_ReadsTheCatalogueThroughTheLoopTheWindowOwns()
+	{
+		var scheduler = new TestScheduler();
+		var dataProvider = NewProvider(scheduler);
+		using var container = BuildContainer(scheduler, dataProvider);
+
+		var probe = await StartupProbe.ReadAsync(container, StartupProbe.DefaultReadBound);
+
+		App.InitializeServices(probe.Value);
+		Dispatcher.UIThread.RunJobs();
+		var mainWindowViewModel = container.GetRequiredService<MainWindowViewModel>();
+		var requests = new List<PenEditorViewModel>();
+
+		using (mainWindowViewModel.PenEditorRequests.Subscribe(requests.Add))
+		{
+			await mainWindowViewModel.ShowPenEditorCommand.Execute();
+		}
+
+		using var penEditor = requests.Should().ContainSingle().Which;
+		var pensQueriesBefore = dataProvider.PensQueryCount;
+		penEditor.Groups.NewGroupName = "Gas";
+		await penEditor.Groups.CreateGroupCommand.Execute();
+		Dispatcher.UIThread.RunJobs();
+
+		dataProvider.PensQueryCount.Should().Be(pensQueriesBefore + 1);
+	}
+
 	// A TestScheduler, not CurrentThreadScheduler: InitializeServices calls TrendCoordinator.Start, and a
 	// recurring realtime subscription on the current thread's trampoline never returns control.
 	private static FakeDataProvider NewProvider(TestScheduler scheduler)
@@ -97,6 +130,7 @@ public sealed class InitializeServicesTests
 			new ServiceCollection()
 				.AddSingleton<IScheduler>(scheduler)
 				.AddSingleton(dataProvider)
+				.AddSingleton<IPenCatalogueEditor>(new FakePenCatalogueEditor())
 				.AddUi(AppContext.BaseDirectory);
 
 		services.AddLogging();

@@ -14,13 +14,20 @@
     <Panel>
         <scottplot:AvaPlot Name="PlotControl" />
         <TextBlock Name="EmptyCatalogueMessage"
-                   Text="{x:Static text:Resources.EmptyCatalogueMessage}"
                    IsVisible="{Binding HasNoPens, FallbackValue=False}"
                    Foreground="{DynamicResource AppSecondaryForegroundBrush}"
                    TextWrapping="Wrap"
                    MaxWidth="480"
                    HorizontalAlignment="Center"
-                   VerticalAlignment="Center" />
+                   VerticalAlignment="Center">
+            <TextBlock.Text>
+                <MultiBinding StringFormat="{x:Static text:Resources.EmptyCatalogueMessage}">
+                    <Binding Source="{x:Static text:Resources.MenuEdit}" />
+                    <Binding Source="{x:Static text:Resources.MenuEditPensAndGroups}" />
+                    <Binding Source="{x:Static text:Resources.PenEditorRefresh}" />
+                </MultiBinding>
+            </TextBlock.Text>
+        </TextBlock>
         <Canvas Name="CursorOverlay" IsHitTestVisible="False">
             <Line Name="CrosshairLine"
                   IsVisible="False"

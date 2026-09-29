@@ -22,22 +22,28 @@ public sealed class TrendLegendViewModel : ReactiveObject, IDisposable
 	/// <summary>The narrowest chart a drag of the panel may leave.</summary>
 	public const double ChartMinWidth = 320;
 
-	private readonly IReadOnlyList<TrendLegendRowViewModel> _rows;
+	private readonly TrendChartViewModel _chartViewModel;
 	private readonly CompositeDisposable _subscriptions = [];
+	private IReadOnlyList<TrendLegendRowViewModel> _rows;
 	private double _expandedWidth = ExpandedWidth;
 	private double _collapsedWidth = CollapsedWidth;
 	private double _maximumWidth = double.PositiveInfinity;
 
 	public TrendLegendViewModel(TrendChartViewModel chartViewModel)
 	{
-		_rows = [.. chartViewModel.Pens.Select(pen => new TrendLegendRowViewModel(chartViewModel, pen))];
+		_chartViewModel = chartViewModel;
+		_rows = BuildRows(chartViewModel);
 		Groups = BuildGroups(_rows);
 
 		ToggleExpandedCommand = ReactiveCommand.Create(() => { IsExpanded = !IsExpanded; });
 		_subscriptions.Add(ToggleExpandedCommand);
 	}
 
-	public IReadOnlyList<TrendLegendGroupViewModel> Groups { get; }
+	public IReadOnlyList<TrendLegendGroupViewModel> Groups
+	{
+		get;
+		private set => this.RaiseAndSetIfChanged(ref field, value);
+	}
 
 	/// <summary>Expanded adds the value and the unit to the row; the command below is the flag's one writer.</summary>
 	public bool IsExpanded
@@ -82,25 +88,48 @@ public sealed class TrendLegendViewModel : ReactiveObject, IDisposable
 		this.RaisePropertyChanged(nameof(PanelWidth));
 	}
 
+	/// <summary>Replaces every row and header from the chart's pens; the widths and the expanded state stay.</summary>
+	public void Rebuild()
+	{
+		var replacedRows = _rows;
+		var replacedGroups = Groups;
+
+		_rows = BuildRows(_chartViewModel);
+		Groups = BuildGroups(_rows);
+
+		DisposeAll(replacedGroups, replacedRows);
+	}
+
 	public void Dispose()
 	{
 		_subscriptions.Dispose();
-
-		foreach (var group in Groups)
-		{
-			group.Dispose();
-		}
-
-		foreach (var row in _rows)
-		{
-			row.Dispose();
-		}
+		DisposeAll(Groups, _rows);
 	}
 
 	// docs/architecture/charting.md#module-layout-avalonia-views--view-models--core-models
 	private double FitWidth(double width)
 	{
 		return Math.Max(PanelMinWidth, Math.Min(width, _maximumWidth));
+	}
+
+	private static void DisposeAll(
+		IReadOnlyList<TrendLegendGroupViewModel> groups,
+		IReadOnlyList<TrendLegendRowViewModel> rows)
+	{
+		foreach (var group in groups)
+		{
+			group.Dispose();
+		}
+
+		foreach (var row in rows)
+		{
+			row.Dispose();
+		}
+	}
+
+	private static IReadOnlyList<TrendLegendRowViewModel> BuildRows(TrendChartViewModel chartViewModel)
+	{
+		return [.. chartViewModel.Pens.Select(pen => new TrendLegendRowViewModel(chartViewModel, pen))];
 	}
 
 	private static IReadOnlyList<TrendLegendGroupViewModel> BuildGroups(IReadOnlyList<TrendLegendRowViewModel> rows)

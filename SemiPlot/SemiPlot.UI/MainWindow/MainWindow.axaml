@@ -19,7 +19,7 @@
         Height="800"
         WindowStartupLocation="CenterScreen">
 
-    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto,Auto,Auto">
+    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto,Auto">
 
         <local:AppMenuBar Grid.Row="0"
                           Name="MenuBar" />
@@ -50,26 +50,19 @@
                    Width="4"
                    Background="{DynamicResource AppContentBackgroundBrush}"
                    Cursor="SizeWestEast"
+                   IsVisible="{Binding IsLegendVisible}"
                    DragDelta="OnPanelResizeHandleDragDelta">
                 <Thumb.Template>
                     <ControlTemplate>
                         <Border Background="{TemplateBinding Background}" />
                     </ControlTemplate>
                 </Thumb.Template>
-                <Thumb.IsVisible>
-                    <MultiBinding Converter="{x:Static BoolConverters.And}">
-                        <Binding Path="IsLegendVisible" />
-                        <Binding Path="LegendViewModel"
-                                 Converter="{x:Static ObjectConverters.IsNotNull}" />
-                    </MultiBinding>
-                </Thumb.IsVisible>
             </Thumb>
 
             <Border Grid.Column="2"
                     Name="LegendPanel"
                     Background="{DynamicResource AppPanelBackgroundBrush}"
-                    Width="{Binding LegendViewModel.PanelWidth,
-                                    FallbackValue={x:Static legend:TrendLegendViewModel.ExpandedWidth}}"
+                    Width="{Binding LegendViewModel.PanelWidth}"
                     BorderThickness="1,0,0,0"
                     BorderBrush="{DynamicResource AppBorderBrush}"
                     Padding="4"
@@ -102,32 +95,8 @@
                 Background="{DynamicResource AppPanelBackgroundBrush}"
                 BorderThickness="0,1,0,0"
                 BorderBrush="{DynamicResource AppBorderBrush}"
-                Padding="8,4"
-                IsVisible="{Binding !HasStartupFailure}">
+                Padding="8,4">
             <local:AppStatusBar DataContext="{Binding StatusBar}" />
-        </Border>
-
-        <Border Grid.Row="6"
-                Name="StartupFailurePanel"
-                Background="{DynamicResource AppPanelBackgroundBrush}"
-                BorderThickness="0,1,0,0"
-                BorderBrush="{DynamicResource AppBorderBrush}"
-                Padding="8,4"
-                IsVisible="{Binding HasStartupFailure}">
-            <StackPanel>
-                <TextBlock Name="StartupFailureTitle"
-                           Text="{Binding StartupFailure.Title}"
-                           FontWeight="Bold"
-                           TextWrapping="Wrap" />
-                <TextBlock Name="StartupFailureDetail"
-                           Text="{Binding StartupFailure.Detail}"
-                           TextWrapping="Wrap"
-                           Margin="0,4,0,0" />
-                <TextBlock Name="StartupFailureRemedy"
-                           Text="{Binding StartupFailure.Remedy}"
-                           TextWrapping="Wrap"
-                           Margin="0,4,0,0" />
-            </StackPanel>
         </Border>
 
     </Grid>

@@ -291,7 +291,7 @@ public sealed class PenGroupsViewTests : IDisposable
 	}
 
 	[AvaloniaFact]
-	public void AMembershipLandingAfterItsGroupWasSelectedAgain_ChecksTheBoxAndTheNextClickUnchecksIt()
+	public async Task AMembershipLandingAfterItsGroupWasSelectedAgain_ChecksTheBoxAndTheNextClickUnchecksIt()
 	{
 		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
 		var window = Realise(viewModel);
@@ -305,17 +305,16 @@ public sealed class PenGroupsViewTests : IDisposable
 			HeadlessInput.Click(window, GroupAt(window, 1));
 			HeadlessInput.Click(window, GroupAt(window, 0));
 			toggle.SetResult();
-			Dispatcher.UIThread.RunJobs();
-
-			MembershipBoxOf(window, Power).IsChecked.Should().BeTrue("the landed toggle shows on the box");
+			await HeadlessWait.Until(() => MembershipBoxOf(window, Power).IsChecked == true);
 
 			HeadlessInput.Click(window, MembershipBoxOf(window, Power));
+			await HeadlessWait.Until(() => _editor.Calls.OfType<FakeEditorCall.SetMembership>().Count() == 2);
 
 			_editor.Calls.OfType<FakeEditorCall.SetMembership>()
 				.Select(call => call.IsMember)
 				.Should()
 				.Equal(true, false);
-			MembershipBoxOf(window, Power).IsChecked.Should().BeFalse();
+			await HeadlessWait.Until(() => MembershipBoxOf(window, Power).IsChecked == false);
 		}
 		finally
 		{

@@ -10,6 +10,7 @@ using FluentResults;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Reactive.Testing;
 
+using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.Tests.Unit.UI.Messages;
@@ -77,12 +78,25 @@ public sealed class TrendChartViewModelTests
 	}
 
 	[AvaloniaFact]
+	public void DisposingTheChart_LeavesTheConnectionFaultsForwarding()
+	{
+		var (viewModel, _, coordinator, provider) = CreateViewModel();
+		var states = new List<ArchiveConnectionState>();
+		using var subscription = coordinator.ConnectionFaults.Subscribe(states.Add);
+
+		viewModel.Dispose();
+		provider.ReportConnectionState(ArchiveConnectionState.Connected);
+
+		states.Should().Equal(ArchiveConnectionState.Connected);
+		coordinator.Dispose();
+	}
+
+	[AvaloniaFact]
 	public void RealtimeBatch_UpdatesPerPenCurrentValue()
 	{
-		var (viewModel, scheduler, coordinator, _) = CreateViewModel(realtimeInterval: TimeSpan.FromMilliseconds(10));
+		var (viewModel, scheduler, _, _) = CreateViewModel(realtimeInterval: TimeSpan.FromMilliseconds(10));
 		viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
 
-		coordinator.Start();
 		scheduler.AdvanceBy(BatchWindow.Ticks);
 
 		var pen = viewModel.FindPen(1)!;
@@ -592,7 +606,7 @@ public sealed class TrendChartViewModelTests
 	[AvaloniaFact]
 	public void Coordinator_CoarseLayerRealtime_FoldsInsteadOfGrowingColumns()
 	{
-		var (viewModel, scheduler, coordinator, _) = CreateViewModel(
+		var (viewModel, scheduler, _, _) = CreateViewModel(
 			realtimeInterval: TimeSpan.FromMilliseconds(10));
 		var state = viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
 
@@ -601,7 +615,6 @@ public sealed class TrendChartViewModelTests
 		viewModel.Navigation.ActiveLayer.Should().NotBe(AggregationLayer.Raw);
 		var columnsBefore = state.Line.Columns.Count;
 
-		coordinator.Start();
 		scheduler.AdvanceBy(BatchWindow.Ticks);
 
 		state.Line.Columns.Count.Should().Be(columnsBefore);
@@ -610,13 +623,12 @@ public sealed class TrendChartViewModelTests
 	[AvaloniaFact]
 	public void Coordinator_RawLayerRealtime_AppendsColumns()
 	{
-		var (viewModel, scheduler, coordinator, _) = CreateViewModel(
+		var (viewModel, scheduler, _, _) = CreateViewModel(
 			realtimeInterval: TimeSpan.FromMilliseconds(10));
 		var state = viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
 		viewModel.Navigation.ActiveLayer.Should().Be(AggregationLayer.Raw);
 		var columnsBefore = state.Line.Columns.Count;
 
-		coordinator.Start();
 		scheduler.AdvanceBy(BatchWindow.Ticks);
 
 		state.Line.Columns.Count.Should().BeGreaterThan(columnsBefore);
@@ -635,7 +647,6 @@ public sealed class TrendChartViewModelTests
 		var second = viewModel.AddPen(provider.Pens[1]);
 		viewModel.Navigation.ActiveLayer.Should().Be(AggregationLayer.Raw);
 
-		coordinator.Start();
 		scheduler.AdvanceBy(BatchWindow.Ticks);
 
 		first.Line.Columns.Should().NotBeEmpty();
@@ -1299,8 +1310,6 @@ public sealed class TrendChartViewModelTests
 			valueWhenTheWindowFailed, "the batches after the failed window still reach the pen");
 	}
 
-	// Publish().RefCount() hands a terminal failure to every subscriber at once, so a chart and the
-	// coordinator's keep-alive each reporting it would coalesce into one entry counted twice.
 	[AvaloniaFact]
 	public void AProviderThatEndsTheLiveEdge_IsReportedOnce()
 	{
@@ -1317,7 +1326,6 @@ public sealed class TrendChartViewModelTests
 			scheduler,
 			panel,
 			NullLogger<TrendChartViewModel>.Instance);
-		coordinator.Start();
 
 		var advance = () => scheduler.AdvanceBy(BatchWindow.Ticks * 2);
 

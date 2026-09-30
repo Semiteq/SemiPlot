@@ -239,14 +239,18 @@ No abbreviations in names.
 
 - Constructor injection only (primary constructors preferred). No property injection, no service locator.
 - Register services in extension methods, each named for what it registers: `AddPostgresData()` in
-  `SemiPlot.DataSource.Postgres`, `AddUi(string configDirectory)` in `SemiPlot.UI`. A data-source project names its own
+  `SemiPlot.DataSource.Postgres`, `AddUi()` in `SemiPlot.UI`. A data-source project names its own
   source rather than a bare `AddData()`, so a composition root referencing several
   `SemiPlot.DataSource.*` projects names the one it registers. Core registers nothing.
 - Avoid mutable static state.
+- The container holds process services only. A window's parts, the status bar included, are built by
+  `MainWindow/TrendWindow.Build` and disposed by `TrendWindow.Dispose`: never registered, never
+  replaced. `MainWindowViewModel` disposes only its own commands and subjects
+  (`docs/architecture/overview.md#one-window-per-process`).
 - `AddPostgresData()` registers the bare data `IScheduler` (`DefaultScheduler.Instance`). The UI
   scheduler is not a second container registration: `App` reads the static
-  `AvaloniaScheduler.Instance` and passes it explicitly to the coordinator constructor, the
-  chart/minimap factories, `PenCatalogueSync` and `MainWindowViewModel.SetCatalogueSync`. `RxApp` does
+  `AvaloniaScheduler.Instance` and passes it explicitly to `TrendWindow.Build`, which hands it to the
+  coordinator, the chart, the minimap and `PenCatalogueSync`. `RxApp` does
   not exist in the installed ReactiveUI 23.2.28 — its schedulers moved to `RxSchedulers` and its
   exception handler to `RxState`; this repository reads neither.
 - **Nothing may construct a ReactiveUI object before `AppBuilder.Setup()`.** `RxState.DefaultExceptionHandler`
@@ -254,12 +258,13 @@ No abbreviations in names.
   `ReactiveCommand` or one `ObservableAsPropertyHelper` built ahead of `Setup()` turns
   `App.BuildAvaloniaApp`'s `.UseReactiveUI(builder => builder.WithExceptionHandler(...))` into a
   silent no-op, with no error and no log line. `StartupSequence.Run` touches no ReactiveUI type, and
-  `MessagePanelViewModel` is resolved from the container inside `.AfterSetup(...)`, never before it
-  (`docs/architecture/overview.md`).
+  `MessagePanelViewModel` is resolved from the container inside `.AfterSetup(...)`, never before it; the
+  failed start has no container, and `StartupFailureViewModel` builds its own panel when
+  `App.CreateMainWindow` runs (`docs/architecture/overview.md`).
 - `.AfterSetup(...)` is synchronous, so no blocking call belongs in it. `StartupSequence.Run` holds
   the ordered blocking steps and `Program.Main` calls it ahead of `BuildAvaloniaApp()`, handing
   `App.Run(AppSettings?, Result<StartupData>, string? configDirectory)` both results and the
-  configuration directory the settings window writes into; the reads `InitializeServices` starts
+  configuration directory the settings window writes into; the reads `TrendWindow.Build` starts
   inside the callback are asynchronous and return through the schedulers
   (`docs/architecture/data-integration.md`).
 
@@ -328,7 +333,7 @@ No abbreviations in names.
   errors. A `catch`, or an Rx `onError`, that only logs is a defect
   (`docs/architecture/data-integration.md#no-failure-stops-at-the-log`). Code-behind reaches the
   panel through its view model (`TrendChartViewModel.ReportFailure`, `MainWindowViewModel.ReportFailure`,
-  `PenEditorViewModel.ReportFailure`).
+  `PenEditorViewModel.ReportFailure`, `StartupFailureViewModel.ReportFailure`).
 
 ### Data-source projects
 
@@ -341,8 +346,8 @@ No abbreviations in names.
   one `NpgsqlDataSource` (`docs/architecture/data-integration.md#the-pen-catalogue-editor`). The chart
   never writes, and this prints nothing:
   `git grep -l "IPenCatalogueEditor" -- SemiPlot/SemiPlot.UI/Chart SemiPlot/SemiPlot.UI/Legend`.
-- No startup code calls `IPenCatalogueEditor`. The container constructs it with `MainWindowViewModel`,
-  which `App.InitializeServices` resolves, and its constructor issues no statement.
+- No startup code calls `IPenCatalogueEditor`. The container constructs it when `TrendWindow.Build`
+  resolves it, and its constructor issues no statement.
   `RegisterNewPensAsync` has one caller, `PenEditorViewModel`:
   `git grep -l "RegisterNewPensAsync" -- SemiPlot/SemiPlot.UI` prints only
   `SemiPlot/SemiPlot.UI/PenEditor/PenEditorViewModel.cs`.

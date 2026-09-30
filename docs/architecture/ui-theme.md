@@ -123,7 +123,7 @@ tests in every state it reaches.
 `SemiTheme` keys its built-in strings by specific culture and falls through to `zh-CN` for a neutral
 one, so `App.Configure` calls `SemiTheme.OverrideLocaleResources` with
 `App.SemiLocaleFor(settings?.Locale ?? StartupSequence.BootstrapLocale)`, outside the
-`settings is not null` guard that the variant sits inside (`App.axaml.cs:112-113`): a settings failure
+`settings is not null` guard that the variant sits inside (`App.axaml.cs:109-112`): a settings failure
 has no configured locale and reads its window in the bootstrap one.
 `AppConfigurationTests.ASettingsFailure_StillHandsSemiTheBootstrapLocale` calls `App.Configure` with
 null settings and reads `STRING_MENU_COPY` back off `Application.Resources`, so moving the call
@@ -152,7 +152,7 @@ Semi owns the controls; these twelve keys are ours, and each exists in both vari
 
 | Key | Consumers | Light | Dark |
 | --- | --- | --- | --- |
-| `AppPanelBackgroundBrush` | Navigation bar, legend panel, message panel, status bar, startup failure panel, minimap frame, chart hover readout | `#F7F8FA` | `#2B2D30` |
+| `AppPanelBackgroundBrush` | Navigation bar, legend panel, message panel, status bar, startup-failure window's message panel, minimap frame, chart hover readout | `#F7F8FA` | `#2B2D30` |
 | `AppContentBackgroundBrush` | Chart area, minimap strip canvas, the sidebar's resize handle | `#FFFFFF` | `#1E1F22` |
 | `AppBorderBrush` | Every separator in the three views | `#EBECF0` | `#393B40` |
 | `AppSubtleLineBrush` | Minimap baseline, plot grid, the line above every sidebar group header but the first | `#EBECF0` | `#393B40` |
@@ -245,7 +245,7 @@ invalid.
 
 `Startup/AppSettingsLoader` reads `theme` into `AppSettings.Theme`
 (`Startup/AppSettings.cs:14-19`), and `App.Configure`, which `App.Run` hands to `AfterSetup`,
-assigns `RequestedThemeVariant` from it at `App.axaml.cs:107`, above the failure return. So an
+assigns `RequestedThemeVariant` from it at `App.axaml.cs:111`, above the failure return. So an
 archive failure still renders on the configured variant. `settings` is null only when the settings load
 itself failed; that window renders on the `Light` variant `App.axaml:5` declares, which is also
 what the headless test builders see, since they construct `App` directly and never call `App.Run`.
@@ -276,7 +276,7 @@ reads the ARGB value alone: `AppAccentFillBrush` is the one key declaring `Opaci
 surface takes it.
 
 `ChartPalette.Apply` takes `AvaPlot.Plot`, not the view model's: the two are one instance once a view
-model is bound, and on the startup-failure path there is no chart view model, where an unpainted plot
+model is bound, and a view with no view model has no chart view model, where an unpainted plot
 would be a white rectangle inside a dark window.
 
 `Chart/TrendChartView.axaml.cs` calls it from three places, and each is a different reason. `OnLoaded`
@@ -290,8 +290,8 @@ of the last paint and does nothing when the axis set did not grow, and it never 
 `ChartPaletteTests` asserts the four surfaces on a real `Plot` against the resolved palette under both
 variants, and `TrendChartViewTests.ALoadedView_RepaintsThePlotWhenTheApplicationVariantChanges` with
 its unloaded counterpart covers the wiring: the subscription, and that `OnUnloaded` drops it.
-`TrendChartViewTests.AViewWithNoViewModel_StillPaintsTheChartAreaFromThePalette` covers the
-startup-failure path.
+`TrendChartViewTests.AViewWithNoViewModel_StillPaintsTheChartAreaFromThePalette` covers a view
+with no view model.
 
 ## A colour literal in AXAML is a defect
 

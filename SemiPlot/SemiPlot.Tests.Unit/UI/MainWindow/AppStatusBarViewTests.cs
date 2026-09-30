@@ -36,9 +36,8 @@ public sealed class AppStatusBarViewTests
 	public void ConnectionIndicator_CarriesTheStateClassAndOpensThePanel()
 	{
 		using var panel = new MessagePanelViewModel();
-		using var statusBar = NewStatusBar(panel);
 		using var states = new Subject<ArchiveConnectionState>();
-		statusBar.TrackArchiveConnection(states);
+		using var statusBar = NewStatusBar(panel, states);
 		var view = new AppStatusBar { DataContext = statusBar };
 		var window = new Window { Content = view };
 		window.Show();
@@ -74,9 +73,8 @@ public sealed class AppStatusBarViewTests
 		var variant = App.VariantFor(theme);
 		using var scope = ThemeProbe.ApplyVariant(variant);
 		using var panel = new MessagePanelViewModel();
-		using var statusBar = NewStatusBar(panel);
 		using var states = new Subject<ArchiveConnectionState>();
-		statusBar.TrackArchiveConnection(states);
+		using var statusBar = NewStatusBar(panel, states);
 		var view = new AppStatusBar { DataContext = statusBar };
 		var window = new Window { Content = view };
 		try
@@ -105,9 +103,8 @@ public sealed class AppStatusBarViewTests
 	public void ActiveLayerText_FollowsTheChartsLayerOnTheRealisedBar()
 	{
 		using var panel = new MessagePanelViewModel();
-		using var statusBar = NewStatusBar(panel);
 		var navigation = NavigationAtRawLayer();
-		statusBar.TrackLayer(navigation);
+		using var statusBar = NewStatusBar(panel, navigation: navigation);
 		var view = new AppStatusBar { DataContext = statusBar };
 		var window = new Window { Content = view };
 		window.Show();

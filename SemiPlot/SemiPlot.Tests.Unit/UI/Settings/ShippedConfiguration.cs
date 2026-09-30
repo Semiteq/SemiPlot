@@ -22,6 +22,14 @@ internal static class ShippedConfiguration
 		}
 	}
 
+	public static string CopyToTemporaryDirectory()
+	{
+		var configDirectory = Directory.CreateTempSubdirectory("semiplot-shipped-configuration-").FullName;
+		CopyTo(configDirectory);
+
+		return configDirectory;
+	}
+
 	public static void FillPassword(string configDirectory, string password)
 	{
 		var file = Path.Combine(configDirectory, StartupProbe.ConnectionDirectoryName, "connection.yaml");

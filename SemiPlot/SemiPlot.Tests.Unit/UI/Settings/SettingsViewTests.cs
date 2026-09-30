@@ -1,5 +1,3 @@
-using System.Diagnostics;
-
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless.XUnit;
@@ -30,8 +28,6 @@ namespace SemiPlot.Tests.Unit.UI.Settings;
 public sealed class SettingsViewTests : IDisposable
 {
 	private const string InvalidClass = "invalid";
-
-	private static readonly TimeSpan _saveTimeout = TimeSpan.FromSeconds(30);
 
 	private readonly string _configDirectory = Directory.CreateTempSubdirectory("semiplot-settings-view-").FullName;
 
@@ -184,7 +180,7 @@ public sealed class SettingsViewTests : IDisposable
 			viewModel.SelectedTheme!.Token.Should().Be("dark");
 
 			HeadlessInput.Click(dialog, Named<Button>(dialog, "SettingsSaveButton"));
-			await WaitUntil(() => viewModel.IsRestartPending);
+			await HeadlessWait.Until(() => viewModel.IsRestartPending);
 
 			notice.IsEffectivelyVisible.Should().BeTrue();
 			_messagePanel.Entries.Should().BeEmpty();
@@ -208,7 +204,7 @@ public sealed class SettingsViewTests : IDisposable
 			var dark = viewModel.Themes.Single(choice => choice.Token == "dark");
 			Pick(dialog, Named<ComboBox>(dialog, "SettingsTheme"), dark);
 			HeadlessInput.Click(dialog, Named<Button>(dialog, "SettingsSaveButton"));
-			await WaitUntil(() => viewModel.IsRestartPending);
+			await HeadlessWait.Until(() => viewModel.IsRestartPending);
 
 			HeadlessInput.Clear(dialog, Named<TextBox>(dialog, "SettingsHost"));
 
@@ -338,21 +334,5 @@ public sealed class SettingsViewTests : IDisposable
 
 		HeadlessInput.Click(popup, item);
 		comboBox.IsDropDownOpen.Should().BeFalse("a click on an entry picks it and closes the list");
-	}
-
-	private static async Task WaitUntil(Func<bool> condition)
-	{
-		var clock = Stopwatch.StartNew();
-
-		while (!condition())
-		{
-			if (clock.Elapsed > _saveTimeout)
-			{
-				throw new TimeoutException("The save did not complete.");
-			}
-
-			await Task.Delay(10);
-			Dispatcher.UIThread.RunJobs();
-		}
 	}
 }

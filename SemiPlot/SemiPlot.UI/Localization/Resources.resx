@@ -105,6 +105,15 @@
   <data name="MenuHelpAbout" xml:space="preserve">
     <value>About</value>
   </data>
+  <data name="StartupFailureSettings" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="StartupFailureAbout" xml:space="preserve">
+    <value>About</value>
+  </data>
+  <data name="StartupFailureExit" xml:space="preserve">
+    <value>Exit</value>
+  </data>
   <data name="AboutTitle" xml:space="preserve">
     <value>About SemiPlot</value>
   </data>

@@ -29,7 +29,8 @@ public sealed class AppMenuBarTests
 	[AvaloniaFact]
 	public void EveryMenuLeaf_CarriesACommand()
 	{
-		using var viewModel = NewViewModel();
+		using var stand = NewWindowStand();
+		var viewModel = stand.ViewModel;
 		var menuBar = ShowMenuBar(viewModel);
 
 		var menu = menuBar.FindControl<Menu>("MainMenu");
@@ -53,7 +54,8 @@ public sealed class AppMenuBarTests
 	[AvaloniaFact]
 	public void EditMenu_HoldsTheSettingsItemThenThePenEditorItemEachBoundToItsCommand()
 	{
-		using var viewModel = NewViewModel();
+		using var stand = NewWindowStand();
+		var viewModel = stand.ViewModel;
 		var menuBar = ShowMenuBar(viewModel);
 
 		var editMenu = menuBar.FindControl<MenuItem>("EditMenu");
@@ -68,7 +70,8 @@ public sealed class AppMenuBarTests
 	[AvaloniaFact]
 	public void NavigationBarItem_TakesItsCheckStateFromTheCommandAndWritesNothingBack()
 	{
-		using var viewModel = NewViewModel();
+		using var stand = NewWindowStand();
+		var viewModel = stand.ViewModel;
 		var menuBar = ShowMenuBar(viewModel);
 
 		AssertTheCommandIsTheOnlyWriter(
@@ -81,7 +84,8 @@ public sealed class AppMenuBarTests
 	[AvaloniaFact]
 	public void LegendItem_TakesItsCheckStateFromTheCommandAndWritesNothingBack()
 	{
-		using var viewModel = NewViewModel();
+		using var stand = NewWindowStand();
+		var viewModel = stand.ViewModel;
 		var menuBar = ShowMenuBar(viewModel);
 
 		AssertTheCommandIsTheOnlyWriter(
@@ -94,7 +98,8 @@ public sealed class AppMenuBarTests
 	[AvaloniaFact]
 	public void MinimapItem_TakesItsCheckStateFromTheCommandAndWritesNothingBack()
 	{
-		using var viewModel = NewViewModel();
+		using var stand = NewWindowStand();
+		var viewModel = stand.ViewModel;
 		var menuBar = ShowMenuBar(viewModel);
 
 		AssertTheCommandIsTheOnlyWriter(
@@ -110,7 +115,8 @@ public sealed class AppMenuBarTests
 	[AvaloniaFact]
 	public void MessagePanelItem_ChecksExactlyWhenTheRowIsOnScreen()
 	{
-		using var viewModel = NewViewModel();
+		using var stand = NewWindowStand();
+		var viewModel = stand.ViewModel;
 		var window = new MainWindowView { DataContext = viewModel };
 		window.Show();
 		Dispatcher.UIThread.RunJobs();
@@ -146,7 +152,8 @@ public sealed class AppMenuBarTests
 	[AvaloniaFact]
 	public void ExitItem_ClosesTheWindow()
 	{
-		using var viewModel = NewViewModel();
+		using var stand = NewWindowStand();
+		var viewModel = stand.ViewModel;
 		var window = new MainWindowView { DataContext = viewModel };
 		window.Show();
 		Dispatcher.UIThread.RunJobs();
@@ -162,7 +169,8 @@ public sealed class AppMenuBarTests
 	[AvaloniaFact]
 	public void AboutItem_AsksForADialogCarryingTheRunsIdentity()
 	{
-		using var viewModel = NewViewModel();
+		using var stand = NewWindowStand();
+		var viewModel = stand.ViewModel;
 		AboutInfo? requested = null;
 		using var subscription = viewModel.AboutRequests.Subscribe(about => requested = about);
 

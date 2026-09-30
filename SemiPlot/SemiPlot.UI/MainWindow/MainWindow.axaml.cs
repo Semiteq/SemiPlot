@@ -4,12 +4,10 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 
-using ReactiveUI;
 using ReactiveUI.Avalonia;
 
 using SemiPlot.UI.Legend;
 using SemiPlot.UI.PenEditor;
-using SemiPlot.UI.Settings;
 
 namespace SemiPlot.UI.MainWindow;
 
@@ -32,12 +30,12 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 		}
 
 		_requests.Add(viewModel.ExitRequests.Subscribe(_ => Close()));
-		_requests.Add(viewModel.AboutRequests.Subscribe(ShowAbout));
-		_requests.Add(viewModel.SettingsRequests.Subscribe(ShowSettings));
+		_requests.Add(viewModel.AboutRequests.Subscribe(
+			about => DialogOpener.ShowAbout(this, about, viewModel.ReportFailure)));
+		_requests.Add(viewModel.SettingsRequests.Subscribe(
+			settings => DialogOpener.ShowSettings(this, settings, viewModel.ReportFailure)));
 		_requests.Add(viewModel.PenEditorRequests.Subscribe(ShowPenEditor));
-		_requests.Add(viewModel
-			.WhenAnyValue(window => window.LegendViewModel)
-			.Subscribe(legend => legend?.FitPanel(MaximumPanelWidth())));
+		viewModel.LegendViewModel.FitPanel(MaximumPanelWidth());
 	}
 
 	protected override void OnUnloaded(RoutedEventArgs e)
@@ -49,52 +47,23 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 
 	private void OnPanelResizeHandleDragDelta(object? sender, VectorEventArgs e)
 	{
-		if (DataContext is MainWindowViewModel { LegendViewModel: { } legend })
+		if (DataContext is MainWindowViewModel viewModel)
 		{
-			legend.ResizePanel(e.Vector.X);
+			viewModel.LegendViewModel.ResizePanel(e.Vector.X);
 		}
 	}
 
 	private void OnContentGridSizeChanged(object? sender, SizeChangedEventArgs e)
 	{
-		if (DataContext is MainWindowViewModel { LegendViewModel: { } legend })
+		if (DataContext is MainWindowViewModel viewModel)
 		{
-			legend.FitPanel(MaximumPanelWidth());
+			viewModel.LegendViewModel.FitPanel(MaximumPanelWidth());
 		}
 	}
 
 	private double MaximumPanelWidth()
 	{
 		return ContentGrid.Bounds.Width - TrendLegendViewModel.ChartMinWidth - PanelResizeHandle.Width;
-	}
-
-	private async void ShowAbout(AboutInfo about)
-	{
-		try
-		{
-			await new AboutDialog { DataContext = about }.ShowDialog(this);
-		}
-		catch (Exception exception)
-		{
-			// An async void handler: a throw out of this catch reaches the dispatcher and ends the process.
-			(DataContext as MainWindowViewModel)?.ReportFailure(exception);
-		}
-	}
-
-	private async void ShowSettings(SettingsViewModel settings)
-	{
-		try
-		{
-			await new SettingsDialog { DataContext = settings }.ShowDialog(this);
-		}
-		catch (Exception exception)
-		{
-			(DataContext as MainWindowViewModel)?.ReportFailure(exception);
-		}
-		finally
-		{
-			settings.Dispose();
-		}
 	}
 
 	private async void ShowPenEditor(PenEditorViewModel penEditor)

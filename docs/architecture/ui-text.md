@@ -106,7 +106,7 @@ targets instead: measured on 2026-09-09, a cold build fails with
 ## What the mapper's two consumers read
 
 `Messages/ArchiveFailureMapper.Map` is the one place operator-facing failure text is written, and two
-surfaces read it: the startup-failure panel, which shows a single `ArchiveFailureView`, and the
+surfaces read it: the startup-failure window, which shows a single `ArchiveFailureView`, and the
 message panel, which keeps a list of them. `Map` yields the title, the detail and the remedy
 separately, and the panel shows all three. The coalescing key is the whole `ArchiveFailureView`:
 `MessagePanelViewModel.Report` compares the incoming view with the newest entry by record equality,

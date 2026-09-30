@@ -3,6 +3,9 @@ using System.Reactive.Linq;
 
 using SemiPlot.Core.Trends;
 using SemiPlot.UI.Bridge;
+using SemiPlot.UI.Chart;
+using SemiPlot.UI.Legend;
+using SemiPlot.UI.Minimap;
 
 namespace SemiPlot.UI.MainWindow;
 
@@ -13,17 +16,26 @@ namespace SemiPlot.UI.MainWindow;
 internal sealed class PenCatalogueApplier : IDisposable
 {
 	private readonly PenCatalogueSync _catalogueSync;
-	private readonly MainWindowViewModel _window;
+	private readonly TrendChartViewModel _chart;
+	private readonly MinimapViewModel _minimap;
+	private readonly TrendLegendViewModel _legend;
 	private readonly IDisposable _subscription;
 
-	public PenCatalogueApplier(PenCatalogueSync catalogueSync, MainWindowViewModel window, IScheduler uiScheduler)
+	public PenCatalogueApplier(
+		PenCatalogueSync catalogueSync,
+		TrendChartViewModel chart,
+		MinimapViewModel minimap,
+		TrendLegendViewModel legend,
+		IScheduler uiScheduler)
 	{
 		_catalogueSync = catalogueSync;
-		_window = window;
+		_chart = chart;
+		_minimap = minimap;
+		_legend = legend;
 		_subscription = catalogueSync.Deltas
 			.Select(delta => Observable.FromAsync(disposed => ApplyAsync(delta, disposed), uiScheduler))
 			.Concat()
-			.Subscribe(_ => { }, window.ReportFailure);
+			.Subscribe(_ => { }, chart.ReportFailure);
 	}
 
 	public void Dispose()
@@ -33,22 +45,17 @@ internal sealed class PenCatalogueApplier : IDisposable
 
 	private async Task ApplyAsync(PenListDelta delta, CancellationToken disposed)
 	{
-		if (_window.ChartViewModel is not { } chart)
-		{
-			return;
-		}
-
-		var shownBefore = chart.Catalogue;
+		var shownBefore = _chart.Catalogue;
 		var isApplied = false;
 
 		try
 		{
 			var addsPens = delta.Added.Count > 0;
-			var hadPens = !chart.HasNoPens;
+			var hadPens = !_chart.HasNoPens;
 
-			if (!hadPens && addsPens && _window.MinimapViewModel is { } emptyChartMinimap)
+			if (!hadPens && addsPens)
 			{
-				var extent = await emptyChartMinimap.LoadExtentAsync();
+				var extent = await _minimap.LoadExtentAsync();
 
 				if (disposed.IsCancellationRequested)
 				{
@@ -57,27 +64,27 @@ internal sealed class PenCatalogueApplier : IDisposable
 
 				if (extent.IsSuccess)
 				{
-					chart.Navigation.SeedFromArchiveExtent(extent.Value);
+					_chart.Navigation.SeedFromArchiveExtent(extent.Value);
 				}
 			}
 
-			chart.ApplyCatalogue(delta.Current);
-			_window.LegendViewModel?.Rebuild();
+			_chart.ApplyCatalogue(delta.Current);
+			_legend.Rebuild();
 			isApplied = true;
 
-			if (hadPens && addsPens && _window.MinimapViewModel is { } minimap)
+			if (hadPens && addsPens)
 			{
-				var extent = await minimap.LoadExtentAsync();
+				var extent = await _minimap.LoadExtentAsync();
 
 				if (!disposed.IsCancellationRequested && extent.IsSuccess)
 				{
-					chart.Navigation.WidenToArchiveExtent(extent.Value);
+					_chart.Navigation.WidenToArchiveExtent(extent.Value);
 				}
 			}
 		}
 		catch (Exception applyFailure)
 		{
-			_window.ReportFailure(applyFailure);
+			_chart.ReportFailure(applyFailure);
 
 			// docs/architecture/overview.md#what-a-read-changes
 			if (!isApplied)

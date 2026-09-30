@@ -1,30 +1,23 @@
-using System.Reactive.Concurrency;
-
 using Avalonia.Headless.XUnit;
 
 using AwesomeAssertions;
 
+using ReactiveUI.Avalonia;
 
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Reactive.Testing;
-
-using SemiPlot.Core.Data;
-using SemiPlot.Core.Trends;
-using SemiPlot.Tests.Unit.UI.Bridge;
-using SemiPlot.Tests.Unit.UI.PenEditor;
-using SemiPlot.UI;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Startup;
 
 using Xunit;
 
+using static SemiPlot.Tests.Unit.UI.MainWindow.MainWindowTestBuilder;
+
 namespace SemiPlot.Tests.Unit.UI.Startup;
 
 /// <summary>
 /// The empty pen catalogue, pinned as a state of its own: an unfinished commissioning answers correctly,
 /// so startup runs to completion and <see cref="TrendChartViewModel.HasNoPens"/> tells it apart from
-/// a broken chart, which otherwise renders the same blank plot. Drives <c>App.InitializeServices</c> itself.
+/// a broken chart, which otherwise renders the same blank plot.
 /// </summary>
 [Trait("Component", "UI")]
 [Trait("Area", "Di")]
@@ -34,8 +27,8 @@ public sealed class EmptyCatalogueStartupTests
 	[AvaloniaFact]
 	public async Task EmptyCatalogue_StartsNormallyAndReportsTheState()
 	{
-		var scheduler = new TestScheduler();
-		using var container = BuildContainer(scheduler, NewProvider(scheduler, []));
+		using var stand = NewArchiveStand([]);
+		var container = stand.Data.ServiceProvider;
 
 		var probe = await StartupProbe.ReadAsync(container, StartupProbe.DefaultReadBound);
 
@@ -43,53 +36,26 @@ public sealed class EmptyCatalogueStartupTests
 		probe.Errors.Should().BeEmpty();
 		probe.Value.Pens.Should().BeEmpty();
 
-		App.InitializeServices(probe.Value);
+		using var window = TrendWindow.Build(probe.Value, AppContext.BaseDirectory, AvaloniaScheduler.Instance);
+		var mainWindowViewModel = window.ViewModel;
 
-		var mainWindowViewModel = container.GetRequiredService<MainWindowViewModel>();
-
-		mainWindowViewModel.ChartViewModel.Should().NotBeNull();
-		mainWindowViewModel.NavigationBarViewModel.Should().NotBeNull();
-		mainWindowViewModel.LegendViewModel.Should().NotBeNull();
-		mainWindowViewModel.MinimapViewModel.Should().NotBeNull();
-		mainWindowViewModel.ChartViewModel!.Pens.Should().BeEmpty();
-		mainWindowViewModel.ChartViewModel!.HasNoPens.Should().BeTrue();
+		mainWindowViewModel.ChartViewModel.Pens.Should().BeEmpty();
+		mainWindowViewModel.ChartViewModel.HasNoPens.Should().BeTrue();
 	}
 
 	[AvaloniaFact]
 	public async Task PopulatedCatalogue_StartsWithTheEmptyCatalogueStateOff()
 	{
-		var scheduler = new TestScheduler();
-		var dataProvider = NewProvider(scheduler);
-		using var container = BuildContainer(scheduler, dataProvider);
+		using var stand = NewArchiveStand();
+		var dataProvider = stand.Provider;
+		var container = stand.Data.ServiceProvider;
 
 		var probe = await StartupProbe.ReadAsync(container, StartupProbe.DefaultReadBound);
 
-		App.InitializeServices(probe.Value);
+		using var window = TrendWindow.Build(probe.Value, AppContext.BaseDirectory, AvaloniaScheduler.Instance);
+		var mainWindowViewModel = window.ViewModel;
 
-		var mainWindowViewModel = container.GetRequiredService<MainWindowViewModel>();
-
-		mainWindowViewModel.ChartViewModel!.Pens.Should().HaveCount(dataProvider.Pens.Count);
-		mainWindowViewModel.ChartViewModel!.HasNoPens.Should().BeFalse();
-	}
-
-	// A TestScheduler, not CurrentThreadScheduler: InitializeServices calls TrendCoordinator.Start, and a
-	// recurring realtime subscription on the current thread's trampoline never returns control.
-	private static FakeDataProvider NewProvider(TestScheduler scheduler, IReadOnlyList<Pen>? pens = null)
-	{
-		return new FakeDataProvider(scheduler, TimeSpan.FromSeconds(1), pens);
-	}
-
-	private static ServiceProvider BuildContainer(TestScheduler scheduler, IDataProvider dataProvider)
-	{
-		var services =
-			new ServiceCollection()
-				.AddSingleton<IScheduler>(scheduler)
-				.AddSingleton(dataProvider)
-				.AddSingleton<IPenCatalogueEditor>(new FakePenCatalogueEditor())
-				.AddUi(AppContext.BaseDirectory);
-
-		services.AddLogging();
-
-		return services.BuildServiceProvider();
+		mainWindowViewModel.ChartViewModel.Pens.Should().HaveCount(dataProvider.Pens.Count);
+		mainWindowViewModel.ChartViewModel.HasNoPens.Should().BeFalse();
 	}
 }

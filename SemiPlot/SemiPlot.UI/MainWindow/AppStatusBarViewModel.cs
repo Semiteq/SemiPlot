@@ -1,5 +1,4 @@
 using System.Reactive;
-using System.Reactive.Disposables;
 
 using FluentResults;
 
@@ -17,20 +16,38 @@ namespace SemiPlot.UI.MainWindow;
 
 /// <summary>
 /// Current state and nothing else: whether the archive answers, and the layer the chart reads. The
-/// connection entries it writes go to the message panel.
+/// connection entries it writes go to the message panel. <see cref="TrendWindow"/> builds and disposes it.
 /// </summary>
-public sealed class AppStatusBarViewModel(
-	MessagePanelViewModel messagePanel,
-	ILogger<AppStatusBarViewModel> logger) : ReactiveObject, IDisposable
+public sealed class AppStatusBarViewModel : ReactiveObject, IDisposable
 {
-	private readonly SerialDisposable _layerSubscription = new();
-
-	private IDisposable? _connectionSubscription;
+	private readonly MessagePanelViewModel _messagePanel;
+	private readonly ILogger<AppStatusBarViewModel> _logger;
+	private readonly ChartNavigationController _navigation;
+	private readonly IDisposable _connectionSubscription;
 
 	private bool _hasSeenFault;
 
+	/// <summary>
+	/// Follows <paramref name="connectionStates"/> (already on the UI scheduler) and the layer of
+	/// <paramref name="navigation"/>.
+	/// </summary>
+	public AppStatusBarViewModel(
+		MessagePanelViewModel messagePanel,
+		IObservable<ArchiveConnectionState> connectionStates,
+		ChartNavigationController navigation,
+		ILogger<AppStatusBarViewModel> logger)
+	{
+		_messagePanel = messagePanel;
+		_logger = logger;
+		_navigation = navigation;
+
+		ActiveLayer = navigation.ActiveLayer;
+		navigation.WindowChanged += OnNavigationWindowChanged;
+		_connectionSubscription = connectionStates.Subscribe(ApplyConnectionState);
+	}
+
 	/// <summary>The indicator opens and closes the panel with the command the View menu also invokes.</summary>
-	public ReactiveCommand<Unit, Unit> ToggleMessagePanelCommand => messagePanel.ToggleCommand;
+	public ReactiveCommand<Unit, Unit> ToggleMessagePanelCommand => _messagePanel.ToggleCommand;
 
 	public bool IsConnected
 	{
@@ -58,41 +75,10 @@ public sealed class AppStatusBarViewModel(
 
 	public string LayerText => Resources.FormatStatusLayerFormat(LayerNameOf(ActiveLayer));
 
-	/// <summary>
-	/// Binds the bar to the coordinator's republished state stream, which already arrives on the UI
-	/// scheduler.
-	/// </summary>
-	public void TrackArchiveConnection(IObservable<ArchiveConnectionState> connectionStates)
-	{
-		if (_connectionSubscription is not null)
-		{
-			throw new InvalidOperationException(
-				"The status bar's connection state is already bound. It has one writer, bound once.");
-		}
-
-		_connectionSubscription = connectionStates.Subscribe(ApplyConnectionState);
-	}
-
-	/// <summary>Follows one chart's layer, and stops following the chart it replaces.</summary>
-	public void TrackLayer(ChartNavigationController? navigation)
-	{
-		if (navigation is null)
-		{
-			_layerSubscription.Disposable = null;
-
-			return;
-		}
-
-		navigation.WindowChanged += OnNavigationWindowChanged;
-		_layerSubscription.Disposable = Disposable.Create(
-			() => navigation.WindowChanged -= OnNavigationWindowChanged);
-		ActiveLayer = navigation.ActiveLayer;
-	}
-
 	public void Dispose()
 	{
-		_connectionSubscription?.Dispose();
-		_layerSubscription.Dispose();
+		_connectionSubscription.Dispose();
+		_navigation.WindowChanged -= OnNavigationWindowChanged;
 	}
 
 	// TrendCoordinator forwards the connection stream with a bare Subscribe, so a throw out of this handler
@@ -106,7 +92,7 @@ public sealed class AppStatusBarViewModel(
 			if (state.Fault is { } fault)
 			{
 				_hasSeenFault = true;
-				messagePanel.ReportFailure(fault, logger);
+				_messagePanel.ReportFailure(fault, _logger);
 
 				return;
 			}
@@ -119,17 +105,17 @@ public sealed class AppStatusBarViewModel(
 
 				// The one entry with no error behind it, so its log line is written here rather than by
 				// ResultReporting.
-				logger.LogInformation("{Title}. {Detail}", restored.Title, restored.Detail);
+				_logger.LogInformation("{Title}. {Detail}", restored.Title, restored.Detail);
 
 				// Cleared after the entry lands: a throw out of the report would otherwise leave the flag
 				// down and no later Connected would write the recovery entry either.
-				messagePanel.Report(restored);
+				_messagePanel.Report(restored);
 				_hasSeenFault = false;
 			}
 		}
 		catch (Exception handlerFailure)
 		{
-			messagePanel.TryReportFailure(new ExceptionalError(handlerFailure), logger);
+			_messagePanel.TryReportFailure(new ExceptionalError(handlerFailure), _logger);
 		}
 	}
 

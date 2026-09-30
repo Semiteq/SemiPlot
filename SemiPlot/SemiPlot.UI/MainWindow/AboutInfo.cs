@@ -13,8 +13,8 @@ public sealed record AboutInfo(string ApplicationName, string Version, string Co
 		return For([.. Environment.GetCommandLineArgs().Skip(1)]);
 	}
 
-	// Program.ReportStartupFailure opens this window with the menu when the argument parse itself failed,
-	// so the dialog is reachable with no directory to name.
+	// The startup-failure window offers About when the argument parse itself failed, so the dialog
+	// is reachable with no directory to name.
 	internal static AboutInfo For(string[] arguments)
 	{
 		var options = StartupOptions.Parse(arguments);

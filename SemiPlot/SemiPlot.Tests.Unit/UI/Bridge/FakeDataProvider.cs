@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Reactive.Concurrency;
+using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 
@@ -115,7 +116,19 @@ internal sealed class FakeDataProvider(
 	// has to survive. The real provider catches everything inside its poll, so only this fake reaches it.
 	public Exception? RealtimeStreamFailure { get; set; }
 
-	public IObservable<ArchiveConnectionState> ConnectionFaults => _connectionFaults;
+	public IObservable<ArchiveConnectionState> ConnectionFaults => Observable.Create<ArchiveConnectionState>(observer =>
+	{
+		ConnectionFaultsObserverCount++;
+		var subscription = _connectionFaults.Subscribe(observer);
+
+		return Disposable.Create(() =>
+		{
+			subscription.Dispose();
+			ConnectionFaultsObserverCount--;
+		});
+	});
+
+	public int ConnectionFaultsObserverCount { get; private set; }
 
 	// The seam a test drives the connection banner from: the fake runs no poll, so nothing else would ever
 	// push a state onto the stream.
@@ -243,7 +256,7 @@ internal sealed class FakeDataProvider(
 			return ExtentGate.Task;
 		}
 
-		return Task.FromResult(Result.Ok(ArchiveExtentOverride ?? new ArchiveExtent(ArchiveFirstUtc, ArchiveLastUtc)));
+		return Task.FromResult(Result.Ok(ArchiveExtentOverride ?? CatalogueExtent()));
 	}
 
 	private sealed class PoisonedSampleList : IReadOnlyList<Sample>
@@ -261,5 +274,11 @@ internal sealed class FakeDataProvider(
 		{
 			return GetEnumerator();
 		}
+	}
+
+	// Mirrors PostgresDataProvider for an empty catalogue.
+	private ArchiveExtent CatalogueExtent()
+	{
+		return Pens.Count == 0 ? ArchiveExtent.Empty : new ArchiveExtent(ArchiveFirstUtc, ArchiveLastUtc);
 	}
 }

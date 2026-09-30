@@ -65,11 +65,12 @@ public sealed class CompositionRootTests
 	}
 
 	[Fact]
-	public void Container_ResolvesMainWindowViewModel()
+	public void Container_RegistersNoWindowPart()
 	{
 		using var provider = BuildContainer();
 
-		provider.GetRequiredService<MainWindowViewModel>().Should().NotBeNull();
+		provider.GetService<MainWindowViewModel>().Should().BeNull("TrendWindow.Build owns the window's parts");
+		provider.GetService<AppStatusBarViewModel>().Should().BeNull("TrendWindow.Build owns the window's parts");
 	}
 
 	// One panel for the process: every reporter writes into the list the window shows.
@@ -85,6 +86,6 @@ public sealed class CompositionRootTests
 
 	private static ServiceProvider BuildContainer()
 	{
-		return StartupProbe.BuildArchiveServiceProvider(ConnectionSettingsFactory.Create(), AppContext.BaseDirectory);
+		return StartupProbe.BuildArchiveServiceProvider(ConnectionSettingsFactory.Create());
 	}
 }

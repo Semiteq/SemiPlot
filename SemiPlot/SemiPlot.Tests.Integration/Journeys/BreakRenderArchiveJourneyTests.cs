@@ -85,7 +85,6 @@ public sealed class BreakRenderArchiveJourneyTests(
 
 		var stopped = FirstBreak();
 		OpenWindowOn(chart.Navigation, extent.Value.FirstUtc, stopped);
-		coordinator.Start();
 
 		var historyApplied = chart.HistoryApplied.FirstAsync().ToTask();
 		chart.RequestInitialHistory();

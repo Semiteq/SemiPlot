@@ -1,5 +1,7 @@
 using System.Reactive.Concurrency;
 
+using Avalonia.Headless.XUnit;
+
 using AwesomeAssertions;
 
 using Microsoft.Extensions.Logging.Abstractions;
@@ -58,7 +60,7 @@ public sealed class ChartGapRenderTests
 	private static readonly TimeSpan _batchWindow = TimeSpan.FromMilliseconds(33);
 	private static readonly DateTime _from = new(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
 
-	[Fact]
+	[AvaloniaFact]
 	public void NaNGapColumn_LeavesTheGapCentreWithoutPenColor_WhileBothSidesStillCarryTheLine()
 	{
 		var (plot, pixels, dataRect) = RenderSeries(SeriesWithGap());
@@ -77,7 +79,7 @@ public sealed class ChartGapRenderTests
 	// The only pixel assertion in the gap-reconstruction slice; envelope-column tests cover the rest. Input
 	// is built in HistoryRowFold's own output shape, a marker row, a null anchor and a resumption row,
 	// rather than by calling the fold, which HistoryRowFoldTests pins separately.
-	[Fact]
+	[AvaloniaFact]
 	public void ArchiveShapedBreak_WithTheFoldsNullAnchor_LeavesEveryBreakColumnWithoutPenColor()
 	{
 		var (timestamps, values) = ArchiveShapedBreak(withAnchor: true);
@@ -109,7 +111,7 @@ public sealed class ChartGapRenderTests
 			"the line resumes at the q = 16 row instead of staying broken to the window's end");
 	}
 
-	[Fact]
+	[AvaloniaFact]
 	public void ContinuousSeries_LeavesNoColumnOfTheDataAreaWithoutPenColor()
 	{
 		var (_, pixels, dataRect) = RenderSeries(ContinuousSeries());

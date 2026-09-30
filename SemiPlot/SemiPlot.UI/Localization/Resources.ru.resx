@@ -96,6 +96,39 @@
   <data name="MenuViewMinimap" xml:space="preserve">
     <value>Обзорная полоса</value>
   </data>
+  <data name="MenuViewAutoscale" xml:space="preserve">
+    <value>Автомасштаб</value>
+  </data>
+  <data name="MenuViewInitialScale" xml:space="preserve">
+    <value>Вернуть начальную шкалу</value>
+  </data>
+  <data name="MenuViewPenScale" xml:space="preserve">
+    <value>Шкала пера</value>
+  </data>
+  <data name="MenuViewPenScaleFormat" xml:space="preserve">
+    <value>Шкала пера «{0}»</value>
+  </data>
+  <data name="AxisScaleMaximumLabel" xml:space="preserve">
+    <value>Максимум</value>
+  </data>
+  <data name="AxisScaleMinimumLabel" xml:space="preserve">
+    <value>Минимум</value>
+  </data>
+  <data name="AxisScaleApply" xml:space="preserve">
+    <value>Применить</value>
+  </data>
+  <data name="AxisScaleInitialScale" xml:space="preserve">
+    <value>Вернуть начальную</value>
+  </data>
+  <data name="AxisScaleBoundsRequired" xml:space="preserve">
+    <value>Укажите обе границы</value>
+  </data>
+  <data name="AxisScaleBoundInvalid" xml:space="preserve">
+    <value>Введите в каждом поле число</value>
+  </data>
+  <data name="AxisScaleMinimumBelowMaximum" xml:space="preserve">
+    <value>Минимум должен быть меньше максимума</value>
+  </data>
   <data name="MenuViewMessagePanel" xml:space="preserve">
     <value>Панель сообщений</value>
   </data>
@@ -172,10 +205,10 @@
     <value>Линия</value>
   </data>
   <data name="PenEditorColumnScaleMin" xml:space="preserve">
-    <value>Шкала от</value>
+    <value>Начальная шкала, от</value>
   </data>
   <data name="PenEditorColumnScaleMax" xml:space="preserve">
-    <value>Шкала до</value>
+    <value>Начальная шкала, до</value>
   </data>
   <data name="PenEditorColumnGroups" xml:space="preserve">
     <value>Группы</value>
@@ -319,7 +352,7 @@
     <value>База данных {0} отклонила значение, записанное для пера «{1}».</value>
   </data>
   <data name="FailureArchiveValueRejectedRemedy" xml:space="preserve">
-    <value>Введите другое значение. Шкала задаётся обеими границами, минимум меньше максимума. Цвет задаётся в виде #RRGGBB.</value>
+    <value>Введите другое значение. Начальная шкала задаётся обеими границами, минимум меньше максимума. Цвет задаётся в виде #RRGGBB.</value>
   </data>
   <data name="FailureArchiveNameTakenTitle" xml:space="preserve">
     <value>Имя уже занято</value>
@@ -550,13 +583,13 @@
     <value>Цвет: #RRGGBB, например #1F77B4</value>
   </data>
   <data name="PenFormScaleBoundInvalid" xml:space="preserve">
-    <value>Шкала: каждая граница — число или пусто</value>
+    <value>Начальная шкала: каждая граница — число или пусто</value>
   </data>
   <data name="PenFormScaleHalfSet" xml:space="preserve">
-    <value>Шкала: задайте обе границы или ни одной</value>
+    <value>Начальная шкала: задайте обе границы или ни одной</value>
   </data>
   <data name="PenFormScaleInverted" xml:space="preserve">
-    <value>Шкала: минимум должен быть меньше максимума</value>
+    <value>Начальная шкала: минимум должен быть меньше максимума</value>
   </data>
   <data name="PenFormMaskPreviewLabel" xml:space="preserve">
     <value>Пример</value>

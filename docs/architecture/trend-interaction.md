@@ -76,10 +76,11 @@ operator interaction.
 - **Many-axes management:** **single active Y axis + per-pen autoscale** (legacy SCADA model);
   clicking a pen makes it active. Pens that must read against one range carry the same stored
   `scale_min`/`scale_max`; no two pens share an axis.
-- **Axis scaling gestures:** double-click axis = autoscale; entering values = fixed manual
-  limits. The second half — the same actions **duplicated in a toolbar** — is superseded: the
-  autoscale button, the two limit boxes and Set Limits left the bar with the navigation-bar change,
-  and the axis click editor is the only way to set a pen's limits.
+- **Axis scaling gestures:** entering values = fixed manual limits. Autoscale and the initial scale
+  are commands on the active pen: buttons of the axis scale panel and items of the View -> Pen scale
+  submenu. The original **toolbar duplicate** is superseded: the autoscale button, the two limit
+  boxes and Set Limits left the bar with the navigation-bar change, and the axis scale panel is the
+  only way to type a pen's limits.
 - **Log axis:** values ≤ 0 are **sanitized** (dropped) before log scaling.
 - **Time display:** **computer local time** (machine local), not UTC.
 - **Line style:** both stepped and interpolated, **configurable per pen**.
@@ -129,9 +130,10 @@ as-built mechanics that realize them:
   redraw seam, not an inline refresh. The startup `RequestInitialHistory` is an ordinary request on
   that path, so the initial load and gestures share one latest-wins history path; the first-snap
   `TrackDataExtents` path stays non-requerying (single initial load).
-- **Axis scaling gestures (as-built):** double-click an axis = autoscale (§AY-4); entering min/max =
-  fixed manual limits (§AY-3). The axis itself is the only place that sets them: the navigation bar
-  carries time navigation only. The scale modes are
+- **Axis scaling gestures (as-built):** entering min/max = fixed manual limits (§AY-3); View -> Pen
+  scale -> Autoscale (§AY-4) and View -> Pen scale -> Restore initial scale act on the active pen, and
+  the panel's two buttons act on the pen the panel was opened for. The axis scale panel is the only
+  place that types limits: the navigation bar carries time navigation only. The scale modes are
   `auto`, which ranges over the columns inside the visible window, and `manual` (§AY-3, §AY-4); the
   logarithmic axis is an axis *type* with values ≤ 0 sanitized before scaling (§AY-6).
 
@@ -194,15 +196,40 @@ so there is one left-button gesture, not overlapping hidden branches.
   lines. Δt and the **active-pen** Δy (`Core/Trends/DeltaCursorModel` → `DeltaReadout`) are shown in
   an inline readout next to the toggle. (The legacy `DeltaCursorsEnabled` flag and the hidden
   left-click hijack branch were deleted.)
-- **Y-axis click-region range edit.** A press on the active pen's Y-axis panel band
-  (`Chart/ChartAxisRegion`, computed from the last render layout) is handled before pan/delta routing:
-  a single click in the **upper** half edits MAX, the **lower** half edits MIN (top pixel = max,
-  accounting for pixel-Y inversion), opening an inline numeric editor seeded with the clicked value;
-  a **double-click** autoscales the axis (`ScaleMode.Auto`). The untouched bound is carried from the
-  current computed range (`Chart/ChartAxisEdit.SeedManualLimits`) and committed into `PenScaleModel`
-  manual limits. The press never starts a pan or places a delta cursor.
+- **Y-axis click-region scale edit.** A press on the active pen's Y-axis panel band
+  (`Chart/ChartAxisRegion`, computed from the last render layout) is handled before pan/delta routing and
+  opens the axis scale panel (below). The router reads no click count and no half of the axis. The press
+  never starts a pan or places a delta cursor.
 - **Horizontal cursor / crosshair** — not in the MVP; deferred as a NICE item
   (trend-feature-spec.md §CU-5), not permanently dropped.
+
+### The axis scale panel
+
+A press on the active pen's axis opens an Avalonia `Flyout` (`Chart/AxisScalePanel`, attached to the plot
+control in `TrendChartView.axaml` and shown at the pointer) over `Chart/AxisScalePanelViewModel`, which
+`TrendChartViewModel.AxisScale` owns. A press while no pen's axis is drawn opens nothing.
+
+- The panel is opened for one pen, the pen whose axis is drawn (`TrendChartViewModel.DrawnPenId`: the
+  active pen while it is visible). The header names that pen and shows its unit. Every action of the panel
+  acts on that pen. The panel closes without writing when the pen leaves the chart, is hidden or stops being
+  the active pen while the panel is open.
+- Maximum and Minimum are `TextBox` fields seeded with the bounds the axis shows, rendered through
+  `PenValueFormat.Format` with the pen's stored mask and the `0.###` fallback, as the legend row and the
+  hover readout render a reading. A field left as seeded keeps the exact bound it was seeded from, so a mask
+  that rounds (0.4 shown as "0") never moves the scale on Apply; only a field whose text changed is parsed.
+  Typed text is read by `PenFormRules.TryReadBound`, the pen editor's rule, in the
+  current culture: an entry that is not a number in that culture, such as "150.5" under `ru-RU`, is
+  invalid, and the last value that parsed is never applied in its place.
+- Apply writes both bounds as a manual scale on the pen through `SetAxisLimits`. Enter in either field
+  applies; the two buttons and the panel take no Enter binding, so Enter on the focused Autoscale button
+  presses Autoscale. Escape and a click outside close the panel and write nothing.
+- An unreadable field, an empty field or a minimum not below the maximum is invalid on every edit: the
+  field takes the `invalid` border, the message line names the rule and Apply is disabled. The panel
+  keeps its size (`ui-theme.md#the-axis-scale-panel`).
+- Autoscale and Restore initial scale call `AutoscalePen` and `RestoreInitialScale(penId)` for the
+  panel's pen and close the panel. The View -> Pen scale submenu items call `AutoscaleActivePen` and
+  `RestoreInitialScale()`. The submenu header names the drawn pen and follows `DrawnPenId` and the
+  catalogue's pen names; while no pen's axis is drawn it reads "Pen scale".
 
 ## Decimation & performance (architectural core)
 

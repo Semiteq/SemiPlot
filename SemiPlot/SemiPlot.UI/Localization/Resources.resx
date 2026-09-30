@@ -96,6 +96,39 @@
   <data name="MenuViewMinimap" xml:space="preserve">
     <value>Minimap</value>
   </data>
+  <data name="MenuViewAutoscale" xml:space="preserve">
+    <value>Autoscale</value>
+  </data>
+  <data name="MenuViewInitialScale" xml:space="preserve">
+    <value>Restore initial scale</value>
+  </data>
+  <data name="MenuViewPenScale" xml:space="preserve">
+    <value>Pen scale</value>
+  </data>
+  <data name="MenuViewPenScaleFormat" xml:space="preserve">
+    <value>Pen scale: {0}</value>
+  </data>
+  <data name="AxisScaleMaximumLabel" xml:space="preserve">
+    <value>Maximum</value>
+  </data>
+  <data name="AxisScaleMinimumLabel" xml:space="preserve">
+    <value>Minimum</value>
+  </data>
+  <data name="AxisScaleApply" xml:space="preserve">
+    <value>Apply</value>
+  </data>
+  <data name="AxisScaleInitialScale" xml:space="preserve">
+    <value>Restore initial scale</value>
+  </data>
+  <data name="AxisScaleBoundsRequired" xml:space="preserve">
+    <value>Enter both bounds</value>
+  </data>
+  <data name="AxisScaleBoundInvalid" xml:space="preserve">
+    <value>Enter a number in each field</value>
+  </data>
+  <data name="AxisScaleMinimumBelowMaximum" xml:space="preserve">
+    <value>The minimum must be below the maximum</value>
+  </data>
   <data name="MenuViewMessagePanel" xml:space="preserve">
     <value>Message panel</value>
   </data>
@@ -172,10 +205,10 @@
     <value>Line</value>
   </data>
   <data name="PenEditorColumnScaleMin" xml:space="preserve">
-    <value>Scale min</value>
+    <value>Initial scale, min</value>
   </data>
   <data name="PenEditorColumnScaleMax" xml:space="preserve">
-    <value>Scale max</value>
+    <value>Initial scale, max</value>
   </data>
   <data name="PenEditorColumnGroups" xml:space="preserve">
     <value>Groups</value>
@@ -319,7 +352,7 @@
     <value>The archive {0} refused the value written to pen '{1}'.</value>
   </data>
   <data name="FailureArchiveValueRejectedRemedy" xml:space="preserve">
-    <value>Enter another value. A scale takes both bounds with the minimum below the maximum. A colour takes the form #RRGGBB.</value>
+    <value>Enter another value. The initial scale takes both bounds with the minimum below the maximum. A colour takes the form #RRGGBB.</value>
   </data>
   <data name="FailureArchiveNameTakenTitle" xml:space="preserve">
     <value>The name is already taken</value>
@@ -550,13 +583,13 @@
     <value>Colour: #RRGGBB, such as #1F77B4</value>
   </data>
   <data name="PenFormScaleBoundInvalid" xml:space="preserve">
-    <value>Scale: each bound is a number or empty</value>
+    <value>Initial scale: each bound is a number or empty</value>
   </data>
   <data name="PenFormScaleHalfSet" xml:space="preserve">
-    <value>Scale: set both bounds or neither</value>
+    <value>Initial scale: set both bounds or neither</value>
   </data>
   <data name="PenFormScaleInverted" xml:space="preserve">
-    <value>Scale: the minimum must be below the maximum</value>
+    <value>Initial scale: the minimum must be below the maximum</value>
   </data>
   <data name="PenFormMaskPreviewLabel" xml:space="preserve">
     <value>Preview</value>

@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Reactive.Linq;
 using System.Runtime.CompilerServices;
 
@@ -373,7 +372,7 @@ public sealed class PenFormViewModel : ReactiveObject, IDisposable
 
 	private static string TextOf(double? stored)
 	{
-		return stored?.ToString(CultureInfo.CurrentCulture) ?? string.Empty;
+		return stored is { } bound ? PenFormRules.FormatBound(bound) : string.Empty;
 	}
 
 	private static string? NullIfEmpty(string draft)

@@ -80,7 +80,7 @@ chart within 5 s (`overview.md#the-live-catalogue`).
 | `color` | yes | yes | Pen colour; `NULL` draws in the one fallback colour |
 | `line_style` | yes | yes | Mapped onto the domain line-style enum |
 | `enabled_on_start` | yes | yes | Whether the pen is drawn when the viewer opens |
-| `scale_min`, `scale_max` | yes | yes, in one statement | The pen's own Y range, set together or not at all; absent means autoscale |
+| `scale_min`, `scale_max` | yes | yes, in one statement | The pen's initial Y range, set together or not at all; absent means autoscale |
 
 Group membership is many-to-many. `semiplot_groups` holds one row per group name,
 `semiplot_pen_groups` one row per membership, and a pen may sit in several groups or in none. The

@@ -8,6 +8,7 @@
         x:DataType="local:PenEditorViewModel"
         Title="{x:Static text:Resources.PenEditorTitle}"
         Width="1180"
+        MinWidth="1100"
         Height="720"
         SizeToContent="Manual"
         CanResize="True"
@@ -45,6 +46,14 @@
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="HorizontalContentAlignment" Value="Left" />
             <Setter Property="Padding" Value="6,2" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Height" Value="44" />
+            <Setter Property="ContentTemplate">
+                <DataTemplate x:DataType="x:String">
+                    <TextBlock Text="{Binding}"
+                               TextWrapping="Wrap" />
+                </DataTemplate>
+            </Setter>
         </Style>
         <Style Selector="TextBlock.cell">
             <Setter Property="Margin" Value="6,0" />

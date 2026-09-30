@@ -161,10 +161,11 @@ always there.
 | 4 | Message panel (`MessagePanelView`) | `MessagePanel.IsVisible` |
 | 5 | Status bar (`AppStatusBar`) | no |
 
-The `View` menu writes rows 1, 3 and 4; row 2's legend column has its own item. Each flag has one
-writer, the command the menu item invokes, and the item reads back that same flag `Mode=OneWay` — a
-`MenuItem` whose `IsChecked` were two-way would have the control as a second writer, and one reading
-back a property the command does not write would let a click move nothing on screen.
+The `View` menu writes rows 1, 3 and 4; row 2's legend column has its own item. One submenu, Pen scale, holds
+two plain commands, Autoscale and Restore initial scale. They act on the active pen's axis and write no flag.
+Each flag has one writer, the command the menu item invokes, and the item reads back that same flag
+`Mode=OneWay` — a `MenuItem` whose `IsChecked` were two-way would have the control as a second writer, and one
+reading back a property the command does not write would let a click move nothing on screen.
 
 Row 4 is the one whose flag the operator is not the only source of. `MessagePanel.IsVisible` starts
 closed, so a session that never fails is never given the row, and `MessagePanelViewModel.Report`
@@ -484,8 +485,9 @@ minimap, hands its `ReadNow` to `MainWindowViewModel`, and starts it once the wi
 The editor asks for a read after every write it lands. `EditorCallQueue` invokes its success callback
 on the UI thread after a call whose result succeeded, and a failed or thrown call invokes nothing.
 `MainWindowViewModel` builds the editor's view model with a callback that calls the sync's `ReadNow()`,
-so an edit reaches the chart of the instance that made it within a second, while the editor is still
-open, and every other instance within 5 s. A burst of writes asks for many reads, and `ReadNow` keeps
+so the read that follows an edit reaches the instance that made it within a second, while the editor
+is still open, and every other instance within 5 s. A scale-pair edit changes no pen already shown
+(`#what-a-read-changes`). A burst of writes asks for many reads, and `ReadNow` keeps
 them to the read in flight and one after it. Refresh's own read succeeds too and asks for one more
 read, which costs one statement. The startup-failure window has no editor and no sync.
 
@@ -500,7 +502,7 @@ element, so two reads of one stored pen are equal. A read that changes nothing e
 | --- | --- |
 | The same pens as the previous read, in any order | Nothing changes: chart, axes and sidebar stay untouched. |
 | A changed name, unit, mask, colour, line style or group list | That pen changes in place. |
-| A changed stored scale pair | That pen's axis is replaced, also one the operator set in this session. A read with the pair unchanged leaves a session axis alone. |
+| A changed stored scale pair | Nothing shown changes: the pair is the pen's initial scale, applied when the pen enters the chart, and the restore target of `RestoreInitialScale`, which reads the pair the latest read stored. |
 | A changed `enabled_on_start` | Nothing changes on screen: the flag is the visibility a pen starts with. |
 | A new pen | It joins with the visibility its `enabled_on_start` gives it, with its history and its live edge. |
 | A pen gone from the catalogue | It leaves the chart. When it was the active pen, the first visible pen in catalogue order takes the slot. |

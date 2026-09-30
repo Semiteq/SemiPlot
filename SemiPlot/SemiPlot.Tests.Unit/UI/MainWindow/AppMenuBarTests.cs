@@ -1,4 +1,5 @@
 using System.Reactive.Linq;
+using System.Windows.Input;
 
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
@@ -8,6 +9,8 @@ using AwesomeAssertions;
 
 using ReactiveUI;
 
+using SemiPlot.Core.Trends;
+using SemiPlot.UI.Localization;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
 
@@ -42,7 +45,7 @@ public sealed class AppMenuBarTests
 			.Select(leaf => leaf.Name)
 			.Should()
 			.Contain(
-				["FileExit", "EditSettings", "EditPensAndGroups", "ViewMessagePanel", "HelpAbout"],
+				["FileExit", "EditSettings", "EditPensAndGroups", "ViewAutoscale", "ViewInitialScale", "ViewMessagePanel", "HelpAbout"],
 				"the walk descends into every menu");
 
 		foreach (var leaf in leaves)
@@ -177,8 +180,147 @@ public sealed class AppMenuBarTests
 		viewModel.ShowAboutCommand.Execute().Subscribe();
 
 		requested.Should().NotBeNull();
-		requested!.ApplicationName.Should().Be(SemiPlot.UI.Localization.Resources.WindowTitle);
+		requested!.ApplicationName.Should().Be(Resources.WindowTitle);
 		requested.Version.Should().NotBeNullOrWhiteSpace();
+	}
+
+	[AvaloniaFact]
+	public void AutoscaleItem_RevertsTheActivePensAxisToAuto()
+	{
+		var stored = StoredPairPens(5.0, 50.0);
+		using var stand = NewWindowStand(stored);
+		var viewModel = stand.ViewModel;
+		var menuBar = ShowMenuBar(viewModel);
+		var chart = viewModel.ChartViewModel;
+		chart.SetAxisLimits(chart.ActivePenId, 10.0, 90.0);
+
+		menuBar.FindControl<MenuItem>("ViewAutoscale")!.Command.Should().BeSameAs(viewModel.AutoscaleCommand);
+		viewModel.AutoscaleCommand.Execute().Subscribe();
+		Dispatcher.UIThread.RunJobs();
+
+		chart.ScaleSettings[chart.ActivePenId].Mode.Should().Be(ScaleMode.Auto);
+	}
+
+	[AvaloniaFact]
+	public void InitialScaleItem_SetsTheActivePensAxisToItsStoredPair()
+	{
+		var stored = StoredPairPens(5.0, 50.0);
+		using var stand = NewWindowStand(stored);
+		var viewModel = stand.ViewModel;
+		var menuBar = ShowMenuBar(viewModel);
+		var chart = viewModel.ChartViewModel;
+		chart.SetAxisLimits(chart.ActivePenId, 10.0, 90.0);
+
+		menuBar.FindControl<MenuItem>("ViewInitialScale")!.Command.Should().BeSameAs(viewModel.InitialScaleCommand);
+		viewModel.InitialScaleCommand.Execute().Subscribe();
+		Dispatcher.UIThread.RunJobs();
+
+		chart.ScaleSettings[chart.ActivePenId].Should().Be(new PenScaleSettings(chart.ActivePenId)
+		{
+			Mode = ScaleMode.Manual,
+			ManualMin = 5.0,
+			ManualMax = 50.0
+		});
+	}
+
+	[AvaloniaFact]
+	public void ViewMenu_HoldsThePenScaleSubmenuBetweenTheTogglesAndTheMessagePanel()
+	{
+		using var stand = NewWindowStand([]);
+		var viewModel = stand.ViewModel;
+		var menuBar = ShowMenuBar(viewModel);
+
+		var viewMenu = menuBar.FindControl<MenuItem>("ViewMenu");
+		viewMenu.Should().NotBeNull();
+
+		viewMenu!.Items.OfType<Control>()
+			.Select(item => item is Separator ? "-" : item.Name)
+			.Should()
+			.Equal(
+				"ViewNavigationBar", "ViewLegend", "ViewMinimap", "-", "ViewPenScale", "-", "ViewMessagePanel");
+		viewMenu.Items.OfType<MenuItem>().Single(item => item.Name == "ViewPenScale").Items.OfType<MenuItem>()
+			.Select(item => item.Name)
+			.Should()
+			.Equal("ViewAutoscale", "ViewInitialScale");
+	}
+
+	[AvaloniaFact]
+	public void PenScaleSubmenu_NamesTheActivePenInItsHeader()
+	{
+		using var stand = NewWindowStand();
+		var viewModel = stand.ViewModel;
+		var menuBar = ShowMenuBar(viewModel);
+		var chart = viewModel.ChartViewModel;
+		var submenu = menuBar.FindControl<MenuItem>("ViewPenScale")!;
+
+		submenu.Header.Should().Be(Resources.FormatMenuViewPenScaleFormat("Pen 1"));
+
+		chart.SetActivePen(2);
+		Dispatcher.UIThread.RunJobs();
+
+		submenu.Header.Should().Be(Resources.FormatMenuViewPenScaleFormat("Pen 2"));
+	}
+
+	[AvaloniaFact]
+	public void PenScaleSubmenu_WithNoActivePen_ReadsPenScale()
+	{
+		using var stand = NewWindowStand([]);
+		var menuBar = ShowMenuBar(stand.ViewModel);
+
+		menuBar.FindControl<MenuItem>("ViewPenScale")!.Header.Should().Be(Resources.MenuViewPenScale);
+	}
+
+	[AvaloniaFact]
+	public void PenScaleSubmenu_NamesNoPenWhileNoPensAxisIsDrawn()
+	{
+		using var stand = NewWindowStand();
+		var chart = stand.ViewModel.ChartViewModel;
+		var menuBar = ShowMenuBar(stand.ViewModel);
+		var submenu = menuBar.FindControl<MenuItem>("ViewPenScale")!;
+
+		chart.SetPenVisibility(1, false);
+		chart.SetPenVisibility(2, false);
+		Dispatcher.UIThread.RunJobs();
+
+		submenu.Header.Should().Be(Resources.MenuViewPenScale);
+
+		chart.SetPenVisibility(2, true);
+		Dispatcher.UIThread.RunJobs();
+
+		submenu.Header.Should().Be(Resources.FormatMenuViewPenScaleFormat("Pen 2"));
+	}
+
+	[AvaloniaFact]
+	public void PenScaleSubmenu_FollowsARenamedPen()
+	{
+		using var stand = NewWindowStand();
+		var chart = stand.ViewModel.ChartViewModel;
+		var menuBar = ShowMenuBar(stand.ViewModel);
+
+		chart.ApplyCatalogue([.. chart.Catalogue.Select(pen => pen with { Name = pen.Name + " renamed" })]);
+		Dispatcher.UIThread.RunJobs();
+
+		menuBar.FindControl<MenuItem>("ViewPenScale")!.Header.Should().Be(
+			Resources.FormatMenuViewPenScaleFormat("Pen 1 renamed"));
+	}
+
+	[AvaloniaFact]
+	public void TheAxisCommands_AreAlwaysExecutable()
+	{
+		using var stand = NewWindowStand([]);
+		var viewModel = stand.ViewModel;
+
+		((ICommand)viewModel.AutoscaleCommand).CanExecute(null).Should().BeTrue();
+		((ICommand)viewModel.InitialScaleCommand).CanExecute(null).Should().BeTrue();
+	}
+
+	private static List<Pen> StoredPairPens(double min, double max)
+	{
+		return
+		[
+			new Pen(1, "Pen 1", ["Group A"], "#ff0000", ScaleMin: min, ScaleMax: max),
+			new Pen(2, "Pen 2", ["Group A"], "#00ff00", ScaleMin: min, ScaleMax: max)
+		];
 	}
 
 	private static void AssertTheCommandIsTheOnlyWriter(

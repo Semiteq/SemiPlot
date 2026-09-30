@@ -210,6 +210,36 @@ public sealed class PenEditorViewTests : IDisposable
 	}
 
 	[AvaloniaFact]
+	public void TheWindow_OpensOnA1280PxScreenAndAtItsMinimumWidthClipsNoFixedColumn()
+	{
+		const double SmallestScreenWidth = 1280;
+		const double MinimumGroupsColumnWidth = 100;
+		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			window.Width.Should().BeLessThan(SmallestScreenWidth, "the window opens whole on a 1280 px screen");
+			var header = Named<Grid>(window, "PenTableHeader");
+			var fixedColumnsWidth = header.ColumnDefinitions.Take(FixedColumnCount).Sum(column => column.Width.Value);
+
+			window.Width = window.MinWidth;
+			Dispatcher.UIThread.RunJobs();
+
+			var buttonHeights = header.Children.OfType<Button>().Select(button => button.Bounds.Height).Distinct();
+			header.Bounds.Width.Should().BeGreaterThanOrEqualTo(fixedColumnsWidth, "the fixed columns keep their widths");
+			(header.Bounds.Width - fixedColumnsWidth).Should()
+				.BeGreaterThanOrEqualTo(MinimumGroupsColumnWidth, "the groups column keeps a readable width");
+			Named<ListBox>(window, "PenTable").GetVisualDescendants().OfType<ScrollViewer>().First().Extent.Width
+				.Should().BeLessThanOrEqualTo(header.Bounds.Width, "the table holds nothing the header lacks");
+			buttonHeights.Should().ContainSingle("every header button, wrapped or not, has the same reserved height");
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
 	public void TheRefreshButton_RegistersRereadsAndShowsTheAddedCount()
 	{
 		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);

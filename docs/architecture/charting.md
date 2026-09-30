@@ -70,7 +70,9 @@ guard them. A catalogue read adds and removes plottables and adds Y axes after t
 so `TrendChartViewModel.ApplyCatalogue` runs its plot and axis edits under `lock (Plot.Sync)`, one
 block per call, and moves the live edge, queries history and asks for the redraw after it. The lock
 guards the plot's lists alone: the live-edge switch cancels the old subscription's tick synchronously,
-and under the lock a frame would wait for it. Without the lock a frame that
+and under the lock a frame would wait for it. The block also runs under `DelayChangeNotifications()`, so `ActivePenId`, `DrawnPenId` and `ScalesRevision`
+raise after the lock is released: a subscriber that closes the axis panel destroys a popup window, which waits
+for the render thread, and the render thread waits for `Plot.Sync`. Without the lock a frame that
 meets the edit throws "Collection was modified" on the render thread, the crash class of #59
 (`TrendChartRenderThreadTests`).
 
@@ -222,12 +224,13 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   readout `Border`), suppressed during drag / delta mode.
 - `Chart/LeftButtonTool` (enum `Pan | DeltaPlacement`) — the single left-button gesture state, sourced
   from the navigation bar's delta toggle.
-- `Chart/ChartAxisRegion` + `ChartAxisEdit` — Y-axis click-region hit-test (panel band, upper/lower
-  split, pixel→value with Y inversion) and the seed-untouched-bound helper for inline range edits.
+- `Chart/ChartAxisRegion` — Y-axis click-region hit-test (the axis panel band beside the data area).
+- `Chart/AxisScalePanel` + `AxisScalePanelViewModel` — the flyout that edits the drawn pen's two bounds
+  (`trend-interaction.md#the-axis-scale-panel`); `TrendChartViewModel.AxisScale` owns the view model.
 - `Chart/LocalTimeAxis` — UTC↔local-OADate conversion at every render boundary.
 - `Navigation/NavigationBarView` + `NavigationBarViewModel` — time navigation only: jump-to-now,
   sticky toggle, delta-mode toggle + inline Δt/Δy readout (ReactiveUI commands). Autoscale, the two
-  limit boxes and set-limits left with the axis click editor taking them over; the layer label left
+  limit boxes and set-limits left with the axis scale panel taking them over; the layer label left
   for the status bar.
 - `Legend/TrendLegendView` + `TrendLegendViewModel` (+ group / row VMs and the converters) — the
   grouped sidebar. A row carries the on/off box, a round colour dot, the name, the current value in
@@ -269,9 +272,10 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   shared `ChartNavigationController` (see trend-interaction.md).
 - `MainWindow/TrendWindow` — builds the window's parts once, in dependency order, and disposes them in
   reverse (`overview.md#one-window-per-process`).
-- `MainWindow/MainWindow` + `MainWindowViewModel` — the six-row window grid and the flags its View
-  menu writes; the window's code-behind owns the three view-side requests (close, About dialog,
-  settings dialog).
+- `MainWindow/MainWindow` + `MainWindowViewModel` — the six-row window grid, the flags its View
+  menu writes and the menu's two axis commands under View -> Pen scale, which call `AutoscaleActivePen`
+  and `RestoreInitialScale` on the chart, and the submenu header that names the drawn pen; the window's
+  code-behind owns the three view-side requests (close, About dialog, settings dialog).
 - `MainWindow/AppMenuBar` — the File / Edit / View / Help menu. Each checkable item reads its flag
   `Mode=OneWay` and writes it only through the command it invokes (`CLAUDE.md`, UI).
 - `MainWindow/AppStatusBar` + `AppStatusBarViewModel` — current connection state and the active
@@ -321,10 +325,13 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   opens `Manual` on exactly those bounds; a pen without them opens `Auto`. What the operator then does
   to the axis rewrites the settings for the session and reaches no database. The only writer of
   `semiplot_tags` is the pen editor (`Edit` -> `Pens and groups`, `PenEditor/`,
-  `data-integration.md#the-pen-catalogue-editor`). A stored bounds change reaches the running chart
-  through the next catalogue read and replaces that pen's axis, also one the operator set in this
-  session; a read whose pair did not change leaves a session axis alone (Applying a catalogue read,
-  below).
+  `data-integration.md#the-pen-catalogue-editor`). The stored pair is the pen's initial scale: it builds the
+  settings when the pen enters the chart and is the target of `RestoreInitialScale`.
+  `PenScaleSettings.InitialFor` builds the settings from the pair a pen record holds, `Manual` on both bounds
+  or `Auto` when it has none; `TrendChartViewModel.RestoreInitialScale` applies them to the active pen.
+  Both scale commands leave an active pen that is switched off alone, since its axis is not drawn. A changed
+  pair reaches the running chart through the next catalogue read and leaves every shown pen alone, whatever
+  session axis it holds (Applying a catalogue read, below).
 - `PenValueFormat` — the `0.###` fallback mask, the character rule that accepts a stored mask, and the
   render under `CultureInfo.CurrentCulture`. The rule runs once, in `PostgresDataProvider.ReadPen`,
   which is where the logger is; a rejected mask reaches the record as `null`, so `Pen.Format` in the
@@ -344,10 +351,10 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
 ## Applying a catalogue read
 
 A running chart follows the stored catalogue (`overview.md#the-live-catalogue`).
-`Core/Trends/PenListDelta.Between` compares two reads: `Added`, `RemovedPenIds`, `Revised` (one
-`PenRevision(Previous, Current)` per pen whose stored settings differ, with `ScaleChanged` when either
-stored bound differs) and `Current`, the new read. `IsEmpty` is true when nothing was added, removed or
-revised, so a new order alone is no change; `ChangesPenSet` is true when a pen was added or removed.
+`Core/Trends/PenListDelta.Between` compares two reads: `Added`, `RemovedPenIds`, `Revised` (the new record of
+each pen whose stored settings differ) and `Current`, the new read. `IsEmpty` is true when nothing was
+added, removed or revised, so a new order alone is no change; `ChangesPenSet` is true when a pen was
+added or removed.
 
 `TrendChartViewModel.ApplyCatalogue(catalogue)` takes the read itself, `delta.Current`, and compares it
 with the pens the chart shows, not with the read before it. `ChartPenSet.Apply` computes that
@@ -358,11 +365,8 @@ whatever baseline the loop compared it with (`overview.md#what-a-read-changes`).
 1. Every pen the read does not name leaves the dictionaries, the plot and its envelope, and its axis is
    hidden. The axis stays keyed on the pen id, so a pen that comes back takes it again.
 2. Every pen the chart holds whose stored settings differ is revised: `TrendPenState.Revise` takes the
-   new pen and restyles its line in place. A revision with `ScaleChanged`, compared with the pen the
-   chart held, replaces the pen's scale settings with the ones the stored pair gives, `Manual` on both
-   bounds or `Auto` when the pair is cleared: the stored pair is the last word on that pen's axis, so it
-   replaces a range the operator set in this session. A revision without it keeps the session axis,
-   and an `EnabledOnStart` revision keeps the visibility.
+   new pen and restyles its line in place. A revision never touches the pen's scale settings, so a changed
+   stored pair leaves the session axis alone, and an `EnabledOnStart` revision keeps the visibility.
 3. Every pen the chart lacks joins, with the visibility its `EnabledOnStart` gives it.
 4. `Pens` is rebuilt in the order of the read.
 5. The active pen settles: a removed active pen's slot goes to the first visible pen in catalogue order.

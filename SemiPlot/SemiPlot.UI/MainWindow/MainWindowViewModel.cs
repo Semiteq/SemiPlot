@@ -12,6 +12,7 @@ using ReactiveUI;
 using SemiPlot.Core.Data;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.Legend;
+using SemiPlot.UI.Localization;
 using SemiPlot.UI.Messages;
 using SemiPlot.UI.Minimap;
 using SemiPlot.UI.Navigation;
@@ -33,6 +34,7 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 	private readonly ILogger<MainWindowViewModel> _logger;
 	private readonly IPenCatalogueEditor _penCatalogueEditor;
 	private readonly Action _readCatalogueNow;
+	private readonly ObservableAsPropertyHelper<string> _penScaleHeader;
 
 	/// <summary>
 	/// The window's parts are built and disposed by <see cref="TrendWindow"/>; this view model holds them for the
@@ -62,6 +64,10 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 		_logger = loggerFactory.CreateLogger<MainWindowViewModel>();
 		_penCatalogueEditor = penCatalogueEditor;
 
+		_disposables.Add(_penScaleHeader = ChartViewModel
+			.WhenAnyValue(chart => chart.DrawnPenId, chart => chart.Pens, (penId, _) => PenScaleHeaderFor(penId))
+			.ToProperty(this, viewModel => viewModel.PenScaleHeader));
+
 		_disposables.Add(_aboutRequests);
 		_disposables.Add(_exitRequests);
 		_disposables.Add(_settingsRequests);
@@ -73,6 +79,10 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 			() => { IsLegendVisible = !IsLegendVisible; }));
 		_disposables.Add(ToggleMinimapCommand = ReactiveCommand.Create(
 			() => { IsMinimapVisible = !IsMinimapVisible; }));
+		_disposables.Add(AutoscaleCommand = ReactiveCommand.Create(
+			() => ChartViewModel.AutoscaleActivePen()));
+		_disposables.Add(InitialScaleCommand = ReactiveCommand.Create(
+			() => ChartViewModel.RestoreInitialScale()));
 		_disposables.Add(ExitCommand = ReactiveCommand.Create(
 			() => _exitRequests.OnNext(Unit.Default)));
 		_disposables.Add(ShowAboutCommand = ReactiveCommand.Create(
@@ -123,11 +133,18 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 
 	public MinimapViewModel MinimapViewModel { get; }
 
+	/// <summary>The View menu's scale submenu header; it names the pen whose axis the chart draws.</summary>
+	public string PenScaleHeader => _penScaleHeader.Value;
+
 	public ReactiveCommand<Unit, Unit> ToggleNavigationBarCommand { get; }
 
 	public ReactiveCommand<Unit, Unit> ToggleLegendCommand { get; }
 
 	public ReactiveCommand<Unit, Unit> ToggleMinimapCommand { get; }
+
+	public ReactiveCommand<Unit, Unit> AutoscaleCommand { get; }
+
+	public ReactiveCommand<Unit, Unit> InitialScaleCommand { get; }
 
 	public ReactiveCommand<Unit, Unit> ExitCommand { get; }
 
@@ -142,6 +159,13 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 	public void ReportFailure(Exception failure)
 	{
 		MessagePanel.TryReportFailure(new ExceptionalError(failure), _logger);
+	}
+
+	private string PenScaleHeaderFor(int? drawnPenId)
+	{
+		return drawnPenId is { } penId && ChartViewModel.FindPen(penId) is { } state
+			? Resources.FormatMenuViewPenScaleFormat(state.Pen.Name)
+			: Resources.MenuViewPenScale;
 	}
 
 	private async Task RequestSettingsAsync()

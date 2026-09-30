@@ -23,7 +23,7 @@ paths:
   because no window part is ever replaced. The startup-failure window gets a view model of its own.
 - **Initial scale.** The stored `ScaleMin`/`ScaleMax` is the scale a pen starts with in a window. It never
   changes a pen already shown. The double-click autoscale leaves the axis; the View menu carries
-  "Autoscale" and "Initial scale" for the active pen.
+  "Pen scale" with "Autoscale" and "Restore initial scale" for the active pen.
 - **Another instance.** One helper starts a copy of the running process with the same launch keys. It
   serves "New window", "Restart" in the startup-failure window, and "Restart now" after a settings save
   that needs one.
@@ -216,7 +216,7 @@ Automated, run from the repository root:
 7. These named tests exist and pass (`dotnet test ... --filter "FullyQualifiedName~<name>"`):
    - `AFailedStartShowsTheFailureWindowWithItsOwnPanel` (startup-failure window);
    - `DisposingTheWindowClosesTheLiveEdgeBeforeTheConnectionStream` (window composition);
-   - `ARevisedStoredScaleLeavesTheShownPenAlone`, `InitialScaleRestoresTheStoredPair` (chart);
+   - `ARevisedStoredScale_LeavesTheShownPenAlone`, `InitialScale_RestoresTheStoredPair` (chart);
    - `TheStartInfoCarriesTheLaunchKeys` (launcher);
    - `RestartExitsOnlyAfterTheCopyStarted` (window view model);
    - `AThemeChangeOnDiskAppliesTheTheme`, `ALanguageChangeOnDiskAppliesNothing`,
@@ -234,9 +234,11 @@ observable outcome per step:
 2. In window 1, set a manual scale on the active pen. In window 2's pen editor, change that pen's colour
    and its initial scale, then save. Window 1 recolours within 5 s and keeps its manual scale. Window 2
    recolours within 1 s and keeps its scale.
-3. In window 1, View -> Initial scale sets the active pen's axis to the saved pair; View -> Autoscale fits
-   it to the window.
-4. A double-click on the axis does what a single click does: it opens the bound editor.
+3. In window 1, View -> Pen scale -> Restore initial scale sets the active pen's axis to the saved pair;
+   View -> Pen scale -> Autoscale fits it to the window.
+4. A click on the axis opens the axis scale panel with the pen's name, unit and bounds; typing a bound and
+   pressing Enter applies it, a double-click does the same as a single click, and Autoscale in the panel
+   reverts the axis to Auto.
 5. In window 2, Edit -> Settings, switch the theme, save. Both windows switch theme within 2 s; no restart
    notice appears.
 6. Switch the language and save. The dialog shows the restart notice and "Restart now"; the other window
@@ -306,7 +308,8 @@ builds its stands through `TrendWindow.Build`.
 
 **Initial scale.** A pen's scale settings are built from its stored pair when the pen enters the chart, at
 the start or when the catalogue adds it, and never again from the catalogue. Two chart methods act on the
-active pen and return `false` when there is none:
+active pen and do nothing when there is none or when it is switched off (➕ deviation: both are `void`, and
+the hidden-pen no-op is new):
 
 - `AutoscaleActivePen` replaces `AutoscaleAxis` and sets `Auto`;
 - `RestoreInitialScale` rebuilds the settings from the pen's current stored pair, `Auto` when it has none.
@@ -584,17 +587,18 @@ The file-creating writer of commit 4966df7 is reverted; the message-line reason 
 - Modify: `docs/architecture/overview.md`
 - Modify: `docs/architecture/charting.md`
 
-- [ ] `ChartPenSet.Revise` stops replacing scale settings. Delete `PenRevision.ScaleChanged` and its
+- [x] `ChartPenSet.Revise` stops replacing scale settings. Delete `PenRevision.ScaleChanged` and its
       assertions (`PenListDeltaTests.cs:92`, `:101-107`, `:143`; `LiveCatalogueTests.cs:90`)
-- [ ] add `ChartPenSet.RestoreInitialScale(int penId)`; replace `TrendChartViewModel.AutoscaleAxis`
-      (`:345-350`) with `AutoscaleActivePen` and add `RestoreInitialScale`. Both act on the active pen,
-      return `false` without one, and apply the axis model and a redraw
-- [ ] write `ARevisedStoredScaleLeavesTheShownPenAlone`, keeping both a manual and an auto session scale
-- [ ] write `InitialScaleRestoresTheStoredPair`, a case where no stored pair gives `Auto`, and a test that a
+- [x] replace `TrendChartViewModel.AutoscaleAxis` (`:345-350`) with `AutoscaleActivePen` and add
+      `RestoreInitialScale`, which reads `PenScaleSettings.InitialFor` (➕ deviation: no
+      `ChartPenSet.RestoreInitialScale` exists, both methods are `void`). Both act on the active pen, do
+      nothing without one or while it is switched off, and apply the axis model and a redraw
+- [x] write `ARevisedStoredScale_LeavesTheShownPenAlone`, keeping both a manual and an auto session scale
+- [x] write `InitialScale_RestoresTheStoredPair`, a case where no stored pair gives `Auto`, and a test that a
       pen the catalogue adds takes its stored pair; port `TrendChartViewModelTests.cs:143-149`
-- [ ] `overview.md:436` and `charting.md:321`, `:356-359`: the stored pair is the initial scale and the
+- [x] `overview.md:436` and `charting.md:321`, `:356-359`: the stored pair is the initial scale and the
       restore target, and a changed pair leaves every shown pen alone
-- [ ] run both test projects - must pass before task 5
+- [x] run both test projects - must pass before task 5
 
 ### Task 5: Move autoscale from the axis to the View menu
 
@@ -611,16 +615,102 @@ The file-creating writer of commit 4966df7 is reverted; the message-line reason 
 - Modify: `docs/architecture/trend-interaction.md`
 - Modify: `docs/architecture/trend-feature-spec.md`
 
-- [ ] delete `ChartPressAction.AutoscaleAxis`, the click-count branch (`ChartPressRouter.cs:18`) and its
+- [x] delete `ChartPressAction.AutoscaleAxis`, the click-count branch (`ChartPressRouter.cs:18`) and its
       view case (`TrendChartView.axaml.cs:247-252`); `Route` loses its `clickCount` parameter
-- [ ] add `AutoscaleCommand` and `InitialScaleCommand` to `MainWindowViewModel`, always executable, and
+- [x] add `AutoscaleCommand` and `InitialScaleCommand` to `MainWindowViewModel`, always executable, and
       two View menu items bound to them, with labels in both resource files
-- [ ] update `ChartPressRouterTests`; replace `DoubleClickOnAxisRegion_RevertsToAutoscale`
+- [x] update `ChartPressRouterTests`; replace `DoubleClickOnAxisRegion_RevertsToAutoscale`
       (`ChartAxisRegionEditTests.cs:66-72`) with a test that a double-click opens the bound editor; write
       menu tests that each item invokes its chart method on the active pen
-- [ ] `trend-interaction.md:79`, `:132`, `:201` and `trend-feature-spec.md:67-68`: autoscale and initial
+- [x] `trend-interaction.md:79`, `:132`, `:201` and `trend-feature-spec.md:67-68`: autoscale and initial
       scale are View menu commands on the active pen
-- [ ] run the unit tests - must pass before task 6
+- [x] run the unit tests - must pass before task 6
+
+### Task 5a: ➕ Edit the active pen's scale in a panel at its axis
+
+A click on the axis opens a bare `TextBox` placed over the ScottPlot canvas by its margin
+(`Chart/TrendChartView.axaml:46`, `Chart/TrendChartView.axaml.cs:283-334`). It shows the axis value
+at the click point rather than a bound, and the half of the axis clicked silently decides whether the
+minimum or the maximum is edited (`Chart/ChartAxisRegion.cs:77`, `Chart/ChartAxisEdit.cs:5`). The two
+View menu commands sit among the panel toggles and do not say which pen they act on. Issue #86 asks
+for the native mechanism.
+
+The rule after this task:
+
+- A click on the active pen's axis opens an Avalonia `Flyout` anchored at the axis. Its header names
+  the pen and its unit. It holds Maximum and Minimum as plain `TextBox` fields (➕ deviation: not
+  `NumericUpDown`, whose text is re-parsed on every keystroke and keeps the last value that parsed)
+  seeded with the axis's current bounds, formatted and parsed by the pen editor's rule
+  (`PenFormRules.FormatBound`, `PenFormRules.TryReadBound`), a reserved message line, and three buttons:
+  Apply, Autoscale, Restore initial scale ("Вернуть начальную"). Escape and a click outside close it
+  without writing. Enter in either field applies (➕ deviation: a key binding on the two fields, not
+  `IsDefault` on Apply, because Avalonia's default-button handler listens on the visual root and the
+  overlay popup a headless test hosts never routes key events to it).
+- Apply sets both bounds as a manual scale on the pen the panel was opened for. A field that is not a
+  number in the current culture, an empty field, or a minimum not below the maximum is refused on the
+  message line, marks the field `invalid` and disables Apply; nothing is written and the panel never
+  resizes. Autoscale and Restore initial scale act on that same pen (➕ deviation: `AutoscalePen(int)` and
+  `RestoreInitialScale(int)` join the two active-pen methods).
+- The panel closes without writing when its pen leaves the chart, is hidden or stops being the active
+  pen while the panel is open (➕ deviation: `TrendChartViewModel.DrawnPenId`, the active pen while it is
+  visible, carries the rule).
+- The View menu carries one submenu whose header names the pen whose axis is drawn ("Шкала пера «Damper 01»",
+  "Pen scale: Damper 01"; while no axis is drawn, that is with every pen hidden or no pen, "Шкала пера" /
+  "Pen scale"), holding Autoscale and "Вернуть начальную шкалу" / "Restore initial scale". The header
+  follows visibility changes as well as the active pen and the pen names.
+- The inline `TextBox`, its margin placement, the half-of-axis choice and `ChartAxisEdit.SeedManualLimits`
+  go; the axis hit test stays.
+
+**Files:**
+- Modify: `SemiPlot/SemiPlot.UI/Chart/TrendChartView.axaml`, `TrendChartView.axaml.cs`
+- Create: the axis panel's view model and view under `SemiPlot/SemiPlot.UI/Chart`
+- Modify: `SemiPlot/SemiPlot.UI/Chart/ChartAxisRegion.cs`, delete `ChartAxisEdit.cs`
+- Modify: `SemiPlot/SemiPlot.UI/MainWindow/AppMenuBar.axaml`, `MainWindowViewModel.cs`
+- Modify: `Resources.resx`, `Resources.ru.resx`
+- Modify: the chart pointer, axis-region, menu bar and chart view model test classes
+- Modify: `docs/architecture/trend-interaction.md`, `trend-feature-spec.md`, `charting.md`,
+  `ui-text.md`, `ui-theme.md`, `readme.md`
+
+- [x] replace the inline editor with the axis `Flyout` and its view model as the rule states
+- [x] Apply validates both bounds and writes a manual scale on the active pen; Autoscale and Initial
+      scale call the existing chart methods and close the panel
+- [x] the View menu submenu with the drawn pen's name in its header, bound to `DrawnPenId` and the pen
+      names
+- [x] delete `ChartAxisEdit`, the half-of-axis choice and the inline `TextBox`
+- [x] write tests: a click on the axis opens the panel seeded with the current bounds and the pen's
+      name; Apply writes both bounds; an inverted or empty pair is refused with the panel's size
+      unchanged; Escape and a click outside write nothing; an unreadable entry, including a fraction in
+      the other culture's separator, is refused and never applied, Enter included; Enter on the focused
+      Autoscale button autoscales; Autoscale and Restore initial scale act on the pen the panel was opened
+      for; the panel closes when that pen is hidden, deactivated or removed; the submenu header follows
+      the drawn pen and reads "Pen scale" without one
+- [x] measure the panel and the submenu header in the real theme in both languages and record the
+      figures in `ui-theme.md`; update the listed docs
+- [x] run the unit tests - must pass before group C
+
+
+### Task 5b: ➕ Show the axis panel's bounds in the pen's format
+
+The axis scale panel seeds its two fields with the round-trip text of the bounds, so an autoscaled
+axis shows values such as 43,50529834. A pen's reading is rendered through
+`SemiPlot.Core.Trends.PenValueFormat` and nowhere else (`CLAUDE.md`, UI), with the stored mask and the
+`0.###` fallback; the panel's header already takes the pen's unit from the same settings.
+
+The rule after this task:
+
+- The panel seeds Maximum and Minimum through `PenValueFormat` with the pen's stored mask.
+- A field the operator leaves unchanged keeps the exact bound it was seeded from, so a mask that
+  rounds never moves the scale on Apply. Only a field whose text changed is parsed and written.
+- Parsing of typed text is unchanged (`PenFormRules.TryReadBound`).
+
+- [x] seed the two fields through `PenValueFormat` with the pen's mask
+- [x] keep the exact seeded bound for an unchanged field on Apply
+- [x] write tests: a masked pen seeds masked text; the `0.###` fallback without a mask; Apply with both
+      fields untouched leaves the exact bounds (a mask that rounds, e.g. "0" over 0.4..9.6); Apply with
+      one field edited writes the typed value and keeps the other exact
+- [x] update `ui-text.md` and `trend-interaction.md#the-axis-scale-panel`
+- [x] run the unit tests - must pass before group C
+
 
 ### Group C: another instance (PR 3)
 
@@ -867,31 +957,29 @@ The file-creating writer of commit 4966df7 is reverted; the message-line reason 
 
 **Executed by exec:**
 - branch: window-lifetime
+- branch: initial-scale
 
 ## Verify it yourself
 
-Group A (Tasks 1-3) only; Groups B-G are later branches.
+Group B (Tasks 4-5b) only; Group A shipped as #97 and #98, Groups C-G are later branches.
 
 1. Build and tests, from the repository root:
    - `dotnet build SemiPlot.slnx` - 0 warnings, 0 errors.
-   - `dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj` - 1438 passed.
+   - `dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj` - 1491 passed.
    - `dotnet test SemiPlot/SemiPlot.Tests.Integration/SemiPlot.Tests.Integration.csproj` - 136 passed
-     (needs Docker).
-2. `git grep -nE "SetChart|SetMinimap|SetCatalogueSync|TrackLayer\(null|_disposables.Add\(_coordinator\)|coordinator\.Start\(" -- SemiPlot`
-   prints nothing; on `master` it prints the replacement machinery and the keep-alive.
-3. The window's disposal on close is pinned by
-   `AppMainWindowTests.AStartShowsTheMainWindowOverTheContainersPanelAndClosingItDisposesTheComposition`:
-   delete `mainWindow.Closed += ...` in `SemiPlot/SemiPlot.UI/App.axaml.cs` and this test fails.
-   The order is pinned by `TrendWindowTests.DisposingTheWindowClosesTheLiveEdgeBeforeTheConnectionStream`.
-4. The startup-failure Settings rule: run the viewer with `--config-dir` pointing at a missing directory;
-   the failure window shows no Settings button. Point it at a copy of the shipped set with the empty
-   `password` in `connection.yaml`; the window shows Settings, Save writes the password into the existing
-   file, and a manual restart starts the viewer. Delete the `locale:` line of a copy and the button is
-   hidden.
-5. The failed start: stop the bench database and run the viewer with the three launch keys. A separate
-   startup-failure window opens with the failure text, its own message panel and the buttons Settings,
-   About and Exit; the main window's menu is not there. `StartupFailureWindowTests` covers it headless.
-6. The working window: `dotnet run --project SemiPlot/SemiPlot.AppHost`, then close the viewer window.
-   The chart, legend, minimap and status bar behave as on `master`; after close the log shows no
-   exception. Headless tests cannot show that no frame renders after `Closed` on Win32, so this run is
-   the only check of that assumption.
+     (needs Docker; do not run it at the same time as the unit suite).
+2. `git grep -nE "ScaleChanged|AutoscaleAxis" -- SemiPlot` prints nothing; on `master` it prints the
+   catalogue's scale replacement and the double-click autoscale.
+3. `TrendChartCatalogueTests.ARevisedStoredScale_LeavesTheShownPenAlone` fails on `master`, where a
+   revised stored pair replaced a shown pen's axis; `TrendChartViewModelTests.InitialScale_RestoresTheStoredPair`
+   pins View -> Pen scale -> Restore initial scale.
+4. On the demo stand (`dotnet run --project SemiPlot/SemiPlot.AppHost`):
+   - set a manual scale on the active pen by clicking its axis; in Edit -> Pens and groups change that
+     pen's "Initial scale, min/max" and save: the shown axis stays as you set it;
+   - View -> Pen scale -> Restore initial scale sets the axis to the saved pair; View -> Pen scale ->
+     Autoscale fits it to the window and keeps fitting as the window moves; both act only on the active
+     pen, and the submenu header names it;
+   - a click on the axis opens the axis scale panel with the pen's name, unit and bounds; a value that is
+     not a number in the OS regional format is refused on the message line and never applied;
+   - the pen editor opens at 1180 px wide, its two scale headers wrap onto two lines, and it cannot be
+     made narrower than 1100 px.

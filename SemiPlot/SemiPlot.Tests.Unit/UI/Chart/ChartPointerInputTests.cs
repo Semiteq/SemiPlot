@@ -1,31 +1,20 @@
-using System.Reactive.Concurrency;
-
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Threading;
-using Avalonia.VisualTree;
 
 using AwesomeAssertions;
-
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Reactive.Testing;
-
-using ReactiveUI.Avalonia;
 
 using ScottPlot;
 using ScottPlot.Avalonia;
 
-using SemiPlot.Core.Trends;
-using SemiPlot.Tests.Unit.UI.Bridge;
-using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
-using SemiPlot.UI.Messages;
 
 using Xunit;
+
+using static SemiPlot.Tests.Unit.UI.Chart.ChartViewTestBuilder;
 
 using Point = Avalonia.Point;
 
@@ -39,21 +28,17 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 [Trait("Category", "Unit")]
 public sealed class ChartPointerInputTests
 {
-	private const int WindowWidth = 900;
-	private const int WindowHeight = 600;
-
 	// Drag leftwards: Pan clamps From at FirstSample, so only a forward pan moves the window away from its
 	// startup position.
 	private const double DragDistancePixels = 120.0;
 	private const double HoverDistancePixels = 40.0;
-	private static readonly TimeSpan _batchWindow = TimeSpan.FromMilliseconds(33.0);
-	private static readonly DateTime _from = new(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
 
 	[AvaloniaFact]
 	public void PressMoveAndRelease_PanTheNavigationWindowByTheDraggedTimeDistance()
 	{
 		using var viewModel = CreateLoadedViewModel();
-		var (window, plotControl) = ShowChart(viewModel);
+		using var shown = ShowChart(viewModel);
+		var (window, plotControl) = shown;
 		var pressAt = DataAreaCenter(viewModel);
 		var moveTo = new Point(pressAt.X - DragDistancePixels, pressAt.Y);
 		var expectedShift = AnchorAt(viewModel.Plot, pressAt) - AnchorAt(viewModel.Plot, moveTo);
@@ -80,7 +65,8 @@ public sealed class ChartPointerInputTests
 	public void WheelUpThenWheelDown_NarrowThenWidenTheNavigationWindow()
 	{
 		using var viewModel = CreateLoadedViewModel();
-		var (window, plotControl) = ShowChart(viewModel);
+		using var shown = ShowChart(viewModel);
+		var (window, plotControl) = shown;
 		var wheelAt = ToWindow(plotControl, window, DataAreaCenter(viewModel));
 		var widthBefore = viewModel.Navigation.To - viewModel.Navigation.From;
 
@@ -98,7 +84,8 @@ public sealed class ChartPointerInputTests
 	public void CaptureLostMidDrag_EndsTheDrag_SoLaterMovesHoverInsteadOfPanning()
 	{
 		using var viewModel = CreateLoadedViewModel();
-		var (window, plotControl) = ShowChart(viewModel);
+		using var shown = ShowChart(viewModel);
+		var (window, plotControl) = shown;
 		var pressedPointer = CapturePointerOfNextPress(window);
 		var pressAt = DataAreaCenter(viewModel);
 		var dragTo = new Point(pressAt.X - DragDistancePixels, pressAt.Y);
@@ -122,34 +109,6 @@ public sealed class ChartPointerInputTests
 			fromAfterDrag, "no drag may remain in progress after capture loss");
 		viewModel.CursorTime.Should().NotBeNull(
 			"the move still reaches the view, so the unchanged window is not an unrouted event");
-	}
-
-	private static (Window Window, AvaPlot PlotControl) ShowChart(TrendChartViewModel viewModel)
-	{
-		var view = new TrendChartView
-		{
-			DataContext = viewModel
-		};
-		var window = new Window
-		{
-			Width = WindowWidth,
-			Height = WindowHeight,
-			Content = view
-		};
-
-		window.Show();
-		Dispatcher.UIThread.RunJobs();
-
-		var plotControl = view.GetVisualDescendants().OfType<AvaPlot>().Single();
-		// Both sides, because RenderInMemory takes both: a zero either way reaches ScottPlot as a throw
-		// rather than as a stated failure.
-		plotControl.Bounds.Width.Should().BeGreaterThan(0.0, "the shown window must lay the chart view out");
-		plotControl.Bounds.Height.Should().BeGreaterThan(0.0, "the shown window must lay the chart view out");
-		viewModel.Plot.RenderInMemory((int)plotControl.Bounds.Width, (int)plotControl.Bounds.Height);
-		viewModel.Plot.RenderManager.LastRender.Layout.DataRect.HasArea.Should().BeTrue(
-			"the view's pixel-to-time maths reads the last render's data area");
-
-		return (window, plotControl);
 	}
 
 	private static Func<IPointer> CapturePointerOfNextPress(Window window)
@@ -184,34 +143,5 @@ public sealed class ChartPointerInputTests
 		var x = plot.GetCoordinates(new Pixel((float)plotPoint.X, (float)plotPoint.Y)).X;
 
 		return LocalTimeAxis.FromAxis(x);
-	}
-
-	private static TrendChartViewModel CreateLoadedViewModel()
-	{
-		var scheduler = new TestScheduler();
-		var provider = new FakeDataProvider(scheduler, TimeSpan.FromMilliseconds(10.0));
-		var coordinator = new TrendCoordinator(
-			provider,
-			provider.Pens,
-			scheduler,
-			ImmediateScheduler.Instance,
-			_batchWindow);
-		// AvaloniaScheduler, as in production, and every test here disposes the view model:
-		// docs/architecture/testing-strategy.md#the-ui-scheduler-in-a-realised-view.
-		var viewModel = new TrendChartViewModel(
-			coordinator,
-			scheduler,
-			AvaloniaScheduler.Instance,
-			new MessagePanelViewModel(),
-			NullLogger<TrendChartViewModel>.Instance);
-		var state = viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
-		state.LoadHistory(new PenHistoryEnvelope(
-			1,
-			[_from, _from.AddMinutes(1.0)],
-			[1.0, 3.0],
-			[5.0, 9.0],
-			[2.0, 6.0]));
-
-		return viewModel;
 	}
 }

@@ -1,8 +1,8 @@
-using System.Globalization;
 using System.Reactive.Disposables;
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
@@ -31,8 +31,8 @@ public partial class TrendChartView : UserControl
 	// when the view drops the last handler.
 	private static readonly EventHandler<RenderDetails> _noRenderFinishedHandler = (_, _) => { };
 
+	private readonly PopupFlyoutBase _axisScaleFlyout;
 	private readonly CompositeDisposable _disposables = [];
-	private bool _axisEditEditsMax;
 	private VerticalLine? _deltaFirstLine;
 	private VerticalLine? _deltaSecondLine;
 	private Point? _dragOrigin;
@@ -49,10 +49,9 @@ public partial class TrendChartView : UserControl
 	public TrendChartView()
 	{
 		InitializeComponent();
+		_axisScaleFlyout = FlyoutBase.GetAttachedFlyout(PlotControl) as PopupFlyoutBase
+			?? throw new InvalidOperationException("The chart view declares its axis scale flyout in XAML.");
 		DataContextChanged += OnDataContextChanged;
-
-		AxisBoundEditor.KeyDown += OnAxisBoundEditorKeyDown;
-		AxisBoundEditor.LostFocus += (_, _) => HideAxisBoundEditor();
 
 		PlotControl.UserInputProcessor.Disable();
 		// AvaPlot marks every wheel event handled in its class handler, which would keep
@@ -143,6 +142,7 @@ public partial class TrendChartView : UserControl
 		_disposables.Clear();
 		_paintedAxisCount = -1;
 		_viewModel = DataContext as TrendChartViewModel;
+		AxisScale.DataContext = _viewModel?.AxisScale;
 
 		if (_viewModel is null)
 		{
@@ -150,6 +150,10 @@ public partial class TrendChartView : UserControl
 		}
 
 		PlotControl.Reset(_viewModel.Plot);
+		_disposables.Add(_viewModel.AxisScale.CloseRequests
+			.Subscribe(
+				_ => _axisScaleFlyout.Hide(),
+				ReportFailureOf(nameof(AxisScalePanelViewModel.CloseRequests))));
 
 		_lastRenderedDataAreaWidth = float.NaN;
 		var renderManager = _viewModel.Plot.RenderManager;
@@ -239,20 +243,12 @@ public partial class TrendChartView : UserControl
 		}
 
 		var position = eventArgs.GetPosition(PlotControl);
-		var region = ResolveAxisRegion(position);
-		var action = ChartPressRouter.Route(region is not null, eventArgs.ClickCount, _viewModel.ActiveLeftButtonTool);
+		var action = ChartPressRouter.Route(IsOverActiveAxis(position), _viewModel.ActiveLeftButtonTool);
 
 		switch (action)
 		{
-			case ChartPressAction.AutoscaleAxis:
-				HideAxisBoundEditor();
-				_viewModel.AutoscaleAxis(_viewModel.ActivePenId);
-				eventArgs.Handled = true;
-
-				break;
-
-			case ChartPressAction.EditAxisBound:
-				BeginAxisBoundEdit(region!, position);
+			case ChartPressAction.EditAxisScale:
+				OpenAxisScalePanel();
 				eventArgs.Handled = true;
 
 				break;
@@ -271,74 +267,19 @@ public partial class TrendChartView : UserControl
 		}
 	}
 
-	private ChartAxisRegion? ResolveAxisRegion(Point position)
+	private bool IsOverActiveAxis(Point position)
 	{
-		if (_viewModel!.ActivePenAxis is not { } axis)
-		{
-			return null;
-		}
-
-		if (ChartAxisRegion.TryCreate(PlotControl.Plot, axis) is not { } region
-			|| !region.Contains((float)position.X, (float)position.Y))
-		{
-			return null;
-		}
-
-		return region;
+		return _viewModel!.ActivePenAxis is { } axis
+			&& ChartAxisRegion.TryCreate(PlotControl.Plot, axis) is { } region
+			&& region.Contains((float)position.X, (float)position.Y);
 	}
 
-	private void BeginAxisBoundEdit(ChartAxisRegion region, Point position)
+	private void OpenAxisScalePanel()
 	{
-		_axisEditEditsMax = region.IsUpperHalf((float)position.Y);
-
-		AxisBoundEditor.Text = region.ValueAt((float)position.Y).ToString("0.###", CultureInfo.CurrentCulture);
-		AxisBoundEditor.Margin = new Thickness(position.X, position.Y, 0.0, 0.0);
-		AxisBoundEditor.IsVisible = true;
-		AxisBoundEditor.Focus();
-		AxisBoundEditor.SelectAll();
-	}
-
-	private void HideAxisBoundEditor()
-	{
-		AxisBoundEditor.IsVisible = false;
-	}
-
-	private void OnAxisBoundEditorKeyDown(object? sender, KeyEventArgs eventArgs)
-	{
-		if (eventArgs.Key == Key.Enter)
+		if (_viewModel!.AxisScale.Seed())
 		{
-			CommitAxisBoundEditor();
-			eventArgs.Handled = true;
-
-			return;
+			_axisScaleFlyout.ShowAt(PlotControl, true);
 		}
-
-		if (eventArgs.Key == Key.Escape)
-		{
-			HideAxisBoundEditor();
-			eventArgs.Handled = true;
-		}
-	}
-
-	private void CommitAxisBoundEditor()
-	{
-		if (_viewModel is null)
-		{
-			return;
-		}
-
-		if (double.TryParse(
-				AxisBoundEditor.Text,
-				NumberStyles.Float,
-				CultureInfo.CurrentCulture,
-				out var typedBound)
-			&& _viewModel.ScaleRangeForPen(_viewModel.ActivePenId) is { } currentRange)
-		{
-			var (min, max) = ChartAxisEdit.SeedManualLimits(typedBound, _axisEditEditsMax, currentRange);
-			_viewModel.SetAxisLimits(_viewModel.ActivePenId, min, max);
-		}
-
-		HideAxisBoundEditor();
 	}
 
 	private void BeginPan(PointerPressedEventArgs eventArgs)

@@ -35,9 +35,9 @@ public sealed class ChartPenSet(Plot plot, ChartAxisBinder axisBinder)
 			Remove(penId);
 		}
 
-		foreach (var revision in change.Revised)
+		foreach (var pen in change.Revised)
 		{
-			Revise(revision);
+			Revise(pen);
 		}
 
 		foreach (var pen in change.Added)
@@ -70,7 +70,7 @@ public sealed class ChartPenSet(Plot plot, ChartAxisBinder axisBinder)
 		_plot.Add.Plottable(line);
 
 		_pensById.Add(pen.PenId, new TrendPenState(pen, line) { IsVisible = pen.EnabledOnStart });
-		_settingsById.Add(pen.PenId, BuildScaleSettings(pen));
+		_settingsById.Add(pen.PenId, PenScaleSettings.InitialFor(pen));
 	}
 
 	private void Remove(int penId)
@@ -82,27 +82,9 @@ public sealed class ChartPenSet(Plot plot, ChartAxisBinder axisBinder)
 	}
 
 	// docs/architecture/charting.md#applying-a-catalogue-read
-	private void Revise(PenRevision revision)
+	private void Revise(Pen pen)
 	{
-		var pen = revision.Current;
-
 		_pensById[pen.PenId].Revise(pen);
-
-		if (revision.ScaleChanged)
-		{
-			_settingsById[pen.PenId] = BuildScaleSettings(pen);
-		}
 	}
 
-	private static PenScaleSettings BuildScaleSettings(Pen pen)
-	{
-		var settings = new PenScaleSettings(pen.PenId);
-
-		if (pen.ScaleMin is { } min && pen.ScaleMax is { } max)
-		{
-			settings = settings with { Mode = ScaleMode.Manual, ManualMin = min, ManualMax = max };
-		}
-
-		return settings;
-	}
 }

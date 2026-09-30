@@ -47,6 +47,16 @@
                       ToggleType="CheckBox"
                       IsChecked="{Binding IsMinimapVisible, Mode=OneWay}" />
             <Separator />
+            <MenuItem Name="ViewPenScale"
+                      Header="{Binding PenScaleHeader}">
+                <MenuItem Name="ViewAutoscale"
+                          Header="{x:Static text:Resources.MenuViewAutoscale}"
+                          Command="{Binding AutoscaleCommand}" />
+                <MenuItem Name="ViewInitialScale"
+                          Header="{x:Static text:Resources.MenuViewInitialScale}"
+                          Command="{Binding InitialScaleCommand}" />
+            </MenuItem>
+            <Separator />
             <MenuItem Name="ViewMessagePanel"
                       Header="{x:Static text:Resources.MenuViewMessagePanel}"
                       Command="{Binding MessagePanel.ToggleCommand}"

@@ -524,6 +524,51 @@ its one writer.
       `MainWindowViewModel.SetCatalogueSync`
 - [x] run `dotnet build SemiPlot.slnx` - clean before group B
 
+### Task 3a: ➕ Offer Settings only where it can save
+
+A missing configuration directory opens the startup-failure window, whose Settings button opens a
+dialog that cannot save: `SettingsViewModel.cs:64` enables Save only when both sections read, and
+`SettingsSave.StageSection` fails on any section error (`Settings/SettingsSave.cs:119-124`). The
+operator fills every field and Save stays disabled with no reason given.
+
+A missing or unreadable configuration is an installation fault, and the remedy text of the failure
+already names the path and the keys to create. The settings window keeps its rule: it edits only keys
+that already exist, each in the file that owns it, and creates no file.
+
+The rule after this task:
+
+- The startup-failure window shows Settings only when both sections read
+  (`SettingsSave.ReadOwned` succeeds for both when the window opens) and every key the dialog edits is
+  present in its section (`SettingsSave.FirstAbsentKey`). Otherwise the failure text alone
+  instructs the operator.
+- A dialog that cannot save states why on its reserved message line: the first section that fails to
+  read, then the first absent key, then the field rules. A disabled Save always carries a reason.
+
+The file-creating writer of commit 4966df7 is reverted; the message-line reason is kept.
+
+**Files:**
+- Modify: `SemiPlot/SemiPlot.Core/Configuration/ConfigurationSectionWriter.cs` (revert)
+- Modify: `SemiPlot/SemiPlot.UI/Settings/SettingsSave.cs` (revert)
+- Modify: `SemiPlot/SemiPlot.UI/Settings/SettingsViewModel.cs`
+- Modify: `SemiPlot/SemiPlot.UI/Startup/StartupFailureViewModel.cs`
+- Modify: the `ConfigurationSectionWriter`, `SettingsSave`, `SettingsViewModel` and `StartupFailureWindow`
+  test classes
+- Modify: `docs/architecture/overview.md`, `CLAUDE.md`, `docs/architecture/ui-text.md`,
+  `docs/architecture/data-integration.md`
+
+- [x] revert the file-creating writer of 4966df7: `ConfigurationSectionWriter`, `OwnedSection.Empty`,
+      the `SettingsSave` create, move and directory-cleanup paths, their tests and their documentation
+- [x] keep the dialog's stated reason: a section that fails to read shows its error on the message line
+      ahead of the field rules
+- [x] `StartupFailureViewModel` shows Settings only when both sections read and carry every key the dialog edits
+- [x] write tests: a failure window over a missing configuration directory, over a section with no files
+      and over an unreadable file shows no Settings; over an empty password it shows Settings, and a save
+      writes the password into the existing `connection.yaml`; a dialog over an unreadable section states
+      the section's error with Save disabled
+- [x] `overview.md#the-settings-window`, `CLAUDE.md`, `ui-text.md`, `data-integration.md`: the settings
+      window creates no file, and the failure window offers it only when both sections read and carry every edited key
+- [x] run the unit and integration tests - must pass before group B
+
 ### Group B: the initial scale (PR 2)
 
 ### Task 4: Apply the stored scale only when a pen enters the chart
@@ -829,7 +874,7 @@ Group A (Tasks 1-3) only; Groups B-G are later branches.
 
 1. Build and tests, from the repository root:
    - `dotnet build SemiPlot.slnx` - 0 warnings, 0 errors.
-   - `dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj` - 1426 passed.
+   - `dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj` - 1438 passed.
    - `dotnet test SemiPlot/SemiPlot.Tests.Integration/SemiPlot.Tests.Integration.csproj` - 136 passed
      (needs Docker).
 2. `git grep -nE "SetChart|SetMinimap|SetCatalogueSync|TrackLayer\(null|_disposables.Add\(_coordinator\)|coordinator\.Start\(" -- SemiPlot`
@@ -838,10 +883,15 @@ Group A (Tasks 1-3) only; Groups B-G are later branches.
    `AppMainWindowTests.AStartShowsTheMainWindowOverTheContainersPanelAndClosingItDisposesTheComposition`:
    delete `mainWindow.Closed += ...` in `SemiPlot/SemiPlot.UI/App.axaml.cs` and this test fails.
    The order is pinned by `TrendWindowTests.DisposingTheWindowClosesTheLiveEdgeBeforeTheConnectionStream`.
-4. The failed start: stop the bench database and run the viewer with the three launch keys. A separate
+4. The startup-failure Settings rule: run the viewer with `--config-dir` pointing at a missing directory;
+   the failure window shows no Settings button. Point it at a copy of the shipped set with the empty
+   `password` in `connection.yaml`; the window shows Settings, Save writes the password into the existing
+   file, and a manual restart starts the viewer. Delete the `locale:` line of a copy and the button is
+   hidden.
+5. The failed start: stop the bench database and run the viewer with the three launch keys. A separate
    startup-failure window opens with the failure text, its own message panel and the buttons Settings,
    About and Exit; the main window's menu is not there. `StartupFailureWindowTests` covers it headless.
-5. The working window: `dotnet run --project SemiPlot/SemiPlot.AppHost`, then close the viewer window.
+6. The working window: `dotnet run --project SemiPlot/SemiPlot.AppHost`, then close the viewer window.
    The chart, legend, minimap and status bar behave as on `master`; after close the log shows no
    exception. Headless tests cannot show that no frame renders after `Closed` on Win32, so this run is
    the only check of that assumption.

@@ -534,6 +534,12 @@
   <data name="SettingsFieldRequired" xml:space="preserve">
     <value>{0}: обязательное поле</value>
   </data>
+  <data name="SettingsSectionUnreadable" xml:space="preserve">
+    <value>{0}: файл не читается. Его имя в панели сообщений.</value>
+  </data>
+  <data name="SettingsKeyAbsent" xml:space="preserve">
+    <value>Ключ '{0}': ни один файл раздела его не содержит. Добавьте его в файл вручную.</value>
+  </data>
   <data name="PenFormNameRequired" xml:space="preserve">
     <value>Имя: обязательное поле</value>
   </data>

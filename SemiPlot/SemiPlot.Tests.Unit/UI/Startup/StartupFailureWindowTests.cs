@@ -12,8 +12,10 @@ using FluentResults;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Reactive.Testing;
 
+using SemiPlot.DataSource.Postgres.Configuration;
 using SemiPlot.Tests.Unit.UI.Settings;
 using SemiPlot.UI;
+using SemiPlot.UI.Localization;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
 using SemiPlot.UI.Settings;
@@ -90,13 +92,72 @@ public sealed class StartupFailureWindowTests
 	}
 
 	[AvaloniaFact]
-	public void TheSettingsButton_IsPresentOnlyWithAConfigurationDirectory()
+	public void TheSettingsButton_IsHiddenWithoutAConfigurationDirectory()
 	{
-		using var withDirectory = NewFailureViewModel(AppContext.BaseDirectory);
-		using var withoutDirectory = NewFailureViewModel(configDirectory: null);
+		using var viewModel = NewFailureViewModel(configDirectory: null);
 
-		SettingsButtonIsVisible(withDirectory).Should().BeTrue();
-		SettingsButtonIsVisible(withoutDirectory).Should().BeFalse("a failed argument parse names no directory");
+		viewModel.OffersSettings.Should().BeFalse("a failed argument parse names no directory");
+		SettingsButtonIsVisible(viewModel).Should().BeFalse();
+	}
+
+	[AvaloniaTheory]
+	[InlineData("missing-directory")]
+	[InlineData("no-files-in-a-section")]
+	[InlineData("unreadable-file")]
+	[InlineData("key-absent")]
+	public void TheSettingsButton_IsHiddenWhenASectionCannotSave(string fault)
+	{
+		var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
+		try
+		{
+			switch (fault)
+			{
+				case "missing-directory":
+					Directory.Delete(configDirectory, recursive: true);
+					break;
+				case "no-files-in-a-section":
+					File.Delete(Path.Combine(configDirectory, StartupProbe.ConnectionDirectoryName, "connection.yaml"));
+					break;
+				case "key-absent":
+					var appWithoutLocale = Path.Combine(configDirectory, StartupSequence.SettingsDirectoryName, "app.yaml");
+					File.WriteAllText(appWithoutLocale, "theme: light\n");
+					break;
+				default:
+					var appFile = Path.Combine(configDirectory, StartupSequence.SettingsDirectoryName, "app.yaml");
+					File.WriteAllText(appFile, "locale: [unclosed\n");
+					break;
+			}
+
+			using var viewModel = NewFailureViewModel(configDirectory);
+
+			viewModel.OffersSettings.Should().BeFalse();
+			((ICommand)viewModel.ShowSettingsCommand).CanExecute(null).Should().BeFalse();
+			SettingsButtonIsVisible(viewModel).Should().BeFalse();
+		}
+		finally
+		{
+			if (Directory.Exists(configDirectory))
+			{
+				Directory.Delete(configDirectory, recursive: true);
+			}
+		}
+	}
+
+	[AvaloniaFact]
+	public void TheSettingsButton_IsShownOverAnEmptyPassword()
+	{
+		var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
+		try
+		{
+			using var viewModel = NewFailureViewModel(configDirectory);
+
+			viewModel.OffersSettings.Should().BeTrue();
+			SettingsButtonIsVisible(viewModel).Should().BeTrue();
+		}
+		finally
+		{
+			Directory.Delete(configDirectory, recursive: true);
+		}
 	}
 
 	[AvaloniaFact]
@@ -184,17 +245,69 @@ public sealed class StartupFailureWindowTests
 	}
 
 	[AvaloniaFact]
-	public async Task TheSettingsCommand_OverAMissingDirectory_ReportsBothSectionsAndStillOpens()
+	public async Task TheSettingsDialog_OverAnEmptyPassword_WritesItIntoTheExistingConnectionFile()
 	{
-		var missingDirectory = Path.Combine(Path.GetTempPath(), "semiplot-missing-" + Guid.NewGuid().ToString("N"));
-		using var viewModel = NewFailureViewModel(missingDirectory);
-		var requests = new List<SettingsViewModel>();
-		using var subscription = viewModel.SettingsRequests.Subscribe(requests.Add);
+		var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
+		try
+		{
+			using var viewModel = NewFailureViewModel(configDirectory);
+			var window = new StartupFailureWindow { DataContext = viewModel };
+			window.Show();
+			Dispatcher.UIThread.RunJobs();
+			HeadlessInput.Click(window, window.FindControl<Button>("StartupFailureSettings")!);
+			await HeadlessWait.Until(() => window.OwnedWindows.OfType<SettingsDialog>().Any());
+			var dialog = window.OwnedWindows.OfType<SettingsDialog>().Single();
+			var settings = dialog.DataContext.Should().BeOfType<SettingsViewModel>().Which;
+			var save = dialog.FindControl<Button>("SettingsSaveButton")!;
 
-		await viewModel.ShowSettingsCommand.Execute();
+			save.IsEffectivelyEnabled.Should().BeFalse("the shipped password is empty");
+			HeadlessInput.Type(dialog, dialog.FindControl<TextBox>("SettingsPassword")!, "secret");
 
-		viewModel.MessagePanel.Entries.Should().HaveCount(2, "each unreadable section reports into the window's panel");
-		requests.Should().ContainSingle().Which.Dispose();
+			save.IsEffectivelyEnabled.Should().BeTrue(settings.ValidationMessage);
+			HeadlessInput.Click(dialog, save);
+			await HeadlessWait.Until(() => settings.IsRestartPending);
+
+			var connectionDirectory = Path.Combine(configDirectory, StartupProbe.ConnectionDirectoryName);
+			PostgresConnectionLoader.Load(connectionDirectory).Value.Password.Should().Be("secret");
+			Directory.GetFiles(connectionDirectory).Should().ContainSingle().Which.Should().EndWith("connection.yaml");
+			viewModel.MessagePanel.Entries.Should().BeEmpty();
+
+			dialog.Close();
+			Dispatcher.UIThread.RunJobs();
+			window.Close();
+		}
+		finally
+		{
+			Directory.Delete(configDirectory, recursive: true);
+		}
+	}
+
+	[AvaloniaFact]
+	public async Task TheSettingsDialog_OverAnUnreadableSection_StatesTheSectionAndKeepsSaveDisabled()
+	{
+		var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
+		try
+		{
+			var messagePanel = new MessagePanelViewModel();
+			var loggerFactory = NullLoggerFactory.Instance;
+			var connectionFile = Path.Combine(configDirectory, StartupProbe.ConnectionDirectoryName, "connection.yaml");
+			File.WriteAllText(connectionFile, "host: [unclosed\n");
+
+			using var settings = await SettingsViewModel.OpenAsync(configDirectory, messagePanel, loggerFactory);
+			var dialog = new SettingsDialog { DataContext = settings };
+			dialog.Show();
+			Dispatcher.UIThread.RunJobs();
+
+			dialog.FindControl<TextBlock>("SettingsValidationMessage")!.Text.Should()
+				.Be(Resources.FormatSettingsSectionUnreadable(Resources.SettingsConnectionHeader));
+			dialog.FindControl<Button>("SettingsSaveButton")!.IsEffectivelyEnabled.Should().BeFalse();
+			dialog.Close();
+			messagePanel.Dispose();
+		}
+		finally
+		{
+			Directory.Delete(configDirectory, recursive: true);
+		}
 	}
 
 	private static bool SettingsButtonIsVisible(StartupFailureViewModel viewModel)

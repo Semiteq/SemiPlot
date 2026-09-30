@@ -19,6 +19,9 @@ namespace SemiPlot.UI.Settings;
 /// <summary>One entry of a settings combo box: the token the file carries and the label the operator reads.</summary>
 public sealed record SettingsChoice(string Token, string Label);
 
+/// <summary>One key the dialog edits and how to read its current text off the view model.</summary>
+internal sealed record EditedKey(string Key, Func<SettingsViewModel, string?> Read);
+
 /// <summary>
 /// The settings window's state, populated from the section files as they are, never from the typed loaders,
 /// so the window opens with the values even when the start failed on them.
@@ -28,6 +31,7 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 	private readonly string _configDirectory;
 	private readonly MessagePanelViewModel _messagePanel;
 	private readonly ILogger<SettingsViewModel> _logger;
+	private readonly string _sectionRefusal;
 	private Dictionary<string, string> _loadedApp;
 	private Dictionary<string, string> _loadedConnection;
 
@@ -47,6 +51,7 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 
 		var appValues = ValuesOf(app);
 		var connectionValues = ValuesOf(connection);
+		_sectionRefusal = RefusalOf(app, connection);
 
 		SelectedLanguage = Match(Languages, appValues.GetValueOrDefault(AppSettingsLoader.LocaleKey));
 		SelectedTheme = Match(Themes, appValues.GetValueOrDefault(AppSettingsLoader.ThemeKey));
@@ -61,7 +66,7 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 		_loadedApp = SpelledAsInTheFile(CurrentApp(), appValues);
 		_loadedConnection = SpelledAsInTheFile(CurrentConnection(), connectionValues);
 
-		var bothLoaded = app.IsSuccess && connection.IsSuccess;
+		var canWriteSections = _sectionRefusal.Length == 0;
 		var canSave = this.WhenAnyValue(
 			vm => vm.SelectedLanguage,
 			vm => vm.SelectedTheme,
@@ -72,7 +77,7 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 			vm => vm.IsPasswordValid,
 			vm => vm.IsPollIntervalValid,
 			(language, theme, host, port, database, user, password, pollInterval) =>
-				bothLoaded
+				canWriteSections
 				&& language is not null
 				&& theme is not null
 				&& host
@@ -84,6 +89,23 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 
 		SaveCommand = ReactiveCommand.CreateFromTask(SaveAsync, canSave);
 	}
+
+	/// <summary>The keys the dialog edits per section, with the field each reads; null means no value to write.</summary>
+	internal static IReadOnlyList<EditedKey> AppKeys { get; } =
+	[
+		new(AppSettingsLoader.LocaleKey, vm => vm.SelectedLanguage?.Token),
+		new(AppSettingsLoader.ThemeKey, vm => vm.SelectedTheme?.Token)
+	];
+
+	internal static IReadOnlyList<EditedKey> ConnectionKeys { get; } =
+	[
+		new(PostgresConnectionLoader.HostKey, vm => vm.Host),
+		new(PostgresConnectionLoader.PortKey, vm => TextOf(vm.Port)),
+		new(PostgresConnectionLoader.DatabaseKey, vm => vm.Database),
+		new(PostgresConnectionLoader.UserKey, vm => vm.User),
+		new(PostgresConnectionLoader.PasswordKey, vm => vm.Password),
+		new(PostgresConnectionLoader.PollIntervalKey, vm => TextOf(vm.PollInterval))
+	];
 
 	public static decimal LowestPort => PostgresConnectionLoader.LowestPort;
 
@@ -101,13 +123,21 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 	public SettingsChoice? SelectedLanguage
 	{
 		get;
-		set => this.RaiseAndSetIfChanged(ref field, value);
+		set
+		{
+			this.RaiseAndSetIfChanged(ref field, value);
+			this.RaisePropertyChanged(nameof(ValidationMessage));
+		}
 	}
 
 	public SettingsChoice? SelectedTheme
 	{
 		get;
-		set => this.RaiseAndSetIfChanged(ref field, value);
+		set
+		{
+			this.RaiseAndSetIfChanged(ref field, value);
+			this.RaisePropertyChanged(nameof(ValidationMessage));
+		}
 	}
 
 	public string Host
@@ -189,7 +219,10 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 
 	public bool IsPollIntervalValid => IsWholeNumberIn(PollInterval, LowestPollInterval, HighestPollInterval);
 
-	/// <summary>The rule the first invalid field breaks, in form order; empty while every field is valid.</summary>
+	/// <summary>
+	/// The section a file cannot be read from or a key it lacks, else the rule the first invalid field breaks in form
+	/// order; empty while the form can save.
+	/// </summary>
 	public string ValidationMessage => FirstBrokenRule();
 
 	/// <summary>Set by a save that wrote something: what it wrote takes effect at the next start.</summary>
@@ -250,6 +283,21 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 
 	private string FirstBrokenRule()
 	{
+		if (_sectionRefusal.Length > 0)
+		{
+			return _sectionRefusal;
+		}
+
+		if (SelectedLanguage is null)
+		{
+			return Resources.FormatSettingsFieldRequired(Resources.SettingsLanguageLabel);
+		}
+
+		if (SelectedTheme is null)
+		{
+			return Resources.FormatSettingsFieldRequired(Resources.SettingsThemeLabel);
+		}
+
 		if (!IsHostValid)
 		{
 			return Resources.SettingsHostInvalid;
@@ -280,32 +328,27 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 
 	private Dictionary<string, string> CurrentApp()
 	{
-		var current = new Dictionary<string, string>(StringComparer.Ordinal);
-
-		if (SelectedLanguage is not null)
-		{
-			current[AppSettingsLoader.LocaleKey] = SelectedLanguage.Token;
-		}
-
-		if (SelectedTheme is not null)
-		{
-			current[AppSettingsLoader.ThemeKey] = SelectedTheme.Token;
-		}
-
-		return current;
+		return Current(AppKeys);
 	}
 
 	private Dictionary<string, string> CurrentConnection()
 	{
-		return new Dictionary<string, string>(StringComparer.Ordinal)
+		return Current(ConnectionKeys);
+	}
+
+	private Dictionary<string, string> Current(IReadOnlyList<EditedKey> keys)
+	{
+		var current = new Dictionary<string, string>(StringComparer.Ordinal);
+
+		foreach (var key in keys)
 		{
-			[PostgresConnectionLoader.HostKey] = Host,
-			[PostgresConnectionLoader.PortKey] = TextOf(Port),
-			[PostgresConnectionLoader.DatabaseKey] = Database,
-			[PostgresConnectionLoader.UserKey] = User,
-			[PostgresConnectionLoader.PasswordKey] = Password,
-			[PostgresConnectionLoader.PollIntervalKey] = TextOf(PollInterval)
-		};
+			if (key.Read(this) is { } text)
+			{
+				current[key.Key] = text;
+			}
+		}
+
+		return current;
 	}
 
 	// docs/architecture/overview.md#the-settings-window
@@ -323,6 +366,23 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 		return current
 			.Where(pair => !(loaded.TryGetValue(pair.Key, out var text) && text == pair.Value))
 			.ToDictionary(StringComparer.Ordinal);
+	}
+
+	private static string RefusalOf(Result<OwnedSection> app, Result<OwnedSection> connection)
+	{
+		if (app.IsFailed)
+		{
+			return Resources.FormatSettingsSectionUnreadable(Resources.SettingsInterfaceHeader);
+		}
+
+		if (connection.IsFailed)
+		{
+			return Resources.FormatSettingsSectionUnreadable(Resources.SettingsConnectionHeader);
+		}
+
+		var absentKey = SettingsSave.FirstAbsentKey(app.Value, connection.Value);
+
+		return absentKey is null ? string.Empty : Resources.FormatSettingsKeyAbsent(absentKey);
 	}
 
 	private IReadOnlyDictionary<string, string> ValuesOf(Result<OwnedSection> section)

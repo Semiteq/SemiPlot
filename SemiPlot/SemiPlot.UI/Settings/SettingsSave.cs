@@ -48,6 +48,15 @@ public static class SettingsSave
 		}
 	}
 
+	/// <summary>The first key the dialog edits that no file of its section carries, else null.</summary>
+	internal static string? FirstAbsentKey(OwnedSection app, OwnedSection connection)
+	{
+		var appKey = SettingsViewModel.AppKeys.FirstOrDefault(edited => !app.Owners.ContainsKey(edited.Key))?.Key;
+
+		return appKey
+			?? SettingsViewModel.ConnectionKeys.FirstOrDefault(edited => !connection.Owners.ContainsKey(edited.Key))?.Key;
+	}
+
 	private static string SectionDirectory(string configDirectory, ConfigurationSectionName section)
 	{
 		return Path.Combine(configDirectory, _sections.Single(loader => loader.Section == section).DirectoryName);

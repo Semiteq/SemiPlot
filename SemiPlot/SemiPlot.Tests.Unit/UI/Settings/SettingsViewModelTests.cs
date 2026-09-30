@@ -106,9 +106,9 @@ public sealed class SettingsViewModelTests : IDisposable
 	}
 
 	[AvaloniaFact]
-	public void ASectionThatFailedToReadIsReportedOnceAndBlocksTheSave()
+	public void ASectionThatCannotBeReadIsReportedOnceAndBlocksTheSaveWithAStatedReason()
 	{
-		Directory.Delete(_connectionDirectory, recursive: true);
+		WriteFile(_connectionDirectory, "connection.yaml", "host: [unclosed\n");
 
 		using var viewModel = Build();
 
@@ -116,18 +116,84 @@ public sealed class SettingsViewModelTests : IDisposable
 		viewModel.Host.Should().BeEmpty();
 		viewModel.SelectedLanguage!.Token.Should().Be("ru");
 		CanSave(viewModel).Should().BeFalse();
+		viewModel.ValidationMessage.Should().Be(
+			Resources.FormatSettingsSectionUnreadable(Resources.SettingsConnectionHeader));
 	}
 
 	[AvaloniaFact]
-	public void ASectionThatFailedToReadAgainCountsAgainstTheSameEntry()
+	public void ASectionThatCannotBeReadAgainCountsAgainstTheSameEntry()
 	{
-		Directory.Delete(_connectionDirectory, recursive: true);
+		WriteFile(_connectionDirectory, "connection.yaml", "host: [unclosed\n");
 
 		Build().Dispose();
 
 		Build().Dispose();
 
 		_messagePanel.Entries.Should().ContainSingle().Which.RepeatCount.Should().Be(2);
+	}
+
+	[AvaloniaFact]
+	public void ASectionWithADuplicateKeyBlocksTheSaveAndNamesTheSection()
+	{
+		WriteFile(_appDirectory, "app.yaml", "locale: ru\nlocale: en\ntheme: light\n");
+
+		using var viewModel = Build();
+
+		CanSave(viewModel).Should().BeFalse();
+		viewModel.ValidationMessage.Should().Be(
+			Resources.FormatSettingsSectionUnreadable(Resources.SettingsInterfaceHeader));
+	}
+
+	[AvaloniaTheory]
+	[InlineData(true, false)]
+	[InlineData(false, true)]
+	public void AMissingSectionFolderIsReportedAndBlocksTheSaveWithAStatedReason(bool appAbsent, bool connectionAbsent)
+	{
+		if (appAbsent)
+		{
+			Directory.Delete(_appDirectory, recursive: true);
+		}
+
+		if (connectionAbsent)
+		{
+			Directory.Delete(_connectionDirectory, recursive: true);
+		}
+
+		using var viewModel = Build();
+		viewModel.Password = "secret";
+
+		_messagePanel.Entries.Should().ContainSingle();
+		CanSave(viewModel).Should().BeFalse();
+		viewModel.ValidationMessage.Should().Be(Resources.FormatSettingsSectionUnreadable(
+			appAbsent ? Resources.SettingsInterfaceHeader : Resources.SettingsConnectionHeader));
+	}
+
+	[AvaloniaFact]
+	public void AnAppFileWithoutALocaleRefusesTheSaveAndNamesTheAbsentKey()
+	{
+		WriteFile(_appDirectory, "app.yaml", "theme: light\n");
+
+		using var viewModel = Build();
+		viewModel.SelectedLanguage = viewModel.Languages[0];
+		viewModel.Password = "secret";
+
+		CanSave(viewModel).Should().BeFalse();
+		viewModel.ValidationMessage.Should().Be(Resources.FormatSettingsKeyAbsent(AppSettingsLoader.LocaleKey));
+	}
+
+	[AvaloniaFact]
+	public void AConnectionFileWithoutAPortRefusesTheSaveAndNamesTheAbsentKey()
+	{
+		WriteFile(
+			_connectionDirectory,
+			"connection.yaml",
+			"host: 127.0.0.1\ndatabase: semiplot\nuser: semiplot\npassword: secret\npoll_interval_ms: 1000\n");
+
+		using var viewModel = Build();
+		viewModel.Port = 5432;
+
+		CanSave(viewModel).Should().BeFalse();
+		viewModel.ValidationMessage.Should().Be(Resources.FormatSettingsKeyAbsent(PostgresConnectionLoader.PortKey));
 	}
 
 	[AvaloniaFact]
@@ -159,6 +225,34 @@ public sealed class SettingsViewModelTests : IDisposable
 		viewModel.IsRestartPending.Should().BeTrue();
 		AppSettingsLoader.Load(_appDirectory).Value.Theme.Should().Be(AppThemeVariant.Dark);
 		File.ReadAllBytes(Path.Combine(_connectionDirectory, "connection.yaml")).Should().Equal(before);
+	}
+
+	[AvaloniaFact]
+	public async Task EveryFieldTheWindowEditsReachesTheFileTheLoadersRead()
+	{
+		using var viewModel = Build();
+		viewModel.SelectedLanguage = viewModel.Languages.Single(choice => choice.Token == "en");
+		viewModel.SelectedTheme = viewModel.Themes.Single(choice => choice.Token == "dark");
+		viewModel.Host = "10.20.30.40";
+		viewModel.Port = 5433;
+		viewModel.Database = "archive";
+		viewModel.User = "viewer";
+		viewModel.Password = "secret";
+		viewModel.PollInterval = 250;
+
+		await viewModel.SaveCommand.Execute();
+
+		_messagePanel.Entries.Should().BeEmpty();
+		var app = AppSettingsLoader.Load(_appDirectory).Value;
+		app.Locale.Should().Be(UiLanguage.En);
+		app.Theme.Should().Be(AppThemeVariant.Dark);
+		var connection = PostgresConnectionLoader.Load(_connectionDirectory).Value;
+		connection.Host.Should().Be("10.20.30.40");
+		connection.Port.Should().Be(5433);
+		connection.Database.Should().Be("archive");
+		connection.Username.Should().Be("viewer");
+		connection.Password.Should().Be("secret");
+		connection.PollInterval.Should().Be(TimeSpan.FromMilliseconds(250));
 	}
 
 	[AvaloniaFact]

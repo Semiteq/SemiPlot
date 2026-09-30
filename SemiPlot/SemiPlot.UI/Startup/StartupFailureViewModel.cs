@@ -34,6 +34,7 @@ public sealed class StartupFailureViewModel : ReactiveObject, IDisposable
 		Failure = failure;
 		MessagePanel = new MessagePanelViewModel();
 		_configDirectory = configDirectory;
+		OffersSettings = configDirectory is not null && EverySavedKeyPresent(configDirectory);
 		_loggerFactory = loggerFactory;
 		_logger = loggerFactory.CreateLogger<StartupFailureViewModel>();
 
@@ -47,7 +48,7 @@ public sealed class StartupFailureViewModel : ReactiveObject, IDisposable
 		_disposables.Add(ShowAboutCommand = ReactiveCommand.Create(
 			() => _aboutRequests.OnNext(AboutInfo.ForCurrentProcess())));
 		_disposables.Add(ShowSettingsCommand = ReactiveCommand.CreateFromTask(
-			RequestSettingsAsync, Observable.Return(configDirectory is not null)));
+			RequestSettingsAsync, Observable.Return(OffersSettings)));
 	}
 
 	public ArchiveFailureView Failure { get; }
@@ -55,8 +56,11 @@ public sealed class StartupFailureViewModel : ReactiveObject, IDisposable
 	/// <summary>The panel of this window alone; what the window opens reports here.</summary>
 	public MessagePanelViewModel MessagePanel { get; }
 
-	/// <summary>False after a failed argument parse, which leaves no directory to fix.</summary>
-	public bool HasConfigDirectory => _configDirectory is not null;
+	/// <summary>
+	/// True only when both configuration sections read as the files carry them; the dialog edits existing keys and
+	/// creates no file, so any other state leaves the failure text alone to instruct the operator.
+	/// </summary>
+	public bool OffersSettings { get; }
 
 	public IObservable<AboutInfo> AboutRequests => _aboutRequests.AsObservable();
 
@@ -75,6 +79,13 @@ public sealed class StartupFailureViewModel : ReactiveObject, IDisposable
 	public void ReportFailure(Exception failure)
 	{
 		MessagePanel.TryReportFailure(new ExceptionalError(failure), _logger);
+	}
+
+	private static bool EverySavedKeyPresent(string configDirectory)
+	{
+		var (app, connection) = SettingsSave.ReadOwned(configDirectory);
+
+		return app.IsSuccess && connection.IsSuccess && SettingsSave.FirstAbsentKey(app.Value, connection.Value) is null;
 	}
 
 	private async Task RequestSettingsAsync()

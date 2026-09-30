@@ -46,7 +46,7 @@
             <Button Name="StartupFailureSettings"
                     Content="{x:Static text:Resources.StartupFailureSettings}"
                     Command="{Binding ShowSettingsCommand}"
-                    IsVisible="{Binding HasConfigDirectory}"
+                    IsVisible="{Binding OffersSettings}"
                     Padding="12,2" />
             <Button Name="StartupFailureAbout"
                     Content="{x:Static text:Resources.StartupFailureAbout}"

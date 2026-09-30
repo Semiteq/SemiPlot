@@ -284,11 +284,21 @@ a port or poll interval that is not a whole number in range opens empty.
 
 The window reads the files, not the typed settings. `SettingsSave.ReadOwned` runs
 `ConfigurationSection.ReadOwned` over both section folders, which returns each section's scalar values
-as text and the file that owns each key, and the view model fills its fields from that. The typed loaders fail on exactly the values the window is there to fix, such as the
-shipped empty password, so a typed read would open the window empty on the startup-failure path.
-The failure window has a Settings button too: `App.Run` hands the configuration directory to the window
-it shows on both paths. When the argument parse failed, or `LogFileTarget.Prepare` did, the directory is
-null and the failure window shows no Settings button.
+as text and the file that owns each key, and the view model fills its fields from that. The typed
+loaders fail on exactly the values the window is there to fix, such as the shipped empty password, so a
+typed read would open the window empty on the startup-failure path.
+
+The failure window offers Settings only when both sections read and carry every key the dialog edits:
+`StartupFailureViewModel.OffersSettings` is true when `SettingsSave.ReadOwned` succeeds for both and
+`SettingsSave.FirstAbsentKey` finds nothing absent when the window opens. A missing configuration
+directory, a section folder with no `*.yaml` file, an unreadable file, and a required key that no file of
+its section carries leave the button hidden, and the
+failure text, which names the path and the keys to create, alone instructs the operator; the window
+creates no file, so a dialog over a section it cannot read, or over an absent key, has nothing to save into.
+`Edit` -> `Settings` over such a folder opens with Save disabled and the reason on the message line. An empty password
+still offers Settings, and a save writes it into the existing `connection.yaml`. `App.Run` hands the
+configuration directory to the window it shows on both paths. When the argument parse failed, or
+`LogFileTarget.Prepare` did, the directory is null and the failure window shows no Settings button.
 
 A save goes through `Settings/SettingsSave.Save`:
 
@@ -319,13 +329,15 @@ A save goes through `Settings/SettingsSave.Save`:
 A failed save reaches the message panel through `ArchiveFailureMapper`, and the dialog stays open. A
 save with no edit writes nothing and shows no restart notice. A section that fails to read is reported
 each time the dialog opens; the panel counts a repeat against its newest entry rather than adding one.
+The dialog also states the first such section on its message line, ahead of the field rules, with Save
+disabled (`SettingsViewModel.ValidationMessage`); a disabled Save always carries a reason.
 
 The staging folder inherits the protection of `<config-dir>`, not that of the section folders, and it
 holds the password in plain text while a save runs. One that cannot be removed stays until the operator
 deletes it; the log names it.
 
-The window edits only keys that already exist. Every key it writes is required by its loader, so a
-folder copied from the shipped set has an owner for each one. An edited key no file carries fails
+The window edits only keys that already exist and creates no file or folder. Every key it writes is
+required by its loader, so a folder copied from the shipped set has an owner for each one. An edited key no file carries fails
 with `SectionProblem.KeyAbsent`; the writer never picks a file for it.
 
 A rewrite parses the owning file into a mapping, sets the keys and serializes the whole mapping back

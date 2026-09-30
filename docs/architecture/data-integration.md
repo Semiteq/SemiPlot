@@ -673,7 +673,8 @@ failure.
 The container, the pens and the extent cross the boundary in a `StartupData` record inside a
 `Result`, so `TrendWindow.Build` awaits nothing. `Program.Main` passes the settings and that
 `Result` and the configuration directory to `App.Run(AppSettings?, Result<StartupData>, string?)`
-unconditionally, the directory reaching the settings window on both paths: on success `App` builds one
+unconditionally, the directory reaching the settings window on both paths (the failure window offers
+Settings only when both sections read and every key the dialog edits is present): on success `App` builds one
 `TrendWindow` (`overview.md#one-window-per-process`); on failure `App` maps the error through
 `ArchiveFailureMapper` and opens `Startup/StartupFailureWindow`, which names what broke and what to do
 and holds a message panel of its own. That window has no chart, legend or minimap and no service

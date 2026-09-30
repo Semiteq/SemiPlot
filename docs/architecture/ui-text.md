@@ -136,9 +136,12 @@ The `Edit` menu is `MenuEdit` with two items, `MenuEditSettings` and `MenuEditPe
 `Settings*Label` per field, `SettingsSave` and `SettingsClose`. The language and theme choices read
 `SettingsLanguageRussian`, `SettingsLanguageEnglish`, `SettingsThemeLight` and `SettingsThemeDark`:
 the combo box shows the label and the file keeps the token `SettingsVocabulary` pairs with it.
-The dialog's message line, left of the buttons, shows the rule the first invalid field breaks, in form
-order: `SettingsHostInvalid`, `SettingsPortInvalid`, `SettingsPollIntervalInvalid`, and
-`SettingsFieldRequired` for a blank database, user or password, which takes the field's label as `{0}`.
+The dialog's message line, left of the buttons, shows `SettingsSectionUnreadable` with the section header
+as `{0}` when a section fails to read, else `SettingsKeyAbsent` with the first edited key no file of its
+section carries as `{0}`, else the rule the first invalid field breaks, in form order:
+`SettingsHostInvalid`, `SettingsPortInvalid`, `SettingsPollIntervalInvalid`, and `SettingsFieldRequired`
+for a blank database, user or password or an unchosen language or theme, which takes the field's label as
+`{0}`.
 `SettingsViewModel.ValidationMessage` picks it. The line is not under the field, so each message opens
 with the field it names, and each is one short line in both languages ("Host: expected an IP address
 such as 127.0.0.1"); `ui-theme.md#a-form-never-resizes-on-validation` holds the width it has to fit.

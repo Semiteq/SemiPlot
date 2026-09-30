@@ -83,11 +83,10 @@ public sealed class LiveCatalogueTests(PostgresContainerFixture postgresContaine
 
 		var delta = PenListDelta.Between(before, await ReadPensAsync(provider));
 
-		var revision = delta.Revised.Should().ContainSingle().Which;
+		var revised = delta.Revised.Should().ContainSingle().Which;
 
-		revision.Current.PenId.Should().Be(HeaterId);
-		revision.Current.Color.Should().Be("#ABCDEF");
-		revision.ScaleChanged.Should().BeFalse();
+		revised.PenId.Should().Be(HeaterId);
+		revised.Color.Should().Be("#ABCDEF");
 		delta.ChangesPenSet.Should().BeFalse();
 	}
 
@@ -113,11 +112,11 @@ public sealed class LiveCatalogueTests(PostgresContainerFixture postgresContaine
 
 		var delta = PenListDelta.Between(before, await ReadPensAsync(provider));
 
-		var revision = delta.Revised.Should().ContainSingle().Which;
+		var revised = delta.Revised.Should().ContainSingle().Which;
 
-		revision.Current.PenId.Should().Be(HeaterId);
-		revision.Previous.Groups.Should().NotContain(VacuumGroup);
-		revision.Current.Groups.Should().Contain(VacuumGroup);
+		revised.PenId.Should().Be(HeaterId);
+		before.Should().ContainSingle(pen => pen.PenId == HeaterId).Which.Groups.Should().NotContain(VacuumGroup);
+		revised.Groups.Should().Contain(VacuumGroup);
 		delta.ChangesPenSet.Should().BeFalse();
 	}
 

@@ -7,7 +7,7 @@ public sealed record PenListDelta(
 	IReadOnlyList<Pen> Current,
 	IReadOnlyList<Pen> Added,
 	IReadOnlyList<int> RemovedPenIds,
-	IReadOnlyList<PenRevision> Revised)
+	IReadOnlyList<Pen> Revised)
 {
 	/// <summary>Nothing added, removed or revised; a new order alone is no change.</summary>
 	public bool IsEmpty => Added.Count == 0 && RemovedPenIds.Count == 0 && Revised.Count == 0;
@@ -20,7 +20,7 @@ public sealed record PenListDelta(
 		var currentIds = current.Select(pen => pen.PenId).ToHashSet();
 
 		var added = new List<Pen>();
-		var revised = new List<PenRevision>();
+		var revised = new List<Pen>();
 
 		foreach (var pen in current)
 		{
@@ -30,7 +30,7 @@ public sealed record PenListDelta(
 			}
 			else if (!previousPen.Equals(pen))
 			{
-				revised.Add(new PenRevision(previousPen, pen));
+				revised.Add(pen);
 			}
 		}
 
@@ -41,11 +41,4 @@ public sealed record PenListDelta(
 
 		return new PenListDelta(current, added, removedPenIds, revised);
 	}
-}
-
-/// <summary>One pen present in both reads whose stored settings differ.</summary>
-public sealed record PenRevision(Pen Previous, Pen Current)
-{
-	public bool ScaleChanged =>
-		!Nullable.Equals(Previous.ScaleMin, Current.ScaleMin) || !Nullable.Equals(Previous.ScaleMax, Current.ScaleMax);
 }

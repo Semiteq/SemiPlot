@@ -10,6 +10,8 @@ using FluentResults;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Reactive.Testing;
 
+using ReactiveUI;
+
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Bridge;
@@ -154,15 +156,172 @@ public sealed class TrendChartViewModelTests
 	}
 
 	[AvaloniaFact]
-	public void AutoscaleAxis_RevertsPenToAutoMode()
+	public void InitialScale_RestoresTheStoredPair()
 	{
-		var (viewModel, _, _, _) = CreateViewModel();
-		viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
+		var (viewModel, _, _, provider) = CreateViewModel();
+		var catalogue = provider.Pens;
+		viewModel.ApplyCatalogue(catalogue);
 		viewModel.SetAxisLimits(1, 10.0, 90.0);
+		viewModel.ApplyCatalogue([catalogue[0] with { ScaleMin = 0.0, ScaleMax = 50.0 }, catalogue[1]]);
 
-		viewModel.AutoscaleAxis(1).Should().BeTrue();
+		viewModel.RestoreInitialScale();
+
+		viewModel.ScaleSettings[1].Should().Be(new PenScaleSettings(1)
+		{
+			Mode = ScaleMode.Manual,
+			ManualMin = 0.0,
+			ManualMax = 50.0
+		});
+		viewModel.ScaleRangeForPen(1)!.Value.Should().Be((0.0, 50.0));
+	}
+
+	[AvaloniaFact]
+	public void InitialScaleWithNoStoredPair_IsAuto()
+	{
+		var (viewModel, _, _, provider) = CreateViewModel();
+		var catalogue = provider.Pens;
+		viewModel.ApplyCatalogue([catalogue[0] with { ScaleMin = 0.0, ScaleMax = 50.0 }, catalogue[1]]);
+		viewModel.ApplyCatalogue([catalogue[0] with { ScaleMin = null, ScaleMax = null }, catalogue[1]]);
+
+		viewModel.RestoreInitialScale();
 
 		viewModel.ScaleSettings[1].Mode.Should().Be(ScaleMode.Auto);
+	}
+
+	[AvaloniaFact]
+	public void TheScaleCommandsWithNoPens_ChangeNothing()
+	{
+		var (viewModel, _, _, _) = CreateViewModel();
+
+		viewModel.RestoreInitialScale();
+		viewModel.AutoscaleActivePen();
+
+		viewModel.ScaleSettings.Should().BeEmpty();
+	}
+
+	[AvaloniaFact]
+	public void InitialScale_ActsOnTheActivePenOnly()
+	{
+		var (viewModel, _, _, provider) = CreateViewModel();
+		viewModel.ApplyCatalogue([.. provider.Pens.Select(pen => pen with { ScaleMin = 5.0, ScaleMax = 50.0 })]);
+		viewModel.SetAxisLimits(1, 10.0, 90.0);
+		viewModel.SetAxisLimits(2, 20.0, 80.0);
+		viewModel.SetActivePen(2);
+
+		viewModel.RestoreInitialScale();
+
+		viewModel.ScaleRangeForPen(2)!.Value.Should().Be((5.0, 50.0));
+		viewModel.ScaleRangeForPen(1)!.Value.Should().Be((10.0, 90.0));
+	}
+
+	[AvaloniaFact]
+	public void Autoscale_ActsOnTheActivePenOnly()
+	{
+		var (viewModel, _, _, provider) = CreateViewModel();
+		viewModel.ApplyCatalogue(provider.Pens);
+		viewModel.SetAxisLimits(1, 10.0, 90.0);
+		viewModel.SetAxisLimits(2, 20.0, 80.0);
+		viewModel.SetActivePen(2);
+
+		viewModel.AutoscaleActivePen();
+
+		viewModel.ScaleSettings[2].Mode.Should().Be(ScaleMode.Auto);
+		viewModel.ScaleSettings[1].Mode.Should().Be(ScaleMode.Manual);
+	}
+
+	[AvaloniaFact]
+	public void TheScaleCommands_LeaveAHiddenActivePenAlone()
+	{
+		var (viewModel, _, _, provider) = CreateViewModel();
+		viewModel.ApplyCatalogue([.. provider.Pens.Select(pen => pen with { ScaleMin = 5.0, ScaleMax = 50.0 })]);
+		viewModel.SetAxisLimits(1, 10.0, 90.0);
+		viewModel.SetPenVisibility(2, false);
+		viewModel.SetPenVisibility(1, false);
+		viewModel.ActivePenId.Should().Be(1);
+
+		viewModel.RestoreInitialScale();
+		viewModel.ScaleRangeForPen(1)!.Value.Should().Be((10.0, 90.0));
+
+		viewModel.AutoscaleActivePen();
+		viewModel.ScaleSettings[1].Mode.Should().Be(ScaleMode.Manual);
+	}
+
+	[AvaloniaFact]
+	public void ActivePenAxis_ResolvesToTheInstanceTheActivePenRendersAgainst()
+	{
+		var (viewModel, _, _, provider) = CreateViewModel();
+		viewModel.ApplyCatalogue(provider.Pens);
+		viewModel.SetActivePen(2);
+
+		viewModel.ActivePenAxis.Should().BeSameAs(viewModel.FindPen(2)!.Line.Axes.YAxis);
+		viewModel.ActivePenAxis.Should().NotBeSameAs(viewModel.FindPen(1)!.Line.Axes.YAxis);
+	}
+
+	[AvaloniaFact]
+	public void DrawnPenId_FollowsTheActivePenAndItsVisibility()
+	{
+		var (viewModel, _, _, provider) = CreateViewModel();
+		var changes = new List<int?>();
+		using var subscription = viewModel.WhenAnyValue(chart => chart.DrawnPenId).Subscribe(changes.Add);
+		viewModel.DrawnPenId.Should().BeNull("no pen is shown yet");
+
+		viewModel.ApplyCatalogue(provider.Pens);
+		viewModel.SetActivePen(2);
+		viewModel.SetPenVisibility(2, false);
+		viewModel.SetPenVisibility(1, false);
+		viewModel.SetPenVisibility(1, true);
+
+		changes.Should().Equal(null, 1, 2, 1, null, 1);
+	}
+
+	[AvaloniaFact]
+	public void AutoscalePen_ActsOnTheNamedPenWhateverIsActive()
+	{
+		var (viewModel, _, _, provider) = CreateViewModel();
+		viewModel.ApplyCatalogue(provider.Pens);
+		viewModel.SetAxisLimits(1, 10.0, 90.0);
+		viewModel.SetAxisLimits(2, 20.0, 80.0);
+
+		viewModel.AutoscalePen(2).Should().BeTrue();
+
+		viewModel.ScaleSettings[2].Mode.Should().Be(ScaleMode.Auto);
+		viewModel.ScaleSettings[1].Mode.Should().Be(ScaleMode.Manual);
+	}
+
+	[AvaloniaFact]
+	public void RestoreInitialScale_ForANamedPen_ActsOnThatPenAndRefusesAHiddenOne()
+	{
+		var (viewModel, _, _, provider) = CreateViewModel();
+		viewModel.ApplyCatalogue([.. provider.Pens.Select(pen => pen with { ScaleMin = 5.0, ScaleMax = 50.0 })]);
+		viewModel.SetAxisLimits(1, 10.0, 90.0);
+		viewModel.SetAxisLimits(2, 20.0, 80.0);
+
+		viewModel.RestoreInitialScale(2).Should().BeTrue();
+		viewModel.ScaleRangeForPen(2)!.Value.Should().Be((5.0, 50.0));
+		viewModel.ScaleRangeForPen(1)!.Value.Should().Be((10.0, 90.0));
+
+		viewModel.SetPenVisibility(2, false);
+
+		viewModel.RestoreInitialScale(2).Should().BeFalse();
+		viewModel.AutoscalePen(2).Should().BeFalse();
+		viewModel.AutoscalePen(99).Should().BeFalse();
+	}
+
+	[AvaloniaFact]
+	public void InitialScale_RequestsARedraw()
+	{
+		var scheduler = new TestScheduler();
+		using var viewModel = CreateChart(scheduler);
+		viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000", ScaleMin: 5.0, ScaleMax: 50.0));
+		viewModel.SetAxisLimits(1, 10.0, 90.0);
+		scheduler.AdvanceBy(BatchWindow.Ticks * 2);
+		var redraws = 0;
+		using var subscription = viewModel.RedrawRequested.Subscribe(_ => redraws++);
+
+		viewModel.RestoreInitialScale();
+		scheduler.AdvanceBy(BatchWindow.Ticks * 2);
+
+		redraws.Should().Be(1);
 	}
 
 	[AvaloniaFact]

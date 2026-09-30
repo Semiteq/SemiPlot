@@ -97,6 +97,28 @@ public sealed class TrendChartRenderThreadTests
 		lockHeldAtEachSwitch.Should().NotBeEmpty().And.AllSatisfy(isHeld => isHeld.Should().BeFalse());
 	}
 
+	// docs/architecture/charting.md#the-plots-own-lists-and-the-render-thread
+	[AvaloniaFact]
+	public void ApplyCatalogue_RaisesNoNotificationWhileThePlotIsLocked()
+	{
+		using var chart = CreateChart(new TestScheduler());
+		var first = new Pen(1, "Pen 1", ["Group A"], "#ff0000");
+		var second = new Pen(2, "Pen 2", ["Group A"], "#00ff00");
+		chart.ApplyCatalogue([first, second]);
+		chart.SetActivePen(second.PenId);
+		var raised = new List<(string? Name, bool IsLockHeld)>();
+		chart.PropertyChanged += (_, args) => raised.Add((args.PropertyName, Monitor.IsEntered(chart.Plot.Sync)));
+
+		chart.ApplyCatalogue([first]);
+		chart.ApplyCatalogue([first, second]);
+		chart.ApplyCatalogue([]);
+
+		raised.Should().Contain(entry => entry.Name == nameof(chart.ActivePenId));
+		raised.Should().Contain(entry => entry.Name == nameof(chart.DrawnPenId));
+		raised.Should().Contain(entry => entry.Name == nameof(chart.ScalesRevision));
+		raised.Should().AllSatisfy(entry => entry.IsLockHeld.Should().BeFalse());
+	}
+
 	private static void RenderFrame(Plot plot)
 	{
 		using var image = plot.GetImage(PlotWidth, PlotHeight);

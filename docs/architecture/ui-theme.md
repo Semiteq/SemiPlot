@@ -50,11 +50,11 @@ control, in each state the tree can reach.
 | `CheckBoxCheckedDefaultBackground` | The legend's checked box, and a group header's indeterminate box | `#3574F0` | `#3574F0` |
 | `CheckBoxCheckedDefaultBorderBrush` | The legend's checked box, and a group header's indeterminate box | `#3574F0` | `#3574F0` |
 | `CheckBoxPointeroverBorderBrush` | The legend's hovered box | `#3574F0` | `#3574F0` |
-| `TextBoxFocusBorderBrush` | The focused axis-bound editor | `#3574F0` | `#3574F0` |
+| `TextBoxFocusBorderBrush` | The focused field of the axis scale panel | `#3574F0` | `#3574F0` |
 | `WindowDefaultBackground` | The window ground | `#FFFFFF` | `#1E1F22` |
 | `MenuFlyoutBackground` | Every open submenu, the `TextBox` context menu included | `#F7F8FA` | `#2B2D30` |
 | `MenuFlyoutBorderBrush` | The same submenu's border | `#EBECF0` | `#393B40` |
-| `MenuItemSeparatorBackground` | The `Separator` in the View menu | `#EBECF0` | `#393B40` |
+| `MenuItemSeparatorBackground` | The `Separator`s in the View menu | `#EBECF0` | `#393B40` |
 | `TabItemLineHeaderForeground` | A pen editor tab header at rest | `#818594` | `#6F737A` |
 | `TabItemLineHeaderPointeroverForeground`, `TabItemLineHeaderSelectedForeground` | A hovered tab header, and the selected one | `#000000` | `#DFE1E5` |
 | `TabItemLinePipeSelectedBackground` | The selected tab's underline | `#3574F0` | `#3574F0` |
@@ -128,7 +128,7 @@ has no configured locale and reads its window in the bootstrap one.
 `AppConfigurationTests.ASettingsFailure_StillHandsSemiTheBootstrapLocale` calls `App.Configure` with
 null settings and reads `STRING_MENU_COPY` back off `Application.Resources`, so moving the call
 inside the guard turns it red. The surfaces this tree shows are the window's own `Menu` and the
-context menu of the axis-bound editor's `TextBox`.
+context menu of the axis scale panel's fields.
 
 ## Corner radius sits outside the theme dictionaries
 
@@ -203,12 +203,41 @@ reserved line. A longer label, button or message is measured the same way before
 `SettingsViewTests.TheDialog_KeepsItsSizeAndItsButtonsWhenAFieldTurnsInvalid` gates the rule: the
 dialog's and the save button's `Bounds` are equal before and after an invalid host.
 
+### The axis scale panel
+
+`Chart/AxisScalePanel` is a `Flyout` form under the same rule. The panel is 360 px wide, with rows that exist
+in every state: the pen name and unit, two `TextBox` rows, the reserved message line (`form-message`, 40 px) and
+two rows of buttons, Autoscale and Restore initial scale side by side, Apply across both. An invalid or empty
+field takes the `invalid` border and Apply is disabled, so nothing appears or disappears.
+
+Measured with Skia and HarfBuzz, in the real theme, with the pen "Damper valve 01" in mTorr:
+
+| | English | Russian |
+| --- | --- | --- |
+| Panel | 360 x 235 px | 360 x 235 px |
+| Flyout presenter | 386 x 261 px | 386 x 261 px |
+| Widest button text, Restore initial scale | 127.9 px in a 176 px button | 137.3 px in a 176 px button |
+| Longest message text | 292.7 px | 306.9 px |
+| Panel and presenter size with the pair inverted | unchanged | unchanged |
+| Panel and presenter size with a field empty | unchanged | unchanged |
+| Panel and presenter size with a field unreadable | unchanged | unchanged |
+| Submenu header text, "Damper valve 01" | 181.3 px, in a 270 px item | 215.1 px, in a 304 px item |
+
+The presenter is the 360 px panel plus 8 px padding and a 1 px border on each side, a 378 x 253 px box, plus a
+4 px margin on each side that the theme reserves for the shadow. The 360 px width holds the longest message on
+one line in both languages. Each button is half the width, so the widest label keeps 176 - 24 - 137.3 = 14.7 px
+in Russian and 176 - 24 - 127.9 = 24.1 px in English. A longer label or message is measured the same way before
+it ships. `AxisScalePanelViewTests.AnInvertedPair_ShowsTheMessageKeepsThePanelsSizeAndEnterWritesNothing` and
+`AnEmptyField_ShowsTheMessageKeepsThePanelsSizeAndEnterWritesNothing` gate the size under the test font, in both
+cultures.
+
 ### A resizable window keeps its fixed parts
 
 The pen editor is the one form the operator may resize, because its table grows with the catalogue.
 `PenEditor/PenEditorWindow.axaml` opens at a fixed `Width` and `Height`, 1180 x 720 px, with
-`SizeToContent="Manual"` and `CanResize="True"`: the operator may widen it, and nothing inside it sizes
-the window. The rule above holds for every part but the two lists:
+`MinWidth="1100"`, `SizeToContent="Manual"` and `CanResize="True"`: the operator may widen it, and nothing
+inside it sizes the window. The smallest screen the editor opens on is 1280 px wide; the 720 px height exceeds
+the working area of a 768 px screen. The rule above holds for every part but the two lists:
 
 - Resizing grows the pen table and the membership list only. The form panel
   (240 px high), the `Groups` tab's side panel (320 px wide), its confirmation row (32 px high) and the
@@ -225,21 +254,30 @@ the window. The rule above holds for every part but the two lists:
 - An invalid field is marked by the `invalid` class alone. The line-style combo box and the "on start"
   checkbox refuse no value, and `Forms.axaml` styles `invalid` on `TextBox` and `NumericUpDown` only, so
   a failed write of either shows on the message line and in the panel only.
+- A header button wraps its text (`TextWrapping="Wrap"`) and every header button is 44 px high, so the
+  two-line scale headers do not change the row's height between cultures. The 44 px is chosen, not measured.
 
-Measured on 2026-09-28 with Skia and HarfBuzz, every field valid. The widest Russian headers are
-`PenEditorColumnOnStart` at 101 px and `PenEditorColumnScaleMax` at 82 px, and the widest line-style
-label is `PenLineStyleStepped` at 69 px. Each fixed column is at least 1.1 times its widest header or
-fixed-vocabulary cell, plus the 12 px cell margin, which gives the widths above and leaves the groups
-column 180 px at the opening width. At 1180 x 720 px the table shows 12 rows. The form's natural size
-is 597 x 195 px in English and 635 x 195 px in Russian, inside a 1156 x 232 px area. The longest form
-message is 379 px on a 1156 px line. Measured on 2026-09-29, with a three-digit added count the bottom
-bar needs 472 px in English, 210 px for the count, 12 px between and 250 px for "Refresh pen list", and
-640 px in Russian, 294 + 12 + 334 px for «Обновить список перьев»; both fit the 1180 px opening width.
+Measured on 2026-09-30 with Skia and HarfBuzz, the composite Inter font at 14 px, every field valid. The fixed
+columns total 976 px and the window margin is 24 px, so no fixed column clips from 1000 px up. `MinWidth` 1100
+leaves the groups column 100 px, and it gets 180 px at the opening width. The two `PenEditorColumnScale*`
+headers measure 106.9 and 109.4 px in English and 145.2 and 147.3 px in Russian on one line, and wrap to two
+lines of at most 81.4 px in English and 79.1 px in Russian, inside the 90 px a 104 px column leaves after its
+padding and border. The widest other Russian header is `PenEditorColumnOnStart` at 86.1 px, and the widest
+line-style label is `PenLineStyleStepped` at 69 px. Each fixed column is at least 1.1 times its widest header
+line (the wrapped line for the two `PenEditorColumnScale*` headers) or fixed-vocabulary cell, plus the 12 px
+cell margin. At 1180 x 720 px the table shows 11 rows. The form's natural size is 703 x 195 px in English and
+778 x 195 px in Russian, inside a 1156 x 232 px area. The longest form message is `PenFormMaskInvalid` at
+476.6 px in English and 480.3 px in Russian on a 1156 px line; `PenFormScaleInverted` is 371.3 px in English
+and 434.0 px in Russian. Measured on 2026-09-29, with a three-digit added count the bottom bar needs 472 px in
+English, 210 px for the count, 12 px between and 250 px for "Refresh pen list", and 640 px in Russian, 294 +
+12 + 334 px for «Обновить список перьев»; both fit the 1100 px minimum width.
 The side panel's 320 px and the confirmation row's 32 px are chosen, not measured; the confirmation
 text spans the tab's width and trims only past it.
 `PenEditorViewTests.AnUnusableMask_WritesNothingRevertsMarksAndSaysWhyWithoutResizing` gates the size
 half of the rule: the window's and the form panel's `Bounds` are equal before and after the mask turns
 invalid.
+`PenEditorViewTests.TheWindow_OpensOnA1280PxScreenAndAtItsMinimumWidthClipsNoFixedColumn` gates the width,
+the 100 px groups column at `MinWidth` and equal header button heights.
 
 ## How the variant reaches the application
 

@@ -12,7 +12,13 @@
              x:DataType="chart:TrendChartViewModel">
 
     <Panel>
-        <scottplot:AvaPlot Name="PlotControl" />
+        <scottplot:AvaPlot Name="PlotControl">
+            <FlyoutBase.AttachedFlyout>
+                <Flyout Placement="Pointer">
+                    <chart:AxisScalePanel Name="AxisScale" />
+                </Flyout>
+            </FlyoutBase.AttachedFlyout>
+        </scottplot:AvaPlot>
         <TextBlock Name="EmptyCatalogueMessage"
                    IsVisible="{Binding HasNoPens, FallbackValue=False}"
                    Foreground="{DynamicResource AppSecondaryForegroundBrush}"
@@ -43,11 +49,6 @@
                            FontSize="12" />
             </Border>
         </Canvas>
-        <TextBox Name="AxisBoundEditor"
-                 Width="90"
-                 IsVisible="False"
-                 HorizontalAlignment="Left"
-                 VerticalAlignment="Top" />
     </Panel>
 
 </UserControl>

@@ -90,40 +90,36 @@ public sealed class TrendChartCatalogueTests
 	}
 
 	[AvaloniaFact]
-	public void AStoredScaleChange_ReplacesTheSessionAxisOfThatPenOnly()
+	public void ARevisedStoredScale_LeavesTheShownPenAlone()
 	{
 		var (viewModel, _, _, provider) = CreateViewModel();
 		var catalogue = provider.Pens;
 		viewModel.ApplyCatalogue(catalogue);
 		viewModel.SetAxisLimits(1, 10.0, 90.0);
-		viewModel.SetAxisLimits(2, 20.0, 80.0);
-		var revised = catalogue[0] with { ScaleMin = 0.0, ScaleMax = 50.0 };
+		var autoSettings = viewModel.ScaleSettings[2];
 
-		viewModel.ApplyCatalogue([revised, catalogue[1]]);
-
-		viewModel.ScaleSettings[1].Should().Be(new PenScaleSettings(1)
-		{
-			Mode = ScaleMode.Manual,
-			ManualMin = 0.0,
-			ManualMax = 50.0
-		});
-		viewModel.ScaleRangeForPen(1)!.Value.Should().Be((0.0, 50.0));
-		viewModel.ScaleSettings[2].ManualMin.Should().Be(20.0);
-		viewModel.ScaleSettings[2].ManualMax.Should().Be(80.0);
-	}
-
-	[AvaloniaFact]
-	public void ARevisionWithoutAScaleChange_KeepsTheSessionAxis()
-	{
-		var (viewModel, _, _, provider) = CreateViewModel();
-		var catalogue = provider.Pens;
-		viewModel.ApplyCatalogue(catalogue);
-		viewModel.SetAxisLimits(1, 10.0, 90.0);
-
-		viewModel.ApplyCatalogue([catalogue[0] with { Name = "Renamed" }, catalogue[1]]);
+		viewModel.ApplyCatalogue(
+			[catalogue[0] with { ScaleMin = 0.0, ScaleMax = 50.0 }, catalogue[1] with { ScaleMin = 5.0, ScaleMax = 6.0 }]);
 
 		viewModel.ScaleSettings[1].Mode.Should().Be(ScaleMode.Manual);
 		viewModel.ScaleRangeForPen(1)!.Value.Should().Be((10.0, 90.0));
+		viewModel.ScaleSettings[2].Should().Be(autoSettings);
+		viewModel.ScaleSettings[2].Mode.Should().Be(ScaleMode.Auto);
+	}
+
+	[AvaloniaFact]
+	public void APenTheCatalogueAdds_TakesItsStoredPair()
+	{
+		var (viewModel, _, _, provider) = CreateViewModel();
+		var catalogue = provider.Pens;
+		viewModel.ApplyCatalogue([catalogue[0]]);
+
+		viewModel.ApplyCatalogue([catalogue[0], catalogue[1] with { ScaleMin = 20.0, ScaleMax = 80.0 }]);
+
+		var settings = viewModel.ScaleSettings[2];
+		settings.Mode.Should().Be(ScaleMode.Manual);
+		settings.ManualMin.Should().Be(20.0);
+		settings.ManualMax.Should().Be(80.0);
 	}
 
 	[AvaloniaFact]

@@ -49,6 +49,12 @@ internal static class PenFormRules
 		return minimum >= maximum ? Resources.PenFormScaleInverted : null;
 	}
 
+	/// <summary>The text a scale bound is shown as, which <see cref="TryReadBound"/> reads back unchanged.</summary>
+	public static string FormatBound(double bound)
+	{
+		return bound.ToString(CultureInfo.CurrentCulture);
+	}
+
 	// An empty bound is no bound.
 	public static bool TryReadBound(string text, out double? bound)
 	{

@@ -134,7 +134,7 @@ public sealed class PenCatalogueSyncTests : IDisposable
 
 		_deltas.Should().ContainSingle()
 			.Which.Revised.Should().ContainSingle()
-			.Which.Current.Should().Be(_provider.Pens[0]);
+			.Which.Should().Be(_provider.Pens[0]);
 	}
 
 	[Fact]
@@ -155,7 +155,7 @@ public sealed class PenCatalogueSyncTests : IDisposable
 		Advance(PenCatalogueSync.ReadInterval);
 
 		_deltas.Should().ContainSingle()
-			.Which.Revised.Select(revision => revision.Current.PenId).Should().Equal(1, 2);
+			.Which.Revised.Select(pen => pen.PenId).Should().Equal(1, 2);
 	}
 
 	[Fact]
@@ -188,7 +188,7 @@ public sealed class PenCatalogueSyncTests : IDisposable
 
 		_provider.PensQueryCount.Should().Be(2);
 		_deltas.Should().HaveCount(2, "the loop survived the throw and emitted the next change");
-		_deltas[1].Revised.Select(revision => revision.Current.PenId).Should().Equal(
+		_deltas[1].Revised.Select(pen => pen.PenId).Should().Equal(
 			[2], "the read the subscriber threw on is the baseline all the same");
 	}
 

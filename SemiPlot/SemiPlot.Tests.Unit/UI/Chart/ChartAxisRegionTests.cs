@@ -33,28 +33,6 @@ public sealed class ChartAxisRegionTests
 	}
 
 	[Fact]
-	public void IsUpperHalf_TopOfDataAreaIsUpper_BottomIsLower()
-	{
-		var (plot, axis) = RenderedPlot();
-		var region = ChartAxisRegion.TryCreate(plot, axis)!;
-		var dataRect = plot.RenderManager.LastRender.Layout.DataRect;
-
-		region.IsUpperHalf(dataRect.Top + 1f).Should().BeTrue();
-		region.IsUpperHalf(dataRect.Bottom - 1f).Should().BeFalse();
-	}
-
-	[Fact]
-	public void ValueAt_MapsTopToMax_BottomToMin()
-	{
-		var (plot, axis) = RenderedPlot();
-		var region = ChartAxisRegion.TryCreate(plot, axis)!;
-		var dataRect = plot.RenderManager.LastRender.Layout.DataRect;
-
-		region.ValueAt(dataRect.Top).Should().BeApproximately(axis.Range.Max, 0.5);
-		region.ValueAt(dataRect.Bottom).Should().BeApproximately(axis.Range.Min, 0.5);
-	}
-
-	[Fact]
 	public void TryCreate_ForARightEdgeAxis_ContainsAPointInsideItsPanelToTheRightOfTheDataArea()
 	{
 		var plot = new Plot();
@@ -81,7 +59,7 @@ public sealed class ChartAxisRegionTests
 	}
 
 	// A hidden axis keeps a panel of size 0 at offset 0, whose band collapses onto the data rect's own
-	// left edge and would answer a press there with the bound editor of a pen nothing draws.
+	// left edge and would answer a press there with the scale panel of a pen nothing draws.
 	[Fact]
 	public void TryCreate_ForAHiddenAxis_ReturnsNoRegion()
 	{
@@ -90,16 +68,6 @@ public sealed class ChartAxisRegionTests
 		plot.RenderInMemory(PlotWidth, PlotHeight);
 
 		ChartAxisRegion.TryCreate(plot, axis).Should().BeNull();
-	}
-
-	[Fact]
-	public void ValueAt_DegenerateHeight_ReturnsTheAxisMaxInsteadOfDividingByZero()
-	{
-		// A zero-height data area would divide by zero in the pixel->value mapping; the guard returns the max.
-		var region = ChartAxisRegion.ForTesting(panelLeft: 0f, panelRight: 10f, dataTop: 50f, dataBottom: 50f,
-			axisMin: 1.0, axisMax: 9.0);
-
-		region.ValueAt(50f).Should().Be(9.0);
 	}
 
 	private static (Plot Plot, IYAxis Axis) RenderedPlot()

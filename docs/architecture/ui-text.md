@@ -167,13 +167,20 @@ one label of its own is `PenFormMaskPreviewLabel`. The line-style cell and the c
 `PenLineStyleInterpolated` and `PenLineStyleStepped` through `PenLineStyleConverters.ToLabel`, a
 `FuncValueConverter` consumed through `{x:Static}`. The visibility column and field read
 `PenEditorColumnOnStart`, "On start" / "При запуске", because the flag is the visibility a pen starts
-with and a change of it switches nothing on a running chart.
+with and a change of it switches nothing on a running chart. The scale columns and fields read
+`PenEditorColumnScaleMin` and `PenEditorColumnScaleMax`, "Initial scale, min" / "Начальная шкала, от" and
+"Initial scale, max" / "Начальная шкала, до", because the stored pair is the pen's initial scale, the
+term the axis scale panel's button `AxisScaleInitialScale` ("Restore initial scale" / "Вернуть начальную")
+and the `View` menu item `MenuViewInitialScale` ("Restore initial scale" / "Вернуть начальную шкалу") use: it applies
+when the pen enters a chart and on that command, and it changes no pen already shown. The three scale
+messages open with the same term, "Initial scale:" / "Начальная шкала:".
 
 The bottom bar reads the button `PenEditorRefresh`, "Refresh pen list" / «Обновить список перьев», which
 names what it refreshes, and `PenEditorAddedCount`, "Pens added: {0}" /
 "Добавлено перьев: {0}", empty until the first successful refresh. It carries no notice: every running
 chart follows what the editor writes through the catalogue read (`overview.md#the-live-catalogue`),
-so there is nothing to wait for. The `Groups` tab reads
+except the scale pair, which changes no pen already shown (`overview.md#what-a-read-changes`), so there
+is nothing to wait for. The `Groups` tab reads
 `PenGroupsNewNamePlaceholder`, the one watermark in the tree, `PenGroupsCreate`, `PenGroupsNameLabel`,
 `PenGroupsDelete`, which is also the confirm button's caption, `PenGroupsCancel` and
 `PenGroupsMembersHeader`. `PenGroupsDeleteConfirmation` takes the group name as `{0}` and its member
@@ -215,6 +222,25 @@ placeholders did not move, which
 `ResourcesTests.EveryRussianValue_UsesThePlaceholderIndicesOfTheNeutralOne` gates, and the timed-out
 detail keeps `(SQLSTATE 57014)`, which `ArchiveFailureMapperTests` asserts. `ArchiveError.Describe`, the
 English log line, names a statement the same way (`data-integration.md#two-error-planes`).
+
+## The axis scale panel's text
+
+`Chart/AxisScalePanel` reads `AxisScaleMaximumLabel` and `AxisScaleMinimumLabel` ("Maximum" / "Максимум",
+"Minimum" / "Минимум"), `AxisScaleApply` ("Apply" / "Применить") and `AxisScaleInitialScale`. Its Autoscale
+button reads `MenuViewAutoscale`, the same key as the menu item, so one word names the command in both
+places. The pen's name and unit are data, shown in two `TextBlock`s, so no format key joins them. The
+message line shows `AxisScaleBoundInvalid` ("Enter a number in each field" / "Введите в каждом поле
+число") for a field that is not a number in the operator's regional format, `AxisScaleBoundsRequired`
+("Enter both bounds" / "Укажите обе границы") for an empty field and `AxisScaleMinimumBelowMaximum`
+("The minimum must be below the maximum" / "Минимум должен быть меньше максимума") for an inverted or
+equal pair. The two fields are `TextBox`es seeded through `PenValueFormat.Format` with the pen's mask and read through
+`PenFormRules.TryReadBound`, the pen editor's rule, so the decimal separator is the current culture's and
+"150.5" under `ru-RU` is refused, never read as 150. A field left as seeded keeps the exact bound.
+
+The View menu's submenu header is `MenuViewPenScale` ("Pen scale" / "Шкала пера") while no pen's axis is
+drawn and the format `MenuViewPenScaleFormat` ("Pen scale: {0}" / "Шкала пера «{0}»") over the drawn pen's
+name otherwise. `MainWindowViewModel.PenScaleHeader` derives it; `AppMenuBarTests` covers the header with a
+pen, without one, with every pen hidden and after a rename.
 
 ## Adding a key
 

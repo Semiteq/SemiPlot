@@ -2,12 +2,9 @@ using ScottPlot;
 
 namespace SemiPlot.UI.Chart;
 
-// View-side hit-test for a single Y-axis panel. Pixel-Y maps onto the axis Range with the top pixel as
-// the maximum (pixel-Y inversion).
+// View-side hit-test for a single Y-axis panel.
 public sealed class ChartAxisRegion
 {
-	private readonly double _axisMax;
-	private readonly double _axisMin;
 	private readonly float _dataBottom;
 	private readonly float _dataTop;
 	private readonly float _panelLeft;
@@ -17,16 +14,12 @@ public sealed class ChartAxisRegion
 		float panelLeft,
 		float panelRight,
 		float dataTop,
-		float dataBottom,
-		double axisMin,
-		double axisMax)
+		float dataBottom)
 	{
 		_panelLeft = panelLeft;
 		_panelRight = panelRight;
 		_dataTop = dataTop;
 		_dataBottom = dataBottom;
-		_axisMin = axisMin;
-		_axisMax = axisMax;
 	}
 
 	public static ChartAxisRegion? TryCreate(Plot plot, IYAxis axis)
@@ -35,7 +28,7 @@ public sealed class ChartAxisRegion
 		var dataRect = layout.DataRect;
 
 		// A hidden axis still carries a panel of size 0 at offset 0, whose band collapses onto the data
-		// rect's own edge and would answer a press there with the bound editor of a pen nothing draws.
+		// rect's own edge and would answer a press there with the scale panel of a pen nothing draws.
 		if (!axis.IsVisible
 			|| !dataRect.HasArea
 			|| !layout.PanelSizes.TryGetValue(axis, out var size)
@@ -50,20 +43,7 @@ public sealed class ChartAxisRegion
 			panelLeft,
 			panelRight,
 			dataRect.Top,
-			dataRect.Bottom,
-			axis.Range.Min,
-			axis.Range.Max);
-	}
-
-	internal static ChartAxisRegion ForTesting(
-		float panelLeft,
-		float panelRight,
-		float dataTop,
-		float dataBottom,
-		double axisMin,
-		double axisMax)
-	{
-		return new ChartAxisRegion(panelLeft, panelRight, dataTop, dataBottom, axisMin, axisMax);
+			dataRect.Bottom);
 	}
 
 	public bool Contains(float pixelX, float pixelY)
@@ -72,25 +52,6 @@ public sealed class ChartAxisRegion
 			   && pixelX <= _panelRight
 			   && pixelY >= _dataTop
 			   && pixelY <= _dataBottom;
-	}
-
-	public bool IsUpperHalf(float pixelY)
-	{
-		return pixelY < (_dataTop + _dataBottom) / 2f;
-	}
-
-	public double ValueAt(float pixelY)
-	{
-		var height = _dataBottom - _dataTop;
-		if (height <= 0f)
-		{
-			return _axisMax;
-		}
-
-		var fractionFromTop = (pixelY - _dataTop) / height;
-		var fractionFromBottom = 1.0 - fractionFromTop;
-
-		return _axisMin + ((_axisMax - _axisMin) * fractionFromBottom);
 	}
 
 	private static (float Left, float Right) HorizontalBand(

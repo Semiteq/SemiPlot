@@ -4,18 +4,17 @@ public enum ChartPressAction
 {
 	Pan,
 	PlaceDeltaCursor,
-	EditAxisBound,
-	AutoscaleAxis
+	EditAxisScale
 }
 
 // Branch ordering: an axis-region hit pre-empts delta and pan; delta mode pre-empts pan.
 public static class ChartPressRouter
 {
-	public static ChartPressAction Route(bool isAxisRegionHit, int clickCount, LeftButtonTool activeTool)
+	public static ChartPressAction Route(bool isAxisRegionHit, LeftButtonTool activeTool)
 	{
 		if (isAxisRegionHit)
 		{
-			return clickCount >= 2 ? ChartPressAction.AutoscaleAxis : ChartPressAction.EditAxisBound;
+			return ChartPressAction.EditAxisScale;
 		}
 
 		return activeTool == LeftButtonTool.DeltaPlacement

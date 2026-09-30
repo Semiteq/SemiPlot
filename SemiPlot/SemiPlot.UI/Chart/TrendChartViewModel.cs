@@ -75,6 +75,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_windowStart = Navigation.From;
 		_windowEnd = Navigation.To;
 		Navigation.WindowChanged += OnNavigationWindowChanged;
+		AxisScale = new AxisScalePanelViewModel(this);
 
 		RedrawRequested = _redrawRequests
 			.Sample(_redrawThrottle, uiScheduler)
@@ -90,6 +91,8 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	public Plot Plot { get; } = new();
 
+	public AxisScalePanelViewModel AxisScale { get; }
+
 	public int ActivePenId
 	{
 		get;
@@ -101,9 +104,13 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			}
 
 			this.RaiseAndSetIfChanged(ref field, value);
+			this.RaisePropertyChanged(nameof(DrawnPenId));
 			RefreshDeltaReadout();
 		}
 	}
+
+	/// <summary>The pen whose axis the plot draws: the active pen while it is shown, otherwise none.</summary>
+	public int? DrawnPenId => MayDrawAxisFor(ActivePenId) ? ActivePenId : null;
 
 	public ChartNavigationController Navigation { get; } = new();
 
@@ -179,6 +186,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_isDisposed = true;
 		Navigation.WindowChanged -= OnNavigationWindowChanged;
 		_historyDebouncer.Dispose();
+		AxisScale.Dispose();
 		_disposables.Dispose();
 		_redrawRequests.Dispose();
 		_historyApplied.Dispose();
@@ -228,19 +236,23 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		ObjectDisposedException.ThrowIf(_isDisposed, this);
 
 		// docs/architecture/charting.md#applying-a-catalogue-read
-		lock (Plot.Sync)
+		using (DelayChangeNotifications())
 		{
-			foreach (var penId in _penSet.Apply(catalogue).RemovedPenIds)
+			lock (Plot.Sync)
 			{
-				_envelopesById.Remove(penId);
-			}
+				foreach (var penId in _penSet.Apply(catalogue).RemovedPenIds)
+				{
+					_envelopesById.Remove(penId);
+				}
 
-			SettleActivePen();
-			ApplyAxisModel();
+				SettleActivePen();
+				ApplyAxisModel();
+			}
 		}
 
 		MoveTheLiveEdgeOntoThePensShown();
 		this.RaisePropertyChanged(nameof(Pens));
+		this.RaisePropertyChanged(nameof(DrawnPenId));
 		this.RaisePropertyChanged(nameof(HasNoPens));
 		RequestRedraw();
 	}
@@ -256,6 +268,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 		state.IsVisible = isVisible;
 		ActivateAVisiblePen();
+		this.RaisePropertyChanged(nameof(DrawnPenId));
 		ApplyAxisModel();
 		RequestRedraw();
 
@@ -340,11 +353,28 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		RefreshDeltaReadout();
 	}
 
-	public bool AutoscaleAxis(int penId)
+	public void AutoscaleActivePen()
 	{
-		ObjectDisposedException.ThrowIf(_isDisposed, this);
+		AutoscalePen(ActivePenId);
+	}
 
-		return UpdateAxisSettings(penId, settings => settings with { Mode = ScaleMode.Auto });
+	public void RestoreInitialScale()
+	{
+		RestoreInitialScale(ActivePenId);
+	}
+
+	/// <summary>False when the pen is not shown, which leaves its scale untouched.</summary>
+	public bool AutoscalePen(int penId)
+	{
+		return MayDrawAxisFor(penId)
+			&& UpdateAxisSettings(penId, settings => settings with { Mode = ScaleMode.Auto });
+	}
+
+	/// <summary>False when the pen is not shown, which leaves its scale untouched.</summary>
+	public bool RestoreInitialScale(int penId)
+	{
+		return FindPen(penId) is { IsVisible: true } state
+			&& UpdateAxisSettings(penId, _ => PenScaleSettings.InitialFor(state.Pen));
 	}
 
 	public bool SetAxisLimits(int penId, double min, double max)

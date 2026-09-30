@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Windows.Input;
 
 using Avalonia;
@@ -8,13 +7,10 @@ using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Threading;
-using Avalonia.VisualTree;
 
 using AwesomeAssertions;
 
 using FluentResults;
-
-using Microsoft.Extensions.Logging.Abstractions;
 
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
@@ -38,66 +34,6 @@ namespace SemiPlot.Tests.Unit.UI.MainWindow;
 [Trait("Category", "Unit")]
 public sealed class MainWindowViewTests
 {
-	private static readonly TimeSpan _dialogTimeout = TimeSpan.FromSeconds(30);
-
-	// Every row of the window, not only the one the failure names: this window has no chart and no services,
-	// so a row that defaults to visible renders empty chrome over the one text the operator needs.
-	[AvaloniaFact]
-	public void MainWindow_WithAStartupFailure_ShowsTheFailureAndNothingElseBelowTheChart()
-	{
-		var failure = new ArchiveFailureView(
-			"No connection to the archive",
-			"SemiPlot could not open a connection to 'semiplot' at scada-host:5432.",
-			"Check that the PostgreSQL server is running.",
-			MessageSeverity.Error);
-		using var viewModel = NewViewModel(configDirectory: null);
-		viewModel.StartupFailure = failure;
-		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
-
-		window.Show();
-		Dispatcher.UIThread.RunJobs();
-
-		ReadText(window, "StartupFailureTitle").Should().Be(failure.Title);
-		ReadText(window, "StartupFailureDetail").Should().Be(failure.Detail);
-		ReadText(window, "StartupFailureRemedy").Should().Be(failure.Remedy);
-		RowVisibility(window, "StartupFailurePanel").Should().BeTrue();
-		RowVisibility(window, "StatusBar").Should().BeFalse("the failure row speaks for the connection");
-		RowVisibility(window, "MessagePanel").Should()
-			.BeFalse("nothing has reported into this window's panel, so it carries no row");
-		EmptyCatalogueMessage(window).IsVisible.Should()
-			.BeFalse("there is no chart on this path, so there is no empty catalogue either");
-	}
-
-	[AvaloniaFact]
-	public void TheStartupFailureWindowWithNoDirectory_CarriesTheSettingsItemDisabled()
-	{
-		using var viewModel = NewViewModel(configDirectory: null);
-		viewModel.StartupFailure = new ArchiveFailureView("t", "d", "r", MessageSeverity.Error);
-		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
-		window.Show();
-		Dispatcher.UIThread.RunJobs();
-
-		var item = MenuItemNamed(window, "EditSettings");
-
-		item.Command.Should().BeSameAs(viewModel.ShowSettingsCommand);
-		item.IsEffectivelyEnabled.Should().BeFalse("there is no directory to read the settings from");
-	}
-
-	[AvaloniaFact]
-	public void TheStartupFailureWindow_CarriesThePenEditorItemDisabled()
-	{
-		using var viewModel = NewViewModel(AppContext.BaseDirectory);
-		viewModel.StartupFailure = new ArchiveFailureView("t", "d", "r", MessageSeverity.Error);
-		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
-		window.Show();
-		Dispatcher.UIThread.RunJobs();
-
-		var item = MenuItemNamed(window, "EditPensAndGroups");
-
-		item.Command.Should().BeSameAs(viewModel.ShowPenEditorCommand);
-		item.IsEffectivelyEnabled.Should().BeFalse("a failed startup leaves no editor to write through");
-	}
-
 	[AvaloniaFact]
 	public async Task EditPensAndGroups_ClickedOnTheRealisedWindow_OpensTheEditorOverIt()
 	{
@@ -107,7 +43,9 @@ public sealed class MainWindowViewTests
 		{
 			ReadResult = Result.Ok(new PenCatalogue([pen], []))
 		};
-		using var viewModel = NewViewModel(AppContext.BaseDirectory, penCatalogueEditor);
+		using var stand = NewWindowStand(
+			penCatalogueEditor: penCatalogueEditor, configDirectory: AppContext.BaseDirectory);
+		var viewModel = stand.ViewModel;
 		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
 		window.Show();
 		Dispatcher.UIThread.RunJobs();
@@ -117,7 +55,7 @@ public sealed class MainWindowViewTests
 		HeadlessInput.Click(
 			TopLevel.GetTopLevel(editorItem) ?? throw new InvalidOperationException("The Edit menu opened no popup."),
 			editorItem);
-		await WaitUntil(() => window.OwnedWindows.OfType<PenEditorWindow>().Any());
+		await HeadlessWait.Until(() => window.OwnedWindows.OfType<PenEditorWindow>().Any());
 
 		var editorWindow = window.OwnedWindows.OfType<PenEditorWindow>().Single();
 		var penEditor = editorWindow.DataContext.Should().BeOfType<PenEditorViewModel>().Which;
@@ -135,20 +73,14 @@ public sealed class MainWindowViewTests
 		window.Close();
 	}
 
-	[AvaloniaTheory]
-	[InlineData(false)]
-	[InlineData(true)]
-	public async Task EditSettings_ClickedOnTheRealisedWindow_OpensTheDialogOverIt(bool startupFailure)
+	[AvaloniaFact]
+	public async Task EditSettings_ClickedOnTheRealisedWindow_OpensTheDialogOverIt()
 	{
-		var configDirectory = CopyShippedConfiguration();
+		var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
 		try
 		{
-			using var viewModel = NewViewModel(configDirectory);
-			if (startupFailure)
-			{
-				viewModel.StartupFailure = new ArchiveFailureView("t", "d", "r", MessageSeverity.Error);
-			}
-
+			using var stand = NewWindowStand(configDirectory: configDirectory);
+			var viewModel = stand.ViewModel;
 			var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
 			window.Show();
 			Dispatcher.UIThread.RunJobs();
@@ -159,7 +91,7 @@ public sealed class MainWindowViewTests
 				TopLevel.GetTopLevel(settingsItem)
 					?? throw new InvalidOperationException("The Edit menu opened no popup."),
 				settingsItem);
-			await WaitUntil(() => window.OwnedWindows.OfType<SettingsDialog>().Any());
+			await HeadlessWait.Until(() => window.OwnedWindows.OfType<SettingsDialog>().Any());
 
 			var dialog = window.OwnedWindows.OfType<SettingsDialog>().Single();
 			var settings = dialog.DataContext.Should().BeOfType<SettingsViewModel>().Which;
@@ -189,8 +121,8 @@ public sealed class MainWindowViewTests
 	public void MessagePanelRow_StartsClosedAndOpensOnTheFirstFailure()
 	{
 		using var panel = new MessagePanelViewModel();
-		using var viewModel = new MainWindowViewModel(
-			panel, NewStatusBar(panel), AppContext.BaseDirectory, NullLoggerFactory.Instance);
+		using var stand = NewWindowStand(panel: panel);
+		var viewModel = stand.ViewModel;
 		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
 		window.Show();
 		var row = window.FindControl<Border>("MessagePanel");
@@ -214,7 +146,8 @@ public sealed class MainWindowViewTests
 	[AvaloniaFact]
 	public void EveryViewMenuRow_FollowsItsOwnFlagOnTheRealisedWindow()
 	{
-		using var viewModel = NewViewModel();
+		using var stand = NewWindowStand();
+		var viewModel = stand.ViewModel;
 		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
 		window.Show();
 		Dispatcher.UIThread.RunJobs();
@@ -243,12 +176,11 @@ public sealed class MainWindowViewTests
 		}
 	}
 
-	// The width comes from a view model the window does not hold until a chart is built, so the fallback
-	// is what a failed startup renders.
 	[AvaloniaFact]
-	public void LegendPanelWidth_ReadsTheFallbackAndThenFollowsThePanelState()
+	public void LegendPanelWidth_OpensExpandedAndThenFollowsThePanelState()
 	{
-		using var viewModel = NewViewModel();
+		using var stand = NewWindowStand();
+		var viewModel = stand.ViewModel;
 		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
 		var panel = window.FindControl<Border>("LegendPanel");
 
@@ -256,19 +188,11 @@ public sealed class MainWindowViewTests
 		Dispatcher.UIThread.RunJobs();
 
 		panel.Should().NotBeNull("'LegendPanel' is a named row of the window");
-		panel!.Width.Should().Be(
-			TrendLegendViewModel.ExpandedWidth,
-			"no chart is built yet, so the border reads its fallback");
+		panel!.Width.Should().Be(TrendLegendViewModel.ExpandedWidth, "the panel opens expanded");
 		panel.Bounds.Width.Should().Be(TrendLegendViewModel.ExpandedWidth);
-		ResizeHandle(window).IsVisible.Should().BeFalse("a window with no legend has nothing to resize");
+		ResizeHandle(window).IsVisible.Should().BeTrue("the window always has a legend to resize");
 
-		viewModel.SetChart(CreateChartWithPens());
-		Dispatcher.UIThread.RunJobs();
-
-		panel.Width.Should().Be(TrendLegendViewModel.ExpandedWidth, "the panel opens expanded");
-		ResizeHandle(window).IsVisible.Should().BeTrue();
-
-		viewModel.LegendViewModel!.ToggleExpandedCommand.Execute().Subscribe();
+		viewModel.LegendViewModel.ToggleExpandedCommand.Execute().Subscribe();
 		Dispatcher.UIThread.RunJobs();
 
 		panel.Width.Should().Be(TrendLegendViewModel.CollapsedWidth);
@@ -278,10 +202,10 @@ public sealed class MainWindowViewTests
 	[AvaloniaFact]
 	public void ADragOnTheHandle_ResizesThePanelInBothStatesAndEachStateKeepsItsWidth()
 	{
-		using var viewModel = NewViewModel();
+		using var stand = NewWindowStand();
+		var viewModel = stand.ViewModel;
 		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
 		window.Show();
-		viewModel.SetChart(CreateChartWithPens());
 		Dispatcher.UIThread.RunJobs();
 		var panel = window.FindControl<Border>("LegendPanel")!;
 		var handle = ResizeHandle(window);
@@ -290,7 +214,7 @@ public sealed class MainWindowViewTests
 
 		panel.Bounds.Width.Should().Be(TrendLegendViewModel.ExpandedWidth + 60);
 
-		viewModel.LegendViewModel!.ToggleExpandedCommand.Execute().Subscribe();
+		viewModel.LegendViewModel.ToggleExpandedCommand.Execute().Subscribe();
 		Dispatcher.UIThread.RunJobs();
 
 		panel.Bounds.Width.Should().Be(TrendLegendViewModel.CollapsedWidth);
@@ -310,10 +234,10 @@ public sealed class MainWindowViewTests
 	[AvaloniaFact]
 	public void ADragOnTheHandle_StopsAtThePanelFloorAndAtTheChartFloor()
 	{
-		using var viewModel = NewViewModel();
+		using var stand = NewWindowStand();
+		var viewModel = stand.ViewModel;
 		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
 		window.Show();
-		viewModel.SetChart(CreateChartWithPens());
 		Dispatcher.UIThread.RunJobs();
 		var panel = window.FindControl<Border>("LegendPanel")!;
 		var chart = window.FindControl<Border>("ChartContent")!;
@@ -331,10 +255,10 @@ public sealed class MainWindowViewTests
 	[AvaloniaFact]
 	public void ShrinkingTheWindowAfterADrag_KeepsTheChartFloorAndGrowingItBackRestoresThePanel()
 	{
-		using var viewModel = NewViewModel();
+		using var stand = NewWindowStand();
+		var viewModel = stand.ViewModel;
 		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
 		window.Show();
-		viewModel.SetChart(CreateChartWithPens());
 		Dispatcher.UIThread.RunJobs();
 		var panel = window.FindControl<Border>("LegendPanel")!;
 		var chart = window.FindControl<Border>("ChartContent")!;
@@ -353,16 +277,14 @@ public sealed class MainWindowViewTests
 	}
 
 	[AvaloniaFact]
-	public void ALegendAssignedToANarrowWindow_KeepsTheChartFloorBeforeAnyDragOrResize()
+	public void ANarrowWindow_KeepsTheChartFloorBeforeAnyDragOrResize()
 	{
-		using var viewModel = NewViewModel();
+		using var stand = NewWindowStand();
+		var viewModel = stand.ViewModel;
 		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel, Width = 500 };
 		window.Show();
 		Dispatcher.UIThread.RunJobs();
 		var chart = window.FindControl<Border>("ChartContent")!;
-
-		viewModel.SetChart(CreateChartWithPens());
-		Dispatcher.UIThread.RunJobs();
 
 		chart.Bounds.Width.Should().Be(TrendLegendViewModel.ChartMinWidth);
 	}
@@ -370,10 +292,10 @@ public sealed class MainWindowViewTests
 	[AvaloniaFact]
 	public void HidingTheLegend_GivesTheChartTheWholeRow()
 	{
-		using var viewModel = NewViewModel();
+		using var stand = NewWindowStand();
+		var viewModel = stand.ViewModel;
 		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
 		window.Show();
-		viewModel.SetChart(CreateChartWithPens());
 		Dispatcher.UIThread.RunJobs();
 		var chart = window.FindControl<Border>("ChartContent")!;
 		var contentGrid = window.FindControl<Grid>("ContentGrid")!;
@@ -418,51 +340,5 @@ public sealed class MainWindowViewTests
 		item.Should().NotBeNull("'{0}' is a named item of the menu bar", name);
 
 		return item;
-	}
-
-	private static async Task WaitUntil(Func<bool> condition)
-	{
-		var clock = Stopwatch.StartNew();
-
-		while (!condition())
-		{
-			if (clock.Elapsed > _dialogTimeout)
-			{
-				throw new TimeoutException("The dialog did not open.");
-			}
-
-			await Task.Delay(10);
-			Dispatcher.UIThread.RunJobs();
-		}
-	}
-
-	private static string CopyShippedConfiguration()
-	{
-		var configDirectory = Directory.CreateTempSubdirectory("semiplot-main-window-settings-").FullName;
-		ShippedConfiguration.CopyTo(configDirectory);
-
-		return configDirectory;
-	}
-
-	private static string? ReadText(Window window, string name)
-	{
-		return window.FindControl<TextBlock>(name)?.Text;
-	}
-
-	private static bool RowVisibility(Window window, string name)
-	{
-		var row = window.FindControl<Border>(name);
-		row.Should().NotBeNull("'{0}' is a named row of the window", name);
-
-		return row.IsVisible;
-	}
-
-	// The chart view carries its own name scope, so the message is reached through the visual tree.
-	private static TextBlock EmptyCatalogueMessage(Window window)
-	{
-		return window
-			.GetVisualDescendants()
-			.OfType<TextBlock>()
-			.Single(block => block.Name == "EmptyCatalogueMessage");
 	}
 }

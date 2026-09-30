@@ -18,9 +18,6 @@ public sealed class TrendCoordinator : IDisposable
 	private readonly IScheduler _uiScheduler;
 	private readonly TimeSpan _batchWindow;
 	private readonly BehaviorSubject<IReadOnlyList<int>> _penIds;
-	private bool _isDisposed;
-
-	private IDisposable? _realtimeSubscription;
 
 	// Own subject so disposal stops forwarding to every consumer.
 	private readonly Subject<ArchiveConnectionState> _connectionFaults = new();
@@ -68,7 +65,7 @@ public sealed class TrendCoordinator : IDisposable
 
 	/// <summary>
 	/// The provider's connection state, republished on the UI scheduler so a view model binds to it directly.
-	/// It neither completes nor faults; disposal stops it instead.
+	/// It never faults; disposal completes it.
 	/// </summary>
 	public IObservable<ArchiveConnectionState> ConnectionFaults { get; }
 
@@ -77,29 +74,13 @@ public sealed class TrendCoordinator : IDisposable
 
 	public void Dispose()
 	{
-		if (_isDisposed)
-		{
-			return;
-		}
-
-		_isDisposed = true;
-		_realtimeSubscription?.Dispose();
-		_realtimeSubscription = null;
 		_connectionSubscription.Dispose();
 
 		// Never disposed: a buffer flush still running on the data scheduler would throw out of
 		// TryBuildRealtimeBatch, and Rx would turn that into the OnError the catch exists to prevent.
 		_realtimeFailures.OnCompleted();
 		_penIds.OnCompleted();
-	}
-
-	public void Start()
-	{
-		ObjectDisposedException.ThrowIf(_isDisposed, this);
-
-		// The keep-alive holds the RefCount open across a chart being replaced. The stream cannot fault, so
-		// this observer has nothing to handle.
-		_realtimeSubscription ??= RealtimeBatches.Subscribe();
+		_connectionFaults.OnCompleted();
 	}
 
 	/// <summary>Moves the live edge onto this pen set; the history query covers rows the switch skips.</summary>
@@ -115,15 +96,11 @@ public sealed class TrendCoordinator : IDisposable
 		AggregationLayer layer,
 		int targetColumnCount)
 	{
-		ObjectDisposedException.ThrowIf(_isDisposed, this);
-
 		return _dataProvider.QueryHistoryAsync(penIds, fromUtc, toUtc, layer, targetColumnCount);
 	}
 
 	public Task<Result<ArchiveExtent>> QueryArchiveExtentAsync()
 	{
-		ObjectDisposedException.ThrowIf(_isDisposed, this);
-
 		return _dataProvider.QueryArchiveExtentAsync();
 	}
 

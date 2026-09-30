@@ -123,7 +123,7 @@ flowchart TB
 
 The composition root resolves `PostgresDataProvider`, and the pen editor's
 `PostgresPenCatalogueEditor` over the same `NpgsqlDataSource`; there is no fallback to resolve: an
-archive that does not answer opens the main window with its startup-failure panel filled rather than
+archive that does not answer opens the startup-failure window rather than
 falling back to invented data, which `data-integration.md` states under **Startup**.
 `ArchiveFailureMapper` turns each public error type into a title, a detail and a remedy — Core's ten
 plus the UI-local `StartupReadTimedOutError`, eleven in all; two of them reach the operator as a

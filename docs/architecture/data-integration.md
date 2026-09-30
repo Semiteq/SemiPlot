@@ -393,8 +393,8 @@ The pen set can change while the viewer runs. `TrendCoordinator` holds it in a
 is handed, which the chart builds fresh for each call, and the chart calls it only when the id set it
 shows differs from `PenIds`, the subject's current set, so the coordinator carries no change check of its
 own.
-`RealtimeBatches` stays one published stream: the chart's one subscription and the coordinator's
-keep-alive see no change. A switch disposes the old subscription and starts a new poll, whose first
+`RealtimeBatches` stays one published stream: the chart's one subscription, which lives as long as
+the window, sees no change. A switch disposes the old subscription and starts a new poll, whose first
 tick reads the baseline and emits nothing. The rows written between the old poll's last tick and the
 new baseline, at most one poll interval, are not delivered live; the history query the chart issues on
 every set change covers them. Every set the chart pushes holds only pens of the provider's own
@@ -425,7 +425,7 @@ catalogue. `Dispose` completes the subject.
 
 `MainWindow/AppStatusBarViewModel` renders the state: the indicator reads connected or not, and
 every fault is mapped by `Messages/ArchiveFailureMapper.Map` into an entry in the message panel. The
-bar has a single writer, the stream it binds once through `TrackArchiveConnection`. Because every
+bar has a single writer, the stream `TrendWindow.Build` hands its constructor. Because every
 subscription's first tick reports `Connected`, the recovery entry is written only once a fault has
 been seen — otherwise every launch would announce a connection it never lost. The handler is
 wrapped: `TrendCoordinator` forwards this stream with a bare `Subscribe`, so a throw out of the
@@ -435,7 +435,7 @@ handler would end the forwarding for the rest of the session instead of reaching
 
 | Situation | Provider result | What the operator sees |
 | --- | --- | --- |
-| Connection refused or DNS failure at startup | failed `Result` | The main window opens with the chart empty and its startup-failure panel titled "No connection to the archive", naming the host and port, with a remedy |
+| Connection refused or DNS failure at startup | failed `Result` | The startup-failure window opens, titled "No connection to the archive", naming the host and port, with a remedy |
 | Connection lost mid-session | failed `Result` on the query; realtime tick dropped | Chart keeps the data it has |
 | Three consecutive realtime ticks fail | `ArchiveFault.ConnectionLost` on `ConnectionFaults`; the observable keeps running | The status indicator turns to the fault state and one `Warning` entry appears; the first tick that succeeds restores the indicator and adds one `Info` entry |
 | A column the read needs is absent (`42703`) | `ArchiveFault.ShapeUnexpected` with the server's detail | "The archive has an unexpected shape" — run `semibase site`, then find what altered the table |
@@ -517,7 +517,7 @@ are `Error`, because nothing recovers until someone changes a grant, a schema or
 loop retries by itself. `ValueRejected`, `NameTaken` and `RowGone` are `Warning` too: the operator's
 own edit was refused, and the next edit is the remedy.
 `FailureSeverityTests.ArchiveFaults_SplitIntoWhatRetriesAndWhatNeedsTheOperator` holds them as a third
-bucket. `ConnectionLost` never opens the startup failure panel; it is an entry in the message panel
+bucket. `ConnectionLost` never opens the startup-failure window; it is an entry in the message panel
 under a chart that works.
 
 The eleven rows above are the `ArchiveError` arm alone. `Map` has eight further arms — the startup
@@ -558,13 +558,14 @@ A handler that runs detached — an Rx `onNext`, an Rx `onError`, a job posted t
 wraps its whole body, not its report alone, and hands the throw to `TryReportFailure`:
 `TrendChartViewModel.OnHistoryQueryFailed`, `MainWindow/AppStatusBarViewModel.ApplyConnectionState`,
 `Bridge/PenCatalogueSync.RunAsync` and `MainWindow/PenCatalogueApplier.ApplyAsync`, the last through
-`MainWindowViewModel.ReportFailure`. The guard belongs to the handler rather than to whoever invokes
+`TrendChartViewModel.ReportFailure`. The guard belongs to the handler rather than to whoever invokes
 it, because the recovery around the report would otherwise escape the same way the report can.
 `Minimap/MinimapViewModel.LoadExtentAsync` carries no guard of its own: its apply runs through
 `Observable.Start` on the UI scheduler and awaits it, so a throw reaches the awaiter, and both awaiters
-report it, the composition root's continuation and `PenCatalogueApplier.ApplyAsync`'s catch.
-`TrendChartViewModel.ReportFailure`, `MainWindowViewModel.ReportFailure`, the `LoadExtentAsync`
-continuation and the ReactiveUI observer call the guarded form directly.
+report it, `TrendWindow.StartExtentLoad`'s continuation and `PenCatalogueApplier.ApplyAsync`'s catch.
+`TrendChartViewModel.ReportFailure`, `MainWindowViewModel.ReportFailure`,
+`StartupFailureViewModel.ReportFailure`, the `LoadExtentAsync` continuation and the ReactiveUI observer
+call the guarded form directly.
 
 A history query reissued on every pan is what the panel's coalescing exists for: during an outage a
 ten-second drag produces roughly twenty-five identical failures, and they become one entry with a
@@ -642,7 +643,7 @@ archive.
 Startup splits at the Avalonia boundary because `AfterSetup` is synchronous: a blocking read inside
 it would hold Avalonia's setup. `StartupSequence.Run` (`SemiPlot.UI/Startup/StartupSequence.cs`)
 therefore holds the ordered blocking steps and `Program.Main` calls it ahead of
-`BuildAvaloniaApp()`, while the reads `InitializeServices` starts inside `AfterSetup` are
+`BuildAvaloniaApp()`, while the reads `TrendWindow.Build` starts inside `AfterSetup` are
 asynchronous.
 
 `StartupOptions.Parse(args)` runs ahead of all of it, because the logger's own path is an argument.
@@ -670,13 +671,13 @@ failure.
 4. Resolve `IDataProvider`, read the pen catalogue, then the archive extent.
 
 The container, the pens and the extent cross the boundary in a `StartupData` record inside a
-`Result`, so `App.InitializeServices` awaits nothing. `Program.Main` passes the settings and that
+`Result`, so `TrendWindow.Build` awaits nothing. `Program.Main` passes the settings and that
 `Result` and the configuration directory to `App.Run(AppSettings?, Result<StartupData>, string?)`
-unconditionally, the directory reaching the settings window on both paths: on success it runs as
-today; on failure `App` maps the error through `ArchiveFailureMapper` and opens the main window with
-`MainWindowViewModel.StartupFailure` set — the
-startup-failure panel names what broke and what to do, and the chart, legend and minimap bind to null and
-render empty, because `CreateMainWindow` builds that view model without a service provider. There is
+unconditionally, the directory reaching the settings window on both paths: on success `App` builds one
+`TrendWindow` (`overview.md#one-window-per-process`); on failure `App` maps the error through
+`ArchiveFailureMapper` and opens `Startup/StartupFailureWindow`, which names what broke and what to do
+and holds a message panel of its own. That window has no chart, legend or minimap and no service
+provider. There is
 no second data source to fall back to: synthetic data would let an operator read invented numbers as
 process data. `Program.Main` returns 1 once that window closes.
 
@@ -696,10 +697,9 @@ states that the catalogue is empty and names the way in, `Edit` -> `Pens and gro
 chart, not an entry in the message panel. Logging is configured before the probe runs; the log path
 and the argument list are in `overview.md`.
 
-No startup code calls `IPenCatalogueEditor`. The container constructs it with `MainWindowViewModel`,
-which `App.InitializeServices` resolves inside `.AfterSetup(...)`, and its constructor issues no
-statement. `RegisterNewPensAsync` has one caller, `PenEditorViewModel`, so every write the viewer
-issues follows an operator action.
+No startup code calls `IPenCatalogueEditor`. The container constructs it when `TrendWindow.Build`
+resolves it inside `.AfterSetup(...)`, and its constructor issues no statement. `RegisterNewPensAsync`
+has one caller, `PenEditorViewModel`, so every write the viewer issues follows an operator action.
 
 ## Field triage
 

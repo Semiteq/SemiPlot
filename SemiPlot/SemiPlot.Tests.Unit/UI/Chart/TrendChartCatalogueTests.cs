@@ -246,10 +246,9 @@ public sealed class TrendChartCatalogueTests
 	[AvaloniaFact]
 	public void TheStartCatalogue_OpensOneLiveSubscription()
 	{
-		var (viewModel, _, coordinator, provider) = CreateViewModel();
+		var (viewModel, _, _, provider) = CreateViewModel();
 
 		viewModel.ApplyCatalogue(provider.Pens);
-		coordinator.Start();
 
 		provider.LiveSubscriptionsOpened.Should().Be(1);
 		provider.OpenLiveSubscriptionCount.Should().Be(1);

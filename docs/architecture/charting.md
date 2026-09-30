@@ -256,25 +256,27 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   width slots, expanded (starts at 280) and collapsed (starts at 168), and `PanelWidth` shows the slot
   of the current state, clamped to at least `PanelMinWidth` (120) and to the room that leaves the chart
   at least `ChartMinWidth` (320). `FitPanel` is the one writer of that room: `MainWindow.axaml.cs` calls
-  it when the window assigns a legend view model and on every `SizeChanged` of the content grid, so the
+  it in `OnLoaded` and on every `SizeChanged` of the content grid, so the
   chart floor holds from the first frame, and a shrink narrows the shown width without writing a slot,
   so growing the window back restores it. The widths and `IsExpanded` are the panel's own fields, so a
   `Rebuild()` keeps them. A `Thumb` between the chart and the panel is the drag handle:
   its `DragDelta` handler calls `ResizePanel`, the only writer of the shown slot, which applies the
   same clamp. Semi ships no `Thumb` theme, so the handle carries its own template, a `Border` painting
   its `Background`; without one it draws nothing and a press never reaches it. The handle shows only
-  while the legend is on and a legend view model exists. Nothing persists the state or the widths —
+  while `IsLegendVisible` holds. Nothing persists the state or the widths —
   every start opens expanded at 280.
 - `Minimap/MinimapView` + `MinimapViewModel` — Canvas-based archive-overview strip; navigates via the
   shared `ChartNavigationController` (see trend-interaction.md).
-- `MainWindow/MainWindow` + `MainWindowViewModel` — the seven-row window grid and the flags its View
+- `MainWindow/TrendWindow` — builds the window's parts once, in dependency order, and disposes them in
+  reverse (`overview.md#one-window-per-process`).
+- `MainWindow/MainWindow` + `MainWindowViewModel` — the six-row window grid and the flags its View
   menu writes; the window's code-behind owns the three view-side requests (close, About dialog,
   settings dialog).
 - `MainWindow/AppMenuBar` — the File / Edit / View / Help menu. Each checkable item reads its flag
   `Mode=OneWay` and writes it only through the command it invokes (`CLAUDE.md`, UI).
 - `MainWindow/AppStatusBar` + `AppStatusBarViewModel` — current connection state and the active
-  aggregation layer, named from resx. Owns the bind-once subscription to the coordinator's connection
-  stream and writes the fault and recovery entries (`data-integration.md`).
+  aggregation layer, named from resx. Built by `TrendWindow` over the coordinator's connection stream and
+  the chart's navigation, and writes the fault and recovery entries (`data-integration.md`).
 - `MainWindow/AboutDialog` + `AboutInfo` — the modal naming the product, the assembly version and the
   configuration directory this run read.
 - `Settings/SettingsDialog` + `SettingsViewModel` — the modal that edits the `app/` and `connection/`
@@ -303,6 +305,9 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   `Resources.Key` and AXAML `{x:Static text:Resources.Key}`. The delta labels and the no-value
   placeholder live there because the source is ASCII. What stays a literal, and why, is in
   `ui-text.md`.
+- `Startup/StartupFailureWindow` + `StartupFailureViewModel` - the window a failed start shows instead of
+  `MainWindow`: the failure text, a panel of its own and the Settings, About and Exit buttons
+  (`overview.md#one-window-per-process`).
 - `Startup/AppSettings` + `AppSettingsLoader` + `StartupSequence` - the required
   `<config-dir>/app` section, its two keys and the ordered startup steps that read it before the
   connection section (`data-integration.md`, Startup).
@@ -413,8 +418,9 @@ view model:
   provider (mirroring `QueryHistoryAsync`); the minimap consumes it (see trend-interaction.md).
 - **Connection state:** `TrendCoordinator.ConnectionFaults` republishes the provider's own
   `IObservable<ArchiveConnectionState>` on the UI scheduler. `MainWindow/AppStatusBarViewModel` binds
-  it once and shows it in the status bar, over a chart that keeps its history; every fault it carries
-  becomes a message-panel entry (see data-integration.md).
+  it and shows it in the status bar, over a chart that keeps its history; every fault it carries
+  becomes a message-panel entry (see data-integration.md). `TrendCoordinator.Dispose` completes the
+  republished stream, while the provider's own stream never terminates (`data-integration.md`).
 
 These records are the plottables' input shape after the view model maps them onto `EnvelopeColumn`
 buffers; there is no serialization step.

@@ -85,8 +85,6 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_disposables.Add(_coordinator.RealtimeFailures
 			.Subscribe(ReportFailure));
 
-		_disposables.Add(_coordinator);
-
 		Plot.HideLegend();
 	}
 

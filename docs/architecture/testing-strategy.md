@@ -91,6 +91,7 @@ commissioning. The container is the delivery mechanism for a real server, nothin
 **Against a real Avalonia** — `SemiPlot.Tests.Unit/UI/`, under `[AvaloniaFact]`:
 `ChartPointerInputTests`, `MinimapPointerInputTests`, `TrendChartViewTests`, `NavigationBarViewTests`,
 `AppMenuBarTests`, `AppStatusBarViewTests`, `MainWindowViewTests`, `MessagePanelViewTests`, `ThemeTests`,
+`StartupFailureWindowTests`, `TrendWindowTests`, `AppMainWindowTests`,
 `TrendCoordinatorTests` with `FakeDataProvider`. Seams guarded: the dispatcher, layout, hit-testing,
 pointer capture and event routing. Real framework, synthetic data. These are what catch a rendering-stack version bump.
 
@@ -173,10 +174,11 @@ and the test hangs. Two schedulers work in its place.
 | `TestScheduler` | the test drives time itself | none |
 | `AvaloniaScheduler.Instance` | the test needs the production seam, as `ChartPointerInputTests` does | the periodic timer lives on the shared headless dispatcher until the view model is disposed, so the test disposes it |
 
-The same holds for a window that realises the chart indirectly: `ChartTestBuilder.CreateChart`, which
-`MainWindowTestBuilder` and the sidebar tests build on, hands its charts a virtual UI scheduler for this
-reason alone. Its `CreateViewModel` takes the immediate UI scheduler and so serves only tests that
-realise no view.
+The same holds for a window that realises the chart indirectly: `ChartTestBuilder.CreateChart`, which the
+sidebar tests build on, hands its charts a virtual UI scheduler for this reason alone. Its
+`CreateViewModel` takes the immediate UI scheduler and so serves only tests that realise no view.
+`MainWindowTestBuilder` composes the window through the production builder, `TrendWindow.Build`, over a
+`TestScheduler`, and no test builds a window's parts by hand.
 
 ## Where the boundaries between projects fall
 

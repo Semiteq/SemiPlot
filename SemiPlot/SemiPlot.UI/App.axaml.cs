@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Reactive.Concurrency;
 
 using Avalonia;
 using Avalonia.Controls;
@@ -10,18 +9,13 @@ using Avalonia.Styling;
 using FluentResults;
 
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 using ReactiveUI.Avalonia;
 
 using Semi.Avalonia;
 
-using SemiPlot.Core.Data;
-using SemiPlot.UI.Bridge;
-using SemiPlot.UI.Chart;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
-using SemiPlot.UI.Minimap;
 using SemiPlot.UI.Startup;
 
 using Serilog.Extensions.Logging;
@@ -30,16 +24,18 @@ namespace SemiPlot.UI;
 
 public class App : Application
 {
-	// Process lifetime by design: ReactiveUI takes its exception handler once, before any service
-	// provider exists, so the observer outlives every window and resolves the panel on first use.
+	// Process lifetime by design: ReactiveUI takes its exception handler once, before any window exists,
+	// so the observer outlives every window and reads the shown window's panel on each exception.
 	private static readonly UnhandledErrorObserver _unhandledErrors = new(
 		ResolveMessagePanel,
 		AvaloniaScheduler.Instance,
 		new SerilogLoggerFactory().CreateLogger(nameof(UnhandledErrorObserver)));
 
-	private IServiceProvider? _serviceProvider;
+	private TrendWindow? _trendWindow;
 
 	private ArchiveFailureView? _startupFailure;
+
+	private MessagePanelViewModel? _messagePanel;
 
 	private string? _configDirectory;
 
@@ -58,39 +54,37 @@ public class App : Application
 		base.OnFrameworkInitializationCompleted();
 	}
 
-	private Window CreateMainWindow()
+	internal Window CreateMainWindow()
 	{
 		if (_startupFailure is not null)
 		{
-			// This path runs before any container exists, so the window gets a panel and a status bar of its
-			// own. ResolveMessagePanel finds no container and returns null, so only what this window
-			// itself opens reports into this panel; the startup-failure row shows the failure and hides the bar.
-			var startupPanel = new MessagePanelViewModel();
-			var startupLoggers = new SerilogLoggerFactory();
+			var startupFailure = new StartupFailureViewModel(
+				_startupFailure, _configDirectory, new SerilogLoggerFactory());
+			var startupFailureWindow = new StartupFailureWindow { DataContext = startupFailure };
 
-			return new MainWindow.MainWindow
+			_messagePanel = startupFailure.MessagePanel;
+			startupFailureWindow.Closed += (_, _) =>
 			{
-				DataContext = new MainWindowViewModel(
-					startupPanel,
-					new AppStatusBarViewModel(
-						startupPanel, startupLoggers.CreateLogger<AppStatusBarViewModel>()),
-					_configDirectory,
-					startupLoggers)
-				{
-					StartupFailure = _startupFailure
-				}
+				_messagePanel = null;
+				startupFailure.Dispose();
 			};
+
+			return startupFailureWindow;
 		}
 
-		if (_serviceProvider is null)
+		if (_trendWindow is not { } trendWindow)
 		{
 			throw new InvalidOperationException(
-				"ServiceProvider not set. Call Run() before starting the app.");
+				"The trend window is not built. Call Run() before starting the app.");
 		}
 
-		var mainWindowViewModel = _serviceProvider.GetRequiredService<MainWindowViewModel>();
+		var mainWindow = new MainWindow.MainWindow { DataContext = trendWindow.ViewModel };
 
-		return new MainWindow.MainWindow { DataContext = mainWindowViewModel };
+		// The dispatcher loop ends with the window, so the composition is disposed here, on the UI thread,
+		// rather than after App.Run returns.
+		mainWindow.Closed += (_, _) => trendWindow.Dispose();
+
+		return mainWindow;
 	}
 
 	/// <summary>
@@ -130,8 +124,12 @@ public class App : Application
 			return;
 		}
 
-		InitializeServices(startup.Value);
-		app._serviceProvider = startup.Value.ServiceProvider;
+		app._messagePanel = startup.Value.ServiceProvider.GetRequiredService<MessagePanelViewModel>();
+		app._trendWindow = TrendWindow.Build(
+			startup.Value,
+			configDirectory
+				?? throw new InvalidOperationException("A started window needs its configuration directory."),
+			AvaloniaScheduler.Instance);
 	}
 
 	internal static CultureInfo SemiLocaleFor(UiLanguage locale)
@@ -157,103 +155,9 @@ public class App : Application
 			.LogToTrace();
 	}
 
-	/// <summary>The panel exists only once the container does; before that a failure is logged and nothing more.</summary>
-	private static MessagePanelViewModel? ResolveMessagePanel()
+	/// <summary>The panel of the window shown; with no window a failure is only logged.</summary>
+	internal static MessagePanelViewModel? ResolveMessagePanel()
 	{
-		return (Current as App)?._serviceProvider?.GetService<MessagePanelViewModel>();
-	}
-
-	internal static void InitializeServices(StartupData startupData)
-	{
-		var uiScheduler = AvaloniaScheduler.Instance;
-		var serviceProvider = startupData.ServiceProvider;
-		var messagePanel = serviceProvider.GetRequiredService<MessagePanelViewModel>();
-
-		var coordinator = new TrendCoordinator(
-			serviceProvider.GetRequiredService<IDataProvider>(),
-			startupData.Pens,
-			serviceProvider.GetRequiredService<IScheduler>(),
-			uiScheduler);
-
-		var chartViewModel = BuildChart(startupData, coordinator, messagePanel, uiScheduler);
-		var minimapViewModel = BuildMinimap(startupData, coordinator, chartViewModel, messagePanel, uiScheduler);
-
-		var catalogueSync = new PenCatalogueSync(
-			serviceProvider.GetRequiredService<IDataProvider>(),
-			startupData.Pens,
-			messagePanel,
-			uiScheduler,
-			serviceProvider.GetRequiredService<ILogger<PenCatalogueSync>>());
-
-		var mainWindowViewModel = serviceProvider.GetRequiredService<MainWindowViewModel>();
-		mainWindowViewModel.SetChart(chartViewModel);
-		mainWindowViewModel.SetMinimap(minimapViewModel);
-		mainWindowViewModel.SetCatalogueSync(catalogueSync, uiScheduler);
-
-		// Before Start, so the first poll tick's state reaches the status bar rather than a stream nothing
-		// is listening to yet: the coordinator's republished stream has no replay.
-		mainWindowViewModel.StatusBar.TrackArchiveConnection(coordinator.ConnectionFaults);
-
-		coordinator.Start();
-		catalogueSync.Start();
-
-		chartViewModel.RequestInitialHistory();
-
-		StartExtentLoad(startupData, minimapViewModel, messagePanel, uiScheduler);
-	}
-
-	private static TrendChartViewModel BuildChart(
-		StartupData startupData,
-		TrendCoordinator coordinator,
-		MessagePanelViewModel messagePanel,
-		IScheduler uiScheduler)
-	{
-		var serviceProvider = startupData.ServiceProvider;
-
-		var chartViewModel = new TrendChartViewModel(
-			coordinator,
-			serviceProvider.GetRequiredService<IScheduler>(),
-			uiScheduler,
-			messagePanel,
-			serviceProvider.GetRequiredService<ILogger<TrendChartViewModel>>());
-
-		// Before the first history request and before the minimap exists: RequestInitialHistory queries
-		// whatever window is in force, and the minimap reads it back when its own extent arrives.
-		chartViewModel.Navigation.SeedFromArchiveExtent(startupData.Extent);
-		chartViewModel.ApplyCatalogue(startupData.Pens);
-
-		return chartViewModel;
-	}
-
-	private static MinimapViewModel BuildMinimap(
-		StartupData startupData,
-		TrendCoordinator coordinator,
-		TrendChartViewModel chartViewModel,
-		MessagePanelViewModel messagePanel,
-		IScheduler uiScheduler)
-	{
-		return new MinimapViewModel(
-			coordinator,
-			chartViewModel.Navigation,
-			uiScheduler,
-			messagePanel,
-			startupData.ServiceProvider.GetRequiredService<ILogger<MinimapViewModel>>());
-	}
-
-	private static void StartExtentLoad(
-		StartupData startupData,
-		MinimapViewModel minimapViewModel,
-		MessagePanelViewModel messagePanel,
-		IScheduler uiScheduler)
-	{
-		var minimapLogger = startupData.ServiceProvider.GetRequiredService<ILogger<MinimapViewModel>>();
-
-		// OnlyOnFaulted, so load.Exception is never null.
-		_ = minimapViewModel.LoadExtentAsync().ContinueWith(
-			load => messagePanel.TryReportFailure(
-				new ExceptionalError(load.Exception!.GetBaseException()), minimapLogger, uiScheduler),
-			CancellationToken.None,
-			TaskContinuationOptions.OnlyOnFaulted,
-			TaskScheduler.Default);
+		return (Current as App)?._messagePanel;
 	}
 }

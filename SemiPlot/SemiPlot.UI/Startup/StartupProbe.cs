@@ -34,18 +34,16 @@ public static class StartupProbe
 
 		Log.Information("Reading the archive in the time zone {TimeZone}", settings.Value.SourceTimeZone.Id);
 
-		var serviceProvider = BuildArchiveServiceProvider(settings.Value, options.ConfigDir);
+		var serviceProvider = BuildArchiveServiceProvider(settings.Value);
 
 		// Main runs with no SynchronizationContext ahead of BuildAvaloniaApp, so this cannot deadlock.
 		return ReadAsync(serviceProvider, DefaultReadBound).GetAwaiter().GetResult();
 	}
 
 	/// <summary>The container the archive path runs on.</summary>
-	internal static ServiceProvider BuildArchiveServiceProvider(
-		PostgresConnectionSettings settings,
-		string configDirectory)
+	internal static ServiceProvider BuildArchiveServiceProvider(PostgresConnectionSettings settings)
 	{
-		var services = new ServiceCollection().AddPostgresData(settings).AddUi(configDirectory);
+		var services = new ServiceCollection().AddPostgresData(settings).AddUi();
 
 		services.AddLogging(builder => builder.AddSerilog(Log.Logger, dispose: false));
 

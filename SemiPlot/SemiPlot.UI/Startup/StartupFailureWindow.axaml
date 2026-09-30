@@ -1,0 +1,63 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:SemiPlot.UI.Startup"
+        xmlns:messages="clr-namespace:SemiPlot.UI.Messages"
+        xmlns:text="clr-namespace:SemiPlot.UI.Localization"
+        mc:Ignorable="d"
+        d:DesignWidth="640"
+        d:DesignHeight="320"
+        x:Class="SemiPlot.UI.Startup.StartupFailureWindow"
+        x:DataType="local:StartupFailureViewModel"
+        Title="{x:Static text:Resources.WindowTitle}"
+        Width="640"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterScreen">
+
+    <StackPanel Margin="16"
+                Spacing="12">
+
+        <StackPanel Spacing="4">
+            <TextBlock Name="StartupFailureTitle"
+                       Text="{Binding Failure.Title}"
+                       FontWeight="Bold"
+                       TextWrapping="Wrap" />
+            <TextBlock Name="StartupFailureDetail"
+                       Text="{Binding Failure.Detail}"
+                       TextWrapping="Wrap" />
+            <TextBlock Name="StartupFailureRemedy"
+                       Text="{Binding Failure.Remedy}"
+                       TextWrapping="Wrap" />
+        </StackPanel>
+
+        <Border Name="MessagePanel"
+                Background="{DynamicResource AppPanelBackgroundBrush}"
+                BorderThickness="0,1,0,0"
+                BorderBrush="{DynamicResource AppBorderBrush}"
+                Padding="8,4"
+                IsVisible="{Binding MessagePanel.IsVisible}">
+            <messages:MessagePanelView DataContext="{Binding MessagePanel}" />
+        </Border>
+
+        <StackPanel Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8">
+            <Button Name="StartupFailureSettings"
+                    Content="{x:Static text:Resources.StartupFailureSettings}"
+                    Command="{Binding ShowSettingsCommand}"
+                    IsVisible="{Binding HasConfigDirectory}"
+                    Padding="12,2" />
+            <Button Name="StartupFailureAbout"
+                    Content="{x:Static text:Resources.StartupFailureAbout}"
+                    Command="{Binding ShowAboutCommand}"
+                    Padding="12,2" />
+            <Button Name="StartupFailureExit"
+                    Content="{x:Static text:Resources.StartupFailureExit}"
+                    Command="{Binding ExitCommand}"
+                    Padding="12,2" />
+        </StackPanel>
+
+    </StackPanel>
+
+</Window>

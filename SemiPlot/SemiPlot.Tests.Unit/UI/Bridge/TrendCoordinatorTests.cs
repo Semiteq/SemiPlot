@@ -23,13 +23,11 @@ public sealed class TrendCoordinatorTests
 	private static readonly DateTime _to = new(2026, 6, 15, 9, 0, 0, DateTimeKind.Utc);
 
 	[Fact]
-	public void Start_EmitsOneRealtimeBatchPerBufferWindow()
+	public void RealtimeBatches_EmitOnePerBufferWindow()
 	{
 		var (coordinator, scheduler, _) = CreateCoordinator(realtimeInterval: TimeSpan.FromMilliseconds(10));
 		var batches = new List<RealtimeBatch>();
 		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
-
-		coordinator.Start();
 
 		scheduler.AdvanceBy(_batchWindow.Ticks);
 		batches.Should().HaveCount(1);
@@ -45,7 +43,6 @@ public sealed class TrendCoordinatorTests
 		var batches = new List<RealtimeBatch>();
 		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
 
-		coordinator.Start();
 		scheduler.AdvanceBy(_batchWindow.Ticks);
 
 		var batch = batches.Single();
@@ -66,7 +63,6 @@ public sealed class TrendCoordinatorTests
 		var batches = new List<RealtimeBatch>();
 		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
 
-		coordinator.Start();
 		scheduler.AdvanceBy(_batchWindow.Ticks);
 
 		var batch = batches.Single();
@@ -89,36 +85,7 @@ public sealed class TrendCoordinatorTests
 	}
 
 	[Fact]
-	public void Dispose_DropsTheRealtimeKeepAliveSubscription()
-	{
-		var (coordinator, scheduler, _) = CreateCoordinator(realtimeInterval: TimeSpan.FromMilliseconds(10));
-		var batches = new List<RealtimeBatch>();
-		coordinator.Start();
-		var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
-		scheduler.AdvanceBy(_batchWindow.Ticks);
-		var countBeforeDispose = batches.Count;
-		countBeforeDispose.Should().BeGreaterThan(0);
-
-		coordinator.Dispose();
-		subscription.Dispose();
-		scheduler.AdvanceBy(_batchWindow.Ticks * 5);
-
-		batches.Should().HaveCount(countBeforeDispose);
-	}
-
-	[Fact]
-	public void Dispose_PreventsRestartingRealtimeViaStart()
-	{
-		var (coordinator, _, _) = CreateCoordinator(realtimeInterval: TimeSpan.FromMilliseconds(10));
-		coordinator.Dispose();
-
-		var act = coordinator.Start;
-
-		act.Should().Throw<ObjectDisposedException>();
-	}
-
-	[Fact]
-	public void Start_WithAnEmptyCatalog_EmitsNoRealtimeBatch()
+	public void RealtimeBatches_WithAnEmptyCatalog_EmitNothing()
 	{
 		var scheduler = new TestScheduler();
 		var provider = new FakeDataProvider(scheduler, TimeSpan.FromMilliseconds(10));
@@ -131,7 +98,6 @@ public sealed class TrendCoordinatorTests
 		var batches = new List<RealtimeBatch>();
 		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
 
-		coordinator.Start();
 		scheduler.AdvanceBy(_batchWindow.Ticks * 5);
 
 		batches.Should().BeEmpty();
@@ -199,7 +165,6 @@ public sealed class TrendCoordinatorTests
 		var batches = new List<RealtimeBatch>();
 		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
 
-		coordinator.Start();
 		scheduler.AdvanceBy(_batchWindow.Ticks);
 
 		provider.ReportConnectionState(
@@ -212,8 +177,8 @@ public sealed class TrendCoordinatorTests
 		batches.Should().HaveCount(2);
 	}
 
-	// Start subscribes to hold the RefCount open, so the provider ending the stream reaches that observer
-	// too: with no onError Rx rethrows it out of the advance below and takes the emitting thread down.
+	// The provider ending the stream reaches every batch observer: with no onError Rx rethrows it out of the
+	// advance below and takes the emitting thread down.
 	[Fact]
 	public void AFaultingRealtimeStream_ReachesTheFailureChannelInsteadOfTheScheduler()
 	{
@@ -230,13 +195,25 @@ public sealed class TrendCoordinatorTests
 			_batchWindow);
 		var failures = new List<Exception>();
 		using var reported = coordinator.RealtimeFailures.Subscribe(failures.Add);
-		coordinator.Start();
+		using var liveEdge = coordinator.RealtimeBatches.Subscribe(_ => { });
 
 		var advance = () => scheduler.AdvanceBy(_batchWindow.Ticks * 2);
 
 		advance.Should().NotThrow();
 		failures.Should().ContainSingle()
 			.Which.Message.Should().Be("the provider ended the live edge");
+	}
+
+	[Fact]
+	public void Dispose_CompletesTheConnectionFaults()
+	{
+		var (coordinator, _, _) = CreateCoordinator();
+		var isCompleted = false;
+		using var subscription = coordinator.ConnectionFaults.Subscribe(_ => { }, () => isCompleted = true);
+
+		coordinator.Dispose();
+
+		isCompleted.Should().BeTrue("a consumer of the stream learns that the window is gone");
 	}
 
 	// A window failing while disposal runs: OnNext on a disposed subject throws, and Rx turns that into the
@@ -247,7 +224,6 @@ public sealed class TrendCoordinatorTests
 		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: TimeSpan.FromMilliseconds(10));
 		var batches = new List<RealtimeBatch>();
 		var failures = new List<Exception>();
-		coordinator.Start();
 		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add, failures.Add);
 		scheduler.AdvanceBy(_batchWindow.Ticks);
 		coordinator.Dispose();
@@ -266,7 +242,6 @@ public sealed class TrendCoordinatorTests
 		using var ownedCoordinator = coordinator;
 		var batches = new List<RealtimeBatch>();
 		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
-		coordinator.Start();
 		scheduler.AdvanceBy(_batchWindow.Ticks);
 		batches.Should().ContainSingle().Which.Pens.Select(values => values.PenId).Should().Equal(1, 2);
 
@@ -284,7 +259,6 @@ public sealed class TrendCoordinatorTests
 		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: TimeSpan.FromMilliseconds(10));
 		using var ownedCoordinator = coordinator;
 		using var subscription = coordinator.RealtimeBatches.Subscribe(_ => { });
-		coordinator.Start();
 		scheduler.AdvanceBy(_batchWindow.Ticks);
 		provider.OpenLiveSubscriptionCount.Should().Be(1);
 
@@ -303,7 +277,7 @@ public sealed class TrendCoordinatorTests
 		using var ownedCoordinator = coordinator;
 		var failures = new List<Exception>();
 		using var reported = coordinator.RealtimeFailures.Subscribe(failures.Add);
-		coordinator.Start();
+		using var liveEdge = coordinator.RealtimeBatches.Subscribe(_ => { });
 		scheduler.AdvanceBy(_batchWindow.Ticks);
 
 		var streamFailure = new InvalidOperationException("the provider ended the switched live edge");

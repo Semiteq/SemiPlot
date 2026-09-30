@@ -47,7 +47,8 @@ Constraint: **$0 budget** — only free/OSS components.
 +-------------------------------------------------------------+
 |  SemiPlot.UI (Avalonia 12.0 + ScottPlot 5)                 |
 |                                                             |
-|   App / MainWindow (Grid: seven rows, table below)          |
+|   App / MainWindow (Grid: six rows, table below)            |
+|     built and owned by TrendWindow                          |
 |     +-- AppMenuBar          File / Edit / View / Help       |
 |     +-- NavigationBarView   jump to now, sticky, delta      |
 |     +-- TrendChartView ---hosts--> ScottPlot AvaPlot        |
@@ -58,6 +59,8 @@ Constraint: **$0 budget** — only free/OSS components.
 |     +-- PenEditorWindow     pens and groups dialog          |
 |   ViewModels (ReactiveUI) ◄── TrendCoordinator (Rx hub)     |
 |                           ◄── PenCatalogueSync (5 s reads)  |
+|   StartupFailureWindow (+ view model): shown instead of     |
+|     MainWindow when the start fails                         |
 +----------------------────────────────────────--------------+
               │ IDataProvider (subscribe realtime, query history,
               │                re-read the catalogue)
@@ -85,25 +88,78 @@ Constraint: **$0 budget** — only free/OSS components.
 The UI never talks to a data source directly. It reads through `IDataProvider`, and the pen editor
 alone writes, through `IPenCatalogueEditor` (see [data-integration.md](./data-integration.md)). The composition root resolves the PostgreSQL
 provider, which is the only one the application ships; an archive that does not answer shows the
-startup failure in the main window rather than falling back to invented data. There is **no web
+startup failure in its own window rather than falling back to invented data. There is **no web
 bridge**: the chart is a native ScottPlot control, fed in-process by `TrendCoordinator` over
 `IObservable`/awaitable seams.
 
+### One window per process
+
+SemiPlot runs one trend window per process. An operator opens several windows, each its own process, on
+one machine. The windows share the configuration directory and the one PostgreSQL archive, whose
+connection never changes while a process runs.
+
+| Shared by every window | Kept by one window |
+| --- | --- |
+| The pen catalogue: name, colour, style, unit, mask, groups, initial scale (the 5 s catalogue loop) | The group shown, the time window, the live-edge mode |
+| The theme | The current scale of each pen, and its visibility |
+| The language, read at each window's start | The message panel and its entries |
+
+`MainWindow/TrendWindow` is the window's composition and its owner. `TrendWindow.Build` takes the start
+sequence's `StartupData`, the configuration directory and the UI scheduler, and constructs in order:
+
+1. the coordinator;
+2. the chart, seeded from the start sequence's pens and extent, whose constructor opens the live edge;
+3. the status bar, over the coordinator's connection stream and the chart's navigation;
+4. the minimap;
+5. the catalogue sync;
+6. the navigation bar and the legend;
+7. the catalogue applier;
+8. `MainWindowViewModel`, over the chart, the status bar, the minimap, the navigation bar, the legend
+   and the sync's `ReadNow`.
+
+The coordinator republishes the provider's connection stream through `ObserveOn` on the UI scheduler.
+`AvaloniaScheduler` runs a zero-delay action at once when the caller is already on the dispatcher thread,
+so `ObserveOn` alone defers nothing for a state emitted on the UI thread. The bar is bound in time for the
+first state because the provider emits off the UI thread; the tests' `TestScheduler` defers it.
+
+`Build` then starts the sync, requests the initial history and starts the minimap's extent load. A part
+is built once and never replaced, so every part of the window view model is non-null.
+`TrendWindow.Dispose` disposes the same objects in reverse order, the coordinator last, and
+`MainWindowViewModel` disposes only its own commands and request subjects. A throw out of `Build` ends
+the start and the process exits; nothing built before the throw is disposed. `Build` resolves every
+container service first, so a missing registration throws before any part exists. `App` builds one
+`TrendWindow`, shows its view model, and disposes the `TrendWindow` from the main window's `Closed` event
+on the UI thread.
+
+The container keeps the process services: the data source, the provider, the editor, the message panel
+and the logger factory. It registers no window part, the status bar included. The UI scheduler is not a
+container registration; `App` passes `AvaloniaScheduler.Instance` to `TrendWindow.Build`, while the data
+scheduler comes from the container.
+
+A failed start opens `Startup/StartupFailureWindow` instead, over its own `StartupFailureViewModel`: the
+failure's title, detail and remedy, a message panel of its own, and the Settings, About and Exit
+buttons. The view model builds and disposes that panel; the window disposes the view model when it
+closes. Settings is present, and its command executable, when a configuration directory is known.
+`App` stores the panel of the window the process shows, the container's in `Configure` on a start and
+the failure window's in `CreateMainWindow` on a failed start, and `App.ResolveMessagePanel` returns that
+field, null before either has run and again after the failure window closes. `UnhandledErrorObserver`
+reaches either window's panel through it. The window has no chart, legend or minimap, and no service
+provider.
+
 ### The window's rows
 
-`MainWindow.axaml` is one `Grid` of seven rows, six `Auto` and the chart row taking the rest
-(`RowDefinitions="Auto,Auto,*,Auto,Auto,Auto,Auto"`). Each row either collapses on a flag or is
+`MainWindow.axaml` is one `Grid` of six rows, five `Auto` and the chart row taking the rest
+(`RowDefinitions="Auto,Auto,*,Auto,Auto,Auto"`). Each row either collapses on a flag or is
 always there.
 
 | Row | Content | Collapses |
 | --- | --- | --- |
 | 0 | Menu bar (`AppMenuBar`) | no |
 | 1 | Navigation bar (`NavigationBarView`) | `IsNavigationBarVisible` |
-| 2 | Chart and legend | the legend column on `IsLegendVisible`; the handle column on `IsLegendVisible` and a non-null `LegendViewModel` |
+| 2 | Chart and legend | the legend column and the handle column on `IsLegendVisible` |
 | 3 | Minimap | `IsMinimapVisible` |
 | 4 | Message panel (`MessagePanelView`) | `MessagePanel.IsVisible` |
-| 5 | Status bar (`AppStatusBar`) | `HasStartupFailure` |
-| 6 | Startup-failure panel | `HasStartupFailure` |
+| 5 | Status bar (`AppStatusBar`) | no |
 
 The `View` menu writes rows 1, 3 and 4; row 2's legend column has its own item. Each flag has one
 writer, the command the menu item invokes, and the item reads back that same flag `Mode=OneWay` — a
@@ -127,8 +183,8 @@ One route, and the mapper is on it. `Messages/ArchiveFailureMapper.Map` turns an
 title, a detail, a remedy and a `MessageSeverity`, and `Messages/MessagePanelViewModel` is the one
 bounded, timestamped list the operator reads them in. A repeated failure is counted against the
 newest entry rather than prepended again, so an outage that reissues a history query on every pan
-produces one entry with a repeat count. The startup-failure panel is separate on purpose: it renders
-before configuration exists and answers a different question.
+produces one entry with a repeat count. The startup-failure text is separate on purpose: it renders
+before configuration exists, in a window of its own, and answers a different question.
 
 `Messages/UnhandledErrorObserver` is the last-resort route under it — what ReactiveUI raises through
 its own machinery (a `ReactiveCommand`'s unobserved `ThrownExceptions`, a faulting `ToProperty`, a
@@ -147,13 +203,15 @@ in the builder lambda, `.UseReactiveUI(builder => builder.WithExceptionHandler(.
 then no-ops. So one `ReactiveCommand`, one `ObservableAsPropertyHelper` or one read of that property
 built ahead of `Setup()` turns the install into a silent no-op, with no error and no log line. This
 is why `StartupSequence.Run` touches no ReactiveUI type and why `MessagePanelViewModel`, which builds
-two `ReactiveCommand`s, is resolved from the container inside `.AfterSetup(...)` and never before it.
+two `ReactiveCommand`s, is resolved from the container inside `.AfterSetup(...)` and never before it. On
+a failed start no container exists, and `StartupFailureViewModel` builds its panel when
+`App.CreateMainWindow` runs, after `Setup()`.
 `RxApp` itself is gone from the installed ReactiveUI 23.2.28; the schedulers live on `RxSchedulers`
 and the handler on `RxState`.
 
-The same ordering forces the one service-locator lookup this tree allows. The handler is taken before
-any container exists, so it cannot be given a panel by constructor injection; `App.ResolveMessagePanel`
-reaches `Application.Current`'s own service provider on first use and returns null until one exists.
+The same ordering forces the one static read this tree allows. The handler is taken before any
+window exists, so it cannot be given a panel by constructor injection; `App.ResolveMessagePanel`
+reads that field of `Application.Current`.
 That is the declared exception to the constructor-injection rule in `CLAUDE.md`, and it covers this
 one method: nothing else may resolve a service through a static.
 
@@ -228,9 +286,9 @@ The window reads the files, not the typed settings. `SettingsSave.ReadOwned` run
 `ConfigurationSection.ReadOwned` over both section folders, which returns each section's scalar values
 as text and the file that owns each key, and the view model fills its fields from that. The typed loaders fail on exactly the values the window is there to fix, such as the
 shipped empty password, so a typed read would open the window empty on the startup-failure path.
-That window carries the menu too: `App.Run` hands the configuration directory to
-`MainWindowViewModel` on both paths. When the argument parse failed, or `LogFileTarget.Prepare` did,
-the directory is null and `ShowSettingsCommand` cannot execute.
+The failure window has a Settings button too: `App.Run` hands the configuration directory to the window
+it shows on both paths. When the argument parse failed, or `LogFileTarget.Prepare` did, the directory is
+null and the failure window shows no Settings button.
 
 A save goes through `Settings/SettingsSave.Save`:
 
@@ -310,12 +368,10 @@ states. Several viewers may run on one machine, and the last write wins per colu
 
 #### Where the view model is built
 
-The editor copies the settings request path. `MainWindowViewModel` takes a trailing
-`IPenCatalogueEditor? penCatalogueEditor = null`. `AddUi` passes the container's editor; the
-startup-failure path leaves it out, because a failed start disposes the container and leaves no data
-source to write through. `ShowPenEditorCommand` is built with `CreateFromTask` and the availability
-`Observable.Return(penCatalogueEditor is not null)`, decided once at construction, so the item exists
-on both windows and is disabled on the startup-failure one. A connection lost after start does not
+The editor copies the settings request path. `MainWindowViewModel` takes the container's
+`IPenCatalogueEditor`, which `TrendWindow.Build` resolves; the failure window has no editor, because a
+failed start disposes the container and leaves no data source to write through. `ShowPenEditorCommand` is
+built with `CreateFromTask` and is always executable. A connection lost after start does not
 disable it: the read fails, `ArchiveFailureMapper` reports it as an `Unreachable` warning, and no
 window opens.
 
@@ -409,8 +465,8 @@ reads, so the read carries the provider's normalisation and nothing repeats it. 
 
 The loop runs on the UI scheduler through `ScheduleAsync`. The read is asynchronous I/O and holds no
 thread, and the loop, `ReadNow`, the snapshot and `Dispose` all run on the UI thread, so nothing is
-locked. `App.InitializeServices` builds the sync from the pens the start sequence read, after the
-minimap, hands it to `MainWindowViewModel.SetCatalogueSync`, and starts it after `coordinator.Start()`.
+locked. `TrendWindow.Build` builds the sync from the pens the start sequence read, after the
+minimap, hands its `ReadNow` to `MainWindowViewModel`, and starts it once the window view model exists.
 `Dispose` cancels the wait, and a read that lands after it emits nothing.
 
 The editor asks for a read after every write it lands. `EditorCallQueue` invokes its success callback
@@ -419,8 +475,7 @@ on the UI thread after a call whose result succeeded, and a failed or thrown cal
 so an edit reaches the chart of the instance that made it within a second, while the editor is still
 open, and every other instance within 5 s. A burst of writes asks for many reads, and `ReadNow` keeps
 them to the read in flight and one after it. Refresh's own read succeeds too and asks for one more
-read, which costs one statement. The startup-failure window has no sync, and the callback does nothing
-there.
+read, which costs one statement. The startup-failure window has no editor and no sync.
 
 #### What a read changes
 
@@ -442,11 +497,11 @@ A delta also puts the chart's pens in the order of the read, and any change rebu
 the chart's pens. The sidebar keeps its width and its expanded state, and every pen keeps its
 visibility.
 
-`MainWindowViewModel.SetCatalogueSync` takes the sync, disposes one it replaces, as `SetChart` disposes
-a replaced chart, and hands it to `MainWindow/PenCatalogueApplier`. The applier applies the sync's
-`Deltas` one at a time, in order, through `Select(delta => Observable.FromAsync(..., uiScheduler))` and
-`Concat()`. The scheduler is required: `FromAsync` without one completes an apply that awaited on the
-thread pool, and the delta queued behind it would start there. Each apply takes four steps:
+`TrendWindow.Build` hands the sync, the chart, the minimap and the legend to
+`MainWindow/PenCatalogueApplier`. The applier applies the sync's `Deltas` one at a time, in order,
+through `Select(delta => Observable.FromAsync(..., uiScheduler))` and `Concat()`. The scheduler is
+required: `FromAsync` without one completes an apply that awaited on the thread pool, and the delta
+queued behind it would start there. Each apply takes four steps:
 
 1. When the chart has no pens and the delta adds some, it reads the extent through
    `MinimapViewModel.LoadExtentAsync` and seeds `Navigation.SeedFromArchiveExtent` with a successful
@@ -461,17 +516,18 @@ thread pool, and the delta queued behind it would start there. Each apply takes 
    leaves the window: the navigation latches its first sample once, so the minimap would otherwise draw
    rows the chart cannot pan to.
 
-The body is one `try/catch`, and a throw goes to the message panel through `ReportFailure`, so the
-next delta still applies. A throw ahead of the end of step 3 also rebases the sync on the pens the
-chart showed before the delta (`PenCatalogueSync.Rebase`): the next read is compared with those, so it
-emits again and the chart and the sidebar catch up instead of staying diverged for the session. The
-chart takes a read whatever baseline it was compared with, because `ApplyCatalogue` compares the read
-with the pens the chart shows: a pen it holds is revised when the read differs, a pen it lacks joins,
-and a pen the read does not name leaves. So the repeat is safe, and so is a delta queued behind the one
-that threw, which was read against a catalogue the chart never took. A throw out of step 4 comes after
-the chart and the sidebar took the delta and rebases nothing. The subscription's `onError` reports the
-same way. `Dispose` disposes the applier, which cancels an apply still waiting for the extent in step
-1, and the sync ahead of the chart; the cancelled apply returns without touching the chart.
+The body is one `try/catch`, and a throw goes to the message panel through
+`TrendChartViewModel.ReportFailure`, so the next delta still applies. A throw ahead of the end of step 3
+also rebases the sync on the pens the chart showed before the delta (`PenCatalogueSync.Rebase`): the next
+read is compared with those, so it emits again and the chart and the sidebar catch up instead of staying
+diverged for the session. The chart takes a read whatever baseline it was compared with, because
+`ApplyCatalogue` compares the read with the pens the chart shows: a pen it holds is revised when the read
+differs, a pen it lacks joins, and a pen the read does not name leaves. So the repeat is safe, and so is
+a delta queued behind the one that threw, which was read against a catalogue the chart never took. A
+throw out of step 4 comes after the chart and the sidebar took the delta and rebases nothing. The
+subscription's `onError` reports the same way. `Dispose` disposes the applier, which cancels an apply
+still waiting for the extent in step 1, and the sync ahead of the chart; the cancelled apply returns
+without touching the chart.
 
 #### A failed read
 
@@ -490,10 +546,10 @@ disconnected, so the periodic read would stay as the fallback in that design too
 few hundred rows every 5 s costs less than the live edge's statement per second, and the live edge
 itself arrives 1 to 2 s after the SCADA writes, so 5 s between stations reads as immediate.
 
-The chart applies the delta to the pens it has and is never rebuilt whole. The status bar binds to one
-coordinator's connection stream once (`AppStatusBarViewModel.TrackArchiveConnection`), the navigation
-controller has no way to take a window back, and a gesture started on the old chart would end on a
-disposed one.
+The chart applies the delta to the pens it has and is never rebuilt whole. A window's parts are built
+once by `TrendWindow.Build` and never replaced. The status bar takes the coordinator's connection
+stream and the chart's navigation in its constructor, the navigation controller has no way to take a
+window back, and a gesture started on a replaced chart would end on a disposed one.
 
 ### Command line
 

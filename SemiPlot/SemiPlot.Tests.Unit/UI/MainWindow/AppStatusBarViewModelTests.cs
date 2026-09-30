@@ -35,9 +35,8 @@ public sealed class AppStatusBarViewModelTests
 	public void Connected_AsTheFirstTick_WritesNoEntry()
 	{
 		using var panel = new MessagePanelViewModel();
-		using var statusBar = NewStatusBar(panel);
 		using var states = new Subject<ArchiveConnectionState>();
-		statusBar.TrackArchiveConnection(states);
+		using var statusBar = NewStatusBar(panel, states);
 
 		states.OnNext(ArchiveConnectionState.Connected);
 
@@ -50,9 +49,8 @@ public sealed class AppStatusBarViewModelTests
 	public void Connected_AfterAFault_WritesExactlyOneInfoEntry()
 	{
 		using var panel = new MessagePanelViewModel();
-		using var statusBar = NewStatusBar(panel);
 		using var states = new Subject<ArchiveConnectionState>();
-		statusBar.TrackArchiveConnection(states);
+		using var statusBar = NewStatusBar(panel, states);
 
 		states.OnNext(ArchiveConnectionState.Connected);
 		states.OnNext(_lost);
@@ -69,9 +67,8 @@ public sealed class AppStatusBarViewModelTests
 	public void Connected_TwiceAfterOneFault_WritesOneRecoveryEntry()
 	{
 		using var panel = new MessagePanelViewModel();
-		using var statusBar = NewStatusBar(panel);
 		using var states = new Subject<ArchiveConnectionState>();
-		statusBar.TrackArchiveConnection(states);
+		using var statusBar = NewStatusBar(panel, states);
 
 		states.OnNext(_lost);
 		states.OnNext(ArchiveConnectionState.Connected);
@@ -85,9 +82,8 @@ public sealed class AppStatusBarViewModelTests
 	public void AFault_SetsTheFaultStateAndItsText()
 	{
 		using var panel = new MessagePanelViewModel();
-		using var statusBar = NewStatusBar(panel);
 		using var states = new Subject<ArchiveConnectionState>();
-		statusBar.TrackArchiveConnection(states);
+		using var statusBar = NewStatusBar(panel, states);
 
 		states.OnNext(_lost);
 
@@ -104,9 +100,9 @@ public sealed class AppStatusBarViewModelTests
 	{
 		using var panel = new MessagePanelViewModel();
 		var logger = new ThrowingLogger<AppStatusBarViewModel>(throwsOnce: true);
-		using var statusBar = new AppStatusBarViewModel(panel, logger);
 		using var states = new Subject<ArchiveConnectionState>();
-		statusBar.TrackArchiveConnection(states);
+		using var statusBar = new AppStatusBarViewModel(
+			panel, states, NavigationAtRawLayer(), logger);
 
 		states.OnNext(_lost);
 
@@ -129,9 +125,9 @@ public sealed class AppStatusBarViewModelTests
 	{
 		using var panel = new MessagePanelViewModel();
 		var logger = new RecordingLogger<AppStatusBarViewModel>();
-		using var statusBar = new AppStatusBarViewModel(panel, logger);
 		using var states = new Subject<ArchiveConnectionState>();
-		statusBar.TrackArchiveConnection(states);
+		using var statusBar = new AppStatusBarViewModel(
+			panel, states, NavigationAtRawLayer(), logger);
 		var poison = ReportingTestDoubles.PoisonEntries(panel);
 
 		states.OnNext(_lost);
@@ -148,26 +144,11 @@ public sealed class AppStatusBarViewModelTests
 	}
 
 	[Fact]
-	public void TrackArchiveConnection_ASecondTime_IsRefused()
-	{
-		using var panel = new MessagePanelViewModel();
-		using var statusBar = NewStatusBar(panel);
-		using var first = new Subject<ArchiveConnectionState>();
-		using var second = new Subject<ArchiveConnectionState>();
-		statusBar.TrackArchiveConnection(first);
-
-		var bindAgain = () => statusBar.TrackArchiveConnection(second);
-
-		bindAgain.Should().Throw<InvalidOperationException>();
-	}
-
-	[Fact]
 	public void AfterDisposal_TheBarStopsFollowingTheStream()
 	{
 		using var panel = new MessagePanelViewModel();
-		var statusBar = NewStatusBar(panel);
 		using var states = new Subject<ArchiveConnectionState>();
-		statusBar.TrackArchiveConnection(states);
+		var statusBar = NewStatusBar(panel, states);
 		statusBar.Dispose();
 
 		states.OnNext(_lost);
@@ -192,9 +173,8 @@ public sealed class AppStatusBarViewModelTests
 			expectedName.Should().NotBe(layer.ToString());
 
 			using var panel = new MessagePanelViewModel();
-			using var statusBar = NewStatusBar(panel);
 			var navigation = NavigationAtRawLayer();
-			statusBar.TrackLayer(navigation);
+			using var statusBar = NewStatusBar(panel, navigation: navigation);
 			DriveToLayer(navigation, layer);
 
 			statusBar.ActiveLayer.Should().Be(layer);
@@ -207,13 +187,12 @@ public sealed class AppStatusBarViewModelTests
 	}
 
 	[Fact]
-	public void TrackLayer_WithNull_StopsFollowingThePreviousChart()
+	public void Dispose_StopsFollowingTheChartsLayer()
 	{
 		using var panel = new MessagePanelViewModel();
-		using var statusBar = NewStatusBar(panel);
 		var navigation = NavigationAtRawLayer();
-		statusBar.TrackLayer(navigation);
-		statusBar.TrackLayer(null);
+		var statusBar = NewStatusBar(panel, navigation: navigation);
+		statusBar.Dispose();
 
 		DriveToLayer(navigation, AggregationLayer.Day);
 

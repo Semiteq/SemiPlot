@@ -10,7 +10,7 @@ namespace SemiPlot.UI.Legend;
 
 public sealed class TrendLegendViewModel : ReactiveObject, IDisposable
 {
-	/// <summary>The expanded width every session starts at; MainWindow.axaml falls back to it.</summary>
+	/// <summary>The expanded width every session starts at.</summary>
 	public const double ExpandedWidth = 280;
 
 	/// <summary>The collapsed width every session starts at.</summary>

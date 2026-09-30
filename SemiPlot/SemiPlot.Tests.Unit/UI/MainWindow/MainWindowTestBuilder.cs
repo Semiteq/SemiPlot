@@ -1,57 +1,74 @@
 using System.Reactive.Concurrency;
+using System.Reactive.Linq;
 
 using AwesomeAssertions;
 
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Reactive.Testing;
 
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Bridge;
-using SemiPlot.Tests.Unit.UI.Chart;
-using SemiPlot.UI.Bridge;
+using SemiPlot.Tests.Unit.UI.PenEditor;
+using SemiPlot.UI;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
-using SemiPlot.UI.Minimap;
+using SemiPlot.UI.Startup;
 
 namespace SemiPlot.Tests.Unit.UI.MainWindow;
 
-/// <summary>What <see cref="MainWindowTestBuilder.NewLiveCatalogueStand"/> builds, with its clock.</summary>
-internal sealed record LiveCatalogueStand(
-	MainWindowViewModel ViewModel,
-	FakeDataProvider Provider,
-	TestScheduler Scheduler);
+/// <summary>
+/// What <see cref="MainWindowTestBuilder.NewWindowStand"/> builds: the window as
+/// <see cref="TrendWindow.Build"/> composes it, with its provider and its clock.
+/// </summary>
+internal sealed class WindowStand(TrendWindow window, ArchiveStand archive) : IDisposable
+{
+	public MainWindowViewModel ViewModel => window.ViewModel;
 
-/// <summary>The window's view models as every test in this folder builds them, plus the layer drive.</summary>
+	public FakeDataProvider Provider => archive.Provider;
+
+	public TestScheduler Scheduler => archive.Scheduler;
+
+	public void Dispose()
+	{
+		window.Dispose();
+		archive.Dispose();
+	}
+}
+
+internal sealed class ArchiveStand(
+	ServiceProvider container,
+	FakeDataProvider provider,
+	TestScheduler scheduler,
+	StartupData data) : IDisposable
+{
+	public FakeDataProvider Provider { get; } = provider;
+
+	public TestScheduler Scheduler { get; } = scheduler;
+
+	public StartupData Data { get; } = data;
+
+	public void Dispose()
+	{
+		container.Dispose();
+	}
+}
+
+/// <summary>The window and its process services as a test builds them, plus the layer drive.</summary>
 internal static class MainWindowTestBuilder
 {
-	public static MainWindowViewModel NewViewModel()
+	public static AppStatusBarViewModel NewStatusBar(
+		MessagePanelViewModel panel,
+		IObservable<ArchiveConnectionState>? connectionStates = null,
+		ChartNavigationController? navigation = null)
 	{
-		return NewViewModel(AppContext.BaseDirectory);
-	}
-
-	/// <summary>
-	/// A null directory is the startup-failure window's shape after a failed argument parse; a null editor is
-	/// that window's shape on every failed startup.
-	/// </summary>
-	public static MainWindowViewModel NewViewModel(
-		string? configDirectory,
-		IPenCatalogueEditor? penCatalogueEditor = null)
-	{
-		var panel = new MessagePanelViewModel();
-
-		return new MainWindowViewModel(
+		return new AppStatusBarViewModel(
 			panel,
-			NewStatusBar(panel),
-			configDirectory,
-			NullLoggerFactory.Instance,
-			penCatalogueEditor);
-	}
-
-	public static AppStatusBarViewModel NewStatusBar(MessagePanelViewModel panel)
-	{
-		return new AppStatusBarViewModel(panel, NullLogger<AppStatusBarViewModel>.Instance);
+			connectionStates ?? Observable.Never<ArchiveConnectionState>(),
+			navigation ?? NavigationAtRawLayer(),
+			NullLogger<AppStatusBarViewModel>.Instance);
 	}
 
 	// The narrowest column target puts every layer inside the model's 365-day width ceiling; at the widest
@@ -65,54 +82,56 @@ internal static class MainWindowTestBuilder
 		return navigation;
 	}
 
-	public static TrendChartViewModel CreateChartWithPens()
-	{
-		var scheduler = new TestScheduler();
-		var provider = new FakeDataProvider(scheduler, TimeSpan.FromMilliseconds(10));
-		var chart = ChartTestBuilder.CreateChart(scheduler, provider);
-		chart.ApplyCatalogue(provider.Pens);
-
-		return chart;
-	}
-
 	/// <summary>
-	/// A window view model over a chart, a minimap and a started catalogue read loop, wired in the order
-	/// App.InitializeServices wires them, all on one virtual clock and one provider; the loop has entered its
-	/// first wait.
+	/// The process services a start hands the window: one container over one virtual clock and one provider,
+	/// and the startup data read from them.
 	/// </summary>
-	public static LiveCatalogueStand NewLiveCatalogueStand(
+	public static ArchiveStand NewArchiveStand(
 		IReadOnlyList<Pen>? pens = null,
-		IPenCatalogueEditor? penCatalogueEditor = null)
+		IPenCatalogueEditor? penCatalogueEditor = null,
+		MessagePanelViewModel? panel = null)
 	{
 		var scheduler = new TestScheduler();
 		var provider = new FakeDataProvider(scheduler, TimeSpan.FromSeconds(1), pens);
-		var viewModel = NewViewModel(AppContext.BaseDirectory, penCatalogueEditor);
-		var messagePanel = viewModel.MessagePanel;
-		var coordinator = ChartTestBuilder.CreateCoordinator(scheduler, provider);
-		var chart = ChartTestBuilder.CreateChart(scheduler, coordinator, messagePanel);
-		chart.ApplyCatalogue(provider.Pens);
+		var services = new ServiceCollection()
+			.AddSingleton<IScheduler>(scheduler)
+			.AddSingleton<IDataProvider>(provider)
+			.AddSingleton(penCatalogueEditor ?? new FakePenCatalogueEditor())
+			.AddUi();
 
-		var minimap = new MinimapViewModel(
-			coordinator,
-			chart.Navigation,
-			ImmediateScheduler.Instance,
-			messagePanel,
-			NullLogger<MinimapViewModel>.Instance);
-		var catalogueSync = new PenCatalogueSync(
-			provider,
-			provider.Pens,
-			messagePanel,
-			scheduler,
-			NullLogger<PenCatalogueSync>.Instance);
+		if (panel is not null)
+		{
+			services.AddSingleton(panel);
+		}
 
-		viewModel.SetChart(chart);
-		viewModel.SetMinimap(minimap);
-		viewModel.SetCatalogueSync(catalogueSync, scheduler);
-		catalogueSync.Start();
-		chart.RequestInitialHistory();
-		scheduler.AdvanceBy(1);
+		services.AddLogging();
 
-		return new LiveCatalogueStand(viewModel, provider, scheduler);
+		var container = services.BuildServiceProvider();
+		var startupExtent = provider.Pens.Count == 0
+			? ArchiveExtent.Empty
+			: new ArchiveExtent(provider.ArchiveFirstUtc, provider.ArchiveLastUtc);
+
+		var startupData = new StartupData(container, provider.Pens, startupExtent);
+
+		return new ArchiveStand(container, provider, scheduler, startupData);
+	}
+
+	/// <summary>
+	/// A window built through <see cref="TrendWindow.Build"/> over one virtual clock and one provider; the
+	/// catalogue read loop has entered its first wait.
+	/// </summary>
+	public static WindowStand NewWindowStand(
+		IReadOnlyList<Pen>? pens = null,
+		IPenCatalogueEditor? penCatalogueEditor = null,
+		string? configDirectory = null,
+		MessagePanelViewModel? panel = null)
+	{
+		var archive = NewArchiveStand(pens, penCatalogueEditor, panel);
+		var window = TrendWindow.Build(archive.Data, configDirectory ?? AppContext.BaseDirectory, archive.Scheduler);
+
+		archive.Scheduler.AdvanceBy(1);
+
+		return new WindowStand(window, archive);
 	}
 
 	public static void DriveToLayer(ChartNavigationController navigation, AggregationLayer layer)

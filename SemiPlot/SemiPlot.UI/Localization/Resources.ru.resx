@@ -105,6 +105,15 @@
   <data name="MenuHelpAbout" xml:space="preserve">
     <value>О программе</value>
   </data>
+  <data name="StartupFailureSettings" xml:space="preserve">
+    <value>Настройки</value>
+  </data>
+  <data name="StartupFailureAbout" xml:space="preserve">
+    <value>О программе</value>
+  </data>
+  <data name="StartupFailureExit" xml:space="preserve">
+    <value>Выход</value>
+  </data>
   <data name="AboutTitle" xml:space="preserve">
     <value>О программе SemiPlot</value>
   </data>

@@ -201,6 +201,18 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 
 	public ReactiveCommand<Unit, Unit> SaveCommand { get; }
 
+	/// <summary>Reads the section files off the UI thread and builds the view model over what they hold.</summary>
+	public static async Task<SettingsViewModel> OpenAsync(
+		string configDirectory,
+		MessagePanelViewModel messagePanel,
+		ILoggerFactory loggerFactory)
+	{
+		var (app, connection) = await Task.Run(() => SettingsSave.ReadOwned(configDirectory));
+
+		return new SettingsViewModel(
+			configDirectory, app, connection, messagePanel, loggerFactory.CreateLogger<SettingsViewModel>());
+	}
+
 	public void Dispose()
 	{
 		SaveCommand.Dispose();

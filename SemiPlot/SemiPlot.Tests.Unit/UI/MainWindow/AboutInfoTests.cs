@@ -47,8 +47,6 @@ public sealed class AboutInfoTests
 		about.ConfigurationDirectory.Should().Be(@"C:\semiplot\config");
 	}
 
-	// Program.ReportStartupFailure opens this window with its menu when the parse failed, so Help > About is
-	// reachable with nothing to name and the row says so rather than standing empty.
 	[Fact]
 	public void AboutInfo_WithArgumentsThatDoNotParse_SaysTheDirectoryIsNotKnown()
 	{

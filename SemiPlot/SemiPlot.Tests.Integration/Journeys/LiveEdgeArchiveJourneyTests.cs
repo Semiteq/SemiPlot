@@ -71,7 +71,6 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 		chart.ApplyCatalogue(catalogue.Value);
 
 		chart.Navigation.SeedFromArchiveExtent(extent.Value);
-		coordinator.Start();
 
 		var historyApplied = chart.HistoryApplied.FirstAsync().ToTask();
 		chart.RequestInitialHistory();
@@ -159,7 +158,6 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 		chart.ApplyCatalogue(catalogue.Value);
 
 		chart.Navigation.SeedFromArchiveExtent(extent.Value);
-		coordinator.Start();
 
 		var historyApplied = chart.HistoryApplied.FirstAsync().ToTask();
 		chart.RequestInitialHistory();

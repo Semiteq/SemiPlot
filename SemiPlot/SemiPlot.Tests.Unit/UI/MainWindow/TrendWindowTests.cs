@@ -5,6 +5,7 @@ using AwesomeAssertions;
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
+using SemiPlot.Tests.Unit.UI.Startup;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.MainWindow;
 
@@ -62,7 +63,8 @@ public sealed class TrendWindowTests
 		var lost = new ArchiveConnectionState(
 			new ArchiveError(ArchiveFault.ConnectionLost, "bench", 5432, "semiplot_dev", "3"));
 		archive.Provider.LiveSubscriptionChanging = () => archive.Provider.ReportConnectionState(lost);
-		using var window = TrendWindow.Build(archive.Data, AppContext.BaseDirectory, archive.Scheduler);
+		using var window = TrendWindow.Build(
+			archive.Data, TestLaunch.LauncherAt(AppContext.BaseDirectory), archive.Scheduler);
 		archive.Provider.LiveSubscriptionChanging = null;
 
 		archive.Scheduler.AdvanceBy(1);

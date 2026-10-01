@@ -180,6 +180,10 @@ sidebar tests build on, hands its charts a virtual UI scheduler for this reason 
 `MainWindowTestBuilder` composes the window through the production builder, `TrendWindow.Build`, over a
 `TestScheduler`, and no test builds a window's parts by hand.
 
+No test starts a process. `MainWindowTestBuilder` and `TestLaunch.LauncherAt` give every window an
+`InstanceLauncher` over a recording seam, its internal four-argument constructor, because the default
+launcher would start the test host; `InstanceLauncherTests` pins the start info as a pure builder.
+
 ## Where the boundaries between projects fall
 
 Two projects, peers, and the line between them is one question: does the test need a container?

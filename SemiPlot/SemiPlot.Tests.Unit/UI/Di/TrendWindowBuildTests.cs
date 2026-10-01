@@ -13,6 +13,7 @@ using ReactiveUI.Avalonia;
 
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
+using SemiPlot.Tests.Unit.UI.Startup;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
@@ -48,7 +49,8 @@ public sealed class TrendWindowBuildTests
 
 		dataProvider.FailHistory = true;
 		dataProvider.FailExtent = true;
-		using var window = TrendWindow.Build(probe.Value, AppContext.BaseDirectory, AvaloniaScheduler.Instance);
+		using var window = TrendWindow.Build(
+			probe.Value, TestLaunch.LauncherAt(AppContext.BaseDirectory), AvaloniaScheduler.Instance);
 		scheduler.AdvanceBy(TimeSpan.FromMilliseconds(200.0).Ticks);
 		Dispatcher.UIThread.RunJobs();
 
@@ -72,7 +74,8 @@ public sealed class TrendWindowBuildTests
 
 		var probe = await StartupProbe.ReadAsync(container, StartupProbe.DefaultReadBound);
 
-		using var window = TrendWindow.Build(probe.Value, AppContext.BaseDirectory, AvaloniaScheduler.Instance);
+		using var window = TrendWindow.Build(
+			probe.Value, TestLaunch.LauncherAt(AppContext.BaseDirectory), AvaloniaScheduler.Instance);
 		var mainWindowViewModel = window.ViewModel;
 
 		mainWindowViewModel.StatusBar.IsConnected.Should().BeTrue();
@@ -98,7 +101,8 @@ public sealed class TrendWindowBuildTests
 
 		var probe = await StartupProbe.ReadAsync(container, StartupProbe.DefaultReadBound);
 
-		using var window = TrendWindow.Build(probe.Value, AppContext.BaseDirectory, AvaloniaScheduler.Instance);
+		using var window = TrendWindow.Build(
+			probe.Value, TestLaunch.LauncherAt(AppContext.BaseDirectory), AvaloniaScheduler.Instance);
 		Dispatcher.UIThread.RunJobs();
 		var mainWindowViewModel = window.ViewModel;
 		var requests = new List<PenEditorViewModel>();

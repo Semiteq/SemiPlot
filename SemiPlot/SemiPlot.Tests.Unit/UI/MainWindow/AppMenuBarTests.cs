@@ -45,13 +45,32 @@ public sealed class AppMenuBarTests
 			.Select(leaf => leaf.Name)
 			.Should()
 			.Contain(
-				["FileExit", "EditSettings", "EditPensAndGroups", "ViewAutoscale", "ViewInitialScale", "ViewMessagePanel", "HelpAbout"],
+				[
+					"FileNewWindow", "FileExit", "EditSettings", "EditPensAndGroups", "ViewAutoscale",
+					"ViewInitialScale", "ViewMessagePanel", "HelpAbout"
+				],
 				"the walk descends into every menu");
 
 		foreach (var leaf in leaves)
 		{
 			leaf.Command.Should().NotBeNull("'{0}' is a menu leaf and has to act", leaf.Name);
 		}
+	}
+
+	[AvaloniaFact]
+	public void FileMenu_HoldsTheNewWindowItemThenTheExitItemEachBoundToItsCommand()
+	{
+		using var stand = NewWindowStand();
+		var viewModel = stand.ViewModel;
+		var menuBar = ShowMenuBar(viewModel);
+
+		var fileMenu = menuBar.FindControl<MenuItem>("FileMenu");
+		fileMenu.Should().NotBeNull();
+
+		var items = fileMenu!.Items.OfType<MenuItem>().ToList();
+		items.Select(item => item.Name).Should().Equal("FileNewWindow", "FileExit");
+		items[0].Command.Should().BeSameAs(viewModel.NewWindowCommand);
+		items[1].Command.Should().BeSameAs(viewModel.ExitCommand);
 	}
 
 	[AvaloniaFact]

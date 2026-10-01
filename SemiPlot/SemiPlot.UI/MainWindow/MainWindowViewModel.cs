@@ -18,6 +18,7 @@ using SemiPlot.UI.Minimap;
 using SemiPlot.UI.Navigation;
 using SemiPlot.UI.PenEditor;
 using SemiPlot.UI.Settings;
+using SemiPlot.UI.Startup;
 
 namespace SemiPlot.UI.MainWindow;
 
@@ -29,11 +30,11 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 	private readonly Subject<SettingsViewModel> _settingsRequests = new();
 	private readonly Subject<PenEditorViewModel> _penEditorRequests = new();
 
-	private readonly string _configDirectory;
 	private readonly ILoggerFactory _loggerFactory;
 	private readonly ILogger<MainWindowViewModel> _logger;
 	private readonly IPenCatalogueEditor _penCatalogueEditor;
 	private readonly Action _readCatalogueNow;
+	private readonly InstanceLauncher _instanceLauncher;
 	private readonly ObservableAsPropertyHelper<string> _penScaleHeader;
 
 	/// <summary>
@@ -48,9 +49,9 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 		NavigationBarViewModel navigationBarViewModel,
 		TrendLegendViewModel legendViewModel,
 		Action readCatalogueNow,
-		string configDirectory,
 		ILoggerFactory loggerFactory,
-		IPenCatalogueEditor penCatalogueEditor)
+		IPenCatalogueEditor penCatalogueEditor,
+		InstanceLauncher instanceLauncher)
 	{
 		MessagePanel = messagePanel;
 		StatusBar = statusBar;
@@ -59,10 +60,10 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 		NavigationBarViewModel = navigationBarViewModel;
 		LegendViewModel = legendViewModel;
 		_readCatalogueNow = readCatalogueNow;
-		_configDirectory = configDirectory;
 		_loggerFactory = loggerFactory;
 		_logger = loggerFactory.CreateLogger<MainWindowViewModel>();
 		_penCatalogueEditor = penCatalogueEditor;
+		_instanceLauncher = instanceLauncher;
 
 		_disposables.Add(_penScaleHeader = ChartViewModel
 			.WhenAnyValue(chart => chart.DrawnPenId, chart => chart.Pens, (penId, _) => PenScaleHeaderFor(penId))
@@ -83,6 +84,7 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 			() => ChartViewModel.AutoscaleActivePen()));
 		_disposables.Add(InitialScaleCommand = ReactiveCommand.Create(
 			() => ChartViewModel.RestoreInitialScale()));
+		_disposables.Add(NewWindowCommand = ReactiveCommand.Create(() => { StartCopy(); }));
 		_disposables.Add(ExitCommand = ReactiveCommand.Create(
 			() => _exitRequests.OnNext(Unit.Default)));
 		_disposables.Add(ShowAboutCommand = ReactiveCommand.Create(
@@ -146,6 +148,9 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 
 	public ReactiveCommand<Unit, Unit> InitialScaleCommand { get; }
 
+	/// <summary>Starts another instance and keeps this window.</summary>
+	public ReactiveCommand<Unit, Unit> NewWindowCommand { get; }
+
 	public ReactiveCommand<Unit, Unit> ExitCommand { get; }
 
 	public ReactiveCommand<Unit, Unit> ShowAboutCommand { get; }
@@ -161,6 +166,23 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 		MessagePanel.TryReportFailure(new ExceptionalError(failure), _logger);
 	}
 
+	public void RestartApplication()
+	{
+		if (StartCopy())
+		{
+			_exitRequests.OnNext(Unit.Default);
+		}
+	}
+
+	private bool StartCopy()
+	{
+		var started = _instanceLauncher.Start();
+
+		MessagePanel.ReportFailure(started, _logger);
+
+		return started.IsSuccess;
+	}
+
 	private string PenScaleHeaderFor(int? drawnPenId)
 	{
 		return drawnPenId is { } penId && ChartViewModel.FindPen(penId) is { } state
@@ -170,7 +192,8 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 
 	private async Task RequestSettingsAsync()
 	{
-		_settingsRequests.OnNext(await SettingsViewModel.OpenAsync(_configDirectory, MessagePanel, _loggerFactory));
+		_settingsRequests.OnNext(await SettingsViewModel.OpenAsync(
+			_instanceLauncher.ConfigDirectory, MessagePanel, _loggerFactory, RestartApplication));
 	}
 
 	private async Task RequestPenEditorAsync()

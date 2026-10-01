@@ -48,6 +48,11 @@
                     Command="{Binding ShowSettingsCommand}"
                     IsVisible="{Binding OffersSettings}"
                     Padding="12,2" />
+            <Button Name="StartupFailureRestart"
+                    Content="{x:Static text:Resources.StartupFailureRestart}"
+                    Command="{Binding RestartCommand}"
+                    IsVisible="{Binding OffersRestart}"
+                    Padding="12,2" />
             <Button Name="StartupFailureAbout"
                     Content="{x:Static text:Resources.StartupFailureAbout}"
                     Command="{Binding ShowAboutCommand}"

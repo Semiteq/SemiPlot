@@ -131,22 +131,26 @@ CS8509, so no compiler check stands behind it: a fifth `AggregationLayer` member
 ## The settings window's text
 
 The `Edit` menu is `MenuEdit` with two items, `MenuEditSettings` and `MenuEditPensAndGroups`
-(`#the-pen-editors-text`). `Settings/SettingsDialog.axaml` reads
-`SettingsTitle`, the two section headers `SettingsInterfaceHeader` and `SettingsConnectionHeader`, one
-`Settings*Label` per field, `SettingsSave` and `SettingsClose`. The language and theme choices read
-`SettingsLanguageRussian`, `SettingsLanguageEnglish`, `SettingsThemeLight` and `SettingsThemeDark`:
-the combo box shows the label and the file keeps the token `SettingsVocabulary` pairs with it.
-The dialog's message line, left of the buttons, shows `SettingsSectionUnreadable` with the section header
-as `{0}` when a section fails to read, else `SettingsKeyAbsent` with the first edited key no file of its
-section carries as `{0}`, else the rule the first invalid field breaks, in form order:
-`SettingsHostInvalid`, `SettingsPortInvalid`, `SettingsPollIntervalInvalid`, and `SettingsFieldRequired`
-for a blank database, user or password or an unchosen language or theme, which takes the field's label as
-`{0}`.
-`SettingsViewModel.ValidationMessage` picks it. The line is not under the field, so each message opens
-with the field it names, and each is one short line in both languages ("Host: expected an IP address
-such as 127.0.0.1"); `ui-theme.md#a-form-never-resizes-on-validation` holds the width it has to fit.
-`SettingsRestartNotice` is the dialog's own text after a save that succeeded, on the same line while no
-field is invalid. It is not a panel entry, because the panel carries failures.
+(`#the-pen-editors-text`). `Settings/SettingsDialog.axaml` reads `SettingsTitle`, the two section headers
+`SettingsInterfaceHeader` and `SettingsConnectionHeader`, one `Settings*Label` per field, `SettingsSave`
+and `SettingsClose`. The language and theme choices read `SettingsLanguageRussian`,
+`SettingsLanguageEnglish`, `SettingsThemeLight` and `SettingsThemeDark`: the combo box shows the label
+and the file keeps the token `SettingsVocabulary` pairs with it. The dialog's message line, left of the
+buttons, shows `SettingsSectionUnreadable` with the section header as `{0}` when a section fails to read,
+else `SettingsKeyAbsent` with the first edited key no file of its section carries as `{0}`, else the rule
+the first invalid field breaks, in form order: `SettingsHostInvalid`, `SettingsPortInvalid`,
+`SettingsPollIntervalInvalid`, and `SettingsFieldRequired` for a blank database, user or password or an
+unchosen language or theme, which takes the field's label as `{0}`. `SettingsViewModel.ValidationMessage`
+picks it. The line is not under the field, so each message opens with the field it names, and each is one
+short line in both languages ("Host: expected an IP address such as 127.0.0.1");
+`ui-theme.md#a-form-never-resizes-on-validation` holds the width it has to fit. `SettingsRestartNotice`
+is the dialog's own text after a save that changed any key, on the same line while no field is invalid,
+and `SettingsRestartNow` ("Restart now", «Перезапустить») is the button beside it. It is not a panel
+entry, because the panel carries failures. `MenuFileNewWindow` names the `File` item that starts another
+window, and `StartupFailureRestart` the failure window's button; `StartupFailureRestart` and
+`SettingsRestartNow` share «Перезапустить», one term for one action. `FailureInstanceHostUnknownTitle`,
+`...Detail` and `...Remedy` are the text of a copy that cannot start because the running process names no
+executable.
 
 A refused save reads the same text as the startup failure for the same value, because both go through
 `ArchiveFailureMapper.Map`. The save adds two `SectionProblem` arms, each with a detail and a remedy

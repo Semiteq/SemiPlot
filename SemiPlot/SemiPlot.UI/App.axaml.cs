@@ -37,7 +37,7 @@ public class App : Application
 
 	private MessagePanelViewModel? _messagePanel;
 
-	private string? _configDirectory;
+	private InstanceLauncher? _instanceLauncher;
 
 	public override void Initialize()
 	{
@@ -59,7 +59,9 @@ public class App : Application
 		if (_startupFailure is not null)
 		{
 			var startupFailure = new StartupFailureViewModel(
-				_startupFailure, _configDirectory, new SerilogLoggerFactory());
+				_startupFailure,
+				_instanceLauncher,
+				new SerilogLoggerFactory());
 			var startupFailureWindow = new StartupFailureWindow { DataContext = startupFailure };
 
 			_messagePanel = startupFailure.MessagePanel;
@@ -81,31 +83,53 @@ public class App : Application
 		var mainWindow = new MainWindow.MainWindow { DataContext = trendWindow.ViewModel };
 
 		// The dispatcher loop ends with the window, so the composition is disposed here, on the UI thread,
-		// rather than after App.Run returns.
+		// rather than after RunStarted returns.
 		mainWindow.Closed += (_, _) => trendWindow.Dispose();
 
 		return mainWindow;
 	}
 
-	/// <summary>
-	/// <paramref name="settings"/> is null only when the settings load itself failed; that window renders
-	/// on the variant <c>App.axaml</c> declares, and every other window follows the configured one.
-	/// <paramref name="configDirectory"/> is null when the startup failure leaves the settings window nothing to fix.
-	/// </summary>
-	public static void Run(AppSettings? settings, Result<StartupData> startup, string? configDirectory)
+	public static void RunStarted(AppSettings? settings, StartupData startup, StartupOptions options)
 	{
 		BuildAvaloniaApp()
-			.AfterSetup(builder => Configure((App)builder.Instance!, settings, startup, configDirectory))
+			.AfterSetup(builder => ConfigureStarted((App)builder.Instance!, settings, startup, options))
 			.StartWithClassicDesktopLifetime([]);
 	}
 
-	internal static void Configure(
+	/// <summary>
+	/// <paramref name="settings"/> is null only when the settings load itself failed; that window renders
+	/// on the variant <c>App.axaml</c> declares. <paramref name="options"/> is null when the launch keys did
+	/// not parse: no copy to start.
+	/// </summary>
+	public static void RunFailed(AppSettings? settings, IError failure, StartupOptions? options)
+	{
+		BuildAvaloniaApp()
+			.AfterSetup(builder => ConfigureFailed((App)builder.Instance!, settings, failure, options))
+			.StartWithClassicDesktopLifetime([]);
+	}
+
+	internal static void ConfigureStarted(
 		App app,
 		AppSettings? settings,
-		Result<StartupData> startup,
-		string? configDirectory)
+		StartupData startup,
+		StartupOptions options)
 	{
-		// Above the failure return, so an archive failure still renders on the configured variant.
+		ApplyAppearance(app, settings);
+
+		app._messagePanel = startup.ServiceProvider.GetRequiredService<MessagePanelViewModel>();
+		app._trendWindow = TrendWindow.Build(startup, new InstanceLauncher(options), AvaloniaScheduler.Instance);
+	}
+
+	internal static void ConfigureFailed(App app, AppSettings? settings, IError failure, StartupOptions? options)
+	{
+		ApplyAppearance(app, settings);
+
+		app._startupFailure = ArchiveFailureMapper.Map(failure);
+		app._instanceLauncher = options is null ? null : new InstanceLauncher(options);
+	}
+
+	private static void ApplyAppearance(App app, AppSettings? settings)
+	{
 		if (settings is not null)
 		{
 			app.RequestedThemeVariant = VariantFor(settings.Theme);
@@ -115,21 +139,6 @@ public class App : Application
 		// already read in.
 		SemiTheme.OverrideLocaleResources(
 			app, SemiLocaleFor(settings?.Locale ?? StartupSequence.BootstrapLocale));
-
-		if (startup.IsFailed)
-		{
-			app._startupFailure = ArchiveFailureMapper.Map(startup.Errors[0]);
-			app._configDirectory = configDirectory;
-
-			return;
-		}
-
-		app._messagePanel = startup.Value.ServiceProvider.GetRequiredService<MessagePanelViewModel>();
-		app._trendWindow = TrendWindow.Build(
-			startup.Value,
-			configDirectory
-				?? throw new InvalidOperationException("A started window needs its configuration directory."),
-			AvaloniaScheduler.Instance);
 	}
 
 	internal static CultureInfo SemiLocaleFor(UiLanguage locale)

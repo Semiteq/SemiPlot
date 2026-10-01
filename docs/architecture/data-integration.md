@@ -646,18 +646,17 @@ therefore holds the ordered blocking steps and `Program.Main` calls it ahead of
 `BuildAvaloniaApp()`, while the reads `TrendWindow.Build` starts inside `AfterSetup` are
 asynchronous.
 
-`StartupOptions.Parse(args)` runs ahead of all of it, because the logger's own path is an argument.
-It returns `Result<StartupOptions>`, and on failure `Program.Main` applies the bootstrap culture,
-creates no logger, opens the failure window through `App.Run(null, failure, configDirectory: null)`
-and returns 1. On
-success `LogFileTarget.Prepare` opens the file that `--log-file` names, creating its folder, and
-takes the same route on failure: Serilog's file sink reports its own open failure only to
-`Serilog.Debugging.SelfLog` and then writes nowhere, so a mistyped path would otherwise start the
-viewer with no log and no report. Only then is the logger created, and `Program.Main` writes one
-Information line naming the configuration directory and the logging level; `StartupProbe.Run` writes
-one more naming the time zone once the connection section loads. A healthy run reaches Information
-nowhere else, so above that level the file `Prepare` opened stays empty until the first
-failure.
+`StartupOptions.Parse(args)` runs ahead of all of it, because the logger's own path is an argument. It
+returns `Result<StartupOptions>`, and on failure `Program.Main` applies the bootstrap culture, creates no
+logger, opens the failure window through `App.RunFailed(null, failure, options: null)` and returns 1. On
+success `LogFileTarget.Prepare` opens the file that `--log-file` names, creating its folder, and takes
+the same route on failure, passing the parsed options so the window still offers Restart and Settings:
+Serilog's file sink reports its own open failure only to `Serilog.Debugging.SelfLog` and then writes
+nowhere, so a mistyped path would otherwise start the viewer with no log and no report. Only then is the
+logger created, and `Program.Main` writes one Information line naming the configuration directory and the
+logging level; `StartupProbe.Run` writes one more naming the time zone once the connection section loads.
+A healthy run reaches Information nowhere else, so above that level the file `Prepare` opened stays empty
+until the first failure.
 
 `StartupSequence.Run` then takes these steps in order:
 
@@ -670,11 +669,10 @@ failure.
    `AddPostgresData(settings)`.
 4. Resolve `IDataProvider`, read the pen catalogue, then the archive extent.
 
-The container, the pens and the extent cross the boundary in a `StartupData` record inside a
-`Result`, so `TrendWindow.Build` awaits nothing. `Program.Main` passes the settings and that
-`Result` and the configuration directory to `App.Run(AppSettings?, Result<StartupData>, string?)`
-unconditionally, the directory reaching the settings window on both paths (the failure window offers
-Settings only when both sections read and every key the dialog edits is present): on success `App` builds one
+The container, the pens and the extent cross the boundary in a `StartupData` record, so `TrendWindow.Build` awaits nothing. `Program.Main` passes the settings, the `StartupData` or the first `IError`, and the parsed `StartupOptions` to `App.RunStarted(AppSettings?, StartupData, StartupOptions)` on
+success and to `App.RunFailed(AppSettings?, IError, StartupOptions?)` on failure, the configuration
+directory reaching the settings window and the keys reaching `InstanceLauncher` on both paths (the failure window offers Settings only when both sections read and every
+key the dialog edits is present; `overview.md#another-instance`): on success `App` builds one
 `TrendWindow` (`overview.md#one-window-per-process`); on failure `App` maps the error through
 `ArchiveFailureMapper` and opens `Startup/StartupFailureWindow`, which names what broke and what to do
 and holds a message panel of its own. That window has no chart, legend or minimap and no service

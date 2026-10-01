@@ -8,7 +8,7 @@ using SemiPlot.UI;
 namespace SemiPlot.Tests.Unit.UI.Startup;
 
 /// <summary>
-/// Puts back everything <c>App.Configure</c> writes into the headless application: the private fields it
+/// Puts back everything <c>App.ConfigureStarted</c> writes into the headless application: the private fields it
 /// sets, the locale resources and the theme variant. <c>Application.Current</c> outlives every test class,
 /// and nothing on the production surface undoes a call.
 /// </summary>
@@ -19,7 +19,7 @@ internal sealed class AppStateScope : IDisposable
 		AppField("_trendWindow"),
 		AppField("_startupFailure"),
 		AppField("_messagePanel"),
-		AppField("_configDirectory")
+		AppField("_instanceLauncher")
 	];
 
 	private readonly object?[] _previousFields;

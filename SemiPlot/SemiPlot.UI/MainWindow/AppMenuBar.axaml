@@ -14,6 +14,9 @@
 
         <MenuItem Name="FileMenu"
                   Header="{x:Static text:Resources.MenuFile}">
+            <MenuItem Name="FileNewWindow"
+                      Header="{x:Static text:Resources.MenuFileNewWindow}"
+                      Command="{Binding NewWindowCommand}" />
             <MenuItem Name="FileExit"
                       Header="{x:Static text:Resources.MenuFileExit}"
                       Command="{Binding ExitCommand}" />

@@ -121,11 +121,11 @@ tests in every state it reaches.
 ## Semi's own control strings
 
 `SemiTheme` keys its built-in strings by specific culture and falls through to `zh-CN` for a neutral
-one, so `App.Configure` calls `SemiTheme.OverrideLocaleResources` with
+one, so `App.ApplyAppearance` calls `SemiTheme.OverrideLocaleResources` with
 `App.SemiLocaleFor(settings?.Locale ?? StartupSequence.BootstrapLocale)`, outside the
-`settings is not null` guard that the variant sits inside (`App.axaml.cs:109-112`): a settings failure
+`settings is not null` guard that the variant sits inside (`App.axaml.cs:133-141`): a settings failure
 has no configured locale and reads its window in the bootstrap one.
-`AppConfigurationTests.ASettingsFailure_StillHandsSemiTheBootstrapLocale` calls `App.Configure` with
+`AppConfigurationTests.ASettingsFailure_StillHandsSemiTheBootstrapLocale` calls `App.ConfigureFailed` with
 null settings and reads `STRING_MENU_COPY` back off `Application.Resources`, so moving the call
 inside the guard turns it red. The surfaces this tree shows are the window's own `Menu` and the
 context menu of the axis scale panel's fields.
@@ -182,7 +182,8 @@ colour and text, never size:
 - One message line sits left of the buttons. It is a `TextBlock.form-message`: two lines of 20 px
   reserved, wrapped, trimmed past the second. It shows the rule the first invalid field breaks, in form
   order, and is empty while every field is valid. A notice that is not an error, such as the settings
-  dialog's restart notice, shares the same line and gives way to an error.
+  dialog's restart notice with its Restart now button in the same cell, shares the same line and gives
+  way to an error, the button with it.
 - Each message is one short line in both languages, `ui-text.md#the-settings-windows-text`.
 
 The invalid style targets the template part, not the control. Semi paints a `TextBox` border on
@@ -194,14 +195,32 @@ wins. `SettingsViewTests.AnInvalidField_PaintsItsBorderWithTheErrorBrushFocusedO
 rendered `BorderBrush` of both parts, focused and at rest, under both variants; it fails without the
 include.
 
-The settings dialog is 528 px wide, with a 20 px margin and 10 px between rows. Measured on 2026-09-25
+The settings dialog is 640 px wide, with a 20 px margin and 10 px between rows. Measured on 2026-09-25
 with Skia and HarfBuzz, every field valid, `SizeToContent="WidthAndHeight"`: 245 px in English and 278 px in
 Russian, so the labels and fields fit either way, and at 440 px the dialog held its size in both languages
-with each field invalid in turn. The width is 1.2 times that measurement, so the message line has about
-88 px more than the 196 px it had there; a message that still does not fit wraps into the second
-reserved line. A longer label, button or message is measured the same way before it ships.
+with each field invalid in turn. The 528 px width that the 1.2 times rule gave is superseded by the
+restart-notice measurement below, which set 640 px; a message that still does not fit wraps into the
+second reserved line. A longer label, button or message is measured the same way before it ships.
 `SettingsViewTests.TheDialog_KeepsItsSizeAndItsButtonsWhenAFieldTurnsInvalid` gates the rule: the
 dialog's and the save button's `Bounds` are equal before and after an invalid host.
+
+The restart notice shares its cell with the Restart now button, which narrows the notice by the button and a
+12 px margin. Measured on 2026-09-30 with Skia and HarfBuzz, the real theme, at 14 px with 20 px lines:
+
+| | English | Russian |
+| --- | --- | --- |
+| Restart now button | 111 px | 135 px |
+| Save and Close buttons | 59 and 64 px | 104 and 88 px |
+| Notice text on one line | 224 px | 325 px |
+| Notice cell beside the button at 528 px wide | 222 px, two lines | 129 px, trimmed past the second line |
+| Notice cell beside the button at 640 px wide | 334 px, one line | 241 px, two lines, the first 235 px wide |
+| Message cell when the notice is hidden, at 640 px | 457 px | 388 px |
+
+At 528 px the Russian notice did not fit its two lines, so the dialog is 640 px wide: the cell holds the
+Russian notice in two lines with 482 px of line capacity for its 325 px. The headless tests measure with the
+test font, which is about twice as wide, so no test asserts the trimming; `SettingsViewTests` gates the
+button's and the notice's effect on the dialog's and the Save button's `Bounds` instead. A longer notice or
+label is measured again in both languages before it ships.
 
 ### The axis scale panel
 
@@ -282,11 +301,11 @@ the 100 px groups column at `MinWidth` and equal header button heights.
 ## How the variant reaches the application
 
 `Startup/AppSettingsLoader` reads `theme` into `AppSettings.Theme`
-(`Startup/AppSettings.cs:14-19`), and `App.Configure`, which `App.Run` hands to `AfterSetup`,
-assigns `RequestedThemeVariant` from it at `App.axaml.cs:111`, above the failure return. So an
-archive failure still renders on the configured variant. `settings` is null only when the settings load
+(`Startup/AppSettings.cs:14-19`), and `App.ApplyAppearance`, which `App.ConfigureStarted` and
+`App.ConfigureFailed` call inside `AfterSetup`, assigns `RequestedThemeVariant` from it before either path
+builds a window. So an archive failure still renders on the configured variant. `settings` is null only when the settings load
 itself failed; that window renders on the `Light` variant `App.axaml:5` declares, which is also
-what the headless test builders see, since they construct `App` directly and never call `App.Run`.
+what the headless test builders see, since they construct `App` directly and never call `App.RunStarted`.
 
 `SettingsVocabulary`, in the same file as the enums, holds every spelling of a settings value: the
 yaml token the loader matches, the UI culture, Semi's specific culture and the `ThemeVariant`. A

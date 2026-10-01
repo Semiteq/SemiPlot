@@ -354,7 +354,7 @@ and fast navigation across long archives.
 
 Same author, same conventions — reuse directly:
 
-- DI + two-phase startup (validate config → build provider → `App.Run`); `IServiceCollection`
+- DI + two-phase startup (validate config → build provider → `App.RunStarted`); `IServiceCollection`
   extension methods.
 - Coordinator-as-event-hub: expose realtime as `IObservable<T>`, `ObserveOn(MainThreadScheduler)
   .Publish().RefCount()` at the source; subscribers `DisposeWith(_disposables)`. This is the

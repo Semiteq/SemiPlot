@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reactive.Linq;
 
 using Avalonia.Headless.XUnit;
@@ -181,6 +182,55 @@ public sealed class MainWindowViewModelTests
 
 		penCatalogueEditor.Calls.Should().Contain(new FakeEditorCall.CreateGroup("Gas"));
 		stand.Provider.PensQueryCount.Should().Be(0);
+	}
+
+	[AvaloniaFact]
+	public void RestartExitsOnlyAfterTheCopyStarted()
+	{
+		var started = 0;
+		var exits = 0;
+		var exitsWhenTheCopyStarted = -1;
+		using var stand = NewWindowStand(start: _ =>
+		{
+			started++;
+			exitsWhenTheCopyStarted = exits;
+		});
+		using var subscription = stand.ViewModel.ExitRequests.Subscribe(_ => exits++);
+
+		stand.ViewModel.RestartApplication();
+
+		started.Should().Be(1);
+		exitsWhenTheCopyStarted.Should().Be(0, "the exit request follows the started copy");
+		exits.Should().Be(1);
+	}
+
+	[AvaloniaFact]
+	public void AFailedRestart_ReportsAndKeepsTheWindow()
+	{
+		var exits = 0;
+		using var panel = new MessagePanelViewModel();
+		using var stand = NewWindowStand(
+			panel: panel, start: _ => throw new InvalidOperationException("no such file"));
+		using var subscription = stand.ViewModel.ExitRequests.Subscribe(_ => exits++);
+
+		stand.ViewModel.RestartApplication();
+
+		exits.Should().Be(0);
+		panel.Entries.Should().ContainSingle().Which.View.Severity.Should().Be(MessageSeverity.Error);
+	}
+
+	[AvaloniaFact]
+	public async Task NewWindow_StartsACopyAndKeepsTheWindow()
+	{
+		var started = new List<ProcessStartInfo>();
+		var exits = 0;
+		using var stand = NewWindowStand(start: started.Add);
+		using var subscription = stand.ViewModel.ExitRequests.Subscribe(_ => exits++);
+
+		await stand.ViewModel.NewWindowCommand.Execute();
+
+		started.Should().ContainSingle();
+		exits.Should().Be(0);
 	}
 
 	private static async Task<PenEditorViewModel> OpenPenEditorAsync(MainWindowViewModel viewModel)

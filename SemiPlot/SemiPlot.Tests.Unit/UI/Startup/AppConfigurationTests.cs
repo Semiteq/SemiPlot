@@ -4,8 +4,6 @@ using Avalonia.Styling;
 
 using AwesomeAssertions;
 
-using FluentResults;
-
 using Semi.Avalonia;
 
 using SemiPlot.UI;
@@ -15,7 +13,7 @@ using Xunit;
 
 namespace SemiPlot.Tests.Unit.UI.Startup;
 
-// What App.Run runs inside AfterSetup. Semi's own control strings are the observable half: the
+// Semi's own control strings are the observable half: the
 // override writes them into Application.Resources, so reading one back says which locale reached it.
 [Collection(ProcessGlobalStateCollection.Name)]
 [Trait("Component", "UI")]
@@ -51,17 +49,16 @@ public sealed class AppConfigurationTests
 	{
 		using var scope = new AppStateScope();
 
-		App.Configure(scope.App, settings, FailedStartup(), configDirectory: null);
+		App.ConfigureFailed(scope.App, settings, FailedStartup(), options: null);
 
 		scope.App.Resources.TryGetResource(CopyMenuKey, ThemeVariant.Light, out var value);
 
 		return value;
 	}
 
-	private static Result<StartupData> FailedStartup()
+	private static AppSettingsError FailedStartup()
 	{
-		return Result.Fail<StartupData>(
-			new AppSettingsError("app", AppSettingsProblem.KeyMissing, AppSettingsLoader.LocaleKey));
+		return new AppSettingsError("app", AppSettingsProblem.KeyMissing, AppSettingsLoader.LocaleKey);
 	}
 
 	private static object? SemiCopyStringOf(UiLanguage language)

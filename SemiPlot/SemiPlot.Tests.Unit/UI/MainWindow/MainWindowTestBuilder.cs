@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 
@@ -11,6 +12,7 @@ using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.Tests.Unit.UI.PenEditor;
+using SemiPlot.Tests.Unit.UI.Startup;
 using SemiPlot.UI;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.MainWindow;
@@ -124,10 +126,12 @@ internal static class MainWindowTestBuilder
 		IReadOnlyList<Pen>? pens = null,
 		IPenCatalogueEditor? penCatalogueEditor = null,
 		string? configDirectory = null,
-		MessagePanelViewModel? panel = null)
+		MessagePanelViewModel? panel = null,
+		Action<ProcessStartInfo>? start = null)
 	{
 		var archive = NewArchiveStand(pens, penCatalogueEditor, panel);
-		var window = TrendWindow.Build(archive.Data, configDirectory ?? AppContext.BaseDirectory, archive.Scheduler);
+		var launcher = TestLaunch.LauncherAt(configDirectory ?? AppContext.BaseDirectory, start);
+		var window = TrendWindow.Build(archive.Data, launcher, archive.Scheduler);
 
 		archive.Scheduler.AdvanceBy(1);
 

@@ -20,14 +20,14 @@ public static class Program
 
 		if (options.IsFailed)
 		{
-			return ReportStartupFailure(options.Errors);
+			return ReportStartupFailure(options.Errors, options: null);
 		}
 
 		var logFile = LogFileTarget.Prepare(options.Value.LogFilePath);
 
 		if (logFile.IsFailed)
 		{
-			return ReportStartupFailure(logFile.Errors);
+			return ReportStartupFailure(logFile.Errors, options.Value);
 		}
 
 		CreateLogger(options.Value.LogFilePath, options.Value.LoggingLevel);
@@ -40,15 +40,15 @@ public static class Program
 			if (startup.IsFailed)
 			{
 				LogStartupFailure(startup.Errors);
-				App.Run(settings, startup, options.Value.ConfigDir);
+				App.RunFailed(settings, startup.Errors[0], options.Value);
 
 				return FailedExitCode;
 			}
 
-			// Held for its disposal alone: the scope closes when Main returns, after App.Run.
+			// Held for its disposal alone: the scope closes when Main returns, after App.RunStarted.
 			using var serviceProvider = startup.Value.ServiceProvider;
 
-			App.Run(settings, startup, options.Value.ConfigDir);
+			App.RunStarted(settings, startup.Value, options.Value);
 
 			return 0;
 		}
@@ -65,11 +65,11 @@ public static class Program
 	}
 
 	// docs/architecture/data-integration.md#startup
-	private static int ReportStartupFailure(IReadOnlyList<IError> errors)
+	private static int ReportStartupFailure(IReadOnlyList<IError> errors, StartupOptions? options)
 	{
 		StartupSequence.ApplyBootstrapCulture();
 
-		App.Run(null, Result.Fail<StartupData>(errors), configDirectory: null);
+		App.RunFailed(settings: null, errors[0], options);
 
 		return FailedExitCode;
 	}

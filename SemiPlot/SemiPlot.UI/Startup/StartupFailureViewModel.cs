@@ -22,27 +22,29 @@ public sealed class StartupFailureViewModel : ReactiveObject, IDisposable
 	private readonly Subject<Unit> _exitRequests = new();
 	private readonly Subject<SettingsViewModel> _settingsRequests = new();
 
-	private readonly string? _configDirectory;
 	private readonly ILoggerFactory _loggerFactory;
 	private readonly ILogger<StartupFailureViewModel> _logger;
+	private readonly InstanceLauncher? _instanceLauncher;
 
 	public StartupFailureViewModel(
 		ArchiveFailureView failure,
-		string? configDirectory,
+		InstanceLauncher? instanceLauncher,
 		ILoggerFactory loggerFactory)
 	{
 		Failure = failure;
 		MessagePanel = new MessagePanelViewModel();
-		_configDirectory = configDirectory;
-		OffersSettings = configDirectory is not null && EverySavedKeyPresent(configDirectory);
+		OffersSettings = instanceLauncher is not null && EverySavedKeyPresent(instanceLauncher.ConfigDirectory);
 		_loggerFactory = loggerFactory;
 		_logger = loggerFactory.CreateLogger<StartupFailureViewModel>();
+		_instanceLauncher = instanceLauncher;
 
 		_disposables.Add(MessagePanel);
 		_disposables.Add(_aboutRequests);
 		_disposables.Add(_exitRequests);
 		_disposables.Add(_settingsRequests);
 
+		_disposables.Add(RestartCommand = ReactiveCommand.Create(
+			RestartApplication, Observable.Return(OffersRestart)));
 		_disposables.Add(ExitCommand = ReactiveCommand.Create(
 			() => _exitRequests.OnNext(Unit.Default)));
 		_disposables.Add(ShowAboutCommand = ReactiveCommand.Create(
@@ -62,12 +64,17 @@ public sealed class StartupFailureViewModel : ReactiveObject, IDisposable
 	/// </summary>
 	public bool OffersSettings { get; }
 
+	/// <summary>True only when the launch keys parsed, so there is a copy to start.</summary>
+	public bool OffersRestart => _instanceLauncher is not null;
+
 	public IObservable<AboutInfo> AboutRequests => _aboutRequests.AsObservable();
 
 	public IObservable<Unit> ExitRequests => _exitRequests.AsObservable();
 
 	/// <summary>Each request carries a view model the listener owns and disposes when its dialog closes.</summary>
 	public IObservable<SettingsViewModel> SettingsRequests => _settingsRequests.AsObservable();
+
+	public ReactiveCommand<Unit, Unit> RestartCommand { get; }
 
 	public ReactiveCommand<Unit, Unit> ExitCommand { get; }
 
@@ -81,6 +88,14 @@ public sealed class StartupFailureViewModel : ReactiveObject, IDisposable
 		MessagePanel.TryReportFailure(new ExceptionalError(failure), _logger);
 	}
 
+	public void RestartApplication()
+	{
+		if (_instanceLauncher is { } launcher)
+		{
+			Restart(launcher);
+		}
+	}
+
 	private static bool EverySavedKeyPresent(string configDirectory)
 	{
 		var (app, connection) = SettingsSave.ReadOwned(configDirectory);
@@ -88,14 +103,32 @@ public sealed class StartupFailureViewModel : ReactiveObject, IDisposable
 		return app.IsSuccess && connection.IsSuccess && SettingsSave.FirstAbsentKey(app.Value, connection.Value) is null;
 	}
 
+	private void Restart(InstanceLauncher launcher)
+	{
+		if (StartCopy(launcher))
+		{
+			_exitRequests.OnNext(Unit.Default);
+		}
+	}
+
+	private bool StartCopy(InstanceLauncher launcher)
+	{
+		var started = launcher.Start();
+
+		MessagePanel.ReportFailure(started, _logger);
+
+		return started.IsSuccess;
+	}
+
 	private async Task RequestSettingsAsync()
 	{
-		if (_configDirectory is not { } configDirectory)
+		if (_instanceLauncher is not { } launcher)
 		{
 			return;
 		}
 
-		_settingsRequests.OnNext(await SettingsViewModel.OpenAsync(configDirectory, MessagePanel, _loggerFactory));
+		_settingsRequests.OnNext(await SettingsViewModel.OpenAsync(
+			launcher.ConfigDirectory, MessagePanel, _loggerFactory, () => Restart(launcher)));
 	}
 
 	public void Dispose()

@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Reactive.Linq;
 using System.Windows.Input;
 
 using Avalonia;
@@ -26,6 +28,8 @@ using Xunit;
 
 using static SemiPlot.Tests.Unit.UI.MainWindow.MainWindowTestBuilder;
 
+using MainWindowView = SemiPlot.UI.MainWindow.MainWindow;
+
 namespace SemiPlot.Tests.Unit.UI.MainWindow;
 
 /// <summary>The realised window: which rows stand, and which flag each of them follows.</summary>
@@ -46,7 +50,7 @@ public sealed class MainWindowViewTests
 		using var stand = NewWindowStand(
 			penCatalogueEditor: penCatalogueEditor, configDirectory: AppContext.BaseDirectory);
 		var viewModel = stand.ViewModel;
-		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
+		var window = new MainWindowView { DataContext = viewModel };
 		window.Show();
 		Dispatcher.UIThread.RunJobs();
 
@@ -81,7 +85,7 @@ public sealed class MainWindowViewTests
 		{
 			using var stand = NewWindowStand(configDirectory: configDirectory);
 			var viewModel = stand.ViewModel;
-			var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
+			var window = new MainWindowView { DataContext = viewModel };
 			window.Show();
 			Dispatcher.UIThread.RunJobs();
 
@@ -115,6 +119,37 @@ public sealed class MainWindowViewTests
 		}
 	}
 
+	[AvaloniaFact]
+	public async Task TheRestartNowButton_OfTheSettingsDialog_StartsACopyAndClosesTheWindow()
+	{
+		var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
+		try
+		{
+			var started = new List<ProcessStartInfo>();
+			using var stand = NewWindowStand(configDirectory: configDirectory, start: started.Add);
+			var window = new MainWindowView { DataContext = stand.ViewModel };
+			window.Show();
+			Dispatcher.UIThread.RunJobs();
+			await stand.ViewModel.ShowSettingsCommand.Execute();
+			await HeadlessWait.Until(() => window.OwnedWindows.OfType<SettingsDialog>().Any());
+			var dialog = window.OwnedWindows.OfType<SettingsDialog>().Single();
+			var settings = dialog.DataContext.Should().BeOfType<SettingsViewModel>().Which;
+
+			HeadlessInput.Type(dialog, dialog.FindControl<TextBox>("SettingsPassword")!, "secret");
+			HeadlessInput.Click(dialog, dialog.FindControl<Button>("SettingsSaveButton")!);
+			await HeadlessWait.Until(() => settings.IsRestartPending);
+			HeadlessInput.Click(dialog, dialog.FindControl<Button>("SettingsRestartNow")!);
+			Dispatcher.UIThread.RunJobs();
+
+			started.Should().ContainSingle();
+			window.IsVisible.Should().BeFalse("the restart closes the owning window");
+		}
+		finally
+		{
+			Directory.Delete(configDirectory, recursive: true);
+		}
+	}
+
 	// The row binds the same flag the View menu writes and reads back, and a failure opens it: an entry that
 	// landed off screen would be a failure the operator is never shown.
 	[AvaloniaFact]
@@ -123,7 +158,7 @@ public sealed class MainWindowViewTests
 		using var panel = new MessagePanelViewModel();
 		using var stand = NewWindowStand(panel: panel);
 		var viewModel = stand.ViewModel;
-		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
+		var window = new MainWindowView { DataContext = viewModel };
 		window.Show();
 		var row = window.FindControl<Border>("MessagePanel");
 
@@ -148,7 +183,7 @@ public sealed class MainWindowViewTests
 	{
 		using var stand = NewWindowStand();
 		var viewModel = stand.ViewModel;
-		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
+		var window = new MainWindowView { DataContext = viewModel };
 		window.Show();
 		Dispatcher.UIThread.RunJobs();
 		var rows = new (string Name, Action Toggle)[]
@@ -181,7 +216,7 @@ public sealed class MainWindowViewTests
 	{
 		using var stand = NewWindowStand();
 		var viewModel = stand.ViewModel;
-		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
+		var window = new MainWindowView { DataContext = viewModel };
 		var panel = window.FindControl<Border>("LegendPanel");
 
 		window.Show();
@@ -204,7 +239,7 @@ public sealed class MainWindowViewTests
 	{
 		using var stand = NewWindowStand();
 		var viewModel = stand.ViewModel;
-		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
+		var window = new MainWindowView { DataContext = viewModel };
 		window.Show();
 		Dispatcher.UIThread.RunJobs();
 		var panel = window.FindControl<Border>("LegendPanel")!;
@@ -236,7 +271,7 @@ public sealed class MainWindowViewTests
 	{
 		using var stand = NewWindowStand();
 		var viewModel = stand.ViewModel;
-		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
+		var window = new MainWindowView { DataContext = viewModel };
 		window.Show();
 		Dispatcher.UIThread.RunJobs();
 		var panel = window.FindControl<Border>("LegendPanel")!;
@@ -257,7 +292,7 @@ public sealed class MainWindowViewTests
 	{
 		using var stand = NewWindowStand();
 		var viewModel = stand.ViewModel;
-		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
+		var window = new MainWindowView { DataContext = viewModel };
 		window.Show();
 		Dispatcher.UIThread.RunJobs();
 		var panel = window.FindControl<Border>("LegendPanel")!;
@@ -281,7 +316,7 @@ public sealed class MainWindowViewTests
 	{
 		using var stand = NewWindowStand();
 		var viewModel = stand.ViewModel;
-		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel, Width = 500 };
+		var window = new MainWindowView { DataContext = viewModel, Width = 500 };
 		window.Show();
 		Dispatcher.UIThread.RunJobs();
 		var chart = window.FindControl<Border>("ChartContent")!;
@@ -294,7 +329,7 @@ public sealed class MainWindowViewTests
 	{
 		using var stand = NewWindowStand();
 		var viewModel = stand.ViewModel;
-		var window = new SemiPlot.UI.MainWindow.MainWindow { DataContext = viewModel };
+		var window = new MainWindowView { DataContext = viewModel };
 		window.Show();
 		Dispatcher.UIThread.RunJobs();
 		var chart = window.FindControl<Border>("ChartContent")!;

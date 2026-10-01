@@ -105,7 +105,8 @@ connection never changes while a process runs.
 | The language, read at each window's start | The message panel and its entries |
 
 `MainWindow/TrendWindow` is the window's composition and its owner. `TrendWindow.Build` takes the start
-sequence's `StartupData`, the configuration directory and the UI scheduler, and constructs in order:
+sequence's `StartupData`, the process's `InstanceLauncher` (which names the configuration directory) and the
+UI scheduler, and constructs in order:
 
 1. the coordinator;
 2. the chart, seeded from the start sequence's pens and extent, whose constructor opens the live edge;
@@ -136,11 +137,33 @@ and the logger factory. It registers no window part, the status bar included. Th
 container registration; `App` passes `AvaloniaScheduler.Instance` to `TrendWindow.Build`, while the data
 scheduler comes from the container.
 
+### Another instance
+
+`Startup/InstanceLauncher` starts a copy of the running process with the launch keys it was started with.
+`App.ConfigureStarted` and `App.ConfigureFailed` build one from the parsed `StartupOptions` and hand it, as a
+required argument, to `TrendWindow.Build` and to `StartupFailureViewModel`; nothing else constructs one. A
+started window always carries its options, and only a failed start can carry none.
+
+- The copy starts from `Environment.ProcessPath`, with `--config-dir`, `--log-file` and `--logging-level`
+  in `ProcessStartInfo.ArgumentList`, one argument each, so a path with spaces needs no quoting. A relative
+  key resolves as it did for the first process, because the copy inherits the working directory.
+- When the host is the `dotnet` muxer (`dotnet` or `dotnet.exe`), the entry assembly's path goes first. A
+  muxer with no entry assembly path, and a process with no path at all, are an `InstanceHostUnknownError`,
+  which `ArchiveFailureMapper` maps to an `Error` entry with its own resource text.
+- `File` -> `New window` (`MainWindowViewModel.NewWindowCommand`) starts a copy and keeps the window.
+  `RestartApplication`, on `MainWindowViewModel` and `StartupFailureViewModel`, starts a copy and closes
+  the window only once the copy has started. Both report a failed start to the window's own
+  panel, each view model through `MessagePanel.ReportFailure`, and keep the window.
+- A copy is a plain child process of the window that started it, not a resource of any stand that
+  launched the first process (`bench.md#the-demos-directories`).
+
 A failed start opens `Startup/StartupFailureWindow` instead, over its own `StartupFailureViewModel`: the
-failure's title, detail and remedy, a message panel of its own, and the Settings, About and Exit
+failure's title, detail and remedy, a message panel of its own, and the Settings, Restart, About and Exit
 buttons. The view model builds and disposes that panel; the window disposes the view model when it
-closes. Settings is present, and its command executable, when a configuration directory is known.
-`App` stores the panel of the window the process shows, the container's in `Configure` on a start and
+closes. Settings and Restart are present when the launch keys parsed, which is when the view model has an
+`InstanceLauncher`; Settings also needs both sections to read and carry every key it edits
+(`#the-settings-window`). Restart starts a copy and closes the window only once the copy has started.
+`App` stores the panel of the window the process shows, the container's in `ConfigureStarted` on a start and
 the failure window's in `CreateMainWindow` on a failed start, and `App.ResolveMessagePanel` returns that
 field, null before either has run and again after the failure window closes. `UnhandledErrorObserver`
 reaches either window's panel through it. The window has no chart, legend or minimap, and no service
@@ -268,11 +291,17 @@ one method: nothing else may resolve a service through a static.
 
 ### The settings window
 
-`Edit` -> `Settings` opens `Settings/SettingsDialog`, the viewer's only writer of the section folders.
-It edits `locale` and `theme` in `app/`, and `host`, `port`, `database`, `user`, `password` and
+`Edit` -> `Settings` opens `Settings/SettingsDialog`, the viewer's only writer of the section folders. It
+edits `locale` and `theme` in `app/`, and `host`, `port`, `database`, `user`, `password` and
 `poll_interval_ms` in `connection/`. A key the window does not show, such as `schema`, stays in its file
-and survives every rewrite. Nothing applies live: the
-dialog shows a restart notice after a save, and the change takes effect at the next start.
+and survives every rewrite. The dialog shows a restart notice after a save that changed any key, and the
+change takes effect at the next start. Beside the notice, "Restart now"
+(`SettingsViewModel.RestartNowCommand`) runs the `RestartApplication` of the window that opened the
+dialog, which starts a copy with the same launch keys and closes that window only once the copy has
+started (`#another-instance`). The command cannot execute while `SaveCommand` runs: a copy would read the
+section folders mid-save, and closing the window would end the process inside the save. The view model
+takes that restart as a required argument: the failure window opens the dialog only when launch options
+parsed, so it always has one to hand.
 
 Each connection field takes only what its loader accepts. `host` is a text box checked by
 `PostgresConnectionLoader.IsIPv4Address`, the loader's own rule. `port` and `poll_interval_ms` are
@@ -297,9 +326,10 @@ its section carries leave the button hidden, and the
 failure text, which names the path and the keys to create, alone instructs the operator; the window
 creates no file, so a dialog over a section it cannot read, or over an absent key, has nothing to save into.
 `Edit` -> `Settings` over such a folder opens with Save disabled and the reason on the message line. An empty password
-still offers Settings, and a save writes it into the existing `connection.yaml`. `App.Run` hands the
-configuration directory to the window it shows on both paths. When the argument parse failed, or
-`LogFileTarget.Prepare` did, the directory is null and the failure window shows no Settings button.
+still offers Settings, and a save writes it into the existing `connection.yaml`. `App.RunStarted` and
+`App.RunFailed` hand the parsed launch options to the window they show. When the argument parse failed, the options
+are null and the failure window shows neither Settings nor Restart. A `LogFileTarget.Prepare` failure
+follows a successful parse, so `Program` passes the parsed options and the window offers both.
 
 A save goes through `Settings/SettingsSave.Save`:
 
@@ -574,6 +604,9 @@ All three keys are required and none carries a default.
 | `--config-dir <dir>` | Directory holding the `app/` and `connection/` section folders |
 | `--log-file <path>` | Log file, rolling 5 MB / 5 files |
 | `--logging-level <level>` | `verbose` \| `debug` \| `info` (or `information`) \| `warning` \| `error` \| `fatal`, case-insensitive |
+
+`File` -> `New window`, `Restart` and `Restart now` start a copy with the same three keys verbatim
+(`#another-instance`).
 
 `StartupOptions.Parse` returns `Result<StartupOptions>`. A missing key, a key the parser does not
 know, a valued key given last with nothing after it, and an unusable logging level are each a

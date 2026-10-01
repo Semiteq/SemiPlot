@@ -3,8 +3,6 @@ using Avalonia.Threading;
 
 using AwesomeAssertions;
 
-using FluentResults;
-
 using SemiPlot.UI;
 using SemiPlot.UI.MainWindow;
 
@@ -31,7 +29,8 @@ public sealed class AppMainWindowTests
 		using var scope = new AppStateScope();
 		using var archive = NewArchiveStand();
 
-		App.Configure(scope.App, settings: null, Result.Ok(archive.Data), AppContext.BaseDirectory);
+		App.ConfigureStarted(
+			scope.App, settings: null, archive.Data, TestLaunch.OptionsAt(AppContext.BaseDirectory));
 
 		var window = scope.App.CreateMainWindow();
 		var viewModel = window.DataContext.Should().BeOfType<MainWindowViewModel>().Which;

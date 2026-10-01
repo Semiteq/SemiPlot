@@ -175,16 +175,49 @@ public sealed class SettingsViewTests : IDisposable
 			var notice = Named<TextBlock>(dialog, "SettingsRestartNotice");
 			notice.IsEffectivelyVisible.Should().BeFalse();
 
-			var dark = viewModel.Themes.Single(choice => choice.Token == "dark");
-			Pick(dialog, Named<ComboBox>(dialog, "SettingsTheme"), dark);
-			viewModel.SelectedTheme!.Token.Should().Be("dark");
+			var other = viewModel.Languages.First(choice => choice.Token != viewModel.SelectedLanguage!.Token);
+			Pick(dialog, Named<ComboBox>(dialog, "SettingsLanguage"), other);
+			viewModel.SelectedLanguage!.Token.Should().Be(other.Token);
 
 			HeadlessInput.Click(dialog, Named<Button>(dialog, "SettingsSaveButton"));
 			await HeadlessWait.Until(() => viewModel.IsRestartPending);
 
 			notice.IsEffectivelyVisible.Should().BeTrue();
 			_messagePanel.Entries.Should().BeEmpty();
-			AppSettingsLoader.Load(_appDirectory).Value.Theme.Should().Be(AppThemeVariant.Dark);
+			AppSettingsLoader.Load(_appDirectory).Value.Locale.Should().Be(UiLanguage.En);
+		}
+		finally
+		{
+			dialog.Close();
+		}
+	}
+
+	[AvaloniaFact]
+	public async Task TheRestartNowButton_AppearsWithTheNoticeAndRunsTheHandedRestart()
+	{
+		var restarts = 0;
+		using var viewModel = Build(() => restarts++);
+		var dialog = Realise(viewModel);
+		try
+		{
+			var button = Named<Button>(dialog, "SettingsRestartNow");
+			var notice = Named<TextBlock>(dialog, "SettingsRestartNotice");
+			var save = Named<Button>(dialog, "SettingsSaveButton");
+			var dialogBounds = dialog.Bounds;
+			var saveBounds = save.Bounds;
+			button.IsEffectivelyVisible.Should().BeFalse();
+
+			var other = viewModel.Languages.First(choice => choice.Token != viewModel.SelectedLanguage!.Token);
+			Pick(dialog, Named<ComboBox>(dialog, "SettingsLanguage"), other);
+			HeadlessInput.Click(dialog, Named<Button>(dialog, "SettingsSaveButton"));
+			await HeadlessWait.Until(() => viewModel.IsRestartPending);
+
+			button.IsEffectivelyVisible.Should().BeTrue();
+			notice.IsEffectivelyVisible.Should().BeTrue();
+			dialog.Bounds.Should().Be(dialogBounds, "the notice and its button sit in the reserved line");
+			save.Bounds.Should().Be(saveBounds, "the notice never moves the buttons");
+			HeadlessInput.Click(dialog, button);
+			restarts.Should().Be(1);
 		}
 		finally
 		{
@@ -200,17 +233,21 @@ public sealed class SettingsViewTests : IDisposable
 		try
 		{
 			var notice = Named<TextBlock>(dialog, "SettingsRestartNotice");
+			var restartNow = Named<Button>(dialog, "SettingsRestartNow");
 			var message = Named<TextBlock>(dialog, "SettingsValidationMessage");
-			var dark = viewModel.Themes.Single(choice => choice.Token == "dark");
-			Pick(dialog, Named<ComboBox>(dialog, "SettingsTheme"), dark);
+			var other = viewModel.Languages.First(choice => choice.Token != viewModel.SelectedLanguage!.Token);
+			Pick(dialog, Named<ComboBox>(dialog, "SettingsLanguage"), other);
 			HeadlessInput.Click(dialog, Named<Button>(dialog, "SettingsSaveButton"));
 			await HeadlessWait.Until(() => viewModel.IsRestartPending);
 
 			HeadlessInput.Clear(dialog, Named<TextBox>(dialog, "SettingsHost"));
 
 			notice.IsEffectivelyVisible.Should().BeFalse("one line carries one message");
+			restartNow.IsEffectivelyVisible.Should().BeFalse("the button belongs to the notice");
 			message.Text.Should().Be(Resources.SettingsHostInvalid);
-			message.Bounds.Should().Be(notice.Bounds, "the notice and the message share the reserved line");
+			message.Bounds.Position.Should().Be(
+				notice.Bounds.Position, "the notice and the message share the reserved line");
+			message.Bounds.Height.Should().Be(notice.Bounds.Height);
 		}
 		finally
 		{
@@ -280,12 +317,17 @@ public sealed class SettingsViewTests : IDisposable
 		}
 	}
 
-	private SettingsViewModel Build()
+	private SettingsViewModel Build(Action? restartApplication = null)
 	{
 		var (app, connection) = SettingsSave.ReadOwned(_configDirectory);
 
 		return new SettingsViewModel(
-			_configDirectory, app, connection, _messagePanel, NullLogger<SettingsViewModel>.Instance);
+			_configDirectory,
+			app,
+			connection,
+			_messagePanel,
+			NullLogger<SettingsViewModel>.Instance,
+			restartApplication ?? (() => { }));
 	}
 
 	private static SettingsDialog Realise(SettingsViewModel viewModel)

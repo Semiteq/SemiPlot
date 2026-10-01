@@ -72,6 +72,9 @@
   <data name="MenuFile" xml:space="preserve">
     <value>File</value>
   </data>
+  <data name="MenuFileNewWindow" xml:space="preserve">
+    <value>New window</value>
+  </data>
   <data name="MenuFileExit" xml:space="preserve">
     <value>Exit</value>
   </data>
@@ -140,6 +143,9 @@
   </data>
   <data name="StartupFailureSettings" xml:space="preserve">
     <value>Settings</value>
+  </data>
+  <data name="StartupFailureRestart" xml:space="preserve">
+    <value>Restart</value>
   </data>
   <data name="StartupFailureAbout" xml:space="preserve">
     <value>About</value>
@@ -492,6 +498,15 @@
   <data name="FailureStartupArgumentsValueInvalidRemedy" xml:space="preserve">
     <value>Set that argument to one of the accepted values in the SemiPlot shortcut.</value>
   </data>
+  <data name="FailureInstanceHostUnknownTitle" xml:space="preserve">
+    <value>SemiPlot could not start another window</value>
+  </data>
+  <data name="FailureInstanceHostUnknownDetail" xml:space="preserve">
+    <value>The executable of the running process is unknown, so a copy of SemiPlot cannot be started.</value>
+  </data>
+  <data name="FailureInstanceHostUnknownRemedy" xml:space="preserve">
+    <value>Close this window and start SemiPlot from its shortcut.</value>
+  </data>
   <data name="FailureLogFileTitle" xml:space="preserve">
     <value>SemiPlot could not open its log file</value>
   </data>
@@ -548,6 +563,9 @@
   </data>
   <data name="SettingsRestartNotice" xml:space="preserve">
     <value>Saved. Takes effect after a restart.</value>
+  </data>
+  <data name="SettingsRestartNow" xml:space="preserve">
+    <value>Restart now</value>
   </data>
   <data name="SettingsSave" xml:space="preserve">
     <value>Save</value>

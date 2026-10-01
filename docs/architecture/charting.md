@@ -310,8 +310,10 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   placeholder live there because the source is ASCII. What stays a literal, and why, is in
   `ui-text.md`.
 - `Startup/StartupFailureWindow` + `StartupFailureViewModel` - the window a failed start shows instead of
-  `MainWindow`: the failure text, a panel of its own and the Settings, About and Exit buttons
+  `MainWindow`: the failure text, a panel of its own and the Settings, Restart, About and Exit buttons
   (`overview.md#one-window-per-process`).
+- `Startup/InstanceLauncher` - starts a copy of the process with the same launch keys for `File` -> `New window`,
+  `Restart` and `Restart now` (`overview.md#another-instance`).
 - `Startup/AppSettings` + `AppSettingsLoader` + `StartupSequence` - the required
   `<config-dir>/app` section, its two keys and the ordered startup steps that read it before the
   connection section (`data-integration.md`, Startup).

@@ -55,7 +55,10 @@ internal sealed class TrendWindow : IDisposable
 
 	public MainWindowViewModel ViewModel { get; }
 
-	public static TrendWindow Build(StartupData startupData, string configDirectory, IScheduler uiScheduler)
+	public static TrendWindow Build(
+		StartupData startupData,
+		InstanceLauncher launcher,
+		IScheduler uiScheduler)
 	{
 		var serviceProvider = startupData.ServiceProvider;
 		var dataProvider = serviceProvider.GetRequiredService<IDataProvider>();
@@ -103,9 +106,9 @@ internal sealed class TrendWindow : IDisposable
 			navigationBar,
 			legend,
 			catalogueSync.ReadNow,
-			configDirectory,
 			loggerFactory,
-			penCatalogueEditor);
+			penCatalogueEditor,
+			launcher);
 
 		catalogueSync.Start();
 		chart.RequestInitialHistory();

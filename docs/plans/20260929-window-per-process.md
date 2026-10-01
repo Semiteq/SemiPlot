@@ -320,7 +320,8 @@ held at most 5 s ago. The two View menu commands are always executable, like the
 **Another instance.** `Startup/InstanceLauncher` builds a `ProcessStartInfo` from `Environment.ProcessPath`
 and the parsed `StartupOptions`. The three keys go into `ArgumentList`, never a joined string. When the
 host is the `dotnet` muxer, the entry assembly path goes first. `App.Run` receives the parsed options
-instead of the bare configuration directory.
+instead of the bare configuration directory, and `App.Configure` builds one launcher from them for
+`TrendWindow.Build` and `StartupFailureViewModel`.
 
 A window view model's `RestartApplication` starts a copy through the launcher. On success it pushes
 `ExitRequests`, which the window already turns into `Close` (`MainWindow.axaml.cs:34`); on failure it
@@ -724,26 +725,59 @@ The rule after this task:
 - Modify: `SemiPlot/SemiPlot.UI/MainWindow/AppMenuBar.axaml`
 - Modify: `SemiPlot/SemiPlot.UI/MainWindow/MainWindowViewModel.cs`
 - Modify: `SemiPlot/SemiPlot.UI/Startup/StartupFailureViewModel.cs`
+- Modify: `SemiPlot/SemiPlot.UI/Startup/StartupFailureWindow.axaml`
+- Modify: `SemiPlot/SemiPlot.UI/Startup/StartupData.cs`
+- Create: `SemiPlot/SemiPlot.UI/Startup/InstanceHostUnknownError.cs`
+- Modify: `SemiPlot/SemiPlot.UI/Messages/ArchiveFailureMapper.cs`
 - Modify: `SemiPlot/SemiPlot.UI/Localization/Resources.resx`
 - Modify: `SemiPlot/SemiPlot.UI/Localization/Resources.ru.resx`
 - Create: `SemiPlot/SemiPlot.Tests.Unit/UI/Startup/InstanceLauncherTests.cs`
 - Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/Startup/AppConfigurationTests.cs`
+- Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/Startup/StartupFailureWindowTests.cs`
+- Create: `SemiPlot/SemiPlot.Tests.Unit/UI/Startup/TestLaunch.cs`
+- Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/Startup/AppMainWindowTests.cs`
+- Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/Startup/AppStateScope.cs`
+- Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/Startup/EmptyCatalogueStartupTests.cs`
+- Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/Di/TrendWindowBuildTests.cs`
+- Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/MainWindow/TrendWindowTests.cs`
+- Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/MainWindow/MainWindowTestBuilder.cs`
+- Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/Messages/ArchiveFailureMapperTests.cs`
+- Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/Messages/FailureSeverityTests.cs`
 - Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/MainWindow/MainWindowViewModelTests.cs`
+- Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/MainWindow/MainWindowViewTests.cs`
+- Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/MainWindow/AppMenuBarTests.cs`
+- Modify: `docs/architecture/overview.md`
+- Modify: `docs/architecture/data-integration.md`
+- Modify: `docs/architecture/charting.md`
+- Modify: `docs/architecture/testing-strategy.md`
+- Modify: `docs/architecture/ui-text.md`
+- Modify: `docs/architecture/bench.md`
+- Modify: `readme.md`
 - Modify: `CLAUDE.md`
 
-- [ ] create `InstanceLauncher` as Solution Overview states. A failed start returns a failed `Result`,
+- [x] create `InstanceLauncher` as Solution Overview states. A failed start returns a failed `Result`,
       which the caller reports through the mapper
-- [ ] `Program` passes the parsed `StartupOptions` to `App.Run` and `App.Configure`, and a failed parse
-      passes none; update `AppConfigurationTests.cs:67` and the `App.Run` signature quoted in `CLAUDE.md`
-- [ ] `TrendWindow.Build` takes the options. Add `RestartApplication` to `MainWindowViewModel` and
+- [x] `Program` passes the parsed `StartupOptions` to `App.RunStarted` and `App.RunFailed`, and a failed parse
+      passes none to `RunFailed`; a started window always carries its options, so no guard remains.
+      Update `AppConfigurationTests.cs:67` and the `App.Run` signature quoted in `CLAUDE.md`
+- [x] `App.ConfigureStarted` and `App.ConfigureFailed` build the process's one `InstanceLauncher` from the options and hands it, as a
+      required argument, to `TrendWindow.Build` and `StartupFailureViewModel`; the launcher names the
+      configuration directory. Add `RestartApplication` to `MainWindowViewModel` and
       `StartupFailureViewModel`. File -> New window starts a copy. The failure window's Restart calls
-      `RestartApplication` and is present only with options
-- [ ] add the labels to both resource files
-- [ ] write `TheStartInfoCarriesTheLaunchKeys`, a case for the `dotnet` muxer host and a case for a path
+      `RestartApplication` and is present only with options, which a `LogFileTarget.Prepare` failure also
+      passes
+- [x] a muxer host with no entry assembly path, and a process with no path, fail with
+      `InstanceHostUnknownError`, which `ArchiveFailureMapper` maps to resource text
+- [x] `overview.md#another-instance` documents the launcher; the stale statements in `overview.md`,
+      `data-integration.md`, `charting.md`, `bench.md`, `CLAUDE.md` and `readme.md` follow
+- [x] add the labels to both resource files
+- [x] write `TheStartInfoCarriesTheLaunchKeys`, a case for the `dotnet` muxer host and a case for a path
       with spaces
-- [ ] write `RestartExitsOnlyAfterTheCopyStarted`, a failed start that reports and keeps the window, and a
-      test that New window starts a copy and keeps the window
-- [ ] run the unit tests - must pass before task 7
+- [x] write `RestartExitsOnlyAfterTheCopyStarted`, a failed start that reports and keeps the window, and a
+      test that New window starts a copy and keeps the window; the test builders hand every window a
+      recording launcher, so no test starts the test host
+- [x] ⚠️ `InstanceLauncher`'s seam constructor is `internal`; the public one takes the options alone
+- [x] run the unit tests - must pass before task 7
 
 ### Task 7: Offer a restart only for what needs one
 
@@ -755,16 +789,24 @@ The rule after this task:
 - Modify: `SemiPlot/SemiPlot.UI/Localization/Resources.resx`
 - Modify: `SemiPlot/SemiPlot.UI/Localization/Resources.ru.resx`
 - Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/Settings/SettingsViewModelTests.cs`
+- Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/Settings/SettingsViewTests.cs`
 - Modify: `docs/architecture/overview.md`
+- Modify: `docs/architecture/ui-text.md`
+- Modify: `docs/architecture/ui-theme.md`
+- Modify: `readme.md`
 
-- [ ] `IsRestartPending` is set when an edit touches a key other than `theme` (`SettingsViewModel.cs:233-236`)
-- [ ] `SettingsViewModel` takes the owning window view model's `RestartApplication` and exposes
-      `RestartNowCommand`, shown with the notice
-- [ ] write tests: a theme-only save sets no notice; a locale or connection save sets it; "Restart now"
-      calls the handed restart
-- [ ] `overview.md#the-settings-window`: the restart notice covers every key but the theme, and "Restart
-      now" starts a copy with the same keys
-- [ ] run the unit tests - must pass before task 8
+- [x] `IsRestartPending` is set by a save that wrote any key, and "Restart now" shows beside the notice
+- [x] ⚠️ the theme exemption moved to Task 8: nothing applies a saved theme live until the watcher lands
+- [x] `SettingsViewModel` takes the owning window view model's `RestartApplication` as a required
+      argument and exposes `RestartNowCommand`, shown with the notice
+- [x] write tests: a theme-only save sets the notice; a locale, theme-and-locale or connection save sets
+      it; "Restart now" calls the handed restart, from the dialog of each window
+- [x] `overview.md#the-settings-window`: the restart notice covers every key, and "Restart now" starts a
+      copy with the same keys
+- [x] the notice and "Restart now" share the dialog's message cell; the dialog is 640 px wide so the
+      Russian notice keeps two lines, measured in `ui-theme.md`; `ui-text.md` and `readme.md` name the
+      new texts
+- [x] run the unit tests - must pass before task 8
 
 ### Group D: the live theme (PR 4)
 
@@ -792,6 +834,8 @@ The rule after this task:
       within 5 s; and a `ConfigurationSection` test that reads a file another handle holds open for writing
 - [ ] `overview.md#the-settings-window` and `:279-285`: the theme applies live in every process;
       `CLAUDE.md`: "every change takes effect at the next start" names the theme as the exception
+- [ ] a theme-only save sets no restart notice (`SettingsViewModel`), tested; the theme sentence in
+      `overview.md#the-settings-window` and `readme.md` follows
 - [ ] run the unit tests - must pass before task 9
 
 ### Group E: the history pipeline (PR 5)
@@ -958,28 +1002,37 @@ The rule after this task:
 **Executed by exec:**
 - branch: window-lifetime
 - branch: initial-scale
+- branch: another-instance
 
 ## Verify it yourself
 
-Group B (Tasks 4-5b) only; Group A shipped as #97 and #98, Groups C-G are later branches.
+Group C (Tasks 6-7) only; Groups A and B shipped as #97, #98 and #99, Groups D-G are later branches.
 
 1. Build and tests, from the repository root:
    - `dotnet build SemiPlot.slnx` - 0 warnings, 0 errors.
-   - `dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj` - 1491 passed.
+   - `dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj` - 1518 passed.
    - `dotnet test SemiPlot/SemiPlot.Tests.Integration/SemiPlot.Tests.Integration.csproj` - 136 passed
      (needs Docker; do not run it at the same time as the unit suite).
-2. `git grep -nE "ScaleChanged|AutoscaleAxis" -- SemiPlot` prints nothing; on `master` it prints the
-   catalogue's scale replacement and the double-click autoscale.
-3. `TrendChartCatalogueTests.ARevisedStoredScale_LeavesTheShownPenAlone` fails on `master`, where a
-   revised stored pair replaced a shown pen's axis; `TrendChartViewModelTests.InitialScale_RestoresTheStoredPair`
-   pins View -> Pen scale -> Restore initial scale.
-4. On the demo stand (`dotnet run --project SemiPlot/SemiPlot.AppHost`):
-   - set a manual scale on the active pen by clicking its axis; in Edit -> Pens and groups change that
-     pen's "Initial scale, min/max" and save: the shown axis stays as you set it;
-   - View -> Pen scale -> Restore initial scale sets the axis to the saved pair; View -> Pen scale ->
-     Autoscale fits it to the window and keeps fitting as the window moves; both act only on the active
-     pen, and the submenu header names it;
-   - a click on the axis opens the axis scale panel with the pen's name, unit and bounds; a value that is
-     not a number in the OS regional format is refused on the message line and never applied;
-   - the pen editor opens at 1180 px wide, its two scale headers wrap onto two lines, and it cannot be
-     made narrower than 1100 px.
+2. The launcher, by test (`dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj --filter
+   "FullyQualifiedName~<name>"`); none of them exists on `master`:
+   - `InstanceLauncherTests.TheStartInfoCarriesTheLaunchKeys` and
+     `AnApphost_WithTheEntryAssemblyKnown_GetsTheLaunchKeysAlone` - the copy gets the three keys and
+     nothing else;
+   - `MainWindowViewModelTests.RestartExitsOnlyAfterTheCopyStarted` - the window closes only after the
+     copy started, and a failed start keeps it with one message;
+   - `MainWindowViewTests.TheRestartNowButton_OfTheSettingsDialog_StartsACopyAndClosesTheWindow` and
+     `StartupFailureWindowTests.TheSettingsDialog_OverAnEmptyPassword_WritesItIntoTheExistingConnectionFileAndRestarts`
+     - "Restart now" from the dialog of each window;
+   - `SettingsViewModelTests.RestartNow_CannotExecuteWhileASaveRuns` - "Restart now" waits for the save.
+3. On the demo stand (`dotnet run --project SemiPlot/SemiPlot.AppHost`):
+   - File -> New window opens a second window, a second process with the same keys; both show live
+     values. On `master` the File menu holds only Exit;
+   - Edit -> Settings, switch the language, save: the notice and "Restart now" appear; "Restart now"
+     closes this window and opens one in the new language, and the other window does not change;
+   - switch only the theme and save: the notice still appears, because the running process applies a
+     saved theme only from Group D on;
+   - stop the bench database and start another instance: the startup-failure window offers "Restart".
+     Start the database, press "Restart": a working window replaces it. On `master` the failure window
+     has no "Restart";
+   - a window opened through New window or Restart is not a stand resource: stopping the AppHost leaves
+     it running, so close it by hand.

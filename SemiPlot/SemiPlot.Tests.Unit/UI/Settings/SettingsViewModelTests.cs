@@ -1,10 +1,13 @@
 using System.Reactive.Linq;
+using System.Reactive.Threading.Tasks;
 
 using Avalonia.Headless.XUnit;
 
 using AwesomeAssertions;
 
 using Microsoft.Extensions.Logging.Abstractions;
+
+using ReactiveUI;
 
 using SemiPlot.DataSource.Postgres.Configuration;
 using SemiPlot.UI.Localization;
@@ -222,9 +225,78 @@ public sealed class SettingsViewModelTests : IDisposable
 		await viewModel.SaveCommand.Execute();
 
 		_messagePanel.Entries.Should().BeEmpty();
-		viewModel.IsRestartPending.Should().BeTrue();
+		viewModel.IsRestartPending.Should().BeTrue("a saved theme takes effect at the next start");
 		AppSettingsLoader.Load(_appDirectory).Value.Theme.Should().Be(AppThemeVariant.Dark);
 		File.ReadAllBytes(Path.Combine(_connectionDirectory, "connection.yaml")).Should().Equal(before);
+	}
+
+	[AvaloniaFact]
+	public async Task ALanguageSaveSetsTheRestartNotice()
+	{
+		ShippedConfiguration.FillPassword(_configDirectory, "secret");
+		using var viewModel = Build();
+		var other = viewModel.Languages.Single(choice => choice.Token != viewModel.SelectedLanguage!.Token);
+		viewModel.SelectedLanguage = other;
+
+		await viewModel.SaveCommand.Execute();
+
+		viewModel.IsRestartPending.Should().BeTrue();
+	}
+
+	[AvaloniaFact]
+	public async Task AThemeAndLanguageSaveSetsTheRestartNotice()
+	{
+		ShippedConfiguration.FillPassword(_configDirectory, "secret");
+		using var viewModel = Build();
+		var other = viewModel.Languages.Single(choice => choice.Token != viewModel.SelectedLanguage!.Token);
+		viewModel.SelectedLanguage = other;
+		viewModel.SelectedTheme = viewModel.Themes.Single(choice => choice.Token == "dark");
+
+		await viewModel.SaveCommand.Execute();
+
+		viewModel.IsRestartPending.Should().BeTrue();
+	}
+
+	[AvaloniaFact]
+	public async Task AConnectionSaveSetsTheRestartNotice()
+	{
+		using var viewModel = Build();
+		viewModel.Password = "secret";
+
+		await viewModel.SaveCommand.Execute();
+
+		viewModel.IsRestartPending.Should().BeTrue();
+	}
+
+	[AvaloniaFact]
+	public async Task RestartNow_RunsTheHandedRestartOnlyWhileTheNoticeShows()
+	{
+		var restarts = 0;
+		using var viewModel = Build(() => restarts++);
+		CanRestartNow(viewModel).Should().BeFalse();
+		viewModel.Password = "secret";
+
+		await viewModel.SaveCommand.Execute();
+
+		await HeadlessWait.Until(() => CanRestartNow(viewModel));
+		await viewModel.RestartNowCommand.Execute();
+		restarts.Should().Be(1);
+	}
+
+	[AvaloniaFact]
+	public async Task RestartNow_CannotExecuteWhileASaveRuns()
+	{
+		using var viewModel = Build();
+		viewModel.Password = "secret";
+		await viewModel.SaveCommand.Execute();
+		await HeadlessWait.Until(() => CanRestartNow(viewModel));
+		viewModel.SelectedTheme = viewModel.Themes.Single(choice => choice.Token == "dark");
+
+		var running = viewModel.SaveCommand.Execute().ToTask();
+
+		CanRestartNow(viewModel).Should().BeFalse("the restart would end the process in the middle of the save");
+		await running;
+		await HeadlessWait.Until(() => CanRestartNow(viewModel));
 	}
 
 	[AvaloniaFact]
@@ -455,19 +527,34 @@ public sealed class SettingsViewModelTests : IDisposable
 		viewModel.ValidationMessage.Should().Be(Resources.SettingsPortInvalid);
 	}
 
-	private SettingsViewModel Build()
+	private SettingsViewModel Build(Action? restartApplication = null)
 	{
 		var (app, connection) = SettingsSave.ReadOwned(_configDirectory);
 
 		return new SettingsViewModel(
-			_configDirectory, app, connection, _messagePanel, NullLogger<SettingsViewModel>.Instance);
+			_configDirectory,
+			app,
+			connection,
+			_messagePanel,
+			NullLogger<SettingsViewModel>.Instance,
+			restartApplication ?? (() => { }));
 	}
 
 	private static bool CanSave(SettingsViewModel viewModel)
 	{
+		return LatestOf(viewModel.SaveCommand);
+	}
+
+	private static bool CanRestartNow(SettingsViewModel viewModel)
+	{
+		return LatestOf(viewModel.RestartNowCommand);
+	}
+
+	private static bool LatestOf<TInput, TOutput>(ReactiveCommand<TInput, TOutput> command)
+	{
 		bool? latest = null;
 
-		using (viewModel.SaveCommand.CanExecute.Subscribe(value => latest = value))
+		using (command.CanExecute.Subscribe(value => latest = value))
 		{
 			return latest ?? throw new InvalidOperationException("The command replayed no execute state.");
 		}

@@ -40,7 +40,8 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 		Result<OwnedSection> app,
 		Result<OwnedSection> connection,
 		MessagePanelViewModel messagePanel,
-		ILogger<SettingsViewModel> logger)
+		ILogger<SettingsViewModel> logger,
+		Action restartApplication)
 	{
 		_configDirectory = configDirectory;
 		_messagePanel = messagePanel;
@@ -88,6 +89,10 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 				&& pollInterval);
 
 		SaveCommand = ReactiveCommand.CreateFromTask(SaveAsync, canSave);
+		var canRestartNow = this.WhenAnyValue(vm => vm.IsRestartPending)
+			.CombineLatest(SaveCommand.IsExecuting, (pending, saving) => pending && !saving);
+
+		RestartNowCommand = ReactiveCommand.Create(restartApplication, canRestartNow);
 	}
 
 	/// <summary>The keys the dialog edits per section, with the field each reads; null means no value to write.</summary>
@@ -225,7 +230,7 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 	/// </summary>
 	public string ValidationMessage => FirstBrokenRule();
 
-	/// <summary>Set by a save that wrote something: what it wrote takes effect at the next start.</summary>
+	/// <summary>Set by a save that wrote any key; every saved key takes effect at the next start.</summary>
 	public bool IsRestartPending
 	{
 		get;
@@ -234,21 +239,30 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 
 	public ReactiveCommand<Unit, Unit> SaveCommand { get; }
 
+	public ReactiveCommand<Unit, Unit> RestartNowCommand { get; }
+
 	/// <summary>Reads the section files off the UI thread and builds the view model over what they hold.</summary>
 	public static async Task<SettingsViewModel> OpenAsync(
 		string configDirectory,
 		MessagePanelViewModel messagePanel,
-		ILoggerFactory loggerFactory)
+		ILoggerFactory loggerFactory,
+		Action restartApplication)
 	{
 		var (app, connection) = await Task.Run(() => SettingsSave.ReadOwned(configDirectory));
 
 		return new SettingsViewModel(
-			configDirectory, app, connection, messagePanel, loggerFactory.CreateLogger<SettingsViewModel>());
+			configDirectory,
+			app,
+			connection,
+			messagePanel,
+			loggerFactory.CreateLogger<SettingsViewModel>(),
+			restartApplication);
 	}
 
 	public void Dispose()
 	{
 		SaveCommand.Dispose();
+		RestartNowCommand.Dispose();
 	}
 
 	private async Task SaveAsync()

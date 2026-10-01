@@ -24,7 +24,7 @@ public static class ResultReporting
 
 	/// <summary>
 	/// One entry per failed read, so the coalescing survives a pan during an outage; the errors the entry
-	/// leaves out still reach the log. The first one is the choice App.Configure already makes.
+	/// leaves out still reach the log.
 	/// </summary>
 	public static void ReportFailure(
 		this MessagePanelViewModel panel, IReadOnlyList<IError> errors, ILogger logger)

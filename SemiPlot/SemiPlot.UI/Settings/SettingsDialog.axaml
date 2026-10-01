@@ -9,7 +9,7 @@
         x:Class="SemiPlot.UI.Settings.SettingsDialog"
         x:DataType="local:SettingsViewModel"
         Title="{x:Static text:Resources.SettingsTitle}"
-        Width="528"
+        Width="640"
         SizeToContent="Height"
         CanResize="False"
         ShowInTaskbar="False"
@@ -154,13 +154,16 @@
               ColumnDefinitions="*,Auto"
               ColumnSpacing="12">
 
-            <Panel Grid.Column="0">
+            <Grid Grid.Column="0"
+                  ColumnDefinitions="*,Auto">
 
                 <TextBlock Name="SettingsValidationMessage"
+                           Grid.ColumnSpan="2"
                            Classes="form-message error"
                            Text="{Binding ValidationMessage}" />
 
                 <TextBlock Name="SettingsRestartNotice"
+                           Grid.Column="0"
                            Classes="form-message"
                            Text="{x:Static text:Resources.SettingsRestartNotice}">
                     <TextBlock.IsVisible>
@@ -172,7 +175,16 @@
                     </TextBlock.IsVisible>
                 </TextBlock>
 
-            </Panel>
+                <Button Name="SettingsRestartNow"
+                        Grid.Column="1"
+                        Margin="12,0,0,0"
+                        VerticalAlignment="Top"
+                        Content="{x:Static text:Resources.SettingsRestartNow}"
+                        Command="{Binding RestartNowCommand}"
+                        Padding="12,2"
+                        IsVisible="{Binding #SettingsRestartNotice.IsVisible}" />
+
+            </Grid>
 
             <StackPanel Grid.Column="1"
                         Orientation="Horizontal"

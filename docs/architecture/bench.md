@@ -185,22 +185,26 @@ only a machine with neither route nor image fails. When an unchanged commit fail
 The container tests exercise the provider and the journeys exercise the composed application; the
 application bench is where a person looks at the chart. `SemiPlot.AppHost` owns the whole stand: the
 bench container, the converge job, the demo writer and the viewer start in dependency order and stop
-together.
+together. A viewer window started from `File` -> `New window` or `Restart` is not among them
+(`#the-demos-directories`).
 
 ```powershell
 dotnet run --project SemiPlot/SemiPlot.AppHost
 ```
 
 or the `Live demo` run configuration, which runs the `http` launch profile (the profile carries
-`ASPIRE_ALLOW_UNSECURED_TRANSPORT`, without which the AppHost refuses its http dashboard address).
-Either way, stopping the AppHost stops the container: it runs under the AppHost's default
+`ASPIRE_ALLOW_UNSECURED_TRANSPORT`, without which the AppHost refuses its http dashboard address). Either
+way, stopping the AppHost stops the container: it runs under the AppHost's default
 `ContainerLifetime.Session`, and DCP watches its parent process, so a Ctrl+C and a hard kill of
-`SemiPlot.AppHost.exe` (Rider's Stop in Debug) both remove the container, the writer and the viewer
-within seconds. The JetBrains Aspire plugin (`me.rafaelldi.aspire`) is optional; it adds
-per-resource debugging (attaching to the converge job or the writer individually) on top of what the
-Aspire dashboard already shows. The AppHost injects the standard OpenTelemetry and console-formatter
-environment variables into every project resource; neither the seeder nor the viewer carries an
-OpenTelemetry SDK or the `Microsoft.Extensions.Logging` console provider, so the variables are inert.
+`SemiPlot.AppHost.exe` (Rider's Stop in Debug) both remove the container, the writer and the viewer the
+stand launched within seconds. A window the viewer started itself, through `File` -> `New window` or
+`Restart`, is a plain child process of that viewer: it keeps running against the removed container and
+the removed configuration copy, and the operator closes it by hand. The JetBrains Aspire plugin
+(`me.rafaelldi.aspire`) is optional; it adds per-resource debugging (attaching to the converge job or the
+writer individually) on top of what the Aspire dashboard already shows. The AppHost injects the standard
+OpenTelemetry and console-formatter environment variables into every project resource; neither the seeder
+nor the viewer carries an OpenTelemetry SDK or the `Microsoft.Extensions.Logging` console provider, so
+the variables are inert.
 
 There is no volume: `converge` recreates the archive on every start regardless of what a previous
 session left, so a volume would carry nothing across runs. Every stand start pays `initdb`,
@@ -287,7 +291,8 @@ Serilog file sink declared `shared: true`, so deleting the directory during shut
 handle, and the log of a run that failed is the one thing worth keeping after the stand is gone. The
 sweep deletes file by file and tolerates a file still held open, so a viewer that outlived its stand
 cannot stop the next one from starting. `ApplicationStopping` does not fire when the AppHost is
-killed rather than stopped; the sweep at the next start is the backstop for that path.
+killed rather than stopped; the sweep at the next start is the backstop for that path. A window started
+from the viewer's `File` menu holds `semiplot.log` open the same way and can outlive the stand.
 
 What the server can be asked afterwards, which needs no screen:
 

@@ -91,7 +91,9 @@ the archive `converge` created and thins it into the coarse layers on every tick
 (`docs/architecture/bench.md#the-demo-writer`).
 
 `SemiPlot.AppHost` runs the whole demo stand — the bench container, `converge`, the demo writer and
-the viewer — in dependency order and stops them together:
+the viewer — in dependency order and stops the processes it launched together; a window the viewer starts
+itself (`File` -> `New window`, `Restart`) is no stand resource and outlives the stand
+(`docs/architecture/bench.md#the-demos-directories`):
 
 ```powershell
 dotnet run --project SemiPlot/SemiPlot.AppHost
@@ -264,8 +266,9 @@ No abbreviations in names.
   `App.CreateMainWindow` runs (`docs/architecture/overview.md`).
 - `.AfterSetup(...)` is synchronous, so no blocking call belongs in it. `StartupSequence.Run` holds
   the ordered blocking steps and `Program.Main` calls it ahead of `BuildAvaloniaApp()`, handing
-  `App.Run(AppSettings?, Result<StartupData>, string? configDirectory)` both results and the
-  configuration directory the settings window writes into; the reads `TrendWindow.Build` starts
+  `App.RunStarted(AppSettings?, StartupData, StartupOptions)` or `App.RunFailed(AppSettings?, IError,
+  StartupOptions?)` and the parsed launch options (the configuration directory the settings window writes into, and the keys
+  `InstanceLauncher` hands a copy); the reads `TrendWindow.Build` starts
   inside the callback are asynchronous and return through the schedulers
   (`docs/architecture/data-integration.md`).
 

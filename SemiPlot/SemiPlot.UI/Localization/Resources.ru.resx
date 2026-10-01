@@ -72,6 +72,9 @@
   <data name="MenuFile" xml:space="preserve">
     <value>Файл</value>
   </data>
+  <data name="MenuFileNewWindow" xml:space="preserve">
+    <value>Новое окно</value>
+  </data>
   <data name="MenuFileExit" xml:space="preserve">
     <value>Выход</value>
   </data>
@@ -140,6 +143,9 @@
   </data>
   <data name="StartupFailureSettings" xml:space="preserve">
     <value>Настройки</value>
+  </data>
+  <data name="StartupFailureRestart" xml:space="preserve">
+    <value>Перезапустить</value>
   </data>
   <data name="StartupFailureAbout" xml:space="preserve">
     <value>О программе</value>
@@ -492,6 +498,15 @@
   <data name="FailureStartupArgumentsValueInvalidRemedy" xml:space="preserve">
     <value>Задайте для этого аргумента одно из допустимых значений в ярлыке SemiPlot.</value>
   </data>
+  <data name="FailureInstanceHostUnknownTitle" xml:space="preserve">
+    <value>Не удалось запустить ещё одно окно SemiPlot</value>
+  </data>
+  <data name="FailureInstanceHostUnknownDetail" xml:space="preserve">
+    <value>Исполняемый файл запущенного процесса неизвестен, поэтому копию SemiPlot запустить нельзя.</value>
+  </data>
+  <data name="FailureInstanceHostUnknownRemedy" xml:space="preserve">
+    <value>Закройте это окно и запустите SemiPlot заново через ярлык.</value>
+  </data>
   <data name="FailureLogFileTitle" xml:space="preserve">
     <value>Не удалось открыть файл журнала SemiPlot</value>
   </data>
@@ -548,6 +563,9 @@
   </data>
   <data name="SettingsRestartNotice" xml:space="preserve">
     <value>Сохранено. Вступит в силу после перезапуска.</value>
+  </data>
+  <data name="SettingsRestartNow" xml:space="preserve">
+    <value>Перезапустить</value>
   </data>
   <data name="SettingsSave" xml:space="preserve">
     <value>Сохранить</value>

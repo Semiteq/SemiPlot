@@ -24,6 +24,7 @@ public static class ArchiveFailureMapper
 			ConnectionFileError file => MapConnectionFile(file),
 			ArchiveError archive => MapArchive(archive),
 			StartupReadTimedOutError startupTimeout => MapStartupReadTimedOut(startupTimeout),
+			InstanceHostUnknownError => MapInstanceHostUnknown(),
 			IExceptionalError thrown => MapThrown(thrown),
 			_ => MapUnknown(error)
 		};
@@ -218,6 +219,15 @@ public static class ArchiveFailureMapper
 			Resources.FailureStartupReadTimedOutTitle,
 			Resources.FormatFailureStartupReadTimedOutDetail(NameOf(error.Read), error.Bound.TotalSeconds),
 			Resources.FailureStartupReadTimedOutRemedy,
+			MessageSeverity.Error);
+	}
+
+	private static ArchiveFailureView MapInstanceHostUnknown()
+	{
+		return new ArchiveFailureView(
+			Resources.FailureInstanceHostUnknownTitle,
+			Resources.FailureInstanceHostUnknownDetail,
+			Resources.FailureInstanceHostUnknownRemedy,
 			MessageSeverity.Error);
 	}
 

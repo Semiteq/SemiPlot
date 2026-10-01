@@ -133,6 +133,17 @@ public sealed class ArchiveFailureMapperTests
 		view.Remedy.Should().Be(Resources.FailureLogFileRemedy);
 	}
 
+	[Fact]
+	public void InstanceHostUnknown_IsAnErrorWithItsOwnResourceText()
+	{
+		var view = ArchiveFailureMapper.Map(new InstanceHostUnknownError());
+
+		view.Title.Should().Be(Resources.FailureInstanceHostUnknownTitle);
+		view.Detail.Should().Be(Resources.FailureInstanceHostUnknownDetail);
+		view.Remedy.Should().Be(Resources.FailureInstanceHostUnknownRemedy);
+		view.Severity.Should().Be(MessageSeverity.Error);
+	}
+
 	[Theory]
 	[InlineData(ConfigurationSectionName.App, nameof(Resources.FailureConfigurationSectionAppTitle))]
 	[InlineData(

@@ -78,6 +78,7 @@ public sealed class FailureSeverityTests
 			[typeof(StartupReadTimedOutError)] = (
 				new StartupReadTimedOutError(StartupRead.PenCatalogue, TimeSpan.FromSeconds(5)),
 				MessageSeverity.Error),
+			[typeof(InstanceHostUnknownError)] = (new InstanceHostUnknownError(), MessageSeverity.Error),
 			[typeof(ExceptionalError)] = (
 				new ExceptionalError(new InvalidOperationException("boom")),
 				MessageSeverity.Error),

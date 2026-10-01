@@ -189,6 +189,24 @@ public sealed class ConfigurationSectionWriterTests : IDisposable
 	}
 
 	[Fact]
+	public void AFileAnotherSavesWriteProbeHoldsOpenIsStillCopied()
+	{
+		WriteFile("a.yaml", "locale: ru\n");
+		WriteFile("b.yaml", "theme: light\n");
+		var owned = OwnedOf(ConfigurationSectionName.App);
+		var held = Path.Combine(_section, "b.yaml");
+		Result<IReadOnlyList<string>> staged;
+
+		using (new FileStream(held, FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete))
+		{
+			staged = Stage(owned, ConfigurationSectionName.App, ("locale", "en"));
+		}
+
+		staged.IsSuccess.Should().BeTrue(Describe(staged));
+		File.ReadAllBytes(Path.Combine(_staging, "b.yaml")).Should().Equal(File.ReadAllBytes(held));
+	}
+
+	[Fact]
 	public void ACopyThatCannotBeWrittenFailsWithUnwritableNamingTheFile()
 	{
 		WriteFile("app.yaml", "locale: ru\ntheme: light\n");

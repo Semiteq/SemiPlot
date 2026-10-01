@@ -66,9 +66,16 @@ public static class ResultReporting
 	/// </summary>
 	public static void TryReportFailure(this MessagePanelViewModel panel, IError error, ILogger logger)
 	{
+		panel.TryReportFailure([error], logger);
+	}
+
+	/// <summary>Reports every error of one failure without ever throwing; the first becomes the entry.</summary>
+	public static void TryReportFailure(
+		this MessagePanelViewModel panel, IReadOnlyList<IError> errors, ILogger logger)
+	{
 		try
 		{
-			panel.ReportFailure(error, logger);
+			panel.ReportFailure(errors, logger);
 		}
 		catch (Exception reportFailure)
 		{

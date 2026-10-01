@@ -141,7 +141,7 @@ public sealed class SettingsSaveTests : IDisposable
 		var before = _sandbox.Snapshot();
 		Result result;
 
-		using (new DirectoryWriteDenial(_sandbox.ConfigDirectory))
+		using (DirectoryAccessDenial.OfNewFolders(_sandbox.ConfigDirectory))
 		{
 			result = _sandbox.Save(Edit(ConfigurationSectionName.App, ("theme", "dark")));
 		}
@@ -223,6 +223,21 @@ public sealed class SettingsSaveTests : IDisposable
 		error.Directory.Should().Be(_sandbox.ConnectionDirectory);
 		error.FileNames.Should().Equal(ConnectionFileName);
 		_sandbox.ShouldMatch(before);
+	}
+
+	[Fact]
+	public void ASaveReplacesATargetAnotherSavesWriteProbeHoldsOpen()
+	{
+		var target = _sandbox.ConnectionFile;
+		Result result;
+
+		using (new FileStream(target, FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete))
+		{
+			result = _sandbox.Save(Edit(ConfigurationSectionName.Connection, ("host", "10.20.30.40")));
+		}
+
+		result.IsSuccess.Should().BeTrue(Describe(result));
+		_sandbox.LoadConnection().Host.Should().Be("10.20.30.40");
 	}
 
 	[Fact]

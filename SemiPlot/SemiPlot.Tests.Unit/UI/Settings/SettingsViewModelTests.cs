@@ -225,9 +225,22 @@ public sealed class SettingsViewModelTests : IDisposable
 		await viewModel.SaveCommand.Execute();
 
 		_messagePanel.Entries.Should().BeEmpty();
-		viewModel.IsRestartPending.Should().BeTrue("a saved theme takes effect at the next start");
 		AppSettingsLoader.Load(_appDirectory).Value.Theme.Should().Be(AppThemeVariant.Dark);
 		File.ReadAllBytes(Path.Combine(_connectionDirectory, "connection.yaml")).Should().Equal(before);
+	}
+
+	[AvaloniaFact]
+	public async Task AThemeOnlySaveSetsNoRestartNotice()
+	{
+		ShippedConfiguration.FillPassword(_configDirectory, "secret");
+		using var viewModel = Build();
+		viewModel.SelectedTheme = viewModel.Themes.Single(choice => choice.Token == "dark");
+
+		await viewModel.SaveCommand.Execute();
+
+		_messagePanel.Entries.Should().BeEmpty();
+		viewModel.IsRestartPending.Should().BeFalse("every process applies a saved theme live");
+		AppSettingsLoader.Load(_appDirectory).Value.Theme.Should().Be(AppThemeVariant.Dark);
 	}
 
 	[AvaloniaFact]
@@ -241,6 +254,7 @@ public sealed class SettingsViewModelTests : IDisposable
 		await viewModel.SaveCommand.Execute();
 
 		viewModel.IsRestartPending.Should().BeTrue();
+		viewModel.RestartNotice.Should().Be(Resources.SettingsRestartNotice);
 	}
 
 	[AvaloniaFact]
@@ -255,6 +269,7 @@ public sealed class SettingsViewModelTests : IDisposable
 		await viewModel.SaveCommand.Execute();
 
 		viewModel.IsRestartPending.Should().BeTrue();
+		viewModel.RestartNotice.Should().Be(Resources.SettingsRestartNoticeThemeApplied, "the theme half applies live");
 	}
 
 	[AvaloniaFact]

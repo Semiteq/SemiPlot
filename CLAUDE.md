@@ -33,7 +33,8 @@ The settings window (`SemiPlot.UI/Settings`) is the viewer's only writer of the 
 edits only keys that already exist, each in the file that owns it, and only the keys the operator
 changed; it creates no file, and the startup-failure window offers it only when both sections read and carry every key it edits. The
 production loaders validate a staged copy before any file is replaced, and every change takes effect at the
-next start (`docs/architecture/overview.md#the-settings-window`).
+next start except the theme, which every running process applies live
+(`docs/architecture/overview.md#the-live-theme`).
 
 `.editorconfig`'s style and quality analyzer rules fail `dotnet build` (`TreatWarningsAsErrors`,
 `EnforceCodeStyleInBuild`) and `dotnet format SemiPlot.slnx --verify-no-changes` alike, so a

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Reactive.Concurrency;
 
 using Avalonia;
 using Avalonia.Controls;
@@ -9,6 +10,7 @@ using Avalonia.Styling;
 using FluentResults;
 
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 using ReactiveUI.Avalonia;
 
@@ -16,6 +18,7 @@ using Semi.Avalonia;
 
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
+using SemiPlot.UI.Settings;
 using SemiPlot.UI.Startup;
 
 using Serilog.Extensions.Logging;
@@ -31,6 +34,8 @@ public class App : Application
 		AvaloniaScheduler.Instance,
 		new SerilogLoggerFactory().CreateLogger(nameof(UnhandledErrorObserver)));
 
+	private static readonly ILogger _themeLogger = new SerilogLoggerFactory().CreateLogger(nameof(AppSectionWatcher));
+
 	private TrendWindow? _trendWindow;
 
 	private ArchiveFailureView? _startupFailure;
@@ -38,6 +43,11 @@ public class App : Application
 	private MessagePanelViewModel? _messagePanel;
 
 	private InstanceLauncher? _instanceLauncher;
+
+	private IDisposable? _themeWatch;
+
+	/// <summary>Theme failures raised before the first window has a panel; null once that window has taken them.</summary>
+	private IReadOnlyList<IReadOnlyList<IError>>? _themeFailuresBeforeWindow = [];
 
 	public override void Initialize()
 	{
@@ -49,6 +59,7 @@ public class App : Application
 		if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
 		{
 			desktop.MainWindow = CreateMainWindow();
+			desktop.Exit += (_, _) => _themeWatch?.Dispose();
 		}
 
 		base.OnFrameworkInitializationCompleted();
@@ -65,6 +76,7 @@ public class App : Application
 			var startupFailureWindow = new StartupFailureWindow { DataContext = startupFailure };
 
 			_messagePanel = startupFailure.MessagePanel;
+			ReportThemeFailuresBeforeWindow(_messagePanel);
 			startupFailureWindow.Closed += (_, _) =>
 			{
 				_messagePanel = null;
@@ -118,6 +130,7 @@ public class App : Application
 
 		app._messagePanel = startup.ServiceProvider.GetRequiredService<MessagePanelViewModel>();
 		app._trendWindow = TrendWindow.Build(startup, new InstanceLauncher(options), AvaloniaScheduler.Instance);
+		app._themeWatch = WatchTheme(app, options.ConfigDir, settings);
 	}
 
 	internal static void ConfigureFailed(App app, AppSettings? settings, IError failure, StartupOptions? options)
@@ -126,6 +139,84 @@ public class App : Application
 
 		app._startupFailure = ArchiveFailureMapper.Map(failure);
 		app._instanceLauncher = options is null ? null : new InstanceLauncher(options);
+		app._themeWatch = options is null ? null : WatchTheme(app, options.ConfigDir, settings);
+	}
+
+	// docs/architecture/overview.md#the-live-theme
+	private static IDisposable? WatchTheme(App app, string configDirectory, AppSettings? settings)
+	{
+		var sectionDirectory = Path.Combine(configDirectory, StartupSequence.SettingsDirectoryName);
+
+		// The start has already reported a missing folder.
+		if (!Directory.Exists(sectionDirectory))
+		{
+			return null;
+		}
+
+		var watch = AppSectionWatcher.Watch(() => AppSectionWatcher.Open(sectionDirectory), DefaultScheduler.Instance);
+
+		return AppSectionWatcher.ThemeChanges(
+				watch,
+				settings?.Theme,
+				() => AppSettingsLoader.Load(sectionDirectory),
+				DefaultScheduler.Instance,
+				AvaloniaScheduler.Instance)
+			.Subscribe(app.ApplyTheme, exception => app.ReportThemeFailure([new ExceptionalError(exception)]));
+	}
+
+	private void ApplyTheme(Result<AppThemeVariant> theme)
+	{
+		try
+		{
+			if (theme.IsFailed)
+			{
+				ReportThemeFailure(theme.Errors);
+
+				return;
+			}
+
+			RequestedThemeVariant = VariantFor(theme.Value);
+		}
+		catch (Exception exception)
+		{
+			ReportThemeFailure([new ExceptionalError(exception)]);
+		}
+	}
+
+	/// <summary>The shown window's panel, the first window's once it exists, or the log alone after it closed.</summary>
+	private void ReportThemeFailure(IReadOnlyList<IError> errors)
+	{
+		if (_messagePanel is { } panel)
+		{
+			panel.TryReportFailure(errors, _themeLogger);
+
+			return;
+		}
+
+		if (_themeFailuresBeforeWindow is { } held)
+		{
+			_themeFailuresBeforeWindow = [.. held, errors];
+
+			return;
+		}
+
+		foreach (var error in errors)
+		{
+			_themeLogger.LogWarning(
+				(error as IExceptionalError)?.Exception,
+				"The theme reload failed with no window open: {Error}",
+				error.Message);
+		}
+	}
+
+	private void ReportThemeFailuresBeforeWindow(MessagePanelViewModel panel)
+	{
+		foreach (var errors in _themeFailuresBeforeWindow ?? [])
+		{
+			panel.TryReportFailure(errors, _themeLogger);
+		}
+
+		_themeFailuresBeforeWindow = null;
 	}
 
 	private static void ApplyAppearance(App app, AppSettings? settings)

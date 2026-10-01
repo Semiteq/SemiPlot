@@ -220,7 +220,8 @@ Automated, run from the repository root:
    - `TheStartInfoCarriesTheLaunchKeys` (launcher);
    - `RestartExitsOnlyAfterTheCopyStarted` (window view model);
    - `AThemeChangeOnDiskAppliesTheTheme`, `ALanguageChangeOnDiskAppliesNothing`,
-     `AWatcherErrorReloadsOnce` (theme pipeline);
+     `ABufferOverflowReloadsOnce`, `AStoppedWatcherIsReportedOnceAndItsWatchOpensAgain`
+     (theme pipeline);
    - `APacedRequestNeverCancelsTheQueryInFlight`, `AGestureEndCancelsTheLeftBehindQuery`,
      `ACancelledQueryReportsNothing` (debouncer);
    - `AFailedApplyCanBeRequestedAgain` (debouncer);
@@ -328,28 +329,39 @@ A window view model's `RestartApplication` starts a copy through the launcher. O
 reports to the panel. The settings dialog's "Restart now" calls the `RestartApplication` its owning window
 view model hands it.
 
-**Live theme.** `App` owns one `Settings/AppSectionWatcher` for the process, whichever window it shows. The
-pipeline is a pure function:
+**Live theme.** `App` owns one watch over `Settings/AppSectionWatcher` for the process, one watcher at a
+time, whichever window it shows. The pipeline is a pure function:
 
 ```
-ThemeChanges(IObservable<Unit> fileEvents, Func<Result<AppSettings>> load, IScheduler data, IScheduler ui)
+ThemeChanges(IObservable<Result> watch, AppThemeVariant? appliedTheme, Func<Result<AppSettings>> load,
+             IScheduler data, IScheduler ui)
     -> IObservable<Result<AppThemeVariant>>
 ```
 
-It throttles the events for 300 ms on the data scheduler, runs `load` on the data scheduler, emits on the
-UI scheduler, and passes a theme on only when it differs from the last one applied. `App` writes the
-emitted theme to `RequestedThemeVariant`, the one writer of the variant after start, and reports a failed
-load through the mapper. A changed locale is ignored.
+It throttles the watch's successes for 300 ms on the data scheduler, runs `load` on the data scheduler,
+emits on the UI scheduler, and passes a theme on only when it differs from the last one applied, starting
+from `appliedTheme`; a watch failure passes through as a failed load. Unless `appliedTheme` is null it
+also loads once when the watch starts, so a theme saved while the start ran its probe is applied. `App` writes the emitted theme to `RequestedThemeVariant`, the
+one writer of the variant after start, and reports a failed load through the mapper. A changed locale is
+ignored.
 
 The adapter merges the `FileSystemWatcher` events `Changed`, `Created`, `Renamed` and `Deleted` for `*.yaml`
-in `<config-dir>/app`, with `NotifyFilter = FileName | LastWrite`. `File.Replace` surfaces as `Created` or
-`Renamed` on Windows and as `Renamed` on Linux. The watcher's `Error` event joins the stream as one more
-event, so an overflowed buffer ends in one reload. `ConfigurationSection` opens section files with
+in `<config-dir>/app`, with `NotifyFilter = FileName | LastWrite`. The `File.Replace` a save ends with
+surfaces as a different event on each platform, and every one of them is in the merge. An `Error` event
+that carries `InternalBufferOverflowException` joins the stream as one more event, so an overflowed buffer
+ends in one reload; any other error comes from a watcher that has stopped reading, so it ends the watcher's
+stream. `AppSectionWatcher.Open` returns a folder the operating system refuses to watch as a failure.
+`AppSectionWatcher.Watch` reports a refused open or a stopped watcher once per outage, opens the folder
+again every 5 s, and a watcher opened again loads the section once; `App` holds a failure raised before
+the first window exists and reports it to that window's panel. `Open` lists the folder before it creates the
+watcher, so an unlistable folder starts no Linux reader thread; any other refusal Windows throws, and
+Linux raises as an `Error` event inside `EnableRaisingEvents`, which `Open` captures. `ConfigurationSection` opens section files with
 `FileShare.ReadWrite | FileShare.Delete`, so a watcher's read never blocks another process's
 `File.Replace`.
 
-`SettingsViewModel` sets `IsRestartPending` only when a key other than `theme` changed. The saving process
-applies its theme through the watcher like every other process.
+`SettingsViewModel` sets `IsRestartPending` only when a key other than `theme` changed, and its
+`RestartNotice` names the theme as applied when the save also changed it. The saving process applies its
+theme through the watcher like every other process.
 
 ## Technical Details
 
@@ -821,22 +833,43 @@ The rule after this task:
 - Modify: `docs/architecture/overview.md`
 - Modify: `CLAUDE.md`
 
-- [ ] create `AppSectionWatcher`: the `ThemeChanges` pipeline and the `FileSystemWatcher` adapter,
+- [x] create `AppSectionWatcher`: the `ThemeChanges` pipeline and the `FileSystemWatcher` adapter,
       as Solution Overview states
-- [ ] `App` builds one watcher for the window it shows, writes the theme it emits, reports a failed load,
+- [x] `App` builds one watcher for the window it shows, writes the theme it emits, reports a failed load,
       and disposes the watcher at exit
-- [ ] `ConfigurationSection` opens section files with `FileShare.ReadWrite | FileShare.Delete`
+- [x] `ConfigurationSection` opens section files with `FileShare.ReadWrite | FileShare.Delete`
       (`ConfigurationSection.cs:131`)
-- [ ] write `AThemeChangeOnDiskAppliesTheTheme`, `ALanguageChangeOnDiskAppliesNothing` and
-      `AWatcherErrorReloadsOnce`, plus tests that a burst collapses to one load and that a failed load
+- [x] write `AThemeChangeOnDiskAppliesTheTheme`, `ALanguageChangeOnDiskAppliesNothing` and
+      `ABufferOverflowReloadsOnce`, plus tests that a burst collapses to one load and that a failed load
       reaches the report
-- [ ] write the real-folder `[Fact]`: a `File.Replace` into a temporary `app/` folder yields the new theme
+- [x] write the real-folder `[Fact]`: a `File.Replace` into a temporary `app/` folder yields the new theme
       within 5 s; and a `ConfigurationSection` test that reads a file another handle holds open for writing
-- [ ] `overview.md#the-settings-window` and `:279-285`: the theme applies live in every process;
+- [x] `overview.md#the-settings-window` and `:279-285`: the theme applies live in every process;
       `CLAUDE.md`: "every change takes effect at the next start" names the theme as the exception
-- [ ] a theme-only save sets no restart notice (`SettingsViewModel`), tested; the theme sentence in
+- [x] a theme-only save sets no restart notice (`SettingsViewModel`), tested; the theme sentence in
       `overview.md#the-settings-window` and `readme.md` follows
-- [ ] run the unit tests - must pass before task 9
+- [x] ⚠️ `ThemeChanges` also takes the theme the start applied (`AppThemeVariant? appliedTheme`), the first
+      "last one applied", so a locale-only change emits nothing; a failed start without settings passes null
+- [x] ⚠️ the lifetime's `Exit` event disposes the watcher; an `app/` folder that does not exist gets none,
+      because the start has already reported it. The section is `overview.md#the-live-theme`, and
+      `ui-text.md` and `ui-theme.md` follow
+- [x] ⚠️ review: a start that loaded its settings loads `app/` once more when the watch starts, which closes
+      the gap between the start's read and the watcher; `AppSectionWatcher.Open` turns a refused folder
+      into a reported failure; a throwing load is a failed load; an open settings dialog follows the applied
+      theme (`SettingsViewModel.FollowAppliedTheme`); `ConfigureStarted`'s watch is tested
+- [x] ⚠️ review: on Linux a refused watch raises `Error` inside `EnableRaisingEvents` instead of throwing,
+      and `Open` captures it, so the refusal is a failure on both platforms. Two `internal` members stay as
+      seams over process-boundary types (➕ deviation from "no widening for tests"):
+      `ConfigurationSection.OpenShared` holds the production read's handle open across a `File.Replace`,
+      which a race against `Read` could only sample; the `internal` `AppSectionWatcher` constructor takes a
+      `FileSystemWatcher` subclass that raises the events no real folder raises on demand, a buffer overflow
+      among them
+- [x] ⚠️ external review: `AppSectionWatcher.Watch` opens a stopped or refused watch again every 5 s and
+      reports each outage once (a deleted `app/` raises `Error` 5 on Windows, measured); `App` holds a
+      failure raised before the first window for its panel; a save's copy and write probe share like a
+      section read; the notice after a save that also changed the theme names it as applied; the lost
+      update between two saves goes to `backlog.md`
+- [x] run the unit tests - must pass before task 9
 
 ### Group E: the history pipeline (PR 5)
 
@@ -1003,36 +1036,52 @@ The rule after this task:
 - branch: window-lifetime
 - branch: initial-scale
 - branch: another-instance
+- branch: live-theme
 
 ## Verify it yourself
 
-Group C (Tasks 6-7) only; Groups A and B shipped as #97, #98 and #99, Groups D-G are later branches.
+Group D (Task 8) only; Groups A-C shipped as #97, #98, #99 and #102, Groups E-G are later branches.
 
 1. Build and tests, from the repository root:
    - `dotnet build SemiPlot.slnx` - 0 warnings, 0 errors.
-   - `dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj` - 1518 passed.
+   - `dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj` - 1547 passed.
    - `dotnet test SemiPlot/SemiPlot.Tests.Integration/SemiPlot.Tests.Integration.csproj` - 136 passed
      (needs Docker; do not run it at the same time as the unit suite).
-2. The launcher, by test (`dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj --filter
+2. The live theme, by test (`dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj --filter
    "FullyQualifiedName~<name>"`); none of them exists on `master`:
-   - `InstanceLauncherTests.TheStartInfoCarriesTheLaunchKeys` and
-     `AnApphost_WithTheEntryAssemblyKnown_GetsTheLaunchKeysAlone` - the copy gets the three keys and
-     nothing else;
-   - `MainWindowViewModelTests.RestartExitsOnlyAfterTheCopyStarted` - the window closes only after the
-     copy started, and a failed start keeps it with one message;
-   - `MainWindowViewTests.TheRestartNowButton_OfTheSettingsDialog_StartsACopyAndClosesTheWindow` and
-     `StartupFailureWindowTests.TheSettingsDialog_OverAnEmptyPassword_WritesItIntoTheExistingConnectionFileAndRestarts`
-     - "Restart now" from the dialog of each window;
-   - `SettingsViewModelTests.RestartNow_CannotExecuteWhileASaveRuns` - "Restart now" waits for the save.
+   - `AppSectionWatcherTests.AThemeChangeOnDiskAppliesTheTheme`, `ALanguageChangeOnDiskAppliesNothing` and
+     `ABufferOverflowReloadsOnce` - the pipeline passes on a changed theme only, and a buffer overflow
+     reloads;
+   - `AppSectionWatcherTests.AStoppedWatcherIsReportedOnceAndItsWatchOpensAgain` and
+     `ARefusedOpenIsReportedOnceAndOpenedAgain` - an outage is reported once and the watch opens again;
+   - `AppSectionWatcherTests.AnAppFolderDeletedAndRecreatedIsWatchedAgain` - on Windows a deleted and
+     recreated `app/` applies its theme within one reopen interval;
+   - `AppSectionWatcherTests.AThemeSavedBeforeTheWatchStartsIsAppliedAfterOneQuietPeriod` - a save that
+     landed while the start ran its probe still applies;
+   - `AppSectionWatcherTests.AReplacedFileInARealFolderYieldsTheNewTheme` - a `File.Replace` into a real
+     folder reaches the pipeline;
+   - `AppConfigurationTests.AThemeSavedOnDiskReachesTheRunningApplication` and
+     `AThemeSavedOnDiskReachesAStartedApplication` - both starts apply a theme saved on disk;
+   - `AppConfigurationTests.ABrokenAppFileOnDiskReachesTheShownWindowsPanel` - a broken file reaches the
+     panel and the theme stays;
+   - `AppConfigurationTests.AnAppFolderThatCannotBeListed_StillStartsAndReachesThePanel` and
+     `AnAppFolderThatCannotBeListed_ReachesTheFailureWindowsPanel` - a folder the watcher cannot open is
+     reported on either start, and the start goes on;
+   - `SettingsViewModelTests.AThemeOnlySaveSetsNoRestartNotice` - a theme-only save shows no notice;
+   - `SettingsViewTests.TheRestartNotice_AfterASaveThatAlsoChangedTheTheme_SaysTheThemeIsApplied` - the
+     notice names the theme as applied;
+   - `ConfigurationSectionTests.AFileAnotherHandleHoldsOpenForWritingStillReads` and
+     `AFileTheSectionReadHoldsOpenCanStillBeReplaced` - a read and a replace never block each other;
+   - `ConfigurationSectionWriterTests.AFileAnotherSavesWriteProbeHoldsOpenIsStillCopied` and
+     `SettingsSaveTests.ASaveReplacesATargetAnotherSavesWriteProbeHoldsOpen` - two saves' handles never
+     block each other.
 3. On the demo stand (`dotnet run --project SemiPlot/SemiPlot.AppHost`):
-   - File -> New window opens a second window, a second process with the same keys; both show live
-     values. On `master` the File menu holds only Exit;
-   - Edit -> Settings, switch the language, save: the notice and "Restart now" appear; "Restart now"
-     closes this window and opens one in the new language, and the other window does not change;
-   - switch only the theme and save: the notice still appears, because the running process applies a
-     saved theme only from Group D on;
-   - stop the bench database and start another instance: the startup-failure window offers "Restart".
-     Start the database, press "Restart": a working window replaces it. On `master` the failure window
-     has no "Restart";
+   - File -> New window opens a second window. In one window, Edit -> Settings, switch only the theme and
+     save: both windows switch theme within 2 s and no restart notice appears. On `master` the notice
+     appears and the other window keeps its theme;
+   - with the dialog of the other window open, switch the theme back from the first window: the open
+     dialog's theme box follows the window;
+   - switch the language and save: the notice and "Restart now" appear, and the other window does not
+     change;
    - a window opened through New window or Restart is not a stand resource: stopping the AppHost leaves
      it running, so close it by hand.

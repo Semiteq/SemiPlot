@@ -144,7 +144,8 @@ unchosen language or theme, which takes the field's label as `{0}`. `SettingsVie
 picks it. The line is not under the field, so each message opens with the field it names, and each is one
 short line in both languages ("Host: expected an IP address such as 127.0.0.1");
 `ui-theme.md#a-form-never-resizes-on-validation` holds the width it has to fit. `SettingsRestartNotice`
-is the dialog's own text after a save that changed any key, on the same line while no field is invalid,
+is the dialog's own text after a save that changed any key but `theme`, on the same line while no field is invalid;
+`SettingsRestartNoticeThemeApplied` replaces it when that save also changed `theme`, which already applies,
 and `SettingsRestartNow` ("Restart now", «Перезапустить») is the button beside it. It is not a panel
 entry, because the panel carries failures. `MenuFileNewWindow` names the `File` item that starts another
 window, and `StartupFailureRestart` the failure window's button; `StartupFailureRestart` and

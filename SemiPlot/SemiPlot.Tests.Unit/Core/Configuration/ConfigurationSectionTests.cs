@@ -146,6 +146,37 @@ public sealed class ConfigurationSectionTests : IDisposable
 	}
 
 	[Fact]
+	public void AFileAnotherHandleHoldsOpenForWritingStillReads()
+	{
+		WriteFile("a.yaml", "locale: ru\n");
+		using var writer = new FileStream(
+			Path.Combine(_directory, "a.yaml"), FileMode.Open, FileAccess.ReadWrite, FileShare.Read);
+
+		var result = ConfigurationSection.Read(_directory, ConfigurationSectionName.App);
+
+		result.IsSuccess.Should().BeTrue(Describe(result));
+		MappingOf(result.Value).Should().Contain("locale", "ru");
+	}
+
+	[Fact]
+	public void AFileTheSectionReadHoldsOpenCanStillBeReplaced()
+	{
+		WriteFile("a.yaml", "locale: ru\n");
+		var staged = Path.Combine(_directory, "a.yaml.staged");
+		File.WriteAllText(staged, "locale: en\n");
+
+		using (ConfigurationSection.OpenShared(Path.Combine(_directory, "a.yaml")))
+		{
+			File.Replace(staged, Path.Combine(_directory, "a.yaml"), destinationBackupFileName: null);
+		}
+
+		var result = ConfigurationSection.Read(_directory, ConfigurationSectionName.App);
+
+		result.IsSuccess.Should().BeTrue(Describe(result));
+		MappingOf(result.Value).Should().Contain("locale", "en");
+	}
+
+	[Fact]
 	public void AFileWrittenWithAByteOrderMarkStillContributesItsFirstKey()
 	{
 		File.WriteAllText(

@@ -167,7 +167,8 @@ public static class SettingsSave
 		return rebuilt.CausedBy(error.Reasons);
 	}
 
-	// Opening with FileMode.Open never truncates, so a target that accepts the probe keeps its content.
+	// Opening with FileMode.Open never truncates, so a target that accepts the probe keeps its content; the probe
+	// shares like a section read, so it never blocks another process's File.Replace.
 	private static Result ProbeTargets(IReadOnlyList<PromotableSection> staged)
 	{
 		foreach (var section in staged)
@@ -176,7 +177,11 @@ public static class SettingsSave
 			{
 				try
 				{
-					new FileStream(Path.Combine(section.Directory, name), FileMode.Open, FileAccess.Write).Dispose();
+					new FileStream(
+						Path.Combine(section.Directory, name),
+						FileMode.Open,
+						FileAccess.Write,
+						FileShare.ReadWrite | FileShare.Delete).Dispose();
 				}
 				catch (Exception exception)
 				{

@@ -564,6 +564,9 @@
   <data name="SettingsRestartNotice" xml:space="preserve">
     <value>Saved. Takes effect after a restart.</value>
   </data>
+  <data name="SettingsRestartNoticeThemeApplied" xml:space="preserve">
+    <value>Saved. Theme applied, the rest after a restart.</value>
+  </data>
   <data name="SettingsRestartNow" xml:space="preserve">
     <value>Restart now</value>
   </data>

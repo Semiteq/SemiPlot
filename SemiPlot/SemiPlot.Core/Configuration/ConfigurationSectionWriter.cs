@@ -163,7 +163,7 @@ public static class ConfigurationSectionWriter
 
 			try
 			{
-				content = File.ReadAllBytes(file);
+				content = ReadAllBytesShared(file);
 			}
 			catch (Exception exception)
 			{
@@ -182,6 +182,15 @@ public static class ConfigurationSectionWriter
 				return ConfigurationSection.Fail(
 					section, sectionDirectory, SectionProblem.Unwritable, fileNames: [name], cause: exception);
 			}
+		}
+
+		private static byte[] ReadAllBytesShared(string file)
+		{
+			using var stream = ConfigurationSection.OpenShared(file);
+			using var content = new MemoryStream();
+			stream.CopyTo(content);
+
+			return content.ToArray();
 		}
 
 		private Result Write(string name, string content)

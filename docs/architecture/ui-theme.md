@@ -222,6 +222,12 @@ test font, which is about twice as wide, so no test asserts the trimming; `Setti
 button's and the notice's effect on the dialog's and the Save button's `Bounds` instead. A longer notice or
 label is measured again in both languages before it ships.
 
+`SettingsRestartNoticeThemeApplied`, the notice after a save that also changed the theme, was measured the
+same way on 2026-10-01 in the realised 640 px dialog, with the notice showing beside the button: 304 px on one
+line in English, in a 334 px cell, and 420 px in Russian, which wraps in its 241 x 40 px cell into
+"Сохранено. Тема применена," at 208.6 px and "остальное после перезапуска." at 210.5 px, two lines with
+nothing trimmed.
+
 ### The axis scale panel
 
 `Chart/AxisScalePanel` is a `Flyout` form under the same rule. The panel is 360 px wide, with rows that exist
@@ -306,6 +312,8 @@ the 100 px groups column at `MinWidth` and equal header button heights.
 builds a window. So an archive failure still renders on the configured variant. `settings` is null only when the settings load
 itself failed; that window renders on the `Light` variant `App.axaml:5` declares, which is also
 what the headless test builders see, since they construct `App` directly and never call `App.RunStarted`.
+After the start, `App.ApplyTheme` is the variant's one writer: it applies a theme any process saved
+(`overview.md#the-live-theme`).
 
 `SettingsVocabulary`, in the same file as the enums, holds every spelling of a settings value: the
 yaml token the loader matches, the UI culture, Semi's specific culture and the `ThemeVariant`. A

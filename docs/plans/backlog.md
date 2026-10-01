@@ -19,6 +19,15 @@ each is a scoped future task.
   carry an absence — a nullable sample, or a separate break signal — which is a change to
   `IDataProvider` and to every consumer of `RealtimeBatch`, so it is its own task.
 
+- **Two settings saves can lose one of them.** `SettingsSave.Save` reads a section at stage time and
+  promotes its copy later; a save from another process that replaces the same file in between is
+  overwritten (`overview.md#the-settings-window`). With the live theme the loss shows: every window
+  returns to the overwriting save's theme and the instance whose save was lost gets no message. The fix
+  is a lock file in `<config-dir>` opened with `FileShare.None` around stage and promote, waited on with a
+  bound and reported as `Unwritable` past it; the operating system drops the lock with the handle, so a
+  killed process leaves none behind. Deferred from the external review of `live-theme` (2026-10-01):
+  the race needs two operators saving the same file within one save's span.
+
 - **Minimap — further work.** The current strip shows the window position over the extent (visible marker +
   extent labels) but no data preview. Wanted: a richer overview (e.g. a downsampled trace/heat preview of the
   archive, clearer window handles, possibly per-pen presence). Treat as its own task.

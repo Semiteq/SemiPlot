@@ -230,12 +230,19 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 	/// </summary>
 	public string ValidationMessage => FirstBrokenRule();
 
-	/// <summary>Set by a save that wrote any key; every saved key takes effect at the next start.</summary>
+	/// <summary>Set by a save that wrote a key other than the theme, which every process applies live.</summary>
 	public bool IsRestartPending
 	{
 		get;
 		private set => this.RaiseAndSetIfChanged(ref field, value);
 	}
+
+	/// <summary>The notice for the last save, which names the theme as applied when that save also wrote it.</summary>
+	public string RestartNotice
+	{
+		get;
+		private set => this.RaiseAndSetIfChanged(ref field, value);
+	} = Resources.SettingsRestartNotice;
 
 	public ReactiveCommand<Unit, Unit> SaveCommand { get; }
 
@@ -265,6 +272,24 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 		RestartNowCommand.Dispose();
 	}
 
+	/// <summary>Moves the loaded theme, and an untouched selection, onto the theme the process applied.</summary>
+	internal void FollowAppliedTheme(AppThemeVariant theme)
+	{
+		var token = SettingsVocabulary.Of(theme).YamlToken;
+
+		if (!_loadedApp.TryGetValue(AppSettingsLoader.ThemeKey, out var loaded) || loaded == token)
+		{
+			return;
+		}
+
+		if (SelectedTheme?.Token == loaded)
+		{
+			SelectedTheme = Match(Themes, token);
+		}
+
+		_loadedApp[AppSettingsLoader.ThemeKey] = token;
+	}
+
 	private async Task SaveAsync()
 	{
 		var app = CurrentApp();
@@ -289,10 +314,14 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 		_loadedApp = app;
 		_loadedConnection = connection;
 
-		if (appEdits.Count > 0 || connectionEdits.Count > 0)
+		if (appEdits.Keys.Any(key => key != AppSettingsLoader.ThemeKey) || connectionEdits.Count > 0)
 		{
 			IsRestartPending = true;
 		}
+
+		RestartNotice = appEdits.ContainsKey(AppSettingsLoader.ThemeKey)
+			? Resources.SettingsRestartNoticeThemeApplied
+			: Resources.SettingsRestartNotice;
 	}
 
 	private string FirstBrokenRule()

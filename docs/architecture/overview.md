@@ -101,7 +101,7 @@ connection never changes while a process runs.
 | Shared by every window | Kept by one window |
 | --- | --- |
 | The pen catalogue: name, colour, style, unit, mask, groups, initial scale (the 5 s catalogue loop) | The group shown, the time window, the live-edge mode |
-| The theme | The current scale of each pen, and its visibility |
+| The theme, applied live in every open window (`#the-live-theme`) | The current scale of each pen, and its visibility |
 | The language, read at each window's start | The message panel and its entries |
 
 `MainWindow/TrendWindow` is the window's composition and its owner. `TrendWindow.Build` takes the start
@@ -168,6 +168,70 @@ the failure window's in `CreateMainWindow` on a failed start, and `App.ResolveMe
 field, null before either has run and again after the failure window closes. `UnhandledErrorObserver`
 reaches either window's panel through it. The window has no chart, legend or minimap, and no service
 provider.
+
+### The live theme
+
+`App` owns one watch over `Settings/AppSectionWatcher` for the process, one watcher at a time, whichever
+window it shows. `App.ConfigureStarted`, and `App.ConfigureFailed` when the launch keys parsed, start it
+over `<config-dir>/app`. A folder that does not exist gets no watcher, because the start has already
+reported it. A folder the operating system refuses to watch, such as one the account cannot list, gets no
+watcher for now: `AppSectionWatcher.Open` returns the refusal as a failure, `App` reports it, and the
+start goes on without the live theme until an open succeeds (`AppSectionWatcher.Watch`, below). `Open`
+lists the folder before it creates the watcher, so a folder the account cannot list fails there on both
+platforms, and Linux starts no reader thread for it; that thread and its inotify handle would outlive
+`Dispose`. Any other refusal comes out of `EnableRaisingEvents`: Windows throws it, and Linux, for one
+such as the inotify watch limit, raises it as an `Error` event inside that call, before anything
+subscribes, so `Open` holds a handler of its own for the call's length. The desktop lifetime's `Exit`
+event disposes the watch and the watcher it holds.
+
+- The adapter merges the `FileSystemWatcher` events `Changed`, `Created`, `Renamed` and `Deleted` for
+  `*.yaml`, with `NotifyFilter = FileName | LastWrite`. The `File.Replace` a save ends with surfaces as a
+  different event on each platform, and every one of them is in the merge. An `Error` event that carries
+  `InternalBufferOverflowException` joins the stream as one more event, so an overflowed buffer ends in
+  one reload. Any other error comes from a watcher that has stopped reading, as Windows does on a share
+  that went away, so the adapter ends the stream with that error. On Linux an overflow also ends the
+  reader loop, so its reload is the last event that process sees; the viewer ships for Windows, and Linux
+  runs only in CI.
+- `AppSectionWatcher.Watch` turns a refused open and a stopped watcher into one failure per outage and
+  disposes the stopped watcher. It opens the folder again every `ReopenInterval`, 5 s; a refusal inside the
+  same outage is not reported again. A watcher opened again emits one event, so the section loads once for
+  whatever changed while nothing watched it. Measured on Windows 11 on 2026-10-01 with .NET 10: deleting the
+  watched folder raises `Deleted` for its files and then `Error` with `Win32Exception` 5, access denied,
+  while `EnableRaisingEvents` still reads true, so a deleted and recreated `app/` is watched again within one
+  interval. A folder renamed away raises nothing: the watcher follows it to its new name, and a new `app/`
+  goes unwatched until the next start. Linux raises nothing when the watched folder is deleted either,
+  because the runtime drops the watch on `IN_IGNORED` without an `Error`.
+- `AppSectionWatcher.ThemeChanges` throttles the watch's events for 300 ms on the data scheduler, runs
+  `AppSettingsLoader.Load` there and emits on the UI scheduler; a watch failure skips the throttle and is
+  emitted as a failed load. It passes a theme on only when it differs
+  from the last one applied, starting from the theme the start applied, so a changed `locale` emits
+  nothing; the language still waits for the next start. A failed load is emitted as it is, and a load
+  that throws is emitted as a failed load, so the watch goes on.
+- The start reads `app/` before the startup probe, which may wait up to 30 s per read, and the watcher
+  starts only after it, so a save in between raises no event this process sees. A start that loaded its
+  settings therefore loads the section once more when the watch starts, one quiet period later, and that
+  load applies a theme saved in the gap; an unchanged theme emits nothing. A start whose settings load
+  failed skips this load, because its window already states that failure.
+- `App.ApplyTheme` writes the emitted theme to `RequestedThemeVariant`, the variant's one writer after the
+  start, and the chart repaints on `ActualThemeVariantChanged`. A failed load reaches the shown window's
+  panel through `ResultReporting.TryReportFailure`, every error of it, and the theme stays as it was. A
+  failure raised before the first window exists, such as a refused open inside `App.ConfigureFailed`, which
+  runs on the UI thread where `AvaloniaScheduler` delivers at once, is held by `App` and reported to that
+  window's panel when `CreateMainWindow` builds it. After the failure window closes, a failure goes to the
+  log alone, as with `UnhandledErrorObserver`. A throw out of the pipeline itself is reported once and ends
+  the watch for the process.
+- A failed reload carries the texts of the same failure at the start, so a remedy may end with "Restart
+  SemiPlot"; a corrected theme applies without the restart, and a corrected `locale` still needs it.
+- `ConfigurationSection` opens a section file with `FileShare.ReadWrite | FileShare.Delete`, so a read in
+  one process never blocks another process's `File.Replace` of the same file. A save copies an unedited
+  file through the same `ConfigurationSection.OpenShared`, and its write probe opens a target with the same
+  sharing, so no handle a save holds blocks another save's `File.Replace` either.
+
+The process that saved applies its theme through the same route as every other process; the settings
+dialog writes no variant itself. An open settings dialog follows the variant its window takes: when it
+changes, `SettingsViewModel.FollowAppliedTheme` moves the dialog's loaded theme to it, and the selection too
+unless the operator has already picked another theme, so picking the theme the files held before is a
+change the save writes.
 
 ### The window's rows
 
@@ -282,7 +346,8 @@ one method: nothing else may resolve a service through a static.
   unchanged. An absent folder and a folder holding no `*.yaml` are separate failures with separate
   remedies; every failure opens the startup window rather than escaping as an exception.
 
-  `locale` is in [ui-text.md](./ui-text.md), `theme` in [ui-theme.md](./ui-theme.md). The set that
+  `locale` is in [ui-text.md](./ui-text.md), `theme` in [ui-theme.md](./ui-theme.md); a changed `theme`
+  applies live in every running process (`#the-live-theme`). The set that
   ships is tracked at `ConfigFiles/` in the repository — `ConfigFiles/app/app.yaml` and
   `ConfigFiles/connection/connection.yaml` — and `SemiPlot.Tests.Unit/DeliveredConfigurationTests`
   runs the production loaders over it, so a broken delivered file fails the build.
@@ -294,8 +359,11 @@ one method: nothing else may resolve a service through a static.
 `Edit` -> `Settings` opens `Settings/SettingsDialog`, the viewer's only writer of the section folders. It
 edits `locale` and `theme` in `app/`, and `host`, `port`, `database`, `user`, `password` and
 `poll_interval_ms` in `connection/`. A key the window does not show, such as `schema`, stays in its file
-and survives every rewrite. The dialog shows a restart notice after a save that changed any key, and the
-change takes effect at the next start. Beside the notice, "Restart now"
+and survives every rewrite. A saved `theme` applies live in every running process (`#the-live-theme`), so
+a save that changed only the theme shows no notice. The dialog shows a restart notice after a save that
+changed any other key, and that change takes effect at the next start. A save that also changed the theme
+words the notice `SettingsRestartNoticeThemeApplied`, which names the theme as applied
+(`SettingsViewModel.RestartNotice`). Beside the notice, "Restart now"
 (`SettingsViewModel.RestartNowCommand`) runs the `RestartApplication` of the window that opened the
 dialog, which starts a copy with the same launch keys and closes that window only once the copy has
 started (`#another-instance`). The command cannot execute while `SaveCommand` runs: a copy would read the
@@ -345,8 +413,8 @@ A save goes through `Settings/SettingsSave.Save`:
    key is copied byte for byte and never rewritten.
 4. `AppSettingsLoader.Load` and `PostgresConnectionLoader.Load` run over the staged folders. A refusal
    is returned with the real section directory in place of the staging one.
-5. Every rewritten target is opened for writing and closed. One that refuses fails the save with
-   `SectionProblem.Unwritable`, and nothing moves.
+5. Every rewritten target is opened for writing and closed, sharing as a section read does
+   (`#the-live-theme`). One that refuses fails the save with `SectionProblem.Unwritable`, and nothing moves.
 6. Each rewritten file replaces its target with `File.Replace`, which keeps the target's ACL and
    attributes on Windows. On Unix it is a rename, so the target's mode is copied onto the staged file
    first, and a `0600` `connection.yaml` stays `0600`. The replaced target goes to
@@ -377,12 +445,14 @@ Comments in a rewritten file do not: YamlDotNet does not round-trip them. Scalar
 strings, so an untouched `port` or `poll_interval_ms` in a rewritten file may come back as
 `port: "5432"`, and it still loads.
 
-Several viewers may share one configuration directory, and the last write wins per key. A save
-applies only its own changed keys over a read taken at save time, so a key another instance saved
-survives a save of a different key. The span between that read and the move is not locked: a save
-from another instance landing there, on the same file, is overwritten. The cost is one value typed
-again, and a lock file would outlive a killed process. A move can also fail after the write check,
-when another process opens the target between the two; the files moved before it stay promoted, the
+Several viewers may share one configuration directory, and the last write wins per key. A save applies
+only its own changed keys over a read taken at save time, so a key another instance saved survives a save
+of a different key. The span between that read and the move is not locked: a save from another instance
+landing there, on the same file, is overwritten. The cost is one value typed again. For the theme the
+overwrite is visible: every window, and an open dialog through `FollowAppliedTheme`, returns to the theme
+the overwriting save carried, and the instance whose save was lost gets no message.
+`docs/plans/backlog.md` holds the lock that would close the span. A move can also fail after the write
+check, when another process opens the target between the two; the files moved before it stay promoted, the
 panel reports the failure, and the next save writes again.
 
 ### The pen and group editor

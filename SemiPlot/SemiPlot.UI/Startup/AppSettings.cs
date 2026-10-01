@@ -55,6 +55,12 @@ internal static class SettingsVocabulary
 		return Array.Find(Themes, entry => entry.Theme == theme)
 			?? throw new ArgumentOutOfRangeException(nameof(theme), theme, null);
 	}
+
+	/// <summary>The entry that selects <paramref name="variant"/>; null for a variant no token selects.</summary>
+	internal static AppThemeEntry? Of(ThemeVariant variant)
+	{
+		return Array.Find(Themes, entry => entry.Variant == variant);
+	}
 }
 
 /// <summary>

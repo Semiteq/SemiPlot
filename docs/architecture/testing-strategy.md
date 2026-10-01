@@ -41,6 +41,7 @@ and built from the commit under test. Its value is diagnosis.
 | The live edge's own rules, and the fresh tail's bound | `SemiPlot.Tests.Unit/Postgres/RealtimePollTests.cs`, `Postgres/FreshTailBoundTests.cs` |
 | The vendor's observed row shape | `SemiPlot.Tests.Unit/Fixtures/RealArchiveFixtureTests.cs` over `Fixtures/real-archive-rows.csv` |
 | The shipped configuration set | `SemiPlot.Tests.Unit/DeliveredConfigurationTests.cs` over `ConfigFiles/**`, linked into the output directory by `SemiPlot.Tests.Unit.csproj` |
+| The live theme's pipeline, its watcher and `App`'s wiring of both | `SemiPlot.Tests.Unit/UI/Settings/AppSectionWatcherTests.cs`, `UI/Startup/AppConfigurationTests.cs`; the wall-clock exception below |
 
 The last two rows are the ones that mislead. A test reading a committed CSV, or the tracked YAML the
 installation ships, is still a unit test: the file is data, versioned by git, and cannot change
@@ -48,6 +49,18 @@ underneath the test. Touching a file is not crossing a boundary.
 
 A unit test must not open a socket, read the wall clock, or depend on anything the machine resolves —
 `PATH`, an installed service, a display. It runs everywhere, ungated.
+
+The live theme's watcher is the one exception to the wall clock. Its pipeline runs on a `TestScheduler` in
+`UI/Settings/AppSectionWatcherTests.cs`, but what only the operating system shows needs a real
+`FileSystemWatcher` over a temporary folder and the real 300 ms quiet period: that a `File.Replace` raises
+an event at all, and that `App` wires the watch on both starts. Those tests,
+`AReplacedFileInARealFolderYieldsTheNewTheme` and the theme tests of
+`UI/Startup/AppConfigurationTests.cs`, wait for an outcome with a bound of 5 s or `HeadlessWait`'s 30 s;
+one of them pumps the dispatcher for one second to let a failed reload land before the next file change.
+`AnAppFolderDeletedAndRecreatedIsWatchedAgain` waits out one real `ReopenInterval`, about 5 s, bounded at
+10 s, and runs its body on Windows alone: Linux raises no event when the watched folder itself is deleted
+(`overview.md#the-live-theme`). A temporary folder is a file the test creates, not a machine resource, so
+they stay ungated on both CI legs.
 
 Two pieces of state are process-global and the project runs its classes in parallel: the UI culture
 (`CultureInfo.DefaultThreadCurrentUICulture` / `CurrentUICulture`) and the application's theme

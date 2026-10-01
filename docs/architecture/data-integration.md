@@ -524,7 +524,8 @@ The eleven rows above are the `ArchiveError` arm alone. `Map` has eight further 
 arguments, the log file, the configuration section, the app settings, the connection file, the
 startup read timeout, an `IExceptionalError` and the `_` fallback — and every one of them is
 `Error`, because each is reachable only at startup, where nothing recovers until the operator edits
-something. `MessageSeverity.Info` has exactly one writer in the whole tree, the connection-restored
+something. The app settings and the configuration section arms are also reachable later, from the live
+theme's reload and the settings save, and the same holds there (`overview.md#the-live-theme`). `MessageSeverity.Info` has exactly one writer in the whole tree, the connection-restored
 entry `AppStatusBarViewModel` writes. `SemiPlot.Tests.Unit/UI/Messages/FailureSeverityTests.cs`
 holds one table per enum the two mappers switch on and asserts each table covers `Enum.GetValues`,
 so a new member leaves a table short and turns red.
@@ -554,12 +555,14 @@ and it logs the refusal once, guarded, because the log sink itself is one of the
 have thrown. Its scheduler overload carries the report to the UI thread first, for the two callers
 that report from a thread of their own.
 
-A handler that runs detached — an Rx `onNext`, an Rx `onError`, a job posted to the UI scheduler —
-wraps its whole body, not its report alone, and hands the throw to `TryReportFailure`:
+A handler that runs detached — an Rx `onNext`, an Rx `onError`, a job posted to the UI scheduler — wraps
+its whole body, not its report alone, and hands the throw to `TryReportFailure`:
 `TrendChartViewModel.OnHistoryQueryFailed`, `MainWindow/AppStatusBarViewModel.ApplyConnectionState`,
-`Bridge/PenCatalogueSync.RunAsync` and `MainWindow/PenCatalogueApplier.ApplyAsync`, the last through
-`TrendChartViewModel.ReportFailure`. The guard belongs to the handler rather than to whoever invokes
-it, because the recovery around the report would otherwise escape the same way the report can.
+`Bridge/PenCatalogueSync.RunAsync`, `MainWindow/PenCatalogueApplier.ApplyAsync`, the last through
+`TrendChartViewModel.ReportFailure`, and `App.ApplyTheme`, which holds a failure for the first window
+until it exists and has only the log after the failure window closes (`overview.md#the-live-theme`). The
+guard belongs to the handler rather than to whoever invokes it, because the recovery around the report
+would otherwise escape the same way the report can.
 `Minimap/MinimapViewModel.LoadExtentAsync` carries no guard of its own: its apply runs through
 `Observable.Start` on the UI scheduler and awaits it, so a throw reaches the awaiter, and both awaiters
 report it, `TrendWindow.StartExtentLoad`'s continuation and `PenCatalogueApplier.ApplyAsync`'s catch.

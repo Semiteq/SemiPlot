@@ -128,7 +128,7 @@ public static class ConfigurationSection
 	{
 		try
 		{
-			var content = File.ReadAllText(file);
+			var content = ReadShared(file);
 			var repeated = FindRepeatedKey(content);
 
 			if (repeated is not null)
@@ -144,6 +144,20 @@ public static class ConfigurationSection
 			return Fail(section, directory, SectionProblem.Unreadable, fileNames: [name], cause: exception)
 				.ToResult<Dictionary<string, object?>>();
 		}
+	}
+
+	private static string ReadShared(string file)
+	{
+		using var stream = OpenShared(file);
+		using var reader = new StreamReader(stream);
+
+		return reader.ReadToEnd();
+	}
+
+	/// <summary>Opens a section file for reading without blocking another process's File.Replace of it.</summary>
+	internal static FileStream OpenShared(string file)
+	{
+		return new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
 	}
 
 	// WithDuplicateKeyChecking refuses the file but names the key only inside its own message, and the

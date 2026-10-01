@@ -1,3 +1,6 @@
+using System.Reactive.Linq;
+
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless.XUnit;
@@ -183,8 +186,34 @@ public sealed class SettingsViewTests : IDisposable
 			await HeadlessWait.Until(() => viewModel.IsRestartPending);
 
 			notice.IsEffectivelyVisible.Should().BeTrue();
+			notice.Text.Should().Be(Resources.SettingsRestartNotice);
 			_messagePanel.Entries.Should().BeEmpty();
 			AppSettingsLoader.Load(_appDirectory).Value.Locale.Should().Be(UiLanguage.En);
+		}
+		finally
+		{
+			dialog.Close();
+		}
+	}
+
+	[AvaloniaFact]
+	public async Task TheRestartNotice_AfterASaveThatAlsoChangedTheTheme_SaysTheThemeIsApplied()
+	{
+		using var viewModel = Build();
+		var dialog = Realise(viewModel);
+		try
+		{
+			var notice = Named<TextBlock>(dialog, "SettingsRestartNotice");
+			var otherLanguage = viewModel.Languages.First(choice => choice.Token != viewModel.SelectedLanguage!.Token);
+			var otherTheme = viewModel.Themes.First(choice => choice.Token != viewModel.SelectedTheme!.Token);
+			Pick(dialog, Named<ComboBox>(dialog, "SettingsLanguage"), otherLanguage);
+			Pick(dialog, Named<ComboBox>(dialog, "SettingsTheme"), otherTheme);
+
+			HeadlessInput.Click(dialog, Named<Button>(dialog, "SettingsSaveButton"));
+			await HeadlessWait.Until(() => viewModel.IsRestartPending);
+
+			notice.IsEffectivelyVisible.Should().BeTrue();
+			notice.Text.Should().Be(Resources.SettingsRestartNoticeThemeApplied, "the theme half applies live");
 		}
 		finally
 		{
@@ -248,6 +277,34 @@ public sealed class SettingsViewTests : IDisposable
 			message.Bounds.Position.Should().Be(
 				notice.Bounds.Position, "the notice and the message share the reserved line");
 			message.Bounds.Height.Should().Be(notice.Bounds.Height);
+		}
+		finally
+		{
+			dialog.Close();
+		}
+	}
+
+	[AvaloniaFact]
+	public async Task AThemeAnotherProcessSaved_MovesTheOpenDialog_SoPickingTheOldThemeWritesIt()
+	{
+		using var scope = ThemeProbe.ApplyVariant(App.VariantFor(AppThemeVariant.Light));
+		using var viewModel = Build();
+		var dialog = Realise(viewModel);
+		try
+		{
+			File.WriteAllText(Path.Combine(_appDirectory, "app.yaml"), "locale: ru\ntheme: dark\n");
+			Application.Current!.RequestedThemeVariant = App.VariantFor(AppThemeVariant.Dark);
+			Dispatcher.UIThread.RunJobs();
+
+			Named<ComboBox>(dialog, "SettingsTheme").SelectedItem
+				.Should().BeSameAs(viewModel.Themes.Single(choice => choice.Token == "dark"));
+
+			var light = viewModel.Themes.Single(choice => choice.Token == "light");
+			Pick(dialog, Named<ComboBox>(dialog, "SettingsTheme"), light);
+			await viewModel.SaveCommand.Execute();
+
+			_messagePanel.Entries.Should().BeEmpty();
+			AppSettingsLoader.Load(_appDirectory).Value.Theme.Should().Be(AppThemeVariant.Light);
 		}
 		finally
 		{

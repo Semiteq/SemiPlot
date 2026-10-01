@@ -199,7 +199,9 @@ way, stopping the AppHost stops the container: it runs under the AppHost's defau
 `SemiPlot.AppHost.exe` (Rider's Stop in Debug) both remove the container, the writer and the viewer the
 stand launched within seconds. A window the viewer started itself, through `File` -> `New window` or
 `Restart`, is a plain child process of that viewer: it keeps running against the removed container and
-the removed configuration copy, and the operator closes it by hand. The JetBrains Aspire plugin
+the removed configuration copy, and the operator closes it by hand. Its theme watcher reports one outage
+when the stand deletes `%TEMP%\SemiPlot\ConfigFiles` and then tries to open the watch again every 5 s
+against the missing folder, which is harmless (`overview.md#the-live-theme`). The JetBrains Aspire plugin
 (`me.rafaelldi.aspire`) is optional; it adds per-resource debugging (attaching to the converge job or the
 writer individually) on top of what the Aspire dashboard already shows. The AppHost injects the standard
 OpenTelemetry and console-formatter environment variables into every project resource; neither the seeder

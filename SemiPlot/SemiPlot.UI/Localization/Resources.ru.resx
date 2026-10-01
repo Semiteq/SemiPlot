@@ -564,6 +564,9 @@
   <data name="SettingsRestartNotice" xml:space="preserve">
     <value>Сохранено. Вступит в силу после перезапуска.</value>
   </data>
+  <data name="SettingsRestartNoticeThemeApplied" xml:space="preserve">
+    <value>Сохранено. Тема применена, остальное после перезапуска.</value>
+  </data>
   <data name="SettingsRestartNow" xml:space="preserve">
     <value>Перезапустить</value>
   </data>

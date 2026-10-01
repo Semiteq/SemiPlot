@@ -165,7 +165,7 @@
                 <TextBlock Name="SettingsRestartNotice"
                            Grid.Column="0"
                            Classes="form-message"
-                           Text="{x:Static text:Resources.SettingsRestartNotice}">
+                           Text="{Binding RestartNotice}">
                     <TextBlock.IsVisible>
                         <MultiBinding Converter="{x:Static BoolConverters.And}">
                             <Binding Path="IsRestartPending" />

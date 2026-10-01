@@ -7,19 +7,19 @@ using SemiPlot.UI;
 
 namespace SemiPlot.Tests.Unit.UI.Startup;
 
-/// <summary>
-/// Puts back everything <c>App.ConfigureStarted</c> writes into the headless application: the private fields it
-/// sets, the locale resources and the theme variant. <c>Application.Current</c> outlives every test class,
-/// and nothing on the production surface undoes a call.
-/// </summary>
+/// <summary>Puts back everything <c>App.ConfigureStarted</c> writes into the headless application.</summary>
 internal sealed class AppStateScope : IDisposable
 {
+	private static readonly FieldInfo _themeWatchField = AppField("_themeWatch");
+
 	private static readonly FieldInfo[] _configuredFields =
 	[
 		AppField("_trendWindow"),
 		AppField("_startupFailure"),
 		AppField("_messagePanel"),
-		AppField("_instanceLauncher")
+		AppField("_instanceLauncher"),
+		_themeWatchField,
+		AppField("_themeFailuresBeforeWindow")
 	];
 
 	private readonly object?[] _previousFields;
@@ -38,6 +38,14 @@ internal sealed class AppStateScope : IDisposable
 
 	public void Dispose()
 	{
+		var previousThemeWatch = _previousFields[Array.IndexOf(_configuredFields, _themeWatchField)];
+
+		if (_themeWatchField.GetValue(App) is IDisposable themeWatch
+			&& !ReferenceEquals(themeWatch, previousThemeWatch))
+		{
+			themeWatch.Dispose();
+		}
+
 		for (var index = 0; index < _configuredFields.Length; index++)
 		{
 			_configuredFields[index].SetValue(App, _previousFields[index]);

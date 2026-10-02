@@ -65,6 +65,7 @@ internal sealed class PenCatalogueApplier : IDisposable
 				if (extent.IsSuccess)
 				{
 					_chart.Navigation.SeedFromArchiveExtent(extent.Value);
+					_chart.WidenToArchiveExtent(extent.Value);
 				}
 			}
 
@@ -78,7 +79,7 @@ internal sealed class PenCatalogueApplier : IDisposable
 
 				if (!disposed.IsCancellationRequested && extent.IsSuccess)
 				{
-					_chart.Navigation.WidenToArchiveExtent(extent.Value);
+					_chart.WidenToArchiveExtent(extent.Value);
 				}
 			}
 		}

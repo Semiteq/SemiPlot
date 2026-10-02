@@ -73,7 +73,7 @@ public sealed class HistoryPrefetchTests
 		var pannedFrom = _windowFrom.AddMinutes(panMinutes);
 
 		var covers = HistoryPrefetch.Covers(
-			fetched, pannedFrom, pannedFrom.AddHours(1.0), AggregationLayer.Raw, ReportedColumns);
+			fetched, pannedFrom, pannedFrom.AddHours(1.0), AggregationLayer.Raw, ReportedColumns, _archiveStart);
 
 		covers.Should().Be(isCovered);
 	}
@@ -88,7 +88,8 @@ public sealed class HistoryPrefetchTests
 			_windowFrom.AddMinutes(15.0),
 			_windowFrom.AddMinutes(45.0),
 			AggregationLayer.Raw,
-			ReportedColumns);
+			ReportedColumns,
+			_archiveStart);
 
 		covers.Should().BeFalse();
 	}
@@ -99,7 +100,12 @@ public sealed class HistoryPrefetchTests
 		var fetched = OneHourFetch();
 
 		var covers = HistoryPrefetch.Covers(
-			fetched, _windowFrom, _windowFrom.AddHours(1.0), AggregationLayer.Minute, ReportedColumns);
+			fetched,
+			_windowFrom,
+			_windowFrom.AddHours(1.0),
+			AggregationLayer.Minute,
+			ReportedColumns,
+			_archiveStart);
 
 		covers.Should().BeFalse();
 	}
@@ -110,7 +116,12 @@ public sealed class HistoryPrefetchTests
 		var fetched = OneHourFetch();
 
 		var covers = HistoryPrefetch.Covers(
-			fetched, _windowFrom, _windowFrom.AddHours(1.0), AggregationLayer.Raw, ReportedColumns / 2);
+			fetched,
+			_windowFrom,
+			_windowFrom.AddHours(1.0),
+			AggregationLayer.Raw,
+			ReportedColumns / 2,
+			_archiveStart);
 
 		covers.Should().BeFalse();
 	}
@@ -132,9 +143,27 @@ public sealed class HistoryPrefetchTests
 		var pannedFrom = windowFrom.AddMinutes(panMinutes);
 
 		var covers = HistoryPrefetch.Covers(
-			fetched, pannedFrom, pannedFrom.AddHours(1.0), AggregationLayer.Raw, ReportedColumns);
+			fetched, pannedFrom, pannedFrom.AddHours(1.0), AggregationLayer.Raw, ReportedColumns, _archiveStart);
 
 		covers.Should().Be(isCovered);
+	}
+
+	[Theory]
+	[InlineData(1)]
+	[InlineData(30)]
+	[InlineData(59)]
+	public void Covers_AWindowStartingBeforeTheFirstSample_HoldsTheRangeFetchedForIt(int minutesBeforeTheFirstSample)
+	{
+		var windowFrom = _archiveStart.AddMinutes(-minutesBeforeTheFirstSample);
+		var windowTo = windowFrom.AddHours(1.0);
+		var fetched = HistoryPrefetch.Expand(
+			windowFrom, windowTo, AggregationLayer.Raw, ReportedColumns, _archiveStart);
+
+		var covers = HistoryPrefetch.Covers(
+			fetched, windowFrom, windowTo, AggregationLayer.Raw, ReportedColumns, _archiveStart);
+
+		fetched.FromUtc.Should().Be(_archiveStart);
+		covers.Should().BeTrue();
 	}
 
 	private static FetchRange OneHourFetch()

@@ -320,9 +320,10 @@ and fast navigation across long archives.
 - The strip reads the extent at start (`App.StartExtentLoad`), before a catalogue delta gives an empty
   chart its first pens, and after a delta adds a pen to a chart that already has some
   (`overview.md#what-a-read-changes`). `LoadExtentAsync` returns the read once the strip has applied
-  it, so the empty-chart caller seeds the navigation from that same read, and the caller after a delta
-  that adds a pen widens the navigation's first sample to an earlier one in that read
-  (`ChartNavigationController.WidenToArchiveExtent`), so the chart pans back as far as the strip draws.
+  it. Both callers widen the navigation's first sample to an earlier one in that read
+  (`TrendChartViewModel.WidenToArchiveExtent`), so the chart pans back as far as the strip draws and
+  reads the rows a moved floor brings into the window in view; the empty-chart caller seeds the
+  navigation from the same read first.
 - `Minimap/MinimapView` is a Canvas-based strip (not a second `AvaPlot`): a highlight border sized
   from `WindowStartFraction` / `WindowWidthFraction`. Press/drag converts pointer-X to a fraction →
   `NavigateToFraction`, which recenters the window via the **same** `ChartNavigationController` the

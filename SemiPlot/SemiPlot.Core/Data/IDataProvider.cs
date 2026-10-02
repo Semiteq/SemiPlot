@@ -21,7 +21,8 @@ public interface IDataProvider
 		DateTime fromUtc,
 		DateTime toUtc,
 		AggregationLayer layer,
-		int targetColumnCount);
+		int targetColumnCount,
+		CancellationToken cancellationToken = default);
 
 	Task<Result<ArchiveExtent>> QueryArchiveExtentAsync();
 }

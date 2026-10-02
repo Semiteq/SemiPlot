@@ -1,4 +1,3 @@
-using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
 
@@ -9,9 +8,10 @@ using FluentResults;
 using Microsoft.Reactive.Testing;
 
 using SemiPlot.Core.Trends;
-using SemiPlot.UI.Chart;
 
 using Xunit;
+
+using static SemiPlot.Tests.Unit.UI.Chart.HistoryDebouncerTestBuilder;
 
 namespace SemiPlot.Tests.Unit.UI.Chart;
 
@@ -20,33 +20,20 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 [Trait("Category", "Unit")]
 public sealed class ChartHistoryRequestDebouncerTests
 {
-	private static readonly TimeSpan _debounceWindow = TimeSpan.FromMilliseconds(150);
-	private static readonly TimeSpan _capInterval = TimeSpan.FromMilliseconds(400);
-	private static readonly TimeSpan _testDeadline = TimeSpan.FromSeconds(10.0);
-	private static readonly DateTime _from = new(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
-	private static readonly DateTime _to = new(2026, 6, 15, 9, 0, 0, DateTimeKind.Utc);
-
 	[Fact]
 	public void RapidRequests_CollapseToOneTrailingQuery()
 	{
 		// The gesture runs 100 ms, shorter than the cap interval, so no sample tick falls inside it.
 		var scheduler = new TestScheduler();
 		var queryCount = 0;
-		using var debouncer = new ChartHistoryRequestDebouncer(
-			request =>
-			{
-				queryCount++;
+		using var debouncer = CreateDebouncer(scheduler, (request, _) =>
+		{
+			queryCount++;
 
-				return Observable
-					.Return(Ok(request))
-					.ToTask();
-			},
-			(_, _) => { },
-			_ => { },
-			_debounceWindow,
-			_capInterval,
-			scheduler,
-			ImmediateScheduler.Instance);
+			return Observable
+				.Return(Ok(request))
+				.ToTask();
+		});
 
 		for (var notch = 0; notch < 5; notch++)
 		{
@@ -56,7 +43,7 @@ public sealed class ChartHistoryRequestDebouncerTests
 
 		queryCount.Should().Be(0);
 
-		scheduler.AdvanceBy(_debounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 
 		queryCount.Should().Be(1);
 	}
@@ -72,8 +59,9 @@ public sealed class ChartHistoryRequestDebouncerTests
 		var queriedLayers = new List<AggregationLayer>();
 		var appliedLayers = new List<AggregationLayer>();
 
-		using var debouncer = new ChartHistoryRequestDebouncer(
-			request =>
+		using var debouncer = CreateDebouncer(
+			scheduler,
+			(request, _) =>
 			{
 				queriedLayers.Add(request.Layer);
 
@@ -88,26 +76,21 @@ public sealed class ChartHistoryRequestDebouncerTests
 				{
 					lastApplied.TrySetResult();
 				}
-			},
-			_ => { },
-			_debounceWindow,
-			_capInterval,
-			scheduler,
-			ImmediateScheduler.Instance);
+			});
 
 		debouncer.Request(RequestForLayer(AggregationLayer.Minute));
-		scheduler.AdvanceBy(_debounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 
 		// Two more windows arrive while that read is held; only the newer of them is worth reading.
 		debouncer.Request(RequestForLayer(AggregationLayer.Hour));
-		scheduler.AdvanceBy(_debounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 		debouncer.Request(RequestForLayer(AggregationLayer.Day));
-		scheduler.AdvanceBy(_debounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 
 		queriedLayers.Should().Equal(AggregationLayer.Minute);
 
 		firstQueryGate.SetResult(Ok(RequestForLayer(AggregationLayer.Minute)));
-		await lastApplied.Task.WaitAsync(_testDeadline, TestContext.Current.CancellationToken);
+		await lastApplied.Task.WaitAsync(TestDeadline, TestContext.Current.CancellationToken);
 
 		queriedLayers.Should().Equal(AggregationLayer.Minute, AggregationLayer.Day);
 		appliedLayers.Should().Equal(AggregationLayer.Minute, AggregationLayer.Day);
@@ -119,20 +102,17 @@ public sealed class ChartHistoryRequestDebouncerTests
 		var scheduler = new TestScheduler();
 		var reportedFailures = new List<IReadOnlyList<IError>>();
 		var appliedLayers = new List<AggregationLayer>();
-		using var debouncer = new ChartHistoryRequestDebouncer(
-			_ => throw new InvalidOperationException("query failed"),
-			(request, _) => appliedLayers.Add(request.Layer),
-			reportedFailures.Add,
-			_debounceWindow,
-			_capInterval,
+		using var debouncer = CreateDebouncer(
 			scheduler,
-			ImmediateScheduler.Instance);
+			(_, _) => throw new InvalidOperationException("query failed"),
+			(request, _) => appliedLayers.Add(request.Layer),
+			reportedFailures.Add);
 
 		debouncer.Request(RequestForLayer(AggregationLayer.Raw));
-		scheduler.AdvanceBy(_debounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 
 		debouncer.Request(RequestForLayer(AggregationLayer.Hour));
-		scheduler.AdvanceBy(_debounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 
 		reportedFailures.Should().HaveCount(2);
 		appliedLayers.Should().BeEmpty();
@@ -150,18 +130,14 @@ public sealed class ChartHistoryRequestDebouncerTests
 		var scheduler = new TestScheduler();
 		var reportedFailures = new List<IReadOnlyList<IError>>();
 		var appliedLayers = new List<AggregationLayer>();
-		using var debouncer = new ChartHistoryRequestDebouncer(
-			_ => Task.FromResult(
-				Result.Fail<IReadOnlyList<PenHistoryEnvelope>>("The archive is unreachable.")),
-			(request, _) => appliedLayers.Add(request.Layer),
-			reportedFailures.Add,
-			_debounceWindow,
-			_capInterval,
+		using var debouncer = CreateDebouncer(
 			scheduler,
-			ImmediateScheduler.Instance);
+			(_, _) => Task.FromResult(Unreachable()),
+			(request, _) => appliedLayers.Add(request.Layer),
+			reportedFailures.Add);
 
 		debouncer.Request(RequestForLayer(AggregationLayer.Raw));
-		scheduler.AdvanceBy(_debounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 
 		reportedFailures.Should().ContainSingle();
 		reportedFailures[0].Should().ContainSingle()
@@ -175,17 +151,13 @@ public sealed class ChartHistoryRequestDebouncerTests
 		// Without them the consumer cannot tell a pen the provider omitted from one it was never asked for.
 		var scheduler = new TestScheduler();
 		IReadOnlyList<int>? appliedPenIds = null;
-		using var debouncer = new ChartHistoryRequestDebouncer(
-			request => Task.FromResult(Ok(request)),
-			(request, _) => appliedPenIds = request.PenIds,
-			_ => { },
-			_debounceWindow,
-			_capInterval,
+		using var debouncer = CreateDebouncer(
 			scheduler,
-			ImmediateScheduler.Instance);
+			(request, _) => Task.FromResult(Ok(request)),
+			(request, _) => appliedPenIds = request.PenIds);
 
-		debouncer.Request(RequestOver([4, 7], _from, _to, AggregationLayer.Raw));
-		scheduler.AdvanceBy(_debounceWindow.Ticks + 1);
+		debouncer.Request(RequestOver([4, 7], From, To, AggregationLayer.Raw));
+		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 
 		appliedPenIds.Should().Equal(4, 7);
 	}
@@ -201,21 +173,14 @@ public sealed class ChartHistoryRequestDebouncerTests
 		// them; a read that outlived a tick would move its query behind the one in flight, never add one.
 		var scheduler = new TestScheduler();
 		var queryCount = 0;
-		using var debouncer = new ChartHistoryRequestDebouncer(
-			request =>
-			{
-				queryCount++;
+		using var debouncer = CreateDebouncer(scheduler, (request, _) =>
+		{
+			queryCount++;
 
-				return Observable
-					.Return(Ok(request))
-					.ToTask();
-			},
-			(_, _) => { },
-			_ => { },
-			_debounceWindow,
-			_capInterval,
-			scheduler,
-			ImmediateScheduler.Instance);
+			return Observable
+				.Return(Ok(request))
+				.ToTask();
+		});
 
 		for (var notch = 1; notch <= 100; notch++)
 		{
@@ -225,7 +190,7 @@ public sealed class ChartHistoryRequestDebouncerTests
 
 		queryCount.Should().Be(5);
 
-		scheduler.AdvanceBy(_debounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 
 		queryCount.Should().Be(6);
 	}
@@ -233,28 +198,66 @@ public sealed class ChartHistoryRequestDebouncerTests
 	[Fact]
 	public void TheSameWindowRequestedTwiceQueriesOnce()
 	{
-		// The trailing throttle emits the window and its result is applied; the sample tick that follows
-		// carries the same window, which the applied envelopes already cover, so the archive is read once.
+		// The trailing throttle admits the second push at 250 ms and its read is applied; the sample tick at
+		// 400 ms emits that same push, which asked for the rows the read brought, so the archive is read once.
 		var scheduler = new TestScheduler();
 		var queryCount = 0;
-		using var debouncer = new ChartHistoryRequestDebouncer(
-			request =>
-			{
-				queryCount++;
+		using var debouncer = CreateDebouncer(scheduler, (request, _) =>
+		{
+			queryCount++;
 
-				return Task.FromResult(Ok(request));
-			},
-			(_, _) => { },
-			_ => { },
-			_debounceWindow,
-			_capInterval,
+			return Task.FromResult(Ok(request));
+		});
+
+		debouncer.Request(RequestForLayer(AggregationLayer.Raw));
+		scheduler.AdvanceBy(TimeSpan.FromMilliseconds(100).Ticks);
+		debouncer.Request(RequestForLayer(AggregationLayer.Raw));
+		scheduler.AdvanceBy(CapInterval.Ticks + 1);
+
+		queryCount.Should().Be(1);
+	}
+
+	[Fact]
+	public void AWindowAskedForAgainAfterItsReadWasDeliveredIsReadAgain()
+	{
+		var scheduler = new TestScheduler();
+		var queryCount = 0;
+		using var debouncer = CreateDebouncer(scheduler, (request, _) =>
+		{
+			queryCount++;
+
+			return Task.FromResult(Ok(request));
+		});
+
+		debouncer.Request(RequestForLayer(AggregationLayer.Raw));
+		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
+		debouncer.Request(RequestForLayer(AggregationLayer.Raw));
+		scheduler.AdvanceBy(CapInterval.Ticks + 1);
+
+		queryCount.Should().Be(2);
+	}
+
+	[Fact]
+	public async Task ARequestPushedWhileItsWindowIsReadReadsNothingOnceTheReadLands()
+	{
+		var scheduler = new TestScheduler();
+		var queryGate = new TaskCompletionSource<Result<IReadOnlyList<PenHistoryEnvelope>>>();
+		var applied = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var queryCount = 0;
+		using var debouncer = CreateDebouncer(
 			scheduler,
-			ImmediateScheduler.Instance);
+			(request, _) => Interlocked.Increment(ref queryCount) == 1
+				? queryGate.Task
+				: Task.FromResult(Ok(request)),
+			(_, _) => applied.TrySetResult());
 
 		debouncer.Request(RequestForLayer(AggregationLayer.Raw));
-		scheduler.AdvanceBy(TimeSpan.FromMilliseconds(200).Ticks);
+		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 		debouncer.Request(RequestForLayer(AggregationLayer.Raw));
-		scheduler.AdvanceBy(_capInterval.Ticks + 1);
+
+		queryGate.SetResult(Ok(RequestForLayer(AggregationLayer.Raw)));
+		await applied.Task.WaitAsync(TestDeadline, TestContext.Current.CancellationToken);
+		scheduler.AdvanceBy(CapInterval.Ticks + 1);
 
 		queryCount.Should().Be(1);
 	}
@@ -266,29 +269,20 @@ public sealed class ChartHistoryRequestDebouncerTests
 	{
 		var scheduler = new TestScheduler();
 		var queryCount = 0;
-		using var debouncer = new ChartHistoryRequestDebouncer(
-			request =>
-			{
-				queryCount++;
+		using var debouncer = CreateDebouncer(scheduler, (request, _) =>
+		{
+			queryCount++;
 
-				return Task.FromResult(queryCount == 1
-					? Result.Fail<IReadOnlyList<PenHistoryEnvelope>>("The archive is unreachable.")
-					: Ok(request));
-			},
-			(_, _) => { },
-			_ => { },
-			_debounceWindow,
-			_capInterval,
-			scheduler,
-			ImmediateScheduler.Instance);
+			return Task.FromResult(queryCount == 1 ? Unreachable() : Ok(request));
+		});
 
 		debouncer.Request(RequestForLayer(AggregationLayer.Raw));
-		scheduler.AdvanceBy(_debounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 
 		queryCount.Should().Be(1);
 
 		debouncer.Request(RequestForLayer(AggregationLayer.Raw));
-		scheduler.AdvanceBy(_debounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 
 		queryCount.Should().Be(2);
 	}
@@ -304,72 +298,55 @@ public sealed class ChartHistoryRequestDebouncerTests
 		var applied = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 		var queryCount = 0;
 
-		using var debouncer = new ChartHistoryRequestDebouncer(
-			request =>
+		using var debouncer = CreateDebouncer(
+			scheduler,
+			(request, _) =>
 			{
 				queryCount++;
 
 				return queryCount == 1 ? queryGate.Task : Task.FromResult(Ok(request));
 			},
-			(_, _) => applied.TrySetResult(),
-			_ => { },
-			_debounceWindow,
-			_capInterval,
-			scheduler,
-			ImmediateScheduler.Instance);
+			(_, _) => applied.TrySetResult());
 
 		debouncer.Request(RequestForLayer(AggregationLayer.Raw));
-		scheduler.AdvanceBy(_debounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 		debouncer.Request(RequestForLayer(AggregationLayer.Raw));
-		scheduler.AdvanceBy(_debounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 
 		queryCount.Should().Be(1);
 
 		queryGate.SetResult(Ok(RequestForLayer(AggregationLayer.Raw)));
-		await applied.Task.WaitAsync(_testDeadline, TestContext.Current.CancellationToken);
+		await applied.Task.WaitAsync(TestDeadline, TestContext.Current.CancellationToken);
 
 		queryCount.Should().Be(1);
 	}
 
-	// The failing case the applied-window record exists for: a window asked for again while its first read is
-	// still in flight must not be silenced by that read, because the read can come back with nothing.
 	[Fact]
 	public async Task AnIdenticalWindowAskedForWhileAFailingQueryIsInFlightIsStillRead()
 	{
-		var firstQueryGate = new TaskCompletionSource();
-		var firstQueryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var scheduler = new TestScheduler();
+		var firstQueryGate = new TaskCompletionSource<Result<IReadOnlyList<PenHistoryEnvelope>>>();
 		var applied = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 		var queryCount = 0;
-		var shortWindow = TimeSpan.FromMilliseconds(20);
 
-		using var debouncer = new ChartHistoryRequestDebouncer(
-			async request =>
-			{
-				if (Interlocked.Increment(ref queryCount) > 1)
-				{
-					return Ok(request);
-				}
-
-				firstQueryStarted.TrySetResult();
-				await firstQueryGate.Task;
-
-				return Result.Fail<IReadOnlyList<PenHistoryEnvelope>>("The archive is unreachable.");
-			},
-			(_, _) => applied.TrySetResult(),
-			_ => { },
-			shortWindow,
-			_capInterval,
-			DefaultScheduler.Instance,
-			ImmediateScheduler.Instance);
+		using var debouncer = CreateDebouncer(
+			scheduler,
+			(request, _) => Interlocked.Increment(ref queryCount) == 1
+				? firstQueryGate.Task
+				: Task.FromResult(Ok(request)),
+			(_, _) => applied.TrySetResult());
 
 		debouncer.Request(RequestForLayer(AggregationLayer.Raw));
-		await firstQueryStarted.Task.WaitAsync(_testDeadline, TestContext.Current.CancellationToken);
-
+		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 		debouncer.Request(RequestForLayer(AggregationLayer.Raw));
-		firstQueryGate.SetResult();
+		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 
-		await applied.Task.WaitAsync(_testDeadline, TestContext.Current.CancellationToken);
-		queryCount.Should().BeGreaterThanOrEqualTo(2);
+		queryCount.Should().Be(1);
+
+		firstQueryGate.SetResult(Unreachable());
+		await applied.Task.WaitAsync(TestDeadline, TestContext.Current.CancellationToken);
+
+		queryCount.Should().Be(2);
 	}
 
 	// Without the guard the throw tears down the one subscription that issues every history query, and the
@@ -381,8 +358,9 @@ public sealed class ChartHistoryRequestDebouncerTests
 		var reportedFailures = new List<IReadOnlyList<IError>>();
 		var appliedWindows = new List<DateTime>();
 		var applyCount = 0;
-		using var debouncer = new ChartHistoryRequestDebouncer(
-			request => Task.FromResult(Ok(request)),
+		using var debouncer = CreateDebouncer(
+			scheduler,
+			(request, _) => Task.FromResult(Ok(request)),
 			(request, _) =>
 			{
 				applyCount++;
@@ -394,50 +372,57 @@ public sealed class ChartHistoryRequestDebouncerTests
 
 				appliedWindows.Add(request.FromUtc);
 			},
-			reportedFailures.Add,
-			_debounceWindow,
-			_capInterval,
-			scheduler,
-			ImmediateScheduler.Instance);
+			reportedFailures.Add);
 
 		debouncer.Request(RequestAtNotch(1));
-		scheduler.AdvanceBy(_debounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 
 		reportedFailures.Should().ContainSingle();
 		reportedFailures[0].Should().ContainSingle()
 			.Which.Message.Should().Be("The axis model rejected the envelope.");
 
 		debouncer.Request(RequestAtNotch(2));
-		scheduler.AdvanceBy(_debounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 
-		appliedWindows.Should().Equal(_from.AddSeconds(2));
+		appliedWindows.Should().Equal(From.AddSeconds(2));
 	}
 
-	private static Result<IReadOnlyList<PenHistoryEnvelope>> Ok(HistoryRequest request)
+	[Fact]
+	public void AFailedApplyCanBeRequestedAgain()
 	{
-		return Result.Ok<IReadOnlyList<PenHistoryEnvelope>>(
-			[new PenHistoryEnvelope(request.PenIds[0], [request.FromUtc], [0.0], [0.0], [0.0])]);
-	}
+		var scheduler = new TestScheduler();
+		var queryCount = 0;
+		var applyCount = 0;
+		var appliedWindows = new List<DateTime>();
+		using var debouncer = CreateDebouncer(
+			scheduler,
+			(request, _) =>
+			{
+				queryCount++;
 
-	private static HistoryRequest RequestForLayer(AggregationLayer layer)
-	{
-		return RequestOver([1], _from, _to, layer);
-	}
+				return Task.FromResult(Ok(request));
+			},
+			(request, _) =>
+			{
+				applyCount++;
 
-	private static HistoryRequest RequestAtNotch(int notch)
-	{
-		return RequestOver([1], _from.AddSeconds(notch), _to.AddSeconds(notch), AggregationLayer.Raw);
-	}
+				if (applyCount == 1)
+				{
+					throw new InvalidOperationException("The axis model rejected the envelope.");
+				}
 
-	private static HistoryRequest RequestOver(
-		IReadOnlyList<int> penIds,
-		DateTime fromUtc,
-		DateTime toUtc,
-		AggregationLayer layer)
-	{
-		return new HistoryRequest(
-			penIds,
-			new FetchRange(fromUtc, toUtc, layer, HistoryColumnTarget.MaxColumns, toUtc - fromUtc),
-			HistoryColumnTarget.MaxColumns);
+				appliedWindows.Add(request.FromUtc);
+			});
+
+		debouncer.Request(RequestAtNotch(1));
+		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
+
+		appliedWindows.Should().BeEmpty();
+
+		debouncer.Request(RequestAtNotch(1));
+		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
+
+		queryCount.Should().Be(2);
+		appliedWindows.Should().Equal(From.AddSeconds(1));
 	}
 }

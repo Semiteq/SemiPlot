@@ -62,6 +62,65 @@ public sealed class PenCatalogueApplierTests
 	}
 
 	[AvaloniaFact]
+	public void ADeltaAddingAPenWithOlderRows_WhoseReadLandsBeforeTheExtent_ReadsTheOlderRowsInView()
+	{
+		using var stand = NewWindowStand();
+		var provider = stand.Provider;
+		var chart = stand.ViewModel.ChartViewModel;
+		OpenTheWindowBeforeTheFirstSample(stand);
+		var olderFirstSample = chart.Navigation.FirstSample - TimeSpan.FromDays(3.0);
+		provider.GateExtent = true;
+		provider.Pens = [.. provider.Pens, new Pen(3, "Pen 3", ["Group B"], "#0000ff")];
+
+		AdvanceOneRead(stand);
+		Advance(stand, TimeSpan.FromSeconds(1));
+
+		provider.LastQueriedPenIds.Should().Equal(1, 2, 3);
+		var readsBeforeTheExtent = provider.HistoryQueryCount;
+
+		provider.ExtentGate.SetResult(Result.Ok(new ArchiveExtent(olderFirstSample, provider.ArchiveLastUtc)));
+		Dispatcher.UIThread.RunJobs();
+		Advance(stand, TimeSpan.FromSeconds(1));
+		Advance(stand, TimeSpan.FromSeconds(1));
+
+		chart.Navigation.FirstSample.Should().Be(olderFirstSample);
+		provider.HistoryQueryCount.Should().Be(readsBeforeTheExtent + 1);
+		provider.LastQueriedFromUtc.Should().Be(olderFirstSample);
+
+		Advance(stand, TimeSpan.FromMinutes(10.0));
+
+		provider.HistoryQueryCount.Should().Be(readsBeforeTheExtent + 1, "an idle chart reads nothing more");
+	}
+
+	[AvaloniaFact]
+	public void ADeltaGivingAChartThatLostItsPensAPenWithOlderRows_ReadsAndPansBackToThem()
+	{
+		using var stand = NewWindowStand();
+		var provider = stand.Provider;
+		var chart = stand.ViewModel.ChartViewModel;
+		OpenTheWindowBeforeTheFirstSample(stand);
+		var olderFirstSample = chart.Navigation.FirstSample - TimeSpan.FromDays(3.0);
+		provider.Pens = [];
+		AdvanceOneRead(stand);
+		chart.HasNoPens.Should().BeTrue();
+
+		provider.ArchiveFirstUtc = olderFirstSample;
+		provider.Pens = [new Pen(3, "Pen 3", ["Group B"], "#0000ff")];
+		AdvanceOneRead(stand);
+		Advance(stand, TimeSpan.FromSeconds(1));
+		Advance(stand, TimeSpan.FromSeconds(1));
+
+		chart.Navigation.FirstSample.Should().Be(olderFirstSample);
+		provider.LastQueriedPenIds.Should().Equal(3);
+		provider.LastQueriedFromUtc.Should().Be(olderFirstSample);
+		var reads = provider.HistoryQueryCount;
+
+		Advance(stand, TimeSpan.FromMinutes(10.0));
+
+		provider.HistoryQueryCount.Should().Be(reads, "an idle chart reads nothing more");
+	}
+
+	[AvaloniaFact]
 	public void ADeltaGivingAnEmptyChartItsFirstPens_SeedsTheNavigationBeforeTheHistoryQuery()
 	{
 		using var stand = NewWindowStand(pens: []);
@@ -245,6 +304,17 @@ public sealed class PenCatalogueApplierTests
 	private static IEnumerable<string> LegendRowNames(MainWindowViewModel viewModel)
 	{
 		return viewModel.LegendViewModel.Groups.SelectMany(group => group.Rows).Select(row => row.Name);
+	}
+
+	// A window wider than the archive, at the live edge, starts before the first sample.
+	private static void OpenTheWindowBeforeTheFirstSample(WindowStand stand)
+	{
+		var navigation = stand.ViewModel.ChartViewModel.Navigation;
+		navigation.ZoomAt(400.0, navigation.To);
+		navigation.JumpToNow();
+		Advance(stand, TimeSpan.FromSeconds(1));
+
+		navigation.From.Should().BeBefore(navigation.FirstSample);
 	}
 
 	private static void AdvanceOneRead(WindowStand stand)

@@ -67,8 +67,9 @@ internal sealed class FakeDataProvider(
 	// (e.g. an initial Raw load vs. a superseding coarser-layer gesture re-query).
 	public Dictionary<AggregationLayer, double> LayerCenterOverrides { get; } = [];
 
-	// Plain, for the reason stated at PensGate: TrendChartViewModelTests asserts inline after SetResult.
-	public TaskCompletionSource<Result<IReadOnlyList<PenHistoryEnvelope>>> HistoryGate { get; } = new();
+	// Plain, for the reason stated at PensGate: TrendChartViewModelTests asserts inline after SetResult. A held
+	// read waits on the gate in place when it starts, so replacing the gate holds the next read apart from it.
+	public TaskCompletionSource<Result<IReadOnlyList<PenHistoryEnvelope>>> HistoryGate { get; set; } = new();
 
 	// Pen identifiers the history read answers with no envelope at all, the shape a real provider returns
 	// for a pen holding no row in the window. A requested pen missing from the result is not an error.
@@ -85,6 +86,8 @@ internal sealed class FakeDataProvider(
 	public DateTime? LastQueriedToUtc { get; private set; }
 
 	public int? LastQueriedTargetColumnCount { get; private set; }
+
+	public CancellationToken LastQueriedCancellationToken { get; private set; }
 
 	public int PensQueryCount { get; private set; }
 
@@ -112,7 +115,7 @@ internal sealed class FakeDataProvider(
 	// TrendCoordinator.BuildRealtimeBatch looks like from the pipeline's side.
 	public bool PoisonRealtimeWindow { get; set; }
 
-	// A provider that ends the live edge with OnError, the one terminal message TrendCoordinator.Start
+	// A provider that ends the live edge with OnError, the one terminal message TrendCoordinator.RealtimeBatches
 	// has to survive. The real provider catches everything inside its poll, so only this fake reaches it.
 	public Exception? RealtimeStreamFailure { get; set; }
 
@@ -205,14 +208,17 @@ internal sealed class FakeDataProvider(
 		DateTime fromUtc,
 		DateTime toUtc,
 		AggregationLayer layer,
-		int targetColumnCount)
+		int targetColumnCount,
+		CancellationToken cancellationToken = default)
 	{
-		HistoryQueryCount++;
+		// The count moves last: a test that waits for it on another thread then reads the query it counts.
 		LastQueriedPenIds = penIds;
 		LastQueriedLayer = layer;
 		LastQueriedFromUtc = fromUtc;
 		LastQueriedToUtc = toUtc;
 		LastQueriedTargetColumnCount = targetColumnCount;
+		LastQueriedCancellationToken = cancellationToken;
+		HistoryQueryCount++;
 
 		if (FailHistory)
 		{
@@ -221,7 +227,7 @@ internal sealed class FakeDataProvider(
 
 		if (GatedLayer == layer)
 		{
-			return HistoryGate.Task;
+			return HistoryGate.Task.WaitAsync(cancellationToken);
 		}
 
 		var center = LayerCenterOverrides.TryGetValue(layer, out var overridden)

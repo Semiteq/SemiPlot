@@ -618,17 +618,21 @@ required: `FromAsync` without one completes an apply that awaited on the thread 
 queued behind it would start there. Each apply takes four steps:
 
 1. When the chart has no pens and the delta adds some, it reads the extent through
-   `MinimapViewModel.LoadExtentAsync` and seeds `Navigation.SeedFromArchiveExtent` with a successful
-   one before anything else. The navigation latches on the first data it sees, and a history envelope
-   would otherwise latch the first sample of a one-hour window, so the operator could not reach the
-   archive's first day.
+   `MinimapViewModel.LoadExtentAsync` and, before anything else, hands a successful one to
+   `Navigation.SeedFromArchiveExtent` and then to `TrendChartViewModel.WidenToArchiveExtent`. The
+   navigation latches on the first data it sees, and a history envelope would otherwise latch the first
+   sample of a one-hour window, so the operator could not reach the archive's first day. A chart that
+   had pens and lost them all latched long ago, so the seed changes nothing there, and the widen is what
+   moves its pan floor back to the new pen's older rows.
 2. `TrendChartViewModel.ApplyCatalogue(delta.Current)` (`charting.md#applying-a-catalogue-read`).
 3. `TrendLegendViewModel.Rebuild()`.
 4. When the delta added a pen to a chart that already had some, `LoadExtentAsync` again, because the
-   extent read at start does not know the new pen. A successful read whose first sample is earlier
-   than the navigation's goes to `Navigation.WidenToArchiveExtent`, which moves the pan floor back and
-   leaves the window: the navigation latches its first sample once, so the minimap would otherwise draw
-   rows the chart cannot pan to.
+   extent read at start does not know the new pen. A successful read goes to
+   `TrendChartViewModel.WidenToArchiveExtent`. When its first sample is earlier than the navigation's,
+   the pan floor moves back and the window stays: the navigation latches its first sample once, so the
+   minimap would otherwise draw rows the chart cannot pan to. The chart then asks for the window in view
+   again unless the range in hand covers it with the new floor. The read step 2 issued for the new pen
+   can land before the extent read, clamped at the old floor, and nothing else checks it again.
 
 The body is one `try/catch`, and a throw goes to the message panel through
 `TrendChartViewModel.ReportFailure`, so the next delta still applies. A throw ahead of the end of step 3

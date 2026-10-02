@@ -1,3 +1,5 @@
+using System.Collections;
+using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
 
@@ -574,6 +576,42 @@ public sealed class TrendChartViewModelTests
 		provider.HistoryQueryCount.Should().Be(1);
 	}
 
+	// The archive is younger than the default window, so the window opens before the first sample.
+	[AvaloniaFact]
+	public void AnArchiveYoungerThanTheWindowIsReadOnce()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
+		var firstSample = _to.AddMinutes(-10.0);
+
+		viewModel.Navigation.TrackDataExtents(firstSample, _to);
+		viewModel.RequestInitialHistory();
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(5.0).Ticks);
+
+		viewModel.Navigation.From.Should().BeBefore(firstSample);
+		provider.HistoryQueryCount.Should().Be(1);
+		provider.LastQueriedFromUtc.Should().Be(firstSample);
+	}
+
+	[AvaloniaFact]
+	public async Task AZoomOutPastTheArchiveFollowedByNowReadsTheWindowOnce()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
+		var firstSample = _from.AddDays(-30.0);
+		await LoadInitialHistory(viewModel, scheduler, firstSample, _to);
+
+		viewModel.Navigation.ZoomAt(1000.0, viewModel.Navigation.To);
+		viewModel.Navigation.JumpToNow();
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(5.0).Ticks);
+
+		var width = viewModel.Navigation.To - viewModel.Navigation.From;
+		viewModel.Navigation.From.Should().BeBefore(firstSample);
+		provider.HistoryQueryCount.Should().Be(2);
+		provider.LastQueriedFromUtc.Should().Be(firstSample);
+		provider.LastQueriedToUtc.Should().Be(viewModel.Navigation.To + width);
+	}
+
 	[AvaloniaFact]
 	public void RequestInitialHistory_WithNoPens_DoesNotQuery()
 	{
@@ -940,9 +978,7 @@ public sealed class TrendChartViewModelTests
 		provider.HistoryQueryCount.Should().Be(2);
 	}
 
-	// The drag that leaves the fetched band and comes back into it before the far query lands. The gate reads
-	// the band as fetched and asks nothing, so the far result arriving is the only thing that can notice the
-	// envelopes it replaced no longer draw the window in view.
+	// The drag that leaves the fetched band and comes back into it, still moving when the far query lands.
 	[AvaloniaFact]
 	public async Task AResultForAWindowTheDragLeftReQueriesTheWindowInView()
 	{
@@ -960,7 +996,6 @@ public sealed class TrendChartViewModelTests
 
 		provider.GatedLayer = null;
 		viewModel.Navigation.PanBy(4 * width);
-		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		viewModel.Navigation.From.Should().Be(windowFrom);
 		provider.HistoryQueryCount.Should().Be(2);
@@ -990,12 +1025,213 @@ public sealed class TrendChartViewModelTests
 
 		provider.GatedLayer = null;
 		viewModel.Navigation.PanBy(4 * width);
-		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 		var revisionBefore = viewModel.ScalesRevision;
 
 		await ReleaseAndAwaitResults(viewModel, 1, () => provider.HistoryGate.SetResult(StaleEnvelopes()));
 
 		viewModel.ScalesRevision.Should().Be(revisionBefore);
+	}
+
+	[AvaloniaFact]
+	public async Task AGestureEndingBackInsideTheFetchedBandCancelsTheReadItLeft()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
+		await LoadInitialHistory(viewModel, scheduler, _from.AddDays(-30.0), _to);
+		var width = viewModel.Navigation.To - viewModel.Navigation.From;
+
+		provider.GatedLayer = viewModel.Navigation.ActiveLayer;
+		viewModel.Navigation.PanBy(-4 * width);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		var farRead = provider.LastQueriedCancellationToken;
+
+		viewModel.Navigation.PanBy(4 * width);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+
+		farRead.IsCancellationRequested.Should().BeTrue();
+		provider.HistoryQueryCount.Should().Be(2);
+	}
+
+	// The apply throws after the band is loaded and the gate open, so the band is drawn though the apply was
+	// reported as failed.
+	[AvaloniaFact]
+	public async Task AGestureEndingInsideABandWhoseApplyThrewAfterTheLoadCancelsTheReadItLeft()
+	{
+		var (viewModel, scheduler, provider, panel) = CreateViewModelWithPanel();
+		viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
+		var subscriberThrows = true;
+		using var subscriber = viewModel.HistoryApplied.Subscribe(_ =>
+		{
+			if (subscriberThrows)
+			{
+				subscriberThrows = false;
+
+				throw new InvalidOperationException("A subscriber rejected the history.");
+			}
+		});
+		await LoadInitialHistory(viewModel, scheduler, _from.AddDays(-30.0), _to);
+		await AwaitPanelEntries(panel, 1);
+		var width = viewModel.Navigation.To - viewModel.Navigation.From;
+
+		provider.GatedLayer = viewModel.Navigation.ActiveLayer;
+		viewModel.Navigation.PanBy(-4 * width);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		var farRead = provider.LastQueriedCancellationToken;
+
+		viewModel.Navigation.PanBy(4 * width);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+
+		farRead.IsCancellationRequested.Should().BeTrue();
+		provider.HistoryQueryCount.Should().Be(2);
+	}
+
+	// The read for pen 1 alone is admitted at 150 ms; pen 2 arrives at 300 ms and the 400 ms sample tick parks
+	// its read behind the first, so that read lands with pen 2 already shown. Its range covers the window in
+	// view but holds no row of pen 2, and the pan that follows ends inside it while pen 2's read still runs.
+	[AvaloniaFact]
+	public async Task AReadForAnOlderPenSetLeavesTheNewPensReadRunning()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
+		viewModel.Navigation.TrackDataExtents(_from.AddDays(-30.0), _to);
+		provider.GatedLayer = viewModel.Navigation.ActiveLayer;
+		viewModel.RequestInitialHistory();
+		scheduler.AdvanceBy(TimeSpan.FromMilliseconds(300).Ticks);
+
+		var penOneRead = provider.HistoryGate;
+		provider.HistoryGate = new();
+		viewModel.AddPen(new Pen(2, "Pen 2", ["Group A"], "#00ff00"));
+		scheduler.AdvanceBy(TimeSpan.FromMilliseconds(100).Ticks);
+
+		await ReleaseAndAwaitResults(viewModel, 1, () => penOneRead.SetResult(StaleEnvelopes()));
+		await AwaitQueryCount(provider, 2);
+
+		viewModel.Navigation.PanBy(TimeSpan.FromMinutes(-30.0));
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		await AwaitQueryCount(provider, 3);
+
+		provider.LastQueriedPenIds.Should().BeEquivalentTo([1, 2]);
+		provider.LastQueriedCancellationToken.IsCancellationRequested.Should().BeFalse();
+
+		await ReleaseAndAwaitResults(viewModel, 1, () => provider.HistoryGate.SetResult(
+			Result.Ok<IReadOnlyList<PenHistoryEnvelope>>(
+			[
+				new PenHistoryEnvelope(1, [_from, _to], [7.0, 7.0], [7.0, 7.0], [7.0, 7.0]),
+				new PenHistoryEnvelope(2, [_from, _to], [7.0, 7.0], [7.0, 7.0], [7.0, 7.0])
+			])));
+
+		viewModel.FindPen(2)!.CurrentValue.Should().Be(7.0);
+	}
+
+	// Pen 2 comes back into the slot it left, so the read the return asks for names the pens and the window
+	// the read before the removal applied, while the read the removal asked for is still held.
+	[AvaloniaFact]
+	public async Task APenThatComesBackWhileTheRemovalsReadIsHeldIsReadAgain()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		var catalogue = provider.Pens;
+		viewModel.ApplyCatalogue(catalogue);
+		await LoadInitialHistory(viewModel, scheduler, _from.AddDays(-30.0), _to);
+
+		provider.GatedLayer = viewModel.Navigation.ActiveLayer;
+		viewModel.ApplyCatalogue([catalogue[0]]);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		provider.HistoryQueryCount.Should().Be(2);
+
+		viewModel.ApplyCatalogue(catalogue);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		await AwaitQueryCount(provider, 3);
+
+		provider.LastQueriedPenIds.Should().Equal(1, 2);
+
+		await ReleaseAndAwaitResults(viewModel, 1, () => provider.HistoryGate.SetResult(
+			Result.Ok<IReadOnlyList<PenHistoryEnvelope>>(
+			[
+				new PenHistoryEnvelope(1, [_from, _to], [7.0, 7.0], [7.0, 7.0], [7.0, 7.0]),
+				new PenHistoryEnvelope(2, [_from, _to], [7.0, 7.0], [7.0, 7.0], [7.0, 7.0])
+			])));
+
+		viewModel.FindPen(2)!.CurrentValue.Should().Be(7.0);
+	}
+
+	// The same return after the removal's read failed: the failure keeps the window drawn before it, which
+	// names the pens the return asks for.
+	[AvaloniaFact]
+	public async Task APenThatComesBackAfterTheRemovalsReadFailedIsReadAgain()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		var catalogue = provider.Pens;
+		viewModel.ApplyCatalogue(catalogue);
+		await LoadInitialHistory(viewModel, scheduler, _from.AddDays(-30.0), _to);
+
+		provider.FailHistory = true;
+		viewModel.ApplyCatalogue([catalogue[0]]);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		provider.HistoryQueryCount.Should().Be(2);
+
+		provider.FailHistory = false;
+		await ReleaseAndAwaitResults(viewModel, 1, () =>
+		{
+			viewModel.ApplyCatalogue(catalogue);
+			scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		});
+
+		provider.HistoryQueryCount.Should().Be(3);
+		provider.LastQueriedPenIds.Should().Equal(1, 2);
+		viewModel.FindPen(2)!.CurrentValue.Should().Be(FakeDataProvider.DefaultCenter);
+	}
+
+	[AvaloniaFact]
+	public async Task AWindowWhoseApplyThrewIsReadAgainOnTheNextMove()
+	{
+		var (viewModel, scheduler, provider, panel) = CreateViewModelWithPanel();
+		var state = viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
+		viewModel.Navigation.TrackDataExtents(_from.AddDays(-30.0), _to);
+		provider.GatedLayer = viewModel.Navigation.ActiveLayer;
+		viewModel.RequestInitialHistory();
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+
+		provider.GatedLayer = null;
+		provider.HistoryGate.SetResult(Result.Ok<IReadOnlyList<PenHistoryEnvelope>>([UnloadableEnvelope(1)]));
+		await AwaitPanelEntries(panel, 1);
+
+		viewModel.Navigation.PanBy(TimeSpan.FromMinutes(-1.0));
+		await ReleaseAndAwaitResults(viewModel, 1, () => scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1));
+
+		provider.HistoryQueryCount.Should().Be(2);
+		state.CurrentValue.Should().Be(FakeDataProvider.DefaultCenter);
+	}
+
+	// The far result loads pen 1 and throws on pen 2, so pen 1 holds rows of a band nothing is fetched for.
+	[AvaloniaFact]
+	public async Task AnApplyThatThrowsPartWayLeavesNoBandFetched()
+	{
+		var (viewModel, scheduler, provider, panel) = CreateViewModelWithPanel();
+		viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
+		viewModel.AddPen(new Pen(2, "Pen 2", ["Group A"], "#00ff00"));
+		await LoadInitialHistory(viewModel, scheduler, _from.AddDays(-30.0), _to);
+		var width = viewModel.Navigation.To - viewModel.Navigation.From;
+		var windowFrom = viewModel.Navigation.From;
+
+		provider.GatedLayer = viewModel.Navigation.ActiveLayer;
+		viewModel.Navigation.PanBy(-4 * width);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+
+		provider.GatedLayer = null;
+		provider.HistoryGate.SetResult(Result.Ok<IReadOnlyList<PenHistoryEnvelope>>(
+			[.. StaleEnvelopes().Value, UnloadableEnvelope(2)]));
+		await AwaitPanelEntries(panel, 1);
+		viewModel.FindPen(1)!.CurrentValue.Should().Be(99.0);
+
+		await ReleaseAndAwaitResults(viewModel, 1, () =>
+		{
+			viewModel.Navigation.PanBy(4 * width);
+			scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		});
+
+		provider.HistoryQueryCount.Should().Be(3);
+		provider.LastQueriedFromUtc.Should().Be(windowFrom - width);
+		viewModel.FindPen(1)!.CurrentValue.Should().Be(FakeDataProvider.DefaultCenter);
 	}
 
 	// Skipping the axis here freezes it with no path back, since the gate that would ask again opens on a
@@ -1116,11 +1352,8 @@ public sealed class TrendChartViewModelTests
 	}
 
 	[AvaloniaFact]
-	public async Task WidthReportedWhileTheInitialQueryIsInFlight_AppliesTheLaterWindowLast()
+	public async Task WidthReportedWhileTheInitialQueryIsInFlight_CancelsItAndAppliesTheReportedResolution()
 	{
-		// Startup race: the render seam reports a width while the initial query is in flight. One query runs
-		// at a time, so the reported window waits behind the held one and reaches the archive only when it
-		// lands; it is then the last window applied, at the reported resolution.
 		var (viewModel, scheduler, _, provider) = CreateViewModel();
 		var state = viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
 		provider.GatedLayer = AggregationLayer.Raw;
@@ -1128,15 +1361,13 @@ public sealed class TrendChartViewModelTests
 		viewModel.RequestInitialHistory();
 		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 		provider.HistoryQueryCount.Should().Be(1);
+		var initialRead = provider.LastQueriedCancellationToken;
 
 		viewModel.ReportDataAreaWidth(256.0);
 		provider.GatedLayer = null;
-		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		await ReleaseAndAwaitResults(viewModel, 1, () => scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1));
 
-		provider.HistoryQueryCount.Should().Be(1);
-
-		await ReleaseAndAwaitResults(viewModel, 2, () => provider.HistoryGate.SetResult(StaleEnvelopes()));
-
+		initialRead.IsCancellationRequested.Should().BeTrue();
 		provider.HistoryQueryCount.Should().Be(2);
 		provider.LastQueriedTargetColumnCount.Should().Be(HistoryPrefetch.MarginColumnFactor * 256);
 		state.Line.Columns.Should().HaveCount(2);
@@ -1290,28 +1521,40 @@ public sealed class TrendChartViewModelTests
 	}
 
 	[AvaloniaFact]
-	public async Task StaleInitialHistory_DoesNotOverwriteANewerDebouncedGestureWindow()
+	public async Task StaleInitialHistory_IsCancelledByAZoomEndingOnAnotherWindow()
 	{
-		// The initial query is held in flight while a zoom asks for a coarser window. One query runs at a
-		// time, so the held read lands first and the gesture's window runs behind it: the value the stale
-		// result carried is overwritten, never the other way round.
 		var (viewModel, scheduler, _, provider) = CreateViewModel();
 		viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
 
 		provider.GatedLayer = AggregationLayer.Raw;
 		viewModel.RequestInitialHistory();
 		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		var initialRead = provider.LastQueriedCancellationToken;
 
 		viewModel.Navigation.ZoomAt(48.0, viewModel.Navigation.To);
 		viewModel.Navigation.ActiveLayer.Should().NotBe(AggregationLayer.Raw);
-		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		await ReleaseAndAwaitResults(viewModel, 1, () => scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1));
 
-		provider.HistoryQueryCount.Should().Be(1);
-
-		await ReleaseAndAwaitResults(viewModel, 2, () => provider.HistoryGate.SetResult(StaleEnvelopes()));
-
+		initialRead.IsCancellationRequested.Should().BeTrue();
 		provider.HistoryQueryCount.Should().Be(2);
 		viewModel.FindPen(1)!.CurrentValue.Should().Be(2.0);
+	}
+
+	[AvaloniaFact]
+	public void DisposingTheChart_CancelsTheHistoryReadInFlight()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
+		provider.GatedLayer = AggregationLayer.Raw;
+
+		viewModel.RequestInitialHistory();
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		var read = provider.LastQueriedCancellationToken;
+		read.IsCancellationRequested.Should().BeFalse();
+
+		viewModel.Dispose();
+
+		read.IsCancellationRequested.Should().BeTrue();
 	}
 
 	[AvaloniaFact]
@@ -1560,6 +1803,41 @@ public sealed class TrendChartViewModelTests
 		]);
 	}
 
+	// Loading it throws inside the apply, as a defect there would; the axis model reads it afterwards unharmed.
+	private static PenHistoryEnvelope UnloadableEnvelope(int penId)
+	{
+		return new PenHistoryEnvelope(penId, [_from, _to], new ThrowsOnFirstRead(99.0, 2), [99.0, 99.0], [99.0, 99.0]);
+	}
+
+	private static (TrendChartViewModel ViewModel, TestScheduler Scheduler, FakeDataProvider Provider,
+		MessagePanelViewModel Panel) CreateViewModelWithPanel()
+	{
+		var scheduler = new TestScheduler();
+		var provider = new FakeDataProvider(scheduler, TimeSpan.FromHours(1));
+		var panel = new MessagePanelViewModel();
+		var viewModel = new TrendChartViewModel(
+			CreateCoordinator(scheduler, provider),
+			scheduler,
+			ImmediateScheduler.Instance,
+			panel,
+			NullLogger<TrendChartViewModel>.Instance);
+
+		return (viewModel, scheduler, provider, panel);
+	}
+
+	// The apply runs on the thread Rx resumes the released query on, so its report lands after the release.
+	private static async Task AwaitPanelEntries(MessagePanelViewModel panel, int count)
+	{
+		var deadline = DateTime.UtcNow + _testDeadline;
+
+		while (panel.Entries.Count < count && DateTime.UtcNow < deadline)
+		{
+			await Task.Delay(TimeSpan.FromMilliseconds(10), TestContext.Current.CancellationToken);
+		}
+
+		panel.Entries.Should().HaveCount(count);
+	}
+
 	// A query the pipeline issues behind a released one starts once Rx has unwound the released query on the
 	// thread it resumed the task on, so a count read straight after the release can run ahead of it.
 	private static async Task AwaitQueryCount(FakeDataProvider provider, int count)
@@ -1586,5 +1864,26 @@ public sealed class TrendChartViewModelTests
 		release();
 
 		await applied.WaitAsync(_testDeadline, TestContext.Current.CancellationToken);
+	}
+
+	private sealed class ThrowsOnFirstRead(double value, int count) : IReadOnlyList<double>
+	{
+		private int _reads;
+
+		public int Count => count;
+
+		public double this[int index] => Interlocked.Increment(ref _reads) == 1
+			? throw new InvalidOperationException("The envelope could not be loaded.")
+			: value;
+
+		public IEnumerator<double> GetEnumerator()
+		{
+			return Enumerable.Repeat(value, count).GetEnumerator();
+		}
+
+		IEnumerator IEnumerable.GetEnumerator()
+		{
+			return GetEnumerator();
+		}
 	}
 }

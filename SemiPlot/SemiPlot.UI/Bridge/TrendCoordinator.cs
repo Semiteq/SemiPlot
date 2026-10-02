@@ -94,9 +94,10 @@ public sealed class TrendCoordinator : IDisposable
 		DateTime fromUtc,
 		DateTime toUtc,
 		AggregationLayer layer,
-		int targetColumnCount)
+		int targetColumnCount,
+		CancellationToken cancellationToken = default)
 	{
-		return _dataProvider.QueryHistoryAsync(penIds, fromUtc, toUtc, layer, targetColumnCount);
+		return _dataProvider.QueryHistoryAsync(penIds, fromUtc, toUtc, layer, targetColumnCount, cancellationToken);
 	}
 
 	public Task<Result<ArchiveExtent>> QueryArchiveExtentAsync()

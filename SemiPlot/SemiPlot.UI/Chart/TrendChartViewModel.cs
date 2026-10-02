@@ -12,6 +12,7 @@ using ReactiveUI;
 
 using ScottPlot;
 
+using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Messages;
@@ -257,6 +258,21 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		RequestRedraw();
 	}
 
+	/// <summary>
+	/// Moves the pan floor back to an earlier first sample, and reads the window in view again when the range
+	/// in hand stopped at the floor that moved (docs/architecture/charting.md#applying-a-catalogue-read).
+	/// </summary>
+	public void WidenToArchiveExtent(ArchiveExtent extent)
+	{
+		var firstSampleBefore = Navigation.FirstSample;
+		Navigation.WidenToArchiveExtent(extent);
+
+		if (_isHistoryStarted && Navigation.FirstSample != firstSampleBefore)
+		{
+			RequestWindowInForce();
+		}
+	}
+
 	public bool SetPenVisibility(int penId, bool isVisible)
 	{
 		ObjectDisposedException.ThrowIf(_isDisposed, this);
@@ -388,7 +404,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	private void MoveTheLiveEdgeOntoThePensShown()
 	{
-		if (_coordinator.PenIds.ToHashSet().SetEquals(_penSet.ById.Keys))
+		if (ShowsExactly(_coordinator.PenIds))
 		{
 			return;
 		}
@@ -405,6 +421,11 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	{
 		_lastFetch = null;
 		RequestWindowInForce();
+	}
+
+	private bool ShowsExactly(IEnumerable<int> penIds)
+	{
+		return penIds.ToHashSet().SetEquals(_penSet.ById.Keys);
 	}
 
 	private void RequestWindowInForce()
@@ -460,7 +481,11 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_windowStart = window.From;
 		_windowEnd = window.To;
 
-		if (window.RequiresHistoryRequery && !IsWindowFetched(window.From, window.To, window.Layer))
+		if (window.RequiresHistoryRequery && IsWindowFetched(window.From, window.To, window.Layer))
+		{
+			_historyDebouncer.RequestNothing();
+		}
+		else if (window.RequiresHistoryRequery)
 		{
 			RequestHistory(window.From, window.To, window.Layer);
 
@@ -480,7 +505,8 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	private bool IsWindowFetched(DateTime fromUtc, DateTime toUtc, AggregationLayer layer)
 	{
 		return _lastFetch is { } fetched
-			&& HistoryPrefetch.Covers(fetched, fromUtc, toUtc, layer, Navigation.TargetColumnCount);
+			&& HistoryPrefetch.Covers(
+				fetched, fromUtc, toUtc, layer, Navigation.TargetColumnCount, Navigation.FirstSample);
 	}
 
 	private bool MayApplyAxisModel(DateTime fromUtc, DateTime toUtc)
@@ -499,21 +525,23 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			HistoryPrefetch.ScaleColumnTarget(_reportedColumnTarget)));
 	}
 
-	private Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(HistoryRequest request)
+	private Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(
+		HistoryRequest request,
+		CancellationToken cancellationToken)
 	{
 		return _coordinator.QueryHistoryAsync(
 			request.PenIds,
 			request.FromUtc,
 			request.ToUtc,
 			request.Layer,
-			request.TargetColumnCount);
+			request.TargetColumnCount,
+			cancellationToken);
 	}
 
+	// docs/architecture/data-integration.md#what-one-history-query-covers
 	private void ApplyHistory(HistoryRequest request, IReadOnlyList<PenHistoryEnvelope> envelopes)
 	{
-		// The gate opens on the range that came back, never on the one last asked for: only a result that
-		// landed says what the envelopes in hand cover.
-		_lastFetch = request.Range;
+		_lastFetch = null;
 
 		foreach (var envelope in envelopes)
 		{
@@ -534,6 +562,8 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		}
 
 		DropPensMissingFromHistory(envelopes, request.PenIds);
+
+		_lastFetch = ShowsExactly(request.PenIds) ? request.Range : null;
 
 		var drawsTheWindowInView = IsWindowFetched(_windowStart, _windowEnd, Navigation.ActiveLayer);
 

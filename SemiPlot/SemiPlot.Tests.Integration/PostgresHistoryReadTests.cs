@@ -129,6 +129,14 @@ public sealed class PostgresHistoryReadTests(
 	// The archive's own code for the layer the coarse rows below belong to.
 	private const short MinuteLayer = (short)AggregationLayer.Minute;
 
+	private const string LockTrendsCommand = "LOCK TABLE public.trends IN ACCESS EXCLUSIVE MODE;";
+
+	private const string LockWaitOnTrendsQuery =
+		"SELECT count(*) FROM pg_locks WHERE NOT granted AND relation = 'public.trends'::regclass;";
+
+	// Far above the round trip a cancel request takes, so only a read the token never reached runs into it.
+	private static readonly TimeSpan _cancelledReadDeadline = TimeSpan.FromSeconds(20);
+
 	[Fact]
 	public async Task AWindowInsideTheFirstRunReadsTheSeedersOwnRows()
 	{
@@ -204,6 +212,50 @@ public sealed class PostgresHistoryReadTests(
 
 		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
 		result.Value.Should().BeEmpty();
+	}
+
+	// The lock holds the statement on the server, so the cancel lands mid-statement and the server answers
+	// 57014. Raw reaches the bucketed window, Minute the sparse one.
+	[Theory]
+	[InlineData(AggregationLayer.Raw)]
+	[InlineData(AggregationLayer.Minute)]
+	public async Task AReadCancelledMidStatementThrowsInsteadOfFailing(AggregationLayer layer)
+	{
+		var testCancellation = TestContext.Current.CancellationToken;
+		await using var database = await postgresContainerFixture.CloneProvisionedAsync(testCancellation);
+		await using var locker = new NpgsqlConnection(database.AdminConnectionString);
+		await locker.OpenAsync(testCancellation);
+		await using var transaction = await locker.BeginTransactionAsync(testCancellation);
+		await using var lockTrends = new NpgsqlCommand(LockTrendsCommand, locker, transaction);
+		await lockTrends.ExecuteNonQueryAsync(testCancellation);
+
+		var window = QuietWindow();
+		using var cancellation = new CancellationTokenSource();
+		await using var services = ArchiveProviderFactory.Build(database.PlotConnectionString);
+
+		var read = services.GetRequiredService<IDataProvider>().QueryHistoryAsync(
+			_seededPenIds.Value,
+			_timeConverter.ToUtc(window.From),
+			_timeConverter.ToUtc(window.To),
+			layer,
+			ColumnTargetFor(window),
+			cancellation.Token);
+
+		try
+		{
+			(await AwaitALockWaitOnTrendsAsync(locker, transaction)).Should().BeTrue(
+				"the read has to be waiting on the server when the token is cancelled");
+
+			await cancellation.CancelAsync();
+
+			var settled = () => read.WaitAsync(_cancelledReadDeadline, testCancellation);
+
+			await settled.Should().ThrowAsync<OperationCanceledException>();
+		}
+		finally
+		{
+			await transaction.RollbackAsync(testCancellation);
+		}
 	}
 
 	// A break writes no rows at all, and the fold turns the q = 32 row bounding it into one NaN anchor a
@@ -566,6 +618,26 @@ public sealed class PostgresHistoryReadTests(
 			ArchiveTemplate.Slice.Start + _seedLookBackFloor + _quietWindowLength);
 
 		SeedLookBackFor(wideWindow).Should().Be(wideWindow.To - wideWindow.From);
+	}
+
+	private static async Task<bool> AwaitALockWaitOnTrendsAsync(
+		NpgsqlConnection locker,
+		NpgsqlTransaction transaction)
+	{
+		await using var command = new NpgsqlCommand(LockWaitOnTrendsQuery, locker, transaction);
+		var deadline = DateTime.UtcNow + _cancelledReadDeadline;
+
+		while (DateTime.UtcNow < deadline)
+		{
+			if (await command.ExecuteScalarAsync(TestContext.Current.CancellationToken) is > 0L)
+			{
+				return true;
+			}
+
+			await Task.Delay(TimeSpan.FromMilliseconds(20), TestContext.Current.CancellationToken);
+		}
+
+		return false;
 	}
 
 	// The archive's first two minutes: inside the first archiving run, before any break.

@@ -382,9 +382,15 @@ completes and lands, which `data-integration.md:248-259` requires. A trailing ad
 end. When it finds a query running for a different request, it stores itself as `_pending` and cancels the
 running query. `Dispose` cancels the running query.
 
-Each query runs under its own `CancellationTokenSource`, created, cancelled and disposed only under
-`_gate`. A query that ends in `OperationCanceledException` completes as `Cancelled`: `CompleteQuery`
-leaves `_lastApplied` as it was and starts the pending request, and `Deliver` reports nothing.
+Each query runs under its own `CancellationTokenSource`, created under `_gate` and cancelled there with
+`CancelAsync`, never disposed (⚠️ as built after review: Npgsql's cancel callback opens a connection
+and blocks, so it runs on the pool, and a dispose ahead of the queued callbacks drops them). A query
+that ends in `OperationCanceledException` while its own token is cancelled completes with a null
+`Result` (see the ⚠️ note under Task 9): `CompleteQuery` starts the pending request, and `Deliver`
+reports nothing. ⚠️ as built after review: when a gesture ends back inside the fetched band,
+`TrendChartViewModel` pushes `RequestNothing`, which reads nothing, clears `_pending` and, as a trailing
+admission, cancels the running query. `ApplyHistory` opens `_lastFetch` only when the request's pens
+set-equal the pens shown, so that push never cancels a read issued for a pen the catalogue added since.
 
 The token is the trailing `CancellationToken cancellationToken = default` of
 `IDataProvider.QueryHistoryAsync`, `TrendCoordinator.QueryHistoryAsync` and the chart's adapter.
@@ -392,14 +398,24 @@ The token is the trailing `CancellationToken cancellationToken = default` of
 `ReadWindowAsync`, `ReadBucketedWindowAsync` and `FillFreshTailAsync`. The mapper's rethrow
 (`ArchiveExceptionMapper.cs:26-29`) keeps a cancelled read out of the failure `Result`.
 
-A cancelled command costs at most one connection for two seconds. Npgsql first sends PostgreSQL a cancel
+A cancelled command costs one extra connection for the cancel request, bounded by the 15 s connect
+timeout, and its own connection for at most two seconds more. Npgsql first sends PostgreSQL a cancel
 request. If no answer arrives within `CancellationTimeout`, it breaks the socket itself: 2000 ms by default
 (`Npgsql.xml` of package 10.0.3, lines 3684-3688), and the connection string leaves it at the default
 (`PostgresConnectionSettings.cs:34-44`). A broken connection leaves the pool, and the pool opens a new one.
 
-**Applied mark.** `CompleteQuery` keeps writing `_lastApplied`. `Deliver`'s catch clears it under `_gate`
-when it still equals the request whose apply threw, so the same window passes the head filter again.
-`TrendChartViewModel.ApplyHistory` sets `_lastFetch` after the envelopes are loaded.
+**Applied mark.** ⚠️ as built after review: `TrendChartViewModel._lastFetch` is the only record of the
+window drawn. `ApplyHistory` clears it before it loads the envelopes and sets it after, and
+`RequeryAllPens` clears it on a pen-set change. The debouncer keeps `_lastSucceeded`, the last successful
+read with its ordinal, which only `CompleteQuery` writes, and stamps each push with the count of
+successful reads `Deliver` has delivered, counted ahead of the apply. A push stamped before the last
+successful read was delivered and matching it is dropped at admission and in `CompleteQuery`; any later
+push is read. So the same window is read again after an apply that threw, and after a pen removed and
+named again takes back its slot and asks for the request applied before the removal. ⚠️ as built after
+review: `ApplyHistory` re-pushes the window in view whenever `Covers` says the read just applied does
+not draw it, and that push is read, so `Covers` has to hold every window the range `Expand` fetched for
+it draws. It takes the first sample and holds the left side of a range that reaches it, so a window
+that starts before the first sample is read once instead of once per cap interval.
 
 **Column cap.** `EnvelopeLine` trims when the count passes `MaxColumns`, removing `MaxColumns / 10`
 columns in one `RemoveRange`. The list lives between 90 000 and 100 000 columns, and the shift runs once
@@ -883,34 +899,96 @@ The rule after this task:
 - Modify: `SemiPlot/SemiPlot.UI/Chart/ChartHistoryRequestDebouncer.cs`
 - Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/Bridge/FakeDataProvider.cs`
 - Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/Chart/ChartHistoryRequestDebouncerTests.cs`
+- Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/Chart/TrendChartViewModelTests.cs`
+- Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/Bridge/TrendCoordinatorTests.cs`
 - Modify: `SemiPlot/SemiPlot.Tests.Integration/PostgresHistoryReadTests.cs`
 - Modify: `docs/architecture/data-integration.md`
+- Modify: `docs/architecture/charting.md`
 
-- [ ] thread the token as Technical Details states, from the interface to `ReadAsync`
-- [ ] implement the debouncer's cancellation rule and the `Cancelled` completion
-- [ ] `FakeDataProvider` records the last token and honours it
-- [ ] write `APacedRequestNeverCancelsTheQueryInFlight`: a continuous drag over a 600 ms query delivers
+- [x] thread the token as Technical Details states, from the interface to `ReadAsync`
+- [x] implement the debouncer's cancellation rule and the `Cancelled` completion
+- [x] `FakeDataProvider` records the last token and honours it
+- [x] write `APacedRequestNeverCancelsTheQueryInFlight`: a continuous drag over a 600 ms query delivers
       results during the drag
-- [ ] write `AGestureEndCancelsTheLeftBehindQuery`, `ACancelledQueryReportsNothing` and a test that
+- [x] write `AGestureEndCancelsTheLeftBehindQuery`, `ACancelledQueryReportsNothing` and a test that
       disposal cancels the running read
-- [ ] write an integration fact in `PostgresHistoryReadTests`: a history read with a cancelled token throws
+- [x] write an integration fact in `PostgresHistoryReadTests`: a history read with a cancelled token throws
       `OperationCanceledException` and returns no failed `Result`
-- [ ] `data-integration.md:248-259`, `:598`: the query in flight completes during a gesture and is
+- [x] `data-integration.md:248-259`, `:598`: the query in flight completes during a gesture and is
       cancelled when the gesture ends on another window
-- [ ] run both test projects - must pass before task 10
+- [x] ⚠️ as built: only an `OperationCanceledException` while the debouncer's own token is cancelled counts
+      as `Cancelled`; any other one is a failed read (`ACancellationTheDebouncerNeverAskedForIsReported`).
+      Two `TrendChartViewModelTests` cases pinned the held initial read landing ahead of a newer window; a
+      zoom or a width report now cancels it, so they assert the cancellation instead, and
+      `DisposingTheChart_CancelsTheHistoryReadInFlight` covers the chain from the chart to the provider.
+      `charting.md`'s debouncer bullet names the cancellation
+- [x] ⚠️ review: the debouncer cancels with `CancelAsync` and disposes no token source
+      (`AGestureEndNeverWaitsForTheCancelToReachTheServer`, `DisposingNeverWaitsForTheCancelToReachTheServer`);
+      a gesture that ends on the drawn window cancels the read it left
+      (`AGestureEndingOnTheDrawnWindowCancelsTheReadItLeftAndReadsNothing`,
+      `AGestureEndingBackInsideTheFetchedBandCancelsTheReadItLeft`); the integration fact became
+      `AReadCancelledMidStatementThrowsInsteadOfFailing`, a Raw and a Minute read cancelled while a lock on
+      `trends` holds them on the server; stepwise input more than 150 ms apart cancels at every step, which
+      `data-integration.md` states as the trade-off
+- [x] ⚠️ review: the gate opens only on a read of the pens shown, so the applied request a gesture pushes
+      leaves a new pen's read running (`AReadForAnOlderPenSetLeavesTheNewPensReadRunning`); a cancel that
+      faults after `Dispose` reports nothing
+- [x] run both test projects - must pass before task 10
 
 ### Task 10: Let a window whose apply threw be requested again
 
 **Files:**
 - Modify: `SemiPlot/SemiPlot.UI/Chart/ChartHistoryRequestDebouncer.cs`
 - Modify: `SemiPlot/SemiPlot.UI/Chart/TrendChartViewModel.cs`
+- Modify: `SemiPlot/SemiPlot.UI/Chart/HistoryPrefetch.cs`
 - Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/Chart/ChartHistoryRequestDebouncerTests.cs`
+- Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/Chart/HistoryPrefetchTests.cs`
+- Create: `SemiPlot/SemiPlot.Tests.Unit/UI/Chart/ChartHistoryRequestCancellationTests.cs`
+- Create: `SemiPlot/SemiPlot.Tests.Unit/UI/Chart/HistoryDebouncerTestBuilder.cs`
+- Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/Chart/TrendChartViewModelTests.cs`
+- Modify: `SemiPlot/SemiPlot.UI/MainWindow/PenCatalogueApplier.cs`
+- Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/Chart/TrendChartCatalogueTests.cs`
+- Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/MainWindow/PenCatalogueApplierTests.cs`
+- Modify: `docs/architecture/data-integration.md`
+- Modify: `docs/architecture/charting.md`
+- Modify: `docs/architecture/overview.md`
+- Modify: `docs/architecture/trend-interaction.md`
 
-- [ ] `Deliver`'s catch clears `_lastApplied` under `_gate` when it still equals the failed request;
+- [x] `Deliver`'s catch clears `_lastApplied` under `_gate` when it still equals the failed request;
       `ApplyHistory` sets `_lastFetch` after the load
-- [ ] write `AFailedApplyCanBeRequestedAgain`: `applyHistory` throws once, and the same request issued
+- [x] write `AFailedApplyCanBeRequestedAgain`: `applyHistory` throws once, and the same request issued
       again is applied
-- [ ] run the unit tests - must pass before task 11
+- [x] ⚠️ as built: `data-integration.md`'s "covers nothing" sentence names a read whose apply threw
+- [x] ⚠️ review: `ApplyHistory` clears `_lastFetch` before the load, so a throw part way leaves no band
+      fetched (`AWindowWhoseApplyThrewIsReadAgainOnTheNextMove`, `AnApplyThatThrowsPartWayLeavesNoBandFetched`)
+- [x] ⚠️ review: a failed read changes nothing drawn, so a gesture whose read failed still cancels the
+      read it left (`AGestureEndingOnTheDrawnWindowAfterAFailedReadCancelsTheReadItLeft`)
+- [x] ⚠️ review: a pen removed and named again while the removal's read is held or after it failed is
+      read again (`APenThatComesBackWhileTheRemovalsReadIsHeldIsReadAgain`,
+      `APenThatComesBackAfterTheRemovalsReadFailedIsReadAgain`)
+- [x] ⚠️ review: the view model is the one owner of the window drawn. `RequestAppliedWindow`,
+      `ForgetAppliedWindow` and `ForgetApplied` are gone: a gesture ending in the fetched band pushes
+      `RequestNothing`, and the debouncer drops only a push stamped before the read it matches was
+      delivered (`ARequestPushedWhileItsWindowIsReadReadsNothingOnceTheReadLands`,
+      `AWindowAskedForAgainAfterItsReadWasDeliveredIsReadAgain`), so an apply that throws after the load
+      no longer stops the gesture's end from cancelling the far read
+      (`AGestureEndingInsideABandWhoseApplyThrewAfterTheLoadCancelsTheReadItLeft`). The cancellation facts
+      moved to `ChartHistoryRequestCancellationTests`, both classes built through `HistoryDebouncerTestBuilder`
+- [x] ⚠️ review: `HistoryPrefetch.Covers` takes the first sample and holds the left side of a range that
+      reaches it, so a window starting before the first sample is read once
+      (`Covers_AWindowStartingBeforeTheFirstSample_HoldsTheRangeFetchedForIt`,
+      `AnArchiveYoungerThanTheWindowIsReadOnce`, `AZoomOutPastTheArchiveFollowedByNowReadsTheWindowOnce`)
+- [x] ⚠️ final review: two gaps present on master since the catalogue applier landed, fixed here because
+      they sit on the history read path. `TrendChartViewModel.WidenToArchiveExtent` moves the pan floor
+      and, when it moved, asks for the window in force through `Covers`, so the added pen's read that
+      landed before the extent read is read again from the new floor
+      (`ADeltaAddingAPenWithOlderRows_WhoseReadLandsBeforeTheExtent_ReadsTheOlderRowsInView`,
+      `AWidenAfterTheAddedPensReadLanded_ReadsTheWindowFromTheEarlierFirstSample`). The empty-chart branch
+      of `PenCatalogueApplier` widens after the seed, which a latched navigation ignores, so a chart that
+      lost every pen moves its floor back to the new pen's rows
+      (`ADeltaGivingAChartThatLostItsPensAPenWithOlderRows_ReadsAndPansBackToThem`). Each test ends idle
+      for ten minutes with no further read
+- [x] run the unit tests - must pass before task 11
 
 ### Group F: the render path and the legend (PR 6)
 
@@ -1037,51 +1115,43 @@ The rule after this task:
 - branch: initial-scale
 - branch: another-instance
 - branch: live-theme
+- branch: history-pipeline
 
 ## Verify it yourself
 
-Group D (Task 8) only; Groups A-C shipped as #97, #98, #99 and #102, Groups E-G are later branches.
+Group E (Tasks 9 and 10) only; Groups A-D shipped as #97, #98, #99, #102 and #103, Groups F-G are later
+branches.
 
 1. Build and tests, from the repository root:
    - `dotnet build SemiPlot.slnx` - 0 warnings, 0 errors.
-   - `dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj` - 1547 passed.
-   - `dotnet test SemiPlot/SemiPlot.Tests.Integration/SemiPlot.Tests.Integration.csproj` - 136 passed
+   - `dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj` - 1580 passed.
+   - `dotnet test SemiPlot/SemiPlot.Tests.Integration/SemiPlot.Tests.Integration.csproj` - 138 passed
      (needs Docker; do not run it at the same time as the unit suite).
-2. The live theme, by test (`dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj --filter
-   "FullyQualifiedName~<name>"`); none of them exists on `master`:
-   - `AppSectionWatcherTests.AThemeChangeOnDiskAppliesTheTheme`, `ALanguageChangeOnDiskAppliesNothing` and
-     `ABufferOverflowReloadsOnce` - the pipeline passes on a changed theme only, and a buffer overflow
-     reloads;
-   - `AppSectionWatcherTests.AStoppedWatcherIsReportedOnceAndItsWatchOpensAgain` and
-     `ARefusedOpenIsReportedOnceAndOpenedAgain` - an outage is reported once and the watch opens again;
-   - `AppSectionWatcherTests.AnAppFolderDeletedAndRecreatedIsWatchedAgain` - on Windows a deleted and
-     recreated `app/` applies its theme within one reopen interval;
-   - `AppSectionWatcherTests.AThemeSavedBeforeTheWatchStartsIsAppliedAfterOneQuietPeriod` - a save that
-     landed while the start ran its probe still applies;
-   - `AppSectionWatcherTests.AReplacedFileInARealFolderYieldsTheNewTheme` - a `File.Replace` into a real
-     folder reaches the pipeline;
-   - `AppConfigurationTests.AThemeSavedOnDiskReachesTheRunningApplication` and
-     `AThemeSavedOnDiskReachesAStartedApplication` - both starts apply a theme saved on disk;
-   - `AppConfigurationTests.ABrokenAppFileOnDiskReachesTheShownWindowsPanel` - a broken file reaches the
-     panel and the theme stays;
-   - `AppConfigurationTests.AnAppFolderThatCannotBeListed_StillStartsAndReachesThePanel` and
-     `AnAppFolderThatCannotBeListed_ReachesTheFailureWindowsPanel` - a folder the watcher cannot open is
-     reported on either start, and the start goes on;
-   - `SettingsViewModelTests.AThemeOnlySaveSetsNoRestartNotice` - a theme-only save shows no notice;
-   - `SettingsViewTests.TheRestartNotice_AfterASaveThatAlsoChangedTheTheme_SaysTheThemeIsApplied` - the
-     notice names the theme as applied;
-   - `ConfigurationSectionTests.AFileAnotherHandleHoldsOpenForWritingStillReads` and
-     `AFileTheSectionReadHoldsOpenCanStillBeReplaced` - a read and a replace never block each other;
-   - `ConfigurationSectionWriterTests.AFileAnotherSavesWriteProbeHoldsOpenIsStillCopied` and
-     `SettingsSaveTests.ASaveReplacesATargetAnotherSavesWriteProbeHoldsOpen` - two saves' handles never
-     block each other.
-3. On the demo stand (`dotnet run --project SemiPlot/SemiPlot.AppHost`):
-   - File -> New window opens a second window. In one window, Edit -> Settings, switch only the theme and
-     save: both windows switch theme within 2 s and no restart notice appears. On `master` the notice
-     appears and the other window keeps its theme;
-   - with the dialog of the other window open, switch the theme back from the first window: the open
-     dialog's theme box follows the window;
-   - switch the language and save: the notice and "Restart now" appear, and the other window does not
-     change;
-   - a window opened through New window or Restart is not a stand resource: stopping the AppHost leaves
-     it running, so close it by hand.
+2. The history pipeline, by test (`dotnet test <project> --filter "FullyQualifiedName~<name>"`); none of
+   them exists on `master`:
+   - `ChartHistoryRequestCancellationTests`: `APacedRequestNeverCancelsTheQueryInFlight`,
+     `AGestureEndCancelsTheLeftBehindQuery`, `ACancelledQueryReportsNothing`,
+     `AGestureEndNeverWaitsForTheCancelToReachTheServer`, `DisposingNeverWaitsForTheCancelToReachTheServer`
+     - a drag never cancels, its end cancels the read it left, a cancel reports nothing, and Npgsql's cancel
+     request never runs on the UI thread or under a lock;
+   - `ChartHistoryRequestDebouncerTests.AFailedApplyCanBeRequestedAgain` and
+     `TrendChartViewModelTests.AWindowWhoseApplyThrewIsReadAgainOnTheNextMove`,
+     `AnApplyThatThrowsPartWayLeavesNoBandFetched` - a window whose apply threw is read again;
+   - `TrendChartViewModelTests.AGestureEndingBackInsideTheFetchedBandCancelsTheReadItLeft`,
+     `AReadForAnOlderPenSetLeavesTheNewPensReadRunning`, `APenThatComesBackWhileTheRemovalsReadIsHeldIsReadAgain`
+     - the drawn window has one owner, per pen set;
+   - `TrendChartViewModelTests.AnArchiveYoungerThanTheWindowIsReadOnce`,
+     `AZoomOutPastTheArchiveFollowedByNowReadsTheWindowOnce` - an idle chart whose window starts before the
+     first sample reads once (on the branch before `70c98ef` it read every 200 ms);
+   - `PenCatalogueApplierTests.ADeltaAddingAPenWithOlderRows_WhoseReadLandsBeforeTheExtent_ReadsTheOlderRowsInView`,
+     `ADeltaGivingAChartThatLostItsPensAPenWithOlderRows_ReadsAndPansBackToThem` - two gaps present on
+     `master` (failing there), fixed here;
+   - integration: `PostgresHistoryReadTests.AReadCancelledMidStatementThrowsInsteadOfFailing` (Raw and
+     Minute) - a read cancelled while a lock holds it ends in `OperationCanceledException`, not a fault.
+3. On the demo stand (`dotnet run --project SemiPlot/SemiPlot.AppHost`), acceptance step 7:
+   - drag the chart across a Raw window for about 3 s and release: the strip fills during the drag, and the
+     final window appears within one read of the release; no archive fault appears in the message panel;
+   - drag out of the drawn band and back into it, then release: the window stays drawn and does not flicker
+     to another band;
+   - leave the window idle for a minute: the log shows no repeated history reads;
+   - close the window while a long drag is in flight: it closes at once.

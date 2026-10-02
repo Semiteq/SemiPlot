@@ -48,7 +48,7 @@ public sealed class ChartAxisBinderTests
 		using var plot = new Plot();
 		var binder = new ChartAxisBinder(plot);
 		var pens = Pens(1, 2);
-		pens[1].IsVisible = false;
+		pens[1].SetVisibility(false);
 
 		binder.Apply([Scale(1, isActive: true), Scale(2)], pens);
 

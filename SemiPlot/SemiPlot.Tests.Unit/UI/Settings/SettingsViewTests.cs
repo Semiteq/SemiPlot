@@ -239,7 +239,7 @@ public sealed class SettingsViewTests : IDisposable
 			var other = viewModel.Languages.First(choice => choice.Token != viewModel.SelectedLanguage!.Token);
 			Pick(dialog, Named<ComboBox>(dialog, "SettingsLanguage"), other);
 			HeadlessInput.Click(dialog, Named<Button>(dialog, "SettingsSaveButton"));
-			await HeadlessWait.Until(() => viewModel.IsRestartPending);
+			await HeadlessWait.Until(() => button.IsEffectivelyEnabled);
 
 			button.IsEffectivelyVisible.Should().BeTrue();
 			notice.IsEffectivelyVisible.Should().BeTrue();

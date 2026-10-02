@@ -60,9 +60,9 @@ public sealed class TrendLegendViewModelTests
 		var underPressures = legend.Groups.Single(group => group.Name == "Pressures").Rows.Single();
 		underPressures.Should().BeSameAs(underHeaters);
 
-		underHeaters.IsVisible = false;
+		underHeaters.ToggleVisibilityCommand.Execute().Subscribe();
 
-		underPressures.IsVisible.Should().BeFalse();
+		underPressures.PenState.IsVisible.Should().BeFalse();
 		chart.FindPen(1)!.IsVisible.Should().BeFalse();
 	}
 
@@ -76,7 +76,7 @@ public sealed class TrendLegendViewModelTests
 		using var legend = new TrendLegendViewModel(chart);
 
 		legend.Groups.Select(group => group.Name).Should().Equal("Heaters", Resources.LegendUngroupedHeader);
-		legend.Groups[^1].Rows.Single().Name.Should().Be("Pen 2");
+		legend.Groups[^1].Rows.Single().PenState.Pen.Name.Should().Be("Pen 2");
 	}
 
 	// The rows arrive ordered by pen name, so first-appearance order and name order only agree by
@@ -128,26 +128,25 @@ public sealed class TrendLegendViewModelTests
 
 		legend.Groups.Should().ContainSingle();
 		legend.Groups.Single().Name.Should().Be(Resources.LegendUngroupedHeader);
-		legend.Groups.Single().Rows.Select(row => row.Name).Should().Equal("Pen 1", "Pen 2");
+		legend.Groups.Single().Rows.Select(row => row.PenState.Pen.Name).Should().Equal("Pen 1", "Pen 2");
 	}
 
-	// Dispose walks the distinct rows, not the flattened ones, and a row listed under two headers is one
-	// instance: it is reached once and its mirror subscription goes with it.
 	[AvaloniaFact]
 	public void Dispose_ReachesARowListedUnderTwoHeaders()
 	{
 		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Pen 1", ["Heaters", "Watchlist"], "#ff0000"));
+		chart.AddPen(new Pen(2, "Pen 2", ["Heaters"], "#00ff00"));
 		var legend = new TrendLegendViewModel(chart);
-		var row = legend.Groups[0].Rows.Single();
+		var row = SingleRow(legend, 1);
 
 		legend.Dispose();
-		chart.SetPenVisibility(1, false);
+		chart.SetActivePen(2);
 
-		row.IsVisible.Should().BeTrue("a disposed row no longer mirrors the chart");
+		row.IsActive.Should().BeTrue("a disposed row no longer follows the chart");
 	}
 
-	// The row's own notification still fires after the legend is gone, so only the group's disposal stops
+	// The pen state's notification still fires after the legend is gone, so only the group's disposal stops
 	// the header re-deriving from it.
 	[AvaloniaFact]
 	public void Dispose_StopsEveryHeaderFollowingItsRows()
@@ -158,7 +157,7 @@ public sealed class TrendLegendViewModelTests
 		var heaters = Group(legend, "Heaters");
 
 		legend.Dispose();
-		heaters.Rows.Single().IsVisible = false;
+		chart.SetPenVisibility(1, false);
 
 		heaters.SwitchState.Should().BeTrue("a disposed header no longer follows its rows");
 	}
@@ -208,7 +207,7 @@ public sealed class TrendLegendViewModelTests
 		chart.AddPen(new Pen(3, "Pen 3", ["Watchlist"], "#0000ff"));
 		using var legend = new TrendLegendViewModel(chart);
 
-		SingleRow(legend, 1).IsVisible = false;
+		SingleRow(legend, 1).ToggleVisibilityCommand.Execute().Subscribe();
 
 		Group(legend, "Heaters").SwitchState.Should().BeNull();
 		Group(legend, "Watchlist").SwitchState.Should().BeNull();
@@ -364,33 +363,36 @@ public sealed class TrendLegendViewModelTests
 	}
 
 	[AvaloniaFact]
-	public void TogglingRowCheckbox_FlipsChartPenVisibility()
+	public void ToggleVisibilityCommand_SwitchesThePenOffAndOnAgain()
 	{
 		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
 		using var legend = new TrendLegendViewModel(chart);
 		var row = SingleRow(legend, 1);
 
-		row.IsVisible = false;
+		row.ToggleVisibilityCommand.Execute().Subscribe();
 
 		chart.FindPen(1)!.IsVisible.Should().BeFalse();
 
-		row.IsVisible = true;
+		row.ToggleVisibilityCommand.Execute().Subscribe();
 
 		chart.FindPen(1)!.IsVisible.Should().BeTrue();
 	}
 
 	[AvaloniaFact]
-	public void RowVisibility_MirrorsChartDrivenVisibilityChange()
+	public void TheRow_FollowsAChangeOfTheChartsPenState()
 	{
 		var chart = CreateChart();
-		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
+		var pen = new Pen(1, "Pen 1", ["Heaters"], "#ff0000");
+		chart.AddPen(pen);
 		using var legend = new TrendLegendViewModel(chart);
 		var row = SingleRow(legend, 1);
 
 		chart.SetPenVisibility(1, false);
+		chart.ApplyCatalogue([pen with { Color = "#00ff00" }]);
 
-		row.IsVisible.Should().BeFalse();
+		row.PenState.IsVisible.Should().BeFalse();
+		row.PenState.Pen.Color.Should().Be("#00ff00");
 	}
 
 	[AvaloniaFact]
@@ -410,19 +412,6 @@ public sealed class TrendLegendViewModelTests
 	}
 
 	[AvaloniaFact]
-	public void CurrentValue_ReflectsChartHistoryLoad()
-	{
-		var chart = CreateChart();
-		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
-		using var legend = new TrendLegendViewModel(chart);
-		var row = SingleRow(legend, 1);
-
-		LoadInitialHistory(chart, _from, _to);
-
-		row.CurrentValue.Should().Be(2.0);
-	}
-
-	[AvaloniaFact]
 	public void CurrentValueText_RendersTheReadingInThePensOwnMask()
 	{
 		var chart = CreateChart();
@@ -434,7 +423,6 @@ public sealed class TrendLegendViewModelTests
 
 		row.CurrentValueText.Should().Be(PenValueFormat.Format(2.0, "0.000"));
 		row.CurrentValueText.Should().NotBe(PenValueFormat.Format(2.0, PenValueFormat.FallbackMask));
-		row.Unit.Should().Be("kPa");
 	}
 
 	[AvaloniaFact]
@@ -446,7 +434,6 @@ public sealed class TrendLegendViewModelTests
 		using var row = new TrendLegendRowViewModel(chart, penState);
 
 		row.CurrentValueText.Should().Be(Resources.NoValuePlaceholder);
-		row.Unit.Should().BeEmpty("a pen with no stored unit renders no unit run");
 	}
 
 	[AvaloniaFact]
@@ -462,9 +449,9 @@ public sealed class TrendLegendViewModelTests
 		legend.Rebuild();
 
 		var row = legend.Groups.Single().Rows.Single();
-		row.Name.Should().Be("Heater 01");
-		row.ColorHex.Should().Be("#00ff00");
-		row.Unit.Should().Be("Pa");
+		row.PenState.Pen.Name.Should().Be("Heater 01");
+		row.PenState.Pen.Color.Should().Be("#00ff00");
+		row.PenState.Pen.Unit.Should().Be("Pa");
 		row.CurrentValueText.Should().Be(PenValueFormat.Format(2.0, "0.000"));
 	}
 
@@ -481,7 +468,7 @@ public sealed class TrendLegendViewModelTests
 		legend.Rebuild();
 
 		legend.Groups.Select(group => group.Name).Should().Equal("Dampers", "Heaters");
-		SingleRow(legend, 3).IsVisible.Should().BeFalse("a pen joins with the visibility it starts with");
+		SingleRow(legend, 3).PenState.IsVisible.Should().BeFalse("a pen joins with the visibility it starts with");
 	}
 
 	[AvaloniaFact]
@@ -498,7 +485,7 @@ public sealed class TrendLegendViewModelTests
 		legend.FitPanel(900);
 		legend.ToggleExpandedCommand.Execute().Subscribe();
 		legend.ResizePanel(-30);
-		SingleRow(legend, 2).IsVisible = false;
+		SingleRow(legend, 2).ToggleVisibilityCommand.Execute().Subscribe();
 
 		chart.ApplyCatalogue(
 		[
@@ -510,9 +497,9 @@ public sealed class TrendLegendViewModelTests
 
 		legend.IsExpanded.Should().BeFalse();
 		legend.PanelWidth.Should().Be(TrendLegendViewModel.CollapsedWidth + 30);
-		SingleRow(legend, 1).IsVisible.Should().BeTrue();
-		SingleRow(legend, 2).IsVisible.Should().BeFalse();
-		SingleRow(legend, 3).IsVisible.Should().BeFalse("an EnabledOnStart revision switches no pen on");
+		SingleRow(legend, 1).PenState.IsVisible.Should().BeTrue();
+		SingleRow(legend, 2).PenState.IsVisible.Should().BeFalse();
+		SingleRow(legend, 3).PenState.IsVisible.Should().BeFalse("an EnabledOnStart revision switches no pen on");
 		Group(legend, "Heaters").SwitchState.Should().BeNull();
 	}
 
@@ -521,43 +508,26 @@ public sealed class TrendLegendViewModelTests
 	{
 		var chart = CreateChart();
 		var pen = new Pen(1, "Pen 1", ["Heaters"], "#ff0000");
+		var other = new Pen(2, "Pen 2", ["Heaters"], "#00ff00");
 		chart.AddPen(pen);
+		chart.AddPen(other);
 		using var legend = new TrendLegendViewModel(chart);
 		var replacedRow = SingleRow(legend, 1);
-		var replacedMirroredOnAnnouncement = false;
+		var replacedFollowedOnAnnouncement = false;
 		legend.PropertyChanged += (_, e) =>
 		{
 			if (e.PropertyName == nameof(TrendLegendViewModel.Groups))
 			{
-				chart.SetPenVisibility(1, false);
-				replacedMirroredOnAnnouncement = !replacedRow.IsVisible;
+				chart.SetActivePen(other.PenId);
+				replacedFollowedOnAnnouncement = !replacedRow.IsActive;
 			}
 		};
 
-		chart.ApplyCatalogue([pen with { Name = "Heater 01" }]);
+		chart.ApplyCatalogue([pen with { Name = "Heater 01" }, other]);
 		legend.Rebuild();
-		chart.SetPenVisibility(1, true);
 
-		replacedMirroredOnAnnouncement.Should().BeTrue();
-		replacedRow.IsVisible.Should().BeFalse("a disposed row no longer mirrors the chart");
-		SingleRow(legend, "Heater 01").IsVisible.Should().BeTrue();
-	}
-
-	[AvaloniaFact]
-	public void AVisibilityWriteOnAReplacedRow_ReachesNoChart()
-	{
-		var chart = CreateChart();
-		var pen = new Pen(1, "Pen 1", ["Heaters"], "#ff0000");
-		chart.AddPen(pen);
-		using var legend = new TrendLegendViewModel(chart);
-		var replacedRow = SingleRow(legend, 1);
-
-		chart.ApplyCatalogue([pen with { Color = "#00ff00" }]);
-		legend.Rebuild();
-		replacedRow.IsVisible = false;
-
-		chart.FindPen(1)!.IsVisible.Should().BeTrue();
-		SingleRow(legend, 1).IsVisible.Should().BeTrue();
+		replacedFollowedOnAnnouncement.Should().BeTrue();
+		SingleRow(legend, 2).IsActive.Should().BeTrue();
 	}
 
 	private void LoadInitialHistory(TrendChartViewModel chart, DateTime from, DateTime to)
@@ -577,7 +547,7 @@ public sealed class TrendLegendViewModelTests
 		return legend.Groups
 			.SelectMany(group => group.Rows)
 			.Distinct()
-			.Single(row => row.Name == name);
+			.Single(row => row.PenState.Pen.Name == name);
 	}
 
 	private static TrendLegendGroupViewModel Group(TrendLegendViewModel legend, string name)

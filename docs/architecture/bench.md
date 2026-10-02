@@ -352,11 +352,11 @@ own size — the headless platform draws nothing. Capture loss is driven through
 `PlatformCaptureLost` leaves the guard green.
 
 **A test that builds `TrendChartView` needs a UI scheduler that can defer.** `TrendChartViewModel`
-builds `RedrawRequested` as `Sample(33 ms, uiScheduler)`, and `Sample` on
-`ImmediateScheduler.Instance` blocks the calling thread forever — the symptom is a silent hang under
-`TrendChartView.OnDataContextChanged`. Pass `AvaloniaScheduler.Instance` or a `TestScheduler`, and
-dispose every view model built on the Avalonia scheduler inside the test body, since each holds a
-33 ms dispatcher timer.
+schedules each redraw once, 33 ms ahead on its UI scheduler. `ImmediateScheduler.Instance` runs that
+schedule inline after sleeping 33 ms on the calling thread, so every redraw blocks the dispatcher and
+paints inside the call that asked for it. Pass `AvaloniaScheduler.Instance` or a `TestScheduler`, and
+dispose every view model built on the Avalonia scheduler inside the test body, since a scheduled
+redraw is a 33 ms dispatcher timer that only the dispose cancels.
 
 **What the guards do not cover.** The Win32 backend and the desktop `AppBuilder` chain are exercised
 by nothing headless; a desktop-only registration the chain is missing fails at `AppBuilder.Setup` in

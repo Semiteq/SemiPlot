@@ -12,6 +12,7 @@ namespace SemiPlot.UI.Chart;
 public sealed class EnvelopeLine : IPlottable
 {
 	private const int MaxColumns = 100_000;
+	private const int TrimChunk = MaxColumns / 10;
 
 	private readonly LineStyle _stroke = new() { Width = 1f };
 	private readonly List<EnvelopePoint> _pathPoints = [];
@@ -132,10 +133,9 @@ public sealed class EnvelopeLine : IPlottable
 
 			_columns.Add(column);
 
-			var overflow = _columns.Count - MaxColumns;
-			if (overflow > 0)
+			if (_columns.Count > MaxColumns)
 			{
-				_columns.RemoveRange(0, overflow);
+				_columns.RemoveRange(0, TrimChunk);
 			}
 
 			return true;

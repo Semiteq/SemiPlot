@@ -36,6 +36,7 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 public sealed class TrendChartViewModelTests
 {
 	private static readonly TimeSpan _testDeadline = TimeSpan.FromSeconds(10.0);
+	private static readonly TimeSpan _redrawDelay = TimeSpan.FromMilliseconds(33.0);
 	private static readonly DateTime _from = new(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
 	private static readonly DateTime _to = new(2026, 6, 15, 9, 0, 0, DateTimeKind.Utc);
 
@@ -45,7 +46,7 @@ public sealed class TrendChartViewModelTests
 		var (viewModel, _, _, _) = CreateViewModel();
 		var state = viewModel.AddPen(new Pen(7, "Heater", ["Group A"], "#ff0000"));
 
-		viewModel.SetPenVisibility(7, false).Should().BeTrue();
+		viewModel.SetPenVisibility(7, false);
 
 		state.IsVisible.Should().BeFalse();
 		state.Line.IsVisible.Should().BeFalse();
@@ -324,6 +325,74 @@ public sealed class TrendChartViewModelTests
 		scheduler.AdvanceBy(BatchWindow.Ticks * 2);
 
 		redraws.Should().Be(1);
+	}
+
+	[AvaloniaFact]
+	public void AnIdleChartSchedulesNoRedraw()
+	{
+		var uiScheduler = new QueueReadingScheduler();
+		using var viewModel = CreateChartOn(uiScheduler);
+		var redraws = 0;
+		using var subscription = viewModel.RedrawRequested.Subscribe(_ => redraws++);
+
+		uiScheduler.HasQueuedWork.Should().BeFalse("a chart with nothing to redraw schedules nothing");
+
+		viewModel.SetDeltaModeEnabled(true);
+		uiScheduler.AdvanceBy(_redrawDelay.Ticks);
+
+		redraws.Should().Be(1);
+		uiScheduler.HasQueuedWork.Should().BeFalse("the redraw was one emission, not a timer left running");
+	}
+
+	[AvaloniaFact]
+	public void AChartNoViewSubscribesToSchedulesNoRedraw()
+	{
+		var uiScheduler = new QueueReadingScheduler();
+		using var viewModel = CreateChartOn(uiScheduler);
+
+		viewModel.SetDeltaModeEnabled(true);
+
+		uiScheduler.HasQueuedWork.Should().BeFalse("no view would draw the frame");
+	}
+
+	[AvaloniaFact]
+	public void DisposingTheChartCancelsTheScheduledRedraw()
+	{
+		var uiScheduler = new QueueReadingScheduler();
+		var viewModel = CreateChartOn(uiScheduler);
+		var redraws = 0;
+		using var subscription = viewModel.RedrawRequested.Subscribe(_ => redraws++);
+		viewModel.SetDeltaModeEnabled(true);
+
+		viewModel.Dispose();
+
+		uiScheduler.HasQueuedWork.Should().BeFalse("the disposed chart leaves nothing on the UI scheduler");
+		var advance = () => uiScheduler.AdvanceBy(_redrawDelay.Ticks * 2);
+		advance.Should().NotThrow();
+		redraws.Should().Be(0);
+	}
+
+	[AvaloniaFact]
+	public void ABurstOfRequestsRedrawsOncePerSpanAndOnceAfterTheLastRequest()
+	{
+		var uiScheduler = new QueueReadingScheduler();
+		using var viewModel = CreateChartOn(uiScheduler);
+		var redrawTimes = new List<TimeSpan>();
+		using var subscription = viewModel.RedrawRequested
+			.Subscribe(_ => redrawTimes.Add(TimeSpan.FromTicks(uiScheduler.Clock)));
+
+		for (var request = 0; request <= 10; request++)
+		{
+			viewModel.SetDeltaModeEnabled(request % 2 == 0);
+			uiScheduler.AdvanceBy(TimeSpan.FromMilliseconds(10.0).Ticks);
+		}
+
+		uiScheduler.AdvanceBy(TimeSpan.FromSeconds(1.0).Ticks);
+
+		redrawTimes.Should().Equal(
+			TimeSpan.FromMilliseconds(33.0),
+			TimeSpan.FromMilliseconds(73.0),
+			TimeSpan.FromMilliseconds(113.0));
 	}
 
 	[AvaloniaFact]
@@ -744,17 +813,19 @@ public sealed class TrendChartViewModelTests
 	public void Realtime_PastTheBufferCap_DropsTheOldestColumns()
 	{
 		const int Cap = 100_000;
+		const int Appended = Cap + 10;
 		var (viewModel, _, _, _) = CreateViewModel();
 		var state = viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
 		var t0 = new DateTime(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
 
-		for (var index = 0; index < Cap + 10; index++)
+		for (var index = 0; index < Appended; index++)
 		{
 			state.AppendRealtime(t0.AddSeconds(index), index);
 		}
 
-		state.Line.Columns.Should().HaveCount(Cap);
-		state.Line.Columns[0].Center.Should().Be(10.0);
+		state.Line.Columns.Count.Should().BeLessThanOrEqualTo(Cap);
+		state.Line.Columns[0].Center.Should().BeGreaterThan(0.0, "the oldest columns go");
+		state.Line.Columns[^1].Center.Should().Be(Appended - 1, "the newest column stays");
 	}
 
 	[AvaloniaFact]
@@ -1643,7 +1714,7 @@ public sealed class TrendChartViewModelTests
 		provider.FailHistory = true;
 
 		chart.RequestInitialHistory();
-		// Past the debounce window and the one sample period the recovery redraw falls into, and short of the
+		// Past the debounce window and the 33 ms the recovery redraw waits, and short of the
 		// 400 ms cap interval, which would admit a second query for the same window.
 		scheduler.AdvanceBy(TimeSpan.FromMilliseconds(200.0).Ticks);
 
@@ -1769,8 +1840,8 @@ public sealed class TrendChartViewModelTests
 			valueWhenTheReportThrew, "the batches after the failed report still reach the pen");
 	}
 
-	// Both schedulers are virtual, unlike CreateViewModel's: these tests subscribe to RedrawRequested, whose
-	// Sample never returns on ImmediateScheduler, and they drive the realtime stream by advancing time.
+	// Both schedulers are virtual, unlike CreateViewModel's: these tests count the redraws a request schedules
+	// 33 ms ahead, and they drive the realtime stream by advancing time.
 	private static (TrendChartViewModel ViewModel, TestScheduler Scheduler, MessagePanelViewModel Panel)
 		CreateReportingViewModel(TimeSpan realtimeInterval, out FakeDataProvider provider)
 	{
@@ -1791,6 +1862,20 @@ public sealed class TrendChartViewModelTests
 			NullLogger<TrendChartViewModel>.Instance);
 
 		return (viewModel, scheduler, panel);
+	}
+
+	// The UI scheduler serves the chart alone, so whatever it holds queued is the chart's.
+	private static TrendChartViewModel CreateChartOn(QueueReadingScheduler uiScheduler)
+	{
+		var dataScheduler = new TestScheduler();
+		var provider = new FakeDataProvider(dataScheduler, TimeSpan.FromHours(1.0));
+
+		return new TrendChartViewModel(
+			CreateCoordinator(dataScheduler, provider),
+			dataScheduler,
+			uiScheduler,
+			new MessagePanelViewModel(),
+			NullLogger<TrendChartViewModel>.Instance);
 	}
 
 	// The value a held query carries, distinct from every value the fake answers with, so the assertion says
@@ -1885,5 +1970,10 @@ public sealed class TrendChartViewModelTests
 		{
 			return GetEnumerator();
 		}
+	}
+
+	private sealed class QueueReadingScheduler : TestScheduler
+	{
+		public bool HasQueuedWork => GetNext() is not null;
 	}
 }

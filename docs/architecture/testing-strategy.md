@@ -178,14 +178,16 @@ history path. A 45 s drag capture passes when `RenderOnce` averages 10 ms or les
 ## The UI scheduler in a realised view
 
 A test that realises `TrendChartView` never passes `ImmediateScheduler.Instance` as the chart's UI
-scheduler. The view subscribes to `RedrawRequested`, whose `Sample` schedules periodically, and
-`ImmediateScheduler.SchedulePeriodic` sleeps on the calling thread: the subscription never returns
-and the test hangs. Two schedulers work in its place.
+scheduler. The view subscribes to `RedrawRequested`, and each redraw request schedules one emission
+33 ms ahead. `ImmediateScheduler` runs it inline after sleeping 33 ms on the calling thread, so every
+redraw blocks the dispatcher and paints inside the call that asked for it, which production never does.
+The schedule is one-shot, so nothing hangs; the hang belongs to `PenCatalogueSync`'s wait loop alone
+(`CLAUDE.md`, Test). Two schedulers work in its place.
 
 | Scheduler | When | Cost |
 | --- | --- | --- |
 | `TestScheduler` | the test drives time itself | none |
-| `AvaloniaScheduler.Instance` | the test needs the production seam, as `ChartPointerInputTests` does | the periodic timer lives on the shared headless dispatcher until the view model is disposed, so the test disposes it |
+| `AvaloniaScheduler.Instance` | the test needs the production seam, as `ChartPointerInputTests` does | a scheduled redraw is a 33 ms timer on the shared headless dispatcher until it fires or the view model is disposed, so the test disposes it |
 
 The same holds for a window that realises the chart indirectly: `ChartTestBuilder.CreateChart`, which the
 sidebar tests build on, hands its charts a virtual UI scheduler for this reason alone. Its

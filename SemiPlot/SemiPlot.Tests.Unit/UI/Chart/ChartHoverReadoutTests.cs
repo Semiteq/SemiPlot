@@ -47,7 +47,7 @@ public sealed class ChartHoverReadoutTests
 	{
 		var visible = CreatePen(1, "Pen 1");
 		var hidden = CreatePen(2, "Pen 2");
-		hidden.IsVisible = false;
+		hidden.SetVisibility(false);
 		var pens = new[] { visible, hidden };
 		var values = new Dictionary<int, double?> { [1] = 2.0, [2] = 20.0 };
 
@@ -72,8 +72,8 @@ public sealed class ChartHoverReadoutTests
 	{
 		var first = CreatePen(1, "Pen 1");
 		var second = CreatePen(2, "Pen 2");
-		first.IsVisible = false;
-		second.IsVisible = false;
+		first.SetVisibility(false);
+		second.SetVisibility(false);
 		var pens = new[] { first, second };
 		var values = new Dictionary<int, double?> { [1] = 2.0, [2] = 20.0 };
 

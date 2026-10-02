@@ -21,24 +21,21 @@ namespace SemiPlot.UI.Chart;
 
 public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 {
-	private static readonly TimeSpan _redrawThrottle = TimeSpan.FromMilliseconds(33);
 	private static readonly TimeSpan _historyDebounceWindow = TimeSpan.FromMilliseconds(150);
 	private static readonly TimeSpan _historyCapInterval = TimeSpan.FromMilliseconds(400);
+	private readonly TrendCoordinator _coordinator;
+	private readonly MessagePanelViewModel _messagePanel;
+	private readonly ILogger<TrendChartViewModel> _logger;
+	private readonly ChartRedrawSchedule _redrawSchedule;
 	private readonly ChartAxisBinder _axisBinder;
 	private readonly ChartPenSet _penSet;
-
-	private readonly TrendCoordinator _coordinator;
 	private readonly ChartCursorReader _cursorReader;
 	private readonly ChartDeltaCursorReader _deltaCursorReader;
+	private readonly ChartRealtimeApplier _realtimeApplier;
+	private readonly ChartHistoryRequestDebouncer _historyDebouncer;
 	private readonly CompositeDisposable _disposables = [];
 	private readonly Dictionary<int, PenHistoryEnvelope> _envelopesById = [];
-	private readonly ChartHistoryRequestDebouncer _historyDebouncer;
-	private readonly ILogger<TrendChartViewModel> _logger;
-	private readonly MessagePanelViewModel _messagePanel;
-	private readonly ChartRealtimeApplier _realtimeApplier;
-	private readonly Subject<Unit> _redrawRequests = new();
 	private readonly PenScaleModel _scaleModel = new();
-
 	private readonly Dictionary<int, PenScale> _scalesByPenId = [];
 	private readonly Subject<Unit> _historyApplied = new();
 	private bool _isDisposed;
@@ -60,6 +57,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_coordinator = coordinator;
 		_messagePanel = messagePanel;
 		_logger = logger;
+		_redrawSchedule = new ChartRedrawSchedule(uiScheduler);
 		_axisBinder = new ChartAxisBinder(Plot);
 		_penSet = new ChartPenSet(Plot, _axisBinder);
 		_cursorReader = new ChartCursorReader(_penSet.ById, _envelopesById);
@@ -77,10 +75,6 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_windowEnd = Navigation.To;
 		Navigation.WindowChanged += OnNavigationWindowChanged;
 		AxisScale = new AxisScalePanelViewModel(this);
-
-		RedrawRequested = _redrawRequests
-			.Sample(_redrawThrottle, uiScheduler)
-			.ObserveOn(uiScheduler);
 
 		_disposables.Add(_coordinator.RealtimeBatches
 			.Subscribe(ApplyRealtimeBatch));
@@ -117,7 +111,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	public IReadOnlyDictionary<int, PenScaleSettings> ScaleSettings => _penSet.ScaleSettings;
 
-	public IObservable<Unit> RedrawRequested { get; }
+	public IObservable<Unit> RedrawRequested => _redrawSchedule.Redraws;
 
 	/// <summary>
 	/// One pulse per history result applied, on the UI scheduler.
@@ -189,7 +183,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_historyDebouncer.Dispose();
 		AxisScale.Dispose();
 		_disposables.Dispose();
-		_redrawRequests.Dispose();
+		_redrawSchedule.Dispose();
 		_historyApplied.Dispose();
 		Plot.Dispose();
 	}
@@ -204,7 +198,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		return _penSet.ById.GetValueOrDefault(penId);
 	}
 
-	// Disposal is tolerated silently because a render can still deliver a width after the window has closed.
+	// A render can deliver a width after the window has closed.
 	public void ReportDataAreaWidth(double dataAreaWidthPixels)
 	{
 		if (_isDisposed || !(dataAreaWidthPixels > 0.0))
@@ -273,22 +267,20 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		}
 	}
 
-	public bool SetPenVisibility(int penId, bool isVisible)
+	public void SetPenVisibility(int penId, bool isVisible)
 	{
 		ObjectDisposedException.ThrowIf(_isDisposed, this);
 
 		if (FindPen(penId) is not { } state)
 		{
-			return false;
+			return;
 		}
 
-		state.IsVisible = isVisible;
+		state.SetVisibility(isVisible);
 		ActivateAVisiblePen();
 		this.RaisePropertyChanged(nameof(DrawnPenId));
 		ApplyAxisModel();
 		RequestRedraw();
-
-		return true;
 	}
 
 	// Only a visible pen's axis may be drawn, so a switched-off pen is refused rather than activated:
@@ -682,6 +674,6 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	private void RequestRedraw()
 	{
-		_redrawRequests.OnNext(Unit.Default);
+		_redrawSchedule.Request();
 	}
 }

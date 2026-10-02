@@ -1,3 +1,4 @@
+using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
 
@@ -12,26 +13,14 @@ namespace SemiPlot.UI.Legend;
 public sealed class TrendLegendRowViewModel : ReactiveObject, IDisposable
 {
 	private readonly TrendChartViewModel _chartViewModel;
-	private readonly TrendPenState _penState;
-	private readonly int _penId;
-	private readonly ObservableAsPropertyHelper<double?> _currentValue;
 	private readonly ObservableAsPropertyHelper<string> _currentValueText;
 	private readonly ObservableAsPropertyHelper<bool> _isActive;
 	private readonly CompositeDisposable _subscriptions = [];
-	private bool _isVisible;
-	private bool _isSettingVisibilityFromChart;
 
 	public TrendLegendRowViewModel(TrendChartViewModel chartViewModel, TrendPenState penState)
 	{
 		_chartViewModel = chartViewModel;
-		_penState = penState;
-		_penId = penState.Pen.PenId;
-		_isVisible = penState.IsVisible;
-
-		_currentValue = penState
-			.WhenAnyValue(state => state.CurrentValue)
-			.ToProperty(this, row => row.CurrentValue);
-		_subscriptions.Add(_currentValue);
+		PenState = penState;
 
 		_currentValueText = penState
 			.WhenAnyValue(state => state.CurrentValue)
@@ -39,43 +28,23 @@ public sealed class TrendLegendRowViewModel : ReactiveObject, IDisposable
 			.ToProperty(this, row => row.CurrentValueText);
 		_subscriptions.Add(_currentValueText);
 
-		_subscriptions.Add(penState
-			.WhenAnyValue(state => state.IsVisible)
-			.Subscribe(MirrorVisibilityFromChart));
-
 		_isActive = chartViewModel
 			.WhenAnyValue(chart => chart.ActivePenId)
-			.Select(activePenId => activePenId == _penId)
+			.Select(activePenId => activePenId == penState.Pen.PenId)
 			.ToProperty(this, row => row.IsActive);
 		_subscriptions.Add(_isActive);
+
+		ToggleVisibilityCommand = ReactiveCommand.Create(() => SetVisibility(!PenState.IsVisible));
+		_subscriptions.Add(ToggleVisibilityCommand);
 	}
 
-	public string Name => _penState.Pen.Name;
-
-	public IReadOnlyList<string> Groups => _penState.Pen.Groups;
-
-	public string ColorHex => _penState.Pen.Color;
-
-	public string Unit => _penState.Pen.Unit ?? string.Empty;
+	public TrendPenState PenState { get; }
 
 	public bool IsActive => _isActive.Value;
 
-	public double? CurrentValue => _currentValue.Value;
-
 	public string CurrentValueText => _currentValueText.Value;
 
-	public bool IsVisible
-	{
-		get => _isVisible;
-		set
-		{
-			this.RaiseAndSetIfChanged(ref _isVisible, value);
-			if (!_isSettingVisibilityFromChart && !_subscriptions.IsDisposed)
-			{
-				_chartViewModel.SetPenVisibility(_penId, value);
-			}
-		}
-	}
+	public ReactiveCommand<Unit, Unit> ToggleVisibilityCommand { get; }
 
 	public void Dispose()
 	{
@@ -84,25 +53,17 @@ public sealed class TrendLegendRowViewModel : ReactiveObject, IDisposable
 
 	public void Select()
 	{
-		_chartViewModel.SetActivePen(_penId);
+		_chartViewModel.SetActivePen(PenState.Pen.PenId);
+	}
+
+	public void SetVisibility(bool isVisible)
+	{
+		_chartViewModel.SetPenVisibility(PenState.Pen.PenId, isVisible);
 	}
 
 	// The provider accepted or dropped the mask already: docs/architecture/charting.md.
 	private static string FormatReading(double? value, string? mask)
 	{
 		return value is { } reading ? PenValueFormat.Format(reading, mask) : Resources.NoValuePlaceholder;
-	}
-
-	private void MirrorVisibilityFromChart(bool isVisible)
-	{
-		_isSettingVisibilityFromChart = true;
-		try
-		{
-			IsVisible = isVisible;
-		}
-		finally
-		{
-			_isSettingVisibilityFromChart = false;
-		}
 	}
 }

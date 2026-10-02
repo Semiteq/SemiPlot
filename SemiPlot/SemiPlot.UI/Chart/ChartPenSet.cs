@@ -69,7 +69,7 @@ public sealed class ChartPenSet(Plot plot, ChartAxisBinder axisBinder)
 		line.Axes.XAxis = _plot.Axes.Bottom;
 		_plot.Add.Plottable(line);
 
-		_pensById.Add(pen.PenId, new TrendPenState(pen, line) { IsVisible = pen.EnabledOnStart });
+		_pensById.Add(pen.PenId, new TrendPenState(pen, line));
 		_settingsById.Add(pen.PenId, PenScaleSettings.InitialFor(pen));
 	}
 

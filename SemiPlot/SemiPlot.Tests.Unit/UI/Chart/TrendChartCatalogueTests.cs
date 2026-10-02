@@ -4,6 +4,7 @@ using AwesomeAssertions;
 
 using FluentResults;
 
+using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
 using SemiPlot.UI.Chart;
 
@@ -393,5 +394,78 @@ public sealed class TrendChartCatalogueTests
 
 		viewModel.Pens.Should().HaveCount(500);
 		viewModel.ScalesRevision.Should().Be(revisionBefore + 1);
+	}
+
+	// The archive is younger than the window, so the window opens before the first sample and every read stops
+	// at it.
+	[AvaloniaFact]
+	public async Task AWidenAfterTheAddedPensReadLanded_ReadsTheWindowFromTheEarlierFirstSample()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
+		await LoadInitialHistory(viewModel, scheduler, _to.AddMinutes(-10.0), _to);
+		viewModel.AddPen(new Pen(2, "Pen 2", ["Group A"], "#00ff00"));
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(5.0).Ticks);
+		provider.HistoryQueryCount.Should().Be(2);
+
+		viewModel.WidenToArchiveExtent(new ArchiveExtent(_to.AddHours(-3.0), _to));
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(5.0).Ticks);
+
+		provider.HistoryQueryCount.Should().Be(3);
+		provider.LastQueriedPenIds.Should().Equal(1, 2);
+		provider.LastQueriedFromUtc.Should().Be(_from - TimeSpan.FromHours(1.0));
+
+		scheduler.AdvanceBy(TimeSpan.FromMinutes(10.0).Ticks);
+
+		provider.HistoryQueryCount.Should().Be(3, "an idle chart reads nothing more");
+	}
+
+	[AvaloniaFact]
+	public async Task AWidenBeforeTheAddedPensReadIsIssued_ReadsTheWindowOnceFromTheEarlierFirstSample()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
+		await LoadInitialHistory(viewModel, scheduler, _to.AddMinutes(-10.0), _to);
+		viewModel.AddPen(new Pen(2, "Pen 2", ["Group A"], "#00ff00"));
+
+		viewModel.WidenToArchiveExtent(new ArchiveExtent(_to.AddHours(-3.0), _to));
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(5.0).Ticks);
+
+		provider.HistoryQueryCount.Should().Be(2);
+		provider.LastQueriedFromUtc.Should().Be(_from - TimeSpan.FromHours(1.0));
+
+		scheduler.AdvanceBy(TimeSpan.FromMinutes(10.0).Ticks);
+
+		provider.HistoryQueryCount.Should().Be(2, "an idle chart reads nothing more");
+	}
+
+	[AvaloniaFact]
+	public async Task AWidenThatKeepsTheFirstSample_ReadsNothing()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
+		await LoadInitialHistory(viewModel, scheduler, _to.AddMinutes(-10.0), _to);
+
+		viewModel.WidenToArchiveExtent(new ArchiveExtent(_to.AddMinutes(-5.0), _to));
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(5.0).Ticks);
+
+		provider.HistoryQueryCount.Should().Be(1);
+	}
+
+	// The applier widens an empty chart ahead of the catalogue that gives it pens.
+	[AvaloniaFact]
+	public async Task AWidenOnAChartWithNoPens_MovesThePanFloorAndReadsNothing()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
+		await LoadInitialHistory(viewModel, scheduler, _to.AddMinutes(-10.0), _to);
+		viewModel.ApplyCatalogue([]);
+		var earlier = _to.AddHours(-3.0);
+
+		viewModel.WidenToArchiveExtent(new ArchiveExtent(earlier, _to));
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(5.0).Ticks);
+
+		viewModel.Navigation.FirstSample.Should().Be(earlier);
+		provider.HistoryQueryCount.Should().Be(1);
 	}
 }

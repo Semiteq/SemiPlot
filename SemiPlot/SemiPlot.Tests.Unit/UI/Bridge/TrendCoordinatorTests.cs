@@ -72,16 +72,24 @@ public sealed class TrendCoordinatorTests
 	}
 
 	[Fact]
-	public async Task QueryHistoryAsync_PassesThroughToProviderWithTargetColumnCount()
+	public async Task QueryHistoryAsync_PassesThroughToProviderWithTargetColumnCountAndToken()
 	{
 		var (coordinator, _, provider) = CreateCoordinator();
+		using var cancellation = new CancellationTokenSource();
 
-		var result = await coordinator.QueryHistoryAsync([1, 2], _from, _to, AggregationLayer.Minute, 256);
+		var result = await coordinator.QueryHistoryAsync(
+			[1, 2],
+			_from,
+			_to,
+			AggregationLayer.Minute,
+			256,
+			cancellation.Token);
 
 		result.IsSuccess.Should().BeTrue();
 		result.Value.Select(pen => pen.PenId).Should().Equal(1, 2);
 		provider.LastQueriedLayer.Should().Be(AggregationLayer.Minute);
 		provider.LastQueriedTargetColumnCount.Should().Be(256);
+		provider.LastQueriedCancellationToken.Should().Be(cancellation.Token);
 	}
 
 	[Fact]

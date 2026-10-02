@@ -197,18 +197,20 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   reports.
 - `Chart/ChartHistoryRequestDebouncer` — the one history path, for the initial load and every gesture:
   `Throttle` (one trailing request 150 ms after the gesture goes quiet) merged with `Sample` at a
-  400 ms cap interval (one request per cap while the gesture keeps moving), duplicates dropped by
-  window, layer and column target → one query at a time on the data scheduler, the newest request
+  400 ms cap interval (one request per cap while the gesture keeps moving), a request for the window
+  the last successful read brings dropped → one query at a time on the data scheduler, the newest request
   that arrived while it ran running when it lands → apply, or report the failure, on the UI
   scheduler. The cap is what fills the strip a long drag exposes while it is still moving; the single
-  slot is what lets a read slower than the cap complete at all. The first-snap path stays
-  non-requerying.
+  slot is what lets a read slower than the cap complete at all. The trailing request cancels a read
+  still running for another window, also when the gesture ends back on the window already drawn
+  (`data-integration.md#what-one-history-query-covers`). The first-snap path stays non-requerying.
 - `Chart/HistoryPrefetch` — visible window → the window to fetch: one window width of margin on each
   side at three times the column target, so the fetched range stays at one column per pixel, with the
   left edge clamped to the archive's first sample. `TrendChartViewModel` keeps the last `FetchRange`
   and asks `Covers` before every request, so a pan that stays in the inner band, half a window width
   in from each fetched edge, issues no query, while a zoom, a layer change and a column-target change
-  always issue one. Envelopes therefore span three windows, and the auto scale reads the visible one
+  always issue one. A range reaching the first sample holds its whole left side, so a window starting
+  before the first sample is read once. Envelopes therefore span three windows, and the auto scale reads the visible one
   only, through `PenScaleModel`'s window bound.
 - `Chart/ChartRealtimeApplier` — the append-vs-fold rule per layer for incoming `RealtimeBatch`es.
   It walks each `PenRealtimeValues` on that pen's own timestamps, never on the batch's union, and
@@ -380,13 +382,19 @@ After the lock, the live edge follows the pens shown: when their id set differs 
 `TrendCoordinator.PenIds`, the set the live edge follows (`data-integration.md#realtime`), the chart
 hands the new one to `SetPens`. Compared with that set rather than with the read before, an apply that
 threw before this point is caught up by the next one, and the start sequence, which applies the pens
-the coordinator was built with, opens no second live subscription. Once the first history request has gone out
-(`RequestInitialHistory`), a set change also drops the last fetch and issues one history query for
-every pen: a pen added after the first fetch otherwise gets no history from a window already read, and
-the live-edge switch leaves a hole in the pens that stay. Before it, the first request covers every pen,
-so the start sequence seeds the chart through the same `ApplyCatalogue` and queries nothing twice.
-`Pens` and `HasNoPens` are raised, and `RequestRedraw` follows. No production code adds or removes a pen
-but a catalogue applied.
+the coordinator was built with, opens no second live subscription. Once the first history request has
+gone out (`RequestInitialHistory`), a set change also drops the last fetch and issues one history
+query for every pen. A pen added after the first fetch otherwise gets no history from a window already
+read, and the live-edge switch leaves a hole in the pens that stay. Before the first history request,
+that request covers every pen, so the start sequence seeds the chart through the same `ApplyCatalogue`
+and queries nothing twice. `Pens` and `HasNoPens` are raised, and `RequestRedraw` follows. No production
+code adds or removes a pen but a catalogue applied.
+
+A pen removed and named again before the removal's read applied is read again too. Its request names
+the same pens and window as the read applied before the removal, but the chart pushes it after that
+read was delivered, and the debouncer reads every such push. A result for a read issued before the
+change sets no fetch either, since it holds no row of an added pen, and the window in view is asked for
+again (`data-integration.md#what-one-history-query-covers`).
 
 A history result that lands after a delta removed a pen carries an envelope for it, because the query
 was issued before the removal. `ApplyHistory` skips every envelope whose pen the chart no longer
@@ -394,9 +402,13 @@ holds, so a removed pen's rows never outlive it and a pen that comes back reads 
 
 A chart that started empty takes its first pens through the same path. `PenCatalogueApplier` reads the
 archive extent first and seeds `Navigation.SeedFromArchiveExtent` with it before the delta applies, as a
-start with pens does. A delta that adds a pen to a chart that already had some reloads the minimap's
-extent after it, and `Navigation.WidenToArchiveExtent` moves the pan floor back to an earlier first
-sample that extent carries, without moving the window (`overview.md#what-a-read-changes`).
+start with pens does, then hands it to `WidenToArchiveExtent`: a chart that lost every pen latched its
+first sample at start, so only the widen moves it. A delta that adds a pen to a chart that already had
+some reloads the minimap's extent after it, and `WidenToArchiveExtent` moves the pan floor back to an
+earlier first sample that extent carries, without moving the window. When the floor moved and history
+has started, the chart asks for the window in force through the same `Covers` gate as any request: a
+range clamped at the old floor no longer reaches the first sample, so a window starting before the old
+floor is read again, while a window far from either floor reads nothing (`overview.md#what-a-read-changes`).
 
 ## Data contract (UI ↔ provider)
 

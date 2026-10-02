@@ -50,7 +50,8 @@ public interface IDataProvider
         DateTime fromUtc,
         DateTime toUtc,
         AggregationLayer layer,
-        int targetColumnCount);
+        int targetColumnCount,
+        CancellationToken cancellationToken = default);
 
     Task<Result<ArchiveExtent>> QueryArchiveExtentAsync();
 }
@@ -78,6 +79,9 @@ Contract points every implementation keeps:
   (`DA-1`).
 - An inverted window, a target column count below one, or a pen identifier outside the archive's
   32-bit range is a failed `Result` with a plain message.
+- A history read whose `cancellationToken` is cancelled ends in `OperationCanceledException`, never in
+  a failed `Result`. The chart treats only that exception, while its own token is cancelled, as its
+  own cancellation.
 
 ## The pen catalogue editor
 
@@ -235,28 +239,99 @@ asks for three times the column target, so the fetched range stays at one column
 edge is clamped to the archive's first sample; the right edge is not, because a range reaching past
 the live edge is a successful empty read. A new window is drawn from the last fetch while it stays
 inside the inner band, half a window width in from each fetched edge, so a pan issues no query until
-the margin is half spent. A zoom, a layer change and a column-target change always re-fetch,
-because each changes the resolution the range was read at.
+the margin is half spent. A range that reaches the first sample has no left edge to approach, because
+no row lies before it: `HistoryPrefetch.Covers` takes `Navigation.FirstSample` and holds the left side
+of such a range whatever margin the clamp left. A window that starts before the first sample is
+therefore read once and drawn from that read; an archive younger than the window opens on one, and a
+zoom out past the archive followed by a jump to now leaves one. A first sample that moves back, after
+a catalogue read adds a pen with older rows, reopens the question:
+`TrendChartViewModel.WidenToArchiveExtent` asks `Covers` again with the new first sample, and a range
+clamped at the old one no longer holds its left side, so the window in view is read once more from the
+new first sample. A zoom, a layer change and a column-target change always re-fetch, because each
+changes the resolution the range was read at.
 
 Two column counts travel on one request, and the gate reads only one of them. `HistoryRequest.Range`
 carries the quantized count `ChartNavigationController.TargetColumnCount` holds, which a deadband
 keeps still while the Y tick labels widen and narrow the data rect by a pixel mid-gesture;
 `HistoryRequest.TargetColumnCount` carries the unquantized pixel width the provider decimates to.
 The range travels on the request so the result alone says which band the envelopes in hand describe:
-`TrendChartViewModel` opens the gate on the range that came back, never on the one last asked for.
+`TrendChartViewModel` opens the gate on the range that came back, never on the one last asked for, and
+only when that read carried every pen the chart shows. A read issued before the catalogue added a pen
+holds no row of it, so its result leaves the gate shut and the window in view is asked for again with
+the pens shown.
 
 A gesture that never goes quiet still fetches. `ChartHistoryRequestDebouncer` merges the trailing
-`Throttle` of 150 ms with a `Sample` of 400 ms over the same requests and drops the request whose
-window the last applied result already covers, so a continuous drag issues one query per 400 ms and
-one more after it stops. A read that is still in flight or that came back failed covers nothing, so
-the same window asked for again reaches the archive.
+`Throttle` of 150 ms with a `Sample` of 400 ms over the same requests, so a continuous drag issues one
+query per 400 ms and one more after it stops.
 
-One query runs at a time, and the newest request that arrived while it ran runs when it lands. A read
-slower than the cap interval therefore still completes during the gesture, the server sees one
-history query per chart, no window is read for nothing, and the last window a gesture asked for is
-the last one applied. The window waiting behind a query is dropped when that query turns out to have
-applied it. The provider takes no `CancellationToken`, and this shape needs none: the query in flight
-is never abandoned.
+The chart alone knows what is drawn. It asks for a window only while its fetched range does not cover
+the window in view, and otherwise pushes `RequestNothing`. The debouncer keeps no drawn window of its
+own. It stamps each request with the number of successful reads delivered so far, and drops a request
+the last successful read answers: the same pens, window and column target, pushed before that read was
+delivered. That is how the two heads emitting one push, and a drag that stops on the window being
+read, issue one query. A request pushed after that read was delivered is the chart asking again, and it
+reaches the archive.
+
+A read that is still in flight, that came back failed, or whose apply threw covers nothing, so the
+chart asks for the same window again. `TrendChartViewModel.ApplyHistory` clears its fetched range
+before it loads the envelopes and sets it only after, so an apply that throws part way leaves the gate
+shut and the window in view is asked for again at the next move. A catalogue read that adds or removes
+a pen drops envelopes outside that apply, so it clears the fetched range and asks for the window in
+view with every pen shown. A pen removed and named again takes back its old place in the pen order, so
+that request can name the same pens and window as the read applied before the removal; it is pushed
+after that read was delivered, so it is read.
+
+One query runs at a time, and the newest request that arrived while it ran runs when it lands. No
+request waits when the newest push needs no read, and the window waiting behind a query is dropped
+when that query's read answers it. The two heads treat the query in flight differently:
+
+- A paced request never cancels it. A read slower than the cap interval therefore still completes
+  during the gesture and lands, so the strip fills while the drag moves.
+- A trailing request is the gesture's end. When it finds a query running for another window, it
+  cancels that query, so the final window starts as soon as the cancelled one completes instead of
+  waiting up to the 300 s command timeout behind a read for a window the gesture has left. The
+  cancelled query completes once the server acknowledges the cancel, or when Npgsql breaks the socket
+  after `CancellationTimeout`.
+
+A gesture can end back inside the band the envelopes in hand cover, after a read for another band
+started. A pan inside the fetched band then pushes `RequestNothing`: it reads nothing, drops the
+request waiting behind the running query, and as the gesture's end it cancels the read for the band
+the drag left. The gate is open only on a read of the pens shown, so that push never cancels a read
+issued for a pen the catalogue added since. A read that failed changes nothing on screen and leaves the
+gate as it was, so a gesture whose read failed still ends on the window drawn before it; an apply that
+throws after the envelopes load leaves the gate open on them, with the same effect. A read that lands
+while the drag is still moving is applied, and the window in view is re-requested from the range that
+arrived.
+
+"Trailing" means 150 ms without a request, not the release of a mouse button. Input that arrives in
+steps more than 150 ms apart, such as wheel notches, key presses or a window resize, ends a gesture
+at every step, so each step cancels the read the previous one started, and no step's read lands until
+the input pauses for one whole read. A read on a local archive completes well inside that gap; the
+trade-off is that a slow read shows the final window sooner and the intermediate ones not at all.
+
+`Dispose` cancels the running query as well. A cancelled query reports nothing and starts the request
+waiting behind it; the last window a gesture asked for is the last one applied. Each query runs under its own `CancellationTokenSource`, which the debouncer
+creates under its gate and cancels with `CancelAsync`: the flag flips at once, and the callbacks run
+on the thread pool. Npgsql's callback opens a second connection to send the cancel request, bounded
+by the 15 s connect timeout, and blocks until the server closes it; run under the gate and Rx's own
+locks, it would freeze the UI thread's next request and the window's close for that long. The source
+is never disposed: it holds no timer and no wait handle, and disposing it before the queued callbacks
+run drops them, so the provider would never hear of the cancel. Only a cancellation the debouncer
+asked for is silent: an `OperationCanceledException` while its token is still live is a failed read
+like any other.
+
+The token is the trailing `cancellationToken` of `IDataProvider.QueryHistoryAsync`, threaded through
+`TrendCoordinator.QueryHistoryAsync`. `PostgresDataProvider` passes it to the connection open, to
+every `ExecuteReaderAsync` and to every row read of the window, the bucketed Raw window and the fresh
+tail, and the mapper rethrows the `OperationCanceledException` it ends in, so a cancelled read never
+becomes a failed `Result`. `PostgresHistoryReadTests.AReadCancelledMidStatementThrowsInsteadOfFailing`
+cancels a Raw and a Minute read held on a lock of `trends`. A cancelled command costs one extra
+connection for the cancel request, and its own connection for at most two seconds more: Npgsql first
+sends PostgreSQL the cancel request, and if no answer arrives within `CancellationTimeout` (2000 ms by
+default, which the connection string keeps) it breaks the socket. A broken connection leaves the pool,
+and the pool opens a new one. The backend behind a broken socket can keep running the abandoned
+statement until it notices the dead connection, so for that stretch the server runs two history
+queries for one chart.
 
 A failed read reaches the chart. `ChartHistoryRequestDebouncer` delivers the `Result`'s errors on the
 UI scheduler, a thrown query joining the same channel as an `ExceptionalError`;
@@ -598,9 +673,11 @@ panel through `ResultReporting.ReportFailure`; a failed refresh reports and leav
 were. The window's code-behind handlers are `async void` with the whole body in `try/catch`, and the
 `catch` reaches the panel through `PenEditorViewModel.ReportFailure`, which takes the guarded form.
 
-`57014` maps unconditionally to `QueryTimedOut`: no member of `IDataProvider` or `IPenCatalogueEditor`
-takes a `CancellationToken`, so no statement is cancelled by a caller, and a caller's own cancellation
-raises `OperationCanceledException`, which the mapper rethrows.
+`57014` maps unconditionally to `QueryTimedOut`. The one statement a caller cancels is a history read
+whose token the chart cancelled, and Npgsql raises `OperationCanceledException` for a cancellation it
+requested, which the mapper rethrows; a `57014` that reaches the mapper is therefore the server's own
+timeout or an administrator's cancel. No other member of `IDataProvider` or `IPenCatalogueEditor`
+takes a `CancellationToken`.
 
 ## Configuration
 

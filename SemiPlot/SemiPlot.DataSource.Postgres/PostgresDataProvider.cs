@@ -121,7 +121,8 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		DateTime fromUtc,
 		DateTime toUtc,
 		AggregationLayer layer,
-		int targetColumnCount)
+		int targetColumnCount,
+		CancellationToken cancellationToken = default)
 	{
 		ArgumentNullException.ThrowIfNull(penIds);
 
@@ -142,22 +143,30 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 
 		try
 		{
-			await using var connection = await _dataSource.OpenConnectionAsync().ConfigureAwait(false);
+			await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
 			var fromLocal = _timeConverter.ToArchiveLocal(fromUtc);
 			var toLocal = _timeConverter.ToArchiveLocal(toUtc);
 
 			if (layer == AggregationLayer.Raw)
 			{
-				var buckets = await ReadBucketedWindowAsync(connection, ids, fromLocal, toLocal, targetColumnCount)
+				var buckets = await ReadBucketedWindowAsync(
+						connection,
+						ids,
+						fromLocal,
+						toLocal,
+						targetColumnCount,
+						cancellationToken)
 					.ConfigureAwait(false);
 
 				return Result.Ok(BucketedRowFold.Fold(buckets, _timeConverter));
 			}
 
-			var rows = await ReadWindowAsync(connection, ids, fromLocal, toLocal, layer).ConfigureAwait(false);
+			var rows = await ReadWindowAsync(connection, ids, fromLocal, toLocal, layer, cancellationToken)
+				.ConfigureAwait(false);
 
-			rows = await FillFreshTailAsync(connection, ids, fromLocal, toLocal, layer, rows).ConfigureAwait(false);
+			rows = await FillFreshTailAsync(connection, ids, fromLocal, toLocal, layer, rows, cancellationToken)
+				.ConfigureAwait(false);
 
 			return Result.Ok(HistoryRowFold.Fold(rows, _timeConverter, targetColumnCount));
 		}
@@ -337,17 +346,18 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		int[] penIds,
 		DateTime fromLocal,
 		DateTime toLocal,
-		AggregationLayer layer)
+		AggregationLayer layer,
+		CancellationToken cancellationToken)
 	{
 		await using var command = new NpgsqlCommand(ArchiveStatements.SparseHistoryWindow, connection);
 
 		BindLocalWindow(command, penIds, fromLocal, toLocal, layer);
 
-		await using var reader = await command.ExecuteReaderAsync().ConfigureAwait(false);
+		await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
 		var rows = new List<HistoryRowFold.Row>();
 
-		while (await reader.ReadAsync().ConfigureAwait(false))
+		while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
 		{
 			rows.Add(ReadHistoryRow(reader));
 		}
@@ -360,17 +370,18 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		int[] penIds,
 		DateTime fromLocal,
 		DateTime toLocal,
-		int targetColumnCount)
+		int targetColumnCount,
+		CancellationToken cancellationToken)
 	{
 		await using var command = new NpgsqlCommand(ArchiveStatements.BucketedRawWindow, connection);
 
 		BindLocalBucketedWindow(command, penIds, fromLocal, toLocal, targetColumnCount);
 
-		await using var reader = await command.ExecuteReaderAsync().ConfigureAwait(false);
+		await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
 		var rows = new List<BucketedRowFold.Row>();
 
-		while (await reader.ReadAsync().ConfigureAwait(false))
+		while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
 		{
 			rows.Add(ReadBucketedRow(reader));
 		}
@@ -384,7 +395,8 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		DateTime fromLocal,
 		DateTime toLocal,
 		AggregationLayer layer,
-		IReadOnlyList<HistoryRowFold.Row> coarseRows)
+		IReadOnlyList<HistoryRowFold.Row> coarseRows,
+		CancellationToken cancellationToken)
 	{
 		var seams = FreshTail.Seams(coarseRows, penIds, fromLocal);
 
@@ -393,7 +405,13 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 			return coarseRows;
 		}
 
-		var tailRows = await ReadWindowAsync(connection, penIds, tailStart, toLocal, AggregationLayer.Raw)
+		var tailRows = await ReadWindowAsync(
+				connection,
+				penIds,
+				tailStart,
+				toLocal,
+				AggregationLayer.Raw,
+				cancellationToken)
 			.ConfigureAwait(false);
 
 		return FreshTail.Merge(coarseRows, tailRows, seams, tailStart);

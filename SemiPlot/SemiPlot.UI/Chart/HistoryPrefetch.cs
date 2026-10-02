@@ -48,7 +48,8 @@ public static class HistoryPrefetch
 		DateTime fromUtc,
 		DateTime toUtc,
 		AggregationLayer layer,
-		int columnTarget)
+		int columnTarget,
+		DateTime firstSampleUtc)
 	{
 		if (fetched.Layer != layer || fetched.ColumnTarget != ScaleColumnTarget(columnTarget))
 		{
@@ -65,10 +66,12 @@ public static class HistoryPrefetch
 		// Expand clamps the left edge only, so what lies left of the visible window is the whole range less
 		// that window and the unclamped right margin.
 		var leftMargin = fetched.ToUtc - fetched.FromUtc - fetched.WindowWidth - rightMargin;
+		var reachesTheFirstSample = fetched.FromUtc <= firstSampleUtc;
 
 		// The inner band ends half of each side's own margin in from that fetched edge, so the next query is
-		// issued while the rest of the margin still covers the gesture that triggered it.
-		return fromUtc >= fetched.FromUtc + (leftMargin / 2)
+		// issued while the rest of the margin still covers the gesture that triggered it. No row lies before
+		// the first sample, so a range reaching it has no left edge to approach.
+		return (reachesTheFirstSample || fromUtc >= fetched.FromUtc + (leftMargin / 2))
 			&& toUtc <= fetched.ToUtc - (rightMargin / 2);
 	}
 }

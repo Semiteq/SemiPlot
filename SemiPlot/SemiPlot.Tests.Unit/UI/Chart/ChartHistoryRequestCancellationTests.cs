@@ -122,7 +122,7 @@ public sealed class ChartHistoryRequestCancellationTests
 
 		debouncer.Request(RequestAtNotch(1));
 		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
-		var farRead = queries.Started[1];
+		var farRead = await queries.AwaitStart(1);
 
 		debouncer.RequestNothing();
 		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
@@ -154,7 +154,7 @@ public sealed class ChartHistoryRequestCancellationTests
 		debouncer.Request(RequestAtNotch(2));
 		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 
-		var cancelled = queries.Started[1];
+		var cancelled = await queries.AwaitStart(1);
 		cancelled.Cancellation.IsCancellationRequested.Should().BeTrue();
 		cancelled.Gate.SetCanceled(cancelled.Cancellation);
 		await AwaitCondition(() => queries.Started.Count == 3);
@@ -191,18 +191,24 @@ public sealed class ChartHistoryRequestCancellationTests
 
 		debouncer.Request(RequestAtNotch(1));
 		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
-		queries.Started[1].Gate.SetResult(Unreachable());
+		(await queries.AwaitStart(1)).Gate.SetResult(Unreachable());
 		await AwaitCondition(() => !reportedFailures.IsEmpty);
 
 		debouncer.Request(RequestAtNotch(2));
 		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
-		var farRead = queries.Started[2];
+		var farRead = await queries.AwaitStart(2);
 
 		debouncer.RequestNothing();
 		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 
 		farRead.Cancellation.IsCancellationRequested.Should().BeTrue();
-		queries.Started.Should().HaveCount(3);
+
+		debouncer.Request(RequestAtNotch(3));
+		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
+		await queries.AwaitStart(3);
+
+		queries.Started.Select(query => query.Request.FromUtc).Should()
+			.Equal(From, From.AddSeconds(1), From.AddSeconds(2), From.AddSeconds(3));
 	}
 
 	[Fact]
@@ -391,6 +397,15 @@ public sealed class ChartHistoryRequestCancellationTests
 			}
 
 			return query.Gate.Task;
+		}
+
+		// A read the pipeline queued behind a landed one starts once Rx unwinds that one on the thread it
+		// resumed on, after the delivery the test observed.
+		public async Task<HeldQuery> AwaitStart(int index)
+		{
+			await AwaitCondition(() => Started.Count > index);
+
+			return Started[index];
 		}
 
 		public async Task LandAndAwaitTheNextStart(HeldQuery query)

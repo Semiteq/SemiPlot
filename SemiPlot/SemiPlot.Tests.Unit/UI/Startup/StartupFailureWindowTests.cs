@@ -265,14 +265,15 @@ public sealed class StartupFailureWindowTests
 
 			save.IsEffectivelyEnabled.Should().BeTrue(settings.ValidationMessage);
 			HeadlessInput.Click(dialog, save);
-			await HeadlessWait.Until(() => settings.IsRestartPending);
+			var restartNow = dialog.FindControl<Button>("SettingsRestartNow")!;
+			await HeadlessWait.Until(() => restartNow.IsEffectivelyEnabled);
 
 			var connectionDirectory = Path.Combine(configDirectory, StartupProbe.ConnectionDirectoryName);
 			PostgresConnectionLoader.Load(connectionDirectory).Value.Password.Should().Be("secret");
 			Directory.GetFiles(connectionDirectory).Should().ContainSingle().Which.Should().EndWith("connection.yaml");
 			viewModel.MessagePanel.Entries.Should().BeEmpty();
 
-			HeadlessInput.Click(dialog, dialog.FindControl<Button>("SettingsRestartNow")!);
+			HeadlessInput.Click(dialog, restartNow);
 			Dispatcher.UIThread.RunJobs();
 
 			started.Should().Be(1);

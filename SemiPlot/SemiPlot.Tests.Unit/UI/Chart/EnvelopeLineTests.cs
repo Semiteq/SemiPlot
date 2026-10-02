@@ -26,6 +26,8 @@ public sealed class EnvelopeLineTests
 	private const int ShortColumnCount = 2000;
 	private const int GapEvery = 500;
 	private const int TestTimeoutMilliseconds = 120_000;
+	private const int ColumnCap = 100_000;
+	private const int TrimChunk = ColumnCap / 10;
 
 	private static readonly TimeSpan _runBudget = TimeSpan.FromSeconds(60);
 	private static readonly TimeSpan _joinBudget = TimeSpan.FromSeconds(30);
@@ -87,6 +89,31 @@ public sealed class EnvelopeLineTests
 			"the render thread must survive concurrent rewrites; it stopped at frame {0}",
 			frames);
 		frames.Should().Be(FrameBudget);
+	}
+
+	[Fact]
+	public void AppendingPastTheCapTrimsOneChunk()
+	{
+		var line = new EnvelopeLine();
+		var peakCount = 0;
+
+		for (var index = 0; index <= ColumnCap; index++)
+		{
+			line.AppendColumn(new EnvelopeColumn(index, 0.0, 1.0, 0.5)).Should().BeTrue();
+			peakCount = Math.Max(peakCount, line.Columns.Count);
+		}
+
+		line.Columns.Should().HaveCount(ColumnCap + 1 - TrimChunk);
+		line.Columns[0].X.Should().Be(TrimChunk);
+		peakCount.Should().Be(ColumnCap);
+
+		for (var index = ColumnCap + 1; index < ColumnCap + TrimChunk; index++)
+		{
+			line.AppendColumn(new EnvelopeColumn(index, 0.0, 1.0, 0.5));
+		}
+
+		line.Columns.Should().HaveCount(ColumnCap);
+		line.Columns[0].X.Should().Be(TrimChunk);
 	}
 
 	private static void RenderFrame(Plot plot)

@@ -12,6 +12,7 @@ public sealed class TrendPenState : ReactiveObject
 	{
 		Pen = pen;
 		Line = line;
+		IsVisible = pen.EnabledOnStart;
 		RestyleLine();
 	}
 
@@ -26,12 +27,12 @@ public sealed class TrendPenState : ReactiveObject
 	public bool IsVisible
 	{
 		get;
-		set
+		private set
 		{
 			this.RaiseAndSetIfChanged(ref field, value);
 			Line.IsVisible = value;
 		}
-	} = true;
+	}
 
 	public double? CurrentValue
 	{
@@ -44,6 +45,11 @@ public sealed class TrendPenState : ReactiveObject
 	{
 		Pen = pen;
 		RestyleLine();
+	}
+
+	internal void SetVisibility(bool isVisible)
+	{
+		IsVisible = isVisible;
 	}
 
 	public void LoadHistory(PenHistoryEnvelope envelope)

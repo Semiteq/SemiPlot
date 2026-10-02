@@ -130,14 +130,15 @@ Two projects, split on one axis: needs a container or not.
   `SemiPlot.Tests.Integration` carries no `xunit.runner.json`.
 - An xunit v3 test project is an executable: a hung test leaves `SemiPlot.Tests.Unit.exe` locked and
   the next build fails with MSB3027 until it is killed. The container half is bounded at two minutes.
-- The way to hang one: give `TrendChartViewModel` `ImmediateScheduler.Instance` as its UI scheduler and
-  then realise a view that subscribes to `RedrawRequested`. Its `Sample` schedules periodically, and
-  `ImmediateScheduler` runs a periodic schedule by sleeping on the calling thread, so the subscription
-  never returns. A headless test that realises the chart passes both schedulers a `TestScheduler`
-  (`UI/Chart/TrendChartViewTests.cs`, `UI/MainWindow/MainWindowTestBuilder.cs`). `PenCatalogueSync`
-  hangs the same way: its loop runs through `ScheduleAsync` and waits on `Schedule(ReadInterval)`, so a
+- The way to hang one: build `PenCatalogueSync` over `ImmediateScheduler.Instance`. Its loop runs
+  through `ScheduleAsync` and waits on `Schedule(ReadInterval)` before every read, and
+  `ImmediateScheduler` runs each wait by sleeping on the calling thread, so `Start()` never returns. A
   test builds it over a `TestScheduler` and advances one tick after `Start()`
-  (`UI/MainWindow/MainWindowTestBuilder.cs`).
+  (`UI/MainWindow/MainWindowTestBuilder.cs`). The chart's redraw hangs nothing: it is a one-shot
+  schedule, which `ImmediateScheduler` runs inline after a 33 ms sleep. A headless test that realises
+  the chart still never passes an immediate UI scheduler, because it blocks the dispatcher on every
+  redraw; it passes a `TestScheduler` or `AvaloniaScheduler.Instance`
+  (`docs/architecture/testing-strategy.md#the-ui-scheduler-in-a-realised-view`).
 - A plain `[Fact]` body runs with no `SynchronizationContext`, so an `await` on a
   `TaskCompletionSource` completed by production code resumes inline on the completing thread. A gate
   awaited by the test and completed by production code takes
@@ -313,7 +314,9 @@ No abbreviations in names.
   imperative `IsSticky =` assignments.
 - A checkable menu item reads its flag `Mode=OneWay` and writes it only through the command it
   invokes, so the command is the flag's single writer. A two-way `IsChecked` would make the control a
-  second writer and the two halves would drift.
+  second writer and the two halves would drift. The sidebar's visibility box follows the same rule: it
+  reads `PenState.IsVisible` `Mode=OneWay` and writes through `ToggleVisibilityCommand`, which reaches
+  the chart's `SetPenVisibility`, the flag's one writer.
 - A menu item without a command, or without children, is not added. A disabled placeholder renders
   and does nothing, and it also forces an exemption into `AppMenuBarTests`, which walks the declared
   `Items` and requires every leaf to carry one or the other.

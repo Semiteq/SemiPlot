@@ -1,4 +1,5 @@
 using Avalonia.Headless.XUnit;
+using Avalonia.Threading;
 
 using AwesomeAssertions;
 
@@ -8,6 +9,7 @@ using ScottPlot;
 
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Bridge;
+using SemiPlot.UI.Chart;
 
 using Xunit;
 
@@ -23,6 +25,10 @@ public sealed class TrendChartRenderThreadTests
 {
 	private const int PlotWidth = 400;
 	private const int PlotHeight = 300;
+
+	// The narrow canvas leaves a data area under the minimum column count, the wide one over the maximum.
+	private const int NarrowPlotWidth = 320;
+	private const int WidePlotWidth = 2600;
 	private const int FrameBudget = 300;
 	private const int JoiningPenCount = 20;
 	private const int TestTimeoutMilliseconds = 120_000;
@@ -119,8 +125,70 @@ public sealed class TrendChartRenderThreadTests
 		raised.Should().AllSatisfy(entry => entry.IsLockHeld.Should().BeFalse());
 	}
 
+	// docs/architecture/charting.md#module-layout-avalonia-views--view-models--core-models
+	[AvaloniaFact]
+	public async Task ARepeatedDataAreaWidth_ChangesNothing()
+	{
+		using var chart = CreateChart(new TestScheduler());
+		_ = new TrendChartView { DataContext = chart };
+		await RenderFrameAsTheRenderThreadDoes(chart.Plot, NarrowPlotWidth, PlotHeight);
+		var windowChanges = 0;
+		chart.Navigation.WindowChanged += (_, _) => windowChanges++;
+		var revisionBefore = chart.ScalesRevision;
+
+		await RenderFrameAsTheRenderThreadDoes(chart.Plot, NarrowPlotWidth, PlotHeight);
+		await RenderFrameAsTheRenderThreadDoes(chart.Plot, NarrowPlotWidth, PlotHeight);
+
+		chart.Navigation.TargetColumnCount.Should().Be(HistoryColumnTarget.MinColumns);
+		windowChanges.Should().Be(0);
+		chart.ScalesRevision.Should().Be(revisionBefore);
+	}
+
+	[AvaloniaFact]
+	public async Task ANewDataAreaWidth_RetargetsTheColumnCount()
+	{
+		using var chart = CreateChart(new TestScheduler());
+		_ = new TrendChartView { DataContext = chart };
+		await RenderFrameAsTheRenderThreadDoes(chart.Plot, NarrowPlotWidth, PlotHeight);
+		chart.Navigation.TargetColumnCount.Should().Be(HistoryColumnTarget.MinColumns);
+		var windowChanges = 0;
+		chart.Navigation.WindowChanged += (_, _) => windowChanges++;
+
+		await RenderFrameAsTheRenderThreadDoes(chart.Plot, WidePlotWidth, PlotHeight);
+
+		chart.Navigation.TargetColumnCount.Should().Be(HistoryColumnTarget.MaxColumns);
+		windowChanges.Should().Be(1);
+	}
+
+	[AvaloniaFact]
+	public async Task AReboundView_ReportsTheWidthToTheNewChartAlone()
+	{
+		using var first = CreateChart(new TestScheduler());
+		using var second = CreateChart(new TestScheduler());
+		var view = new TrendChartView { DataContext = first };
+
+		view.DataContext = second;
+
+		await RenderFrameAsTheRenderThreadDoes(first.Plot, NarrowPlotWidth, PlotHeight);
+		await RenderFrameAsTheRenderThreadDoes(second.Plot, NarrowPlotWidth, PlotHeight);
+
+		first.Navigation.TargetColumnCount.Should().Be(HistoryColumnTarget.MaxColumns, "the view let go of it");
+		second.Navigation.TargetColumnCount.Should().Be(HistoryColumnTarget.MinColumns);
+	}
+
+	private static async Task RenderFrameAsTheRenderThreadDoes(Plot plot, int width, int height)
+	{
+		await Task.Run(() => RenderFrame(plot, width, height), TestContext.Current.CancellationToken);
+		Dispatcher.UIThread.RunJobs();
+	}
+
 	private static void RenderFrame(Plot plot)
 	{
-		using var image = plot.GetImage(PlotWidth, PlotHeight);
+		RenderFrame(plot, PlotWidth, PlotHeight);
+	}
+
+	private static void RenderFrame(Plot plot, int width, int height)
+	{
+		using var image = plot.GetImage(width, height);
 	}
 }

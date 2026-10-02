@@ -126,8 +126,7 @@ public sealed class MinimapPointerInputTests
 	}
 
 	// The chart view model is here for its navigation controller alone, the instance the minimap receives in
-	// production; its UI scheduler is AvaloniaScheduler for the reason ChartViewTestBuilder records, and
-	// the 33 ms timer that scheduler starts is why each test disposes the view model.
+	// production.
 	private static TrendChartViewModel CreateChartViewModel(TrendCoordinator coordinator, TestScheduler scheduler)
 	{
 		return new TrendChartViewModel(

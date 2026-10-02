@@ -37,7 +37,7 @@ public sealed class PenCatalogueApplierTests
 		AdvanceOneRead(stand);
 
 		viewModel.ChartViewModel.FindPen(3).Should().NotBeNull();
-		viewModel.LegendViewModel.Groups.SelectMany(group => group.Rows).Select(row => row.Name).Should()
+		viewModel.LegendViewModel.Groups.SelectMany(group => group.Rows).Select(row => row.PenState.Pen.Name).Should()
 			.Equal("Pen 1", "Pen 2", "Pen 3");
 		stand.Provider.ExtentQueryCount.Should().Be(extentQueriesAtStart + 1);
 		viewModel.MessagePanel.Entries.Should().BeEmpty();
@@ -303,7 +303,7 @@ public sealed class PenCatalogueApplierTests
 
 	private static IEnumerable<string> LegendRowNames(MainWindowViewModel viewModel)
 	{
-		return viewModel.LegendViewModel.Groups.SelectMany(group => group.Rows).Select(row => row.Name);
+		return viewModel.LegendViewModel.Groups.SelectMany(group => group.Rows).Select(row => row.PenState.Pen.Name);
 	}
 
 	// A window wider than the archive, at the live edge, starts before the first sample.

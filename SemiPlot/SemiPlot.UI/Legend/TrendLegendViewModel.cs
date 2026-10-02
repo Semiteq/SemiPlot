@@ -134,7 +134,7 @@ public sealed class TrendLegendViewModel : ReactiveObject, IDisposable
 
 	private static IReadOnlyList<TrendLegendGroupViewModel> BuildGroups(IReadOnlyList<TrendLegendRowViewModel> rows)
 	{
-		if (rows.All(row => row.Groups.Count == 0))
+		if (rows.All(row => row.PenState.Pen.Groups.Count == 0))
 		{
 			return rows.Count > 0 ? [new TrendLegendGroupViewModel(string.Empty, hasHeader: false, rows)] : [];
 		}
@@ -144,7 +144,7 @@ public sealed class TrendLegendViewModel : ReactiveObject, IDisposable
 		return
 		[
 			.. rows
-				.SelectMany(row => (row.Groups.Count == 0 ? [ungroupedHeader] : row.Groups)
+				.SelectMany(row => (row.PenState.Pen.Groups is { Count: > 0 } groups ? groups : [ungroupedHeader])
 					.Select(name => (Name: name, Row: row)))
 				.GroupBy(entry => entry.Name, StringComparer.Ordinal)
 				.OrderBy(group => string.Equals(group.Key, ungroupedHeader, StringComparison.Ordinal))

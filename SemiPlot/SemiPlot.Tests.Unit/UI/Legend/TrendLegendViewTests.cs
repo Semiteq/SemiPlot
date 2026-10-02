@@ -213,8 +213,7 @@ public sealed class TrendLegendViewTests
 		var boxes = RowBoxes(window);
 		boxes.Should().HaveCount(2);
 
-		boxes[0].IsChecked = false;
-		Dispatcher.UIThread.RunJobs();
+		HeadlessInput.Click(window, boxes[0]);
 
 		boxes[1].IsChecked.Should().BeFalse();
 		chart.FindPen(1)!.IsVisible.Should().BeFalse();
@@ -299,6 +298,88 @@ public sealed class TrendLegendViewTests
 
 		headerSwitch.IsChecked.Should().BeTrue();
 		chart.Pens.Should().AllSatisfy(pen => pen.IsVisible.Should().BeTrue());
+	}
+
+	[AvaloniaFact]
+	public void AClickOnARowBox_SwitchesItsPenAndTheBoxFollows()
+	{
+		var chart = CreateChart();
+		chart.AddPen(new Pen(1, "Heater 01", ["Heaters"], "#ff0000"));
+		chart.AddPen(new Pen(2, "Heater 02", ["Heaters"], "#00ff00"));
+		using var legend = new TrendLegendViewModel(chart);
+		var window = Realize(legend);
+
+		HeadlessInput.Click(window, RowBoxes(window)[0]);
+
+		BoxStates(window).Should().Equal(false, true);
+		PenStates(chart).Should().Equal(false, true);
+
+		HeadlessInput.Click(window, RowBoxes(window)[0]);
+
+		BoxStates(window).Should().Equal(true, true);
+		PenStates(chart).Should().Equal(true, true);
+	}
+
+	[AvaloniaFact]
+	public void AClickOnTheGroupSwitch_LeavesEveryRowBoxAgreeingWithItsPen()
+	{
+		var chart = CreateChart();
+		chart.AddPen(new Pen(1, "Heater 01", ["Heaters"], "#ff0000"));
+		chart.AddPen(new Pen(2, "Heater 02", ["Heaters"], "#00ff00"));
+		using var legend = new TrendLegendViewModel(chart);
+		var window = Realize(legend);
+
+		HeadlessInput.Click(window, HeaderSwitches(window).Single());
+
+		BoxStates(window).Should().Equal(false, false);
+		PenStates(chart).Should().Equal(false, false);
+
+		HeadlessInput.Click(window, HeaderSwitches(window).Single());
+
+		BoxStates(window).Should().Equal(true, true);
+		PenStates(chart).Should().Equal(true, true);
+	}
+
+	// The chart switches the pen back after a click, so the box follows only if its one-way binding
+	// outlived the click.
+	[AvaloniaFact]
+	public void APenSwitchedOnTheChart_MovesItsRowBoxBeforeAndAfterAClick()
+	{
+		var chart = CreateChart();
+		chart.AddPen(new Pen(1, "Heater 01", ["Heaters"], "#ff0000"));
+		chart.AddPen(new Pen(2, "Heater 02", ["Heaters"], "#00ff00"));
+		using var legend = new TrendLegendViewModel(chart);
+		var window = Realize(legend);
+
+		chart.SetPenVisibility(2, false);
+		Dispatcher.UIThread.RunJobs();
+
+		BoxStates(window).Should().Equal(true, false);
+
+		HeadlessInput.Click(window, RowBoxes(window)[1]);
+
+		BoxStates(window).Should().Equal(true, true);
+		PenStates(chart).Should().Equal(true, true);
+
+		chart.SetPenVisibility(2, false);
+		Dispatcher.UIThread.RunJobs();
+
+		BoxStates(window).Should().Equal(true, false);
+		PenStates(chart).Should().Equal(true, false);
+	}
+
+	[AvaloniaFact]
+	public void ARowBoxSetInCode_WritesNothingToThePen()
+	{
+		var chart = CreateChart();
+		chart.AddPen(new Pen(1, "Heater 01", ["Heaters"], "#ff0000"));
+		using var legend = new TrendLegendViewModel(chart);
+		var window = Realize(legend);
+
+		RowBoxes(window).Single().IsChecked = false;
+		Dispatcher.UIThread.RunJobs();
+
+		chart.FindPen(1)!.IsVisible.Should().BeTrue("the box is not a writer of the pen's visibility");
 	}
 
 	[AvaloniaFact]
@@ -407,6 +488,22 @@ public sealed class TrendLegendViewTests
 		RowBoxes(window).Single().IsChecked.Should().BeTrue();
 	}
 
+	[AvaloniaFact]
+	public void TheRealisedRow_ShowsARevisedUnitWithoutARebuild()
+	{
+		var chart = CreateChart();
+		var pen = new Pen(1, "Chamber pressure", ["Pressures"], "#ff0000", "kPa", "0.000");
+		chart.AddPen(pen);
+		using var legend = new TrendLegendViewModel(chart);
+		LoadInitialHistory(chart);
+		var window = Realize(legend);
+
+		chart.ApplyCatalogue([pen with { Unit = "Pa" }]);
+		Dispatcher.UIThread.RunJobs();
+
+		RowTexts(SingleRow(window)).Should().Equal("Chamber pressure", PenValueFormat.Format(2.0, "0.000"), "Pa");
+	}
+
 	private static Window Realize(TrendLegendViewModel legend)
 	{
 		var window = new Window { Width = 320, Height = 400, Content = new TrendLegendView { DataContext = legend } };
@@ -440,6 +537,16 @@ public sealed class TrendLegendViewTests
 	private static IReadOnlyList<CheckBox> RowBoxes(Window window)
 	{
 		return [.. Descendants<CheckBox>(window).Where(box => box.Name != "GroupSwitch")];
+	}
+
+	private static IReadOnlyList<bool?> BoxStates(Window window)
+	{
+		return [.. RowBoxes(window).Select(box => box.IsChecked)];
+	}
+
+	private static IReadOnlyList<bool> PenStates(TrendChartViewModel chart)
+	{
+		return [.. chart.Pens.Select(pen => pen.IsVisible)];
 	}
 
 	private static Border SingleRow(Window window)

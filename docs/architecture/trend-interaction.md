@@ -123,13 +123,13 @@ as-built mechanics that realize them:
   stored sample and renders the missing left span as data (§TM-3).
 - **Zoom history is debounced off the UI thread** (§DA-9). Gesture-driven re-queries flow through a
   single chokepoint (`Chart/ChartHistoryRequestDebouncer`): `Throttle` collapses rapid notches to one
-  trailing request after the gesture goes quiet, the query runs on the data scheduler, one at a time,
-  and the newest window that arrived while it ran runs when it lands (so a read slower than the cap
-  still completes, and the newest window is the last applied). Per-zoom redraws are coalesced through
-  the 30 FPS `Sample(33 ms)`
-  redraw seam, not an inline refresh. The startup `RequestInitialHistory` is an ordinary request on
-  that path, so the initial load and gestures share one latest-wins history path; the first-snap
-  `TrackDataExtents` path stays non-requerying (single initial load).
+  trailing request after the gesture goes quiet, the query runs on the data scheduler, one at a time, and
+  the newest window that arrived while it ran runs when it lands (so a read slower than the cap still
+  completes, and the newest window is the last applied). Per-zoom redraws are coalesced through the
+  redraw seam, one emission 33 ms after the first request of a span, not an inline refresh. The startup
+  `RequestInitialHistory` is an ordinary request on that path, so the initial load and gestures share one
+  latest-wins history path; the first-snap `TrackDataExtents` path stays non-requerying (single initial
+  load).
 - **Axis scaling gestures (as-built):** entering min/max = fixed manual limits (§AY-3); View -> Pen
   scale -> Autoscale (§AY-4) and View -> Pen scale -> Restore initial scale act on the active pen, and
   the panel's two buttons act on the pen the panel was opened for. The axis scale panel is the only
@@ -188,7 +188,7 @@ so there is one left-button gesture, not overlapping hidden branches.
   `Chart/ChartHoverReadout.BuildContent` string: the local timestamp plus every *visible* pen's value
   at the cursor X (one line per pen; gap or missing pen → dash). The overlay is suppressed while a drag
   is in progress or delta mode is active (`IsDragging || IsDeltaModeEnabled`) and is repositioned from
-  the throttled `RedrawRequested` seam (after `Refresh()`) and on `SizeChanged` so it tracks
+  the coalesced `RedrawRequested` seam (after `Refresh()`) and on `SizeChanged` so it tracks
   pan/zoom/resize/live-edge without per-event re-renders.
 - **Delta cursors (Δt / Δy) via an explicit navigation-bar mode.** The bar's "Delta" toggle
   (`NavigationBarViewModel.IsDeltaModeEnabled`) sets the chart into `DeltaPlacement`: two left clicks

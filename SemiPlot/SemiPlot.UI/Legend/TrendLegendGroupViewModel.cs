@@ -19,7 +19,7 @@ public sealed class TrendLegendGroupViewModel : ReactiveObject, IDisposable
 		Rows = rows;
 
 		_switchState = rows
-			.Select(row => row.WhenAnyValue(visibleRow => visibleRow.IsVisible))
+			.Select(row => row.PenState.WhenAnyValue(state => state.IsVisible))
 			.CombineLatest()
 			.Select(DeriveSwitchState)
 			.ToProperty(this, group => group.SwitchState);
@@ -63,7 +63,7 @@ public sealed class TrendLegendGroupViewModel : ReactiveObject, IDisposable
 
 		foreach (var row in Rows)
 		{
-			row.IsVisible = switchOn;
+			row.SetVisibility(switchOn);
 		}
 	}
 }

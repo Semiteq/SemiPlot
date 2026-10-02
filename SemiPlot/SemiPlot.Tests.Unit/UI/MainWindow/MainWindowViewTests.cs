@@ -133,12 +133,13 @@ public sealed class MainWindowViewTests
 			await stand.ViewModel.ShowSettingsCommand.Execute();
 			await HeadlessWait.Until(() => window.OwnedWindows.OfType<SettingsDialog>().Any());
 			var dialog = window.OwnedWindows.OfType<SettingsDialog>().Single();
-			var settings = dialog.DataContext.Should().BeOfType<SettingsViewModel>().Which;
+			dialog.DataContext.Should().BeOfType<SettingsViewModel>();
 
 			HeadlessInput.Type(dialog, dialog.FindControl<TextBox>("SettingsPassword")!, "secret");
 			HeadlessInput.Click(dialog, dialog.FindControl<Button>("SettingsSaveButton")!);
-			await HeadlessWait.Until(() => settings.IsRestartPending);
-			HeadlessInput.Click(dialog, dialog.FindControl<Button>("SettingsRestartNow")!);
+			var restartNow = dialog.FindControl<Button>("SettingsRestartNow")!;
+			await HeadlessWait.Until(() => restartNow.IsEffectivelyEnabled);
+			HeadlessInput.Click(dialog, restartNow);
 			Dispatcher.UIThread.RunJobs();
 
 			started.Should().ContainSingle();

@@ -37,10 +37,6 @@ public partial class TrendChartView : UserControl
 	private VerticalLine? _deltaSecondLine;
 	private Point? _dragOrigin;
 
-	// Render-thread state: read and written by OnPlotRenderFinished, and reset on the UI thread when the
-	// bound plot changes so the first frame of the new plot always reports.
-	private float _lastRenderedDataAreaWidth = float.NaN;
-
 	// -1 until the bound plot is painted once, so the first scale revision always repaints.
 	private int _paintedAxisCount = -1;
 
@@ -122,19 +118,14 @@ public partial class TrendChartView : UserControl
 		_paintedAxisCount = _viewModel?.AxisCount ?? -1;
 	}
 
-	// This runs on the render thread, so the report is posted back to the UI thread against the view model
-	// the frame was drawn for, not whichever one is bound when the post is dispatched.
-	private void OnPlotRenderFinished(object? sender, RenderDetails renderDetails)
+	// docs/architecture/charting.md#module-layout-avalonia-views--view-models--core-models
+	private static EventHandler<RenderDetails> ReportDataAreaWidthTo(TrendChartViewModel renderedViewModel)
 	{
-		var dataAreaWidth = renderDetails.DataRect.Width;
-		if (dataAreaWidth.Equals(_lastRenderedDataAreaWidth))
+		return (_, renderDetails) =>
 		{
-			return;
-		}
-
-		_lastRenderedDataAreaWidth = dataAreaWidth;
-		var renderedViewModel = _viewModel;
-		Dispatcher.UIThread.Post(() => renderedViewModel?.ReportDataAreaWidth(dataAreaWidth));
+			var dataAreaWidth = renderDetails.DataRect.Width;
+			Dispatcher.UIThread.Post(() => renderedViewModel.ReportDataAreaWidth(dataAreaWidth));
+		};
 	}
 
 	private void OnDataContextChanged(object? sender, EventArgs eventArgs)
@@ -155,14 +146,14 @@ public partial class TrendChartView : UserControl
 				_ => _axisScaleFlyout.Hide(),
 				ReportFailureOf(nameof(AxisScalePanelViewModel.CloseRequests))));
 
-		_lastRenderedDataAreaWidth = float.NaN;
 		var renderManager = _viewModel.Plot.RenderManager;
-		renderManager.RenderFinished += OnPlotRenderFinished;
+		var reportDataAreaWidth = ReportDataAreaWidthTo(_viewModel);
+		renderManager.RenderFinished += reportDataAreaWidth;
 
 		// RenderFinished is a plain delegate property, so the removal keeps the empty-delegate contract
 		// instead of leaving null behind.
 		_disposables.Add(Disposable.Create(() => renderManager.RenderFinished =
-			(renderManager.RenderFinished - OnPlotRenderFinished) ?? _noRenderFinishedHandler));
+			(renderManager.RenderFinished - reportDataAreaWidth) ?? _noRenderFinishedHandler));
 
 		// Assigned in place rather than via Plot.Axes.DateTimeTicksBottom(), which would replace the shared
 		// bottom-X axis instance the plottables are pinned to.

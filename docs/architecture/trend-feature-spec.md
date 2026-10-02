@@ -99,6 +99,7 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 ### PN-4 — Enable/disable a pen (visibility) (MUST)
 **Definition.** A pen can be hidden/shown (a checkbox in the legend, two-way sync with the visibility flag). A hidden pen is not drawn and does not participate in the hover readout.
 **Acceptance.** UI: toggling visibility in the legend removes/restores the pen's line; the flag is synchronized between the legend and the chart without looping (guard).
+**Note.** As-built there is nothing to synchronize and no guard: the legend box reads the chart's pen state one way and writes only through the chart's `SetPenVisibility` (charting.md, `Legend/TrendLegendView`).
 
 ### PN-5 — Color and line style (MUST)
 **Definition.** A pen's color and line style: interpolated (a straight line between points) and stepped (Stepped). Style is mapped to the render in `TrendPenState`.
@@ -216,7 +217,7 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 **Acceptance.** Core/test: feeding a point on a coarse layer widens the Min/Max of the last column without adding a new raw point.
 
 ### RT-4 — Update/render parameters (NICE)
-**Definition.** A data-update interval, pixel-aware thinning, a redraw FPS cap (overlay reposition from a throttled RedrawRequested ~30 FPS).
+**Definition.** A data-update interval, pixel-aware thinning, a redraw FPS cap (overlay reposition from a coalesced RedrawRequested ~30 FPS).
 **Acceptance.** UI: redraw is no more frequent than the given FPS; pointer-move does not initiate a full plot redraw.
 
 ---

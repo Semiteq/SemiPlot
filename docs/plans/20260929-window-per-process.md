@@ -421,9 +421,10 @@ that starts before the first sample is read once instead of once per cap interva
 columns in one `RemoveRange`. The list lives between 90 000 and 100 000 columns, and the shift runs once
 per 10 000 appends.
 
-**Data-area width.** `OnPlotRenderFinished` only posts the width, and
-`TrendChartViewModel.ReportDataAreaWidth` ignores a width equal to the last one it applied. The view keeps
-no width field.
+**Data-area width.** `RenderFinished` carries the `ReportDataAreaWidthTo(TrendChartViewModel)` closure,
+which reads no view field and posts every frame's width to the view model it was built for. A repeated
+width changes nothing, because `SetTargetColumnCount` drops an unchanged quantised count, so neither the
+view nor the view model keeps a width field.
 
 **Idle redraw.** `RequestRedraw` schedules one emission 33 ms ahead on the UI scheduler unless one is
 already scheduled; requests inside that span join it. The flag and the scheduled handle are UI-thread
@@ -999,11 +1000,13 @@ The rule after this task:
 - Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/Chart/EnvelopeLineTests.cs`
 - Modify: `docs/architecture/charting.md`
 
-- [ ] trim `MaxColumns / 10` once the count passes `MaxColumns`
-- [ ] write `AppendingPastTheCapTrimsOneChunk`: the count after the trim, the oldest surviving X, and no
+- [x] trim `MaxColumns / 10` once the count passes `MaxColumns`
+- [x] write `AppendingPastTheCapTrimsOneChunk`: the count after the trim, the oldest surviving X, and no
       count above `MaxColumns + 1`
-- [ ] `charting.md`: the cap trims in chunks of one tenth
-- [ ] run the unit tests - must pass before task 12
+- [x] ➕ `TrendChartViewModelTests.Realtime_PastTheBufferCap_DropsTheOldestColumns` pinned the one-column
+      trim; it now expects the chunk
+- [x] `charting.md`: the cap trims in chunks of one tenth
+- [x] run the unit tests - must pass before task 12
 
 ### Task 12: Keep the data-area width on the UI thread
 
@@ -1012,10 +1015,14 @@ The rule after this task:
 - Modify: `SemiPlot/SemiPlot.UI/Chart/TrendChartViewModel.cs`
 - Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/Chart/TrendChartRenderThreadTests.cs`
 
-- [ ] delete `_lastRenderedDataAreaWidth`; `OnPlotRenderFinished` posts every width
-- [ ] `ReportDataAreaWidth` ignores a width equal to the last applied one
-- [ ] write tests: a repeated width changes nothing; a new width re-targets the column count
-- [ ] run the unit tests - must pass before task 13
+- [x] delete `_lastRenderedDataAreaWidth`; `OnPlotRenderFinished` posts every width
+      (➕ as built: the handler is a closure over the bound view model, so it reads no view field either)
+- [x] `ReportDataAreaWidth` ignores a width equal to the last applied one
+      (➕ after review: `SetTargetColumnCount` already drops an unchanged quantised count, so the
+      view-model field went)
+- [x] write tests: a repeated width changes nothing; a new width re-targets the column count
+- [x] ➕ `charting.md`: the render seam posts every width and the view model drops a repeat
+- [x] run the unit tests - must pass before task 13
 
 ### Task 13: Let an idle chart schedule nothing
 
@@ -1028,14 +1035,18 @@ The rule after this task:
 - Modify: `docs/architecture/bench.md`
 - Modify: `docs/architecture/testing-strategy.md`
 
-- [ ] replace `Sample` and the trailing `ObserveOn` (`TrendChartViewModel.cs:79-81`) with the one-shot
+- [x] replace `Sample` and the trailing `ObserveOn` (`TrendChartViewModel.cs:79-81`) with the one-shot
       schedule Technical Details states
-- [ ] write `AnIdleChartSchedulesNoRedraw` on a `TestScheduler`, and a burst test: requests over 100 ms give
+      (➕ as built: a request with no subscriber schedules nothing, as the hot subject under `Sample` dropped
+      it, so a chart on `ImmediateScheduler` with no view never sleeps 33 ms per request)
+- [x] write `AnIdleChartSchedulesNoRedraw` on a `TestScheduler`, and a burst test: requests over 100 ms give
       one redraw per 33 ms span and one after the last request
-- [ ] rewrite the redraw and hang statements in `CLAUDE.md` (Test), `charting.md:92`,
+      (➕ as built: `ABurstOfRequestsRedrawsOncePerSpanAndOnceAfterTheLastRequest`; both read a UI
+      `TestScheduler` the chart alone uses, and both fail on the `Sample` pipeline)
+- [x] rewrite the redraw and hang statements in `CLAUDE.md` (Test), `charting.md:92`,
       `trend-interaction.md:128`, `bench.md:346-352` and `testing-strategy.md:166-169`: the redraw is a
       one-shot schedule, and the periodic-schedule hang remains for `PenCatalogueSync`'s wait only
-- [ ] run the unit tests - must pass before task 14
+- [x] run the unit tests - must pass before task 14
 
 ### Task 14: Give pen visibility one writer
 
@@ -1046,14 +1057,22 @@ The rule after this task:
 - Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/Legend/TrendLegendViewModelTests.cs`
 - Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/Legend/TrendLegendViewTests.cs`
 
-- [ ] the row exposes the pen state and `ToggleVisibilityCommand`; delete the row's `IsVisible` setter and
+- [x] the row exposes the pen state and `ToggleVisibilityCommand`; delete the row's `IsVisible` setter and
       `_isSettingVisibilityFromChart`
-- [ ] the group derives its switch from the pen states and switches through the rows' command path
-- [ ] the row's `CheckBox` binds through the pen state one way plus the command; the allowlist in
+      (➕ as built: the row's `IsVisible` goes whole, getter included, so nothing on the row can drift; the
+      command and the group both call the row's `SetVisibility`; ➕ after review: its replaced-row guard
+      went, because nothing calls a replaced row)
+- [x] the group derives its switch from the pen states and switches through the rows' command path
+- [x] the row's `CheckBox` binds through the pen state one way plus the command; the allowlist in
       `TrendLegendViewTests` still holds
-- [ ] write tests: a row click, a group switch and a chart-side change each leave the checkbox and the pen
+- [x] write tests: a row click, a group switch and a chart-side change each leave the checkbox and the pen
       in agreement
-- [ ] run the unit tests - must pass before task 15
+      (➕ as built: `AClickOnARowBox_SwitchesItsPenAndTheBoxFollows`,
+      `AClickOnTheGroupSwitch_LeavesEveryRowBoxAgreeingWithItsPen`,
+      `APenSwitchedOnTheChart_MovesItsRowBoxBeforeAndAfterAClick`, and `ARowBoxSetInCode_WritesNothingToThePen`
+      pinning the one-way binding)
+- [x] ➕ `charting.md` and `trend-feature-spec.md` PN-4: one source, one writer, no guard
+- [x] run the unit tests - must pass before task 15
 
 ### Group G: logs and backlog (PR 7)
 
@@ -1085,7 +1104,9 @@ The rule after this task:
       - `throw exception;` in `ArchiveExceptionMapper.cs:28`;
       - the undisposed bounds subscription in `MinimapView.axaml.cs:29`;
       - the double UI hop in `MinimapViewModel.LoadExtentAsync` (`:86-87`);
-      - the per-pointer-move allocation in the cursor read
+      - the per-pointer-move allocation in the cursor read;
+      - ➕ the debouncer's 400 ms `Sample` timer, which runs on the data scheduler for the chart's
+        lifetime even while it is idle (`ChartHistoryRequestDebouncer.cs:55-56`)
 - [ ] delete the two stale bullets at `backlog.md:81-90`
 - [ ] run `git grep -n "bench-demo.ps1\|LiveWithin" -- docs/plans/backlog.md` - prints nothing
 
@@ -1116,42 +1137,41 @@ The rule after this task:
 - branch: another-instance
 - branch: live-theme
 - branch: history-pipeline
+- branch: render-path
 
 ## Verify it yourself
 
-Group E (Tasks 9 and 10) only; Groups A-D shipped as #97, #98, #99, #102 and #103, Groups F-G are later
-branches.
+Group F (Tasks 11-14) only; Groups A-E shipped as #97, #98, #99, #102, #103 and #104, Group G is a later
+branch.
 
 1. Build and tests, from the repository root:
    - `dotnet build SemiPlot.slnx` - 0 warnings, 0 errors.
-   - `dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj` - 1580 passed.
+   - `dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj` - 1591 passed.
    - `dotnet test SemiPlot/SemiPlot.Tests.Integration/SemiPlot.Tests.Integration.csproj` - 138 passed
      (needs Docker; do not run it at the same time as the unit suite).
-2. The history pipeline, by test (`dotnet test <project> --filter "FullyQualifiedName~<name>"`); none of
-   them exists on `master`:
-   - `ChartHistoryRequestCancellationTests`: `APacedRequestNeverCancelsTheQueryInFlight`,
-     `AGestureEndCancelsTheLeftBehindQuery`, `ACancelledQueryReportsNothing`,
-     `AGestureEndNeverWaitsForTheCancelToReachTheServer`, `DisposingNeverWaitsForTheCancelToReachTheServer`
-     - a drag never cancels, its end cancels the read it left, a cancel reports nothing, and Npgsql's cancel
-     request never runs on the UI thread or under a lock;
-   - `ChartHistoryRequestDebouncerTests.AFailedApplyCanBeRequestedAgain` and
-     `TrendChartViewModelTests.AWindowWhoseApplyThrewIsReadAgainOnTheNextMove`,
-     `AnApplyThatThrowsPartWayLeavesNoBandFetched` - a window whose apply threw is read again;
-   - `TrendChartViewModelTests.AGestureEndingBackInsideTheFetchedBandCancelsTheReadItLeft`,
-     `AReadForAnOlderPenSetLeavesTheNewPensReadRunning`, `APenThatComesBackWhileTheRemovalsReadIsHeldIsReadAgain`
-     - the drawn window has one owner, per pen set;
-   - `TrendChartViewModelTests.AnArchiveYoungerThanTheWindowIsReadOnce`,
-     `AZoomOutPastTheArchiveFollowedByNowReadsTheWindowOnce` - an idle chart whose window starts before the
-     first sample reads once (on the branch before `70c98ef` it read every 200 ms);
-   - `PenCatalogueApplierTests.ADeltaAddingAPenWithOlderRows_WhoseReadLandsBeforeTheExtent_ReadsTheOlderRowsInView`,
-     `ADeltaGivingAChartThatLostItsPensAPenWithOlderRows_ReadsAndPansBackToThem` - two gaps present on
-     `master` (failing there), fixed here;
-   - integration: `PostgresHistoryReadTests.AReadCancelledMidStatementThrowsInsteadOfFailing` (Raw and
-     Minute) - a read cancelled while a lock holds it ends in `OperationCanceledException`, not a fault.
-3. On the demo stand (`dotnet run --project SemiPlot/SemiPlot.AppHost`), acceptance step 7:
-   - drag the chart across a Raw window for about 3 s and release: the strip fills during the drag, and the
-     final window appears within one read of the release; no archive fault appears in the message panel;
-   - drag out of the drawn band and back into it, then release: the window stays drawn and does not flicker
-     to another band;
-   - leave the window idle for a minute: the log shows no repeated history reads;
-   - close the window while a long drag is in flight: it closes at once.
+   - Acceptance Evidence item 6, `git grep -nE "_isSettingVisibilityFromChart|_lastRenderedDataAreaWidth|Sample\(_redrawThrottle" -- SemiPlot`,
+     prints nothing.
+2. The render path and the legend, by test (`dotnet test <project> --filter "FullyQualifiedName~<name>"`);
+   none of them exists on `master`:
+   - `EnvelopeLineTests.AppendingPastTheCapTrimsOneChunk` - the cap trims one tenth at once;
+   - `TrendChartRenderThreadTests`: `ARepeatedDataAreaWidth_ChangesNothing`,
+     `ANewDataAreaWidth_RetargetsTheColumnCount`, `AReboundView_ReportsTheWidthToTheNewChartAlone` - each
+     frame's width reaches the view model it was drawn for, on the UI thread;
+   - `TrendChartViewModelTests`: `AnIdleChartSchedulesNoRedraw`, `AChartNoViewSubscribesToSchedulesNoRedraw`,
+     `ABurstOfRequestsRedrawsOncePerSpanAndOnceAfterTheLastRequest`, `DisposingTheChartCancelsTheScheduledRedraw`
+     - the redraw is one coalescing schedule, and nothing is queued while idle or after dispose;
+   - `TrendLegendViewTests`: `AClickOnARowBox_SwitchesItsPenAndTheBoxFollows`,
+     `AClickOnTheGroupSwitch_LeavesEveryRowBoxAgreeingWithItsPen`,
+     `APenSwitchedOnTheChart_MovesItsRowBoxBeforeAndAfterAClick`, `ARowBoxSetInCode_WritesNothingToThePen`,
+     `TheRealisedRow_ShowsARevisedUnitWithoutARebuild`, and
+     `TrendLegendViewModelTests.TheRow_FollowsAChangeOfTheChartsPenState` - the box and the pen never disagree,
+     and the box writes only through its command.
+3. On the demo stand (`dotnet run --project SemiPlot/SemiPlot.AppHost`):
+   - in the sidebar, untick a pen's box: its line disappears and the box stays unticked; tick it again;
+   - switch a group off and on with its header switch: every row box in the group follows, and each line
+     with it; switch one row back by hand, then the group switch again: no box disagrees with its line;
+   - in `Edit` -> `Pens and groups`, change a pen's unit and name: within 5 s the sidebar row shows both,
+     and the pen keeps its visibility;
+   - resize the window narrow and wide again: the chart redraws at the new width with no flicker;
+   - pan to a historical window off the live edge and leave it: Task Manager shows the viewer at about
+     0% CPU.

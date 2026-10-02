@@ -91,7 +91,8 @@
                                                       VerticalAlignment="Center">
 
                                                     <CheckBox Grid.Column="0"
-                                                              IsChecked="{Binding IsVisible}"
+                                                              IsChecked="{Binding PenState.IsVisible, Mode=OneWay}"
+                                                              Command="{Binding ToggleVisibilityCommand}"
                                                               VerticalAlignment="Center"
                                                               Margin="0,0,4,0" />
 
@@ -101,10 +102,10 @@
                                                             CornerRadius="6"
                                                             Margin="0,0,6,0"
                                                             VerticalAlignment="Center"
-                                                            Background="{Binding ColorHex, Converter={x:Static legend:LegendConverters.HexToBrush}}" />
+                                                            Background="{Binding PenState.Pen.Color, Converter={x:Static legend:LegendConverters.HexToBrush}}" />
 
                                                     <TextBlock Grid.Column="2"
-                                                               Text="{Binding Name}"
+                                                               Text="{Binding PenState.Pen.Name}"
                                                                VerticalAlignment="Center" />
 
                                                     <TextBlock Grid.Column="3"
@@ -116,7 +117,7 @@
 
                                                     <TextBlock Grid.Column="4"
                                                                Name="RowUnit"
-                                                               Text="{Binding Unit}"
+                                                               Text="{Binding PenState.Pen.Unit}"
                                                                IsVisible="{Binding $parent[UserControl].DataContext.IsExpanded}"
                                                                Foreground="{DynamicResource AppSecondaryForegroundBrush}"
                                                                Margin="4,0,0,0"

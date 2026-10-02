@@ -260,7 +260,7 @@ public sealed class PenGroupsViewTests : IDisposable
 	}
 
 	[AvaloniaFact]
-	public void ARenameTypedWhileARefreshRuns_ReachesNoFieldAndWritesNothing()
+	public async Task ARenameTypedWhileARefreshRuns_ReachesNoFieldAndWritesNothing()
 	{
 		_editor.ReadResult = Result.Ok(_catalogue);
 		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
@@ -277,7 +277,7 @@ public sealed class PenGroupsViewTests : IDisposable
 			Named<TextBox>(window, "NewGroupName").IsEffectivelyEnabled.Should().BeFalse();
 			HeadlessInput.Type(window, rename, " typed during refresh");
 			registration.SetResult();
-			Dispatcher.UIThread.RunJobs();
+			await HeadlessWait.Until(() => Named<ListBox>(window, "GroupList").IsEffectivelyEnabled);
 			HeadlessInput.Click(window, GroupAt(window, 1));
 
 			rename.Text.Should().Be(Spare.Name);

@@ -103,6 +103,7 @@ connection never changes while a process runs.
 | The pen catalogue: name, colour, style, unit, mask, groups, initial scale (the 5 s catalogue loop) | The group shown, the time window, the live-edge mode |
 | The theme, applied live in every open window (`#the-live-theme`) | The current scale of each pen, and its visibility |
 | The language, read at each window's start | The message panel and its entries |
+| The log file `--log-file` names, each event carrying its writer's process id after the timestamp (`#command-line`) | |
 
 `MainWindow/TrendWindow` is the window's composition and its owner. `TrendWindow.Build` takes the start
 sequence's `StartupData`, the process's `InstanceLauncher` (which names the configuration directory) and the
@@ -701,6 +702,16 @@ successful parse is followed by one Information line naming the configuration di
 level, and a loaded connection section by one naming the time zone the provider reads the archive in
 (`data-integration.md#time-boundary`). At `information` or below those two lines are the only ones a
 healthy run writes, and at `warning`, `error` or `fatal` the file stays empty until the first failure.
+
+Several processes write one log file when their windows share `--log-file`, which every copy a window
+starts does (`#another-instance`). The sink is `shared: true`: it writes each event whole under a
+cross-process mutex. Each event's first line carries its writer's process id in brackets after the
+timestamp, and the event's other lines, such as a stack trace, follow it unbroken, so the interleaved
+events of two windows stay apart. The shared file's own length decides the 5 MB roll: a write that finds
+the file full is refused, and its process moves to the newest file in the sequence (`semiplot_001.log`,
+then `semiplot_002.log`). Every process moves at its first write after the file fills, so no two
+processes write two files of the sequence at once; one process's events can still span two files over
+time, and a reader follows that process by its id.
 
 The process exits `0` when the main window opened and closed normally, and `1` when the start failed —
 the startup failure and the fatal catch alike — so a launcher can tell one from the other.

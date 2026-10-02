@@ -248,8 +248,10 @@ observable outcome per step:
    window appears within one read of the release.
 8. Stop the bench database and start a third instance: the startup-failure window opens. Start the
    database, press "Restart": a working window replaces it.
-9. The log folder holds lines from three process ids, each line carrying its id. The shared file rolls on
-   size per process, so the lines may span `semiplot.log` and `semiplot_001.log`.
+9. The log folder holds events from three process ids, each event's first line carrying its id. The
+   shared file's own length decides the roll: every process moves to `semiplot_001.log` at its first
+   write after `semiplot.log` reaches 5 MB, so one process's events may span both files, and no two
+   files take writes at once.
 
 ## Progress Tracking
 
@@ -262,10 +264,10 @@ observable outcome per step:
 
 **The startup-failure window is its own window.** `Startup/StartupFailureWindow` over a
 `StartupFailureViewModel` shows the failure, the message panel, and buttons: Settings, About, Exit, and
-Restart. Settings is present when a configuration directory is known; Restart is present when launch
-options parsed. `App` keeps the panel of the window it shows, and `ResolveMessagePanel` returns it, so the
-ReactiveUI handler reaches either window's panel. With this window gone from `MainWindowViewModel`, the
-main window view model has one shape: a chart, a configuration directory and an editor, always.
+Restart. Restart is present when the launch keys parsed; Settings also needs both sections to read and to
+carry every key it edits. `App` keeps the panel of the window it shows, and `ResolveMessagePanel` returns
+it, so the ReactiveUI handler reaches either window's panel. Because this window has its own view model,
+the main window view model has one shape: a chart, a configuration directory and an editor, always.
 
 **One owner per window.** A new `MainWindow/TrendWindow` class is the window's composition and its
 owner. `TrendWindow.Build` constructs, in order:
@@ -285,32 +287,33 @@ owner. `TrendWindow.Build` constructs, in order:
 coordinator's connection stream and the chart's navigation, and `TrendWindow` disposes it, so steps 2 and 4
 collapse into one step after step 3. The coordinator republishes through `ObserveOn` on the UI scheduler,
 so no state arrives before `Build` returns. The catalogue applier is built without the panel, which it
-never used. `AddUi` lost its `configDirectory` parameter, and `Build` takes the directory from Task 2. `InitializeServicesTests` is `TrendWindowBuildTests`.
+never used. `AddUi` takes no `configDirectory`, and `Build` takes the process's `InstanceLauncher`,
+which names the directory. The composition tests are `TrendWindowBuildTests`.
 
 Then it starts the sync, requests the initial history and starts the minimap's extent load.
 `TrendWindow.Dispose` disposes the same objects in reverse order, the coordinator last.
 
 `MainWindowViewModel` disposes only what it creates: its commands and request subjects. `App` builds one
 `TrendWindow`, shows its view model, and disposes the `TrendWindow` from the main window's `Closed` event
-on the UI thread. ASSUMPTION: Avalonia renders no further frame for a window after `Closed`, so
-`Plot.Dispose` there meets no render in flight. A headless test closes a realised window and then disposes
-its `TrendWindow` without an exception.
+on the UI thread. Avalonia renders no further frame for a window after `Closed`, so `Plot.Dispose` there
+meets no render in flight: verified on the headless platform by `AppMainWindowTests`, which closes a
+realised window and then disposes its `TrendWindow` without an exception; unverified for a real renderer.
 
-⚠️ As built: `AppMainWindowTests` drives `App.Configure` and `App.CreateMainWindow` over a stand's container,
-closes the window and reads the provider's `OpenLiveSubscriptionCount` and `ConnectionFaultsObserverCount`
-back at zero, which the `Closed` handler alone can cause. `CreateMainWindow` and `ResolveMessagePanel` are
-`internal` for those tests; the tests restore the private `App` fields `Configure` writes through one
-`AppStateScope`. The disposal-order test asserts the provider's observer counts, not completion of
+⚠️ As built: `AppMainWindowTests` drives `App.ConfigureStarted` and `App.CreateMainWindow` over a stand's
+container, closes the window and reads the provider's `OpenLiveSubscriptionCount` and
+`ConnectionFaultsObserverCount` back at zero, which the `Closed` handler alone can cause.
+`CreateMainWindow` and `ResolveMessagePanel` are `internal` for those tests; the tests restore the
+private `App` fields `ConfigureStarted` writes through one `AppStateScope`. The disposal-order test asserts the provider's observer counts, not completion of
 `ConnectionFaults`. A throw out of `Build` ends the start and the process exits; nothing is disposed.
 
-The container keeps the process services: the data source, the provider, the editor, the message panel,
-the status bar and the logger factory. It no longer registers `MainWindowViewModel`. `MainWindowTestBuilder`
+The container keeps the process services: the data source, the provider, the editor, the message panel
+and the logger factory. It registers no window part, `MainWindowViewModel` included. `MainWindowTestBuilder`
 builds its stands through `TrendWindow.Build`.
 
 **Initial scale.** A pen's scale settings are built from its stored pair when the pen enters the chart, at
 the start or when the catalogue adds it, and never again from the catalogue. Two chart methods act on the
 active pen and do nothing when there is none or when it is switched off (➕ deviation: both are `void`, and
-the hidden-pen no-op is new):
+both skip a switched-off pen):
 
 - `AutoscaleActivePen` replaces `AutoscaleAxis` and sets `Auto`;
 - `RestoreInitialScale` rebuilds the settings from the pen's current stored pair, `Auto` when it has none.
@@ -320,9 +323,9 @@ held at most 5 s ago. The two View menu commands are always executable, like the
 
 **Another instance.** `Startup/InstanceLauncher` builds a `ProcessStartInfo` from `Environment.ProcessPath`
 and the parsed `StartupOptions`. The three keys go into `ArgumentList`, never a joined string. When the
-host is the `dotnet` muxer, the entry assembly path goes first. `App.Run` receives the parsed options
-instead of the bare configuration directory, and `App.Configure` builds one launcher from them for
-`TrendWindow.Build` and `StartupFailureViewModel`.
+host is the `dotnet` muxer, the entry assembly path goes first. `App.RunStarted` and `App.RunFailed`
+receive the parsed options, and `App.ConfigureStarted` and `App.ConfigureFailed` build one launcher from
+them for `TrendWindow.Build` and `StartupFailureViewModel`.
 
 A window view model's `RestartApplication` starts a copy through the launcher. On success it pushes
 `ExitRequests`, which the window already turns into `Close` (`MainWindow.axaml.cs:34`); on failure it
@@ -366,10 +369,10 @@ theme through the watcher like every other process.
 ## Technical Details
 
 **`TrendWindow`** holds its parts as non-null fields, in the order `Build` assigns them. Its constructor
-is private. `Build` takes the start sequence's data and the UI scheduler, and resolves the logger factory
-and the panel from `StartupData.ServiceProvider`. `Build` gains the configuration directory and the
-launch options in the tasks that first consume them. The status bar's binding ahead of the first poll tick
-was a comment at `App.axaml.cs:193-194`; it becomes a statement order in one method.
+is private. `Build` takes the start sequence's data, the process's `InstanceLauncher`, which names the
+configuration directory, and the UI scheduler, and resolves the logger factory and the panel from
+`StartupData.ServiceProvider`. The status bar is bound before any connection state reaches it: the
+coordinator republishes on the UI scheduler, and `Build` binds the bar before it returns.
 
 **`TrendCoordinator`.** `Start` and its keep-alive go. The chart's constructor subscription holds the
 `RefCount` for the window's whole life, because the chart is never replaced and is disposed only with the
@@ -383,11 +386,11 @@ end. When it finds a query running for a different request, it stores itself as 
 running query. `Dispose` cancels the running query.
 
 Each query runs under its own `CancellationTokenSource`, created under `_gate` and cancelled there with
-`CancelAsync`, never disposed (⚠️ as built after review: Npgsql's cancel callback opens a connection
+`CancelAsync`, never disposed (⚠️ as built: Npgsql's cancel callback opens a connection
 and blocks, so it runs on the pool, and a dispose ahead of the queued callbacks drops them). A query
 that ends in `OperationCanceledException` while its own token is cancelled completes with a null
 `Result` (see the ⚠️ note under Task 9): `CompleteQuery` starts the pending request, and `Deliver`
-reports nothing. ⚠️ as built after review: when a gesture ends back inside the fetched band,
+reports nothing. ⚠️ as built: when a gesture ends back inside the fetched band,
 `TrendChartViewModel` pushes `RequestNothing`, which reads nothing, clears `_pending` and, as a trailing
 admission, cancels the running query. `ApplyHistory` opens `_lastFetch` only when the request's pens
 set-equal the pens shown, so that push never cancels a read issued for a pen the catalogue added since.
@@ -404,15 +407,15 @@ request. If no answer arrives within `CancellationTimeout`, it breaks the socket
 (`Npgsql.xml` of package 10.0.3, lines 3684-3688), and the connection string leaves it at the default
 (`PostgresConnectionSettings.cs:34-44`). A broken connection leaves the pool, and the pool opens a new one.
 
-**Applied mark.** ⚠️ as built after review: `TrendChartViewModel._lastFetch` is the only record of the
+**Applied mark.** ⚠️ as built: `TrendChartViewModel._lastFetch` is the only record of the
 window drawn. `ApplyHistory` clears it before it loads the envelopes and sets it after, and
 `RequeryAllPens` clears it on a pen-set change. The debouncer keeps `_lastSucceeded`, the last successful
 read with its ordinal, which only `CompleteQuery` writes, and stamps each push with the count of
 successful reads `Deliver` has delivered, counted ahead of the apply. A push stamped before the last
 successful read was delivered and matching it is dropped at admission and in `CompleteQuery`; any later
 push is read. So the same window is read again after an apply that threw, and after a pen removed and
-named again takes back its slot and asks for the request applied before the removal. ⚠️ as built after
-review: `ApplyHistory` re-pushes the window in view whenever `Covers` says the read just applied does
+named again takes back its slot and asks for the request applied before the removal. ⚠️ as built:
+`ApplyHistory` re-pushes the window in view whenever `Covers` says the read just applied does
 not draw it, and that push is read, so `Covers` has to hold every window the range `Expand` fetched for
 it draws. It takes the first sample and holds the left side of a range that reaches it, so a window
 that starts before the first sample is read once instead of once per cap interval.
@@ -529,8 +532,8 @@ its one writer.
       call (`TrendCoordinatorTests.cs`, `TrendChartViewModelTests.cs:85`, `:604`, `:619`, `:638`, `:1320`,
       `TrendChartCatalogueTests.cs:252`). Port `InitializeServicesTests.cs:51-101` and
       `EmptyCatalogueStartupTests.cs:46-69` to `TrendWindow.Build`, and replace
-      `Container_ResolvesMainWindowViewModel` (`CompositionRootTests.cs:68-72`) with a test that the
-      container resolves the panel and the status bar
+      `Container_ResolvesMainWindowViewModel` (`CompositionRootTests.cs:68-72`) with
+      `Container_RegistersNoWindowPart` and a test that the container resolves the panel
 - [x] write `DisposingTheWindowClosesTheLiveEdgeBeforeTheConnectionStream`:
       `FakeDataProvider.OpenLiveSubscriptionCount` (`FakeDataProvider.cs:92`) reaches 0 before
       `ConnectionFaults` completes
@@ -577,7 +580,7 @@ The rule after this task:
 - A dialog that cannot save states why on its reserved message line: the first section that fails to
   read, then the first absent key, then the field rules. A disabled Save always carries a reason.
 
-The file-creating writer of commit 4966df7 is reverted; the message-line reason is kept.
+No file-creating writer exists; the dialog's message-line reason stays.
 
 **Files:**
 - Modify: `SemiPlot/SemiPlot.Core/Configuration/ConfigurationSectionWriter.cs` (revert)
@@ -668,14 +671,13 @@ for the native mechanism.
 The rule after this task:
 
 - A click on the active pen's axis opens an Avalonia `Flyout` anchored at the axis. Its header names
-  the pen and its unit. It holds Maximum and Minimum as plain `TextBox` fields (➕ deviation: not
-  `NumericUpDown`, whose text is re-parsed on every keystroke and keeps the last value that parsed)
-  seeded with the axis's current bounds, formatted and parsed by the pen editor's rule
-  (`PenFormRules.FormatBound`, `PenFormRules.TryReadBound`), a reserved message line, and three buttons:
-  Apply, Autoscale, Restore initial scale ("Вернуть начальную"). Escape and a click outside close it
-  without writing. Enter in either field applies (➕ deviation: a key binding on the two fields, not
-  `IsDefault` on Apply, because Avalonia's default-button handler listens on the visual root and the
-  overlay popup a headless test hosts never routes key events to it).
+  the pen and its unit. It holds Maximum and Minimum as plain `TextBox` fields that keep the operator's
+  text as typed (➕ deviation), seeded with the axis's current bounds, formatted and parsed by the pen
+  editor's rule (`PenFormRules.FormatBound`, `PenFormRules.TryReadBound`), a reserved message line, and
+  three buttons: Apply, Autoscale, Restore initial scale ("Вернуть начальную"). Escape and a click outside
+  close it without writing. Enter in either field applies through a key binding on the two fields (➕
+  deviation: Avalonia's default-button handler listens on the visual root, and the overlay popup a
+  headless test hosts never routes key events to it).
 - Apply sets both bounds as a manual scale on the pen the panel was opened for. A field that is not a
   number in the current culture, an empty field, or a minimum not below the maximum is refused on the
   message line, marks the field `invalid` and disables Apply; nothing is written and the panel never
@@ -825,7 +827,7 @@ The rule after this task:
 - Modify: `readme.md`
 
 - [x] `IsRestartPending` is set by a save that wrote any key, and "Restart now" shows beside the notice
-- [x] ⚠️ the theme exemption moved to Task 8: nothing applies a saved theme live until the watcher lands
+- [x] ⚠️ as built: this task exempts no key; Task 8 exempts the theme, which only the watcher applies live
 - [x] `SettingsViewModel` takes the owning window view model's `RestartApplication` as a required
       argument and exposes `RestartNowCommand`, shown with the notice
 - [x] write tests: a theme-only save sets the notice; a locale, theme-and-locale or connection save sets
@@ -870,18 +872,18 @@ The rule after this task:
 - [x] ⚠️ the lifetime's `Exit` event disposes the watcher; an `app/` folder that does not exist gets none,
       because the start has already reported it. The section is `overview.md#the-live-theme`, and
       `ui-text.md` and `ui-theme.md` follow
-- [x] ⚠️ review: a start that loaded its settings loads `app/` once more when the watch starts, which closes
-      the gap between the start's read and the watcher; `AppSectionWatcher.Open` turns a refused folder
-      into a reported failure; a throwing load is a failed load; an open settings dialog follows the applied
-      theme (`SettingsViewModel.FollowAppliedTheme`); `ConfigureStarted`'s watch is tested
-- [x] ⚠️ review: on Linux a refused watch raises `Error` inside `EnableRaisingEvents` instead of throwing,
-      and `Open` captures it, so the refusal is a failure on both platforms. Two `internal` members stay as
+- [x] ⚠️ as built: a start that loaded its settings loads `app/` once more when the watch starts, which
+      closes the gap between the start's read and the watcher; `AppSectionWatcher.Open` turns a refused
+      folder into a reported failure; a throwing load is a failed load; an open settings dialog follows the
+      applied theme (`SettingsViewModel.FollowAppliedTheme`); `ConfigureStarted`'s watch is tested
+- [x] ⚠️ as built: on Linux a refused watch raises `Error` inside `EnableRaisingEvents` instead of
+      throwing, and `Open` captures it, so the refusal is a failure on both platforms. Two `internal` members stay as
       seams over process-boundary types (➕ deviation from "no widening for tests"):
       `ConfigurationSection.OpenShared` holds the production read's handle open across a `File.Replace`,
       which a race against `Read` could only sample; the `internal` `AppSectionWatcher` constructor takes a
       `FileSystemWatcher` subclass that raises the events no real folder raises on demand, a buffer overflow
       among them
-- [x] ⚠️ external review: `AppSectionWatcher.Watch` opens a stopped or refused watch again every 5 s and
+- [x] ⚠️ as built: `AppSectionWatcher.Watch` opens a stopped or refused watch again every 5 s and
       reports each outage once (a deleted `app/` raises `Error` 5 on Windows, measured); `App` holds a
       failure raised before the first window for its panel; a save's copy and write probe share like a
       section read; the notice after a save that also changed the theme names it as applied; the lost
@@ -919,19 +921,19 @@ The rule after this task:
       cancelled when the gesture ends on another window
 - [x] ⚠️ as built: only an `OperationCanceledException` while the debouncer's own token is cancelled counts
       as `Cancelled`; any other one is a failed read (`ACancellationTheDebouncerNeverAskedForIsReported`).
-      Two `TrendChartViewModelTests` cases pinned the held initial read landing ahead of a newer window; a
-      zoom or a width report now cancels it, so they assert the cancellation instead, and
-      `DisposingTheChart_CancelsTheHistoryReadInFlight` covers the chain from the chart to the provider.
+      A zoom or a width report cancels the held initial read, two `TrendChartViewModelTests` cases assert
+      that cancellation, and `DisposingTheChart_CancelsTheHistoryReadInFlight` covers the chain from the
+      chart to the provider.
       `charting.md`'s debouncer bullet names the cancellation
-- [x] ⚠️ review: the debouncer cancels with `CancelAsync` and disposes no token source
+- [x] ⚠️ as built: the debouncer cancels with `CancelAsync` and disposes no token source
       (`AGestureEndNeverWaitsForTheCancelToReachTheServer`, `DisposingNeverWaitsForTheCancelToReachTheServer`);
       a gesture that ends on the drawn window cancels the read it left
       (`AGestureEndingOnTheDrawnWindowCancelsTheReadItLeftAndReadsNothing`,
-      `AGestureEndingBackInsideTheFetchedBandCancelsTheReadItLeft`); the integration fact became
+      `AGestureEndingBackInsideTheFetchedBandCancelsTheReadItLeft`); the integration fact is
       `AReadCancelledMidStatementThrowsInsteadOfFailing`, a Raw and a Minute read cancelled while a lock on
       `trends` holds them on the server; stepwise input more than 150 ms apart cancels at every step, which
       `data-integration.md` states as the trade-off
-- [x] ⚠️ review: the gate opens only on a read of the pens shown, so the applied request a gesture pushes
+- [x] ⚠️ as built: the gate opens only on a read of the pens shown, so the applied request a gesture pushes
       leaves a new pen's read running (`AReadForAnOlderPenSetLeavesTheNewPensReadRunning`); a cancel that
       faults after `Dispose` reports nothing
 - [x] run both test projects - must pass before task 10
@@ -960,29 +962,30 @@ The rule after this task:
 - [x] write `AFailedApplyCanBeRequestedAgain`: `applyHistory` throws once, and the same request issued
       again is applied
 - [x] ⚠️ as built: `data-integration.md`'s "covers nothing" sentence names a read whose apply threw
-- [x] ⚠️ review: `ApplyHistory` clears `_lastFetch` before the load, so a throw part way leaves no band
+- [x] ⚠️ as built: `ApplyHistory` clears `_lastFetch` before the load, so a throw part way leaves no band
       fetched (`AWindowWhoseApplyThrewIsReadAgainOnTheNextMove`, `AnApplyThatThrowsPartWayLeavesNoBandFetched`)
-- [x] ⚠️ review: a failed read changes nothing drawn, so a gesture whose read failed still cancels the
+- [x] ⚠️ as built: a failed read changes nothing drawn, so a gesture whose read failed still cancels the
       read it left (`AGestureEndingOnTheDrawnWindowAfterAFailedReadCancelsTheReadItLeft`)
-- [x] ⚠️ review: a pen removed and named again while the removal's read is held or after it failed is
+- [x] ⚠️ as built: a pen removed and named again while the removal's read is held or after it failed is
       read again (`APenThatComesBackWhileTheRemovalsReadIsHeldIsReadAgain`,
       `APenThatComesBackAfterTheRemovalsReadFailedIsReadAgain`)
-- [x] ⚠️ review: the view model is the one owner of the window drawn. `RequestAppliedWindow`,
-      `ForgetAppliedWindow` and `ForgetApplied` are gone: a gesture ending in the fetched band pushes
-      `RequestNothing`, and the debouncer drops only a push stamped before the read it matches was
-      delivered (`ARequestPushedWhileItsWindowIsReadReadsNothingOnceTheReadLands`,
-      `AWindowAskedForAgainAfterItsReadWasDeliveredIsReadAgain`), so an apply that throws after the load
-      no longer stops the gesture's end from cancelling the far read
-      (`AGestureEndingInsideABandWhoseApplyThrewAfterTheLoadCancelsTheReadItLeft`). The cancellation facts
-      moved to `ChartHistoryRequestCancellationTests`, both classes built through `HistoryDebouncerTestBuilder`
-- [x] ⚠️ review: `HistoryPrefetch.Covers` takes the first sample and holds the left side of a range that
+- [x] ⚠️ as built: the view model is the one owner of the window drawn, and the debouncer keeps no record
+      of it: a gesture ending in the fetched band pushes `RequestNothing`, and the debouncer drops only a
+      push stamped before the read it matches was delivered
+      (`ARequestPushedWhileItsWindowIsReadReadsNothingOnceTheReadLands`,
+      `AWindowAskedForAgainAfterItsReadWasDeliveredIsReadAgain`), so a gesture's end cancels the far read
+      even after an apply that threw after the load
+      (`AGestureEndingInsideABandWhoseApplyThrewAfterTheLoadCancelsTheReadItLeft`). The cancellation
+      facts live in `ChartHistoryRequestCancellationTests`, both classes built through
+      `HistoryDebouncerTestBuilder`
+- [x] ⚠️ as built: `HistoryPrefetch.Covers` takes the first sample and holds the left side of a range that
       reaches it, so a window starting before the first sample is read once
       (`Covers_AWindowStartingBeforeTheFirstSample_HoldsTheRangeFetchedForIt`,
       `AnArchiveYoungerThanTheWindowIsReadOnce`, `AZoomOutPastTheArchiveFollowedByNowReadsTheWindowOnce`)
-- [x] ⚠️ final review: two gaps present on master since the catalogue applier landed, fixed here because
-      they sit on the history read path. `TrendChartViewModel.WidenToArchiveExtent` moves the pan floor
-      and, when it moved, asks for the window in force through `Covers`, so the added pen's read that
-      landed before the extent read is read again from the new floor
+- [x] ⚠️ as built: the history read path covers two cases the catalogue applier raises.
+      `TrendChartViewModel.WidenToArchiveExtent` moves the pan floor and, when it moved, asks for the
+      window in force through `Covers`, so the added pen's read that landed before the extent read is
+      read again from the new floor
       (`ADeltaAddingAPenWithOlderRows_WhoseReadLandsBeforeTheExtent_ReadsTheOlderRowsInView`,
       `AWidenAfterTheAddedPensReadLanded_ReadsTheWindowFromTheEarlierFirstSample`). The empty-chart branch
       of `PenCatalogueApplier` widens after the seed, which a latched navigation ignores, so a chart that
@@ -1003,8 +1006,8 @@ The rule after this task:
 - [x] trim `MaxColumns / 10` once the count passes `MaxColumns`
 - [x] write `AppendingPastTheCapTrimsOneChunk`: the count after the trim, the oldest surviving X, and no
       count above `MaxColumns + 1`
-- [x] ➕ `TrendChartViewModelTests.Realtime_PastTheBufferCap_DropsTheOldestColumns` pinned the one-column
-      trim; it now expects the chunk
+- [x] ➕ `TrendChartViewModelTests.Realtime_PastTheBufferCap_DropsTheOldestColumns` expects the
+      chunk trim
 - [x] `charting.md`: the cap trims in chunks of one tenth
 - [x] run the unit tests - must pass before task 12
 
@@ -1018,8 +1021,8 @@ The rule after this task:
 - [x] delete `_lastRenderedDataAreaWidth`; `OnPlotRenderFinished` posts every width
       (➕ as built: the handler is a closure over the bound view model, so it reads no view field either)
 - [x] `ReportDataAreaWidth` ignores a width equal to the last applied one
-      (➕ after review: `SetTargetColumnCount` already drops an unchanged quantised count, so the
-      view-model field went)
+      (➕ as built: `SetTargetColumnCount` drops an unchanged quantised count, so the view model
+      keeps no width field)
 - [x] write tests: a repeated width changes nothing; a new width re-targets the column count
 - [x] ➕ `charting.md`: the render seam posts every width and the view model drops a repeat
 - [x] run the unit tests - must pass before task 13
@@ -1059,9 +1062,9 @@ The rule after this task:
 
 - [x] the row exposes the pen state and `ToggleVisibilityCommand`; delete the row's `IsVisible` setter and
       `_isSettingVisibilityFromChart`
-      (➕ as built: the row's `IsVisible` goes whole, getter included, so nothing on the row can drift; the
-      command and the group both call the row's `SetVisibility`; ➕ after review: its replaced-row guard
-      went, because nothing calls a replaced row)
+      (➕ as built: the row has no `IsVisible`, getter included, so nothing on the row can drift; the
+      command and the group both call the row's `SetVisibility`, which carries no replaced-row guard,
+      because nothing calls a replaced row)
 - [x] the group derives its switch from the pen states and switches through the rows' command path
 - [x] the row's `CheckBox` binds through the pen state one way plus the command; the allowlist in
       `TrendLegendViewTests` still holds
@@ -1082,17 +1085,21 @@ The rule after this task:
 - Modify: `SemiPlot/SemiPlot.UI/Program.cs`
 - Modify: `docs/architecture/overview.md`
 
-- [ ] add the `ProcessId` property and `[{ProcessId}]` to the template (`Program.cs:99-107`)
-- [ ] `overview.md`: several processes share the log file, each line naming its process, each process
-      rolling it on size on its own
-- [ ] run the demo stand once and confirm a log line carries the id
+- [x] add the `ProcessId` property and `[{ProcessId}]` to the template (`Program.cs:99-107`)
+- [x] `overview.md`: several processes share the log file, each event's first line naming its process,
+      and the shared file's own length deciding the roll for every process
+- [x] run the demo stand once and confirm a log line carries the id
+      (➕ as built: the stand's `semiplot.log` read `2026-10-02 14:39:23.814 [21288] [INF] : SemiPlot
+      starting; ...`, and 21288 was the stand's `SemiPlot.UI.exe`; ⚠️ no unit test: the only route
+      that needs no wider visibility launches the viewer out of process, which the Testing Strategy rules
+      out, so manual smoke step 9 is the pin)
 
 ### Task 16: Move the audit's leftovers to the backlog
 
 **Files:**
 - Modify: `docs/plans/backlog.md`
 
-- [ ] add "Platform audit leftovers", one line each:
+- [x] add "Platform audit leftovers", one line each:
       - the dead logarithmic scale (`PenScaleSettings.cs:6`, `PenScaleModel.cs`);
       - the `ObjectDisposedException` guards on no-op members (`TrendChartViewModel` x12, `MinimapViewModel` x2);
       - `ChartCursorReader` with one caller;
@@ -1106,22 +1113,41 @@ The rule after this task:
       - the double UI hop in `MinimapViewModel.LoadExtentAsync` (`:86-87`);
       - the per-pointer-move allocation in the cursor read;
       - ➕ the debouncer's 400 ms `Sample` timer, which runs on the data scheduler for the chart's
-        lifetime even while it is idle (`ChartHistoryRequestDebouncer.cs:55-56`)
-- [ ] delete the two stale bullets at `backlog.md:81-90`
-- [ ] run `git grep -n "bench-demo.ps1\|LiveWithin" -- docs/plans/backlog.md` - prints nothing
+        lifetime even while it is idle (`ChartHistoryRequestDebouncer.cs:55-57`)
+      (➕ as built: 12 entries land, with lines re-read on the current tree; the guards are 11 in
+      `TrendChartViewModel`, the two format wrappers are `TrendLegendRowViewModel.FormatReading` and
+      `ChartHoverReadout.FormatValue`, and the `ThrowIfNull` line also names `PostgresDataProvider`'s two
+      method guards; the bounds subscription at `MinimapView.axaml.cs:29` is no entry, because it subscribes
+      to the control's own `BoundsProperty`, which the Avalonia rules allow)
+- [x] delete the two stale bullets at `backlog.md:81-90`
+      (➕ as built: they stood at `:90-99`)
+- [x] run `git grep -n "bench-demo.ps1\|LiveWithin" -- docs/plans/backlog.md` - prints nothing
 
 ### Task 17: Verify acceptance criteria
 
-- [ ] every item of Acceptance Evidence's automated list passes
-- [ ] `dotnet format SemiPlot.slnx --verify-no-changes` exits 0
-- [ ] `dotnet terse` over every touched `.cs` file exits 0
-- [ ] the manual smoke checklist passes on the demo stand
+- [x] every item of Acceptance Evidence's automated list passes
+      (➕ as built on `log-and-backlog`: 1 - build 0 warnings, 0 errors; 2 - unit 1591 passed, 0 failed;
+      3 - integration 138 passed, 0 failed; 4, 5, 6 - each grep prints nothing; 7 - the 16 named tests
+      exist and pass in one filtered run of `SemiPlot.Tests.Unit`)
+- [x] `dotnet format SemiPlot.slnx --verify-no-changes` exits 0
+- [x] `dotnet terse` over every touched `.cs` file exits 0
+      (➕ as built: 86 files, the `.cs` names in the groups' **Files:** blocks resolved to tracked paths,
+      the generically named axis panel, configuration, settings-save and chart test classes, and
+      `git diff --name-only master...HEAD`; `ChartAxisEdit.cs`, `ChartAxisRegionEditTests.cs` and
+      `InitializeServicesTests.cs` no longer exist)
+- [x] the manual smoke checklist: the operator's walk before delivery (not automatable)
 
 ### Task 18: [Final] Update documentation
 
-- [ ] run `git grep -nE "SetChart|SetCatalogueSync|InitializeServices|coordinator\.Start|keep-alive|ScaleChanged|double-click|Sample\(33|takes no .CancellationToken|next start" -- CLAUDE.md docs/architecture`
+- [x] run `git grep -nE "SetChart|SetCatalogueSync|InitializeServices|coordinator\.Start|keep-alive|ScaleChanged|double-click|Sample\(33|takes no .CancellationToken|next start" -- CLAUDE.md docs/architecture`
       and resolve every statement the groups left behind
-- [ ] move this plan to `docs/plans/completed/`
+      (➕ as built: nine hits, none stale, so no document changes. `CLAUDE.md:36`, `overview.md:208` and
+      `:364` - every saved key but the theme applies at the next start; `CLAUDE.md:105`, `bench.md:273`,
+      `:291` and `:296` - `DemoDirectories.Prepare` sweeps both directories at the stand's next start;
+      `overview.md:202` - a folder renamed away leaves a new `app/` unwatched until the next start;
+      `trend-feature-spec.md:147` - CU-4's bookmark gesture, a SHOULD requirement not yet built and
+      unrelated to the axis double-click Group B removed)
+- [x] the plan moves to `docs/plans/completed/` in the delivery commit
 
 ## Post-Completion
 
@@ -1138,40 +1164,27 @@ The rule after this task:
 - branch: live-theme
 - branch: history-pipeline
 - branch: render-path
+- branch: log-and-backlog
 
 ## Verify it yourself
 
-Group F (Tasks 11-14) only; Groups A-E shipped as #97, #98, #99, #102, #103 and #104, Group G is a later
-branch.
+Group G (Tasks 15-18), the last group; Groups A-F shipped as #97, #98, #99, #102, #103, #104 and #105.
+This delivery also archives the plan.
 
 1. Build and tests, from the repository root:
    - `dotnet build SemiPlot.slnx` - 0 warnings, 0 errors.
    - `dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj` - 1591 passed.
    - `dotnet test SemiPlot/SemiPlot.Tests.Integration/SemiPlot.Tests.Integration.csproj` - 138 passed
      (needs Docker; do not run it at the same time as the unit suite).
-   - Acceptance Evidence item 6, `git grep -nE "_isSettingVisibilityFromChart|_lastRenderedDataAreaWidth|Sample\(_redrawThrottle" -- SemiPlot`,
-     prints nothing.
-2. The render path and the legend, by test (`dotnet test <project> --filter "FullyQualifiedName~<name>"`);
-   none of them exists on `master`:
-   - `EnvelopeLineTests.AppendingPastTheCapTrimsOneChunk` - the cap trims one tenth at once;
-   - `TrendChartRenderThreadTests`: `ARepeatedDataAreaWidth_ChangesNothing`,
-     `ANewDataAreaWidth_RetargetsTheColumnCount`, `AReboundView_ReportsTheWidthToTheNewChartAlone` - each
-     frame's width reaches the view model it was drawn for, on the UI thread;
-   - `TrendChartViewModelTests`: `AnIdleChartSchedulesNoRedraw`, `AChartNoViewSubscribesToSchedulesNoRedraw`,
-     `ABurstOfRequestsRedrawsOncePerSpanAndOnceAfterTheLastRequest`, `DisposingTheChartCancelsTheScheduledRedraw`
-     - the redraw is one coalescing schedule, and nothing is queued while idle or after dispose;
-   - `TrendLegendViewTests`: `AClickOnARowBox_SwitchesItsPenAndTheBoxFollows`,
-     `AClickOnTheGroupSwitch_LeavesEveryRowBoxAgreeingWithItsPen`,
-     `APenSwitchedOnTheChart_MovesItsRowBoxBeforeAndAfterAClick`, `ARowBoxSetInCode_WritesNothingToThePen`,
-     `TheRealisedRow_ShowsARevisedUnitWithoutARebuild`, and
-     `TrendLegendViewModelTests.TheRow_FollowsAChangeOfTheChartsPenState` - the box and the pen never disagree,
-     and the box writes only through its command.
-3. On the demo stand (`dotnet run --project SemiPlot/SemiPlot.AppHost`):
-   - in the sidebar, untick a pen's box: its line disappears and the box stays unticked; tick it again;
-   - switch a group off and on with its header switch: every row box in the group follows, and each line
-     with it; switch one row back by hand, then the group switch again: no box disagrees with its line;
-   - in `Edit` -> `Pens and groups`, change a pen's unit and name: within 5 s the sidebar row shows both,
-     and the pen keeps its visibility;
-   - resize the window narrow and wide again: the chart redraws at the new width with no flicker;
-   - pan to a historical window off the live edge and leave it: Task Manager shows the viewer at about
-     0% CPU.
+   - Acceptance Evidence items 4-6 and `git grep -n "bench-demo.ps1\|LiveWithin" -- docs/plans/backlog.md`
+     print nothing.
+2. `docs/plans/backlog.md` carries "Platform audit leftovers"; every entry names a `file:line` that holds on
+   the tree.
+3. `PenEditorViewTests.ANameTypedWhileARefreshRuns_ReachesNoFieldAndWritesNothing` and
+   `PenGroupsViewTests.ARenameTypedWhileARefreshRuns_ReachesNoFieldAndWritesNothing` wait for the refresh
+   to enable the control before they click; both classes pass ten runs in a row.
+4. On the demo stand (`dotnet run --project SemiPlot/SemiPlot.AppHost`), the whole manual smoke checklist
+   of Acceptance Evidence, steps 1-9. For this group, step 9 in particular:
+   - `%TEMP%\SemiPlot\Logs\semiplot.log` shows `[<pid>]` right after the timestamp on every event's first
+     line;
+   - after File -> New window, the same file holds lines from a second process id.

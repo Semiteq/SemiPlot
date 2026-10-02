@@ -67,6 +67,52 @@ each is a scoped future task.
   `NextHistorySequence()` counter as every gesture re-query, so both entry points draw a fresh monotonic
   stamp from one unified counter — the frozen-sequence hazard no longer exists.
 
+## Platform audit leftovers
+
+Small cleanups outside `completed/20260929-window-per-process.md`. Each is independent; fold one into a
+nearby edit.
+Paths are under `SemiPlot/SemiPlot.UI/` unless they name another project.
+
+- **Dead logarithmic scale.** `PenScaleSettings.IsLogarithmic` (`SemiPlot.Core/Trends/PenScaleSettings.cs:6`)
+  has no production writer and `PenScale.IsLogarithmic` (`SemiPlot.Core/Trends/PenScale.cs:9`) no reader;
+  the log branches of `SemiPlot.Core/Trends/PenScaleModel.cs` run only under `PenScaleModelTests`.
+- **Disposed guards set inconsistently.** `ObjectDisposedException.ThrowIf` opens 11 members of
+  `Chart/TrendChartViewModel.cs` (`:219` to `:390`) and 2 of `Minimap/MinimapViewModel.cs` (`:84`, `:94`).
+  Some guard real work: `RequestInitialHistory` (`:219`) and `ApplyCatalogue` (`:231`) push into the
+  debouncer and the live edge. Others are missing on the paths the guarded `SetAxisLimits` (`:390`) shares:
+  `AutoscalePen` (`:375`), `RestoreInitialScale(int)` (`:382`) and `WidenToArchiveExtent` (`:259`) carry no
+  guard. Decide the guard set per member against `csharp.md`'s rule: guard only where a late call corrupts
+  state or leaks.
+- **`ChartCursorReader` has one caller.** It wraps `CursorReadoutModel.ReadAt` for
+  `TrendChartViewModel.MoveCursor` alone (`Chart/TrendChartViewModel.cs:63`, `:329`).
+- **Hand-rolled log-level switch.** `StartupOptions.ParseLogLevel` (`StartupOptions.cs:105-117`) restates
+  `Enum.TryParse<LogEventLevel>(ignoreCase: true)` plus the `info` alias. `Enum.TryParse` alone also
+  accepts a numeric string (`"42"` parses to an undefined level) and a comma list, which would widen the
+  closed list in `LoggingLevelValues` and `readme.md`; a replacement checks `Enum.IsDefined` and rejects
+  numeric input.
+- **`ThrowIfNull` on repository-internal APIs.** `SemiPlot.Core/Trends/PenHistoryEnvelope.cs:12-15`,
+  `ArchiveTimeConverter.cs:13` and `RealtimePoll.cs:64-69` in `SemiPlot.DataSource.Postgres`, and the two
+  `PostgresDataProvider` entry points at `:80` and `:127`.
+- **Two copies of the empty-reading format.** `TrendLegendRowViewModel.FormatReading`
+  (`Legend/TrendLegendRowViewModel.cs:65-68`) and `ChartHoverReadout.FormatValue` (`Chart/ChartHoverReadout.cs:43-48`)
+  both map no value to `Resources.NoValuePlaceholder` around `PenValueFormat.Format`.
+- **A property read only by tests.** No production code reads `TrendChartViewModel.ScaleSettings`
+  (`Chart/TrendChartViewModel.cs:112`).
+- **Hand-rolled pluralisation.** `PostgresConnectionLoader.Invalid`
+  (`SemiPlot.DataSource.Postgres/Configuration/PostgresConnectionLoader.cs:236-237`) picks "field"/"fields"
+  and "is"/"are" by count.
+- **`throw exception;` loses the stack trace.** `ArchiveExceptionMapper.Map`
+  (`SemiPlot.DataSource.Postgres/ArchiveExceptionMapper.cs:28`) rethrows `OperationCanceledException` that way.
+- **Double UI hop.** `MinimapViewModel.LoadExtentAsync` resumes its `await` on the UI thread its callers run
+  on, then posts `ApplyExtent` to the UI scheduler again (`Minimap/MinimapViewModel.cs:86-87`). Under a
+  `TestScheduler` no `SynchronizationContext` exists, and the `Observable.Start` at `:87` is the one route
+  that brings `ApplyExtent` back, so dropping `:87` is no fix: keep one of the two marshalling routes.
+- **Allocation per pointer move.** Every `MoveCursor` (`Chart/TrendChartView.axaml.cs:305`) builds an array
+  in `ChartCursorReader.ReadAt` (`Chart/ChartCursorReader.cs:13-16`) and a dictionary in
+  `CursorReadoutModel.ReadAt` (`SemiPlot.Core/Trends/CursorReadoutModel.cs:9`).
+- **An idle chart keeps a 400 ms timer.** The debouncer's `Sample` runs on the data scheduler for the chart's
+  lifetime, idle or not (`Chart/ChartHistoryRequestDebouncer.cs:55-57`, `Chart/TrendChartViewModel.cs:25`).
+
 ## Tooling
 
 - **NU1903 advisory.** Transitive `Tmds.DBus.Protocol` 0.21.2 (pulled by Avalonia, unused on the Win32
@@ -86,17 +132,6 @@ each is a scoped future task.
 
 Deferred out of the harness simplification (`completed/20260828-simplify-the-test-harness.md`). None is a
 defect in the shipped tree; each is a scoped follow-up an audit named.
-
-- **The stand and the fixture build the bench image differently.** `scripts/bench-demo.ps1` builds
-  `semiplot-bench:manual` with no build arguments, while `PostgresContainerFixture` builds its own tag with
-  `BASE_IMAGE` and a resolved `PROVISIONER_IMAGE` digest. The stand can therefore run a different provisioner
-  than the tests do, and nothing says so. Either give the script the same two arguments or state in
-  `docs/architecture/bench.md` that the stand deliberately tracks the floating tag.
-
-- **The freshness bound lives in two copies.** `StaleArchiveGuard.MaximumAge` (five minutes) and the script's
-  `$LiveWithin` are held in sync by a comment in each file. Drift fails loud — the writer refuses and names
-  the script — so this is hygiene, not a hazard. It collapses to one owner only if the convergence moves into
-  C#, which was considered and rejected on cost; revisit only alongside that.
 
 - **An unspent cut list, about 200 lines.** An over-engineering audit proposed more than the two cuts taken
   (the teardown leak audit and the break-marker validator). Still on the table: `ProvisionerResolution` with

@@ -50,7 +50,9 @@ underneath the test. Touching a file is not crossing a boundary.
 A unit test must not open a socket, read the wall clock, or depend on anything the machine resolves —
 `PATH`, an installed service, a display. It runs everywhere, ungated.
 
-The live theme's watcher is the one exception to the wall clock. Its pipeline runs on a `TestScheduler` in
+The wall clock has two exceptions: the live theme's watcher and `HeadlessWait`.
+
+The live theme's watcher is the first. Its pipeline runs on a `TestScheduler` in
 `UI/Settings/AppSectionWatcherTests.cs`, but what only the operating system shows needs a real
 `FileSystemWatcher` over a temporary folder and the real 300 ms quiet period: that a `File.Replace` raises
 an event at all, and that `App` wires the watch on both starts. Those tests,
@@ -61,6 +63,16 @@ one of them pumps the dispatcher for one second to let a failed reload land befo
 10 s, and runs its body on Windows alone: Linux raises no event when the watched folder itself is deleted
 (`overview.md#the-live-theme`). A temporary folder is a file the test creates, not a machine resource, so
 they stay ungated on both CI legs.
+
+`UI/HeadlessWait.cs` is the second, and the approved wait for a hop from a pool thread back to the
+dispatcher that an `[AvaloniaFact]` test cannot drive. A `ReactiveCommand` whose task finishes on the pool
+reaches the view through an `AvaloniaScheduler` post, and `Dispatcher.UIThread.RunJobs()` can drain the
+queue before that post lands. `HeadlessWait.Until` checks the awaited outcome every 10 ms, pumping the
+dispatcher between checks, and throws after 30 s. The exception reaches no further: the clock bounds the
+wait and no test asserts on elapsed time, and a pipeline that takes an `IScheduler` runs on a
+`TestScheduler` instead. Its users besides the theme tests are `UI/MainWindow/MainWindowViewTests.cs`,
+`UI/Startup/StartupFailureWindowTests.cs`, `UI/Settings/SettingsViewModelTests.cs`, `SettingsViewTests.cs`,
+`UI/PenEditor/PenEditorViewTests.cs` and `PenGroupsViewTests.cs`.
 
 Two pieces of state are process-global and the project runs its classes in parallel: the UI culture
 (`CultureInfo.DefaultThreadCurrentUICulture` / `CurrentUICulture`) and the application's theme

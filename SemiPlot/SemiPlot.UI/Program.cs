@@ -96,27 +96,28 @@ public static class Program
 
 	private static void CreateLogger(string logFilePath, LogEventLevel logLevel)
 	{
+		const string ProcessIdProperty = "ProcessId";
 		const string Template =
-			"{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}";
+			"{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{" + ProcessIdProperty + "}] [{Level:u3}] "
+			+ "{SourceContext}: {Message:lj}{NewLine}{Exception}";
+		const long LogFileSizeLimitBytes = 5 * 1024 * 1024;
 
 		var invariant = CultureInfo.InvariantCulture;
 
-		var configuration =
-			new LoggerConfiguration()
-				.MinimumLevel.Is(logLevel)
-				.Enrich.FromLogContext()
-				.WriteTo.Console(outputTemplate: Template, formatProvider: invariant);
-
-		configuration = configuration.WriteTo.File(
-			path: logFilePath,
-			rollingInterval: RollingInterval.Infinite,
-			fileSizeLimitBytes: 5 * 1024 * 1024,
-			rollOnFileSizeLimit: true,
-			retainedFileCountLimit: 5,
-			shared: true,
-			outputTemplate: Template,
-			formatProvider: invariant);
-
-		Log.Logger = configuration.CreateLogger();
+		Log.Logger = new LoggerConfiguration()
+			.MinimumLevel.Is(logLevel)
+			.Enrich.FromLogContext()
+			.Enrich.WithProperty(ProcessIdProperty, Environment.ProcessId)
+			.WriteTo.Console(outputTemplate: Template, formatProvider: invariant)
+			.WriteTo.File(
+				path: logFilePath,
+				rollingInterval: RollingInterval.Infinite,
+				fileSizeLimitBytes: LogFileSizeLimitBytes,
+				rollOnFileSizeLimit: true,
+				retainedFileCountLimit: 5,
+				shared: true,
+				outputTemplate: Template,
+				formatProvider: invariant)
+			.CreateLogger();
 	}
 }

@@ -276,7 +276,7 @@ construction, on a fixed host port with `isProxied: false` and one database name
 | Path | Holds | Lifecycle |
 | --- | --- | --- |
 | `%TEMP%\SemiPlot\ConfigFiles` | A copy of the repository's `ConfigFiles/`, `converge`'s rewritten `connection/connection.yaml` included | Swept and recreated at start, removed on `ApplicationStopping` |
-| `%TEMP%\SemiPlot\Logs` | `semiplot.log` | Swept and recreated at start, kept after the stand stops |
+| `%TEMP%\SemiPlot\Logs` | `semiplot.log`, and the `semiplot_NNN.log` files it rolls into at 5 MB | Swept and recreated at start, kept after the stand stops |
 
 `DemoDirectories.Prepare` resolves the tracked set two levels above `builder.AppHostDirectory` and
 throws `DirectoryNotFoundException` when it is absent, so a missing source fails the AppHost at once

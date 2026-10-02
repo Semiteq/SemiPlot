@@ -721,7 +721,7 @@ public sealed class PenEditorViewTests : IDisposable
 	}
 
 	[AvaloniaFact]
-	public void ANameTypedWhileARefreshRuns_ReachesNoFieldAndWritesNothing()
+	public async Task ANameTypedWhileARefreshRuns_ReachesNoFieldAndWritesNothing()
 	{
 		_editor.ReadResult = Result.Ok(_catalogue);
 		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
@@ -736,11 +736,10 @@ public sealed class PenEditorViewTests : IDisposable
 			name.IsEffectivelyEnabled.Should().BeFalse("the form waits for the rebuild");
 			HeadlessInput.Type(window, name, " typed during refresh");
 			registration.SetResult();
-			Dispatcher.UIThread.RunJobs();
+			await HeadlessWait.Until(() => name.IsEffectivelyEnabled);
 			HeadlessInput.Click(window, name);
 			HeadlessInput.Press(window, PhysicalKey.Tab);
 
-			name.IsEffectivelyEnabled.Should().BeTrue();
 			name.Text.Should().Be(Pressure.Name);
 			_editor.Calls.Should().Equal(new FakeEditorCall.RegisterNewPens(), new FakeEditorCall.Read());
 		}

@@ -288,8 +288,14 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   painting its `Background`; without one it draws nothing and a press never reaches it. The handle shows
   only while `IsLegendVisible` holds. Nothing persists the state or the widths — every start opens
   expanded at 280.
-- `Minimap/MinimapView` + `MinimapViewModel` — Canvas-based archive-overview strip; navigates via the
-  shared `ChartNavigationController` (see trend-interaction.md).
+- `Minimap/MinimapView` + `MinimapViewModel` — Canvas-based archive-overview strip with no baseline,
+  and a label row under it that holds the two end labels and, under the pointer, the time at the strip's
+  1 px hover line (`HoverAt`, `ClearHover`, `HoverFraction`, `HoverLabel`); navigates via the shared
+  `ChartNavigationController`, ends at the later of the extent's last sample and the navigation's
+  `NewestSample`; its `Minimap/MinimapBandFeed` reads the drawn pen's band over the whole strip
+  (`trend-interaction.md#archive-overview-minimap`).
+- `Minimap/MinimapBand` — the strip's band, a `Control` with a `Render` override that fills and strokes
+  the figures `MinimapGeometry.BandFigures` shapes; it reads nothing.
 - `MainWindow/TrendWindow` — builds the window's parts once, in dependency order, and disposes them in
   reverse (`overview.md#one-window-per-process`).
 - `MainWindow/MainWindow` + `MainWindowViewModel` — the six-row window grid, the flags its View
@@ -366,7 +372,11 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   at empty leading/trailing edge sub-spans. Shared by the coarse-layer read path of every provider:
   each translates its own rows into the parallel `(timestamp, value?)` vocabulary where a null marks
   a gap. The Postgres Raw path runs no decimator; the server reduces the rows instead.
-- `MinimapGeometry` — extent + window → strip start/width fractions, and fraction → timestamp.
+- `MinimapGeometry` — extent + window → strip start/width fractions, and fraction → timestamp;
+  `MarkerSpan` → the marker's left edge and width, clamped inside the strip; `RightBound` → the later
+  of the extent's last sample and the newest sample; `BandFigures` → one outline and centre line per
+  run of finite envelope columns, scaled to the pen's own range. The band's next-read delay is the
+  read schedule's own, `Minimap/MinimapBandFeed.NextReadDelay`.
 - `CursorReadoutModel` — cursor X → per-pen interpolated `Center` value (gaps → no value).
 - `DeltaCursorModel` — two cursor times → `DeltaReadout` (Δt + Δy for the active pen).
 
@@ -438,7 +448,8 @@ view model:
   query, returning one `PenHistoryEnvelope` per pen (ascending `Timestamps` + `Min` + `Max` +
   `Center`; NaN = gap). The initial load and every gesture re-query go through
   `ChartHistoryRequestDebouncer`, which runs one query at a time and lets the newest window asked
-  for run last.
+  for run last. The minimap band is a second reader outside the debouncer: one pen at 250 columns
+  every 2-60 s (`trend-interaction.md#archive-overview-minimap`).
 - **Realtime:** `IObservable<RealtimeBatch>` — an ascending union timeline the live edge advances
   from, plus one `PenRealtimeValues` per pen carrying that pen's **own** timestamps and `double`
   values; buffered on the data scheduler and observed on the UI scheduler. The values are per pen

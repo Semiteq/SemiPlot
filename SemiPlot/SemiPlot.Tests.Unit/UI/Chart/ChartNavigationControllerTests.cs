@@ -101,6 +101,76 @@ public sealed class ChartNavigationControllerTests
 		controller.To.Should().Be(toBefore);
 	}
 
+	[Fact]
+	public void NewestSample_OnAFreshController_IsNull()
+	{
+		var controller = new ChartNavigationController();
+
+		controller.NewestSample.Should().BeNull("the constructor's wall clock is no sample");
+	}
+
+	[Fact]
+	public void TrackDataExtents_SetsTheNewestSampleAndRaisesItsMove()
+	{
+		var controller = new ChartNavigationController();
+		var moves = new List<DateTime>();
+		controller.NewestSampleMoved += (_, sample) => moves.Add(sample);
+
+		controller.TrackDataExtents(_first, _last);
+
+		controller.NewestSample.Should().Be(_last);
+		moves.Should().Equal(_last);
+	}
+
+	[Fact]
+	public void OnLiveEdge_SetsTheNewestSampleAndRaisesEachMove_StickyOrNot()
+	{
+		var controller = Loaded();
+		var moves = new List<DateTime>();
+		controller.NewestSampleMoved += (_, sample) => moves.Add(sample);
+		var whileSticky = _last.AddMinutes(1.0);
+		var whileDetached = _last.AddMinutes(2.0);
+
+		controller.OnLiveEdge(whileSticky);
+		controller.SetSticky(false);
+		controller.OnLiveEdge(whileDetached);
+
+		controller.NewestSample.Should().Be(whileDetached);
+		moves.Should().Equal(whileSticky, whileDetached);
+	}
+
+	[Fact]
+	public void NewestSampleMoved_SeesTheMovedWindowAndPrecedesWindowChanged()
+	{
+		var controller = new ChartNavigationController();
+		var raised = new List<(string Event, DateTime To)>();
+		controller.NewestSampleMoved += (_, _) => raised.Add((nameof(controller.NewestSampleMoved), controller.To));
+		controller.WindowChanged += (_, window) => raised.Add((nameof(controller.WindowChanged), window.To));
+		var advanced = _last.AddMinutes(2.0);
+
+		controller.TrackDataExtents(_first, _last);
+		controller.OnLiveEdge(advanced);
+
+		raised.Should().Equal(
+			(nameof(controller.NewestSampleMoved), _last),
+			(nameof(controller.WindowChanged), _last),
+			(nameof(controller.NewestSampleMoved), advanced),
+			(nameof(controller.WindowChanged), advanced));
+	}
+
+	[Fact]
+	public void OnLiveEdge_WithASampleOlderThanTheNewest_LeavesItAndRaisesNothing()
+	{
+		var controller = Loaded();
+		var moves = 0;
+		controller.NewestSampleMoved += (_, _) => moves++;
+
+		controller.OnLiveEdge(_last.AddMinutes(-1.0));
+
+		controller.NewestSample.Should().Be(_last);
+		moves.Should().Be(0);
+	}
+
 	// Half a layer's ceiling sits well inside it, clear of the 25% zoom quantisation step and the 10%
 	// hysteresis band. The Day row's 1.2x hour ceiling stays inside the 365-day maximum window at 1024
 	// columns, so the answer comes from the ladder, not from TrendNavigationModel truncating the width.

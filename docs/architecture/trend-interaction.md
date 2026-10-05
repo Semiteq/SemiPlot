@@ -305,30 +305,152 @@ it read as the pen's measured extremes and was the padded axis bound.
 
 ## Archive-overview minimap
 
-Required by trend-feature-spec.md §TM-4. As-built: a thin overview strip beneath the chart shows
-the **full archive extent** with the current `[From, To]` view window highlighted, for orientation
-and fast navigation across long archives.
+Required by trend-feature-spec.md §TM-4. As-built: a 36 px overview strip beneath the chart shows
+the **full archive extent** with the current `[From, To]` view window highlighted over a min/max band
+of the drawn pen, for orientation and fast navigation across long archives. A label row under the
+strip names its two ends and, while the pointer is over the strip, the time under it.
 
 - The extent comes from a new `IDataProvider.QueryArchiveExtentAsync()` seam returning an
   `ArchiveExtent(FirstUtc, LastUtc)` (data-integration.md), which `PostgresDataProvider` answers
   with the true bounds of the configured variables; an archive with no rows answers
-  `ArchiveExtent.Empty`.
-- `Minimap/MinimapViewModel` reaches the extent through a `TrendCoordinator.QueryArchiveExtentAsync()`
-  pass-through (mirroring the `QueryHistoryAsync` seam + UI-scheduler discipline); it never holds the
-  `IDataProvider` directly. Extent → strip / window → fractions geometry is pure
-  (`Core/Trends/MinimapGeometry`).
-- The strip reads the extent at start (`App.StartExtentLoad`), before a catalogue delta gives an empty
-  chart its first pens, and after a delta adds a pen to a chart that already has some
+  `ArchiveExtent.Empty`, and the strip stays blank.
+- `Minimap/MinimapViewModel` reaches the archive through `TrendCoordinator.QueryArchiveExtentAsync()`
+  and `QueryHistoryAsync` on the UI scheduler; it never holds the `IDataProvider` directly. It takes
+  the chart (`TrendChartViewModel`) and reads its `Navigation`, `DrawnPenId`, `Pens` and `FindPen`.
+  The band is its own part, `Minimap/MinimapBandFeed`, which the view model builds, exposes as
+  `BandFeed` and disposes. The strip's geometry is pure (`Core/Trends/MinimapGeometry`).
+- The strip reads the extent at start (`TrendWindow.StartExtentLoad`), before a catalogue delta gives
+  an empty chart its first pens, and after a delta adds a pen to a chart that already has some
   (`overview.md#what-a-read-changes`). `LoadExtentAsync` returns the read once the strip has applied
   it. Both callers widen the navigation's first sample to an earlier one in that read
   (`TrendChartViewModel.WidenToArchiveExtent`), so the chart pans back as far as the strip draws and
   reads the rows a moved floor brings into the window in view; the empty-chart caller seeds the
-  navigation from the same read first.
-- `Minimap/MinimapView` is a Canvas-based strip (not a second `AvaPlot`): a highlight border sized
-  from `WindowStartFraction` / `WindowWidthFraction`. Press/drag converts pointer-X to a fraction →
-  `NavigateToFraction`, which recenters the window via the **same** `ChartNavigationController` the
-  chart navigates with. The highlight tracks every `WindowChanged` (pan / zoom and the sticky
-  live-edge advance).
+  navigation from the same read first. A read that leaves the strip blank, failed or empty, is read
+  once more on the next `NewestSampleMoved`: a sample exists, so the archive has rows. One such read
+  runs at a time, only a read that again leaves the strip blank arms the next one, and the next one
+  waits for a sample at least 60 s after the previous retry started, so an extent read that keeps
+  failing while the live edge works costs one read a minute. The extent reads share the band's
+  outage policy (see Failures).
+
+**The bounds.** The left bound (`ExtentFirst`) is the extent's first sample. The archive is never
+pruned, so it moves only when a reloaded extent starts earlier, and no periodic extent read exists.
+The right bound (`ExtentLast`) is `MinimapGeometry.RightBound`: the later of the extent's last sample
+and `ChartNavigationController.NewestSample`, the newest sample the chart has seen. `TrackDataExtents`
+writes it once, from the archive seed or the chart's first history, and afterwards only the live edge
+(`OnLiveEdge`) moves it. `NewestSample` is null until one of the two writes it, so the controller's
+wall-clock start never becomes a bound, and it only moves forward. `NewestSampleMoved` fires on every
+forward move, sticky or not; when the window also moves, it fires after the move and ahead of
+`WindowChanged`. The minimap recomputes the right bound, `ExtentLastLabel` and the window fractions
+on it. An extent applied after a newer sample takes that sample as its right bound.
+
+**The marker.** `Minimap/MinimapView` draws the strip on a Canvas, `StripCanvas` (not a second
+`AvaPlot`). A highlight border marks the window: `MinimapGeometry.MarkerSpan` turns
+`WindowStartFraction` and `WindowWidthFraction` into a width of
+`min(strip, max(6 px, widthFraction × strip))` and a left edge clamped to `[0, strip − width]`, so the
+marker lies whole inside the strip at any zoom and window position. Press/drag converts pointer-X to a
+fraction → `NavigateToFraction`, which recenters the window via the **same**
+`ChartNavigationController` the chart navigates with. The highlight tracks every `WindowChanged` (pan /
+zoom and the sticky live-edge advance) and every move of the right bound.
+
+**The label row.** `MinimapView` is a two-row grid: the 36 px strip (`StripCanvas`) on top and
+`LabelRow`, one line of 10 px text with a 4 px side margin, under it. The strip draws the band, the
+marker and the hover line and nothing else; no baseline runs through it, because a line through the
+middle of the band is no zero and no value. The chart's own time labels sit directly above the strip,
+so the end labels sit under it: `ExtentFirstLabel` at the row's left edge and `ExtentLastLabel` at its
+right edge, both `MMM d HH:mm` in local time and in `AppSecondaryForegroundBrush`. `MainWindow.axaml`
+sets no height on the minimap row, so the row takes the view's own height, the same with empty labels
+as with filled ones.
+
+**The hover.** The code-behind takes `PointerMoved` and `PointerExited` on `StripCanvas` and hands the
+pointer's strip fraction to `MinimapViewModel.HoverAt`, or calls `ClearHover`; a strip with no width
+hovers and navigates nothing. `HoverAt` does nothing without an extent. The view model publishes
+`HoverFraction` (`double?`, null while no hover shows) and `HoverLabel`, the time
+`MinimapGeometry.TimeAtFraction` gives at that fraction, formatted as the end labels are; a move of
+either bound relabels it. The view draws `HoverLine`, a 1 px `Border` above the marker in the chart
+crosshair's `AppSecondaryForegroundBrush`, at the pointer's x, kept inside the strip by
+`MinimapGeometry.SpanLeftWithin`. `MinimapGeometry.PlaceHoverTime` centres `HoverTimeLabel` under the
+line in the label row, clamped inside the row, and decides which end label it covers from the widths of
+the time and of the two end labels. The view measures the three texts as it places them, because a new
+extent or a newer sample relabels an end label ahead of the layout pass. An end label the time covers,
+or comes within the view's `EndLabelCoverDistance` of 6 px, takes `Opacity` 0, so its layout stays put
+and it shows again once the time moves away. A press and drag navigate as before, and the line follows the pointer. A
+captured drag keeps delivering moves past the strip's edges, so a move off the strip clears the hover;
+capturing the pointer raises `PointerExited` while the pointer is still over the strip, so
+`PointerExited` is ignored while a drag holds.
+
+**The band read.** `MinimapBandFeed` runs one read pipeline on the UI scheduler. Three things request
+a read: an applied non-empty extent, a change of `DrawnPenId` (`WhenAnyValue` drops a raise with the
+same value, and the value at construction is skipped), and the next-read schedule. Each request
+snapshots the drawn pen, the bounds and the layer on the UI thread, drops the scheduled read, and
+`Switch` cancels the read in flight through its `CancellationToken`. A request for a pen other than the
+one `Band` holds turns `Band` null at once, so the band never shows one pen's shape in another pen's
+colour, even when the new pen's read fails. An answer that lands after a newer request, already queued
+on the UI scheduler when `Switch` dropped it, is discarded and schedules nothing. A read asks
+`QueryHistoryAsync` for `[DrawnPenId]` over `[ExtentFirst, ExtentLast]` at
+`MinimapBandFeed.MinimapColumns` (250) columns and logs its layer, column count and duration at Debug.
+`Band` holds the drawn pen's envelope from the answer, null when the answer has none. With no drawn pen
+or no extent the request is empty: `Band` turns null and no read runs or stays scheduled, so a chart
+that draws no pen issues no band reads until one is drawn again.
+
+**The overview layer** is `ChartNavigationController.LayerForWidth(span, the band's previous layer,
+250)`: the chart's own ladder at the strip's column count, so no second ladder exists. 250 columns
+read `Raw` up to about 62 min, `Minute` up to about 62 h, `Hour` up to about 62 days and `Day`
+beyond, and the hysteresis keeps a span at a boundary on the layer it already has. Every coarse read,
+`Minute`, `Hour` or `Day`, includes the provider's raw fresh tail, up to four point spacings of one pen
+(`data-integration.md#layer-ladder`). 250 columns are about 6 px each on a 1500 px strip. 250 is below
+the chart's 256-column floor (`Chart/HistoryColumnTarget.MinColumns`), so no chart read asks for it,
+and the test fake tells the band's reads from the chart's by that count
+(`FakeDataProvider.BandHistoryQueries`).
+
+**The next-read schedule.** When a read lands, success or failure, the next read is scheduled
+`MinimapBandFeed.NextReadDelay(span)` later: `clamp(span / 1000, 2 s, 60 s)` over the span that read
+covered. A requested read drops the scheduled one, so a read slower than that delay is never cut off by
+its own successor; the next read follows it one delay after it lands. Between reads the right bound
+grows and the band's right end trails it by up to one delay; on a 1500 px strip that is 5 px at a
+10-minute span, 1.5 px from 33 minutes to 16.7 hours, and past 16.7 hours a read a minute whose trail
+shrinks with the span, about 1 px on a day and 0.15 px on a week. The schedule keeps reading while the
+operator hides the minimap row, at the same cost as when the strip shows.
+
+**The band's shape** is pure geometry. `MinimapGeometry.BandFigures(band, first, last, width,
+height)` maps the envelope to `BandFigure(Outline, CenterLine)` values in control coordinates, each
+point a `BandPoint(X, Y)` (`Core/Trends/BandFigure.cs`). A column is drawn when it lies in `[first,
+last]` and its min, max and centre are all finite; a NaN or an infinite value is a break. Each run of
+drawn columns is one figure: its outline runs along the max line forward and the min line back, and its
+centre line follows `Center`, so a break in the archive is a gap in the band. A run of one column is
+drawn 2 px wide, kept inside the strip, so a short island between two breaks stays visible. The y range
+is the pen's own, the min and max of the drawn columns, widened through `Core/Trends/ValueRange.Widen`,
+the NaN-skipping rule `PenScaleModel` uses for its auto scale. The maximum maps to the top and the band
+is never logarithmic. A flat range is padded by ±1, so a flat pen draws a band at mid-height. A zero
+span, width or height, or an envelope with no drawn column, gives no figure.
+
+**The band control.** `Minimap/MinimapBand` is a `Control` with a `Render` override (avalonia.md,
+custom drawing) and reads nothing. `Figures` and `BandColor` are styled properties registered with
+`AffectsRender`; `Render` fills each outline with `BandColor` at 35 % opacity and strokes each centre
+line 1 px wide at full colour. It sits below the marker and the hover line, with
+`IsHitTestVisible="False"`, so a press on the band reaches the strip. `MinimapView.LayoutBand`
+sizes it to the strip and computes its figures from `Band`, `ExtentFirst`, `ExtentLast` and the strip's
+size; it runs on a resize of the strip and on a change of `HasExtent`, `ExtentFirst`, `ExtentLast` or
+`Band`. `PlaceMarker` runs on a resize and on a change of the window fractions or `HasExtent`, so a pan
+or a drag moves the marker and leaves the figures as they are.
+
+**The band's colour** follows the drawn pen's stored colour live. `BandColor` is a `WhenAnyValue`
+over `DrawnPenId` and `Pens`, switched to that pen state's `Pen.Color` and ending in `ToProperty`, so a
+recolour in the pen editor reaches the strip with the chart and needs no read. It is the stored hex
+string, null with no drawn pen, and the view converts it with the legend's
+`LegendConverters.HexToBrush`.
+
+**Failures.** A failed band read reaches the message panel through
+`ResultReporting.TryReportFailure`, which maps it through `ArchiveFailureMapper.Map` like every
+other read. `Minimap/OutageReport` holds the outage policy, one instance for the band reads in
+`MinimapBandFeed` and one for the extent reads in `MinimapViewModel`: it reports the first failed read
+of an outage and logs every further one at Warning, with the exception when the read threw, and the
+first successful read ends the outage and arms the report again. The report starts armed. During an outage the catalogue
+sync reports every 5 s with its own detail, and the panel coalesces a repeat of its newest entry only,
+so a band entry per read would never coalesce; one entry per outage keeps the panel readable. The
+catalogue sync answers its 5 s loop the other way: it logs its first two failures in a row and reports
+from the third (`overview.md#a-failed-read`). Each read turns a throw into a failed `Result`, so a
+throw never ends the pipeline and the next read is still scheduled; a throw while a read is applied,
+the next read's scheduling included, goes to `TryReportFailure` as well.
 
 ## Out of scope / later
 

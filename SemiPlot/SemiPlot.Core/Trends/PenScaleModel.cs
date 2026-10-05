@@ -103,24 +103,11 @@ public sealed class PenScaleModel
 				break;
 			}
 
-			hasValue |= Widen(envelope.Min[index], isLogarithmic, ref min, ref max);
-			hasValue |= Widen(envelope.Max[index], isLogarithmic, ref min, ref max);
+			hasValue |= ValueRange.Widen(envelope.Min[index], isLogarithmic, ref min, ref max);
+			hasValue |= ValueRange.Widen(envelope.Max[index], isLogarithmic, ref min, ref max);
 		}
 
 		return hasValue;
-	}
-
-	private static bool Widen(double value, bool isLogarithmic, ref double min, ref double max)
-	{
-		if (double.IsNaN(value) || (isLogarithmic && value <= 0.0))
-		{
-			return false;
-		}
-
-		min = Math.Min(min, value);
-		max = Math.Max(max, value);
-
-		return true;
 	}
 
 	// PenHistoryEnvelope enforces strictly ascending timestamps.

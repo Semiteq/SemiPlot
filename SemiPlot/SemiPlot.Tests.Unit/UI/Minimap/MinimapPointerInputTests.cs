@@ -1,27 +1,12 @@
-using System.Reactive.Concurrency;
-
-using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
-using Avalonia.Interactivity;
 using Avalonia.Threading;
-using Avalonia.VisualTree;
 
 using AwesomeAssertions;
 
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Reactive.Testing;
-
-using ReactiveUI.Avalonia;
-
 using SemiPlot.Core.Trends;
-using SemiPlot.Tests.Unit.UI.Bridge;
-using SemiPlot.UI.Bridge;
-using SemiPlot.UI.Chart;
-using SemiPlot.UI.Messages;
-using SemiPlot.UI.Minimap;
 
 using Xunit;
 
@@ -29,48 +14,41 @@ using Point = Avalonia.Point;
 
 namespace SemiPlot.Tests.Unit.UI.Minimap;
 
-// The minimap's half of the input guard: MinimapViewModelTests drive NavigateToFraction directly, so hit
-// testing, capture, the drag flag and pixel-to-fraction are exercised only here, via Avalonia.Headless
-// in window-client coordinates translated into StripCanvas's own space.
+// The minimap's half of the input guard: MinimapViewModelTests drive NavigateToFraction directly, so hit testing,
+// capture, the drag flag and pixel-to-fraction on the way to the chart's window are exercised only here.
 [Trait("Component", "UI")]
 [Trait("Area", "Bridge")]
 [Trait("Category", "Unit")]
 public sealed class MinimapPointerInputTests
 {
-	private const int WindowWidth = 900;
-	private const int WindowHeight = 36;
 	private const double PressFraction = 0.30;
 	private const double DragFraction = 0.60;
 	private const double HoverFraction = 0.80;
-	private static readonly TimeSpan _batchWindow = TimeSpan.FromMilliseconds(33.0);
+	private const double MinimumMarkerWidth = 6.0;
 	private static readonly TimeSpan _timeTolerance = TimeSpan.FromSeconds(1.0);
-	private static readonly DateTime _extentFirst = new(2025, 12, 25, 0, 0, 0, DateTimeKind.Utc);
-	private static readonly DateTime _extentLast = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
 	[AvaloniaFact]
 	public async Task PressThenDrag_MovesTheChartWindowToEachPointerFraction()
 	{
-		var scheduler = new TestScheduler();
-		var coordinator = CreateCoordinator(scheduler);
-		using var chartViewModel = CreateChartViewModel(coordinator, scheduler);
-		var navigation = chartViewModel.Navigation;
-		var (window, stripCanvas) = await ShowMinimapAsync(coordinator, navigation);
-		var pressAt = StripPointAt(stripCanvas, PressFraction);
-		var dragTo = StripPointAt(stripCanvas, DragFraction);
+		using var stand = await MinimapViewStand.ShowAsync(showPens: false);
+		var navigation = stand.Model.Navigation;
+		var window = stand.Window;
+		var pressAt = stand.StripPointAt(PressFraction);
+		var dragTo = stand.StripPointAt(DragFraction);
 		var widthBefore = navigation.To - navigation.From;
 
-		window.MouseDown(ToWindow(stripCanvas, window, pressAt), MouseButton.Left);
+		window.MouseDown(stand.InWindow(pressAt), MouseButton.Left);
 
-		WindowCenter(navigation).Should().BeCloseTo(
-			ExpectedCenter(stripCanvas, pressAt),
+		stand.Model.WindowCenter.Should().BeCloseTo(
+			ExpectedCenter(stand, pressAt),
 			_timeTolerance,
 			"the press must reach the strip and recenter the chart there");
 
-		window.MouseMove(ToWindow(stripCanvas, window, dragTo));
-		window.MouseUp(ToWindow(stripCanvas, window, dragTo), MouseButton.Left);
+		stand.MovePointer(dragTo, RawInputModifiers.LeftMouseButton);
+		window.MouseUp(stand.InWindow(dragTo), MouseButton.Left);
 
-		WindowCenter(navigation).Should().BeCloseTo(
-			ExpectedCenter(stripCanvas, dragTo),
+		stand.Model.WindowCenter.Should().BeCloseTo(
+			ExpectedCenter(stand, dragTo),
 			_timeTolerance,
 			"a move while the drag holds must keep recentering the chart");
 		(navigation.To - navigation.From).Should().Be(
@@ -80,139 +58,53 @@ public sealed class MinimapPointerInputTests
 	[AvaloniaFact]
 	public async Task MoveAfterRelease_LeavesTheChartWindowWhereTheDragEndedIt()
 	{
-		var scheduler = new TestScheduler();
-		var coordinator = CreateCoordinator(scheduler);
-		using var chartViewModel = CreateChartViewModel(coordinator, scheduler);
-		var navigation = chartViewModel.Navigation;
-		var (window, stripCanvas) = await ShowMinimapAsync(coordinator, navigation);
-		var pressAt = StripPointAt(stripCanvas, PressFraction);
-		var dragTo = StripPointAt(stripCanvas, DragFraction);
-		var hoverTo = StripPointAt(stripCanvas, HoverFraction);
+		using var stand = await MinimapViewStand.ShowAsync(showPens: false);
+		var navigation = stand.Model.Navigation;
+		var window = stand.Window;
+		var pressAt = stand.StripPointAt(PressFraction);
+		var dragTo = stand.StripPointAt(DragFraction);
+		var hoverTo = stand.StripPointAt(HoverFraction);
 
-		window.MouseDown(ToWindow(stripCanvas, window, pressAt), MouseButton.Left);
-		window.MouseMove(ToWindow(stripCanvas, window, dragTo));
-		window.MouseUp(ToWindow(stripCanvas, window, dragTo), MouseButton.Left);
+		window.MouseDown(stand.InWindow(pressAt), MouseButton.Left);
+		stand.MovePointer(dragTo, RawInputModifiers.LeftMouseButton);
+		window.MouseUp(stand.InWindow(dragTo), MouseButton.Left);
 		var fromAfterRelease = navigation.From;
-		var movesAfterRelease = MovesReachingStrip(stripCanvas);
 
-		window.MouseMove(ToWindow(stripCanvas, window, hoverTo));
+		stand.MovePointer(hoverTo);
 
-		movesAfterRelease.Should().ContainSingle(
-			"a layer that stopped delivering moves would pass the check below without routing anything")
-			.Which.X.Should().BeApproximately(
-				hoverTo.X, 1.0, "the delivered move must be the one aimed at the hover position");
+		stand.Model.ViewModel.HoverFraction.Should().Be(
+			hoverTo.X / stand.StripCanvas.Bounds.Width,
+			"a layer that stopped delivering moves would pass the check below without routing anything");
 		navigation.From.Should().Be(
 			fromAfterRelease, "the release ends the drag, so a later move is a hover and navigates nothing");
-		ExpectedCenter(stripCanvas, hoverTo).Should().NotBeCloseTo(
-			WindowCenter(navigation),
+		ExpectedCenter(stand, hoverTo).Should().NotBeCloseTo(
+			stand.Model.WindowCenter,
 			_timeTolerance,
 			"the hover position must differ from the drag's, or the assertion above proves nothing");
 	}
 
-	private static TrendCoordinator CreateCoordinator(TestScheduler scheduler)
+	[AvaloniaFact]
+	public async Task AWindowPastTheExtent_KeepsItsMarkerInsideTheStrip()
 	{
-		var provider = new FakeDataProvider(scheduler, TimeSpan.FromMilliseconds(10.0))
-		{
-			ArchiveFirstUtc = _extentFirst,
-			ArchiveLastUtc = _extentLast
-		};
+		using var stand = await MinimapViewStand.ShowAsync(showPens: false);
+		var navigation = stand.Model.Navigation;
+		var highlight = stand.Named<Border>("WindowHighlight");
 
-		return new TrendCoordinator(
-			provider,
-			provider.Pens,
-			scheduler,
-			ImmediateScheduler.Instance,
-			_batchWindow);
-	}
-
-	// The chart view model is here for its navigation controller alone, the instance the minimap receives in
-	// production.
-	private static TrendChartViewModel CreateChartViewModel(TrendCoordinator coordinator, TestScheduler scheduler)
-	{
-		return new TrendChartViewModel(
-			coordinator,
-			scheduler,
-			AvaloniaScheduler.Instance,
-			new MessagePanelViewModel(),
-			NullLogger<TrendChartViewModel>.Instance);
-	}
-
-	private static async Task<(Window Window, Canvas StripCanvas)> ShowMinimapAsync(
-		TrendCoordinator coordinator, ChartNavigationController navigation)
-	{
-		var viewModel = new MinimapViewModel(
-			coordinator,
-			navigation,
-			ImmediateScheduler.Instance,
-			new MessagePanelViewModel(),
-			NullLogger<MinimapViewModel>.Instance);
-		await viewModel.LoadExtentAsync();
-		viewModel.HasExtent.Should().BeTrue("without an extent the strip ignores every pointer position");
-
-		// Seeds the window to [last - width, last], so both drag targets sit inside the extent and neither
-		// pan clamps at an edge.
-		navigation.TrackDataExtents(_extentFirst, _extentLast);
-
-		var view = new MinimapView
-		{
-			DataContext = viewModel
-		};
-		var window = new Window
-		{
-			Width = WindowWidth,
-			Height = WindowHeight,
-			Content = view
-		};
-
-		window.Show();
+		navigation.OnLiveEdge(MinimapStand.ExtentLast + TimeSpan.FromDays(1.0));
 		Dispatcher.UIThread.RunJobs();
 
-		var stripCanvas = view.GetVisualDescendants()
-			.OfType<Canvas>()
-			.Single(canvas => canvas.Name == "StripCanvas");
-		stripCanvas.Bounds.Width.Should().BeGreaterThan(
-			0.0, "the strip divides by its own width, so a zero-width canvas navigates nowhere");
-
-		return (window, stripCanvas);
+		navigation.From.Should().BeAfter(
+			MinimapStand.ExtentLast, "the sticky window must have followed the live edge past the extent");
+		highlight.Width.Should().Be(
+			MinimumMarkerWidth, "only a floored marker at the right edge reaches past the strip unclamped");
+		(Canvas.GetLeft(highlight) + highlight.Width).Should().BeLessThanOrEqualTo(
+			stand.StripCanvas.Bounds.Width, "the marker's right edge must stay inside the strip");
 	}
 
-	// The witness that a move was routed at all: the strip's own handler navigates nothing once the drag is
-	// over, so an unchanged navigation window alone cannot tell a delivered hover from a swallowed event.
-	private static IReadOnlyList<Point> MovesReachingStrip(Canvas stripCanvas)
-	{
-		var moves = new List<Point>();
-
-		stripCanvas.AddHandler(
-			InputElement.PointerMovedEvent,
-			(_, eventArgs) => moves.Add(eventArgs.GetPosition(stripCanvas)),
-			RoutingStrategies.Bubble,
-			handledEventsToo: true);
-
-		return moves;
-	}
-
-	// Whole pixels, so the fraction the view computes back is exactly the one the expectation uses.
-	private static Point StripPointAt(Canvas stripCanvas, double fraction)
-	{
-		return new Point(Math.Round(fraction * stripCanvas.Bounds.Width), stripCanvas.Bounds.Height / 2.0);
-	}
-
-	private static Point ToWindow(Canvas stripCanvas, Window window, Point stripPoint)
-	{
-		return stripCanvas.TranslatePoint(stripPoint, window)
-			?? throw new InvalidOperationException("The strip canvas is not in the window's visual tree.");
-	}
-
-	// Mirrors MinimapView.NavigateToPointer and MinimapViewModel.NavigateToFraction: the pointer's X over the
-	// canvas width is the fraction, and the window's center lands on that fraction of the extent.
-	private static DateTime ExpectedCenter(Canvas stripCanvas, Point stripPoint)
+	// Mirrors MinimapView.NavigateToPointer and MinimapViewModel.NavigateToFraction.
+	private static DateTime ExpectedCenter(MinimapViewStand stand, Point stripPoint)
 	{
 		return MinimapGeometry.TimeAtFraction(
-			_extentFirst, _extentLast, stripPoint.X / stripCanvas.Bounds.Width);
-	}
-
-	private static DateTime WindowCenter(ChartNavigationController navigation)
-	{
-		return navigation.From + ((navigation.To - navigation.From) / 2.0);
+			MinimapStand.ExtentFirst, MinimapStand.ExtentLast, stripPoint.X / stand.StripCanvas.Bounds.Width);
 	}
 }

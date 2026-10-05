@@ -122,8 +122,7 @@ Two projects, split on one axis: needs a container or not.
   `SemiPlot.Tests.Unit/UI/HeadlessInput.cs` (`Click`, `Clear`, `Type`, `Press`) on the `TopLevel` that
   shows the control; no test class carries a helper of its own for these four gestures.
   `git grep -nE "static void (Click|Clear|Type|Press)\(" -- SemiPlot/SemiPlot.Tests.Unit` prints only
-  `HeadlessInput.cs` lines. A hover or a held mouse button, which only `ThemeTests` drives, is outside
-  the rule.
+  `HeadlessInput.cs` lines. A hover, a drag or a held mouse button is outside the rule.
 - Neither project references the other. Core, `SemiPlot.DataSource.Postgres` and `SemiPlot.UI` each
   name both in `InternalsVisibleTo`.
 - `SemiPlot.Tests.Unit` sets `failSkips` in `xunit.runner.json`, so no gated test may live there.
@@ -134,7 +133,11 @@ Two projects, split on one axis: needs a container or not.
   through `ScheduleAsync` and waits on `Schedule(ReadInterval)` before every read, and
   `ImmediateScheduler` runs each wait by sleeping on the calling thread, so `Start()` never returns. A
   test builds it over a `TestScheduler` and advances one tick after `Start()`
-  (`UI/MainWindow/MainWindowTestBuilder.cs`). The chart's redraw hangs nothing: it is a one-shot
+  (`UI/MainWindow/MainWindowTestBuilder.cs`). `MinimapViewModel` hangs the same way: each band read
+  that lands schedules the next 2-60 s ahead, so over `ImmediateScheduler` and a synchronous fake it
+  reads forever once an extent and a drawn pen exist, and `TestScheduler.Start()` never returns after a
+  band read landed. A test builds it over a `TestScheduler` and never calls `Start()`
+  (`UI/Minimap/MinimapStand.cs`). The chart's redraw hangs nothing: it is a one-shot
   schedule, which `ImmediateScheduler` runs inline after a 33 ms sleep. A headless test that realises
   the chart still never passes an immediate UI scheduler, because it blocks the dispatcher on every
   redraw; it passes a `TestScheduler` or `AvaloniaScheduler.Instance`

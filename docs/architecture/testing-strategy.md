@@ -114,11 +114,13 @@ writes run as `semiplot`, so a privilege that never reached the role fails here 
 commissioning. The container is the delivery mechanism for a real server, nothing more.
 
 **Against a real Avalonia** — `SemiPlot.Tests.Unit/UI/`, under `[AvaloniaFact]`:
-`ChartPointerInputTests`, `MinimapPointerInputTests`, `TrendChartViewTests`, `NavigationBarViewTests`,
-`AppMenuBarTests`, `AppStatusBarViewTests`, `MainWindowViewTests`, `MessagePanelViewTests`, `ThemeTests`,
+`ChartPointerInputTests`, `MinimapPointerInputTests`, `MinimapHoverTests`, `MinimapViewTests`, `TrendChartViewTests`,
+`NavigationBarViewTests`, `AppMenuBarTests`, `AppStatusBarViewTests`, `MainWindowViewTests`, `MessagePanelViewTests`, `ThemeTests`,
 `StartupFailureWindowTests`, `TrendWindowTests`, `AppMainWindowTests`,
 `TrendCoordinatorTests` with `FakeDataProvider`. Seams guarded: the dispatcher, layout, hit-testing,
 pointer capture and event routing. Real framework, synthetic data. These are what catch a rendering-stack version bump.
+The headless platform draws no pixels, so `Minimap/MinimapBand.Render` has no test: `MinimapViewTests`
+pins the figures it receives, and the minimap's smoke walk on the demo stand covers what it paints.
 
 **Against a real rasterizer** — `SemiPlot.Tests.Unit/UI/Chart/ChartGapRenderTests.cs`, a plain `[Fact]`
 with no Avalonia: it renders through SkiaSharp and asserts on pixels that a `NaN` column breaks the
@@ -193,8 +195,8 @@ A test that realises `TrendChartView` never passes `ImmediateScheduler.Instance`
 scheduler. The view subscribes to `RedrawRequested`, and each redraw request schedules one emission
 33 ms ahead. `ImmediateScheduler` runs it inline after sleeping 33 ms on the calling thread, so every
 redraw blocks the dispatcher and paints inside the call that asked for it, which production never does.
-The schedule is one-shot, so nothing hangs; the hang belongs to `PenCatalogueSync`'s wait loop alone
-(`CLAUDE.md`, Test). Two schedulers work in its place.
+The schedule is one-shot, so nothing hangs; the hangs belong to `PenCatalogueSync`'s wait loop and the
+minimap band's next-read schedule (`CLAUDE.md`, Test). Two schedulers work in its place.
 
 | Scheduler | When | Cost |
 | --- | --- | --- |

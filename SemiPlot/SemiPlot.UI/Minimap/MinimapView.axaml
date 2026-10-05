@@ -3,41 +3,62 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:minimap="clr-namespace:SemiPlot.UI.Minimap"
+             xmlns:legend="clr-namespace:SemiPlot.UI.Legend"
              mc:Ignorable="d"
              d:DesignWidth="900"
-             d:DesignHeight="36"
+             d:DesignHeight="51"
              x:Class="SemiPlot.UI.Minimap.MinimapView"
              x:DataType="minimap:MinimapViewModel">
 
     <Border Background="{DynamicResource AppPanelBackgroundBrush}"
             BorderThickness="0,1,0,0"
             BorderBrush="{DynamicResource AppBorderBrush}">
-        <Canvas Name="StripCanvas"
-                Background="{DynamicResource AppContentBackgroundBrush}"
-                ClipToBounds="True"
-                Cursor="Hand">
-            <Rectangle Name="Baseline"
-                       Canvas.Left="0"
-                       Height="1"
-                       Fill="{DynamicResource AppSubtleLineBrush}" />
-            <TextBlock Name="ExtentFirstLabel"
-                       Canvas.Left="4"
-                       FontSize="10"
-                       Foreground="{DynamicResource AppSecondaryForegroundBrush}"
-                       IsHitTestVisible="False"
-                       Text="{Binding ExtentFirstLabel}" />
-            <TextBlock Name="ExtentLastLabel"
-                       Canvas.Top="0"
-                       FontSize="10"
-                       Foreground="{DynamicResource AppSecondaryForegroundBrush}"
-                       IsHitTestVisible="False"
-                       Text="{Binding ExtentLastLabel}" />
-            <Border Name="WindowHighlight"
-                    Canvas.Top="0"
-                    Background="{DynamicResource AppAccentFillBrush}"
-                    BorderThickness="2"
-                    BorderBrush="{DynamicResource AppAccentBrush}" />
-        </Canvas>
+        <Grid RowDefinitions="36,Auto">
+            <Canvas Grid.Row="0"
+                    Name="StripCanvas"
+                    Background="{DynamicResource AppContentBackgroundBrush}"
+                    ClipToBounds="True"
+                    Cursor="Hand">
+                <minimap:MinimapBand Name="BandLayer"
+                                     Canvas.Left="0"
+                                     Canvas.Top="0"
+                                     IsHitTestVisible="False"
+                                     BandColor="{Binding BandFeed.BandColor,
+                                                         Converter={x:Static legend:LegendConverters.HexToBrush}}" />
+                <Border Name="WindowHighlight"
+                        Canvas.Top="0"
+                        Background="{DynamicResource AppAccentFillBrush}"
+                        BorderThickness="2"
+                        BorderBrush="{DynamicResource AppAccentBrush}" />
+                <Border Name="HoverLine"
+                        Canvas.Top="0"
+                        Width="1"
+                        IsVisible="False"
+                        IsHitTestVisible="False"
+                        Background="{DynamicResource AppSecondaryForegroundBrush}" />
+            </Canvas>
+            <Panel Grid.Row="1"
+                   Name="LabelRow"
+                   Margin="4,0">
+                <Panel.Styles>
+                    <Style Selector="TextBlock">
+                        <Setter Property="FontSize" Value="10" />
+                        <Setter Property="Foreground" Value="{DynamicResource AppSecondaryForegroundBrush}" />
+                    </Style>
+                </Panel.Styles>
+                <TextBlock Name="ExtentFirstLabel"
+                           HorizontalAlignment="Left"
+                           Text="{Binding ExtentFirstLabel}" />
+                <TextBlock Name="ExtentLastLabel"
+                           HorizontalAlignment="Right"
+                           Text="{Binding ExtentLastLabel}" />
+                <Canvas>
+                    <TextBlock Name="HoverTimeLabel"
+                               Canvas.Top="0"
+                               IsVisible="False" />
+                </Canvas>
+            </Panel>
+        </Grid>
     </Border>
 
 </UserControl>

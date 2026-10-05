@@ -9,6 +9,7 @@ using FluentResults;
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
+using SemiPlot.UI.Minimap;
 
 namespace SemiPlot.Tests.Unit.UI.Bridge;
 
@@ -28,6 +29,10 @@ internal sealed class FakeDataProvider(
 	// Hot and never completed, like the real provider's. A test pushes into it through ReportConnectionState
 	// instead of waiting for a tick that this fake never runs.
 	private readonly Subject<ArchiveConnectionState> _connectionFaults = new();
+
+	// A test waits for a query on another thread and then reads it, so the log is appended and copied whole.
+	private readonly Lock _historyQueriesGate = new();
+	private readonly List<HistoryQuery> _historyQueries = [];
 
 	public DateTime ArchiveFirstUtc { get; set; } = new(2025, 12, 25, 0, 0, 0, DateTimeKind.Utc);
 
@@ -75,19 +80,42 @@ internal sealed class FakeDataProvider(
 	// for a pen holding no row in the window. A requested pen missing from the result is not an error.
 	public HashSet<int> OmittedPenIds { get; } = [];
 
-	public int HistoryQueryCount { get; private set; }
+	// A history read that throws instead of answering, the shape of a defect rather than of an outage.
+	public Exception? HistoryReadException { get; set; }
 
-	public IReadOnlyList<int>? LastQueriedPenIds { get; private set; }
+	public IReadOnlyList<HistoryQuery> ChartHistoryQueries =>
+		[.. HistoryQueries.Where(query => query.TargetColumnCount != MinimapBandFeed.MinimapColumns)];
 
-	public AggregationLayer? LastQueriedLayer { get; private set; }
+	public IReadOnlyList<HistoryQuery> BandHistoryQueries =>
+		[.. HistoryQueries.Where(query => query.TargetColumnCount == MinimapBandFeed.MinimapColumns)];
 
-	public DateTime? LastQueriedFromUtc { get; private set; }
+	/// <summary>The chart's query count; like every LastQueried member below, it ignores the band's reads.</summary>
+	public int HistoryQueryCount => ChartHistoryQueries.Count;
 
-	public DateTime? LastQueriedToUtc { get; private set; }
+	public IReadOnlyList<int>? LastQueriedPenIds => LastHistoryQuery?.PenIds;
 
-	public int? LastQueriedTargetColumnCount { get; private set; }
+	public AggregationLayer? LastQueriedLayer => LastHistoryQuery?.Layer;
 
-	public CancellationToken LastQueriedCancellationToken { get; private set; }
+	public DateTime? LastQueriedFromUtc => LastHistoryQuery?.FromUtc;
+
+	public DateTime? LastQueriedToUtc => LastHistoryQuery?.ToUtc;
+
+	public int? LastQueriedTargetColumnCount => LastHistoryQuery?.TargetColumnCount;
+
+	public CancellationToken LastQueriedCancellationToken => LastHistoryQuery?.CancellationToken ?? default;
+
+	private HistoryQuery? LastHistoryQuery => ChartHistoryQueries is [.., var last] ? last : null;
+
+	private IReadOnlyList<HistoryQuery> HistoryQueries
+	{
+		get
+		{
+			lock (_historyQueriesGate)
+			{
+				return [.. _historyQueries];
+			}
+		}
+	}
 
 	public int PensQueryCount { get; private set; }
 
@@ -211,14 +239,15 @@ internal sealed class FakeDataProvider(
 		int targetColumnCount,
 		CancellationToken cancellationToken = default)
 	{
-		// The count moves last: a test that waits for it on another thread then reads the query it counts.
-		LastQueriedPenIds = penIds;
-		LastQueriedLayer = layer;
-		LastQueriedFromUtc = fromUtc;
-		LastQueriedToUtc = toUtc;
-		LastQueriedTargetColumnCount = targetColumnCount;
-		LastQueriedCancellationToken = cancellationToken;
-		HistoryQueryCount++;
+		lock (_historyQueriesGate)
+		{
+			_historyQueries.Add(new HistoryQuery(penIds, fromUtc, toUtc, layer, targetColumnCount, cancellationToken));
+		}
+
+		if (HistoryReadException is { } readException)
+		{
+			return Task.FromException<Result<IReadOnlyList<PenHistoryEnvelope>>>(readException);
+		}
 
 		if (FailHistory)
 		{
@@ -288,3 +317,11 @@ internal sealed class FakeDataProvider(
 		return Pens.Count == 0 ? ArchiveExtent.Empty : new ArchiveExtent(ArchiveFirstUtc, ArchiveLastUtc);
 	}
 }
+
+internal sealed record HistoryQuery(
+	IReadOnlyList<int> PenIds,
+	DateTime FromUtc,
+	DateTime ToUtc,
+	AggregationLayer Layer,
+	int TargetColumnCount,
+	CancellationToken CancellationToken);

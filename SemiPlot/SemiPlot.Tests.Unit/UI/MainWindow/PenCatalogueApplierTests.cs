@@ -169,7 +169,8 @@ public sealed class PenCatalogueApplierTests
 
 		chart.HasNoPens.Should().BeFalse();
 		chart.Navigation.FirstSample.Should().Be(firstSampleBefore, "no extent came back to seed it with");
-		provider.ExtentQueryCount.Should().Be(extentQueriesAtStart + 1);
+		provider.ExtentQueryCount.Should().Be(
+			extentQueriesAtStart + 2, "the delta reads the extent, and the minimap reads it once more on the next sample");
 		provider.LastQueriedPenIds.Should().Equal(1);
 		viewModel.MessagePanel.Entries.Should().ContainSingle()
 			.Which.View.Title.Should().Be(Resources.FailureArchiveReadFailedTitle);

@@ -28,7 +28,7 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 
 ### TM-4 — Minimap (horizontal navigator) (MUST)
 **Definition.** An overview strip across the entire available archive extent with the current window highlighted. A click/drag on the minimap moves the window (recentering on a fraction of the extent). The extent is pulled from the data provider.
-**Acceptance.** Core/test: `MinimapGeometry` — extent+window → (startFraction, widthFraction) and back fraction→time without loss of precision. UI: the highlight tracks every window change; a click on the minimap moves the window.
+**Acceptance.** Core/test: `MinimapGeometry` — extent+window → (startFraction, widthFraction) and back fraction→time without loss of precision; the marker span stays inside the strip at any zoom and window position; the right bound is the later of the extent's last sample and the newest sample; an envelope with a break draws two band figures. UI: the highlight tracks every window change and every move of the right bound, and the marker never leaves the strip; a click on the minimap moves the window; the strip draws the drawn pen as a min/max band over the whole extent in the pen's colour, re-read on a schedule that follows the strip's span, and no drawn pen leaves no band; no baseline runs through the strip, and its two end labels sit in a row under it; a hover over the strip shows a line at the pointer and the time under it in that row, and leaving the strip hides both.
 
 ### TM-5 — Undo/Redo of time navigation (SHOULD)
 **Definition.** Undo/redo of the most recent horizontal shift and scale operations.

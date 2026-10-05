@@ -316,7 +316,8 @@ one method: nothing else may resolve a service through a static.
   query, reached through the debouncer by the initial load and every gesture alike) → provider
   returns one decimated `PenHistoryEnvelope` per pen (ascending `X` + `Min`/`Max`/`Center`) → the view
   model applies the result into the plot; the debouncer runs one query at a time and lets the newest
-  window asked for run last.
+  window asked for run last. The minimap band is a second reader outside the debouncer: one pen at 250
+  columns every 2-60 s (`trend-interaction.md#archive-overview-minimap`).
 
 ## Deployment
 

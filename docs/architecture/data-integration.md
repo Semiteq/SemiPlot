@@ -617,7 +617,8 @@ hands on, so one bad batch does not end the realtime subscription. `Deliver` gua
 only: the result it reports instead is reported by a handler that guards itself. The catalogue read
 loop reports from the third failure in a row, the live edge's threshold
 (`ArchiveConnectionState.ConsecutiveFailuresBeforeFault`); the first two log a warning
-(`overview.md#a-failed-read`).
+(`overview.md#a-failed-read`). The minimap's band and extent reads each report the first failure of an
+outage and log every repeat at Warning (`trend-interaction.md#archive-overview-minimap`).
 
 `Messages/ResultReporting` treats the log and the panel as two independent sinks: the panel edit runs
 first and the log line from a `finally`, so whichever of the two refuses the failure, the other still
@@ -634,7 +635,10 @@ A handler that runs detached — an Rx `onNext`, an Rx `onError`, a job posted t
 its whole body, not its report alone, and hands the throw to `TryReportFailure`:
 `TrendChartViewModel.OnHistoryQueryFailed`, `MainWindow/AppStatusBarViewModel.ApplyConnectionState`,
 `Bridge/PenCatalogueSync.RunAsync`, `MainWindow/PenCatalogueApplier.ApplyAsync`, the last through
-`TrendChartViewModel.ReportFailure`, and `App.ApplyTheme`, which holds a failure for the first window
+`TrendChartViewModel.ReportFailure`, the minimap band's `Minimap/MinimapBandFeed.ApplyRead`, whose guard
+covers the next read's scheduling too, and `TryRequestRead`, which the schedule and the pen-change
+subscription call, `Minimap/MinimapViewModel.TryApplyExtent` for the extent read once more after a
+blank one, and `App.ApplyTheme`, which holds a failure for the first window
 until it exists and has only the log after the failure window closes (`overview.md#the-live-theme`). The
 guard belongs to the handler rather than to whoever invokes it, because the recovery around the report
 would otherwise escape the same way the report can.

@@ -16,11 +16,13 @@ using FluentResults;
 
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
+using SemiPlot.Tests.Unit.UI.Minimap;
 using SemiPlot.Tests.Unit.UI.PenEditor;
 using SemiPlot.Tests.Unit.UI.Settings;
 using SemiPlot.UI.Legend;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
+using SemiPlot.UI.Minimap;
 using SemiPlot.UI.PenEditor;
 using SemiPlot.UI.Settings;
 
@@ -210,6 +212,27 @@ public sealed class MainWindowViewTests
 
 			row.IsVisible.Should().BeTrue("'{0}' comes back", name);
 		}
+	}
+
+	[AvaloniaFact]
+	public void TheMinimapRow_ShowsTheWholeLabelRowUnderTheStrip()
+	{
+		using var stand = NewWindowStand();
+		var window = new MainWindowView { DataContext = stand.ViewModel };
+		window.Show();
+		Dispatcher.UIThread.RunJobs();
+		var row = window.FindControl<Border>("MinimapRow")!;
+		var minimap = window.FindControl<MinimapView>("Minimap")!;
+		var strip = minimap.FindControl<Canvas>("StripCanvas")!;
+		var lastLabel = minimap.FindControl<TextBlock>("ExtentLastLabel")!;
+
+		var label = MinimapViewStand.AreaIn(row, lastLabel);
+
+		label.Height.Should().BePositive("the label row holds one line of text");
+		label.Top.Should().BeGreaterThanOrEqualTo(
+			MinimapViewStand.AreaIn(row, strip).Bottom, "the label row sits under the strip");
+		label.Bottom.Should().BeLessThanOrEqualTo(
+			row.Bounds.Height, "the minimap row shows the whole label row");
 	}
 
 	[AvaloniaFact]

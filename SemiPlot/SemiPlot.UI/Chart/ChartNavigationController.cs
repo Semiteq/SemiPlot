@@ -36,11 +36,20 @@ public sealed class ChartNavigationController
 
 	public AggregationLayer ActiveLayer { get; private set; }
 
+	/// <summary>The newest sample the chart has seen, from the archive or the live edge; null until one arrives.</summary>
+	public DateTime? NewestSample { get; private set; }
+
 	// Number of pixel columns the canvas will draw. The stored value is quantized, so it does not read back
 	// as the value passed to SetTargetColumnCount.
 	public int TargetColumnCount { get; private set; } = HistoryColumnTarget.MaxColumns;
 
 	public event EventHandler<NavigationWindow>? WindowChanged;
+
+	/// <summary>
+	/// Raised on every write of <see cref="NewestSample"/>, sticky or not; when the window also moves, after the
+	/// move and ahead of <see cref="WindowChanged"/>.
+	/// </summary>
+	public event EventHandler<DateTime>? NewestSampleMoved;
 
 	public void SetTargetColumnCount(int columns)
 	{
@@ -99,6 +108,7 @@ public sealed class ChartNavigationController
 		// The first snap must NOT re-query (would load history twice at startup); later navigation gestures
 		// go through ApplyWindowChange and do re-query.
 		ActiveLayer = LayerForCurrentWidth();
+		RecordNewestSample(lastSample);
 		WindowChanged?.Invoke(
 			this,
 			new NavigationWindow(_navigation.From, _navigation.To, ActiveLayer, RequiresHistoryRequery: false));
@@ -145,15 +155,29 @@ public sealed class ChartNavigationController
 
 		if (!_navigation.IsSticky)
 		{
+			RecordNewestSample(now);
+
 			return;
 		}
 
 		_navigation.OnLiveEdge(_liveEdge);
 
 		ActiveLayer = LayerForCurrentWidth();
+		RecordNewestSample(now);
 		WindowChanged?.Invoke(
 			this,
 			new NavigationWindow(_navigation.From, _navigation.To, ActiveLayer, RequiresHistoryRequery: false));
+	}
+
+	private void RecordNewestSample(DateTime sample)
+	{
+		if (NewestSample >= sample)
+		{
+			return;
+		}
+
+		NewestSample = sample;
+		NewestSampleMoved?.Invoke(this, sample);
 	}
 
 	private void ApplyWindowChange()

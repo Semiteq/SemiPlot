@@ -28,9 +28,8 @@ each is a scoped future task.
   killed process leaves none behind. Deferred from the external review of `live-theme` (2026-10-01):
   the race needs two operators saving the same file within one save's span.
 
-- **Minimap — further work.** The current strip shows the window position over the extent (visible marker +
-  extent labels) but no data preview. Wanted: a richer overview (e.g. a downsampled trace/heat preview of the
-  archive, clearer window handles, possibly per-pen presence). Treat as its own task.
+- **Minimap — further work.** The strip draws the drawn pen's min/max band under the window marker. Still
+  wanted: clearer window handles, and possibly a per-pen presence row. Treat as its own task.
 
 ## Rendering / performance
 
@@ -77,7 +76,7 @@ Paths are under `SemiPlot/SemiPlot.UI/` unless they name another project.
   has no production writer and `PenScale.IsLogarithmic` (`SemiPlot.Core/Trends/PenScale.cs:9`) no reader;
   the log branches of `SemiPlot.Core/Trends/PenScaleModel.cs` run only under `PenScaleModelTests`.
 - **Disposed guards set inconsistently.** `ObjectDisposedException.ThrowIf` opens 11 members of
-  `Chart/TrendChartViewModel.cs` (`:219` to `:390`) and 2 of `Minimap/MinimapViewModel.cs` (`:84`, `:94`).
+  `Chart/TrendChartViewModel.cs` (`:219` to `:390`) and 2 of `Minimap/MinimapViewModel.cs` (`:92`, `:102`).
   Some guard real work: `RequestInitialHistory` (`:219`) and `ApplyCatalogue` (`:231`) push into the
   debouncer and the live edge. Others are missing on the paths the guarded `SetAxisLimits` (`:390`) shares:
   `AutoscalePen` (`:375`), `RestoreInitialScale(int)` (`:382`) and `WidenToArchiveExtent` (`:259`) carry no
@@ -104,9 +103,9 @@ Paths are under `SemiPlot/SemiPlot.UI/` unless they name another project.
 - **`throw exception;` loses the stack trace.** `ArchiveExceptionMapper.Map`
   (`SemiPlot.DataSource.Postgres/ArchiveExceptionMapper.cs:28`) rethrows `OperationCanceledException` that way.
 - **Double UI hop.** `MinimapViewModel.LoadExtentAsync` resumes its `await` on the UI thread its callers run
-  on, then posts `ApplyExtent` to the UI scheduler again (`Minimap/MinimapViewModel.cs:86-87`). Under a
-  `TestScheduler` no `SynchronizationContext` exists, and the `Observable.Start` at `:87` is the one route
-  that brings `ApplyExtent` back, so dropping `:87` is no fix: keep one of the two marshalling routes.
+  on, then posts `ApplyExtent` to the UI scheduler again (`Minimap/MinimapViewModel.cs:94-95`). Under a
+  `TestScheduler` no `SynchronizationContext` exists, and the `Observable.Start` at `:95` is the one route
+  that brings `ApplyExtent` back, so dropping `:95` is no fix: keep one of the two marshalling routes.
 - **Allocation per pointer move.** Every `MoveCursor` (`Chart/TrendChartView.axaml.cs:305`) builds an array
   in `ChartCursorReader.ReadAt` (`Chart/ChartCursorReader.cs:13-16`) and a dictionary in
   `CursorReadoutModel.ReadAt` (`SemiPlot.Core/Trends/CursorReadoutModel.cs:9`).

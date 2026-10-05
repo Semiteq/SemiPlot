@@ -155,8 +155,8 @@ Semi owns the controls; these twelve keys are ours, and each exists in both vari
 | `AppPanelBackgroundBrush` | Navigation bar, legend panel, message panel, status bar, startup-failure window's message panel, minimap frame, chart hover readout | `#F7F8FA` | `#2B2D30` |
 | `AppContentBackgroundBrush` | Chart area, minimap strip canvas, the sidebar's resize handle | `#FFFFFF` | `#1E1F22` |
 | `AppBorderBrush` | Every separator in the three views | `#EBECF0` | `#393B40` |
-| `AppSubtleLineBrush` | Minimap baseline, plot grid, the line above every sidebar group header but the first | `#EBECF0` | `#393B40` |
-| `AppSecondaryForegroundBrush` | Minimap extent labels, chart crosshair, plot axis furniture, the sidebar group header caption and a row's unit | `#818594` | `#6F737A` |
+| `AppSubtleLineBrush` | Plot grid, the line above every sidebar group header but the first, the status bar's separator after the connection indicator, the navigation bar's group separator | `#EBECF0` | `#393B40` |
+| `AppSecondaryForegroundBrush` | Minimap end labels, hover line and hover time, chart crosshair, plot axis furniture, the sidebar group header caption and a row's unit | `#818594` | `#6F737A` |
 | `AppAccentBrush` | Minimap window highlight border, the active sidebar row's left bar | `#3574F0` | `#3574F0` |
 | `AppAccentFillBrush` | Minimap window highlight fill, the active sidebar row's background | `#3574F0` at 0.25 opacity | `#3574F0` at 0.25 opacity |
 | `AppSeverityErrorBrush` | The message panel's dot on an `Error` entry; a form's invalid field border and its message line | `#DB3B4B` | `#E55765` |
@@ -167,7 +167,8 @@ Semi owns the controls; these twelve keys are ours, and each exists in both vari
 
 Pen colours are not theme keys. They come from the archive with the pen and stay per pen under both
 variants. The pen editor's colour swatch is the pen's own colour through `LegendConverters.HexToBrush`,
-the converter the sidebar dot uses, and a pen with no colour shows a transparent swatch.
+the converter the sidebar dot and the minimap band use, and a pen with no colour shows a transparent
+swatch.
 
 ## A form never resizes on validation
 

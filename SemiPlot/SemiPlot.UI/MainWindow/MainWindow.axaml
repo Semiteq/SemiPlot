@@ -76,7 +76,6 @@
                 Name="MinimapRow"
                 IsVisible="{Binding IsMinimapVisible}">
             <minimap:MinimapView Name="Minimap"
-                                 Height="36"
                                  DataContext="{Binding MinimapViewModel}" />
         </Border>
 

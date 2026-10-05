@@ -56,6 +56,7 @@ public sealed class TrendWindowBuildTests
 
 		var panel = container.GetRequiredService<MessagePanelViewModel>();
 
+		// The failed extent leaves the minimap band unread, so the history failure here is the chart's own.
 		panel.Entries.Select(entry => entry.View.Title).Should().Contain(
 			[
 				ArchiveFailureMapper.Map(new Error("Forced history failure.")).Title,

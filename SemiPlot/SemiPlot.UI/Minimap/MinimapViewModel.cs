@@ -19,41 +19,78 @@ namespace SemiPlot.UI.Minimap;
 
 public sealed class MinimapViewModel : ReactiveObject, IDisposable
 {
-	private readonly TrendCoordinator _coordinator;
-	private readonly CompositeDisposable _disposables = [];
-	private readonly ILogger<MinimapViewModel> _logger;
-	private readonly MessagePanelViewModel _messagePanel;
-	private readonly ChartNavigationController _navigation;
-	private readonly IScheduler _uiScheduler;
+	private static readonly TimeSpan _missingExtentRetryInterval = TimeSpan.FromSeconds(60.0);
 
+	private readonly TrendCoordinator _coordinator;
+	private readonly TrendChartViewModel _chart;
+	private readonly IScheduler _uiScheduler;
+	private readonly MessagePanelViewModel _messagePanel;
+	private readonly ILogger<MinimapViewModel> _logger;
+	private readonly OutageReport _extentOutage;
+	private readonly CompositeDisposable _disposables = [];
+	private readonly SerialDisposable _missingExtentRead = new();
+
+	private bool _isExtentMissing;
+	private DateTimeOffset _nextMissingExtentRead = DateTimeOffset.MinValue;
 	private bool _isDisposed;
 
 	public MinimapViewModel(
 		TrendCoordinator coordinator,
-		ChartNavigationController navigation,
+		TrendChartViewModel chart,
 		IScheduler uiScheduler,
 		MessagePanelViewModel messagePanel,
 		ILogger<MinimapViewModel> logger)
 	{
 		_coordinator = coordinator;
-		_navigation = navigation;
+		_chart = chart;
 		_uiScheduler = uiScheduler;
 		_messagePanel = messagePanel;
 		_logger = logger;
+		_extentOutage = new OutageReport("archive extent read", messagePanel, logger);
+		BandFeed = new MinimapBandFeed(coordinator, chart, ReadBounds, uiScheduler, messagePanel, logger);
 
-		_navigation.WindowChanged += OnNavigationWindowChanged;
-		_disposables.Add(Disposable.Create(() => _navigation.WindowChanged -= OnNavigationWindowChanged));
+		_disposables.Add(FollowNavigation());
+		_disposables.Add(_missingExtentRead);
+		_disposables.Add(BandFeed);
 	}
 
-	public DateTime ExtentFirst { get; private set; }
+	public DateTime ExtentFirst
+	{
+		get;
+		private set
+		{
+			this.RaiseAndSetIfChanged(ref field, value);
+			this.RaisePropertyChanged(nameof(ExtentFirstLabel));
+			this.RaisePropertyChanged(nameof(HoverLabel));
+		}
+	}
 
-	public DateTime ExtentLast { get; private set; }
+	/// <summary>The strip's right bound: the later of the extent's last sample and the chart's newest sample.</summary>
+	public DateTime ExtentLast
+	{
+		get;
+		private set
+		{
+			this.RaiseAndSetIfChanged(ref field, value);
+			this.RaisePropertyChanged(nameof(ExtentLastLabel));
+			this.RaisePropertyChanged(nameof(HoverLabel));
+		}
+	}
 
-	public bool HasExtent { get; private set; }
+	public bool HasExtent
+	{
+		get;
+		private set
+		{
+			this.RaiseAndSetIfChanged(ref field, value);
+			this.RaisePropertyChanged(nameof(ExtentFirstLabel));
+			this.RaisePropertyChanged(nameof(ExtentLastLabel));
+		}
+	}
 
-	public string ExtentFirstLabel => HasExtent ? FormatEndpoint(ExtentFirst) : string.Empty;
+	public string ExtentFirstLabel => HasExtent ? FormatTime(ExtentFirst) : string.Empty;
 
-	public string ExtentLastLabel => HasExtent ? FormatEndpoint(ExtentLast) : string.Empty;
+	public string ExtentLastLabel => HasExtent ? FormatTime(ExtentLast) : string.Empty;
 
 	public double WindowStartFraction
 	{
@@ -66,6 +103,22 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 		get;
 		private set => this.RaiseAndSetIfChanged(ref field, value);
 	} = 1.0;
+
+	public double? HoverFraction
+	{
+		get;
+		private set
+		{
+			this.RaiseAndSetIfChanged(ref field, value);
+			this.RaisePropertyChanged(nameof(HoverLabel));
+		}
+	}
+
+	public string HoverLabel => HoverFraction is { } fraction
+		? FormatTime(MinimapGeometry.TimeAtFraction(ExtentFirst, ExtentLast, fraction))
+		: string.Empty;
+
+	public MinimapBandFeed BandFeed { get; }
 
 	public void Dispose()
 	{
@@ -99,8 +152,42 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 		}
 
 		var target = MinimapGeometry.TimeAtFraction(ExtentFirst, ExtentLast, fraction);
-		var currentCenter = _navigation.From + ((_navigation.To - _navigation.From) / 2.0);
-		_navigation.PanBy(target - currentCenter);
+		var navigation = _chart.Navigation;
+		var currentCenter = navigation.From + ((navigation.To - navigation.From) / 2.0);
+		navigation.PanBy(target - currentCenter);
+	}
+
+	public void HoverAt(double fraction)
+	{
+		if (!HasExtent)
+		{
+			return;
+		}
+
+		HoverFraction = fraction;
+	}
+
+	public void ClearHover()
+	{
+		HoverFraction = null;
+	}
+
+	private IDisposable FollowNavigation()
+	{
+		var navigation = _chart.Navigation;
+		navigation.WindowChanged += OnNavigationWindowChanged;
+		navigation.NewestSampleMoved += OnNewestSampleMoved;
+
+		return Disposable.Create(() =>
+		{
+			navigation.WindowChanged -= OnNavigationWindowChanged;
+			navigation.NewestSampleMoved -= OnNewestSampleMoved;
+		});
+	}
+
+	private (DateTime First, DateTime Last)? ReadBounds()
+	{
+		return HasExtent ? (ExtentFirst, ExtentLast) : null;
 	}
 
 	private void ApplyExtent(Result<ArchiveExtent> result)
@@ -110,12 +197,16 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 			return;
 		}
 
+		_isExtentMissing = !HasExtent && (result.IsFailed || result.Value.IsEmpty);
+
 		if (result.IsFailed)
 		{
-			_messagePanel.ReportFailure(result, _logger);
+			_extentOutage.Failed(result.Errors);
 
 			return;
 		}
+
+		_extentOutage.Succeeded();
 
 		// An empty extent is a normal state of a fresh archive: leave HasExtent false so the strip stays
 		// blank.
@@ -124,18 +215,42 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 			return;
 		}
 
+		var navigation = _chart.Navigation;
 		ExtentFirst = result.Value.FirstUtc;
-		ExtentLast = result.Value.LastUtc;
+		ExtentLast = MinimapGeometry.RightBound(result.Value.LastUtc, navigation.NewestSample);
 		HasExtent = true;
-		this.RaisePropertyChanged(nameof(ExtentFirst));
-		this.RaisePropertyChanged(nameof(ExtentLast));
-		this.RaisePropertyChanged(nameof(HasExtent));
-		this.RaisePropertyChanged(nameof(ExtentFirstLabel));
-		this.RaisePropertyChanged(nameof(ExtentLastLabel));
-		RefreshWindowFraction(_navigation.From, _navigation.To);
+		RefreshWindowFraction(navigation.From, navigation.To);
+		BandFeed.RequestRead();
 	}
 
-	private static string FormatEndpoint(DateTime utc)
+	private void ReadMissingExtent()
+	{
+		_isExtentMissing = false;
+		_nextMissingExtentRead = _uiScheduler.Now + _missingExtentRetryInterval;
+		_missingExtentRead.Disposable = Observable
+			.Create<Result<ArchiveExtent>>(async observer => observer.OnNext(await _coordinator.QueryArchiveExtentAsync()))
+			.ObserveOn(_uiScheduler)
+			.Subscribe(TryApplyExtent, ReportFailure);
+	}
+
+	private void TryApplyExtent(Result<ArchiveExtent> result)
+	{
+		try
+		{
+			ApplyExtent(result);
+		}
+		catch (Exception applyFailure)
+		{
+			ReportFailure(applyFailure);
+		}
+	}
+
+	private void ReportFailure(Exception failure)
+	{
+		_messagePanel.TryReportFailure(new ExceptionalError(failure), _logger);
+	}
+
+	private static string FormatTime(DateTime utc)
 	{
 		return utc.ToLocalTime().ToString("MMM d HH:mm", CultureInfo.CurrentCulture);
 	}
@@ -143,6 +258,29 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 	private void OnNavigationWindowChanged(object? sender, NavigationWindow window)
 	{
 		RefreshWindowFraction(window.From, window.To);
+	}
+
+	private void OnNewestSampleMoved(object? sender, DateTime newestSample)
+	{
+		if (!HasExtent)
+		{
+			var isRetryDue = _uiScheduler.Now >= _nextMissingExtentRead;
+			if (_isExtentMissing && isRetryDue)
+			{
+				ReadMissingExtent();
+			}
+
+			return;
+		}
+
+		var rightBound = MinimapGeometry.RightBound(ExtentLast, newestSample);
+		if (rightBound == ExtentLast)
+		{
+			return;
+		}
+
+		ExtentLast = rightBound;
+		RefreshWindowFraction(_chart.Navigation.From, _chart.Navigation.To);
 	}
 
 	private void RefreshWindowFraction(DateTime from, DateTime to)

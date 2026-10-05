@@ -6,13 +6,15 @@ using Avalonia.Input;
 
 using ReactiveUI;
 
+using SemiPlot.Core.Trends;
+
 namespace SemiPlot.UI.Minimap;
 
 public partial class MinimapView : UserControl
 {
 	// Floors a sub-pixel window fraction so the marker stays visible.
 	private const double MinimumHighlightWidth = 6.0;
-	private const double LabelEdgePadding = 4.0;
+	private const double EndLabelCoverDistance = 6.0;
 
 	private readonly CompositeDisposable _disposables = [];
 	private bool _isDragging;
@@ -25,6 +27,7 @@ public partial class MinimapView : UserControl
 		StripCanvas.PointerMoved += OnPointerMoved;
 		StripCanvas.PointerReleased += OnPointerReleased;
 		StripCanvas.PointerCaptureLost += OnPointerCaptureLost;
+		StripCanvas.PointerExited += OnPointerExited;
 
 		this.GetObservable(BoundsProperty).Subscribe(_ => UpdateStrip());
 
@@ -42,24 +45,47 @@ public partial class MinimapView : UserControl
 
 		_disposables.Add(viewModel
 			.WhenAnyValue(
-				model => model.WindowStartFraction,
-				model => model.WindowWidthFraction,
-				model => model.HasExtent)
-			.Subscribe(_ => UpdateStrip()));
+				model => model.HasExtent,
+				model => model.ExtentFirst,
+				model => model.ExtentLast,
+				model => model.BandFeed.Band)
+			.Subscribe(_ => LayoutBand()));
+		_disposables.Add(viewModel
+			.WhenAnyValue(model => model.WindowStartFraction, model => model.WindowWidthFraction, model => model.HasExtent)
+			.Subscribe(_ => PlaceMarker()));
+		_disposables.Add(viewModel
+			.WhenAnyValue(model => model.HoverFraction, model => model.HoverLabel)
+			.Subscribe(_ => PlaceHover()));
 	}
 
 	private void UpdateStrip()
+	{
+		LayoutBand();
+		PlaceMarker();
+		PlaceHover();
+	}
+
+	private void LayoutBand()
 	{
 		if (DataContext is not MinimapViewModel viewModel)
 		{
 			return;
 		}
 
-		var width = StripCanvas.Bounds.Width;
-		var height = StripCanvas.Bounds.Height;
+		var (width, height) = (StripCanvas.Bounds.Width, StripCanvas.Bounds.Height);
+		BandLayer.Width = width;
+		BandLayer.Height = height;
+		BandLayer.Figures = viewModel is { HasExtent: true, BandFeed.Band: { } band }
+			? MinimapGeometry.BandFigures(band, viewModel.ExtentFirst, viewModel.ExtentLast, width, height)
+			: [];
+	}
 
-		LayoutBaseline(width, height);
-		LayoutEndLabel(width, height);
+	private void PlaceMarker()
+	{
+		if (DataContext is not MinimapViewModel viewModel)
+		{
+			return;
+		}
 
 		if (!viewModel.HasExtent)
 		{
@@ -68,22 +94,69 @@ public partial class MinimapView : UserControl
 			return;
 		}
 
+		var stripWidth = StripCanvas.Bounds.Width;
+		var (left, width) = MinimapGeometry.MarkerSpan(
+			viewModel.WindowStartFraction, viewModel.WindowWidthFraction, stripWidth, MinimumHighlightWidth);
 		WindowHighlight.IsVisible = true;
-		Canvas.SetLeft(WindowHighlight, viewModel.WindowStartFraction * width);
-		WindowHighlight.Width = Math.Max(MinimumHighlightWidth, viewModel.WindowWidthFraction * width);
-		WindowHighlight.Height = height;
+		Canvas.SetLeft(WindowHighlight, left);
+		WindowHighlight.Width = width;
+		WindowHighlight.Height = StripCanvas.Bounds.Height;
 	}
 
-	private void LayoutBaseline(double width, double height)
+	private void PlaceHover()
 	{
-		Baseline.Width = width;
-		Canvas.SetTop(Baseline, height / 2.0);
+		if (DataContext is not MinimapViewModel viewModel)
+		{
+			return;
+		}
+
+		if (viewModel.HoverFraction is not { } fraction)
+		{
+			HideHover();
+
+			return;
+		}
+
+		var stripWidth = StripCanvas.Bounds.Width;
+		var pointerX = fraction * stripWidth;
+		HoverLine.IsVisible = true;
+		Canvas.SetLeft(HoverLine, MinimapGeometry.SpanLeftWithin(pointerX, HoverLine.Width, stripWidth));
+		HoverLine.Height = StripCanvas.Bounds.Height;
+
+		PlaceHoverTime(viewModel.HoverLabel, pointerX + StripCanvas.Bounds.X - LabelRow.Bounds.X);
 	}
 
-	private void LayoutEndLabel(double width, double height)
+	// docs/architecture/trend-interaction.md#archive-overview-minimap
+	private void PlaceHoverTime(string text, double rowPointerX)
 	{
-		ExtentLastLabel.Measure(new Size(width, height));
-		Canvas.SetLeft(ExtentLastLabel, width - ExtentLastLabel.DesiredSize.Width - LabelEdgePadding);
+		HoverTimeLabel.Text = text;
+		HoverTimeLabel.IsVisible = true;
+
+		var placement = MinimapGeometry.PlaceHoverTime(
+			rowPointerX,
+			MeasuredWidth(HoverTimeLabel),
+			LabelRow.Bounds.Width,
+			MeasuredWidth(ExtentFirstLabel),
+			MeasuredWidth(ExtentLastLabel),
+			EndLabelCoverDistance);
+		Canvas.SetLeft(HoverTimeLabel, placement.Left);
+		ExtentFirstLabel.Opacity = placement.CoversFirst ? 0.0 : 1.0;
+		ExtentLastLabel.Opacity = placement.CoversLast ? 0.0 : 1.0;
+	}
+
+	private static double MeasuredWidth(Control control)
+	{
+		control.Measure(Size.Infinity);
+
+		return control.DesiredSize.Width;
+	}
+
+	private void HideHover()
+	{
+		HoverLine.IsVisible = false;
+		HoverTimeLabel.IsVisible = false;
+		ExtentFirstLabel.Opacity = 1.0;
+		ExtentLastLabel.Opacity = 1.0;
 	}
 
 	private void OnPointerPressed(object? sender, PointerPressedEventArgs args)
@@ -105,6 +178,8 @@ public partial class MinimapView : UserControl
 		{
 			NavigateToPointer(args);
 		}
+
+		HoverAtPointer(args);
 	}
 
 	private void OnPointerReleased(object? sender, PointerReleasedEventArgs args)
@@ -124,20 +199,45 @@ public partial class MinimapView : UserControl
 		_isDragging = false;
 	}
 
-	private void NavigateToPointer(PointerEventArgs args)
+	// docs/architecture/trend-interaction.md#archive-overview-minimap
+	private void OnPointerExited(object? sender, PointerEventArgs args)
+	{
+		if (!_isDragging && DataContext is MinimapViewModel viewModel)
+		{
+			viewModel.ClearHover();
+		}
+	}
+
+	private void HoverAtPointer(PointerEventArgs args)
 	{
 		if (DataContext is not MinimapViewModel viewModel)
 		{
 			return;
 		}
 
-		var width = StripCanvas.Bounds.Width;
-		if (width <= 0.0)
+		var position = args.GetPosition(StripCanvas);
+		if (new Rect(StripCanvas.Bounds.Size).Contains(position) && StripFraction(position) is { } fraction)
 		{
-			return;
+			viewModel.HoverAt(fraction);
 		}
+		else
+		{
+			viewModel.ClearHover();
+		}
+	}
 
-		var fraction = args.GetPosition(StripCanvas).X / width;
-		viewModel.NavigateToFraction(fraction);
+	private void NavigateToPointer(PointerEventArgs args)
+	{
+		if (DataContext is MinimapViewModel viewModel && StripFraction(args.GetPosition(StripCanvas)) is { } fraction)
+		{
+			viewModel.NavigateToFraction(fraction);
+		}
+	}
+
+	private double? StripFraction(Point position)
+	{
+		var width = StripCanvas.Bounds.Width;
+
+		return width > 0.0 ? position.X / width : null;
 	}
 }

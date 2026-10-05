@@ -88,7 +88,7 @@ internal sealed class TrendWindow : IDisposable
 			loggerFactory.CreateLogger<AppStatusBarViewModel>());
 
 		var minimapLogger = loggerFactory.CreateLogger<MinimapViewModel>();
-		var minimap = new MinimapViewModel(coordinator, chart.Navigation, uiScheduler, messagePanel, minimapLogger);
+		var minimap = new MinimapViewModel(coordinator, chart, uiScheduler, messagePanel, minimapLogger);
 		var catalogueSync = new PenCatalogueSync(
 			dataProvider,
 			startupData.Pens,

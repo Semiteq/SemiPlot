@@ -301,7 +301,7 @@ and the handler on `RxState`.
 The same ordering forces the one static read this tree allows. The handler is taken before any
 window exists, so it cannot be given a panel by constructor injection; `App.ResolveMessagePanel`
 reads that field of `Application.Current`.
-That is the declared exception to the constructor-injection rule in `CLAUDE.md`, and it covers this
+That is the declared exception to the constructor-injection rule in `AGENTS.md`, and it covers this
 one method: nothing else may resolve a service through a static.
 
 ## Data flow

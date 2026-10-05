@@ -125,7 +125,7 @@ Paths are under `SemiPlot/SemiPlot.UI/` unless they name another project.
 
 - **~~Test unification (with the Avalonia 12 bump).~~ Resolved.** Avalonia is on 12.0.5 and all three test
   projects target xunit v3. `SemiPlot.Core.Tests` no longer exists; the suites are now split by dependency
-  graph and skip policy rather than by framework, which `CLAUDE.md` states.
+  graph and skip policy rather than by framework, which `AGENTS.md` states.
 
 ## Test harness and the demo bench
 

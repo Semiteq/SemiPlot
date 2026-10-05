@@ -1,7 +1,7 @@
 # SemiPlot Architecture
 
 Machine-readable architecture docs (English). These describe the stable design, not the
-decision process. For build/test/style conventions see the root `CLAUDE.md`; for
+decision process. For build/test/style conventions see the root `AGENTS.md`; for
 implementation plans see `docs/plans/`.
 
 ## Documents

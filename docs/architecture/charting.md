@@ -303,7 +303,7 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   and `RestoreInitialScale` on the chart, and the submenu header that names the drawn pen; the window's
   code-behind owns the three view-side requests (close, About dialog, settings dialog).
 - `MainWindow/AppMenuBar` — the File / Edit / View / Help menu. Each checkable item reads its flag
-  `Mode=OneWay` and writes it only through the command it invokes (`CLAUDE.md`, UI).
+  `Mode=OneWay` and writes it only through the command it invokes (`AGENTS.md`, UI).
 - `MainWindow/AppStatusBar` + `AppStatusBarViewModel` — current connection state and the active
   aggregation layer, named from resx. Built by `TrendWindow` over the coordinator's connection stream and
   the chart's navigation, and writes the fault and recovery entries (`data-integration.md`).

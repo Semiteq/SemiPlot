@@ -17,8 +17,8 @@ dotnet format SemiPlot.slnx                    # pre-commit hook enforces this
 
 `dotnet run` on the viewer needs all three launch keys — `--config-dir`, `--log-file` and
 `--logging-level` — and none has a default; a missing or bad one opens the failure window and exits
-1. The run reads a copy of the tracked set, never the tracked set itself: `readme.md` holds the
-copy recipe that produces `SemiPlot/Artifacts/dev-config`, which is also where the `.zed/` and `.run/`
+1. The run reads a copy of the tracked set, never the tracked set itself: the first two lines of the
+`converge` example below produce `SemiPlot/Artifacts/dev-config`, which is also where the `.zed/` and `.run/`
 launchers point `--config-dir`, and the password is then filled in the viewer's `Edit` -> `Settings`.
 
 Configuration is a tree of section folders under `--config-dir`: `app/` and `connection/`. Every

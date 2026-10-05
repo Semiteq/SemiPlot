@@ -200,7 +200,7 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 
 	// The nth Connected is the nth subscription's armed point, and NoFaultWasSeen is what makes that an
 	// asserted precondition instead of an assumption. The waiters run their continuations asynchronously
-	// (CLAUDE.md, "An xunit v3 test project is an executable").
+	// (AGENTS.md, "An xunit v3 test project is an executable").
 	private sealed class ArmedGate : IDisposable
 	{
 		private readonly List<ArchiveConnectionState> _states = [];

@@ -110,7 +110,7 @@ settings columns and no `INSERT` or `DELETE` on `semiplot_tags` (`postgres-insta
 The read interface stays read-only because the chart consumes it. A write member on `IDataProvider`
 would put a write in reach of every chart consumer; with the write path apart, `Chart/` and `Legend/`
 never name `IPenCatalogueEditor`, `IDataProvider` carries no `Insert`, `Update`, `Write` or `Save`, and
-two greps in `CLAUDE.md` hold both. An axis the operator rescales stays a session edit (`charting.md`).
+two greps in `AGENTS.md` hold both. An axis the operator rescales stays a session edit (`charting.md`).
 
 `PostgresPenCatalogueEditor` in `SemiPlot.DataSource.Postgres` is the only implementation.
 `AddPostgresData()` registers it by factory beside `IDataProvider`, over the same `NpgsqlDataSource`

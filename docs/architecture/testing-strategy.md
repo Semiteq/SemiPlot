@@ -196,7 +196,7 @@ scheduler. The view subscribes to `RedrawRequested`, and each redraw request sch
 33 ms ahead. `ImmediateScheduler` runs it inline after sleeping 33 ms on the calling thread, so every
 redraw blocks the dispatcher and paints inside the call that asked for it, which production never does.
 The schedule is one-shot, so nothing hangs; the hangs belong to `PenCatalogueSync`'s wait loop and the
-minimap band's next-read schedule (`CLAUDE.md`, Test). Two schedulers work in its place.
+minimap band's next-read schedule (`AGENTS.md`, Test). Two schedulers work in its place.
 
 | Scheduler | When | Cost |
 | --- | --- | --- |

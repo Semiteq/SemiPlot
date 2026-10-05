@@ -321,7 +321,7 @@ The launchers that start the viewer alone - `.run/Debug.run.xml` and the `.zed/`
 entries - point `--config-dir` at `SemiPlot/Artifacts/dev-config` through `$PROJECT_DIR$` and
 `$ZED_WORKTREE_ROOT`, never at the stand's copy: `%TEMP%\SemiPlot\ConfigFiles` exists only while the
 stand runs, and the stand has already started its own viewer against it. The developer creates that
-directory once from `ConfigFiles/`, as `readme.md` and `CLAUDE.md` spell out; `SemiPlot/Artifacts/`
+directory once from `ConfigFiles/`, as `AGENTS.md` spells out; `SemiPlot/Artifacts/`
 is gitignored, so the password filled in there stays out of the repository.
 
 ## The headless render and input guards

@@ -210,10 +210,10 @@
   <data name="PenEditorColumnLineStyle" xml:space="preserve">
     <value>Линия</value>
   </data>
-  <data name="PenEditorColumnScaleMin" xml:space="preserve">
+  <data name="PenEditorColumnScaleMinOnStart" xml:space="preserve">
     <value>Начальная шкала, от</value>
   </data>
-  <data name="PenEditorColumnScaleMax" xml:space="preserve">
+  <data name="PenEditorColumnScaleMaxOnStart" xml:space="preserve">
     <value>Начальная шкала, до</value>
   </data>
   <data name="PenEditorColumnGroups" xml:space="preserve">

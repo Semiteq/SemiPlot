@@ -8,8 +8,8 @@ public sealed record Pen(
 	string? Unit = null,
 	string? Format = null,
 	bool EnabledOnStart = true,
-	double? ScaleMin = null,
-	double? ScaleMax = null,
+	double? ScaleMinOnStart = null,
+	double? ScaleMaxOnStart = null,
 	PenLineStyle LineStyle = PenLineStyle.Interpolated)
 {
 	/// <summary>Compares <see cref="Groups"/> element by element, so two reads of one stored pen are equal.</summary>
@@ -23,8 +23,8 @@ public sealed record Pen(
 			&& string.Equals(Unit, other.Unit, StringComparison.Ordinal)
 			&& string.Equals(Format, other.Format, StringComparison.Ordinal)
 			&& EnabledOnStart == other.EnabledOnStart
-			&& Nullable.Equals(ScaleMin, other.ScaleMin)
-			&& Nullable.Equals(ScaleMax, other.ScaleMax)
+			&& Nullable.Equals(ScaleMinOnStart, other.ScaleMinOnStart)
+			&& Nullable.Equals(ScaleMaxOnStart, other.ScaleMaxOnStart)
 			&& LineStyle == other.LineStyle;
 	}
 
@@ -44,8 +44,8 @@ public sealed record Pen(
 		hash.Add(Unit, StringComparer.Ordinal);
 		hash.Add(Format, StringComparer.Ordinal);
 		hash.Add(EnabledOnStart);
-		hash.Add(ScaleMin);
-		hash.Add(ScaleMax);
+		hash.Add(ScaleMinOnStart);
+		hash.Add(ScaleMaxOnStart);
 		hash.Add(LineStyle);
 
 		return hash.ToHashCode();

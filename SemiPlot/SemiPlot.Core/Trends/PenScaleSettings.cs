@@ -11,7 +11,7 @@ public sealed record PenScaleSettings(
 	{
 		var settings = new PenScaleSettings(pen.PenId);
 
-		if (pen.ScaleMin is { } min && pen.ScaleMax is { } max)
+		if (pen.ScaleMinOnStart is { } min && pen.ScaleMaxOnStart is { } max)
 		{
 			settings = settings with { Mode = ScaleMode.Manual, ManualMin = min, ManualMax = max };
 		}

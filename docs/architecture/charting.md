@@ -148,8 +148,8 @@ The mapping below routes the major capability groups to their feature IDs:
 - **Grouping / layout** — view pen groups separately or together: trend-feature-spec.md §MS-2.
 
 Canonical use cases (acceptance fixtures): 16 dampers + 16 heat sources (dampers viewed separately,
-the 16 heaters reading against the same bounds, which is the same `scale_min`/`scale_max` pair stored
-on each of them rather than a shared axis) and 10 gas lines with different min..max ranges (all on
+the 16 heaters reading against the same bounds, which is the same
+`scale_min_on_start`/`scale_max_on_start` pair stored on each of them rather than a shared axis) and 10 gas lines with different min..max ranges (all on
 one chart, each with its own scale — §AY-2).
 
 ## Module layout (Avalonia views / view models / Core models)
@@ -349,8 +349,8 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
 **Core models (`SemiPlot.Core.Trends`, renderer-agnostic, unit-tested):**
 
 - `PenScaleModel` — one `PenScale` per pen: `(Min, Max)` + autoscale mode + the active flag (Auto over
-  the columns inside `[windowStart, windowEnd]` / Manual; log sanitize). A pen whose `scale_min`/`scale_max` are stored
-  opens `Manual` on exactly those bounds; a pen without them opens `Auto`. What the operator then does
+  the columns inside `[windowStart, windowEnd]` / Manual; log sanitize). A pen whose
+  `scale_min_on_start`/`scale_max_on_start` are stored opens `Manual` on exactly those bounds; a pen without them opens `Auto`. What the operator then does
   to the axis rewrites the settings for the session and reaches no database. The only writer of
   `semiplot_tags` is the pen editor (`Edit` -> `Pens and groups`, `PenEditor/`,
   `data-integration.md#the-pen-catalogue-editor`). The stored pair is the pen's initial scale: it builds the

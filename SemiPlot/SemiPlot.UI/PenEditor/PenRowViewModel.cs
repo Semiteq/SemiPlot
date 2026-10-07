@@ -87,7 +87,8 @@ public sealed class PenRowViewModel(StoredPen pen, IEnumerable<StoredGroup> grou
 			PenSettingChange.Color color => pen with { Color = color.Value },
 			PenSettingChange.LineStyle lineStyle => pen with { LineStyle = lineStyle.Value },
 			PenSettingChange.EnabledOnStart enabledOnStart => pen with { EnabledOnStart = enabledOnStart.Value },
-			PenSettingChange.Scale scale => pen with { ScaleMin = scale.Min, ScaleMax = scale.Max },
+			PenSettingChange.ScaleOnStart scale
+				=> pen with { ScaleMinOnStart = scale.Min, ScaleMaxOnStart = scale.Max },
 			_ => throw new ArgumentOutOfRangeException(nameof(change), change, null)
 		};
 	}

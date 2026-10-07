@@ -115,7 +115,7 @@ public partial class PenEditorWindow : Window
 
 			if (TakeScaleForm() is { } scaleForm)
 			{
-				await scaleForm.EndEditAsync(PenField.Scale);
+				await scaleForm.EndEditAsync(PenField.ScaleOnStart);
 			}
 
 			if (DataContext is PenEditorViewModel editor)
@@ -191,7 +191,7 @@ public partial class PenEditorWindow : Window
 			}
 			else if (_scaleForm is { } scaleForm && field.GetVisualAncestors().Contains(FormScale))
 			{
-				await scaleForm.EndEditAsync(PenField.Scale);
+				await scaleForm.EndEditAsync(PenField.ScaleOnStart);
 			}
 		}
 		catch (Exception exception)
@@ -211,7 +211,7 @@ public partial class PenEditorWindow : Window
 			}
 			else if (TakeScaleForm() is { } scaleForm)
 			{
-				await scaleForm.EndEditAsync(PenField.Scale);
+				await scaleForm.EndEditAsync(PenField.ScaleOnStart);
 			}
 		}
 		catch (Exception exception)

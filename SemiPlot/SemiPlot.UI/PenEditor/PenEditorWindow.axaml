@@ -139,18 +139,18 @@
                                 CommandParameter="{x:Static local:PenColumn.LineStyle}" />
 
                         <Button Grid.Column="7"
-                                Name="SortByScaleMin"
+                                Name="SortByScaleMinOnStart"
                                 Classes="column-header"
-                                Content="{x:Static text:Resources.PenEditorColumnScaleMin}"
+                                Content="{x:Static text:Resources.PenEditorColumnScaleMinOnStart}"
                                 Command="{Binding SortCommand}"
-                                CommandParameter="{x:Static local:PenColumn.ScaleMin}" />
+                                CommandParameter="{x:Static local:PenColumn.ScaleMinOnStart}" />
 
                         <Button Grid.Column="8"
-                                Name="SortByScaleMax"
+                                Name="SortByScaleMaxOnStart"
                                 Classes="column-header"
-                                Content="{x:Static text:Resources.PenEditorColumnScaleMax}"
+                                Content="{x:Static text:Resources.PenEditorColumnScaleMaxOnStart}"
                                 Command="{Binding SortCommand}"
-                                CommandParameter="{x:Static local:PenColumn.ScaleMax}" />
+                                CommandParameter="{x:Static local:PenColumn.ScaleMaxOnStart}" />
 
                         <Button Grid.Column="9"
                                 Name="SortByGroups"
@@ -226,14 +226,14 @@
                                 </TextBlock>
 
                                 <TextBlock Grid.Column="7"
-                                           Name="RowScaleMin"
+                                           Name="RowScaleMinOnStart"
                                            Classes="cell"
-                                           Text="{Binding Pen.ScaleMin}" />
+                                           Text="{Binding Pen.ScaleMinOnStart}" />
 
                                 <TextBlock Grid.Column="8"
-                                           Name="RowScaleMax"
+                                           Name="RowScaleMaxOnStart"
                                            Classes="cell"
-                                           Text="{Binding Pen.ScaleMax}" />
+                                           Text="{Binding Pen.ScaleMaxOnStart}" />
 
                                 <TextBlock Grid.Column="9"
                                            Name="RowGroups"
@@ -381,24 +381,24 @@
                                     <TextBlock Grid.Row="0"
                                                Grid.Column="0"
                                                Classes="form-label"
-                                               Text="{x:Static text:Resources.PenEditorColumnScaleMin}" />
+                                               Text="{x:Static text:Resources.PenEditorColumnScaleMinOnStart}" />
 
                                     <TextBox Grid.Row="0"
                                              Grid.Column="1"
-                                             Name="FormScaleMin"
-                                             Classes.invalid="{Binding !IsScaleMinValid}"
-                                             Text="{Binding ScaleMin}" />
+                                             Name="FormScaleMinOnStart"
+                                             Classes.invalid="{Binding !IsScaleMinOnStartValid}"
+                                             Text="{Binding ScaleMinOnStart}" />
 
                                     <TextBlock Grid.Row="1"
                                                Grid.Column="0"
                                                Classes="form-label"
-                                               Text="{x:Static text:Resources.PenEditorColumnScaleMax}" />
+                                               Text="{x:Static text:Resources.PenEditorColumnScaleMaxOnStart}" />
 
                                     <TextBox Grid.Row="1"
                                              Grid.Column="1"
-                                             Name="FormScaleMax"
-                                             Classes.invalid="{Binding !IsScaleMaxValid}"
-                                             Text="{Binding ScaleMax}" />
+                                             Name="FormScaleMaxOnStart"
+                                             Classes.invalid="{Binding !IsScaleMaxOnStartValid}"
+                                             Text="{Binding ScaleMaxOnStart}" />
 
                                 </Grid>
 

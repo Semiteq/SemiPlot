@@ -165,7 +165,7 @@ public sealed class TrendChartViewModelTests
 		var catalogue = provider.Pens;
 		viewModel.ApplyCatalogue(catalogue);
 		viewModel.SetAxisLimits(1, 10.0, 90.0);
-		viewModel.ApplyCatalogue([catalogue[0] with { ScaleMin = 0.0, ScaleMax = 50.0 }, catalogue[1]]);
+		viewModel.ApplyCatalogue([catalogue[0] with { ScaleMinOnStart = 0.0, ScaleMaxOnStart = 50.0 }, catalogue[1]]);
 
 		viewModel.RestoreInitialScale();
 
@@ -183,8 +183,8 @@ public sealed class TrendChartViewModelTests
 	{
 		var (viewModel, _, _, provider) = CreateViewModel();
 		var catalogue = provider.Pens;
-		viewModel.ApplyCatalogue([catalogue[0] with { ScaleMin = 0.0, ScaleMax = 50.0 }, catalogue[1]]);
-		viewModel.ApplyCatalogue([catalogue[0] with { ScaleMin = null, ScaleMax = null }, catalogue[1]]);
+		viewModel.ApplyCatalogue([catalogue[0] with { ScaleMinOnStart = 0.0, ScaleMaxOnStart = 50.0 }, catalogue[1]]);
+		viewModel.ApplyCatalogue([catalogue[0] with { ScaleMinOnStart = null, ScaleMaxOnStart = null }, catalogue[1]]);
 
 		viewModel.RestoreInitialScale();
 
@@ -206,7 +206,8 @@ public sealed class TrendChartViewModelTests
 	public void InitialScale_ActsOnTheActivePenOnly()
 	{
 		var (viewModel, _, _, provider) = CreateViewModel();
-		viewModel.ApplyCatalogue([.. provider.Pens.Select(pen => pen with { ScaleMin = 5.0, ScaleMax = 50.0 })]);
+		viewModel.ApplyCatalogue(
+			[.. provider.Pens.Select(pen => pen with { ScaleMinOnStart = 5.0, ScaleMaxOnStart = 50.0 })]);
 		viewModel.SetAxisLimits(1, 10.0, 90.0);
 		viewModel.SetAxisLimits(2, 20.0, 80.0);
 		viewModel.SetActivePen(2);
@@ -236,7 +237,8 @@ public sealed class TrendChartViewModelTests
 	public void TheScaleCommands_LeaveAHiddenActivePenAlone()
 	{
 		var (viewModel, _, _, provider) = CreateViewModel();
-		viewModel.ApplyCatalogue([.. provider.Pens.Select(pen => pen with { ScaleMin = 5.0, ScaleMax = 50.0 })]);
+		viewModel.ApplyCatalogue(
+			[.. provider.Pens.Select(pen => pen with { ScaleMinOnStart = 5.0, ScaleMaxOnStart = 50.0 })]);
 		viewModel.SetAxisLimits(1, 10.0, 90.0);
 		viewModel.SetPenVisibility(2, false);
 		viewModel.SetPenVisibility(1, false);
@@ -295,7 +297,8 @@ public sealed class TrendChartViewModelTests
 	public void RestoreInitialScale_ForANamedPen_ActsOnThatPenAndRefusesAHiddenOne()
 	{
 		var (viewModel, _, _, provider) = CreateViewModel();
-		viewModel.ApplyCatalogue([.. provider.Pens.Select(pen => pen with { ScaleMin = 5.0, ScaleMax = 50.0 })]);
+		viewModel.ApplyCatalogue(
+			[.. provider.Pens.Select(pen => pen with { ScaleMinOnStart = 5.0, ScaleMaxOnStart = 50.0 })]);
 		viewModel.SetAxisLimits(1, 10.0, 90.0);
 		viewModel.SetAxisLimits(2, 20.0, 80.0);
 
@@ -315,7 +318,7 @@ public sealed class TrendChartViewModelTests
 	{
 		var scheduler = new TestScheduler();
 		using var viewModel = CreateChart(scheduler);
-		viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000", ScaleMin: 5.0, ScaleMax: 50.0));
+		viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000", ScaleMinOnStart: 5.0, ScaleMaxOnStart: 50.0));
 		viewModel.SetAxisLimits(1, 10.0, 90.0);
 		scheduler.AdvanceBy(BatchWindow.Ticks * 2);
 		var redraws = 0;
@@ -423,8 +426,8 @@ public sealed class TrendChartViewModelTests
 	public void StoredScalePair_OpensEachPenOnItsOwnBoundsWithNoPadding()
 	{
 		var (viewModel, _, _, _) = CreateViewModel();
-		viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000", ScaleMin: 0.0, ScaleMax: 50.0));
-		viewModel.AddPen(new Pen(2, "Pen 2", ["Group A"], "#00ff00", ScaleMin: -10.0, ScaleMax: 10.0));
+		viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000", ScaleMinOnStart: 0.0, ScaleMaxOnStart: 50.0));
+		viewModel.AddPen(new Pen(2, "Pen 2", ["Group A"], "#00ff00", ScaleMinOnStart: -10.0, ScaleMaxOnStart: 10.0));
 
 		viewModel.AxisCount.Should().Be(2);
 		viewModel.ScaleSettings[1].Mode.Should().Be(ScaleMode.Manual);

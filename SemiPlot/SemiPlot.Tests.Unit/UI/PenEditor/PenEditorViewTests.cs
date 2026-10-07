@@ -116,7 +116,7 @@ public sealed class PenEditorViewTests : IDisposable
 			Cell<Border>(argon, "RowColor").Bounds.Width.Should().BePositive("the swatch renders");
 
 			TextOf(power, "RowLineStyle").Should().Be(Resources.PenLineStyleInterpolated);
-			TextOf(power, "RowScaleMax").Should().Be(500.ToString(CultureInfo.CurrentCulture));
+			TextOf(power, "RowScaleMaxOnStart").Should().Be(500.ToString(CultureInfo.CurrentCulture));
 			Cell<CheckBox>(power, "RowEnabledOnStart").IsChecked.Should().BeTrue();
 			Cell<Border>(power, "RowColor").Background.Should()
 				.Be(Brushes.Transparent, "a pen with no colour draws no swatch");
@@ -285,8 +285,8 @@ public sealed class PenEditorViewTests : IDisposable
 			Named<ColorPicker>(window, "FormColorPicker").Color.Should().Be(Color.Parse(Pressure.Color!));
 			Named<ComboBox>(window, "FormLineStyle").SelectedItem.Should().Be(Pressure.LineStyle);
 			Named<CheckBox>(window, "FormEnabledOnStart").IsChecked.Should().Be(Pressure.EnabledOnStart);
-			Named<TextBox>(window, "FormScaleMin").Text.Should().Be(0.ToString(CultureInfo.CurrentCulture));
-			Named<TextBox>(window, "FormScaleMax").Text.Should().Be(100.ToString(CultureInfo.CurrentCulture));
+			Named<TextBox>(window, "FormScaleMinOnStart").Text.Should().Be(0.ToString(CultureInfo.CurrentCulture));
+			Named<TextBox>(window, "FormScaleMaxOnStart").Text.Should().Be(100.ToString(CultureInfo.CurrentCulture));
 			Named<TextBlock>(window, "FormMessage").Text.Should().BeEmpty();
 			_editor.Calls.Should().BeEmpty();
 		}
@@ -384,18 +384,18 @@ public sealed class PenEditorViewTests : IDisposable
 		{
 			HeadlessInput.Click(window, RowAt(window, 0));
 
-			HeadlessInput.Type(window, Named<TextBox>(window, "FormScaleMin"), "5");
+			HeadlessInput.Type(window, Named<TextBox>(window, "FormScaleMinOnStart"), "5");
 			HeadlessInput.Press(window, PhysicalKey.Tab);
 
-			Named<TextBox>(window, "FormScaleMax").IsFocused.Should()
+			Named<TextBox>(window, "FormScaleMaxOnStart").IsFocused.Should()
 				.BeTrue("Tab moves from the minimum to the maximum");
 			_editor.Calls.Should().BeEmpty("half a pair is never written");
 
-			HeadlessInput.Type(window, Named<TextBox>(window, "FormScaleMax"), "50");
+			HeadlessInput.Type(window, Named<TextBox>(window, "FormScaleMaxOnStart"), "50");
 			HeadlessInput.Press(window, PhysicalKey.Tab);
 
 			Named<Grid>(window, "FormScale").IsKeyboardFocusWithin.Should().BeFalse();
-			_editor.Changes.Should().Equal(new FakeEditorCall.Change(Argon, new PenSettingChange.Scale(5, 50)));
+			_editor.Changes.Should().Equal(new FakeEditorCall.Change(Argon, new PenSettingChange.ScaleOnStart(5, 50)));
 		}
 		finally
 		{
@@ -434,12 +434,12 @@ public sealed class PenEditorViewTests : IDisposable
 		try
 		{
 			HeadlessInput.Click(window, RowAt(window, 0));
-			HeadlessInput.Type(window, Named<TextBox>(window, "FormScaleMin"), "1");
-			HeadlessInput.Type(window, Named<TextBox>(window, "FormScaleMax"), "2");
+			HeadlessInput.Type(window, Named<TextBox>(window, "FormScaleMinOnStart"), "1");
+			HeadlessInput.Type(window, Named<TextBox>(window, "FormScaleMaxOnStart"), "2");
 
 			HeadlessInput.Click(window, RowAt(window, 1));
 
-			_editor.Changes.Should().Equal(new FakeEditorCall.Change(Argon, new PenSettingChange.Scale(1, 2)));
+			_editor.Changes.Should().Equal(new FakeEditorCall.Change(Argon, new PenSettingChange.ScaleOnStart(1, 2)));
 		}
 		finally
 		{
@@ -481,14 +481,14 @@ public sealed class PenEditorViewTests : IDisposable
 		{
 			HeadlessInput.Click(window, RowAt(window, 0));
 			var message = Named<TextBlock>(window, "FormMessage");
-			HeadlessInput.Type(window, Named<TextBox>(window, "FormScaleMin"), "1");
-			HeadlessInput.Type(window, Named<TextBox>(window, "FormScaleMax"), "2");
+			HeadlessInput.Type(window, Named<TextBox>(window, "FormScaleMinOnStart"), "1");
+			HeadlessInput.Type(window, Named<TextBox>(window, "FormScaleMaxOnStart"), "2");
 			message.Text.Should().BeNullOrEmpty("the empty message line is the form's empty area");
 
 			HeadlessInput.Click(window, message);
 
 			Named<Grid>(window, "FormScale").IsKeyboardFocusWithin.Should().BeFalse();
-			_editor.Changes.Should().Equal(new FakeEditorCall.Change(Argon, new PenSettingChange.Scale(1, 2)));
+			_editor.Changes.Should().Equal(new FakeEditorCall.Change(Argon, new PenSettingChange.ScaleOnStart(1, 2)));
 		}
 		finally
 		{
@@ -808,8 +808,8 @@ public sealed class PenEditorViewTests : IDisposable
 		try
 		{
 			HeadlessInput.Click(window, RowAt(window, 0));
-			HeadlessInput.Type(window, Named<TextBox>(window, "FormScaleMin"), "1");
-			HeadlessInput.Type(window, Named<TextBox>(window, "FormScaleMax"), "2");
+			HeadlessInput.Type(window, Named<TextBox>(window, "FormScaleMinOnStart"), "1");
+			HeadlessInput.Type(window, Named<TextBox>(window, "FormScaleMaxOnStart"), "2");
 			var write = _editor.HoldNextCall();
 
 			HeadlessInput.Press(window, PhysicalKey.Enter);
@@ -818,7 +818,7 @@ public sealed class PenEditorViewTests : IDisposable
 			Dispatcher.UIThread.RunJobs();
 
 			Named<Grid>(window, "FormScale").IsKeyboardFocusWithin.Should().BeFalse();
-			_editor.Changes.Should().Equal(new FakeEditorCall.Change(Argon, new PenSettingChange.Scale(1, 2)));
+			_editor.Changes.Should().Equal(new FakeEditorCall.Change(Argon, new PenSettingChange.ScaleOnStart(1, 2)));
 		}
 		finally
 		{
@@ -835,15 +835,15 @@ public sealed class PenEditorViewTests : IDisposable
 		window.Closed += (_, _) => changesWhenClosed = _editor.Changes.Count();
 
 		HeadlessInput.Click(window, RowAt(window, 0));
-		HeadlessInput.Type(window, Named<TextBox>(window, "FormScaleMin"), "1");
-		HeadlessInput.Type(window, Named<TextBox>(window, "FormScaleMax"), "2");
+		HeadlessInput.Type(window, Named<TextBox>(window, "FormScaleMinOnStart"), "1");
+		HeadlessInput.Type(window, Named<TextBox>(window, "FormScaleMaxOnStart"), "2");
 		var write = _editor.HoldNextCall();
 
 		window.Close();
 		Dispatcher.UIThread.RunJobs();
 
 		window.IsVisible.Should().BeTrue("the close waits for the write in flight");
-		_editor.Changes.Should().Equal(new FakeEditorCall.Change(Argon, new PenSettingChange.Scale(1, 2)));
+		_editor.Changes.Should().Equal(new FakeEditorCall.Change(Argon, new PenSettingChange.ScaleOnStart(1, 2)));
 
 		write.SetResult();
 		Dispatcher.UIThread.RunJobs();

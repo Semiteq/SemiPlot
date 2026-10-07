@@ -298,8 +298,8 @@ public sealed class PenEditorViewModelTests : IDisposable
 	[InlineData(PenColumn.Unit, new[] { 7, 3, 12 })]
 	[InlineData(PenColumn.Mask, new[] { 3, 12, 7 })]
 	[InlineData(PenColumn.LineStyle, new[] { 7, 12, 3 })]
-	[InlineData(PenColumn.ScaleMin, new[] { 3, 7, 12 })]
-	[InlineData(PenColumn.ScaleMax, new[] { 3, 7, 12 })]
+	[InlineData(PenColumn.ScaleMinOnStart, new[] { 3, 7, 12 })]
+	[InlineData(PenColumn.ScaleMaxOnStart, new[] { 3, 7, 12 })]
 	[InlineData(PenColumn.Groups, new[] { 12, 7, 3 })]
 	public void ASort_OrdersTheRowsByTheColumnThenById(PenColumn column, int[] expectedIds)
 	{

@@ -89,7 +89,7 @@ public sealed class PenCatalogueEditorTests(PostgresContainerFixture postgresCon
 	[InlineData(nameof(PenSettingChange.Color))]
 	[InlineData(nameof(PenSettingChange.LineStyle))]
 	[InlineData(nameof(PenSettingChange.EnabledOnStart))]
-	[InlineData(nameof(PenSettingChange.Scale))]
+	[InlineData(nameof(PenSettingChange.ScaleOnStart))]
 	public async Task EachChangeWritesItsOwnColumnAndNothingElse(string arm)
 	{
 		using var services = Build();
@@ -151,12 +151,12 @@ public sealed class PenCatalogueEditorTests(PostgresContainerFixture postgresCon
 		var editor = Editor(services);
 		var pen = await PenAsync(editor, UncommissionedId);
 
-		var set = await editor.ChangeAsync(pen, new PenSettingChange.Scale(-5, 5));
+		var set = await editor.ChangeAsync(pen, new PenSettingChange.ScaleOnStart(-5, 5));
 
 		set.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(set));
-		(await PenAsync(editor, UncommissionedId)).Should().Be(pen with { ScaleMin = -5, ScaleMax = 5 });
+		(await PenAsync(editor, UncommissionedId)).Should().Be(pen with { ScaleMinOnStart = -5, ScaleMaxOnStart = 5 });
 
-		var cleared = await editor.ChangeAsync(pen, new PenSettingChange.Scale(null, null));
+		var cleared = await editor.ChangeAsync(pen, new PenSettingChange.ScaleOnStart(null, null));
 
 		cleared.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(cleared));
 		(await PenAsync(editor, UncommissionedId)).Should().Be(pen);
@@ -173,7 +173,7 @@ public sealed class PenCatalogueEditorTests(PostgresContainerFixture postgresCon
 		var editor = Editor(services);
 		var pen = await PenAsync(editor, ChamberPressureId);
 
-		var result = await editor.ChangeAsync(pen, new PenSettingChange.Scale(min, max));
+		var result = await editor.ChangeAsync(pen, new PenSettingChange.ScaleOnStart(min, max));
 
 		FailureOf(result).Should().Be((ArchiveFault.ValueRejected, "Chamber pressure"));
 		(await PenAsync(editor, ChamberPressureId)).Should().Be(pen);
@@ -422,8 +422,8 @@ public sealed class PenCatalogueEditorTests(PostgresContainerFixture postgresCon
 				pen with { LineStyle = PenLineStyle.Stepped }),
 			nameof(PenSettingChange.EnabledOnStart)
 				=> (new PenSettingChange.EnabledOnStart(false), pen with { EnabledOnStart = false }),
-			nameof(PenSettingChange.Scale)
-				=> (new PenSettingChange.Scale(-1, 1), pen with { ScaleMin = -1, ScaleMax = 1 }),
+			nameof(PenSettingChange.ScaleOnStart)
+				=> (new PenSettingChange.ScaleOnStart(-1, 1), pen with { ScaleMinOnStart = -1, ScaleMaxOnStart = 1 }),
 			_ => throw new ArgumentOutOfRangeException(nameof(arm), arm, "Unknown change arm.")
 		};
 	}

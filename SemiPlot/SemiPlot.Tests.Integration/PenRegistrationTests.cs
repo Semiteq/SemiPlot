@@ -64,8 +64,8 @@ public sealed class PenRegistrationTests(PostgresContainerFixture postgresContai
 		added.Color.Should().BeOneOf(_registrationColors);
 		added.Unit.Should().BeNull();
 		added.Format.Should().BeNull();
-		added.ScaleMin.Should().BeNull();
-		added.ScaleMax.Should().BeNull();
+		added.ScaleMinOnStart.Should().BeNull();
+		added.ScaleMaxOnStart.Should().BeNull();
 		pens.Select(pen => pen.Id).Should().Equal(_unregisteredPenIds.Prepend(RegisteredPenId));
 	}
 

@@ -91,16 +91,16 @@ public sealed class PenFormViewModel : ReactiveObject, IDisposable
 	}
 
 	/// <summary>The lower scale bound as the operator types it, read under the current culture.</summary>
-	public string ScaleMin
+	public string ScaleMinOnStart
 	{
 		get;
-		set => SetDraft(ref field, value, PenField.Scale);
+		set => SetDraft(ref field, value, PenField.ScaleOnStart);
 	} = string.Empty;
 
-	public string ScaleMax
+	public string ScaleMaxOnStart
 	{
 		get;
-		set => SetDraft(ref field, value, PenField.Scale);
+		set => SetDraft(ref field, value, PenField.ScaleOnStart);
 	} = string.Empty;
 
 	public bool IsNameValid => IsValid(PenField.Name, RuleOf(PenField.Name));
@@ -111,11 +111,15 @@ public sealed class PenFormViewModel : ReactiveObject, IDisposable
 
 	public bool IsColorValid => IsValid(PenField.Color, RuleOf(PenField.Color));
 
-	public bool IsScaleMinValid =>
-		IsValid(PenField.Scale, PenFormRules.BoundRule(ScaleMin) ?? PenFormRules.PairRule(ScaleMin, ScaleMax));
+	public bool IsScaleMinOnStartValid =>
+		IsValid(
+			PenField.ScaleOnStart,
+			PenFormRules.BoundRule(ScaleMinOnStart) ?? PenFormRules.PairRule(ScaleMinOnStart, ScaleMaxOnStart));
 
-	public bool IsScaleMaxValid =>
-		IsValid(PenField.Scale, PenFormRules.BoundRule(ScaleMax) ?? PenFormRules.PairRule(ScaleMin, ScaleMax));
+	public bool IsScaleMaxOnStartValid =>
+		IsValid(
+			PenField.ScaleOnStart,
+			PenFormRules.BoundRule(ScaleMaxOnStart) ?? PenFormRules.PairRule(ScaleMinOnStart, ScaleMaxOnStart));
 
 	/// <summary>The first rule a draft breaks, in form order; otherwise the last refusal; otherwise empty.</summary>
 	public string Message => FirstBrokenRule() ?? _refusal?.Text ?? string.Empty;
@@ -270,9 +274,9 @@ public sealed class PenFormViewModel : ReactiveObject, IDisposable
 			case PenField.EnabledOnStart:
 				EnabledOnStart = pen.EnabledOnStart;
 				break;
-			case PenField.Scale:
-				ScaleMin = TextOf(pen.ScaleMin);
-				ScaleMax = TextOf(pen.ScaleMax);
+			case PenField.ScaleOnStart:
+				ScaleMinOnStart = TextOf(pen.ScaleMinOnStart);
+				ScaleMaxOnStart = TextOf(pen.ScaleMaxOnStart);
 				break;
 			default:
 				throw new ArgumentOutOfRangeException(nameof(penField), penField, null);
@@ -290,7 +294,8 @@ public sealed class PenFormViewModel : ReactiveObject, IDisposable
 			PenField.Color => Color == TextOf(pen.Color),
 			PenField.LineStyle => LineStyle == pen.LineStyle,
 			PenField.EnabledOnStart => EnabledOnStart == pen.EnabledOnStart,
-			PenField.Scale => ScaleMin == TextOf(pen.ScaleMin) && ScaleMax == TextOf(pen.ScaleMax),
+			PenField.ScaleOnStart => ScaleMinOnStart == TextOf(pen.ScaleMinOnStart)
+				&& ScaleMaxOnStart == TextOf(pen.ScaleMaxOnStart),
 			_ => throw new ArgumentOutOfRangeException(nameof(penField), penField, null)
 		};
 	}
@@ -301,8 +306,8 @@ public sealed class PenFormViewModel : ReactiveObject, IDisposable
 		this.RaisePropertyChanged(nameof(IsUnitValid));
 		this.RaisePropertyChanged(nameof(IsMaskValid));
 		this.RaisePropertyChanged(nameof(IsColorValid));
-		this.RaisePropertyChanged(nameof(IsScaleMinValid));
-		this.RaisePropertyChanged(nameof(IsScaleMaxValid));
+		this.RaisePropertyChanged(nameof(IsScaleMinOnStartValid));
+		this.RaisePropertyChanged(nameof(IsScaleMaxOnStartValid));
 		this.RaisePropertyChanged(nameof(Message));
 		this.RaisePropertyChanged(nameof(MaskPreview));
 	}
@@ -314,7 +319,10 @@ public sealed class PenFormViewModel : ReactiveObject, IDisposable
 
 	private string? FirstBrokenRule()
 	{
-		return RuleOf(PenField.Name) ?? RuleOf(PenField.Mask) ?? RuleOf(PenField.Color) ?? RuleOf(PenField.Scale);
+		return RuleOf(PenField.Name)
+			?? RuleOf(PenField.Mask)
+			?? RuleOf(PenField.Color)
+			?? RuleOf(PenField.ScaleOnStart);
 	}
 
 	private string? RuleOf(PenField penField)
@@ -324,7 +332,7 @@ public sealed class PenFormViewModel : ReactiveObject, IDisposable
 			PenField.Name => PenFormRules.NameRule(Name),
 			PenField.Mask => PenFormRules.MaskRule(Mask),
 			PenField.Color => PenFormRules.ColorRule(Color),
-			PenField.Scale => PenFormRules.ScaleRule(ScaleMin, ScaleMax),
+			PenField.ScaleOnStart => PenFormRules.ScaleRule(ScaleMinOnStart, ScaleMaxOnStart),
 			_ => null
 		};
 	}
@@ -335,9 +343,9 @@ public sealed class PenFormViewModel : ReactiveObject, IDisposable
 	{
 		var queued = Row.QueuedPen;
 
-		if (penField == PenField.Scale)
+		if (penField == PenField.ScaleOnStart)
 		{
-			return ScaleChangeOf(queued);
+			return ScaleOnStartChangeOf(queued);
 		}
 
 		if (Shows(penField, queued))
@@ -357,12 +365,14 @@ public sealed class PenFormViewModel : ReactiveObject, IDisposable
 		};
 	}
 
-	private PenSettingChange.Scale? ScaleChangeOf(StoredPen queued)
+	private PenSettingChange.ScaleOnStart? ScaleOnStartChangeOf(StoredPen queued)
 	{
-		PenFormRules.TryReadBound(ScaleMin, out var min);
-		PenFormRules.TryReadBound(ScaleMax, out var max);
+		PenFormRules.TryReadBound(ScaleMinOnStart, out var min);
+		PenFormRules.TryReadBound(ScaleMaxOnStart, out var max);
 
-		return min == queued.ScaleMin && max == queued.ScaleMax ? null : new PenSettingChange.Scale(min, max);
+		return min == queued.ScaleMinOnStart && max == queued.ScaleMaxOnStart
+			? null
+			: new PenSettingChange.ScaleOnStart(min, max);
 	}
 
 	private static string TextOf(string? stored)

@@ -124,10 +124,15 @@ pins the figures it receives, and the minimap's smoke walk on the demo stand cov
 
 **Against a real rasterizer** — `SemiPlot.Tests.Unit/UI/Chart/ChartGapRenderTests.cs`, a plain `[Fact]`
 with no Avalonia: it renders through SkiaSharp and asserts on pixels that a `NaN` column breaks the
-line. `EnvelopeLineTests.cs` uses the same rasterizer as a render thread, not for its pixels: a
-background task renders frames while the test thread rewrites the same pen's columns, and the pin is
-that the render task throws nothing and reaches its frame budget, the run bounded by that budget and a
-cancellation token.
+line. `LogAxisRenderTests.cs` renders a log axis the same way and asserts on pixels that the 1e-4 plateau
+of a 1e-6..1e-2 axis draws at the data area's vertical middle and that a plateau at `0`, or under the
+axis minimum, draws 2 px above the data area's bottom row. `EnvelopeLineTests.cs` uses the same rasterizer
+twice. As a render thread, not for its pixels: a background task renders frames while the test thread
+rewrites the same pen's columns, and the pin is that the render task throws nothing and reaches its frame
+budget, the run bounded by that budget and a cancellation token. And for its pixels in
+`Render_ProjectsThroughLog10OnlyUnderALogTickGenerator`: one flat line lands inside a -6..-2 axis only
+while the axis carries a `LogTickGenerator`. Both pixel probes go through `RedStroke`, the red-dominance
+band of `ChartGapRenderTests`.
 
 An integration test must not cross a second foreign boundary in the same assertion, and must not
 exercise the production composition root. The moment it does either, a failure stops naming a seam.

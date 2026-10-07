@@ -4,8 +4,12 @@ public sealed class PenScaleModel
 {
 	private const double AutoPaddingFraction = 0.05;
 	private const double FlatRangePadding = 0.5;
+	private const double FlatLogRangeDecades = 0.5;
 	private const double LogFallbackMin = 1.0;
 	private const double LogFallbackMax = 10.0;
+	// 10 to either power is a finite, normal double.
+	private const double LowestLogDecade = -307.0;
+	private const double HighestLogDecade = 308.0;
 
 	public IReadOnlyList<PenScale> Compute(
 		IReadOnlyList<PenScaleSettings> settings,
@@ -66,10 +70,15 @@ public sealed class PenScaleModel
 
 	private static (double Min, double Max) SanitizeManualRange(PenScaleSettings setting, bool isLogarithmic)
 	{
+		if (!double.IsFinite(setting.ManualMin) || !double.IsFinite(setting.ManualMax))
+		{
+			return DefaultRange(isLogarithmic);
+		}
+
 		var min = Math.Min(setting.ManualMin, setting.ManualMax);
 		var max = Math.Max(setting.ManualMin, setting.ManualMax);
 
-		if (isLogarithmic && min <= 0.0)
+		if (isLogarithmic && !LogAxis.AdmitsMinimum(min))
 		{
 			min = max > 0.0 ? Math.Min(LogFallbackMin, max) : LogFallbackMin;
 			if (max <= min)
@@ -134,26 +143,28 @@ public sealed class PenScaleModel
 
 	private static (double Min, double Max) PadRange(double min, double max, bool isLogarithmic)
 	{
-		if (min == max)
+		if (isLogarithmic)
 		{
-			return ClampLowerToPositive(min - FlatRangePadding, max + FlatRangePadding, isLogarithmic);
+			return PadLogRange(min, max);
 		}
 
-		var padding = (max - min) * AutoPaddingFraction;
+		var padding = min == max ? FlatRangePadding : (max - min) * AutoPaddingFraction;
 
-		return ClampLowerToPositive(min - padding, max + padding, isLogarithmic);
+		return (min - padding, max + padding);
 	}
 
-	// A log axis has no defined range below zero, so a padded lower bound is clamped to keep the
-	// minimum positive instead of dipping the auto padding past zero.
-	private static (double Min, double Max) ClampLowerToPositive(double min, double max, bool isLogarithmic)
+	// docs/architecture/charting.md#log10-y-axis
+	private static (double Min, double Max) PadLogRange(double min, double max)
 	{
-		if (isLogarithmic && min <= 0.0)
-		{
-			min = Math.Min(LogFallbackMin, max);
-		}
+		var lowerDecade = Math.Clamp(Math.Log10(min), LowestLogDecade, HighestLogDecade);
+		var upperDecade = Math.Clamp(Math.Log10(max), LowestLogDecade, HighestLogDecade);
+		var padding = lowerDecade == upperDecade
+			? FlatLogRangeDecades
+			: (upperDecade - lowerDecade) * AutoPaddingFraction;
 
-		return (min, max);
+		return (
+			Math.Pow(10.0, Math.Max(lowerDecade - padding, LowestLogDecade)),
+			Math.Pow(10.0, Math.Min(upperDecade + padding, HighestLogDecade)));
 	}
 
 	private static (double Min, double Max) DefaultRange(bool isLogarithmic)

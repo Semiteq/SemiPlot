@@ -82,6 +82,9 @@ operator interaction.
   boxes and Set Limits left the bar with the navigation-bar change, and the axis scale panel is the
   only way to type a pen's limits.
 - **Log axis:** values ≤ 0 are **sanitized** (dropped) before log scaling.
+  *As-built note:* only the auto range drops them. The line draws a value ≤ 0, and any value under the
+  axis minimum, on a floor 2 px above the data area's bottom, and the cursor and hover readouts show the
+  stored value (charting.md#log10-y-axis).
 - **Time display:** **computer local time** (machine local), not UTC.
 - **Line style:** both stepped and interpolated, **configurable per pen**.
 - **Performance:** **FPS locked at 30**; data updates no faster than **10 Hz (100 ms)**; up to
@@ -111,7 +114,7 @@ operator interaction.
 
 Requirements: the now-marker / sticky live-edge follow (trend-feature-spec.md §RT-2), pan with a
 constant window width down to the first stored sample (§TM-3), wheel zoom from 1 second to 1 year
-about the cursor anchor (§TM-2), and the autoscale / manual / log axis modes (§AY-3 … §AY-6). The
+about the cursor anchor (§TM-2), and the autoscale / manual modes and the log10 axis type (§AY-3 … §AY-6). The
 as-built mechanics that realize them:
 
 - **Zoom width is quantized onto a 1.25 geometric ladder** (`TrendNavigationModel.Zoom`); the
@@ -135,7 +138,12 @@ as-built mechanics that realize them:
   the panel's two buttons act on the pen the panel was opened for. The axis scale panel is the only
   place that types limits: the navigation bar carries time navigation only. The scale modes are
   `auto`, which ranges over the columns inside the visible window, and `manual` (§AY-3, §AY-4); the
-  logarithmic axis is an axis *type* with values ≤ 0 sanitized before scaling (§AY-6).
+  log10 axis is an axis *type* beside either mode (§AY-6). A pen opens on the type its
+  `log_scale_on_start` stores, the panel's Logarithmic scale checkbox switches it for the session of the
+  window, and Restore initial scale brings the stored type back with the stored bounds. A log axis
+  needs a minimum above zero: the auto range skips values ≤ 0, the panel refuses the type over a manual
+  minimum ≤ 0, and a sample ≤ 0 draws 2 px above the bottom of the data area while every readout
+  shows its true value (`charting.md#log10-y-axis`).
 
 ## Multi-pen / multi-axis behavior
 
@@ -216,18 +224,62 @@ control in `TrendChartView.axaml` and shown at the pointer) over `Chart/AxisScal
 - Maximum and Minimum are `TextBox` fields seeded with the bounds the axis shows, rendered through
   `PenValueFormat.Format` with the pen's stored mask and the `0.###` fallback, as the legend row and the
   hover readout render a reading. A field left as seeded keeps the exact bound it was seeded from, so a mask
-  that rounds (0.4 shown as "0") never moves the scale on Apply; only a field whose text changed is parsed.
+  that rounds (0.4 shown as "0") never moves the scale; only a field whose text changed is parsed.
   Typed text is read by `PenFormRules.TryReadBound`, the pen editor's rule, in the
   current culture: an entry that is not a number in that culture, such as "150.5" under `ru-RU`, is
   invalid, and the last value that parsed is never applied in its place.
-- Apply writes both bounds as a manual scale on the pen through `SetAxisLimits`. Enter in either field
-  applies; the two buttons and the panel take no Enter binding, so Enter on the focused Autoscale button
-  presses Autoscale. Escape and a click outside close the panel and write nothing.
+- The panel has no apply button. The two fields are one edit, as the pen editor's scale pair is
+  (`overview.md#the-pen-and-group-editor`), and the edit ends when keyboard focus leaves both: the view
+  watches `IsKeyboardFocusWithin` of the grid that holds them, `AxisScaleBounds`, and calls
+  `CommitBounds` when it turns false, so a Tab from one field to the other writes no half pair. Enter in
+  either field runs `CommitBoundsCommand`, the same method; the two buttons and the panel take no Enter
+  binding, so Enter on the focused Autoscale button presses Autoscale. The panel itself is focusable and
+  no tab stop, so a press on its empty area, a label or the pen name gives the panel the keyboard through
+  Avalonia's own press-to-focus, which ends the edit too. Keys then still route through the panel, so
+  Escape keeps closing it. The panel's background is `Transparent` so that press reaches it; a press on
+  the flyout presenter's padding around the panel does not end the edit.
+- `CommitBounds` writes only a real change: a pair that reads, with the minimum below the maximum and
+  admitted by the log rule, and that differs from the seeded pair's values. It writes both bounds as a
+  manual scale on the pen through `SetAxisLimits`, then re-seeds from the chart, and the panel stays open.
+  Focus passing through untouched fields, or a value retyped in another notation, writes nothing, so
+  Enter on an untouched autoscaled pen keeps it `Auto` rather than freezing the shown range into a manual
+  one.
+- A dismiss from outside (a press outside the panel, a click on the window frame, the window losing focus
+  or activation) writes a pending valid pair once and closes the panel. Avalonia raises the flyout's
+  `Closing`, then detaches the panel, which takes focus off the field and so ends the edit through the
+  same `CommitBounds`; the panel has no close-time write of its own, and the host does not handle the
+  flyout's `Closed`. Escape runs `CancelCommand`, and the panel's own close requests run `RequestClose`;
+  both clear the pen before the flyout hides, so the detach finds no pen and writes nothing. Escape thus
+  discards the pending pair and keeps a pair already written. A field that is invalid when the panel
+  closes is discarded, and the axis keeps its bounds.
 - An unreadable field, an empty field or a minimum not below the maximum is invalid on every edit: the
-  field takes the `invalid` border, the message line names the rule and Apply is disabled. The panel
-  keeps its size (`ui-theme.md#the-axis-scale-panel`).
+  field takes the `invalid` border, the message line names the rule, and no commit writes the pair. While
+  the axis is logarithmic, a minimum ≤ 0 is invalid the same way, under `ScaleLogMinimumPositive`. The
+  panel keeps its size (`ui-theme.md#the-axis-scale-panel`).
+- The Logarithmic scale checkbox sits in its own row under the bounds, outside `AxisScaleBounds`, so a
+  press on it ends the pair's edit. It reads the pen's session flag, `IsLogarithmic`, `Mode=OneWay`,
+  seeded from the chart's settings at every seed, and writes it only through `ToggleLogarithmicCommand`,
+  which orders its two writes by direction. Switching on, the pending pair is in the chart before
+  `TrendChartViewModel.SetLogarithmic(penId, true)` checks the log rule: in the view the press or Tab onto
+  the box has already moved focus off the pair, which wrote it, and the command writes a pending valid
+  pair itself first, so the view model keeps the order without the view. Switching off, it calls
+  `SetLogarithmic(penId, false)` first and then writes the pending pair under the linear rule, so a
+  minimum of 0 typed on a log axis lands. Either way the panel re-seeds and stays open: the fields show
+  the bounds of the new axis.
+- The command refuses in two cases, and the box then stays as it was. A pending pair that does not read as
+  a pair (a field empty or not a number, or the minimum not below the maximum) stops it before any write:
+  the typed text stays and the message line names the rule the pair breaks. Switching on, the pending pair
+  is written first; the chart then refuses the flag over a manual minimum ≤ 0, so the axis keeps the
+  written bounds on a linear scale (a linear 5..100 with 0 typed ends linear at 0..100), and the panel
+  keeps the box clear and shows `ScaleLogMinimumPositive` on the message line until the operator edits the
+  minimum or the panel seeds again. That refusal marks no field invalid, because the minimum is valid on a
+  linear axis; the way out is to type a positive minimum and tick the box again. On an autoscaled pen with
+  untouched fields the switch always lands. The box reaches only this window's chart; the stored flag is
+  the pen editor's (`overview.md#the-pen-and-group-editor`).
 - Autoscale and Restore initial scale call `AutoscalePen` and `RestoreInitialScale(penId)` for the
-  panel's pen and close the panel. The View -> Pen scale submenu items call `AutoscaleActivePen` and
+  panel's pen and close the panel. A press on either button takes focus off a typed pair, which is
+  written first; the button's own result then replaces it. Autoscale keeps the axis type; Restore initial
+  scale sets the stored one. The View -> Pen scale submenu items call `AutoscaleActivePen` and
   `RestoreInitialScale()`. The submenu header names the drawn pen and follows `DrawnPenId` and the
   catalogue's pen names; while no pen's axis is drawn it reads "Pen scale".
 

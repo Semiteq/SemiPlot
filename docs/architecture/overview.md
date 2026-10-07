@@ -468,7 +468,7 @@ The window is a `TabControl` of two tabs over a bottom bar that both tabs share:
 
 | Part | Holds |
 | --- | --- |
-| `Pens` tab | A read-only table of every pen: a click on a column header sorts by that column, a second click reverses. Under it, the form of the selected pen: name, unit, mask with a live preview, colour as a `#RRGGBB` text box beside a `ColorPicker`, line style, "on start", and the scale pair. A pen's groups show in the table as text and are not edited there. |
+| `Pens` tab | A read-only table of every pen: a click on a column header sorts by that column, a second click reverses. Under it, the form of the selected pen: name, unit, mask with a live preview, colour as a `#RRGGBB` text box beside a `ColorPicker`, line style, "on start", the scale pair and the log scale flag under it. A pen's groups show in the table as text and are not edited there. |
 | `Groups` tab | The group list with a new-name field, a create button, one rename field and a delete button. Beside it, every pen of the catalogue as a checkbox, checked where the pen is a member of the selected group. Membership is edited here only. A delete asks once, in a row the tab always reserves, naming the group and how many pens it holds. |
 | Bottom bar | The number of pens the last refresh added and `Refresh pen list`, right-aligned. `Refresh pen list` registers the keys the SCADA writes as hidden pens and reads the catalogue again. |
 
@@ -526,13 +526,15 @@ There is no save button.
   follows the row: a draft still showing the queued value takes the new one when a write is queued,
   lands or fails, and a draft the operator changed stays as typed.
 - The group rename keeps its own list of queued names on `PenGroupViewModel` instead of sharing the
-  row's. The row's list holds changes of seven settings, folds them over the stored pen and counts a
+  row's. The row's list holds changes of eight settings, folds them over the stored pen and counts a
   later write only when it changes the same setting; the rename list holds one field, its queued value
   is the last name, and any queued name is a later write. The two share only the append and the removal
   of the settled entry, and a common type would take both differences as parameters.
 - The scale pair writes only when focus leaves the pair, so tabbing from the minimum to the maximum
-  writes no half pair; both bounds go in one statement.
-- The line-style combo box and the "on start" checkbox write only a value that differs from the draft,
+  writes no half pair; both bounds go in one statement. The log scale checkbox sits under the pair but
+  outside its focus scope, so a click on it ends the pair's edit first, and the flag's rule, a minimum
+  above zero, reads the minimum just typed.
+- The line-style combo box and the two start checkboxes write only a value that differs from the draft,
   so a binding that pushes a newly selected pen's values into them writes nothing. The colour picker
   writes when its flyout closes on a colour other than the one it opened with.
 - A value the form refuses, or one the write fails on, reverts to the value the field holds once its
@@ -588,7 +590,8 @@ The editor asks for a read after every write it lands. `EditorCallQueue` invokes
 on the UI thread after a call whose result succeeded, and a failed or thrown call invokes nothing.
 `MainWindowViewModel` builds the editor's view model with a callback that calls the sync's `ReadNow()`,
 so the read that follows an edit reaches the instance that made it within a second, while the editor
-is still open, and every other instance within 5 s. A scale-pair edit changes no pen already shown
+is still open, and every other instance within 5 s. An edit of the scale pair or the log scale flag
+changes no pen already shown
 (`#what-a-read-changes`). A burst of writes asks for many reads, and `ReadNow` keeps
 them to the read in flight and one after it. Refresh's own read succeeds too and asks for one more
 read, which costs one statement. The startup-failure window has no editor and no sync.
@@ -606,6 +609,7 @@ element, so two reads of one stored pen are equal. A read that changes nothing e
 | A changed name, unit, mask, colour, line style or group list | That pen changes in place. |
 | A changed stored scale pair | Nothing shown changes: the pair is the pen's initial scale, applied when the pen enters the chart, and the restore target of `RestoreInitialScale`, which reads the pair the latest read stored. |
 | A changed `enabled_on_start` | Nothing changes on screen: the flag is the visibility a pen starts with. |
+| A changed `log_scale_on_start` | Nothing changes on screen: the flag is the axis type a pen starts with, applied when the pen enters the chart and by `RestoreInitialScale`, which reads the flag the latest read stored. |
 | A new pen | It joins with the visibility its `enabled_on_start` gives it, with its history and its live edge. |
 | A pen gone from the catalogue | It leaves the chart. When it was the active pen, the first visible pen in catalogue order takes the slot. |
 
@@ -723,6 +727,7 @@ The application reads the real archive and nothing else: the composition root re
 `AddPostgresData`, and every member of `IDataProvider` is implemented over it — the pen catalogue,
 the archive extent, the windowed history read and the live-edge poll. The chart draws history and
 follows the archive as it grows. The pen editor writes the catalogue through `IPenCatalogueEditor`,
-and every running chart follows what it writes within 5 s (`#the-live-catalogue`). See
+and every running chart follows what it writes within 5 s (`#the-live-catalogue`), except the start
+values, which change nothing on screen (`#what-a-read-changes`). See
 [data-integration.md](./data-integration.md)
 for the contract and `docs/plans/` for the remaining work.

@@ -9,7 +9,7 @@ public sealed record PenScaleSettings(
 {
 	public static PenScaleSettings InitialFor(Pen pen)
 	{
-		var settings = new PenScaleSettings(pen.PenId);
+		var settings = new PenScaleSettings(pen.PenId, IsLogarithmic: pen.LogScaleOnStart);
 
 		if (pen.ScaleMinOnStart is { } min && pen.ScaleMaxOnStart is { } max)
 		{

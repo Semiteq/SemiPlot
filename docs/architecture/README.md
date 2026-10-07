@@ -8,14 +8,15 @@ implementation plans see `docs/plans/`.
 
 - [overview.md](./overview.md) — purpose, technology stack, components, data flow, deployment.
 - [charting.md](./charting.md) — the trend-viewer UI: ScottPlot 5 renderer and the required
-  charting features (pens, multi-axis per-pen scaling, cursor, aggregation layers, time navigation).
+  charting features (pens, multi-axis per-pen scaling, the log10 axis, cursor, aggregation layers, time
+  navigation).
 - [trend-interaction.md](./trend-interaction.md) — behavior spec: time navigation, sticky scroll,
   axis management, cursors, decimation, rendering; the locked decisions log.
 - [ui-text.md](./ui-text.md) - the strings the operator reads: the English and Russian resource sets,
   what the `locale` key selects, the compile-time accessor and why it is a source generator, and
   what stays a literal in code.
 - [ui-theme.md](./ui-theme.md) - the colours the operator sees: the retinted `Semi.Avalonia` tokens,
-  the application's own surface keys, how the `theme` key picks a variant, the four ScottPlot
+  the application's own surface keys, how the `theme` key picks a variant, the five ScottPlot
   surfaces, and the rule that a colour literal in AXAML is a defect.
 - [data-integration.md](./data-integration.md) — the contract between SemiPlot and the archive
   database: responsibility zones, the `IDataProvider` surface, the statement each operation issues

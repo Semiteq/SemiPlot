@@ -35,6 +35,7 @@ public sealed class ChartPaletteTests
 		plot.FigureBackground.Color.Should().Be(Resolve("AppPanelBackgroundBrush", variant));
 		plot.DataBackground.Color.Should().Be(Resolve("AppContentBackgroundBrush", variant));
 		plot.Grid.MajorLineColor.Should().Be(Resolve("AppSubtleLineBrush", variant));
+		plot.Grid.YAxisStyle.MinorLineStyle.Color.Should().Be(Resolve("AppMinorGridLineBrush", variant));
 
 		var axisColor = Resolve("AppSecondaryForegroundBrush", variant);
 		foreach (var axis in plot.Axes.GetAxes())
@@ -61,10 +62,12 @@ public sealed class ChartPaletteTests
 		dark.Figure.Should().NotBe(light.Figure);
 		dark.Data.Should().NotBe(light.Data);
 		dark.Grid.Should().NotBe(light.Grid);
+		dark.MinorGrid.Should().NotBe(light.MinorGrid);
 		dark.Axis.Should().NotBe(light.Axis);
 		dark.Figure.Should().Be(Resolve("AppPanelBackgroundBrush", ThemeVariant.Dark));
 		dark.Data.Should().Be(Resolve("AppContentBackgroundBrush", ThemeVariant.Dark));
 		dark.Grid.Should().Be(Resolve("AppSubtleLineBrush", ThemeVariant.Dark));
+		dark.MinorGrid.Should().Be(Resolve("AppMinorGridLineBrush", ThemeVariant.Dark));
 		dark.Axis.Should().Be(Resolve("AppSecondaryForegroundBrush", ThemeVariant.Dark));
 	}
 
@@ -80,12 +83,13 @@ public sealed class ChartPaletteTests
 		added.TickLabelStyle.ForeColor.Should().Be(Resolve("AppSecondaryForegroundBrush", ThemeVariant.Light));
 	}
 
-	private static (Color Figure, Color Data, Color Grid, Color Axis) SurfacesOf(Plot plot)
+	private static (Color Figure, Color Data, Color Grid, Color MinorGrid, Color Axis) SurfacesOf(Plot plot)
 	{
 		return (
 			plot.FigureBackground.Color,
 			plot.DataBackground.Color,
 			plot.Grid.MajorLineColor,
+			plot.Grid.YAxisStyle.MinorLineStyle.Color,
 			plot.Axes.Bottom.TickLabelStyle.ForeColor);
 	}
 

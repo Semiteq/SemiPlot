@@ -202,7 +202,7 @@ public sealed class RawLayerGeneratorTests
 	}
 
 	[Fact]
-	public void TheStandardSliceCarriesTheThreeCommissioningStates()
+	public void TheStandardSliceCarriesTheFourCommissioningStates()
 	{
 		var pens = RawLayerGenerator.SelectPens(SeederOptions.DefaultPenCount);
 
@@ -210,6 +210,13 @@ public sealed class RawLayerGeneratorTests
 			.Which.Groups.Should().HaveCount(2);
 		pens.Should().ContainSingle(pen => pen.PenId == SyntheticPenCatalog.HiddenOnStartPenId)
 			.Which.EnabledOnStart.Should().BeFalse();
+
+		var logScale = pens.Should().ContainSingle(pen => pen.LogScaleOnStart).Which;
+
+		logScale.PenId.Should().Be(SyntheticPenCatalog.LogScalePenId);
+		logScale.Format.Should().Be("0.0E+0");
+		logScale.ScaleMinOnStart.Should().Be(1e-6);
+		logScale.ScaleMaxOnStart.Should().Be(1e-1);
 
 		var uncommissioned = pens.Should()
 			.ContainSingle(pen => pen.PenId == SyntheticPenCatalog.UncommissionedPenId).Which;
@@ -219,6 +226,22 @@ public sealed class RawLayerGeneratorTests
 		uncommissioned.Format.Should().BeNull();
 		uncommissioned.ScaleMinOnStart.Should().BeNull();
 		uncommissioned.ScaleMaxOnStart.Should().BeNull();
+	}
+
+	[Fact]
+	public void TheLogPenCoversAtLeastFourDecadesOfItsRangeOverADay()
+	{
+		var options = BenchOptions.For(days: 1);
+		var pen = RawLayerGenerator.SelectPens(options.PenCount)
+			.Single(candidate => candidate.PenId == SyntheticPenCatalog.LogScalePenId);
+
+		var values = RawLayerGenerator.Generate(options)
+			.Where(row => row.Id == pen.PenId)
+			.Select(row => row.Value)
+			.ToArray();
+
+		values.Should().AllSatisfy(value => value.Should().BeInRange(pen.MinValue, pen.MaxValue));
+		Math.Log10(values.Max() / values.Min()).Should().BeGreaterThanOrEqualTo(4.0);
 	}
 
 	[Fact]

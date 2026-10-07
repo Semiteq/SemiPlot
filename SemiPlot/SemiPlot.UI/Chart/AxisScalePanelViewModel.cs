@@ -7,11 +7,10 @@ using ReactiveUI;
 
 using SemiPlot.Core.Trends;
 using SemiPlot.UI.Localization;
-using SemiPlot.UI.PenEditor;
 
 namespace SemiPlot.UI.Chart;
 
-// The panel that edits one pen's two scale bounds, docs/architecture/trend-interaction.md#the-axis-scale-panel
+// docs/architecture/trend-interaction.md#the-axis-scale-panel
 public sealed class AxisScalePanelViewModel : ReactiveObject, IDisposable
 {
 	private readonly Subject<Unit> _closeRequests = new();
@@ -20,19 +19,19 @@ public sealed class AxisScalePanelViewModel : ReactiveObject, IDisposable
 	private int? _penId;
 	private SeededBound _seededMaximum;
 	private SeededBound _seededMinimum;
+	private bool _isLogarithmicRefused;
 
 	public AxisScalePanelViewModel(TrendChartViewModel chart)
 	{
 		_chart = chart;
 
 		_disposables.Add(_closeRequests);
-		_disposables.Add(ApplyCommand = ReactiveCommand.Create(
-			Apply,
-			this.WhenAnyValue(panel => panel.IsValid)));
+		_disposables.Add(CommitBoundsCommand = ReactiveCommand.Create(CommitBounds));
 		_disposables.Add(AutoscaleCommand = ReactiveCommand.Create(() => ActOnThePen(_chart.AutoscalePen)));
 		_disposables.Add(InitialScaleCommand = ReactiveCommand.Create(
 			() => ActOnThePen(_chart.RestoreInitialScale)));
 		_disposables.Add(CancelCommand = ReactiveCommand.Create(RequestClose));
+		_disposables.Add(ToggleLogarithmicCommand = ReactiveCommand.Create(ToggleLogarithmic));
 		_disposables.Add(_chart
 			.WhenAnyValue(chart => chart.DrawnPenId)
 			.Subscribe(CloseWhenThePenIsNotDrawn, _chart.ReportFailure));
@@ -41,13 +40,15 @@ public sealed class AxisScalePanelViewModel : ReactiveObject, IDisposable
 	/// <summary>The panel asks its host to close through this; the host owns the flyout.</summary>
 	public IObservable<Unit> CloseRequests => _closeRequests.AsObservable();
 
-	public ReactiveCommand<Unit, Unit> ApplyCommand { get; }
+	public ReactiveCommand<Unit, Unit> CommitBoundsCommand { get; }
 
 	public ReactiveCommand<Unit, Unit> AutoscaleCommand { get; }
 
 	public ReactiveCommand<Unit, Unit> InitialScaleCommand { get; }
 
 	public ReactiveCommand<Unit, Unit> CancelCommand { get; }
+
+	public ReactiveCommand<Unit, Unit> ToggleLogarithmicCommand { get; }
 
 	public string PenName
 	{
@@ -77,33 +78,52 @@ public sealed class AxisScalePanelViewModel : ReactiveObject, IDisposable
 		get;
 		set
 		{
+			if (!string.Equals(field, value, StringComparison.Ordinal))
+			{
+				_isLogarithmicRefused = false;
+			}
+
 			this.RaiseAndSetIfChanged(ref field, value);
 			RaiseValidationChanged();
 		}
 	} = string.Empty;
 
+	/// <summary>The pen's axis type in this window, as the chart held it at the last seed.</summary>
+	public bool IsLogarithmic
+	{
+		get;
+		private set
+		{
+			this.RaiseAndSetIfChanged(ref field, value);
+			RaiseValidationChanged();
+		}
+	}
+
 	public bool IsMaximumValid => TryReadMaximum(out _) && !IsInverted;
 
-	public bool IsMinimumValid => TryReadMinimum(out _) && !IsInverted;
-
-	public bool IsValid => TryReadPair(out _, out _);
+	public bool IsMinimumValid => TryReadMinimum(out _) && !IsInverted && !BreaksLogMinimum;
 
 	/// <summary>The rule the pair breaks, or an empty string while it is valid.</summary>
 	public string ValidationMessage
 	{
 		get
 		{
-			if (IsUnreadable(MaximumText, _seededMaximum) || IsUnreadable(MinimumText, _seededMinimum))
+			if (_seededMaximum.IsUnreadable(MaximumText) || _seededMinimum.IsUnreadable(MinimumText))
 			{
 				return Resources.AxisScaleBoundInvalid;
 			}
 
-			if (IsEmpty(MaximumText, _seededMaximum) || IsEmpty(MinimumText, _seededMinimum))
+			if (_seededMaximum.IsEmpty(MaximumText) || _seededMinimum.IsEmpty(MinimumText))
 			{
 				return Resources.AxisScaleBoundsRequired;
 			}
 
-			return IsInverted ? Resources.AxisScaleMinimumBelowMaximum : string.Empty;
+			if (IsInverted)
+			{
+				return Resources.AxisScaleMinimumBelowMaximum;
+			}
+
+			return BreaksLogMinimum || _isLogarithmicRefused ? Resources.ScaleLogMinimumPositive : string.Empty;
 		}
 	}
 
@@ -112,17 +132,25 @@ public sealed class AxisScalePanelViewModel : ReactiveObject, IDisposable
 		&& TryReadMinimum(out var minimum)
 		&& minimum >= maximum;
 
+	private bool BreaksLogMinimum =>
+		IsLogarithmic
+		&& TryReadMinimum(out var minimum)
+		&& !LogAxis.AdmitsMinimum(minimum);
+
 	/// <summary>Fills the fields from the drawn pen; false when no pen's axis can be edited.</summary>
 	public bool Seed()
 	{
 		if (_chart.DrawnPenId is not { } penId
 			|| _chart.FindPen(penId) is not { } state
+			|| _chart.ScaleSettings.GetValueOrDefault(penId) is not { } settings
 			|| _chart.ScaleRangeForPen(penId) is not { } range)
 		{
 			return false;
 		}
 
 		_penId = penId;
+		_isLogarithmicRefused = false;
+		IsLogarithmic = settings.IsLogarithmic;
 		PenName = state.Pen.Name;
 		PenUnit = state.Pen.Unit ?? string.Empty;
 		_seededMaximum = new SeededBound(PenValueFormat.Format(range.Max, state.Pen.Format), range.Max);
@@ -133,18 +161,38 @@ public sealed class AxisScalePanelViewModel : ReactiveObject, IDisposable
 		return true;
 	}
 
+	/// <summary>Writes a valid pair that differs from the seeded one and re-seeds; the panel stays open.</summary>
+	public void CommitBounds()
+	{
+		if (_penId is { } penId && WritePendingPair(penId))
+		{
+			Seed();
+		}
+	}
+
+	public void ReportFailure(Exception failure)
+	{
+		_chart.ReportFailure(failure);
+	}
+
 	public void Dispose()
 	{
 		_disposables.Dispose();
 	}
 
-	private void Apply()
+	private bool WritePendingPair(int penId)
 	{
-		if (_penId is { } penId && TryReadPair(out var minimum, out var maximum))
+		if (!TryReadPair(out var minimum, out var maximum) || BreaksLogMinimum || IsSeededPair(minimum, maximum))
 		{
-			_chart.SetAxisLimits(penId, minimum, maximum);
-			RequestClose();
+			return false;
 		}
+
+		return _chart.SetAxisLimits(penId, minimum, maximum);
+	}
+
+	private bool IsSeededPair(double minimum, double maximum)
+	{
+		return minimum.Equals(_seededMinimum.Value) && maximum.Equals(_seededMaximum.Value);
 	}
 
 	private void ActOnThePen(Func<int, bool> action)
@@ -155,6 +203,56 @@ public sealed class AxisScalePanelViewModel : ReactiveObject, IDisposable
 		}
 
 		RequestClose();
+	}
+
+	private void ToggleLogarithmic()
+	{
+		if (_penId is not { } penId || _chart.ScaleSettings.GetValueOrDefault(penId) is not { } settings)
+		{
+			return;
+		}
+
+		if (!TryReadPair(out _, out _))
+		{
+			KeepTheBoxAsItWas();
+
+			return;
+		}
+
+		if (settings.IsLogarithmic)
+		{
+			SwitchLogarithmicOff(penId);
+
+			return;
+		}
+
+		WritePendingPair(penId);
+		var isSwitchedOn = _chart.SetLogarithmic(penId, true);
+		Seed();
+
+		if (!isSwitchedOn)
+		{
+			_isLogarithmicRefused = true;
+			KeepTheBoxAsItWas();
+		}
+	}
+
+	private void SwitchLogarithmicOff(int penId)
+	{
+		if (_chart.SetLogarithmic(penId, false))
+		{
+			IsLogarithmic = false;
+			WritePendingPair(penId);
+		}
+
+		Seed();
+	}
+
+	// The box ticks itself before the command runs; only a notification makes its binding read the flag again.
+	private void KeepTheBoxAsItWas()
+	{
+		this.RaisePropertyChanged(nameof(IsLogarithmic));
+		this.RaisePropertyChanged(nameof(ValidationMessage));
 	}
 
 	private void CloseWhenThePenIsNotDrawn(int? drawnPenId)
@@ -175,23 +273,11 @@ public sealed class AxisScalePanelViewModel : ReactiveObject, IDisposable
 	{
 		this.RaisePropertyChanged(nameof(IsMaximumValid));
 		this.RaisePropertyChanged(nameof(IsMinimumValid));
-		this.RaisePropertyChanged(nameof(IsValid));
 		this.RaisePropertyChanged(nameof(ValidationMessage));
-	}
-
-	private static bool IsUnreadable(string text, SeededBound seeded)
-	{
-		return !seeded.Matches(text) && !PenFormRules.TryReadBound(text, out _);
-	}
-
-	private static bool IsEmpty(string text, SeededBound seeded)
-	{
-		return !seeded.Matches(text) && string.IsNullOrWhiteSpace(text);
 	}
 
 	private bool TryReadPair(out double minimum, out double maximum)
 	{
-		minimum = 0.0;
 		maximum = 0.0;
 
 		return TryReadMinimum(out minimum)
@@ -201,42 +287,11 @@ public sealed class AxisScalePanelViewModel : ReactiveObject, IDisposable
 
 	private bool TryReadMaximum(out double bound)
 	{
-		return TryReadRequired(MaximumText, _seededMaximum, out bound);
+		return _seededMaximum.TryRead(MaximumText, out bound);
 	}
 
 	private bool TryReadMinimum(out double bound)
 	{
-		return TryReadRequired(MinimumText, _seededMinimum, out bound);
-	}
-
-	// An empty field is no bound, which the pen editor allows and this panel does not. A field left as
-	// seeded keeps the exact bound, so a mask that rounds never moves the scale.
-	private static bool TryReadRequired(string text, SeededBound seeded, out double bound)
-	{
-		bound = 0.0;
-
-		if (seeded.Matches(text))
-		{
-			bound = seeded.Value;
-
-			return true;
-		}
-
-		if (!PenFormRules.TryReadBound(text, out var read) || read is not { } value)
-		{
-			return false;
-		}
-
-		bound = value;
-
-		return true;
-	}
-
-	private readonly record struct SeededBound(string Text, double Value)
-	{
-		public bool Matches(string text)
-		{
-			return Text is not null && string.Equals(text, Text, StringComparison.Ordinal);
-		}
+		return _seededMinimum.TryRead(MinimumText, out bound);
 	}
 }

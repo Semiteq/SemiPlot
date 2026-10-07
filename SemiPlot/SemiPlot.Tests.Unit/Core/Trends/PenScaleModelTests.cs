@@ -155,9 +155,59 @@ public sealed class PenScaleModelTests
 		var scales = model.Compute(settings, envelopes, activePenId: 1, _origin, _origin.AddHours(3));
 
 		var logScale = scales.Should().ContainSingle().Which;
+		var paddingDecades = (Math.Log10(50.0) - Math.Log10(2.0)) * 0.05;
 		logScale.IsLogarithmic.Should().BeTrue();
-		logScale.Min.Should().BeGreaterThan(0.0, "a log axis lower bound is clamped positive after padding");
-		logScale.Max.Should().BeApproximately(50.0 + (48.0 * 0.05), 1e-9);
+		logScale.Min.Should().BeApproximately(2.0 / Math.Pow(10.0, paddingDecades), 1e-9);
+		logScale.Max.Should().BeApproximately(50.0 * Math.Pow(10.0, paddingDecades), 1e-9);
+	}
+
+	[Fact]
+	public void Compute_LogarithmicAxisOverDecades_PadsBeyondBothEnds()
+	{
+		var model = new PenScaleModel();
+		var settings = new[] { new PenScaleSettings(PenId: 1, IsLogarithmic: true) };
+		var envelopes = new Dictionary<int, PenHistoryEnvelope> { [1] = Envelope(1, (1e-6, 1e-4), (1e-3, 1e-2)) };
+
+		var scales = model.Compute(settings, envelopes, activePenId: 1, _origin, _origin.AddHours(2));
+
+		var logScale = scales.Should().ContainSingle().Which;
+		logScale.Min.Should().BeGreaterThan(0.0).And.BeLessThan(1e-6);
+		logScale.Max.Should().BeGreaterThan(1e-2);
+	}
+
+	[Fact]
+	public void Compute_FlatLogarithmicLine_PadsHalfADecadeOnEachSide()
+	{
+		var model = new PenScaleModel();
+		var settings = new[] { new PenScaleSettings(PenId: 1, IsLogarithmic: true) };
+		var envelopes = new Dictionary<int, PenHistoryEnvelope> { [1] = Envelope(1, (0.3, 0.3)) };
+
+		var scales = model.Compute(settings, envelopes, activePenId: 1, _origin, _origin.AddHours(1));
+
+		var flat = scales.Should().ContainSingle().Which;
+		flat.Min.Should().BeLessThan(0.3);
+		flat.Max.Should().BeGreaterThan(0.3);
+		flat.Min.Should().BeApproximately(0.3 / Math.Sqrt(10.0), 1e-12);
+		flat.Max.Should().BeApproximately(0.3 * Math.Sqrt(10.0), 1e-12);
+	}
+
+	[Theory]
+	[InlineData(1.0, double.PositiveInfinity)]
+	[InlineData(double.Epsilon, 1.0)]
+	[InlineData(double.Epsilon, double.MaxValue)]
+	[InlineData(double.MaxValue, double.PositiveInfinity)]
+	public void Compute_LogarithmicAxisAtTheEdgesOfTheDoubleRange_KeepsFiniteDecadeLimits(double low, double high)
+	{
+		var model = new PenScaleModel();
+		var settings = new[] { new PenScaleSettings(PenId: 1, IsLogarithmic: true) };
+		var envelopes = new Dictionary<int, PenHistoryEnvelope> { [1] = Envelope(1, (low, low), (high, high)) };
+
+		var scales = model.Compute(settings, envelopes, activePenId: 1, _origin, _origin.AddHours(2));
+
+		var logScale = scales.Should().ContainSingle().Which;
+		double.IsFinite(Math.Log10(logScale.Min)).Should().BeTrue();
+		double.IsFinite(Math.Log10(logScale.Max)).Should().BeTrue();
+		logScale.Min.Should().BeLessThan(logScale.Max);
 	}
 
 	[Fact]
@@ -244,6 +294,36 @@ public sealed class PenScaleModelTests
 		var manual = scales.Should().ContainSingle().Which;
 		manual.Min.Should().BeGreaterThan(0.0);
 		manual.Max.Should().Be(100.0);
+	}
+
+	[Theory]
+	[InlineData(1.0, double.PositiveInfinity, true, 1.0, 10.0)]
+	[InlineData(1.0, double.NaN, true, 1.0, 10.0)]
+	[InlineData(double.NegativeInfinity, 100.0, true, 1.0, 10.0)]
+	[InlineData(1.0, double.PositiveInfinity, false, 0.0, 1.0)]
+	[InlineData(double.NaN, 100.0, false, 0.0, 1.0)]
+	public void Compute_ManualModeWithANonFiniteBound_FallsBackToTheDefaultRange(
+		double manualMin,
+		double manualMax,
+		bool isLogarithmic,
+		double defaultMin,
+		double defaultMax)
+	{
+		var model = new PenScaleModel();
+		var settings = new[]
+		{
+			new PenScaleSettings(PenId: 1, Mode: ScaleMode.Manual, ManualMin: manualMin, ManualMax: manualMax)
+			{
+				IsLogarithmic = isLogarithmic
+			}
+		};
+		var envelopes = new Dictionary<int, PenHistoryEnvelope> { [1] = Envelope(1, (2.0, 50.0)) };
+
+		var scales = model.Compute(settings, envelopes, activePenId: 1, _origin, _origin.AddHours(1));
+
+		var manual = scales.Should().ContainSingle().Which;
+		manual.Min.Should().Be(defaultMin);
+		manual.Max.Should().Be(defaultMax);
 	}
 
 	private static PenHistoryEnvelope Envelope(int penId, params (double Min, double Max)[] columns)

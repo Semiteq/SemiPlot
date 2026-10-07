@@ -4,11 +4,14 @@ namespace SemiPlot.Tools.ArchiveSeeder;
 
 public static class SyntheticPenCatalog
 {
-	// The pen in two groups, the pen the operator kept out of the startup set, and the pen nobody
-	// commissioned: the three catalogue states the round-robin slice would otherwise never carry.
+	// The pen in two groups, the pen the operator kept out of the startup set, the pen nobody
+	// commissioned and the pen spanning decades: the catalogue states the round-robin slice would
+	// otherwise never carry.
 	public const int TwoGroupPenId = 1000;
 
 	public const int HiddenOnStartPenId = 2001;
+
+	public const int LogScalePenId = 4000;
 
 	public const int UncommissionedPenId = 5001;
 
@@ -88,6 +91,14 @@ public static class SyntheticPenCatalog
 		{
 			TwoGroupPenId => pen with { Groups = [.. pen.Groups, WatchlistGroup] },
 			HiddenOnStartPenId => pen with { EnabledOnStart = false },
+			LogScalePenId => pen with
+			{
+				Unit = "mbar",
+				Format = "0.0E+0",
+				MinValue = 1e-6,
+				MaxValue = 1e-1,
+				LogScaleOnStart = true
+			},
 			UncommissionedPenId => pen with { Groups = [], Unit = null, Format = null, StoresScale = false },
 			_ => pen
 		};

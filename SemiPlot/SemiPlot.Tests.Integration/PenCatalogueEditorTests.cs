@@ -62,7 +62,8 @@ public sealed class PenCatalogueEditorTests(PostgresContainerFixture postgresCon
 			PenLineStyle.Interpolated,
 			true,
 			0,
-			100));
+			100,
+			false));
 		catalogue.Groups.Select(group => group.Name).Should().Equal(HeatersGroup, VacuumGroup);
 		Group(catalogue, HeatersGroup).MemberPenIds.Should().Equal(_heaterIds);
 		Group(catalogue, VacuumGroup).MemberPenIds.Should().Equal(ChamberPressureId);
@@ -90,6 +91,7 @@ public sealed class PenCatalogueEditorTests(PostgresContainerFixture postgresCon
 	[InlineData(nameof(PenSettingChange.LineStyle))]
 	[InlineData(nameof(PenSettingChange.EnabledOnStart))]
 	[InlineData(nameof(PenSettingChange.ScaleOnStart))]
+	[InlineData(nameof(PenSettingChange.LogScaleOnStart))]
 	public async Task EachChangeWritesItsOwnColumnAndNothingElse(string arm)
 	{
 		using var services = Build();
@@ -102,6 +104,26 @@ public sealed class PenCatalogueEditorTests(PostgresContainerFixture postgresCon
 
 		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
 		(await PenAsync(editor, ChamberPressureId)).Should().Be(expected);
+	}
+
+	[Fact]
+	public async Task AWrittenLogScaleOnStartReadsBackThroughBothReads()
+	{
+		using var services = Build();
+
+		var editor = Editor(services);
+		var pen = await PenAsync(editor, ChamberPressureId);
+
+		var result = await editor.ChangeAsync(pen, new PenSettingChange.LogScaleOnStart(true));
+
+		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
+		(await PenAsync(editor, ChamberPressureId)).LogScaleOnStart.Should().BeTrue();
+
+		var pens = await services.GetRequiredService<IDataProvider>().QueryPensAsync();
+
+		pens.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(pens));
+		pens.Value.Should().ContainSingle(read => read.PenId == ChamberPressureId)
+			.Which.LogScaleOnStart.Should().BeTrue();
 	}
 
 	[Fact]
@@ -424,6 +446,8 @@ public sealed class PenCatalogueEditorTests(PostgresContainerFixture postgresCon
 				=> (new PenSettingChange.EnabledOnStart(false), pen with { EnabledOnStart = false }),
 			nameof(PenSettingChange.ScaleOnStart)
 				=> (new PenSettingChange.ScaleOnStart(-1, 1), pen with { ScaleMinOnStart = -1, ScaleMaxOnStart = 1 }),
+			nameof(PenSettingChange.LogScaleOnStart)
+				=> (new PenSettingChange.LogScaleOnStart(true), pen with { LogScaleOnStart = true }),
 			_ => throw new ArgumentOutOfRangeException(nameof(arm), arm, "Unknown change arm.")
 		};
 	}

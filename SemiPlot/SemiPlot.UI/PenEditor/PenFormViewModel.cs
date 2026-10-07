@@ -103,6 +103,12 @@ public sealed class PenFormViewModel : ReactiveObject, IDisposable
 		set => SetDraft(ref field, value, PenField.ScaleOnStart);
 	} = string.Empty;
 
+	public bool LogScaleOnStart
+	{
+		get;
+		private set => SetDraft(ref field, value, PenField.LogScaleOnStart);
+	}
+
 	public bool IsNameValid => IsValid(PenField.Name, RuleOf(PenField.Name));
 
 	public bool IsUnitValid => IsValid(PenField.Unit, null);
@@ -114,7 +120,9 @@ public sealed class PenFormViewModel : ReactiveObject, IDisposable
 	public bool IsScaleMinOnStartValid =>
 		IsValid(
 			PenField.ScaleOnStart,
-			PenFormRules.BoundRule(ScaleMinOnStart) ?? PenFormRules.PairRule(ScaleMinOnStart, ScaleMaxOnStart));
+			PenFormRules.BoundRule(ScaleMinOnStart)
+				?? PenFormRules.PairRule(ScaleMinOnStart, ScaleMaxOnStart)
+				?? PenFormRules.LogMinimumRule(ScaleMinOnStart, LogScaleOnStart));
 
 	public bool IsScaleMaxOnStartValid =>
 		IsValid(
@@ -193,6 +201,13 @@ public sealed class PenFormViewModel : ReactiveObject, IDisposable
 		EnabledOnStart = enabledOnStart;
 
 		return EndEditAsync(PenField.EnabledOnStart);
+	}
+
+	public Task ChooseLogScaleOnStartAsync(bool logScaleOnStart)
+	{
+		LogScaleOnStart = logScaleOnStart;
+
+		return EndEditAsync(PenField.LogScaleOnStart);
 	}
 
 	/// <summary>Stops the drafts following the row; an edit ended afterwards still writes.</summary>
@@ -278,6 +293,9 @@ public sealed class PenFormViewModel : ReactiveObject, IDisposable
 				ScaleMinOnStart = TextOf(pen.ScaleMinOnStart);
 				ScaleMaxOnStart = TextOf(pen.ScaleMaxOnStart);
 				break;
+			case PenField.LogScaleOnStart:
+				LogScaleOnStart = pen.LogScaleOnStart;
+				break;
 			default:
 				throw new ArgumentOutOfRangeException(nameof(penField), penField, null);
 		}
@@ -296,6 +314,7 @@ public sealed class PenFormViewModel : ReactiveObject, IDisposable
 			PenField.EnabledOnStart => EnabledOnStart == pen.EnabledOnStart,
 			PenField.ScaleOnStart => ScaleMinOnStart == TextOf(pen.ScaleMinOnStart)
 				&& ScaleMaxOnStart == TextOf(pen.ScaleMaxOnStart),
+			PenField.LogScaleOnStart => LogScaleOnStart == pen.LogScaleOnStart,
 			_ => throw new ArgumentOutOfRangeException(nameof(penField), penField, null)
 		};
 	}
@@ -332,7 +351,9 @@ public sealed class PenFormViewModel : ReactiveObject, IDisposable
 			PenField.Name => PenFormRules.NameRule(Name),
 			PenField.Mask => PenFormRules.MaskRule(Mask),
 			PenField.Color => PenFormRules.ColorRule(Color),
-			PenField.ScaleOnStart => PenFormRules.ScaleRule(ScaleMinOnStart, ScaleMaxOnStart),
+			PenField.ScaleOnStart => PenFormRules.ScaleRule(ScaleMinOnStart, ScaleMaxOnStart, LogScaleOnStart),
+			PenField.LogScaleOnStart
+				=> PenFormRules.LogMinimumRule(Row.QueuedPen.ScaleMinOnStart, LogScaleOnStart),
 			_ => null
 		};
 	}
@@ -361,6 +382,7 @@ public sealed class PenFormViewModel : ReactiveObject, IDisposable
 			PenField.Color => new PenSettingChange.Color(Color),
 			PenField.LineStyle => new PenSettingChange.LineStyle(LineStyle),
 			PenField.EnabledOnStart => new PenSettingChange.EnabledOnStart(EnabledOnStart),
+			PenField.LogScaleOnStart => new PenSettingChange.LogScaleOnStart(LogScaleOnStart),
 			_ => throw new ArgumentOutOfRangeException(nameof(penField), penField, null)
 		};
 	}

@@ -13,6 +13,8 @@ public sealed class EnvelopeLine : IPlottable
 {
 	private const int MaxColumns = 100_000;
 	private const int TrimChunk = MaxColumns / 10;
+	// docs/architecture/charting.md#log10-y-axis
+	private const float PinnedFloorPixels = 2f;
 
 	private readonly LineStyle _stroke = new() { Width = 1f };
 	private readonly List<EnvelopePoint> _pathPoints = [];
@@ -32,8 +34,11 @@ public sealed class EnvelopeLine : IPlottable
 
 	public IEnumerable<LegendItem> LegendItems => [];
 
+	// docs/architecture/charting.md#log10-y-axis
 	public AxisLimits GetAxisLimits()
 	{
+		var isLogarithmic = LogTickGenerator.IsLogarithmic(Axes.YAxis);
+
 		lock (_renderStateLock)
 		{
 			if (_columns.Count == 0)
@@ -58,7 +63,7 @@ public sealed class EnvelopeLine : IPlottable
 			var left = _columns[0].X;
 			var right = _columns[^1].X;
 
-			return double.IsInfinity(bottom)
+			return isLogarithmic || double.IsInfinity(bottom)
 				? AxisLimits.HorizontalOnly(left, right)
 				: new AxisLimits(left, right, bottom, top);
 		}
@@ -78,17 +83,22 @@ public sealed class EnvelopeLine : IPlottable
 			return;
 		}
 
+		var yAxis = Axes.YAxis;
+		var isLogarithmic = LogTickGenerator.IsLogarithmic(yAxis);
+		var floor = yAxis.GetCoordinate(rp.DataRect.Bottom - PinnedFloorPixels, rp.DataRect);
+
 		using var path = new SKPath();
 		foreach (var point in _pathPoints)
 		{
-			var pixel = Axes.GetPixel(new Coordinates(point.X, point.Y));
+			var pixelX = Axes.XAxis.GetPixel(point.X, rp.DataRect);
+			var pixelY = yAxis.GetPixel(isLogarithmic ? LogAxis.Project(point.Y, floor) : point.Y, rp.DataRect);
 			if (point.StartsSegment)
 			{
-				path.MoveTo(pixel.X, pixel.Y);
+				path.MoveTo(pixelX, pixelY);
 			}
 			else
 			{
-				path.LineTo(pixel.X, pixel.Y);
+				path.LineTo(pixelX, pixelY);
 			}
 		}
 

@@ -9,5 +9,6 @@ public enum PenField
 	Color,
 	LineStyle,
 	EnabledOnStart,
-	ScaleOnStart
+	ScaleOnStart,
+	LogScaleOnStart
 }

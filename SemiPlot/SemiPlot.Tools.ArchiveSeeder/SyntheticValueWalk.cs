@@ -9,6 +9,15 @@ public static class SyntheticValueWalk
 		return minValue + (normalized * (maxValue - minValue));
 	}
 
+	/// <summary>The same walk over the decades of a positive range, so every decade gets its share.</summary>
+	public static double LogValue(long seed, int penId, long tickIndex, double minValue, double maxValue)
+	{
+		var exponent = Value(seed, penId, tickIndex, Math.Log10(minValue), Math.Log10(maxValue));
+
+		// 10 to the log of a bound can land one ulp outside it.
+		return Math.Clamp(Math.Pow(10.0, exponent), minValue, maxValue);
+	}
+
 	// Two decorrelated sine waves plus hash jitter, so the signal looks process-like yet stays a
 	// pure function of its inputs.
 	private static double Normalized(long seed, int penId, long tickIndex)

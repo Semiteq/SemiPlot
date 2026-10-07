@@ -13,6 +13,7 @@ public sealed record SyntheticPen(
 	string? Format = null,
 	bool EnabledOnStart = true,
 	bool StoresScale = true,
+	bool LogScaleOnStart = false,
 	PenLineStyle LineStyle = PenLineStyle.Interpolated)
 {
 	/// <summary>The round-robin key: the first group, and the empty string for an ungrouped pen.</summary>

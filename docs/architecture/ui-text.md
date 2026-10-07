@@ -166,40 +166,47 @@ the one detail naming `<config-dir>` and the staging folder (`overview.md#the-se
 
 `MenuEditPensAndGroups` is the `Edit` menu's second item, "Pens and groups" / "Перья и группы", and
 carries no ellipsis, as `MenuEditSettings` carries none. `PenEditor/PenEditorWindow.axaml` reads
-`PenEditorTitle`, the tab headers `PenEditorPensTab` and `PenEditorGroupsTab`, and the ten column
-headers `PenEditorColumn*`. The form's labels reuse the column-header keys, one term per concept; its
-one label of its own is `PenFormMaskPreviewLabel`. The line-style cell and the combo box read
+`PenEditorTitle`, the tab headers `PenEditorPensTab` and `PenEditorGroupsTab`, and the eleven column
+headers `PenEditorColumn*`. The form's labels reuse the column-header keys, one term per concept; its one
+label of its own is `PenFormMaskPreviewLabel`. The line-style cell and the combo box read
 `PenLineStyleInterpolated` and `PenLineStyleStepped` through `PenLineStyleConverters.ToLabel`, a
 `FuncValueConverter` consumed through `{x:Static}`. The visibility column and field read
 `PenEditorColumnOnStart`, "On start" / "При запуске", because the flag is the visibility a pen starts
 with and a change of it switches nothing on a running chart. The scale columns and fields read
-`PenEditorColumnScaleMinOnStart` and `PenEditorColumnScaleMaxOnStart`, "Initial scale, min" / "Начальная шкала, от"
-and "Initial scale, max" / "Начальная шкала, до", because the stored pair is the pen's initial scale, the
-term the axis scale panel's button `AxisScaleInitialScale` ("Restore initial scale" / "Вернуть начальную")
-and the `View` menu item `MenuViewInitialScale` ("Restore initial scale" / "Вернуть начальную шкалу") use: it applies
-when the pen enters a chart and on that command, and it changes no pen already shown. The three scale
-messages open with the same term, "Initial scale:" / "Начальная шкала:".
+`PenEditorColumnScaleMinOnStart` and `PenEditorColumnScaleMaxOnStart`, "Initial scale, min" / "Начальная
+шкала, от" and "Initial scale, max" / "Начальная шкала, до", because the stored pair is the pen's initial
+scale, the term the axis scale panel's button `AxisScaleInitialScale` ("Restore initial scale" / "Вернуть
+начальную") and the `View` menu item `MenuViewInitialScale` ("Restore initial scale" / "Вернуть начальную
+шкалу") use: it applies when the pen enters a chart and on that command, and it changes no pen already
+shown. The three scale messages open with the same term, "Initial scale:" / "Начальная шкала:". The log
+column and field read `PenEditorColumnLogScaleOnStart`, "Initial scale, logarithmic" / "Начальная
+шкала, логарифмическая": the flag is a start value like the pair, so it takes the pair's term. The
+label names the scale type the way Excel, MasterSCADA 4D and Simple-Scada 2 do and leaves the base out;
+the chart builds base 10 only (`charting.md#log10-y-axis`).
 
 The bottom bar reads the button `PenEditorRefresh`, "Refresh pen list" / «Обновить список перьев», which
-names what it refreshes, and `PenEditorAddedCount`, "Pens added: {0}" /
-"Добавлено перьев: {0}", empty until the first successful refresh. It carries no notice: every running
-chart follows what the editor writes through the catalogue read (`overview.md#the-live-catalogue`),
-except the scale pair, which changes no pen already shown (`overview.md#what-a-read-changes`), so there
-is nothing to wait for. The `Groups` tab reads
-`PenGroupsNewNamePlaceholder`, the one watermark in the tree, `PenGroupsCreate`, `PenGroupsNameLabel`,
-`PenGroupsDelete`, which is also the confirm button's caption, `PenGroupsCancel` and
-`PenGroupsMembersHeader`. `PenGroupsDeleteConfirmation` takes the group name as `{0}` and its member
-count as `{1}`, and is a snapshot taken when delete is pressed. The added count and the confirmation put
-the counted noun first in both languages, "Pens in the group: {1}" / "Перьев в группе: {1}", so neither
-needs a plural form.
+names what it refreshes, and `PenEditorAddedCount`, "Pens added: {0}" / "Добавлено перьев: {0}", empty
+until the first successful refresh. It carries no notice: every running chart follows what the editor
+writes through the catalogue read (`overview.md#the-live-catalogue`), except the scale pair and the log
+scale flag, which change no pen already shown (`overview.md#what-a-read-changes`), so there is nothing to
+wait for. The `Groups` tab reads `PenGroupsNewNamePlaceholder`, the one watermark in the tree,
+`PenGroupsCreate`, `PenGroupsNameLabel`, `PenGroupsDelete`, which is also the confirm button's caption,
+`PenGroupsCancel` and `PenGroupsMembersHeader`. `PenGroupsDeleteConfirmation` takes the group name as
+`{0}` and its member count as `{1}`, and is a snapshot taken when delete is pressed. The added count and
+the confirmation put the counted noun first in both languages, "Pens in the group: {1}" / "Перьев в
+группе: {1}", so neither needs a plural form.
 
 The pen form's message line shows the first rule a draft breaks, in form order: `PenFormNameRequired`,
-`PenFormMaskInvalid`, `PenFormColorInvalid`, `PenFormScaleBoundInvalid`, `PenFormScaleHalfSet` and
-`PenFormScaleInverted`. The `Groups` tab's line shows `PenGroupsNameRequired`. The line is not under
-the field, so each message opens with the field it names, as the settings messages do. With every
-draft valid, a line shows the last refusal, and for a failed write that text is the title
-`ArchiveFailureMapper.Map` gives the error: the mapper stays the one owner of failure wording, and the
-full entry goes to the message panel.
+`PenFormMaskInvalid`, `PenFormColorInvalid`, `PenFormScaleBoundInvalid`, `PenFormScaleHalfSet`,
+`PenFormScaleInverted` and `ScaleLogMinimumPositive`. The `Groups` tab's line shows
+`PenGroupsNameRequired`. The line is not under the field, so each message opens with the field it names,
+as the settings messages do. `ScaleLogMinimumPositive`, "A logarithmic scale needs a minimum above zero"
+/ "Для логарифмической шкалы минимум должен быть больше нуля", is the one exception: the
+axis scale panel shows the same rule with the same key, so it names the rule rather than a form field.
+The form shows it for a scale draft with a minimum at or below zero while the flag is ticked, and as the
+refusal of a tick while the pen stores such a minimum. With every draft valid, a line shows the last
+refusal, and for a failed write that text is the title `ArchiveFailureMapper.Map` gives the error: the
+mapper stays the one owner of failure wording, and the full entry goes to the message panel.
 
 `EmptyCatalogueMessage`, the chart area's text over an empty catalogue, names the way in: open the
 editor, press "Refresh pen list", then name and switch on the pens. It is a
@@ -231,16 +238,23 @@ English log line, names a statement the same way (`data-integration.md#two-error
 ## The axis scale panel's text
 
 `Chart/AxisScalePanel` reads `AxisScaleMaximumLabel` and `AxisScaleMinimumLabel` ("Maximum" / "Максимум",
-"Minimum" / "Минимум"), `AxisScaleApply` ("Apply" / "Применить") and `AxisScaleInitialScale`. Its Autoscale
-button reads `MenuViewAutoscale`, the same key as the menu item, so one word names the command in both
-places. The pen's name and unit are data, shown in two `TextBlock`s, so no format key joins them. The
-message line shows `AxisScaleBoundInvalid` ("Enter a number in each field" / "Введите в каждом поле
+"Minimum" / "Минимум") and `AxisScaleInitialScale`; it has no apply button, because the pair is written
+when its edit ends (`trend-interaction.md#the-axis-scale-panel`). Its Autoscale button reads
+`MenuViewAutoscale`, the same key as the menu item, so one word names the command in both places. The
+pen's name and unit are data, shown in two `TextBlock`s, so no format key joins them.
+The message line shows `AxisScaleBoundInvalid` ("Enter a number in each field" / "Введите в каждом поле
 число") for a field that is not a number in the operator's regional format, `AxisScaleBoundsRequired`
-("Enter both bounds" / "Укажите обе границы") for an empty field and `AxisScaleMinimumBelowMaximum`
-("The minimum must be below the maximum" / "Минимум должен быть меньше максимума") for an inverted or
-equal pair. The two fields are `TextBox`es seeded through `PenValueFormat.Format` with the pen's mask and read through
-`PenFormRules.TryReadBound`, the pen editor's rule, so the decimal separator is the current culture's and
-"150.5" under `ru-RU` is refused, never read as 150. A field left as seeded keeps the exact bound.
+("Enter both bounds" / "Укажите обе границы") for an empty field and `AxisScaleMinimumBelowMaximum` ("The
+minimum must be below the maximum" / "Минимум должен быть меньше максимума") for an inverted or equal
+pair. The checkbox under Minimum reads `AxisScaleLogarithmic` ("Logarithmic scale" / "Логарифмическая
+шкала"), the scale type in the industry form the pen editor's log column uses, and
+`ScaleLogMinimumPositive`, the pen form's key, fills the message line for a minimum at or below zero on a
+logarithmic axis and for a tick the chart refuses over a manual minimum at or below zero. A tick refused
+over a pair that does not read shows that pair's rule instead. The Russian rule wraps to two lines in the
+panel, which its reserved line holds (`ui-theme.md#the-axis-scale-panel`). The two fields are `TextBox`es
+seeded through `PenValueFormat.Format` with the pen's mask and read through `PenFormRules.TryReadBound`,
+the pen editor's rule, so the decimal separator is the current culture's and "150.5" under `ru-RU` is
+refused, never read as 150. A field left as seeded keeps the exact bound.
 
 The View menu's submenu header is `MenuViewPenScale` ("Pen scale" / "Шкала пера") while no pen's axis is
 drawn and the format `MenuViewPenScaleFormat` ("Pen scale: {0}" / "Шкала пера «{0}»") over the drawn pen's

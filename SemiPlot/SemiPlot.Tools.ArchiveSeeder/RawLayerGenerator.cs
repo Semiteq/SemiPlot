@@ -180,7 +180,9 @@ public static class RawLayerGenerator
 
 	private static double ValueAt(long seed, SyntheticPen pen, long index)
 	{
-		return SyntheticValueWalk.Value(seed, pen.PenId, index, pen.MinValue, pen.MaxValue);
+		return pen.LogScaleOnStart
+			? SyntheticValueWalk.LogValue(seed, pen.PenId, index, pen.MinValue, pen.MaxValue)
+			: SyntheticValueWalk.Value(seed, pen.PenId, index, pen.MinValue, pen.MaxValue);
 	}
 
 	private static ArchiveRow Row(SyntheticPen pen, long ticks, double value)

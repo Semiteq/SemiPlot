@@ -10,6 +10,7 @@ public sealed record Pen(
 	bool EnabledOnStart = true,
 	double? ScaleMinOnStart = null,
 	double? ScaleMaxOnStart = null,
+	bool LogScaleOnStart = false,
 	PenLineStyle LineStyle = PenLineStyle.Interpolated)
 {
 	/// <summary>Compares <see cref="Groups"/> element by element, so two reads of one stored pen are equal.</summary>
@@ -25,6 +26,7 @@ public sealed record Pen(
 			&& EnabledOnStart == other.EnabledOnStart
 			&& Nullable.Equals(ScaleMinOnStart, other.ScaleMinOnStart)
 			&& Nullable.Equals(ScaleMaxOnStart, other.ScaleMaxOnStart)
+			&& LogScaleOnStart == other.LogScaleOnStart
 			&& LineStyle == other.LineStyle;
 	}
 
@@ -46,6 +48,7 @@ public sealed record Pen(
 		hash.Add(EnabledOnStart);
 		hash.Add(ScaleMinOnStart);
 		hash.Add(ScaleMaxOnStart);
+		hash.Add(LogScaleOnStart);
 		hash.Add(LineStyle);
 
 		return hash.ToHashCode();

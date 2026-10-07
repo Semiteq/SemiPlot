@@ -335,8 +335,9 @@ No abbreviations in names.
   shows, then rebuilds the sidebar. The chart is never rebuilt whole
   (`docs/architecture/overview.md#the-live-catalogue`).
 - A pen's reading is rendered through `SemiPlot.Core.Trends.PenValueFormat` and nowhere else: it owns
-  the stored mask's character-and-section rule and the `0.###` fallback, and the sidebar row and the
-  chart's hover readout both go through it (`docs/architecture/ui-text.md`).
+  the stored mask's character-and-section rule and the `0.###` fallback, and the sidebar row, the
+  chart's hover readout and the major labels of a log10 axis (`Chart/LogTickGenerator`) all go through it
+  (`docs/architecture/ui-text.md`).
 - Every failure the operator should see goes to `Messages/MessagePanelViewModel` through
   `Messages/ArchiveFailureMapper.Map`, which assigns the severity in its own per-kind switch — never
   at the call site. The one message with no error behind it is
@@ -344,7 +345,8 @@ No abbreviations in names.
   errors. A `catch`, or an Rx `onError`, that only logs is a defect
   (`docs/architecture/data-integration.md#no-failure-stops-at-the-log`). Code-behind reaches the
   panel through its view model (`TrendChartViewModel.ReportFailure`, `MainWindowViewModel.ReportFailure`,
-  `PenEditorViewModel.ReportFailure`, `StartupFailureViewModel.ReportFailure`).
+  `PenEditorViewModel.ReportFailure`, `StartupFailureViewModel.ReportFailure`,
+  `AxisScalePanelViewModel.ReportFailure`).
 
 ### Data-source projects
 

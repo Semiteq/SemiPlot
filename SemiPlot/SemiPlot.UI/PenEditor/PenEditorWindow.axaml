@@ -7,8 +7,8 @@
         x:Class="SemiPlot.UI.PenEditor.PenEditorWindow"
         x:DataType="local:PenEditorViewModel"
         Title="{x:Static text:Resources.PenEditorTitle}"
-        Width="1180"
-        MinWidth="1100"
+        Width="1272"
+        MinWidth="1260"
         Height="720"
         SizeToContent="Manual"
         CanResize="True"
@@ -28,6 +28,7 @@
             <ColumnDefinition Width="104" />
             <ColumnDefinition Width="104" />
             <ColumnDefinition Width="104" />
+            <ColumnDefinition Width="160" />
             <ColumnDefinition Width="*" />
         </ColumnDefinitions>
         <ColumnDefinitions x:Key="MembershipColumns"
@@ -153,6 +154,13 @@
                                 CommandParameter="{x:Static local:PenColumn.ScaleMaxOnStart}" />
 
                         <Button Grid.Column="9"
+                                Name="SortByLogScaleOnStart"
+                                Classes="column-header"
+                                Content="{x:Static text:Resources.PenEditorColumnLogScaleOnStart}"
+                                Command="{Binding SortCommand}"
+                                CommandParameter="{x:Static local:PenColumn.LogScaleOnStart}" />
+
+                        <Button Grid.Column="10"
                                 Name="SortByGroups"
                                 Classes="column-header"
                                 Content="{x:Static text:Resources.PenEditorColumnGroups}"
@@ -235,7 +243,15 @@
                                            Classes="cell"
                                            Text="{Binding Pen.ScaleMaxOnStart}" />
 
-                                <TextBlock Grid.Column="9"
+                                <CheckBox Grid.Column="9"
+                                          Name="RowLogScaleOnStart"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          IsHitTestVisible="False"
+                                          Focusable="False"
+                                          IsChecked="{Binding Pen.LogScaleOnStart, Mode=OneWay}" />
+
+                                <TextBlock Grid.Column="10"
                                            Name="RowGroups"
                                            Classes="cell"
                                            Text="{Binding GroupsText}" />
@@ -367,38 +383,68 @@
                                           Grid.Column="3"
                                           Name="FormEnabledOnStart"
                                           IsChecked="{Binding EnabledOnStart, Mode=OneWay}"
-                                          IsCheckedChanged="OnEnabledOnStartChanged" />
+                                          IsCheckedChanged="OnStartFlagChanged" />
 
                                 <Grid Grid.Row="0"
-                                      Grid.RowSpan="2"
+                                      Grid.RowSpan="3"
                                       Grid.Column="4"
-                                      Name="FormScale"
-                                      ColumnDefinitions="Auto,Auto"
+                                      Grid.IsSharedSizeScope="True"
                                       RowDefinitions="Auto,Auto"
-                                      ColumnSpacing="12"
                                       RowSpacing="10">
 
-                                    <TextBlock Grid.Row="0"
-                                               Grid.Column="0"
-                                               Classes="form-label"
-                                               Text="{x:Static text:Resources.PenEditorColumnScaleMinOnStart}" />
+                                    <Grid Grid.Row="0"
+                                          Name="FormScale"
+                                          RowDefinitions="Auto,Auto"
+                                          ColumnSpacing="12"
+                                          RowSpacing="10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"
+                                                              SharedSizeGroup="ScaleLabel" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
 
-                                    <TextBox Grid.Row="0"
-                                             Grid.Column="1"
-                                             Name="FormScaleMinOnStart"
-                                             Classes.invalid="{Binding !IsScaleMinOnStartValid}"
-                                             Text="{Binding ScaleMinOnStart}" />
+                                        <TextBlock Grid.Row="0"
+                                                   Grid.Column="0"
+                                                   Classes="form-label"
+                                                   Text="{x:Static text:Resources.PenEditorColumnScaleMinOnStart}" />
 
-                                    <TextBlock Grid.Row="1"
-                                               Grid.Column="0"
-                                               Classes="form-label"
-                                               Text="{x:Static text:Resources.PenEditorColumnScaleMaxOnStart}" />
+                                        <TextBox Grid.Row="0"
+                                                 Grid.Column="1"
+                                                 Name="FormScaleMinOnStart"
+                                                 Classes.invalid="{Binding !IsScaleMinOnStartValid}"
+                                                 Text="{Binding ScaleMinOnStart}" />
 
-                                    <TextBox Grid.Row="1"
-                                             Grid.Column="1"
-                                             Name="FormScaleMaxOnStart"
-                                             Classes.invalid="{Binding !IsScaleMaxOnStartValid}"
-                                             Text="{Binding ScaleMaxOnStart}" />
+                                        <TextBlock Grid.Row="1"
+                                                   Grid.Column="0"
+                                                   Classes="form-label"
+                                                   Text="{x:Static text:Resources.PenEditorColumnScaleMaxOnStart}" />
+
+                                        <TextBox Grid.Row="1"
+                                                 Grid.Column="1"
+                                                 Name="FormScaleMaxOnStart"
+                                                 Classes.invalid="{Binding !IsScaleMaxOnStartValid}"
+                                                 Text="{Binding ScaleMaxOnStart}" />
+
+                                    </Grid>
+
+                                    <Grid Grid.Row="1"
+                                          ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"
+                                                              SharedSizeGroup="ScaleLabel" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Grid.Column="0"
+                                                   Classes="form-label"
+                                                   Text="{x:Static text:Resources.PenEditorColumnLogScaleOnStart}" />
+
+                                        <CheckBox Grid.Column="1"
+                                                  Name="FormLogScaleOnStart"
+                                                  IsChecked="{Binding LogScaleOnStart, Mode=OneWay}"
+                                                  IsCheckedChanged="OnStartFlagChanged" />
+
+                                    </Grid>
 
                                 </Grid>
 

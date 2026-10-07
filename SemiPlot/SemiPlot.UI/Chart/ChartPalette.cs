@@ -8,12 +8,13 @@ using Color = ScottPlot.Color;
 
 namespace SemiPlot.UI.Chart;
 
-/// <summary>Paints the four ScottPlot surfaces the library draws from its own defaults.</summary>
+/// <summary>Paints the five ScottPlot surfaces the library draws from its own defaults.</summary>
 public static class ChartPalette
 {
 	private const string FigureBackgroundKey = "AppPanelBackgroundBrush";
 	private const string DataBackgroundKey = "AppContentBackgroundBrush";
 	private const string GridLineKey = "AppSubtleLineBrush";
+	private const string MinorGridLineKey = "AppMinorGridLineBrush";
 	private const string AxisKey = "AppSecondaryForegroundBrush";
 
 	public static void Apply(Plot plot, IResourceHost resources, ThemeVariant variant)
@@ -21,11 +22,13 @@ public static class ChartPalette
 		var figureBackground = Resolve(resources, variant, FigureBackgroundKey);
 		var dataBackground = Resolve(resources, variant, DataBackgroundKey);
 		var gridLine = Resolve(resources, variant, GridLineKey);
+		var minorGridLine = Resolve(resources, variant, MinorGridLineKey);
 		var axisColor = Resolve(resources, variant, AxisKey);
 
 		plot.FigureBackground.Color = figureBackground;
 		plot.DataBackground.Color = dataBackground;
 		plot.Grid.MajorLineColor = gridLine;
+		plot.Grid.MinorLineColor = minorGridLine;
 
 		foreach (var axis in plot.Axes.GetAxes())
 		{

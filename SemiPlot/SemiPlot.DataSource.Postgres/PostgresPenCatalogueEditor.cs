@@ -168,6 +168,8 @@ public sealed class PostgresPenCatalogueEditor : IPenCatalogueEditor
 				=> Value(ArchiveStatements.UpdatePenEnabledOnStart, NpgsqlDbType.Boolean, enabledOnStart.Value),
 			PenSettingChange.ScaleOnStart scale
 				=> (ArchiveStatements.UpdatePenScaleOnStart, ScaleOnStartParameters(scale)),
+			PenSettingChange.LogScaleOnStart logScaleOnStart
+				=> Value(ArchiveStatements.UpdatePenLogScaleOnStart, NpgsqlDbType.Boolean, logScaleOnStart.Value),
 			_ => throw new ArgumentOutOfRangeException(nameof(change), change, "Unknown pen setting change.")
 		};
 	}
@@ -258,7 +260,8 @@ public sealed class PostgresPenCatalogueEditor : IPenCatalogueEditor
 			StoredLineStyle.Read(storedLineStyle, penId, _logger, () => LogLevel.Warning),
 			reader.GetBoolean(PenCatalogColumn.EnabledOnStart),
 			ReadBound(reader, PenCatalogColumn.ScaleMinOnStart),
-			ReadBound(reader, PenCatalogColumn.ScaleMaxOnStart));
+			ReadBound(reader, PenCatalogColumn.ScaleMaxOnStart),
+			reader.GetBoolean(PenCatalogColumn.LogScaleOnStart));
 	}
 
 	private static string? ReadText(NpgsqlDataReader reader, int ordinal)

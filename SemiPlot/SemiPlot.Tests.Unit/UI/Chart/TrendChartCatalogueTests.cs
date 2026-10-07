@@ -127,6 +127,40 @@ public sealed class TrendChartCatalogueTests
 	}
 
 	[AvaloniaFact]
+	public void APenTheCatalogueAdds_TakesItsStoredLogFlag()
+	{
+		var (viewModel, _, _, provider) = CreateViewModel();
+		var catalogue = provider.Pens;
+		viewModel.ApplyCatalogue([catalogue[0]]);
+
+		viewModel.ApplyCatalogue([catalogue[0], catalogue[1] with { LogScaleOnStart = true }]);
+
+		viewModel.ScaleSettings[2].IsLogarithmic.Should().BeTrue();
+		viewModel.ScaleSettings[1].IsLogarithmic.Should().BeFalse();
+	}
+
+	[AvaloniaFact]
+	public void ARevisedLogFlag_LeavesTheSessionSettingsAlone()
+	{
+		var (viewModel, _, _, provider) = CreateViewModel();
+		var catalogue = provider.Pens;
+		viewModel.ApplyCatalogue(catalogue);
+		viewModel.SetAxisLimits(1, 10.0, 90.0);
+		var before = viewModel.ScaleSettings.ToDictionary();
+
+		viewModel.ApplyCatalogue(
+			[
+				catalogue[0] with { LogScaleOnStart = true },
+				catalogue[1] with { LogScaleOnStart = true }
+			]);
+
+		viewModel.FindPen(1)!.Pen.LogScaleOnStart.Should().BeTrue();
+		viewModel.ScaleSettings.Should().BeEquivalentTo(before);
+		viewModel.ScaleSettings[1].IsLogarithmic.Should().BeFalse();
+		viewModel.ScaleSettings[2].IsLogarithmic.Should().BeFalse();
+	}
+
+	[AvaloniaFact]
 	public void AnEnabledOnStartRevision_KeepsTheVisibility()
 	{
 		var (viewModel, _, _, provider) = CreateViewModel();

@@ -54,6 +54,14 @@ public sealed class PostgresCatalogReadTests(
 		       (9998, 'Shaping mask', '0.##0', '#123456', 0);
 		""";
 
+	private const int LogScaleTagId = 9995;
+
+	private const string LogScaleTagCommand =
+		"""
+		INSERT INTO public.semiplot_tags (id, name, color, line_style, log_scale_on_start)
+		VALUES (9995, 'Log scale', '#123456', 0, true);
+		""";
+
 	private const int NullColumnTagId = 9999;
 
 	// Every nullable column of SemiBase's semiplot_tags at once, and no membership: the state a pen
@@ -105,6 +113,12 @@ public sealed class PostgresCatalogReadTests(
 		commissioned.EnabledOnStart.Should().BeTrue();
 
 		Single(result.Value, SyntheticPenCatalog.HiddenOnStartPenId).EnabledOnStart.Should().BeFalse();
+
+		var logScale = Single(result.Value, SyntheticPenCatalog.LogScalePenId);
+
+		logScale.LogScaleOnStart.Should().BeTrue();
+		logScale.Format.Should().Be("0.0E+0");
+		logScale.ScaleMinOnStart.Should().Be(1e-6);
 	}
 
 	// One row, not two: the memberships aggregate into the array the record carries.
@@ -167,6 +181,24 @@ public sealed class PostgresCatalogReadTests(
 		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
 		Single(result.Value, ShapingMaskTagId).Format.Should().Be("0.##0");
 		Single(result.Value, ScalingMaskTagId).Format.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task AStoredLogScaleOnStartReadsBackAndTheDefaultReadsLinear()
+	{
+		await using var database = await postgresContainerFixture.CloneTemplateAsync(
+			TestContext.Current.CancellationToken);
+
+		await ArchiveDatabase.ExecuteAsync(
+			database.AdminConnectionString,
+			LogScaleTagCommand,
+			TestContext.Current.CancellationToken);
+
+		var result = await ReadCatalogueAsync(database.PlotConnectionString);
+
+		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
+		Single(result.Value, LogScaleTagId).LogScaleOnStart.Should().BeTrue();
+		Single(result.Value, SyntheticPenCatalog.TwoGroupPenId).LogScaleOnStart.Should().BeFalse();
 	}
 
 	[Fact]
@@ -291,6 +323,7 @@ public sealed class PostgresCatalogReadTests(
 			pen.EnabledOnStart,
 			pen.ScaleMinOnStart,
 			pen.ScaleMaxOnStart,
+			pen.LogScaleOnStart,
 			pen.LineStyle);
 	}
 

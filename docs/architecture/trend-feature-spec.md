@@ -57,7 +57,7 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 ### AY-2 — Per-pen scale ("each on its own axis") (MUST)
 **Definition.** The canonical case "N lines, each with its own min..max scale" must work literally: each such pen gets its own axis with its own range, rather than sharing a common min/max with others. The axis is never hard-wired to the pen's group.
 **Acceptance.** Core/test: N `PenScaleSettings` build N axes with independent ranges. UI: after loading the "gas lines" catalog, the operator sees each line on its own scale.
-**Note.** Closed: `PenScaleSettings` carries no axis key at all — the axis is the pen. The stored `scale_min`/`scale_max` pair is what forced it: seeded into a group-keyed axis, one pen's range would have been applied to the whole group and the rest silently discarded.
+**Note.** Closed: `PenScaleSettings` carries no axis key at all — the axis is the pen. The stored `scale_min_on_start`/`scale_max_on_start` pair is what forced it: seeded into a group-keyed axis, one pen's range would have been applied to the whole group and the rest silently discarded.
 
 ### AY-3 — Manual min/max for an axis (MUST)
 **Definition.** `Manual` mode: fixed `ManualMin/ManualMax` for an axis; on swapped bounds — auto-swap. Bound editing is available from the UI: a click on the active pen's axis opens a panel with Maximum and Minimum fields, and Apply writes both.
@@ -85,7 +85,7 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 ## 3. Pens
 
 ### PN-1 — Pen model and Y layer (MUST)
-**Definition.** A pen: `PenId`, `Name`, `Groups`, `Color`, `LineStyle`, `Unit`, `Format`, `EnabledOnStart` and the stored `ScaleMin`/`ScaleMax` pair. A pen's history is a `PenHistoryEnvelope` (parallel `Timestamps/Min/Max/Center`, strictly increasing timestamps, NaN = gap). Render: one `EnvelopeLine` polyline through each column's Min and Max.
+**Definition.** A pen: `PenId`, `Name`, `Groups`, `Color`, `LineStyle`, `Unit`, `Format`, `EnabledOnStart` and the stored `ScaleMinOnStart`/`ScaleMaxOnStart` pair. A pen's history is a `PenHistoryEnvelope` (parallel `Timestamps/Min/Max/Center`, strictly increasing timestamps, NaN = gap). Render: one `EnvelopeLine` polyline through each column's Min and Max.
 **Acceptance.** Core/test: the envelope constructor throws on unequal lengths and non-increasing timestamps; NaN breaks the line. UI: a column whose Min differs from its Max is drawn as a vertical segment.
 
 ### PN-2 — Resize a pen's Y layer (MUST)

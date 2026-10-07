@@ -351,7 +351,8 @@ public sealed class AxisScalePanelViewModelTests
 	public void InitialScale_ActsOnTheActivePenAndCloses()
 	{
 		var (chart, _, _, provider) = CreateViewModel();
-		chart.ApplyCatalogue([.. provider.Pens.Select(pen => pen with { ScaleMin = 5.0, ScaleMax = 50.0 })]);
+		chart.ApplyCatalogue(
+			[.. provider.Pens.Select(pen => pen with { ScaleMinOnStart = 5.0, ScaleMaxOnStart = 50.0 })]);
 		chart.SetAxisLimits(1, 10.0, 90.0);
 		chart.SetAxisLimits(2, 20.0, 80.0);
 		chart.SetActivePen(2);
@@ -373,7 +374,8 @@ public sealed class AxisScalePanelViewModelTests
 	public void WhenThePenIsNoLongerDrawn_ThePanelClosesAndEveryCommandWritesNothing(PanelPenLeaves leaves)
 	{
 		var (chart, _, _, provider) = CreateViewModel();
-		chart.ApplyCatalogue([.. provider.Pens.Select(pen => pen with { ScaleMin = 5.0, ScaleMax = 50.0 })]);
+		chart.ApplyCatalogue(
+			[.. provider.Pens.Select(pen => pen with { ScaleMinOnStart = 5.0, ScaleMaxOnStart = 50.0 })]);
 		chart.SetAxisLimits(1, 10.0, 90.0);
 		chart.SetAxisLimits(2, 20.0, 80.0);
 		chart.SetActivePen(2);

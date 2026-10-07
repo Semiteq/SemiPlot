@@ -173,8 +173,8 @@ one label of its own is `PenFormMaskPreviewLabel`. The line-style cell and the c
 `FuncValueConverter` consumed through `{x:Static}`. The visibility column and field read
 `PenEditorColumnOnStart`, "On start" / "При запуске", because the flag is the visibility a pen starts
 with and a change of it switches nothing on a running chart. The scale columns and fields read
-`PenEditorColumnScaleMin` and `PenEditorColumnScaleMax`, "Initial scale, min" / "Начальная шкала, от" and
-"Initial scale, max" / "Начальная шкала, до", because the stored pair is the pen's initial scale, the
+`PenEditorColumnScaleMinOnStart` and `PenEditorColumnScaleMaxOnStart`, "Initial scale, min" / "Начальная шкала, от"
+and "Initial scale, max" / "Начальная шкала, до", because the stored pair is the pen's initial scale, the
 term the axis scale panel's button `AxisScaleInitialScale` ("Restore initial scale" / "Вернуть начальную")
 and the `View` menu item `MenuViewInitialScale` ("Restore initial scale" / "Вернуть начальную шкалу") use: it applies
 when the pen enters a chart and on that command, and it changes no pen already shown. The three scale

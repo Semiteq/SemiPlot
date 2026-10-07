@@ -481,12 +481,12 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 	// installation without the constraint: it autoscales rather than opening on a bound with no partner.
 	private static (double? Min, double? Max) ReadScalePair(NpgsqlDataReader reader)
 	{
-		if (reader.IsDBNull(PenCatalogColumn.ScaleMin) || reader.IsDBNull(PenCatalogColumn.ScaleMax))
+		if (reader.IsDBNull(PenCatalogColumn.ScaleMinOnStart) || reader.IsDBNull(PenCatalogColumn.ScaleMaxOnStart))
 		{
 			return (null, null);
 		}
 
-		return (reader.GetDouble(PenCatalogColumn.ScaleMin), reader.GetDouble(PenCatalogColumn.ScaleMax));
+		return (reader.GetDouble(PenCatalogColumn.ScaleMinOnStart), reader.GetDouble(PenCatalogColumn.ScaleMaxOnStart));
 	}
 
 	// The server validates a stored colour against the hex pattern, so only its absence is handled here.

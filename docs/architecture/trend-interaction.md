@@ -75,7 +75,7 @@ operator interaction.
   **right edge** (centering is at most a transient transition animation).
 - **Many-axes management:** **single active Y axis + per-pen autoscale** (legacy SCADA model);
   clicking a pen makes it active. Pens that must read against one range carry the same stored
-  `scale_min`/`scale_max`; no two pens share an axis.
+  `scale_min_on_start`/`scale_max_on_start`; no two pens share an axis.
 - **Axis scaling gestures:** entering values = fixed manual limits. Autoscale and the initial scale
   are commands on the active pen: buttons of the axis scale panel and items of the View -> Pen scale
   submenu. The original **toolbar duplicate** is superseded: the autoscale button, the two limit
@@ -147,8 +147,8 @@ own axis" case (§AY-2), and the shared-X / independent-Y invariant (§TM-1). As
   on the primary axis; non-active pens scale individually with their axes hidden, so many pens do
   not spill many visible axes. The literal "N lines, each on its own axis" case (§AY-2) is the
   as-built shape: `PenScaleSettings` carries no axis key, and the axis is the pen.
-- 16 heaters reading against one range (dampers separately) is the same `scale_min`/`scale_max` pair
-  stored on each of the sixteen, not one axis carrying all of them.
+- 16 heaters reading against one range (dampers separately) is the same
+  `scale_min_on_start`/`scale_max_on_start` pair stored on each of the sixteen, not one axis carrying all of them.
 - When panning/zooming time, **all pens move together** — pens are **always time-synchronized**;
   Y scales are independent (§TM-1).
 

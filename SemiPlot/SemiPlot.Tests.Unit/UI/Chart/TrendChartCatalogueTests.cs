@@ -100,7 +100,10 @@ public sealed class TrendChartCatalogueTests
 		var autoSettings = viewModel.ScaleSettings[2];
 
 		viewModel.ApplyCatalogue(
-			[catalogue[0] with { ScaleMin = 0.0, ScaleMax = 50.0 }, catalogue[1] with { ScaleMin = 5.0, ScaleMax = 6.0 }]);
+			[
+				catalogue[0] with { ScaleMinOnStart = 0.0, ScaleMaxOnStart = 50.0 },
+				catalogue[1] with { ScaleMinOnStart = 5.0, ScaleMaxOnStart = 6.0 }
+			]);
 
 		viewModel.ScaleSettings[1].Mode.Should().Be(ScaleMode.Manual);
 		viewModel.ScaleRangeForPen(1)!.Value.Should().Be((10.0, 90.0));
@@ -115,7 +118,7 @@ public sealed class TrendChartCatalogueTests
 		var catalogue = provider.Pens;
 		viewModel.ApplyCatalogue([catalogue[0]]);
 
-		viewModel.ApplyCatalogue([catalogue[0], catalogue[1] with { ScaleMin = 20.0, ScaleMax = 80.0 }]);
+		viewModel.ApplyCatalogue([catalogue[0], catalogue[1] with { ScaleMinOnStart = 20.0, ScaleMaxOnStart = 80.0 }]);
 
 		var settings = viewModel.ScaleSettings[2];
 		settings.Mode.Should().Be(ScaleMode.Manual);

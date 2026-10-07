@@ -100,8 +100,8 @@ public sealed class PostgresCatalogReadTests(
 
 		commissioned.Unit.Should().Be("degC");
 		commissioned.Format.Should().Be("0.0");
-		commissioned.ScaleMin.Should().Be(20.0);
-		commissioned.ScaleMax.Should().Be(850.0);
+		commissioned.ScaleMinOnStart.Should().Be(20.0);
+		commissioned.ScaleMaxOnStart.Should().Be(850.0);
 		commissioned.EnabledOnStart.Should().BeTrue();
 
 		Single(result.Value, SyntheticPenCatalog.HiddenOnStartPenId).EnabledOnStart.Should().BeFalse();
@@ -147,8 +147,8 @@ public sealed class PostgresCatalogReadTests(
 		var uncommissioned = Single(result.Value, SyntheticPenCatalog.UncommissionedPenId);
 
 		uncommissioned.Groups.Should().BeEmpty();
-		uncommissioned.ScaleMin.Should().BeNull();
-		uncommissioned.ScaleMax.Should().BeNull();
+		uncommissioned.ScaleMinOnStart.Should().BeNull();
+		uncommissioned.ScaleMaxOnStart.Should().BeNull();
 	}
 
 	[Fact]
@@ -289,8 +289,8 @@ public sealed class PostgresCatalogReadTests(
 			pen.Unit,
 			pen.Format,
 			pen.EnabledOnStart,
-			pen.ScaleMin,
-			pen.ScaleMax,
+			pen.ScaleMinOnStart,
+			pen.ScaleMaxOnStart,
 			pen.LineStyle);
 	}
 

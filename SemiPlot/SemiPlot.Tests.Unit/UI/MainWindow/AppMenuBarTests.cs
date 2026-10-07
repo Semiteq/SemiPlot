@@ -337,8 +337,8 @@ public sealed class AppMenuBarTests
 	{
 		return
 		[
-			new Pen(1, "Pen 1", ["Group A"], "#ff0000", ScaleMin: min, ScaleMax: max),
-			new Pen(2, "Pen 2", ["Group A"], "#00ff00", ScaleMin: min, ScaleMax: max)
+			new Pen(1, "Pen 1", ["Group A"], "#ff0000", ScaleMinOnStart: min, ScaleMaxOnStart: max),
+			new Pen(2, "Pen 2", ["Group A"], "#00ff00", ScaleMinOnStart: min, ScaleMaxOnStart: max)
 		];
 	}
 

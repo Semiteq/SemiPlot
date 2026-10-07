@@ -24,8 +24,8 @@ public enum PenColumn
 	Unit,
 	Mask,
 	LineStyle,
-	ScaleMin,
-	ScaleMax,
+	ScaleMinOnStart,
+	ScaleMaxOnStart,
 	Groups
 }
 
@@ -258,8 +258,10 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 			PenColumn.Unit => ByText(row => row.Pen.Unit),
 			PenColumn.Mask => ByText(row => row.Pen.Format),
 			PenColumn.LineStyle => (left, right) => left.Pen.LineStyle.CompareTo(right.Pen.LineStyle),
-			PenColumn.ScaleMin => (left, right) => Nullable.Compare(left.Pen.ScaleMin, right.Pen.ScaleMin),
-			PenColumn.ScaleMax => (left, right) => Nullable.Compare(left.Pen.ScaleMax, right.Pen.ScaleMax),
+			PenColumn.ScaleMinOnStart
+				=> (left, right) => Nullable.Compare(left.Pen.ScaleMinOnStart, right.Pen.ScaleMinOnStart),
+			PenColumn.ScaleMaxOnStart
+				=> (left, right) => Nullable.Compare(left.Pen.ScaleMaxOnStart, right.Pen.ScaleMaxOnStart),
 			PenColumn.Groups => ByText(row => row.GroupsText),
 			_ => throw new ArgumentOutOfRangeException(nameof(column), column, null)
 		};

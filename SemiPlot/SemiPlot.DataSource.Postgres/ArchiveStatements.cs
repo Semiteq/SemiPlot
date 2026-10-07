@@ -1,7 +1,7 @@
 namespace SemiPlot.DataSource.Postgres;
 
 /// <summary>
-/// The column order of <see cref="ArchiveStatements.PenCatalog"/> and, up to <see cref="ScaleMax"/>, of
+/// The column order of <see cref="ArchiveStatements.PenCatalog"/> and, up to <see cref="ScaleMaxOnStart"/>, of
 /// <see cref="ArchiveStatements.StoredPens"/>, named so a transposition shows.
 /// </summary>
 internal static class PenCatalogColumn
@@ -13,8 +13,8 @@ internal static class PenCatalogColumn
 	public const int Color = 4;
 	public const int LineStyle = 5;
 	public const int EnabledOnStart = 6;
-	public const int ScaleMin = 7;
-	public const int ScaleMax = 8;
+	public const int ScaleMinOnStart = 7;
+	public const int ScaleMaxOnStart = 8;
 	public const int Groups = 9;
 }
 
@@ -65,7 +65,7 @@ internal static class ArchiveStatements
 	/// </summary>
 	public const string StoredPens = """
 	                                 SELECT id, name, unit, format, color, line_style, enabled_on_start,
-	                                        scale_min, scale_max
+	                                        scale_min_on_start, scale_max_on_start
 	                                 FROM semiplot_tags
 	                                 ORDER BY id;
 	                                 """;
@@ -99,9 +99,11 @@ internal static class ArchiveStatements
 	/// <summary>
 	/// Both bounds in one statement: <c>semiplot_tags_scale_paired</c> refuses a half-set pair between two.
 	/// </summary>
-	public const string UpdatePenScale = """
-	                                     UPDATE semiplot_tags SET scale_min = @min, scale_max = @max WHERE id = @id;
-	                                     """;
+	public const string UpdatePenScaleOnStart = """
+	                                            UPDATE semiplot_tags
+	                                            SET scale_min_on_start = @min, scale_max_on_start = @max
+	                                            WHERE id = @id;
+	                                            """;
 
 	public const string CreateGroup = "INSERT INTO semiplot_groups (name) VALUES (@name) RETURNING id;";
 
@@ -129,7 +131,7 @@ internal static class ArchiveStatements
 	/// </summary>
 	public const string PenCatalog = """
 	                                 SELECT tag.id, tag.name, tag.unit, tag.format, tag.color, tag.line_style,
-	                                        tag.enabled_on_start, tag.scale_min, tag.scale_max,
+	                                        tag.enabled_on_start, tag.scale_min_on_start, tag.scale_max_on_start,
 	                                        coalesce(array_agg(grp.name ORDER BY grp.name)
 	                                                 FILTER (WHERE grp.name IS NOT NULL), '{}') AS groups
 	                                 FROM semiplot_tags tag

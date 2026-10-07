@@ -244,7 +244,7 @@ public sealed class AxisScalePanelViewTests
 	{
 		using var viewModel = CreateLoadedViewModel();
 		var pen = new Pen(1, "Pen 1", ["Group A"], "#ff0000");
-		viewModel.ApplyCatalogue([pen with { ScaleMin = 5.0, ScaleMax = 50.0 }]);
+		viewModel.ApplyCatalogue([pen with { ScaleMinOnStart = 5.0, ScaleMaxOnStart = 50.0 }]);
 		viewModel.SetAxisLimits(1, 10.0, 90.0);
 		using var shown = ShowChart(viewModel);
 		var (flyout, panel) = OpenPanel(viewModel, shown);

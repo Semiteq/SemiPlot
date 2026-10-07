@@ -217,8 +217,8 @@ public sealed class RawLayerGeneratorTests
 		uncommissioned.Groups.Should().BeEmpty();
 		uncommissioned.Unit.Should().BeNull();
 		uncommissioned.Format.Should().BeNull();
-		uncommissioned.ScaleMin.Should().BeNull();
-		uncommissioned.ScaleMax.Should().BeNull();
+		uncommissioned.ScaleMinOnStart.Should().BeNull();
+		uncommissioned.ScaleMaxOnStart.Should().BeNull();
 	}
 
 	[Fact]

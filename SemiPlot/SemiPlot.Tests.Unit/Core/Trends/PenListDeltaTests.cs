@@ -19,8 +19,8 @@ public sealed class PenListDeltaTests
 		"Pa",
 		"0.0",
 		EnabledOnStart: true,
-		ScaleMin: 0,
-		ScaleMax: 100);
+		ScaleMinOnStart: 0,
+		ScaleMaxOnStart: 100);
 
 	private static readonly Pen _heater = new(2, "Heater", ["Heaters"], "#223344", "degC");
 
@@ -36,8 +36,8 @@ public sealed class PenListDeltaTests
 		nameof(Pen.Unit),
 		nameof(Pen.Format),
 		nameof(Pen.EnabledOnStart),
-		nameof(Pen.ScaleMin),
-		nameof(Pen.ScaleMax),
+		nameof(Pen.ScaleMinOnStart),
+		nameof(Pen.ScaleMaxOnStart),
 		nameof(Pen.LineStyle)
 	];
 
@@ -96,7 +96,7 @@ public sealed class PenListDeltaTests
 	[InlineData(null, null)]
 	public void AStoredScaleChange_GivesARevision(double? scaleMin, double? scaleMax)
 	{
-		var rescaled = _pressure with { ScaleMin = scaleMin, ScaleMax = scaleMax };
+		var rescaled = _pressure with { ScaleMinOnStart = scaleMin, ScaleMaxOnStart = scaleMax };
 
 		var delta = PenListDelta.Between([_pressure], [rescaled]);
 
@@ -196,8 +196,8 @@ public sealed class PenListDeltaTests
 			nameof(Pen.Unit) => pen with { Unit = "kPa" },
 			nameof(Pen.Format) => pen with { Format = "0.000" },
 			nameof(Pen.EnabledOnStart) => pen with { EnabledOnStart = !pen.EnabledOnStart },
-			nameof(Pen.ScaleMin) => pen with { ScaleMin = -5.0 },
-			nameof(Pen.ScaleMax) => pen with { ScaleMax = 500.0 },
+			nameof(Pen.ScaleMinOnStart) => pen with { ScaleMinOnStart = -5.0 },
+			nameof(Pen.ScaleMaxOnStart) => pen with { ScaleMaxOnStart = 500.0 },
 			nameof(Pen.LineStyle) => pen with { LineStyle = PenLineStyle.Stepped },
 			_ => throw new ArgumentOutOfRangeException(nameof(member), member, "No change is defined for it.")
 		};

@@ -27,7 +27,7 @@ public sealed class TagCatalogWriterTests(PostgresContainerFixture postgresConta
 		""";
 
 	private const string StoredScalesCommand =
-		"SELECT id, scale_min, scale_max FROM public.semiplot_tags ORDER BY id;";
+		"SELECT id, scale_min_on_start, scale_max_on_start FROM public.semiplot_tags ORDER BY id;";
 
 	[Fact]
 	public async Task TheGroupTableHoldsEveryGroupTheSliceNames()
@@ -60,7 +60,9 @@ public sealed class TagCatalogWriterTests(PostgresContainerFixture postgresConta
 
 		written.Should().Equal(
 		[
-			.. Slice().Select(pen => (pen.PenId, pen.ScaleMin, pen.ScaleMax)).OrderBy(scale => scale.PenId)
+			.. Slice()
+				.Select(pen => (pen.PenId, pen.ScaleMinOnStart, pen.ScaleMaxOnStart))
+				.OrderBy(scale => scale.PenId)
 		]);
 		written.Should().Contain(scale => scale.PenId == SyntheticPenCatalog.UncommissionedPenId
 										  && scale.Min == null

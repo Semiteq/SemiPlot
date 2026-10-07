@@ -10,8 +10,9 @@ public sealed class TagCatalogWriter(string adminConnectionString)
 	private const string UpsertTagCommand =
 		"""
 		INSERT INTO public.semiplot_tags
-			(id, name, unit, format, color, line_style, enabled_on_start, scale_min, scale_max)
-		VALUES (@id, @name, @unit, @format, @color, @line_style, @enabled_on_start, @scale_min, @scale_max)
+			(id, name, unit, format, color, line_style, enabled_on_start, scale_min_on_start, scale_max_on_start)
+		VALUES
+			(@id, @name, @unit, @format, @color, @line_style, @enabled_on_start, @scale_min_on_start, @scale_max_on_start)
 		ON CONFLICT (id) DO UPDATE
 		SET name = EXCLUDED.name,
 			unit = EXCLUDED.unit,
@@ -19,8 +20,8 @@ public sealed class TagCatalogWriter(string adminConnectionString)
 			color = EXCLUDED.color,
 			line_style = EXCLUDED.line_style,
 			enabled_on_start = EXCLUDED.enabled_on_start,
-			scale_min = EXCLUDED.scale_min,
-			scale_max = EXCLUDED.scale_max;
+			scale_min_on_start = EXCLUDED.scale_min_on_start,
+			scale_max_on_start = EXCLUDED.scale_max_on_start;
 		""";
 
 	private const string InsertGroupsCommand =
@@ -124,8 +125,8 @@ public sealed class TagCatalogWriter(string adminConnectionString)
 		command.Parameters.AddWithValue("color", pen.Color);
 		command.Parameters.AddWithValue("line_style", (short)pen.LineStyle);
 		command.Parameters.AddWithValue("enabled_on_start", pen.EnabledOnStart);
-		command.Parameters.AddWithValue("scale_min", (object?)pen.ScaleMin ?? DBNull.Value);
-		command.Parameters.AddWithValue("scale_max", (object?)pen.ScaleMax ?? DBNull.Value);
+		command.Parameters.AddWithValue("scale_min_on_start", (object?)pen.ScaleMinOnStart ?? DBNull.Value);
+		command.Parameters.AddWithValue("scale_max_on_start", (object?)pen.ScaleMaxOnStart ?? DBNull.Value);
 
 		await command.ExecuteNonQueryAsync(cancellationToken);
 	}

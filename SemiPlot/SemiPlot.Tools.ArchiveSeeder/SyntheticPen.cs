@@ -19,8 +19,8 @@ public sealed record SyntheticPen(
 	public string PrimaryGroup => Groups.Count > 0 ? Groups[0] : string.Empty;
 
 	/// <summary>The commissioned lower bound, or none for a pen the operator left autoscaling.</summary>
-	public double? ScaleMin => StoresScale ? MinValue : null;
+	public double? ScaleMinOnStart => StoresScale ? MinValue : null;
 
 	/// <summary>The commissioned upper bound, or none for a pen the operator left autoscaling.</summary>
-	public double? ScaleMax => StoresScale ? MaxValue : null;
+	public double? ScaleMaxOnStart => StoresScale ? MaxValue : null;
 }

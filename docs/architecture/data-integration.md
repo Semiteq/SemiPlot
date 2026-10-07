@@ -59,7 +59,7 @@ public interface IDataProvider
 
 | Type | Shape | Notes |
 | --- | --- | --- |
-| `Pen` | `PenId`, `Name`, `Groups`, `Color`, `Unit`, `Format`, `EnabledOnStart`, `ScaleMin`, `ScaleMax`, `LineStyle` | `PenId` is the archive's `trends.id`. Equality compares `Groups` element by element, ordinal, so two reads of one stored pen are equal. |
+| `Pen` | `PenId`, `Name`, `Groups`, `Color`, `Unit`, `Format`, `EnabledOnStart`, `ScaleMinOnStart`, `ScaleMaxOnStart`, `LineStyle` | `PenId` is the archive's `trends.id`. Equality compares `Groups` element by element, ordinal, so two reads of one stored pen are equal. |
 | `Sample` | `PenId`, `TimestampUtc`, `Value` | Realtime element. Timestamps are UTC by the time they leave the provider. |
 | `PenHistoryEnvelope` | parallel `Timestamps` / `Min` / `Max` / `Center`, strictly ascending, `NaN` marks a gap | One per pen per history query. |
 | `ArchiveExtent` | `FirstUtc`, `LastUtc`, `IsEmpty` | The span of the configured variables, consumed by the minimap (`TM-4`). `ArchiveExtent.Empty` is the no-span form. |
@@ -119,9 +119,9 @@ singleton, so one role and one connection string serve reads and writes.
 | Type | Shape | Notes |
 | --- | --- | --- |
 | `PenCatalogue` | `Pens`, `Groups` | The catalogue as stored. |
-| `StoredPen` | `Id`, `Name`, `Unit`, `Format`, `Color`, `LineStyle`, `EnabledOnStart`, `ScaleMin`, `ScaleMax` | One `semiplot_tags` row; a null field is a stored `NULL`. |
+| `StoredPen` | `Id`, `Name`, `Unit`, `Format`, `Color`, `LineStyle`, `EnabledOnStart`, `ScaleMinOnStart`, `ScaleMaxOnStart` | One `semiplot_tags` row; a null field is a stored `NULL`. |
 | `StoredGroup` | `Id`, `Name`, `MemberPenIds` | Member ids ascending; the member count is `MemberPenIds.Count`. |
-| `PenSettingChange` | `Name`, `Unit`, `Format`, `Color`, `LineStyle`, `EnabledOnStart`, `Scale(Min, Max)` | A closed family, one arm per column; the scale pair is one arm. |
+| `PenSettingChange` | `Name`, `Unit`, `Format`, `Color`, `LineStyle`, `EnabledOnStart`, `ScaleOnStart(Min, Max)` | A closed family, one arm per column; the scale pair is one arm. |
 
 A parameter record carries the id the statement binds and the name a fault names. The implementation
 reads only `Id` and `Name` from it, and no statement compares old values in its `WHERE`.
@@ -146,8 +146,8 @@ already replaced.
 
 | Operation | Constant | What the statement keeps |
 | --- | --- | --- |
-| `ChangeAsync`, every arm but `Scale` | `UpdatePenName`, `UpdatePenUnit`, `UpdatePenFormat`, `UpdatePenColor`, `UpdatePenLineStyle`, `UpdatePenEnabledOnStart` | `UPDATE semiplot_tags SET <column> = @value WHERE id = @id`, the column fixed in the constant and never interpolated. A null unit or mask binds `NULL`; the form turns an empty field into null. |
-| `ChangeAsync`, `Scale` | `UpdatePenScale` | Both bounds in one statement: `semiplot_tags_scale_paired` refuses a half-set pair between two. |
+| `ChangeAsync`, every arm but `ScaleOnStart` | `UpdatePenName`, `UpdatePenUnit`, `UpdatePenFormat`, `UpdatePenColor`, `UpdatePenLineStyle`, `UpdatePenEnabledOnStart` | `UPDATE semiplot_tags SET <column> = @value WHERE id = @id`, the column fixed in the constant and never interpolated. A null unit or mask binds `NULL`; the form turns an empty field into null. |
+| `ChangeAsync`, `ScaleOnStart` | `UpdatePenScaleOnStart` | Both bounds in one statement: `semiplot_tags_scale_paired` refuses a half-set pair between two. |
 | `CreateGroupAsync` | `CreateGroup` | `INSERT ... RETURNING id`; the result is the new group's id. |
 | `RenameGroupAsync` | `RenameGroup` | One row by id. |
 | `DeleteGroupAsync` | `DeleteGroup` | `ON DELETE CASCADE` on `semiplot_pen_groups.group_id` removes the memberships. The pens stay, and a pen left in no group falls under the Ungrouped header at the next catalogue read. |

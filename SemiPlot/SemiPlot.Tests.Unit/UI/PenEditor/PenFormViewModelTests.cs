@@ -63,7 +63,7 @@ public sealed class PenFormViewModelTests : IDisposable
 	[InlineData(PenField.Color)]
 	[InlineData(PenField.LineStyle)]
 	[InlineData(PenField.EnabledOnStart)]
-	[InlineData(PenField.Scale)]
+	[InlineData(PenField.ScaleOnStart)]
 	public async Task AnUnchangedField_WritesNothing(PenField field)
 	{
 		var form = FormFor(Pressure);
@@ -108,15 +108,15 @@ public sealed class PenFormViewModelTests : IDisposable
 	{
 		var form = FormFor(Pressure);
 
-		form.ScaleMin = minimum;
-		form.ScaleMax = maximum;
-		await form.EndEditAsync(PenField.Scale);
+		form.ScaleMinOnStart = minimum;
+		form.ScaleMaxOnStart = maximum;
+		await form.EndEditAsync(PenField.ScaleOnStart);
 
 		_editor.Calls.Should().BeEmpty();
-		form.ScaleMin.Should().Be("0");
-		form.ScaleMax.Should().Be("100");
-		form.IsScaleMinValid.Should().BeFalse();
-		form.IsScaleMaxValid.Should().BeFalse();
+		form.ScaleMinOnStart.Should().Be("0");
+		form.ScaleMaxOnStart.Should().Be("100");
+		form.IsScaleMinOnStartValid.Should().BeFalse();
+		form.IsScaleMaxOnStartValid.Should().BeFalse();
 		form.Message.Should().Be(Text(ruleKey));
 	}
 
@@ -125,12 +125,12 @@ public sealed class PenFormViewModelTests : IDisposable
 	{
 		var form = FormFor(Pressure);
 
-		form.ScaleMin = "-20";
-		form.ScaleMax = "80";
-		await form.EndEditAsync(PenField.Scale);
+		form.ScaleMinOnStart = "-20";
+		form.ScaleMaxOnStart = "80";
+		await form.EndEditAsync(PenField.ScaleOnStart);
 
-		_editor.Changes.Select(call => call.Setting).Should().Equal(new PenSettingChange.Scale(-20, 80));
-		form.Row.Pen.Should().Be(Pressure with { ScaleMin = -20, ScaleMax = 80 });
+		_editor.Changes.Select(call => call.Setting).Should().Equal(new PenSettingChange.ScaleOnStart(-20, 80));
+		form.Row.Pen.Should().Be(Pressure with { ScaleMinOnStart = -20, ScaleMaxOnStart = 80 });
 	}
 
 	[AvaloniaFact]
@@ -138,11 +138,11 @@ public sealed class PenFormViewModelTests : IDisposable
 	{
 		var form = FormFor(Pressure);
 
-		form.ScaleMin = string.Empty;
-		form.ScaleMax = string.Empty;
-		await form.EndEditAsync(PenField.Scale);
+		form.ScaleMinOnStart = string.Empty;
+		form.ScaleMaxOnStart = string.Empty;
+		await form.EndEditAsync(PenField.ScaleOnStart);
 
-		_editor.Changes.Select(call => call.Setting).Should().Equal(new PenSettingChange.Scale(null, null));
+		_editor.Changes.Select(call => call.Setting).Should().Equal(new PenSettingChange.ScaleOnStart(null, null));
 	}
 
 	[AvaloniaFact]
@@ -179,13 +179,13 @@ public sealed class PenFormViewModelTests : IDisposable
 		try
 		{
 			CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("ru-RU");
-			var form = FormFor(Pressure with { ScaleMin = null, ScaleMax = null });
+			var form = FormFor(Pressure with { ScaleMinOnStart = null, ScaleMaxOnStart = null });
 
-			form.ScaleMin = "1,5";
-			form.ScaleMax = "2,25";
-			await form.EndEditAsync(PenField.Scale);
+			form.ScaleMinOnStart = "1,5";
+			form.ScaleMaxOnStart = "2,25";
+			await form.EndEditAsync(PenField.ScaleOnStart);
 
-			_editor.Changes.Select(call => call.Setting).Should().Equal(new PenSettingChange.Scale(1.5, 2.25));
+			_editor.Changes.Select(call => call.Setting).Should().Equal(new PenSettingChange.ScaleOnStart(1.5, 2.25));
 		}
 		finally
 		{
@@ -207,16 +207,16 @@ public sealed class PenFormViewModelTests : IDisposable
 			CultureInfo.CurrentCulture = russian;
 			var form = FormFor(Pressure);
 
-			form.ScaleMax = bound switch
+			form.ScaleMaxOnStart = bound switch
 			{
 				"NaNSymbol" => russian.NumberFormat.NaNSymbol,
 				"PositiveInfinitySymbol" => russian.NumberFormat.PositiveInfinitySymbol,
 				_ => bound
 			};
-			await form.EndEditAsync(PenField.Scale);
+			await form.EndEditAsync(PenField.ScaleOnStart);
 
 			_editor.Calls.Should().BeEmpty();
-			form.IsScaleMaxValid.Should().BeFalse();
+			form.IsScaleMaxOnStartValid.Should().BeFalse();
 			form.Message.Should().Be(Resources.PenFormScaleBoundInvalid);
 		}
 		finally

@@ -44,7 +44,7 @@ public sealed class MainWindowViewTests
 	public async Task EditPensAndGroups_ClickedOnTheRealisedWindow_OpensTheEditorOverIt()
 	{
 		var pen = new StoredPen(
-			7, "Chamber pressure", "Pa", null, "#1F77B4", PenLineStyle.Interpolated, true, null, null);
+			7, "Chamber pressure", "Pa", null, "#1F77B4", PenLineStyle.Interpolated, true, null, null, false);
 		var penCatalogueEditor = new FakePenCatalogueEditor
 		{
 			ReadResult = Result.Ok(new PenCatalogue([pen], []))

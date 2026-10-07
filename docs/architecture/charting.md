@@ -104,6 +104,89 @@ delta-toggle changes drive ScottPlot redraws (through that coalescing seam); hov
 is repositioned from the `RedrawRequested` seam (after `Refresh()`) and on `SizeChanged`. Keeping the
 re-rasterization off the per-pointer-event path is the point of the overlay.
 
+### Log10 Y axis
+
+The logarithmic scale is base 10, the one base the chart builds. The operator texts call it the
+logarithmic scale and leave the base out (`ui-text.md`), as Excel, MasterSCADA 4D and Simple-Scada 2 do.
+
+ScottPlot 5.1.59 has no log axis: `YAxisBase.GetPixel` is linear and `IAxis` exposes no transform. The
+transform lives at the render edge instead, and everything before it stays in the pen's own units:
+`PenScale.Min`/`Max`, the axis scale panel's bounds, `ScaleRangeForPen` and the cursor, hover and delta
+readouts, which read stored values. Two places convert:
+
+- `ChartAxisBinder.Apply` sets a log axis's limits to `log10(Min)` and `log10(Max)`, so the axis runs in
+  decades.
+- `EnvelopeLine.Render` projects every Y through `LogAxis.Project` while its axis is logarithmic.
+
+**The axis type lives in the tick generator.** An axis is logarithmic while its `TickGenerator` is a
+`LogTickGenerator`, and nothing else on the render side holds the type. `Render` reads that mode once per
+frame and projects through the axis's own `GetPixel`, and the line keeps no flag of its own to drift from
+the axis. `GetAxisLimits` reports no Y limits under a log axis, because its columns are in the pen's
+units and the axis runs in decades; nothing autoscales a pen's axis through ScottPlot today. The binder
+switches a type under one `lock (Plot.Sync)`: the generator (a new `LogTickGenerator`, or a new
+`NumericAutomatic` on the way back), the limits and the minor gridline width, so no frame draws decades
+under linear ticks or the reverse. A pan or an autoscale that keeps the type sets the limits as a linear
+axis does.
+
+**Non-positive samples are pinned.** A value `<= 0` has no logarithm. `LogAxis.Project` puts it on a
+floor 2 px above the data area's bottom (`EnvelopeLine.PinnedFloorPixels`), because the bottom axis frame
+is drawn over the data area's bottom row and would hide a line there. A positive value under that floor,
+such as a dip below a manual minimum, lands on the same floor, so the line never draws `0` above a
+smaller positive value. The line stays continuous through it, and the readouts show the stored value,
+`0`. A NaN stays NaN, so a gap stays a gap.
+
+**The range is padded in decades.** The auto range skips values `<= 0` (`ValueRange.Widen`), and
+`PenScaleModel` pads an auto log range by 5 % of the decades it spans on each side, a flat range by half
+a decade, and keeps both padded ends between decades -307 and 308, so a `+Infinity` sample or a value
+near the end of the double range never gives the axis a limit of 0 or infinity. A manual log range with a
+minimum `<= 0` can only come from a row written by hand, since the axis scale panel and the pen form both
+refuse it; `SanitizeManualRange` replaces it with a positive range. A manual pair with an infinite or NaN
+bound, which also only a hand-written row can hold, opens on the default range instead, 0..1 on a linear
+axis and 1..10 on a log one. The panel, the chart's `SetLogarithmic`, the pen form and
+`SanitizeManualRange` read one rule, `LogAxis.AdmitsMinimum`.
+
+**Tick choice is Core.** `LogAxis.Ticks(minLog, maxLog, pixelLength)` returns ascending `LogTick`s, all
+inside the range, and nothing for a non-finite bound, `minLog >= maxLog` or a length `<= 0`. Majors come
+from one of three families:
+
+1. linear: one value step, the smallest 1-2-5 step whose narrowest gap, at the top of the range, is at
+   least 40 px;
+2. mantissas 1, 2 and 5 in every decade;
+3. decades, at the smallest stride of 1, 2, 3, 5, 10, 20, ... that leaves 40 px between majors.
+
+Of the families with at least two majors and no gap under 40 px, the one with the most majors wins, ties
+going to the earlier one in that order. The first readable family would let the linear one win a range of
+one to three decades with its majors in the top decade only: over 2..50 at 400 px it gives 20 and 40,
+where 1-2-5 gives 2, 5, 10, 20 and 50. With no readable family, the two range ends are the majors. Minors
+fill what the majors skip: mantissas 2..9 under a decade stride of 1, the skipped decades under a larger
+stride, mantissas 3, 4 and 6..9 under 1-2-5, four even steps per interval under the linear family, the
+partial intervals at both ends included, and none under the range ends. One call builds at most
+`pixelLength / 40 + 2` majors plus their minors. Skipped decades closer than 1 px get no minors, and the
+linear family gets none once its minor multiples pass 2^53, where a double no longer tells neighbours
+apart: a range of float noise, such as 1 to 1.0000000000000007, then still returns its ticks.
+
+**Labels go through the pen's mask.** `Chart/LogTickGenerator` adapts `LogAxis.Ticks` to ScottPlot's
+`ITickGenerator` and labels a major `PenValueFormat.Format(10^position, Mask)`. A major turns into a
+minor when its label equals `PenValueFormat.Format(0, Mask)`, a positive value the mask cannot show, when
+it does not parse back under the current culture to within 1 % of its value, or when it repeats the last
+label kept, so no gridline carries a label that misreads it. Over 0.02..0.5 under `0.0` the 0.05 gridline
+would read "0.1"; it stays a minor one and the 0.1 gridline keeps the label. A label whose literals no
+number parse reads, such as parentheses, is kept. A pen spanning decades needs an exponent mask such as
+`0.0E+0`; under a fixed-point mask or the `0.###` fallback the decades below the mask's precision keep
+their gridlines and lose their labels. The binder writes `Mask` from `Pen.Format` on every `Apply` on the
+UI thread, and `Regenerate` reads it on the render thread under `Plot.Sync`, so a revised mask reaches
+the labels at the next catalogue read. ScottPlot regenerates each Y panel at two lengths per frame, so
+the generator caches the last two results, keyed on the limits, the length and the mask; a published
+`Ticks` array is never changed. `MaxTickCount` is unused, because `LogAxis.Ticks` bounds the count
+itself.
+
+**Minor gridlines show on a log axis only.** The binder sets `Grid.YAxisStyle.MinorLineStyle.Width` to 1
+when it draws a log axis and to 0 otherwise, in the same step that assigns `Grid.YAxis`, and
+`ChartPalette` paints them `AppMinorGridLineBrush` (`ui-theme.md`).
+
+The minimap band stays linear (`trend-interaction.md#archive-overview-minimap`), and the delta readout
+stays a linear difference.
+
 ## Reference: legacy SCADA trend window
 
 The legacy Simple-Scada trend window ("Параметры (Графики)") is a functional reference —
@@ -147,10 +230,10 @@ The mapping below routes the major capability groups to their feature IDs:
   decimation: trend-feature-spec.md §DA-2, §DA-3, §DA-5.
 - **Grouping / layout** — view pen groups separately or together: trend-feature-spec.md §MS-2.
 
-Canonical use cases (acceptance fixtures): 16 dampers + 16 heat sources (dampers viewed separately,
-the 16 heaters reading against the same bounds, which is the same
-`scale_min_on_start`/`scale_max_on_start` pair stored on each of them rather than a shared axis) and 10 gas lines with different min..max ranges (all on
-one chart, each with its own scale — §AY-2).
+Canonical use cases (acceptance fixtures): 16 dampers + 16 heat sources (dampers viewed separately, the
+16 heaters reading against the same bounds, which is the same `scale_min_on_start`/`scale_max_on_start`
+pair stored on each of them rather than a shared axis) and 10 gas lines with different min..max ranges
+(all on one chart, each with its own scale — §AY-2).
 
 ## Module layout (Avalonia views / view models / Core models)
 
@@ -177,7 +260,10 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   one writer, and a method is what no binding can reach. The hover readout reads `Pen` per pointer move;
   the sidebar row binds through it.
 - `Chart/ChartAxisBinder` — applies the `PenScaleModel` output to ScottPlot Y axes (one left axis per
-  pen, `SetLimitsY`, shared-X pinning).
+  pen, `SetLimitsY`, shared-X pinning) and switches an axis between linear and log10: its limits in
+  decades, its tick generator and the minor gridline width (`#log10-y-axis`).
+- `Chart/LogTickGenerator` - the `ITickGenerator` of a log axis: `LogAxis.Ticks` with majors labelled
+  under the pen's mask, and the two-entry cache (`#log10-y-axis`).
 - `Chart/ChartNavigationController` — owns the `TrendNavigationModel`, the layer ladder, the live-edge
   advance; raises `WindowChanged` (`NavigationWindow` = `[From, To]` + `Layer` +
   `RequiresHistoryRequery`). A ceiling is derived, not constant:
@@ -241,7 +327,8 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   from the navigation bar's delta toggle.
 - `Chart/ChartAxisRegion` — Y-axis click-region hit-test (the axis panel band beside the data area).
 - `Chart/AxisScalePanel` + `AxisScalePanelViewModel` — the flyout that edits the drawn pen's two bounds
-  (`trend-interaction.md#the-axis-scale-panel`); `TrendChartViewModel.AxisScale` owns the view model.
+  and its axis type (`trend-interaction.md#the-axis-scale-panel`); `TrendChartViewModel.AxisScale` owns
+  the view model.
 - `Chart/LocalTimeAxis` — UTC↔local-OADate conversion at every render boundary.
 - `Navigation/NavigationBarView` + `NavigationBarViewModel` — time navigation only: jump-to-now,
   sticky toggle, delta-mode toggle + inline Δt/Δy readout (ReactiveUI commands). Autoscale, the two
@@ -343,25 +430,32 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
 - `Startup/AppSettings` + `AppSettingsLoader` + `StartupSequence` - the required
   `<config-dir>/app` section, its two keys and the ordered startup steps that read it before the
   connection section (`data-integration.md`, Startup).
-- `Styles/Palette.axaml` + `Chart/ChartPalette` - the two theme variants, and the four ScottPlot
+- `Styles/Palette.axaml` + `Chart/ChartPalette` - the two theme variants, and the five ScottPlot
   surfaces painted from them (`ui-theme.md`).
 
 **Core models (`SemiPlot.Core.Trends`, renderer-agnostic, unit-tested):**
 
 - `PenScaleModel` — one `PenScale` per pen: `(Min, Max)` + autoscale mode + the active flag (Auto over
-  the columns inside `[windowStart, windowEnd]` / Manual; log sanitize). A pen whose
-  `scale_min_on_start`/`scale_max_on_start` are stored opens `Manual` on exactly those bounds; a pen without them opens `Auto`. What the operator then does
-  to the axis rewrites the settings for the session and reaches no database. The only writer of
-  `semiplot_tags` is the pen editor (`Edit` -> `Pens and groups`, `PenEditor/`,
-  `data-integration.md#the-pen-catalogue-editor`). The stored pair is the pen's initial scale: it builds the
-  settings when the pen enters the chart and is the target of `RestoreInitialScale`.
-  `PenScaleSettings.InitialFor` builds the settings from the pair a pen record holds, `Manual` on both bounds
-  or `Auto` when it has none; `TrendChartViewModel.RestoreInitialScale` applies them to the active pen.
-  Both scale commands leave an active pen that is switched off alone, since its axis is not drawn. A changed
-  pair reaches the running chart through the next catalogue read and leaves every shown pen alone, whatever
-  session axis it holds (Applying a catalogue read, below).
+  the columns inside `[windowStart, windowEnd]` / Manual; log padding and sanitize). A pen whose
+  `scale_min_on_start`/`scale_max_on_start` are stored opens `Manual` on exactly those bounds; a pen
+  without them opens `Auto`. A pen whose `log_scale_on_start` is set opens on a log10 axis. What the
+  operator then does to the axis rewrites the settings for the session and reaches no database. The only
+  writer of `semiplot_tags` is the pen editor (`Edit` -> `Pens and groups`, `PenEditor/`,
+  `data-integration.md#the-pen-catalogue-editor`). The stored pair and the stored flag are the pen's
+  initial scale: they build the settings when the pen enters the chart and are the target of
+  `RestoreInitialScale`. `PenScaleSettings.InitialFor` builds the settings from the pair and the flag a
+  pen record holds, `Manual` on both bounds or `Auto` when it has none, logarithmic when
+  `Pen.LogScaleOnStart` is set; `TrendChartViewModel.RestoreInitialScale` applies them to the active pen.
+  The session flag has three writers: `ChartPenSet.Add` and `RestoreInitialScale` from the stored flag,
+  and `TrendChartViewModel.SetLogarithmic`, which the axis scale panel calls. Both scale commands leave
+  an active pen that is switched off alone, since its axis is not drawn. A changed pair or flag reaches
+  the running chart through the next catalogue read and leaves every shown pen alone, whatever session
+  axis it holds (Applying a catalogue read, below).
+- `LogAxis` - the log10 projection with the pinned floor, the tick choice and the log minimum rule
+  (`#log10-y-axis`).
 - `PenValueFormat` — the `0.###` fallback mask, the character rule that accepts a stored mask, and the
-  render under `CultureInfo.CurrentCulture`. The rule runs once, in `PostgresDataProvider.ReadPen`,
+  render under `CultureInfo.CurrentCulture`, for the sidebar row, the hover readout and the major labels
+  of a log axis. The rule runs once, in `PostgresDataProvider.ReadPen`,
   which is where the logger is; a rejected mask reaches the record as `null`, so `Pen.Format` in the
   row is always usable and the row neither validates nor logs. The rule is a character set rather than
   a `try`/`catch` because .NET throws on almost no bad mask: `qqq` prints literally and `%0.0`
@@ -398,7 +492,8 @@ whatever baseline the loop compared it with (`overview.md#what-a-read-changes`).
    hidden. The axis stays keyed on the pen id, so a pen that comes back takes it again.
 2. Every pen the chart holds whose stored settings differ is revised: `TrendPenState.Revise` takes the
    new pen and restyles its line in place. A revision never touches the pen's scale settings, so a changed
-   stored pair leaves the session axis alone, and an `EnabledOnStart` revision keeps the visibility.
+   stored pair or `log_scale_on_start` leaves the session axis alone, and an `EnabledOnStart` revision
+   keeps the visibility.
 3. Every pen the chart lacks joins, with the visibility its `EnabledOnStart` gives it.
 4. `Pens` is rebuilt in the order of the read.
 5. The active pen settles: a removed active pen's slot goes to the first visible pen in catalogue order.

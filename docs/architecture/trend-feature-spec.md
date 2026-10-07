@@ -60,8 +60,8 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 **Note.** Closed: `PenScaleSettings` carries no axis key at all — the axis is the pen. The stored `scale_min_on_start`/`scale_max_on_start` pair is what forced it: seeded into a group-keyed axis, one pen's range would have been applied to the whole group and the rest silently discarded.
 
 ### AY-3 — Manual min/max for an axis (MUST)
-**Definition.** `Manual` mode: fixed `ManualMin/ManualMax` for an axis; on swapped bounds — auto-swap. Bound editing is available from the UI: a click on the active pen's axis opens a panel with Maximum and Minimum fields, and Apply writes both.
-**Acceptance.** Core/test: `ScaleMode.Manual` returns exactly the given bounds; swapped input is swapped back. UI: a click on the axis opens the panel seeded with the current bounds; Apply sets both as a manual scale, and an empty or inverted pair is refused on the panel's message line.
+**Definition.** `Manual` mode: fixed `ManualMin/ManualMax` for an axis; on swapped bounds — auto-swap. Bound editing is available from the UI: a click on the active pen's axis opens a panel with Maximum and Minimum fields, and the pair is written when focus leaves both fields or on Enter.
+**Acceptance.** Core/test: `ScaleMode.Manual` returns exactly the given bounds; swapped input is swapped back. UI: a click on the axis opens the panel seeded with the current bounds; a changed pair is set as a manual scale when focus leaves both fields, on Enter or when the panel is dismissed from outside, and Escape closes the panel without writing; an empty or inverted pair is refused on the panel's message line and not written.
 
 ### AY-4 — Autoscale to the visible window (MUST)
 **Definition.** `Auto` mode: min/max over the columns inside the current `[windowStart, windowEnd]` with 5% padding; a flat range → ±0.5; a window holding no column → the whole fetched envelope, and the default range only when no envelope carries a usable value at all. View -> Pen scale -> Autoscale and the panel's Autoscale button switch the active pen to `Auto`, which refits on every window change, and View -> Pen scale -> Restore initial scale and the panel's Initial scale button set the active pen to its stored pair, or to `Auto` when the pen has none; the navigation bar carries no autoscale button.
@@ -72,9 +72,9 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 `Auto` is the window-bounded mode; there is no second autoscale mode to switch into.
 
 ### AY-6 — Logarithmic scale (SHOULD)
-**Definition.** A log axis mode (Log10/Ln/arbitrary base — at minimum Log10). Values ≤ 0 are sanitized (dropped/clamped), and there is a default range on empty data. The mode must be **available from the UI and actually change the axis type in the render**, not merely clamp linear limits.
-**Acceptance.** Core/test: `IsLogarithmic` drops ≤ 0 and yields correct bounds. UI: a toggle enables the log axis, and the scale is visually logarithmic (log ticks/grid), not linear with a clamp.
-**Note.** Closes gap (b)2: the model supports log, but the UI has no toggle and `ChartAxisBinder` only does a linear `SetLimitsY`.
+**Definition.** A log10 axis type beside the auto and manual modes; Ln and other bases are not built. Values ≤ 0 are skipped by the auto range, and there is a default range on empty data. The type is stored per pen as `log_scale_on_start` and edited in the pen editor; the axis scale panel's Logarithmic scale checkbox switches it for the session of one window, and Restore initial scale brings the stored type back. The type **changes the axis in the render**: majors and minor gridlines on log positions, the line projected through the same transform, readable majors over a range narrower than a decade.
+**Acceptance.** Core/test: an auto log range over 1e-6..1e-2 has `Min < 1e-6` and `Max > 1e-2`, and a flat log pen at 0.3 has `Min < 0.3 < Max` (`PenScaleModelTests`); `LogAxis.Ticks` gives majors at the six decades of 1e-6..1e-1 over 400 px and at least two majors with no gap under 40 px over 2..50 and 0.9..1.4 (`LogAxisTests`). UI: over 1e-6..1e-2 the 1e-4 plateau draws within 2 px of the data area's middle and a plateau at `0` draws 2 px above its bottom (`LogAxisRenderTests`); the panel's checkbox switches the axis at once, from a positive minimum typed just before the tick, and is refused over a manual minimum ≤ 0. DB: a written `log_scale_on_start` reads back through both catalogue reads.
+**Note.** Closed by the log10 axis (`charting.md#log10-y-axis`). Before it, the model supported log but the UI had no toggle and `ChartAxisBinder` only did a linear `SetLimitsY`.
 
 ### AY-7 — Position binding and vertical-scale presets (NICE)
 **Definition.** Axis binding (Left/Right/Center/Free) with a percentage offset, plus user presets for the vertical scale in percent (add/edit/delete, apply to a pen or to all).
@@ -85,7 +85,7 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 ## 3. Pens
 
 ### PN-1 — Pen model and Y layer (MUST)
-**Definition.** A pen: `PenId`, `Name`, `Groups`, `Color`, `LineStyle`, `Unit`, `Format`, `EnabledOnStart` and the stored `ScaleMinOnStart`/`ScaleMaxOnStart` pair. A pen's history is a `PenHistoryEnvelope` (parallel `Timestamps/Min/Max/Center`, strictly increasing timestamps, NaN = gap). Render: one `EnvelopeLine` polyline through each column's Min and Max.
+**Definition.** A pen: `PenId`, `Name`, `Groups`, `Color`, `LineStyle`, `Unit`, `Format`, `EnabledOnStart`, the stored `ScaleMinOnStart`/`ScaleMaxOnStart` pair and `LogScaleOnStart`. A pen's history is a `PenHistoryEnvelope` (parallel `Timestamps/Min/Max/Center`, strictly increasing timestamps, NaN = gap). Render: one `EnvelopeLine` polyline through each column's Min and Max.
 **Acceptance.** Core/test: the envelope constructor throws on unequal lengths and non-increasing timestamps; NaN breaks the line. UI: a column whose Min differs from its Max is drawn as a vertical segment.
 
 ### PN-2 — Resize a pen's Y layer (MUST)
@@ -258,10 +258,10 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 
 **MUST (product core):** TM-1, TM-2, TM-3, TM-4; AY-1, AY-2, AY-3, AY-4; PN-1, PN-2, PN-3, PN-4, PN-5, PN-6; CU-1, CU-2, CU-3; DA-1, DA-2, DA-3, DA-5, DA-7, DA-9; RT-1, RT-2.
 
-**SHOULD:** TM-5, TM-6; AY-6; PN-7, PN-8; CU-4, CU-6; DA-4, DA-6, DA-8; RT-3; MS-1, MS-2.
+**SHOULD:** TM-5, TM-6; AY-6 (met); PN-7, PN-8; CU-4, CU-6; DA-4, DA-6, DA-8; RT-3; MS-1, MS-2.
 
 **NICE:** TM-7, TM-8; AY-7; PN-9, PN-10; CU-5; RT-4; MS-3, MS-4, MS-5, MS-6, MS-7.
 
 **Direct user requirements (all MUST):** continuous time canvas → TM-1; multiple Y axes → AY-1/AY-2; resize a pen's Y layer, min/max, disable → PN-2/PN-3/PN-4; T1/T2 markers → CU-3; pen value at a point → CU-2; source always PostgreSQL → DA-1.
 
-**Known "model exists — UI missing" discrepancies promoted to requirements:** AY-6 (log axis), DA-4 (manual layer), AY-2 (axis ≠ group), DA-7 (X monotonicity), CU-6 (readout at the live edge), DA-6 (column-count stability).
+**Known "model exists — UI missing" discrepancies promoted to requirements:** AY-6 (log axis, closed), DA-4 (manual layer), AY-2 (axis ≠ group), DA-7 (X monotonicity), CU-6 (readout at the live edge), DA-6 (column-count stability).

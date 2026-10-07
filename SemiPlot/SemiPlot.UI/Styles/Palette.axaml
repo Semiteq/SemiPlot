@@ -82,6 +82,7 @@
             <SolidColorBrush x:Key="AppContentBackgroundBrush" Color="#FFFFFF" />
             <SolidColorBrush x:Key="AppBorderBrush" Color="#EBECF0" />
             <SolidColorBrush x:Key="AppSubtleLineBrush" Color="#EBECF0" />
+            <SolidColorBrush x:Key="AppMinorGridLineBrush" Color="#F4F5F7" />
             <SolidColorBrush x:Key="AppSecondaryForegroundBrush" Color="#818594" />
             <SolidColorBrush x:Key="AppAccentBrush" Color="#3574F0" />
             <SolidColorBrush x:Key="AppAccentFillBrush" Color="#3574F0" Opacity="0.25" />
@@ -164,6 +165,7 @@
             <SolidColorBrush x:Key="AppContentBackgroundBrush" Color="#1E1F22" />
             <SolidColorBrush x:Key="AppBorderBrush" Color="#393B40" />
             <SolidColorBrush x:Key="AppSubtleLineBrush" Color="#393B40" />
+            <SolidColorBrush x:Key="AppMinorGridLineBrush" Color="#2B2D30" />
             <SolidColorBrush x:Key="AppSecondaryForegroundBrush" Color="#6F737A" />
             <SolidColorBrush x:Key="AppAccentBrush" Color="#3574F0" />
             <SolidColorBrush x:Key="AppAccentFillBrush" Color="#3574F0" Opacity="0.25" />

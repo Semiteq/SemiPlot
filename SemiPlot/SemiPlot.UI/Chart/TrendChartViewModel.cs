@@ -394,6 +394,21 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			settings => settings with { Mode = ScaleMode.Manual, ManualMin = min, ManualMax = max });
 	}
 
+	/// <summary>
+	/// False for a pen the chart does not hold, or for the flag going on over a manual minimum at or below zero.
+	/// </summary>
+	public bool SetLogarithmic(int penId, bool isLogarithmic)
+	{
+		ObjectDisposedException.ThrowIf(_isDisposed, this);
+
+		var breaksLogMinimum = isLogarithmic
+			&& ScaleSettings.GetValueOrDefault(penId) is { Mode: ScaleMode.Manual } manual
+			&& !LogAxis.AdmitsMinimum(manual.ManualMin);
+
+		return !breaksLogMinimum
+			&& UpdateAxisSettings(penId, settings => settings with { IsLogarithmic = isLogarithmic });
+	}
+
 	private void MoveTheLiveEdgeOntoThePensShown()
 	{
 		if (ShowsExactly(_coordinator.PenIds))

@@ -64,6 +64,7 @@ public sealed class PenFormViewModelTests : IDisposable
 	[InlineData(PenField.LineStyle)]
 	[InlineData(PenField.EnabledOnStart)]
 	[InlineData(PenField.ScaleOnStart)]
+	[InlineData(PenField.LogScaleOnStart)]
 	public async Task AnUnchangedField_WritesNothing(PenField field)
 	{
 		var form = FormFor(Pressure);
@@ -381,19 +382,22 @@ public sealed class PenFormViewModelTests : IDisposable
 	[InlineData(PenField.Color)]
 	[InlineData(PenField.LineStyle)]
 	[InlineData(PenField.EnabledOnStart)]
+	[InlineData(PenField.LogScaleOnStart)]
 	public async Task AFailedChoice_RevertsTheDraftSaysWhyAndReportsOnce(PenField field)
 	{
 		var refusal = FakePenCatalogueEditor.Refusal(ArchiveFault.RowGone, Pressure.Name);
 		_editor.ChangeResult = Result.Fail(refusal);
-		var form = FormFor(Pressure);
+		var pen = Pressure with { ScaleMinOnStart = 1 };
+		var form = FormFor(pen);
 
 		await ChooseAsync(form, field);
 
 		_editor.Changes.Should().ContainSingle();
-		form.Color.Should().Be(Pressure.Color);
-		form.LineStyle.Should().Be(Pressure.LineStyle);
-		form.EnabledOnStart.Should().Be(Pressure.EnabledOnStart);
-		form.Row.Pen.Should().Be(Pressure);
+		form.Color.Should().Be(pen.Color);
+		form.LineStyle.Should().Be(pen.LineStyle);
+		form.EnabledOnStart.Should().Be(pen.EnabledOnStart);
+		form.LogScaleOnStart.Should().Be(pen.LogScaleOnStart);
+		form.Row.Pen.Should().Be(pen);
 		form.Message.Should().Be(ArchiveFailureMapper.Map(refusal).Title);
 		_messagePanel.Entries.Should().ContainSingle();
 	}
@@ -437,6 +441,114 @@ public sealed class PenFormViewModelTests : IDisposable
 			new PenSettingChange.EnabledOnStart(false));
 	}
 
+	[AvaloniaFact]
+	public async Task TheLogBoxTickedOverAPositiveStoredMinimum_WritesTheFlag()
+	{
+		var form = FormFor(Pressure with { ScaleMinOnStart = 1 });
+
+		await form.ChooseLogScaleOnStartAsync(true);
+
+		_editor.Changes.Select(call => call.Setting).Should().Equal(new PenSettingChange.LogScaleOnStart(true));
+		form.Row.Pen.LogScaleOnStart.Should().BeTrue();
+		form.LogScaleOnStart.Should().BeTrue();
+		form.Message.Should().BeEmpty();
+	}
+
+	[AvaloniaFact]
+	public async Task TheLogBoxTickedOverAnEmptyPair_WritesTheFlag()
+	{
+		var form = FormFor(Argon);
+
+		await form.ChooseLogScaleOnStartAsync(true);
+
+		_editor.Changes.Select(call => call.Setting).Should().Equal(new PenSettingChange.LogScaleOnStart(true));
+	}
+
+	[AvaloniaTheory]
+	[InlineData(0.0)]
+	[InlineData(-5.0)]
+	public async Task TheLogBoxTickedOverANonPositiveStoredMinimum_IsRefusedAndSaysWhy(double storedMinimum)
+	{
+		var form = FormFor(Pressure with { ScaleMinOnStart = storedMinimum });
+
+		await form.ChooseLogScaleOnStartAsync(true);
+
+		_editor.Calls.Should().BeEmpty();
+		form.LogScaleOnStart.Should().BeFalse("the refused tick puts the box back");
+		form.Message.Should().Be(Resources.ScaleLogMinimumPositive);
+		form.IsScaleMinOnStartValid.Should().BeTrue("the stored pair breaks no rule of its own");
+	}
+
+	[AvaloniaTheory]
+	[InlineData(0.0, 5.0, true)]
+	[InlineData(1.0, 0.0, false)]
+	public async Task TheLogBoxTickedWhileAPairWriteIsHeld_ReadsTheMinimumAsQueued(
+		double storedMinimum, double typedMinimum, bool isWritten)
+	{
+		var pen = Pressure with { ScaleMinOnStart = storedMinimum };
+		var form = FormFor(pen);
+		var gate = _editor.HoldNextCall();
+
+		form.ScaleMinOnStart = PenFormRules.FormatBound(typedMinimum);
+		var pairWritten = form.EndEditAsync(PenField.ScaleOnStart);
+		var flagWritten = form.ChooseLogScaleOnStartAsync(true);
+
+		form.Row.Pen.ScaleMinOnStart.Should().Be(storedMinimum, "the pair write is still in flight");
+		form.LogScaleOnStart.Should().Be(isWritten);
+		form.Message.Should().Be(isWritten ? string.Empty : Resources.ScaleLogMinimumPositive);
+
+		gate.SetResult();
+		await _queue.WhenIdleAsync();
+		await Task.WhenAll(pairWritten, flagWritten);
+
+		var pair = new PenSettingChange.ScaleOnStart(typedMinimum, pen.ScaleMaxOnStart);
+		PenSettingChange[] expected = isWritten ? [pair, new PenSettingChange.LogScaleOnStart(true)] : [pair];
+		_editor.Changes.Select(call => call.Setting).Should().Equal(expected);
+		form.Row.Pen.LogScaleOnStart.Should().Be(isWritten);
+	}
+
+	[AvaloniaFact]
+	public async Task TheLogBoxUntickedOverAStoredMinimumOfZero_WritesTheFlag()
+	{
+		var form = FormFor(Pressure with { LogScaleOnStart = true });
+
+		await form.ChooseLogScaleOnStartAsync(false);
+
+		_editor.Changes.Select(call => call.Setting).Should().Equal(new PenSettingChange.LogScaleOnStart(false));
+	}
+
+	[AvaloniaFact]
+	public async Task AScaleDraftWithMinimumZero_IsRefusedWhileTheFlagIsOn()
+	{
+		var form = FormFor(Argon with { LogScaleOnStart = true });
+
+		form.ScaleMinOnStart = "0";
+		form.ScaleMaxOnStart = "100";
+
+		form.IsScaleMinOnStartValid.Should().BeFalse();
+		form.IsScaleMaxOnStartValid.Should().BeTrue("the rule names the minimum");
+		form.Message.Should().Be(Resources.ScaleLogMinimumPositive);
+
+		await form.EndEditAsync(PenField.ScaleOnStart);
+
+		_editor.Calls.Should().BeEmpty();
+		form.ScaleMinOnStart.Should().BeEmpty();
+		form.ScaleMaxOnStart.Should().BeEmpty();
+		form.Message.Should().Be(Resources.ScaleLogMinimumPositive);
+	}
+
+	[AvaloniaFact]
+	public async Task EmptyingThePairWhileTheFlagIsOn_WritesAPairOfNulls()
+	{
+		var form = FormFor(Pressure with { ScaleMinOnStart = 1, LogScaleOnStart = true });
+
+		form.ScaleMinOnStart = string.Empty;
+		form.ScaleMaxOnStart = string.Empty;
+		await form.EndEditAsync(PenField.ScaleOnStart);
+
+		_editor.Changes.Select(call => call.Setting).Should().Equal(new PenSettingChange.ScaleOnStart(null, null));
+	}
+
 	private PenFormViewModel FormFor(StoredPen pen)
 	{
 		return new PenFormViewModel(
@@ -450,6 +562,7 @@ public sealed class PenFormViewModelTests : IDisposable
 			PenField.Color => form.PickColorAsync(Color.FromRgb(0xD6, 0x27, 0x28)),
 			PenField.LineStyle => form.ChooseLineStyleAsync(PenLineStyle.Stepped),
 			PenField.EnabledOnStart => form.ChooseEnabledOnStartAsync(false),
+			PenField.LogScaleOnStart => form.ChooseLogScaleOnStartAsync(true),
 			_ => throw new ArgumentOutOfRangeException(nameof(field), field, null)
 		};
 	}

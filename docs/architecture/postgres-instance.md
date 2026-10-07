@@ -26,6 +26,9 @@ commissioning day and the copy that has drifted.
   (`data-integration.md`, History, Raw). The bench's own SQL bottoms out at 13
   (`DROP DATABASE ... WITH (FORCE)`); the client's floor is 14.
 - Reachable on the loopback interface plus the operator network only.
+- Provisioned by SemiBase v0.5.0 or newer. Both catalogue reads name `scale_min_on_start`,
+  `scale_max_on_start` and `log_scale_on_start`, which v0.5.0 introduced; against an older schema
+  every catalogue read fails with `42703`, `ArchiveFault.ShapeUnexpected` (`data-integration.md`).
 - The archive database holds `trends`, which the SCADA writes and SemiBase creates, the four
   configuration tables `semiplot_tags`, `semiplot_groups`, `semiplot_pen_groups` and `semiplot_meta`,
   which are SemiBase's outright, and `messages`, which is the SCADA's outright. Nothing of ours runs
@@ -39,7 +42,7 @@ archive and it reads and writes the configuration tables.
 
 | Property | Value | What it means for the client |
 | --- | --- | --- |
-| Privileges | `SELECT` on `trends` and `messages`; `SELECT` and a column-level `UPDATE` of the eight settings columns on `semiplot_tags`, never `INSERT` or `DELETE`; `SELECT, INSERT, UPDATE, DELETE` on `semiplot_groups` and `semiplot_pen_groups`; `SELECT` on `semiplot_meta`; `EXECUTE` on `semiplot_register_new_pens()`. Nothing else | The pen editor uses the configuration-table grants and the `EXECUTE`, and nothing else writes. Any write to the archive, and any `ALTER` or `CREATE`, is a defect; the server answers `42501` |
+| Privileges | `SELECT` on `trends` and `messages`; `SELECT` and a column-level `UPDATE` of the nine settings columns on `semiplot_tags`, never `INSERT` or `DELETE`; `SELECT, INSERT, UPDATE, DELETE` on `semiplot_groups` and `semiplot_pen_groups`; `SELECT` on `semiplot_meta`; `EXECUTE` on `semiplot_register_new_pens()`. Nothing else | The pen editor uses the configuration-table grants and the `EXECUTE`, and nothing else writes. Any write to the archive, and any `ALTER` or `CREATE`, is a defect; the server answers `42501` |
 | `statement_timeout` | 30 s | A read that exceeds it fails with SQLSTATE `57014`. That is a bug in layer selection, not a slow disk — surface it as a typed error instead of retrying |
 | `idle_in_transaction_session_timeout` | 60 s | A transaction held open is killed rather than blocking vacuum on the partitions |
 
@@ -65,10 +68,11 @@ Its `Refresh pen list` button calls `semiplot_register_new_pens()`, which adds a
 for every key the SCADA writes that has none; the operator then names the pens and switches them on in
 the same window. No startup step registers or writes anything
 (`data-integration.md#registration-from-the-refresh-button-only`), and a change reaches every running
-chart within 5 s (`overview.md#the-live-catalogue`).
+chart within 5 s (`overview.md#the-live-catalogue`), except the start values, which change nothing on
+screen (`overview.md#what-a-read-changes`).
 
 `semiplot_tags` is one row per pen, and the catalogue read projects every column of it. The role's
-`UPDATE` is column-level: it covers the eight settings columns and never `id`, and the role holds no
+`UPDATE` is column-level: it covers the nine settings columns and never `id`, and the role holds no
 `INSERT` or `DELETE` on the table, because the key is the SCADA variable number.
 
 | Column | Read by SemiPlot | Written by the editor | Use |
@@ -81,6 +85,7 @@ chart within 5 s (`overview.md#the-live-catalogue`).
 | `line_style` | yes | yes | Mapped onto the domain line-style enum |
 | `enabled_on_start` | yes | yes | Whether the pen is drawn when the viewer opens |
 | `scale_min_on_start`, `scale_max_on_start` | yes | yes, in one statement | The pen's initial Y range, set together or not at all; absent means autoscale |
+| `log_scale_on_start` | yes | yes | Whether the pen opens on a log10 Y axis, and the axis type Restore initial scale returns to; `NOT NULL DEFAULT false` |
 
 Group membership is many-to-many. `semiplot_groups` holds one row per group name,
 `semiplot_pen_groups` one row per membership, and a pen may sit in several groups or in none. The

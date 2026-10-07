@@ -300,10 +300,12 @@ public sealed class PenEditorViewModelTests : IDisposable
 	[InlineData(PenColumn.LineStyle, new[] { 7, 12, 3 })]
 	[InlineData(PenColumn.ScaleMinOnStart, new[] { 3, 7, 12 })]
 	[InlineData(PenColumn.ScaleMaxOnStart, new[] { 3, 7, 12 })]
+	[InlineData(PenColumn.LogScaleOnStart, new[] { 3, 12, 7 })]
 	[InlineData(PenColumn.Groups, new[] { 12, 7, 3 })]
 	public void ASort_OrdersTheRowsByTheColumnThenById(PenColumn column, int[] expectedIds)
 	{
-		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+		var withALogPen = _catalogue with { Pens = [Argon, Pressure with { LogScaleOnStart = true }, Power] };
+		using var editor = _editor.EditorOver(withALogPen, _messagePanel);
 
 		editor.SortCommand.Execute(column).Subscribe();
 

@@ -41,7 +41,10 @@ Layer `0` only; the coarse layers are derived from it.
 - **One lattice, written by the seeding run and by the demo writer alike.** A change sits at
   `index * intervalTicks` from absolute tick zero, where the interval is `--change-seconds` rounded
   to whole milliseconds, and its value is `SyntheticValueWalk.Value(seed, penId, index, min, max)`,
-  a pure function of its inputs. `RawLayerGenerator` (run by run between the breaks) and
+  a pure function of its inputs. A pen whose `LogScaleOnStart` is set takes
+  `SyntheticValueWalk.LogValue`, which walks the same function between `log10(min)` and `log10(max)`
+  and takes `10^v`, clamped to `min..max`, so the walk moves in decades rather than in value; the
+  lattice is the same. `RawLayerGenerator` (run by run between the breaks) and
   `LiveTailGenerator` (window by window) both emit through `RawLayerGenerator.AppendWindow`, so a
   follow run resuming at the archive edge continues the lattice the seeding wrote.
   `SharedLatticeTests` goes red if the two are split again.
@@ -251,10 +254,12 @@ template that was already filled.
 `SyntheticPenCatalog.Build` holds 50 pens over six group names, all but one with a unit, a format mask and the
 stored scale pair its waveform walks between. What reaches the table is the slice, not the whole
 catalogue: `SeedFiller` hands the writer `RawLayerGenerator.SelectPens(options.PenCount)`, the
-round-robin slice that is eight pens wide by default. Three pens carry the states that slice would
+round-robin slice that is eight pens wide by default. Four pens carry the states that slice would
 otherwise never reach — `TwoGroupPenId` sits in `Heaters` and `Watchlist` at once, `HiddenOnStartPenId`
-has `enabled_on_start = false`, and `UncommissionedPenId` has no group, no unit, no mask and no stored
-pair, so it opens autoscaled.
+has `enabled_on_start = false`, `LogScalePenId` (4000, `Pressure 01`) spans `1e-6..1e-1` mbar under the
+mask `0.0E+0` with `log_scale_on_start = true`, so the demo stand opens it on a log10 axis, and
+`UncommissionedPenId` has no group, no unit, no mask and no stored pair, so it opens autoscaled.
+`TagCatalogWriter` writes `log_scale_on_start` with the other settings columns.
 
 That one file is all it writes. It overwrites the delivered `connection/connection.yaml` by name
 rather than adding a second file beside it, because two files of one section folder carrying the
@@ -326,13 +331,14 @@ is gitignored, so the password filled in there stays out of the repository.
 
 ## The headless render and input guards
 
-Five classes in `SemiPlot.Tests.Unit` pin what a rendering-stack version bump can change without
-announcing it: how a gap is drawn, how a pointer reaches a handler, and where a realised control sits
-in the strip, at what size and with which figures.
+Six classes in `SemiPlot.Tests.Unit` pin what a rendering-stack version bump can change without
+announcing it: how a gap is drawn, where a log axis puts a value, how a pointer reaches a handler, and
+where a realised control sits in the strip, at what size and with which figures.
 
 | Class | Drives | Asserts |
 | --- | --- | --- |
 | `UI/Chart/ChartGapRenderTests` | ScottPlot's rasteriser, no Avalonia | a `NaN` column leaves the rendered line broken, and a continuous series leaves no such break |
+| `UI/Chart/LogAxisRenderTests` | ScottPlot's rasteriser, no Avalonia, through `ChartAxisBinder.Apply` | the 1e-4 plateau of a 1e-6..1e-2 log axis draws within 2 px of the data area's middle, and a plateau at `0` or under the minimum draws 2 px above its bottom row; it pins two ScottPlot behaviours, the bottom axis frame drawn over the data area's bottom row and a linear `YAxisBase.GetPixel` |
 | `UI/Chart/ChartPointerInputTests` | headless pointer events into `TrendChartView` | a drag pans the navigation window, a wheel zooms it, a capture loss ends the drag |
 | `UI/Minimap/MinimapPointerInputTests` | headless pointer events into `MinimapView` | a drag on the strip moves the chart's window to each pointer fraction, a move after release reaches the strip and moves nothing, a window past the extent keeps its marker inside the strip |
 | `UI/Minimap/MinimapHoverTests` | headless pointer events into `MinimapView` | a hover shows a line at the pointer and its time centred under it in the label row, inside the row at either end, where the time hides only the end label it covers, also after a new extent relabels that label; the line stays inside the strip at its right edge and keeps its fraction through a resize; a newer sample relabels the time; a drag keeps the line under the pointer, and a move off the strip or an exit hides the line and the time |

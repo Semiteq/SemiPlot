@@ -87,7 +87,7 @@ public sealed class MainWindowViewModelTests
 	public async Task ShowPenEditor_WithAnEditor_ReadsTheCatalogueAndEmitsOneViewModelOverIt()
 	{
 		var pen = new StoredPen(
-			7, "Chamber pressure", "Pa", null, "#1F77B4", PenLineStyle.Interpolated, true, null, null);
+			7, "Chamber pressure", "Pa", null, "#1F77B4", PenLineStyle.Interpolated, true, null, null, false);
 		var penCatalogueEditor = new FakePenCatalogueEditor
 		{
 			ReadResult = Result.Ok(new PenCatalogue([pen], [new StoredGroup(1, "Chamber", [7])]))
@@ -146,7 +146,7 @@ public sealed class MainWindowViewModelTests
 	public async Task APenWriteThatLands_ReadsTheCatalogueBeforeTheIntervalPasses()
 	{
 		var pen = new StoredPen(
-			1, "Pen 1", null, null, "#ff0000", PenLineStyle.Interpolated, true, null, null);
+			1, "Pen 1", null, null, "#ff0000", PenLineStyle.Interpolated, true, null, null, false);
 		var penCatalogueEditor = new FakePenCatalogueEditor
 		{
 			ReadResult = Result.Ok(new PenCatalogue([pen], []))

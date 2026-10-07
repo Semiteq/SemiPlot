@@ -89,6 +89,7 @@ public sealed class PenRowViewModel(StoredPen pen, IEnumerable<StoredGroup> grou
 			PenSettingChange.EnabledOnStart enabledOnStart => pen with { EnabledOnStart = enabledOnStart.Value },
 			PenSettingChange.ScaleOnStart scale
 				=> pen with { ScaleMinOnStart = scale.Min, ScaleMaxOnStart = scale.Max },
+			PenSettingChange.LogScaleOnStart logScaleOnStart => pen with { LogScaleOnStart = logScaleOnStart.Value },
 			_ => throw new ArgumentOutOfRangeException(nameof(change), change, null)
 		};
 	}

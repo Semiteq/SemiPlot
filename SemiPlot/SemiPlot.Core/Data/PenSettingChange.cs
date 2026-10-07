@@ -25,4 +25,6 @@ public abstract record PenSettingChange
 	public sealed record EnabledOnStart(bool Value) : PenSettingChange;
 
 	public sealed record ScaleOnStart(double? Min, double? Max) : PenSettingChange;
+
+	public sealed record LogScaleOnStart(bool Value) : PenSettingChange;
 }

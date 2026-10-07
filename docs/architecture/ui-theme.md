@@ -148,7 +148,7 @@ and the picker's flyout keep Semi's 6 px, as the menu flyout does.
 
 ## The application's own surfaces
 
-Semi owns the controls; these twelve keys are ours, and each exists in both variants.
+Semi owns the controls; these thirteen keys are ours, and each exists in both variants.
 
 | Key | Consumers | Light | Dark |
 | --- | --- | --- | --- |
@@ -156,6 +156,7 @@ Semi owns the controls; these twelve keys are ours, and each exists in both vari
 | `AppContentBackgroundBrush` | Chart area, minimap strip canvas, the sidebar's resize handle | `#FFFFFF` | `#1E1F22` |
 | `AppBorderBrush` | Every separator in the three views | `#EBECF0` | `#393B40` |
 | `AppSubtleLineBrush` | Plot grid, the line above every sidebar group header but the first, the status bar's separator after the connection indicator, the navigation bar's group separator | `#EBECF0` | `#393B40` |
+| `AppMinorGridLineBrush` | The plot's minor gridlines, drawn on a log10 axis only | `#F4F5F7` | `#2B2D30` |
 | `AppSecondaryForegroundBrush` | Minimap end labels, hover line and hover time, chart crosshair, plot axis furniture, the sidebar group header caption and a row's unit | `#818594` | `#6F737A` |
 | `AppAccentBrush` | Minimap window highlight border, the active sidebar row's left bar | `#3574F0` | `#3574F0` |
 | `AppAccentFillBrush` | Minimap window highlight fill, the active sidebar row's background | `#3574F0` at 0.25 opacity | `#3574F0` at 0.25 opacity |
@@ -232,71 +233,104 @@ nothing trimmed.
 ### The axis scale panel
 
 `Chart/AxisScalePanel` is a `Flyout` form under the same rule. The panel is 360 px wide, with rows that exist
-in every state: the pen name and unit, two `TextBox` rows, the reserved message line (`form-message`, 40 px) and
-two rows of buttons, Autoscale and Restore initial scale side by side, Apply across both. An invalid or empty
-field takes the `invalid` border and Apply is disabled, so nothing appears or disappears.
+in every state: the pen name and unit, the two `TextBox` rows of the bounds grid, the Logarithmic scale
+`CheckBox` row, the reserved message line (`form-message`, 40 px) and one row of buttons, Autoscale and Restore initial
+scale side by side. The checkbox row is a grid of its own that shares the bounds grid's label column
+(`SharedSizeGroup="AxisScaleLabel"`), so the box sits in the field column. The panel has no apply button. An
+invalid or empty field takes the `invalid` border, and a refused Logarithmic scale click leaves the box as it
+was and fills the message line, so nothing appears or disappears.
 
-Measured with Skia and HarfBuzz, in the real theme, with the pen "Damper valve 01" in mTorr:
+Measured with Skia and HarfBuzz, in the real theme, Inter at 14 px; the submenu header with the pen "Damper
+valve 01" in mTorr. The panel, the checkbox and the messages were measured again on 2026-10-07, without the
+apply row and with the logarithmic scale texts:
 
 | | English | Russian |
 | --- | --- | --- |
-| Panel | 360 x 235 px | 360 x 235 px |
-| Flyout presenter | 386 x 261 px | 386 x 261 px |
-| Widest button text, Restore initial scale | 127.9 px in a 176 px button | 137.3 px in a 176 px button |
-| Longest message text | 292.7 px | 306.9 px |
+| Panel | 360 x 223 px | 360 x 223 px |
+| Flyout presenter | 386 x 249 px | 386 x 249 px |
+| Logarithmic scale checkbox | 140.6 x 18.5 px, ends 221.7 px from the left | 198.9 x 18.5 px, ends 286.7 px from the left |
+| Widest button text, Restore initial scale | 127.9 px in a 176 x 32 px button | 137.3 px in a 176 x 32 px button |
+| `ScaleLogMinimumPositive` on one line | 329.3 px | 468.6 px |
+| `ScaleLogMinimumPositive` in the panel | 329.3 px, one line | 336.8 and 127.7 px, two lines |
+| Longest other message text | 292.7 px, one line | 306.9 px, one line |
 | Panel and presenter size with the pair inverted | unchanged | unchanged |
 | Panel and presenter size with a field empty | unchanged | unchanged |
 | Panel and presenter size with a field unreadable | unchanged | unchanged |
+| Panel and presenter size with the log rule shown | unchanged | unchanged |
 | Submenu header text, "Damper valve 01" | 181.3 px, in a 270 px item | 215.1 px, in a 304 px item |
 
-The presenter is the 360 px panel plus 8 px padding and a 1 px border on each side, a 378 x 253 px box, plus a
-4 px margin on each side that the theme reserves for the shadow. The 360 px width holds the longest message on
-one line in both languages. Each button is half the width, so the widest label keeps 176 - 24 - 137.3 = 14.7 px
-in Russian and 176 - 24 - 127.9 = 24.1 px in English. A longer label or message is measured the same way before
-it ships. `AxisScalePanelViewTests.AnInvertedPair_ShowsTheMessageKeepsThePanelsSizeAndEnterWritesNothing` and
-`AnEmptyField_ShowsTheMessageKeepsThePanelsSizeAndEnterWritesNothing` gate the size under the test font, in both
-cultures.
+The presenter is the 360 px panel plus 8 px padding and a 1 px border on each side, a 378 x 241 px box, plus a
+4 px margin on each side that the theme reserves for the shadow. The 360 px width holds every English message
+and every Russian message but `ScaleLogMinimumPositive` on one line. The Russian log rule wraps to two lines,
+and the 40 px `form-message` line (two 20 px lines, `MaxLines` 2) holds them with nothing trimmed, so the panel
+keeps one height whether the line is empty, holds a one-line rule or holds the log rule. The checkbox sits in
+the field column, which starts 81.1 px from the panel's left edge in English and 87.8 px in Russian, and both
+boxes end inside the 360 px. Each button is half the width,
+so the widest label keeps 176 - 24 - 137.3 = 14.7 px in Russian and 176 - 24 - 127.9 = 24.1 px in English. A
+longer label or message is measured the same way before it ships.
+`AxisScalePanelViewTests.AnInvertedPair_ShowsTheMessageKeepsThePanelsSizeAndEnterWritesNothing`,
+`AnEmptyField_ShowsTheMessageKeepsThePanelsSizeAndEnterWritesNothing` and
+`TheMessageLine_KeepsThePanelsSize_EmptyWithAOneLineRuleAndWithTheLogRule` gate the size under the test font,
+in both cultures. None of them checks the trimming: the test font is about twice as wide, and under it the Russian log
+rule needs three lines, so the measurement above is the only evidence that nothing is trimmed.
 
 ### A resizable window keeps its fixed parts
 
 The pen editor is the one form the operator may resize, because its table grows with the catalogue.
-`PenEditor/PenEditorWindow.axaml` opens at a fixed `Width` and `Height`, 1180 x 720 px, with
-`MinWidth="1100"`, `SizeToContent="Manual"` and `CanResize="True"`: the operator may widen it, and nothing
+`PenEditor/PenEditorWindow.axaml` opens at a fixed `Width` and `Height`, 1272 x 720 px, with
+`MinWidth="1260"`, `SizeToContent="Manual"` and `CanResize="True"`: the operator may widen it, and nothing
 inside it sizes the window. The smallest screen the editor opens on is 1280 px wide; the 720 px height exceeds
 the working area of a 768 px screen. The rule above holds for every part but the two lists:
 
-- Resizing grows the pen table and the membership list only. The form panel
-  (240 px high), the `Groups` tab's side panel (320 px wide), its confirmation row (32 px high) and the
-  bottom bar keep fixed sizes, made of rows that
-  exist in every state.
+- Resizing grows the pen table and the membership list only. The form panel (240 px high), the `Groups` tab's
+  side panel (320 px wide), its confirmation row (32 px high) and the bottom bar keep fixed sizes, made of
+  rows that exist in every state.
 - A pen row, a group row and a membership row are each `RowHeight`, 28 px, and all three lists
   virtualise.
 - The pen table's header row and its row template read one column list, the window's
-  `PenTableColumns` resource: 72, 112, 68, 220, 96, 96, 104, 104 and 104 px, and the groups column takes
+  `PenTableColumns` resource: 72, 112, 68, 220, 96, 96, 104, 104, 104 and 160 px, and the groups column takes
   the rest. The resource is `x:Shared="False"`, so every grid gets its own copy. The membership row's id
   column reads the same `IdColumnWidth`.
 - The bottom bar, on both tabs, holds the added count and the refresh button in a right-aligned `Auto,Auto`
   grid, 12 px apart, and carries no notice. Each tab has its own reserved `form-message` line.
 - An invalid field is marked by the `invalid` class alone. The line-style combo box and the "on start"
   checkbox refuse no value, and `Forms.axaml` styles `invalid` on `TextBox` and `NumericUpDown` only, so
-  a failed write of either shows on the message line and in the panel only.
+  a failed write of either shows on the message line and in the panel only. The log scale checkbox refuses
+  a tick while the pen stores a minimum at or below zero; the refusal shows on the message line alone, and
+  a minimum that breaks the rule while the box is ticked marks the minimum `TextBox` `invalid`.
+- The log scale checkbox is the form's third row under the scale pair, outside `FormScale`, the pair's focus
+  scope. A wrapper grid spans the three rows and lines the box up under the bounds through a shared label
+  column (`SharedSizeGroup="ScaleLabel"`), so the form panel keeps its 240 px.
 - A header button wraps its text (`TextWrapping="Wrap"`) and every header button is 44 px high, so the
   two-line scale headers do not change the row's height between cultures. The 44 px is chosen, not measured.
 
-Measured on 2026-09-30 with Skia and HarfBuzz, the composite Inter font at 14 px, every field valid. The fixed
-columns total 976 px and the window margin is 24 px, so no fixed column clips from 1000 px up. `MinWidth` 1100
-leaves the groups column 100 px, and it gets 180 px at the opening width. The two `PenEditorColumnScale*`
+Measured on 2026-09-30 with Skia and HarfBuzz, the composite Inter font at 14 px, every field valid; the log
+scale column, its form label, the window width and the form were measured again on 2026-10-07. The fixed
+columns total 1136 px and the window margin is 24 px, so no fixed column clips from 1160 px up. `MinWidth` 1260
+leaves the groups column 100 px, and it gets 112 px at the opening width. The two `PenEditorColumnScale*`
 headers measure 106.9 and 109.4 px in English and 145.2 and 147.3 px in Russian on one line, and wrap to two
 lines of at most 81.4 px in English and 79.1 px in Russian, inside the 90 px a 104 px column leaves after its
-padding and border. The widest other Russian header is `PenEditorColumnOnStart` at 86.1 px, and the widest
-line-style label is `PenLineStyleStepped` at 69 px. Each fixed column is at least 1.1 times its widest header
-line (the wrapped line for the two `PenEditorColumnScale*` headers) or fixed-vocabulary cell, plus the 12 px
-cell margin. At 1180 x 720 px the table shows 11 rows. The form's natural size is 703 x 195 px in English and
-778 x 195 px in Russian, inside a 1156 x 232 px area. The longest form message is `PenFormMaskInvalid` at
-476.6 px in English and 480.3 px in Russian on a 1156 px line; `PenFormScaleInverted` is 371.3 px in English
-and 434.0 px in Russian. Measured on 2026-09-29, with a three-digit added count the bottom bar needs 472 px in
-English, 210 px for the count, 12 px between and 250 px for "Refresh pen list", and 640 px in Russian, 294 +
-12 + 334 px for «Обновить список перьев»; both fit the 1100 px minimum width.
+padding and border. `PenEditorColumnLogScaleOnStart`, in the DemiBold face the header button renders,
+measures 157.5 px in English and 255.2 px in Russian on one line and wraps in the 146 px its 160 px column
+leaves to two lines: "Initial scale," at 81.4 px with its trailing space and "logarithmic" at 76.1 px in
+English, «Начальная шкала,» at 130.0 px with its trailing space and «логарифмическая» at 125.2 px in Russian,
+so the cell holds 1.12 times its widest line. Two lines need «Начальная шкала,» on one line, and the 1.1
+margin over its 130.0 px asks for a 143 px cell, so the column is 160 px. A 112 px column wraps the
+Russian header to four lines, breaking «логарифмическая» inside the word, and the 44 px button shows the first
+two.
+The widest other Russian header is `PenEditorColumnOnStart` at 86.1 px, and the widest line-style label is
+`PenLineStyleStepped` at 69 px. Each fixed column is at least 1.1 times its widest header line (the wrapped
+line for the two `PenEditorColumnScale*` headers and `PenEditorColumnLogScaleOnStart`) or fixed-vocabulary
+cell, plus the 12 px cell margin. At 1272 x 720 px the table shows 11 rows. The form's labels share one column
+(`ScaleLabel`), as wide as its widest label: "Initial scale, logarithmic" takes 157.5 px and the column
+159.0 px in English, «Начальная шкала, логарифмическая» 255.2 px and the column 257.0 px in Russian. The
+form's natural size is 742 x 195 px in English and 877 x 195 px in Russian, inside a 1248 x 232 px area at the
+opening width and 1236 x 232 px at `MinWidth`. The longest form message is `PenFormMaskInvalid`, 476.6 px in
+English and 480.3 px in Russian, on a 1236 px line; `ScaleLogMinimumPositive` is 329.3 px in English and
+468.6 px in Russian, and `PenFormScaleInverted` 371.3 px in English and 434.0 px in Russian. Measured on
+2026-09-29, with a three-digit added count the bottom bar needs 472 px in English, 210 px for the count, 12 px
+between and 250 px for "Refresh pen list", and 640 px in Russian, 294 + 12 + 334 px for «Обновить список
+перьев»; both fit the 1260 px minimum width.
 The side panel's 320 px and the confirmation row's 32 px are chosen, not measured; the confirmation
 text spans the tab's width and trims only past it.
 `PenEditorViewTests.AnUnusableMask_WritesNothingRevertsMarksAndSaysWhyWithoutResizing` gates the size
@@ -325,7 +359,7 @@ further language or theme is one row there, and `App.VariantFor`, `App.SemiLocal
 
 ## The plot
 
-ScottPlot paints four surfaces from its own defaults, and `Chart/ChartPalette.cs` moves all four
+ScottPlot paints five surfaces from its own defaults, and `Chart/ChartPalette.cs` moves all five
 under the palette keys:
 
 | ScottPlot surface | Key |
@@ -333,11 +367,12 @@ under the palette keys:
 | `Plot.FigureBackground.Color` | `AppPanelBackgroundBrush` |
 | `Plot.DataBackground.Color` | `AppContentBackgroundBrush` |
 | `Plot.Grid.MajorLineColor` | `AppSubtleLineBrush` |
+| `Plot.Grid.MinorLineColor` | `AppMinorGridLineBrush` |
 | Per axis: `Label.ForeColor`, `TickLabelStyle.ForeColor`, `MajorTickStyle.Color`, `MinorTickStyle.Color`, `FrameLineStyle.Color` | `AppSecondaryForegroundBrush` |
 
-The four keys are constants in a dictionary the same assembly ships, so `Apply` resolves them
+The five keys are constants in a dictionary the same assembly ships, so `Apply` resolves them
 unconditionally and throws when one does not resolve to a brush; a palette key that stops resolving
-is a defect in the palette, not a state to paint around. All four brushes are opaque, and `Apply`
+is a defect in the palette, not a state to paint around. All five brushes are opaque, and `Apply`
 reads the ARGB value alone: `AppAccentFillBrush` is the one key declaring `Opacity`, and no ScottPlot
 surface takes it.
 
@@ -353,7 +388,11 @@ of the last paint and does nothing when the axis set did not grow, and it never 
 `PlotControl.Refresh()` because every site that bumps `ScalesRevision` already follows with
 `RequestRedraw()`, which the view samples at the frame budget.
 
-`ChartPaletteTests` asserts the four surfaces on a real `Plot` against the resolved palette under both
+The minor gridlines take their colour on every axis but draw only on a log10 axis: `ChartAxisBinder` sets
+their width to 1 px when the drawn axis is logarithmic and to 0 otherwise (`charting.md#log10-y-axis`).
+`MinorLineColor` has no getter, so a test reads `Grid.YAxisStyle.MinorLineStyle.Color`.
+
+`ChartPaletteTests` asserts the five surfaces on a real `Plot` against the resolved palette under both
 variants, and `TrendChartViewTests.ALoadedView_RepaintsThePlotWhenTheApplicationVariantChanges` with
 its unloaded counterpart covers the wiring: the subscription, and that `OnUnloaded` drops it.
 `TrendChartViewTests.AViewWithNoViewModel_StillPaintsTheChartAreaFromThePalette` covers a view

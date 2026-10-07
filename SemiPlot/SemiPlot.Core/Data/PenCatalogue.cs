@@ -15,7 +15,8 @@ public sealed record StoredPen(
 	PenLineStyle LineStyle,
 	bool EnabledOnStart,
 	double? ScaleMinOnStart,
-	double? ScaleMaxOnStart);
+	double? ScaleMaxOnStart,
+	bool LogScaleOnStart);
 
 /// <summary>One <c>semiplot_groups</c> row and the ids of its member pens, in ascending order.</summary>
 public sealed record StoredGroup(int Id, string Name, IReadOnlyList<int> MemberPenIds);

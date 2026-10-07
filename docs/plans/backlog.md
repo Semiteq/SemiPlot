@@ -72,9 +72,6 @@ Small cleanups outside `completed/20260929-window-per-process.md`. Each is indep
 nearby edit.
 Paths are under `SemiPlot/SemiPlot.UI/` unless they name another project.
 
-- **Dead logarithmic scale.** `PenScaleSettings.IsLogarithmic` (`SemiPlot.Core/Trends/PenScaleSettings.cs:6`)
-  has no production writer and `PenScale.IsLogarithmic` (`SemiPlot.Core/Trends/PenScale.cs:9`) no reader;
-  the log branches of `SemiPlot.Core/Trends/PenScaleModel.cs` run only under `PenScaleModelTests`.
 - **Disposed guards set inconsistently.** `ObjectDisposedException.ThrowIf` opens 11 members of
   `Chart/TrendChartViewModel.cs` (`:219` to `:390`) and 2 of `Minimap/MinimapViewModel.cs` (`:92`, `:102`).
   Some guard real work: `RequestInitialHistory` (`:219`) and `ApplyCatalogue` (`:231`) push into the

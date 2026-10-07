@@ -117,9 +117,6 @@
   <data name="AxisScaleMinimumLabel" xml:space="preserve">
     <value>Minimum</value>
   </data>
-  <data name="AxisScaleApply" xml:space="preserve">
-    <value>Apply</value>
-  </data>
   <data name="AxisScaleInitialScale" xml:space="preserve">
     <value>Restore initial scale</value>
   </data>
@@ -131,6 +128,12 @@
   </data>
   <data name="AxisScaleMinimumBelowMaximum" xml:space="preserve">
     <value>The minimum must be below the maximum</value>
+  </data>
+  <data name="AxisScaleLogarithmic" xml:space="preserve">
+    <value>Logarithmic scale</value>
+  </data>
+  <data name="ScaleLogMinimumPositive" xml:space="preserve">
+    <value>A logarithmic scale needs a minimum above zero</value>
   </data>
   <data name="MenuViewMessagePanel" xml:space="preserve">
     <value>Message panel</value>
@@ -215,6 +218,9 @@
   </data>
   <data name="PenEditorColumnScaleMaxOnStart" xml:space="preserve">
     <value>Initial scale, max</value>
+  </data>
+  <data name="PenEditorColumnLogScaleOnStart" xml:space="preserve">
+    <value>Initial scale, logarithmic</value>
   </data>
   <data name="PenEditorColumnGroups" xml:space="preserve">
     <value>Groups</value>

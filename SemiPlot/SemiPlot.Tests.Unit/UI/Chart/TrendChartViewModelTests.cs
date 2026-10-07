@@ -159,6 +159,22 @@ public sealed class TrendChartViewModelTests
 	}
 
 	[AvaloniaFact]
+	public void SetLogarithmic_OverANonPositiveManualMinimum_IsRefusedAndWritesNothing()
+	{
+		var (viewModel, _, _, provider) = CreateViewModel();
+		viewModel.ApplyCatalogue(provider.Pens);
+		viewModel.SetAxisLimits(1, -5.0, 100.0);
+		var revision = viewModel.ScalesRevision;
+
+		viewModel.SetLogarithmic(1, true).Should().BeFalse();
+
+		viewModel.ScaleSettings[1].IsLogarithmic.Should().BeFalse();
+		viewModel.ScalesRevision.Should().Be(revision);
+		viewModel.SetLogarithmic(1, false).Should().BeTrue("switching the flag off is never refused");
+		viewModel.SetLogarithmic(99, true).Should().BeFalse();
+	}
+
+	[AvaloniaFact]
 	public void InitialScale_RestoresTheStoredPair()
 	{
 		var (viewModel, _, _, provider) = CreateViewModel();

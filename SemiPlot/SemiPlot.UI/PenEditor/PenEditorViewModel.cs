@@ -26,6 +26,7 @@ public enum PenColumn
 	LineStyle,
 	ScaleMinOnStart,
 	ScaleMaxOnStart,
+	LogScaleOnStart,
 	Groups
 }
 
@@ -262,6 +263,8 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 				=> (left, right) => Nullable.Compare(left.Pen.ScaleMinOnStart, right.Pen.ScaleMinOnStart),
 			PenColumn.ScaleMaxOnStart
 				=> (left, right) => Nullable.Compare(left.Pen.ScaleMaxOnStart, right.Pen.ScaleMaxOnStart),
+			PenColumn.LogScaleOnStart
+				=> (left, right) => left.Pen.LogScaleOnStart.CompareTo(right.Pen.LogScaleOnStart),
 			PenColumn.Groups => ByText(row => row.GroupsText),
 			_ => throw new ArgumentOutOfRangeException(nameof(column), column, null)
 		};

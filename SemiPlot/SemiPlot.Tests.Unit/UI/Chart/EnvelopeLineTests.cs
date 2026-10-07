@@ -1,6 +1,7 @@
 using AwesomeAssertions;
 
 using ScottPlot;
+using ScottPlot.TickGenerators;
 
 using SemiPlot.Core.Trends;
 using SemiPlot.UI.Chart;
@@ -28,6 +29,9 @@ public sealed class EnvelopeLineTests
 	private const int TestTimeoutMilliseconds = 120_000;
 	private const int ColumnCap = 100_000;
 	private const int TrimChunk = ColumnCap / 10;
+	private const double FlatValue = 1e-4;
+	private const double LogAxisBottomDecade = -6.0;
+	private const double LogAxisTopDecade = -2.0;
 
 	private static readonly TimeSpan _runBudget = TimeSpan.FromSeconds(60);
 	private static readonly TimeSpan _joinBudget = TimeSpan.FromSeconds(30);
@@ -114,6 +118,60 @@ public sealed class EnvelopeLineTests
 
 		line.Columns.Should().HaveCount(ColumnCap);
 		line.Columns[0].X.Should().Be(TrimChunk);
+	}
+
+	[Fact]
+	public void Render_ProjectsThroughLog10OnlyUnderALogTickGenerator()
+	{
+		var underLogTicks = RowsOfAFlatLine(new LogTickGenerator());
+		var underStockTicks = RowsOfAFlatLine(new NumericAutomatic());
+
+		underLogTicks.Should().NotBeEmpty("log10(1e-4) is -4, inside the -6..-2 axis");
+		underStockTicks.Should().BeEmpty("1e-4 read as a linear value lies above an axis whose top is -2");
+	}
+
+	[Fact]
+	public void GetAxisLimits_UnderALogTickGenerator_ReportsNoVerticalLimits()
+	{
+		using var plot = new Plot();
+		var line = new EnvelopeLine();
+		line.Axes.YAxis = plot.Axes.Left;
+		line.ReplaceColumns(
+		[
+			new EnvelopeColumn(0.0, FlatValue, FlatValue, FlatValue),
+			new EnvelopeColumn(1.0, FlatValue, FlatValue, FlatValue)
+		]);
+
+		var linearLimits = line.GetAxisLimits();
+		line.Axes.YAxis.TickGenerator = new LogTickGenerator();
+		var logLimits = line.GetAxisLimits();
+
+		linearLimits.Should().Be(new AxisLimits(0.0, 1.0, FlatValue, FlatValue));
+		logLimits.Should().Be(
+			AxisLimits.HorizontalOnly(0.0, 1.0), "the columns are in data units, the axis in decades");
+	}
+
+	private static IReadOnlyList<int> RowsOfAFlatLine(ITickGenerator tickGenerator)
+	{
+		using var plot = new Plot();
+		var line = new EnvelopeLine();
+		line.Axes.XAxis = plot.Axes.Bottom;
+		line.Axes.YAxis = plot.Axes.Left;
+		plot.Axes.Left.TickGenerator = tickGenerator;
+		plot.Add.Plottable(line);
+		line.Restyle(new Color(PenColorHex), PenLineStyle.Interpolated);
+		line.ReplaceColumns(
+		[
+			new EnvelopeColumn(0.0, FlatValue, FlatValue, FlatValue),
+			new EnvelopeColumn(1.0, FlatValue, FlatValue, FlatValue)
+		]);
+		plot.Axes.SetLimitsX(0.0, 1.0);
+		plot.Axes.SetLimitsY(LogAxisBottomDecade, LogAxisTopDecade);
+
+		using var image = plot.GetImage(PlotWidth, PlotHeight);
+		var dataRect = plot.RenderManager.LastRender.Layout.DataRect;
+
+		return RedStroke.RowsIn(image.GetArrayRGB(), dataRect, (int)Math.Round(dataRect.HorizontalCenter));
 	}
 
 	private static void RenderFrame(Plot plot)

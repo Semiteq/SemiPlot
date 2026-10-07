@@ -1,7 +1,7 @@
 namespace SemiPlot.DataSource.Postgres;
 
 /// <summary>
-/// The column order of <see cref="ArchiveStatements.PenCatalog"/> and, up to <see cref="ScaleMaxOnStart"/>, of
+/// The column order of <see cref="ArchiveStatements.PenCatalog"/> and, up to <see cref="LogScaleOnStart"/>, of
 /// <see cref="ArchiveStatements.StoredPens"/>, named so a transposition shows.
 /// </summary>
 internal static class PenCatalogColumn
@@ -15,7 +15,8 @@ internal static class PenCatalogColumn
 	public const int EnabledOnStart = 6;
 	public const int ScaleMinOnStart = 7;
 	public const int ScaleMaxOnStart = 8;
-	public const int Groups = 9;
+	public const int LogScaleOnStart = 9;
+	public const int Groups = 10;
 }
 
 /// <summary>The column order of <see cref="ArchiveStatements.StoredGroups"/>, named so a transposition shows.</summary>
@@ -65,7 +66,7 @@ internal static class ArchiveStatements
 	/// </summary>
 	public const string StoredPens = """
 	                                 SELECT id, name, unit, format, color, line_style, enabled_on_start,
-	                                        scale_min_on_start, scale_max_on_start
+	                                        scale_min_on_start, scale_max_on_start, log_scale_on_start
 	                                 FROM semiplot_tags
 	                                 ORDER BY id;
 	                                 """;
@@ -105,6 +106,10 @@ internal static class ArchiveStatements
 	                                            WHERE id = @id;
 	                                            """;
 
+	public const string UpdatePenLogScaleOnStart = """
+	                                               UPDATE semiplot_tags SET log_scale_on_start = @value WHERE id = @id;
+	                                               """;
+
 	public const string CreateGroup = "INSERT INTO semiplot_groups (name) VALUES (@name) RETURNING id;";
 
 	public const string RenameGroup = "UPDATE semiplot_groups SET name = @name WHERE id = @id;";
@@ -132,6 +137,7 @@ internal static class ArchiveStatements
 	public const string PenCatalog = """
 	                                 SELECT tag.id, tag.name, tag.unit, tag.format, tag.color, tag.line_style,
 	                                        tag.enabled_on_start, tag.scale_min_on_start, tag.scale_max_on_start,
+	                                        tag.log_scale_on_start,
 	                                        coalesce(array_agg(grp.name ORDER BY grp.name)
 	                                                 FILTER (WHERE grp.name IS NOT NULL), '{}') AS groups
 	                                 FROM semiplot_tags tag

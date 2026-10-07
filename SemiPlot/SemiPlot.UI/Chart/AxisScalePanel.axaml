@@ -8,15 +8,19 @@
              d:DesignWidth="360"
              x:Class="SemiPlot.UI.Chart.AxisScalePanel"
              x:DataType="chart:AxisScalePanelViewModel"
-             Width="360">
+             Width="360"
+             Background="Transparent"
+             Focusable="True"
+             IsTabStop="False">
 
     <UserControl.KeyBindings>
         <KeyBinding Gesture="Escape"
                     Command="{Binding CancelCommand}" />
     </UserControl.KeyBindings>
 
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto"
-          RowSpacing="10">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+          RowSpacing="10"
+          Grid.IsSharedSizeScope="True">
 
         <Grid Grid.Row="0"
               ColumnDefinitions="*,Auto"
@@ -36,10 +40,15 @@
         </Grid>
 
         <Grid Grid.Row="1"
-              ColumnDefinitions="Auto,*"
+              Name="AxisScaleBounds"
               RowDefinitions="Auto,Auto"
               ColumnSpacing="14"
               RowSpacing="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"
+                                  SharedSizeGroup="AxisScaleLabel" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
 
             <TextBlock Grid.Row="0"
                        Grid.Column="0"
@@ -54,7 +63,7 @@
                      Text="{Binding MaximumText}">
                 <TextBox.KeyBindings>
                     <KeyBinding Gesture="Enter"
-                                Command="{Binding ApplyCommand}" />
+                                Command="{Binding CommitBoundsCommand}" />
                 </TextBox.KeyBindings>
             </TextBox>
 
@@ -71,47 +80,50 @@
                      Text="{Binding MinimumText}">
                 <TextBox.KeyBindings>
                     <KeyBinding Gesture="Enter"
-                                Command="{Binding ApplyCommand}" />
+                                Command="{Binding CommitBoundsCommand}" />
                 </TextBox.KeyBindings>
             </TextBox>
 
         </Grid>
 
-        <TextBlock Grid.Row="2"
+        <Grid Grid.Row="2"
+              ColumnSpacing="14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"
+                                  SharedSizeGroup="AxisScaleLabel" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <CheckBox Grid.Column="1"
+                      Name="AxisScaleLogarithmic"
+                      Content="{x:Static text:Resources.AxisScaleLogarithmic}"
+                      IsChecked="{Binding IsLogarithmic, Mode=OneWay}"
+                      Command="{Binding ToggleLogarithmicCommand}" />
+
+        </Grid>
+
+        <TextBlock Grid.Row="3"
                    Name="AxisScaleValidationMessage"
                    Classes="form-message error"
                    Text="{Binding ValidationMessage}" />
 
-        <Grid Grid.Row="3"
+        <Grid Grid.Row="4"
               ColumnDefinitions="*,*"
-              RowDefinitions="Auto,Auto"
-              ColumnSpacing="8"
-              RowSpacing="8">
+              ColumnSpacing="8">
 
-            <Button Grid.Row="0"
-                    Grid.Column="0"
+            <Button Grid.Column="0"
                     Name="AxisScaleAutoscaleButton"
                     HorizontalAlignment="Stretch"
                     HorizontalContentAlignment="Center"
                     Content="{x:Static text:Resources.MenuViewAutoscale}"
                     Command="{Binding AutoscaleCommand}" />
 
-            <Button Grid.Row="0"
-                    Grid.Column="1"
+            <Button Grid.Column="1"
                     Name="AxisScaleInitialScaleButton"
                     HorizontalAlignment="Stretch"
                     HorizontalContentAlignment="Center"
                     Content="{x:Static text:Resources.AxisScaleInitialScale}"
                     Command="{Binding InitialScaleCommand}" />
-
-            <Button Grid.Row="1"
-                    Grid.Column="0"
-                    Grid.ColumnSpan="2"
-                    Name="AxisScaleApplyButton"
-                    HorizontalAlignment="Stretch"
-                    HorizontalContentAlignment="Center"
-                    Content="{x:Static text:Resources.AxisScaleApply}"
-                    Command="{Binding ApplyCommand}" />
 
         </Grid>
 

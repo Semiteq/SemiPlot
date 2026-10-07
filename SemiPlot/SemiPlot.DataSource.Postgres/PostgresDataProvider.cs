@@ -474,6 +474,7 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 			reader.GetBoolean(PenCatalogColumn.EnabledOnStart),
 			scaleMin,
 			scaleMax,
+			reader.GetBoolean(PenCatalogColumn.LogScaleOnStart),
 			ReadLineStyle(reader, penId));
 	}
 

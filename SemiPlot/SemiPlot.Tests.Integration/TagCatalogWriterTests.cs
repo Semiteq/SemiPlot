@@ -29,6 +29,9 @@ public sealed class TagCatalogWriterTests(PostgresContainerFixture postgresConta
 	private const string StoredScalesCommand =
 		"SELECT id, scale_min_on_start, scale_max_on_start FROM public.semiplot_tags ORDER BY id;";
 
+	private const string LogScaleFlagsCommand =
+		"SELECT id, log_scale_on_start FROM public.semiplot_tags ORDER BY id;";
+
 	[Fact]
 	public async Task TheGroupTableHoldsEveryGroupTheSliceNames()
 	{
@@ -67,6 +70,26 @@ public sealed class TagCatalogWriterTests(PostgresContainerFixture postgresConta
 		written.Should().Contain(scale => scale.PenId == SyntheticPenCatalog.UncommissionedPenId
 										  && scale.Min == null
 										  && scale.Max == null);
+	}
+
+	[Fact]
+	public async Task TheStoredLogScaleFlagIsTheSyntheticPensOwn()
+	{
+		await using var database = await WrittenSliceAsync();
+
+		var written = await ReadAsync(
+			database,
+			LogScaleFlagsCommand,
+			reader => (PenId: reader.GetInt32(0), LogScaleOnStart: reader.GetBoolean(1)));
+
+		written.Should().Equal(
+		[
+			.. Slice()
+				.Select(pen => (pen.PenId, pen.LogScaleOnStart))
+				.OrderBy(flag => flag.PenId)
+		]);
+		written.Should().ContainSingle(flag => flag.LogScaleOnStart)
+			.Which.PenId.Should().Be(SyntheticPenCatalog.LogScalePenId);
 	}
 
 	// A template rebuild runs the writer over a catalogue it already wrote; the memberships are

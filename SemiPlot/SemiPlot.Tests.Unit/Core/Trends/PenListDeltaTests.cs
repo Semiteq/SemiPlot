@@ -38,6 +38,7 @@ public sealed class PenListDeltaTests
 		nameof(Pen.EnabledOnStart),
 		nameof(Pen.ScaleMinOnStart),
 		nameof(Pen.ScaleMaxOnStart),
+		nameof(Pen.LogScaleOnStart),
 		nameof(Pen.LineStyle)
 	];
 
@@ -137,6 +138,17 @@ public sealed class PenListDeltaTests
 	}
 
 	[Fact]
+	public void ALogScaleOnStartChangeAlone_GivesARevision()
+	{
+		var logarithmic = _pressure with { LogScaleOnStart = true };
+
+		var delta = PenListDelta.Between([_pressure], [logarithmic]);
+
+		delta.Revised.Should().ContainSingle().Which.LogScaleOnStart.Should().BeTrue();
+		delta.ChangesPenSet.Should().BeFalse();
+	}
+
+	[Fact]
 	public void ANewPen_IsAddedAndChangesThePenSet()
 	{
 		var delta = PenListDelta.Between([_pressure], [_pressure, _heater]);
@@ -198,6 +210,7 @@ public sealed class PenListDeltaTests
 			nameof(Pen.EnabledOnStart) => pen with { EnabledOnStart = !pen.EnabledOnStart },
 			nameof(Pen.ScaleMinOnStart) => pen with { ScaleMinOnStart = -5.0 },
 			nameof(Pen.ScaleMaxOnStart) => pen with { ScaleMaxOnStart = 500.0 },
+			nameof(Pen.LogScaleOnStart) => pen with { LogScaleOnStart = !pen.LogScaleOnStart },
 			nameof(Pen.LineStyle) => pen with { LineStyle = PenLineStyle.Stepped },
 			_ => throw new ArgumentOutOfRangeException(nameof(member), member, "No change is defined for it.")
 		};

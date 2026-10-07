@@ -36,7 +36,7 @@ namespace SemiPlot.Tests.Unit.UI.PenEditor;
 [Trait("Category", "Unit")]
 public sealed class PenEditorViewTests : IDisposable
 {
-	private const int FixedColumnCount = 9;
+	private const int FixedColumnCount = 10;
 
 	private const int PaletteTabIndex = 1;
 
@@ -902,6 +902,214 @@ public sealed class PenEditorViewTests : IDisposable
 		}
 	}
 
+	[AvaloniaFact]
+	public void TheLogColumn_ShowsTheFlagReadOnlyAndSortsOnAHeaderClick()
+	{
+		var logArgon = Argon with { LogScaleOnStart = true };
+		using var viewModel = _editor.EditorOver(new PenCatalogue([logArgon, Pressure, Power], []), _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			var table = Named<ListBox>(window, "PenTable");
+			var header = Named<Button>(window, "SortByLogScaleOnStart");
+			header.Content.Should().Be(Resources.PenEditorColumnLogScaleOnStart);
+			Cell<CheckBox>(RowAt(window, 0), "RowLogScaleOnStart").IsChecked.Should().BeTrue();
+			Cell<CheckBox>(RowAt(window, 0), "RowLogScaleOnStart").IsHitTestVisible.Should().BeFalse(
+				"the tick is read-only");
+			Cell<CheckBox>(RowAt(window, 1), "RowLogScaleOnStart").IsChecked.Should().BeFalse();
+
+			HeadlessInput.Click(window, header);
+
+			RealisedPens(table).Should().Equal(Pressure, Power, logArgon);
+
+			HeadlessInput.Click(window, header);
+
+			RealisedPens(table).Should().Equal(logArgon, Power, Pressure);
+			_editor.Calls.Should().BeEmpty();
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void TheLogBoxClicked_WritesTheFlagAndTheRowShowsIt()
+	{
+		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			HeadlessInput.Click(window, RowAt(window, 0));
+			var box = Named<CheckBox>(window, "FormLogScaleOnStart");
+			box.IsChecked.Should().Be(Argon.LogScaleOnStart);
+
+			HeadlessInput.Click(window, box);
+
+			_editor.Changes.Should().Equal(
+				new FakeEditorCall.Change(Argon, new PenSettingChange.LogScaleOnStart(true)));
+			Cell<CheckBox>(RowAt(window, 0), "RowLogScaleOnStart").IsChecked.Should().BeTrue();
+			box.IsChecked.Should().BeTrue();
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void TheLogBoxOverAStoredMinimumOfZero_PutsTheBoxBackAndSaysWhyWithoutResizing()
+	{
+		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			HeadlessInput.Click(window, RowAt(window, 1));
+			var box = Named<CheckBox>(window, "FormLogScaleOnStart");
+			var panel = Named<Border>(window, "PenFormPanel");
+			var message = Named<TextBlock>(window, "FormMessage");
+			var panelBounds = panel.Bounds;
+
+			HeadlessInput.Click(window, box);
+
+			_editor.Calls.Should().BeEmpty();
+			box.IsChecked.Should().BeFalse("the refused tick puts the box back");
+			message.Text.Should().Be(Resources.ScaleLogMinimumPositive);
+			panel.Bounds.Should().Be(panelBounds);
+			LeftOf(box, window).Should().BeApproximately(
+				LeftOf(Named<TextBox>(window, "FormScaleMinOnStart"), window), 1, "the box lines up under the bounds");
+			BottomOf(box, window).Should().BeLessThanOrEqualTo(
+				TopOf(message, window), "the box sits above the message line");
+			BottomOf(message, window).Should().BeLessThanOrEqualTo(
+				BottomOf(panel, window), "the message line stays inside");
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void APositiveMinimumTypedThenTheLogBoxClicked_WritesThePairThenTheFlag()
+	{
+		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			HeadlessInput.Click(window, RowAt(window, 1));
+			Retype(window, Named<TextBox>(window, "FormScaleMinOnStart"), "5");
+			var pairWrite = _editor.HoldNextCall();
+
+			HeadlessInput.Click(window, Named<CheckBox>(window, "FormLogScaleOnStart"));
+
+			_editor.Changes.Should().Equal(
+				new FakeEditorCall.Change(Pressure, new PenSettingChange.ScaleOnStart(5, 100)));
+			Named<CheckBox>(window, "FormLogScaleOnStart").IsChecked.Should().BeTrue(
+				"the rule reads the minimum queued, not the 0 still stored");
+			Named<TextBlock>(window, "FormMessage").Text.Should().BeNullOrEmpty();
+
+			pairWrite.SetResult();
+			Dispatcher.UIThread.RunJobs();
+
+			var rescaled = Pressure with { ScaleMinOnStart = 5 };
+			_editor.Changes.Should().Equal(
+				new FakeEditorCall.Change(Pressure, new PenSettingChange.ScaleOnStart(5, 100)),
+				new FakeEditorCall.Change(rescaled, new PenSettingChange.LogScaleOnStart(true)));
+			Named<CheckBox>(window, "FormLogScaleOnStart").IsChecked.Should().BeTrue();
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void AZeroMinimumTypedThenTheLogBoxClicked_RefusesTheFlagWhileThePairIsInFlight()
+	{
+		var positivePressure = Pressure with { ScaleMinOnStart = 1 };
+		using var viewModel = _editor.EditorOver(new PenCatalogue([Argon, positivePressure, Power], []), _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			HeadlessInput.Click(window, RowAt(window, 1));
+			Retype(window, Named<TextBox>(window, "FormScaleMinOnStart"), "0");
+			var pairWrite = _editor.HoldNextCall();
+
+			HeadlessInput.Click(window, Named<CheckBox>(window, "FormLogScaleOnStart"));
+
+			Named<CheckBox>(window, "FormLogScaleOnStart").IsChecked.Should().BeFalse(
+				"the rule reads the minimum queued, not the 1 still stored");
+			Named<TextBlock>(window, "FormMessage").Text.Should().Be(Resources.ScaleLogMinimumPositive);
+
+			pairWrite.SetResult();
+			Dispatcher.UIThread.RunJobs();
+
+			_editor.Changes.Should().Equal(
+				new FakeEditorCall.Change(positivePressure, new PenSettingChange.ScaleOnStart(0, 100)));
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void ALogBoxTheArchiveRefuses_PutsTheBoxBackSaysWhyAndReportsOnce()
+	{
+		var refusal = FakePenCatalogueEditor.Refusal(ArchiveFault.RowGone, Argon.Name);
+		_editor.ChangeResult = Result.Fail(refusal);
+		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			HeadlessInput.Click(window, RowAt(window, 0));
+			var box = Named<CheckBox>(window, "FormLogScaleOnStart");
+
+			HeadlessInput.Click(window, box);
+
+			box.IsChecked.Should().Be(Argon.LogScaleOnStart, "the refused choice puts the box back");
+			_editor.Changes.Should().ContainSingle("the box put back writes nothing");
+			Named<TextBlock>(window, "FormMessage").Text.Should().Be(ArchiveFailureMapper.Map(refusal).Title);
+			_messagePanel.Entries.Should().ContainSingle();
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void AZeroMinimumTypedWhileTheFlagIsOn_MarksTheMinimumAndWritesNothing()
+	{
+		var logArgon = Argon with { LogScaleOnStart = true };
+		using var viewModel = _editor.EditorOver(new PenCatalogue([logArgon, Pressure, Power], []), _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			HeadlessInput.Click(window, RowAt(window, 0));
+			var minimum = Named<TextBox>(window, "FormScaleMinOnStart");
+			var maximum = Named<TextBox>(window, "FormScaleMaxOnStart");
+
+			HeadlessInput.Type(window, minimum, "0");
+			HeadlessInput.Type(window, maximum, "100");
+
+			minimum.Classes.Should().Contain("invalid");
+			maximum.Classes.Should().NotContain("invalid", "the rule names the minimum");
+			Named<TextBlock>(window, "FormMessage").Text.Should().Be(Resources.ScaleLogMinimumPositive);
+
+			HeadlessInput.Click(window, Named<TextBlock>(window, "FormMessage"));
+
+			Named<Grid>(window, "FormScale").IsKeyboardFocusWithin.Should().BeFalse();
+			_editor.Calls.Should().BeEmpty();
+			minimum.Text.Should().BeNullOrEmpty("the refused pair goes back to the stored empty pair");
+			minimum.Classes.Should().Contain("invalid", "the refusal marks the pair");
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
 	private static void ChooseLineStyle(PenEditorWindow window, ComboBox lineStyle, PenLineStyle choice)
 	{
 		HeadlessInput.Click(window, lineStyle);
@@ -972,6 +1180,17 @@ public sealed class PenEditorViewTests : IDisposable
 	private static double RightOf(Control control, PenEditorWindow window)
 	{
 		return LeftOf(control, window) + control.Bounds.Width;
+	}
+
+	private static double TopOf(Control control, PenEditorWindow window)
+	{
+		return control.TranslatePoint(default, window)?.Y
+			?? throw new InvalidOperationException("The control is not in the window's visual tree.");
+	}
+
+	private static double BottomOf(Control control, PenEditorWindow window)
+	{
+		return TopOf(control, window) + control.Bounds.Height;
 	}
 
 	private static string? RefreshLabelIn(CultureInfo culture)

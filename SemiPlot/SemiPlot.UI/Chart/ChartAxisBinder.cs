@@ -1,4 +1,5 @@
 using ScottPlot;
+using ScottPlot.TickGenerators;
 
 using SemiPlot.Core.Trends;
 
@@ -6,6 +7,8 @@ namespace SemiPlot.UI.Chart;
 
 public sealed class ChartAxisBinder(Plot plot)
 {
+	private const float LogMinorGridWidth = 1f;
+
 	private readonly Dictionary<int, IYAxis> _axesByPenId = [];
 	private readonly Plot _plot = plot;
 
@@ -33,21 +36,87 @@ public sealed class ChartAxisBinder(Plot plot)
 		foreach (var scale in scales)
 		{
 			var axis = ResolveAxis(scale.PenId);
-
 			if (pensById.TryGetValue(scale.PenId, out var pen))
 			{
 				pen.Line.Axes.YAxis = axis;
 			}
 
-			_plot.Axes.SetLimitsY(scale.Min, scale.Max, axis);
+			var mask = pen?.Pen.Format;
+
+			if (LogTickGenerator.IsLogarithmic(axis) == scale.IsLogarithmic)
+			{
+				if (axis.TickGenerator is LogTickGenerator logTicks)
+				{
+					logTicks.Mask = mask;
+				}
+
+				SetLimits(axis, scale);
+			}
+			else
+			{
+				// One lock for the whole switch, docs/architecture/charting.md#log10-y-axis
+				lock (_plot.Sync)
+				{
+					axis.TickGenerator = scale.IsLogarithmic
+						? new LogTickGenerator { Mask = mask }
+						: new NumericAutomatic();
+					SetLimits(axis, scale);
+					RefreshMinorGridWidth();
+				}
+			}
+
 			axis.IsVisible = scale.IsActive && pen is { IsVisible: true };
 
 			if (axis.IsVisible)
 			{
-				// ScottPlot draws the horizontal gridlines from Grid.YAxis alone and never reads that axis's
-				// own IsVisible, so it keeps the plot's first axis until the drawn one is assigned here.
-				_plot.Grid.YAxis = axis;
+				DrawGridFrom(axis);
 			}
+		}
+	}
+
+	private void SetLimits(IYAxis axis, PenScale scale)
+	{
+		if (scale.IsLogarithmic)
+		{
+			_plot.Axes.SetLimitsY(Math.Log10(scale.Min), Math.Log10(scale.Max), axis);
+		}
+		else
+		{
+			_plot.Axes.SetLimitsY(scale.Min, scale.Max, axis);
+		}
+	}
+
+	// ScottPlot draws the horizontal gridlines from Grid.YAxis alone and never reads that axis's own IsVisible,
+	// so it keeps the plot's first axis until the drawn one is assigned here.
+	private void DrawGridFrom(IYAxis axis)
+	{
+		if (ReferenceEquals(_plot.Grid.YAxis, axis))
+		{
+			RefreshMinorGridWidth();
+
+			return;
+		}
+
+		lock (_plot.Sync)
+		{
+			_plot.Grid.YAxis = axis;
+			RefreshMinorGridWidth();
+		}
+	}
+
+	private void RefreshMinorGridWidth()
+	{
+		var minorWidth = LogTickGenerator.IsLogarithmic(_plot.Grid.YAxis) ? LogMinorGridWidth : 0f;
+		var minorLine = _plot.Grid.YAxisStyle.MinorLineStyle;
+
+		if (minorLine.Width == minorWidth)
+		{
+			return;
+		}
+
+		lock (_plot.Sync)
+		{
+			minorLine.Width = minorWidth;
 		}
 	}
 

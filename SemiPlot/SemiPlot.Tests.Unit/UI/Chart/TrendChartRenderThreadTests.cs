@@ -35,6 +35,7 @@ public sealed class TrendChartRenderThreadTests
 
 	private static readonly TimeSpan _runBudget = TimeSpan.FromSeconds(60);
 	private static readonly TimeSpan _joinBudget = TimeSpan.FromSeconds(30);
+	private static readonly DateTime _historyStart = new(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
 
 	[AvaloniaFact(Timeout = TestTimeoutMilliseconds)]
 	public async Task ApplyCatalogue_WhileTheRenderThreadDraws_DoesNotThrow()
@@ -49,43 +50,48 @@ public sealed class TrendChartRenderThreadTests
 		chart.ApplyCatalogue(kept);
 		RenderFrame(chart.Plot);
 
-		using var cancellation = new CancellationTokenSource(_runBudget);
-
-		// Written by the render task, read by the test thread only after joining it.
-		var frames = 0;
-
-		var renderTask = Task.Run(
+		await DrawWhileMutating(
+			chart,
 			() =>
-			{
-				while (frames < FrameBudget && !cancellation.Token.IsCancellationRequested)
-				{
-					RenderFrame(chart.Plot);
-					frames++;
-				}
-			},
-			TestContext.Current.CancellationToken);
-
-		Exception? failure;
-
-		try
-		{
-			while (!cancellation.Token.IsCancellationRequested && !renderTask.IsCompleted)
 			{
 				chart.ApplyCatalogue(joined);
 				chart.ApplyCatalogue(kept);
-			}
-		}
-		finally
-		{
-			await cancellation.CancelAsync();
-			failure = await Record.ExceptionAsync(
-				() => renderTask.WaitAsync(_joinBudget, TestContext.Current.CancellationToken));
-		}
+			},
+			"a frame must never meet a half-applied delta");
+	}
 
-		failure.Should().BeNull(
-			"a frame must never meet a half-applied delta; the render thread stopped at frame {0}",
-			frames);
-		frames.Should().Be(FrameBudget);
+	// RestoreInitialScale switches the axis type outside ApplyCatalogue's lock, so the binder's lock is under test.
+	[AvaloniaFact(Timeout = TestTimeoutMilliseconds)]
+	public async Task TogglingTheAxisType_WhileTheRenderThreadDraws_DoesNotThrow()
+	{
+		using var chart = CreateChart(new TestScheduler());
+		var linear = new Pen(1, "Pen 1", ["Group A"], "#ff0000");
+		var logarithmic = linear with { LogScaleOnStart = true };
+		var state = chart.AddPen(linear);
+		state.LoadHistory(new PenHistoryEnvelope(
+			linear.PenId,
+			[_historyStart, _historyStart.AddMinutes(1.0), _historyStart.AddMinutes(2.0)],
+			[0.0, 1e-3, 10.0],
+			[1e-6, 1.0, 100.0],
+			[1e-3, 0.1, 50.0]));
+		chart.Plot.Axes.SetLimitsX(
+			LocalTimeAxis.ToAxis(_historyStart),
+			LocalTimeAxis.ToAxis(_historyStart.AddMinutes(2.0)));
+		chart.ApplyCatalogue([logarithmic]);
+		chart.RestoreInitialScale();
+		chart.ActivePenAxis!.TickGenerator.Should().BeOfType<LogTickGenerator>("the loop below must switch types");
+		RenderFrame(chart.Plot);
+
+		await DrawWhileMutating(
+			chart,
+			() =>
+			{
+				chart.ApplyCatalogue([logarithmic]);
+				chart.RestoreInitialScale();
+				chart.ApplyCatalogue([linear]);
+				chart.RestoreInitialScale();
+			},
+			"a frame drawn while the axis type switches must not throw");
 	}
 
 	// docs/architecture/charting.md#per-pen-plottable-envelopeline
@@ -174,6 +180,45 @@ public sealed class TrendChartRenderThreadTests
 
 		first.Navigation.TargetColumnCount.Should().Be(HistoryColumnTarget.MaxColumns, "the view let go of it");
 		second.Navigation.TargetColumnCount.Should().Be(HistoryColumnTarget.MinColumns);
+	}
+
+	/// <summary>Repeats the mutation on the test thread while a render task draws the frame budget.</summary>
+	private static async Task DrawWhileMutating(TrendChartViewModel chart, Action mutate, string because)
+	{
+		using var cancellation = new CancellationTokenSource(_runBudget);
+
+		// Written by the render task, read by the test thread only after joining it.
+		var frames = 0;
+
+		var renderTask = Task.Run(
+			() =>
+			{
+				while (frames < FrameBudget && !cancellation.Token.IsCancellationRequested)
+				{
+					RenderFrame(chart.Plot);
+					frames++;
+				}
+			},
+			TestContext.Current.CancellationToken);
+
+		Exception? failure;
+
+		try
+		{
+			while (!cancellation.Token.IsCancellationRequested && !renderTask.IsCompleted)
+			{
+				mutate();
+			}
+		}
+		finally
+		{
+			await cancellation.CancelAsync();
+			failure = await Record.ExceptionAsync(
+				() => renderTask.WaitAsync(_joinBudget, TestContext.Current.CancellationToken));
+		}
+
+		failure.Should().BeNull(because + "; the render thread stopped at frame {0}", frames);
+		frames.Should().Be(FrameBudget);
 	}
 
 	private static async Task RenderFrameAsTheRenderThreadDoes(Plot plot, int width, int height)

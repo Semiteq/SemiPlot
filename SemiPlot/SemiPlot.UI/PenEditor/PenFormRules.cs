@@ -23,9 +23,9 @@ internal static class PenFormRules
 		return PenColorConverters.TryParse(color, out _) ? null : Resources.PenFormColorInvalid;
 	}
 
-	public static string? ScaleRule(string min, string max)
+	public static string? ScaleRule(string min, string max, bool isLogarithmic)
 	{
-		return BoundRule(min) ?? BoundRule(max) ?? PairRule(min, max);
+		return BoundRule(min) ?? BoundRule(max) ?? PairRule(min, max) ?? LogMinimumRule(min, isLogarithmic);
 	}
 
 	public static string? BoundRule(string bound)
@@ -47,6 +47,17 @@ internal static class PenFormRules
 		}
 
 		return minimum >= maximum ? Resources.PenFormScaleInverted : null;
+	}
+
+	/// <summary>Null while the minimum is unreadable, which <see cref="BoundRule"/> reports.</summary>
+	public static string? LogMinimumRule(string min, bool isLogarithmic)
+	{
+		return TryReadBound(min, out var minimum) ? LogMinimumRule(minimum, isLogarithmic) : null;
+	}
+
+	public static string? LogMinimumRule(double? minimum, bool isLogarithmic)
+	{
+		return isLogarithmic && !LogAxis.AdmitsMinimum(minimum) ? Resources.ScaleLogMinimumPositive : null;
 	}
 
 	/// <summary>The text a scale bound is shown as, which <see cref="TryReadBound"/> reads back unchanged.</summary>

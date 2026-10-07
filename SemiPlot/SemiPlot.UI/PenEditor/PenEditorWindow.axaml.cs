@@ -236,14 +236,22 @@ public partial class PenEditorWindow : Window
 		}
 	}
 
-	private async void OnEnabledOnStartChanged(object? sender, RoutedEventArgs e)
+	private async void OnStartFlagChanged(object? sender, RoutedEventArgs e)
 	{
 		try
 		{
-			if (FormEnabledOnStart is { IsChecked: { } enabledOnStart, DataContext: PenFormViewModel form }
-				&& enabledOnStart != form.EnabledOnStart)
+			if (sender is not CheckBox { IsChecked: { } isChecked, DataContext: PenFormViewModel form } box)
 			{
-				await form.ChooseEnabledOnStartAsync(enabledOnStart);
+				return;
+			}
+
+			if (box == FormEnabledOnStart && isChecked != form.EnabledOnStart)
+			{
+				await form.ChooseEnabledOnStartAsync(isChecked);
+			}
+			else if (box == FormLogScaleOnStart && isChecked != form.LogScaleOnStart)
+			{
+				await form.ChooseLogScaleOnStartAsync(isChecked);
 			}
 		}
 		catch (Exception exception)

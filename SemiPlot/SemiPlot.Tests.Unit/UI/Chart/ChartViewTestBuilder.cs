@@ -97,12 +97,14 @@ internal static class ChartViewTestBuilder
 			new MessagePanelViewModel(),
 			NullLogger<TrendChartViewModel>.Instance);
 		var state = viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
-		state.LoadHistory(new PenHistoryEnvelope(
-			1,
-			[_from, _from.AddMinutes(1.0)],
-			[1.0, 3.0],
-			[5.0, 9.0],
-			[2.0, 6.0]));
+		state.LoadHistory(
+			new PenHistoryEnvelope(
+				1,
+				[_from, _from.AddMinutes(1.0)],
+				[1.0, 3.0],
+				[5.0, 9.0],
+				[2.0, 6.0]),
+			_from.AddMinutes(1.0));
 
 		return viewModel;
 	}

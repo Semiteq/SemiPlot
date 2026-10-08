@@ -1,6 +1,7 @@
 using System.Reactive.Concurrency;
 
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 
 using Npgsql;
@@ -17,6 +18,7 @@ public static class PostgresDataServiceCollectionExtensions
 		PostgresConnectionSettings settings)
 	{
 		services.AddSingleton<IScheduler>(DefaultScheduler.Instance);
+		services.TryAddSingleton(TimeProvider.System);
 		services.AddSingleton(settings);
 		services.AddSingleton(_ => NpgsqlDataSource.Create(settings.ConnectionString));
 		services.AddSingleton(new ArchiveTimeConverter(settings.SourceTimeZone));
@@ -29,6 +31,7 @@ public static class PostgresDataServiceCollectionExtensions
 			provider.GetRequiredService<ArchiveExceptionMapper>(),
 			provider.GetRequiredService<PostgresConnectionSettings>(),
 			provider.GetRequiredService<IScheduler>(),
+			provider.GetRequiredService<TimeProvider>(),
 			provider.GetRequiredService<ILogger<PostgresDataProvider>>()));
 		services.AddSingleton<IPenCatalogueEditor>(provider => new PostgresPenCatalogueEditor(
 			provider.GetRequiredService<NpgsqlDataSource>(),

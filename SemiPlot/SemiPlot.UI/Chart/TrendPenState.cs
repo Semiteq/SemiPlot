@@ -52,7 +52,8 @@ public sealed class TrendPenState : ReactiveObject
 		IsVisible = isVisible;
 	}
 
-	public void LoadHistory(PenHistoryEnvelope envelope)
+	/// <summary><paramref name="requestedToUtc"/> is the read's own right edge: no live column past it is kept.</summary>
+	public void LoadHistory(PenHistoryEnvelope envelope, DateTime requestedToUtc)
 	{
 		var columns = new List<EnvelopeColumn>(envelope.Timestamps.Count);
 
@@ -65,35 +66,34 @@ public sealed class TrendPenState : ReactiveObject
 				envelope.Center[index]));
 		}
 
-		Line.ReplaceColumns(columns);
-		CurrentValue = LastNonGapCenter(columns);
+		ReplaceHistory(columns, requestedToUtc);
 	}
 
-	public void ClearHistory()
+	public void ClearHistory(DateTime requestedToUtc)
 	{
-		Line.ClearColumns();
-		CurrentValue = null;
+		ReplaceHistory([], requestedToUtc);
 	}
 
 	public void AppendRealtime(DateTime timestampUtc, double? value)
 	{
-		var y = value ?? double.NaN;
-		var column = new EnvelopeColumn(LocalTimeAxis.ToAxis(timestampUtc), y, y, y);
-
-		if (Line.AppendColumn(column) && value.HasValue)
+		if (Line.AppendColumn(LiveColumn(timestampUtc, value ?? double.NaN)) && value.HasValue)
 		{
 			CurrentValue = value;
 		}
 	}
 
-	// At coarse layers a realtime sample folds into the current (last) decimation column instead of drawing
-	// a raw point, widening its Min/Max; a null/empty/gap tail is skipped.
-	public void FoldRealtime(double? value)
+	// docs/architecture/charting.md#per-pen-plottable-envelopeline
+	public void FoldRealtime(DateTime timestampUtc, double value)
 	{
-		if (value.HasValue && Line.FoldIntoLastColumn(value.Value))
+		if (Line.FoldIntoLastColumn(LiveColumn(timestampUtc, value)))
 		{
 			CurrentValue = value;
 		}
+	}
+
+	private static EnvelopeColumn LiveColumn(DateTime timestampUtc, double value)
+	{
+		return new EnvelopeColumn(LocalTimeAxis.ToAxis(timestampUtc), value, value, value);
 	}
 
 	private void RestyleLine()
@@ -101,17 +101,10 @@ public sealed class TrendPenState : ReactiveObject
 		Line.Restyle(new Color(Pen.Color), Pen.LineStyle);
 	}
 
-	private static double? LastNonGapCenter(List<EnvelopeColumn> columns)
+	// docs/architecture/charting.md#per-pen-plottable-envelopeline
+	private void ReplaceHistory(IReadOnlyList<EnvelopeColumn> columns, DateTime requestedToUtc)
 	{
-		for (var index = columns.Count - 1; index >= 0; index--)
-		{
-			var center = columns[index].Center;
-			if (!double.IsNaN(center))
-			{
-				return center;
-			}
-		}
-
-		return null;
+		Line.ReplaceColumns(columns, LocalTimeAxis.ToAxis(requestedToUtc));
+		CurrentValue = Line.LastNonGapCenter();
 	}
 }

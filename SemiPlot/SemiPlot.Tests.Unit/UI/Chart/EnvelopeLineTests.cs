@@ -32,6 +32,8 @@ public sealed class EnvelopeLineTests
 	private const double FlatValue = 1e-4;
 	private const double LogAxisBottomDecade = -6.0;
 	private const double LogAxisTopDecade = -2.0;
+	private const double UnboundedRequestedEndX = double.PositiveInfinity;
+	private const int RawBandColumns = HistoryPrefetch.MarginColumnFactor * HistoryColumnTarget.MaxColumns;
 
 	private static readonly TimeSpan _runBudget = TimeSpan.FromSeconds(60);
 	private static readonly TimeSpan _joinBudget = TimeSpan.FromSeconds(30);
@@ -49,7 +51,7 @@ public sealed class EnvelopeLineTests
 		plot.Add.Plottable(line);
 
 		var state = new TrendPenState(new Pen(PenId, "Pen 1", ["Group A"], PenColorHex), line);
-		state.LoadHistory(Envelope(LongColumnCount));
+		state.LoadHistory(Envelope(LongColumnCount), _start.AddSeconds(LongColumnCount));
 
 		plot.Axes.SetLimitsX(
 			LocalTimeAxis.ToAxis(_start),
@@ -121,6 +123,155 @@ public sealed class EnvelopeLineTests
 	}
 
 	[Fact]
+	public void AReplaceKeepsOnlyTheAppendedColumnsPastItsEnd()
+	{
+		var line = new EnvelopeLine();
+		line.ReplaceColumns([.. ColumnsFrom(0.0, 3), Column(10.0)], UnboundedRequestedEndX);
+		line.AppendColumn(Column(11.0)).Should().BeTrue();
+		line.AppendColumn(Column(12.0)).Should().BeTrue();
+
+		line.ReplaceColumns(ColumnsFrom(0.0, 4), UnboundedRequestedEndX);
+
+		line.Columns.Select(column => column.X).Should().Equal(
+			[0.0, 1.0, 2.0, 3.0, 11.0, 12.0],
+			"the replaced column at 10 is history, not a live append");
+	}
+
+	[Fact]
+	public void AReplaceEndingAtAnAppendedColumnTakesItsPlace()
+	{
+		var line = new EnvelopeLine();
+		line.ReplaceColumns(ColumnsFrom(0.0, 2), UnboundedRequestedEndX);
+		line.AppendColumn(new EnvelopeColumn(2.0, 7.0, 7.0, 7.0)).Should().BeTrue();
+		line.AppendColumn(Column(3.0)).Should().BeTrue();
+
+		line.ReplaceColumns(ColumnsFrom(0.0, 3), UnboundedRequestedEndX);
+
+		line.Columns.Select(column => column.X).Should().Equal(0.0, 1.0, 2.0, 3.0);
+		line.Columns[2].Center.Should().Be(Column(2.0).Center, "the read's column replaces the live one at its X");
+	}
+
+	[Fact]
+	public void AReplaceDropsTheAppendedColumnsPastTheRequestedEnd()
+	{
+		var line = new EnvelopeLine();
+		line.ReplaceColumns(ColumnsFrom(0.0, 2), UnboundedRequestedEndX);
+		line.AppendColumn(Column(5.0)).Should().BeTrue();
+		line.AppendColumn(Column(6.0)).Should().BeTrue();
+		line.AppendColumn(Column(7.0)).Should().BeTrue();
+
+		line.ReplaceColumns(ColumnsFrom(0.0, 3), requestedEndX: 6.0);
+
+		line.Columns.Select(column => column.X).Should().Equal(0.0, 1.0, 2.0, 5.0, 6.0);
+	}
+
+	[Fact]
+	public void ASecondReplaceKeepsTheTailTheFirstOneKept()
+	{
+		var line = new EnvelopeLine();
+		line.ReplaceColumns(ColumnsFrom(0.0, 3), UnboundedRequestedEndX);
+		line.AppendColumn(Column(10.0)).Should().BeTrue();
+		line.AppendColumn(Column(11.0)).Should().BeTrue();
+		line.ReplaceColumns(ColumnsFrom(0.0, 2), UnboundedRequestedEndX);
+
+		line.ReplaceColumns(ColumnsFrom(0.0, 4), UnboundedRequestedEndX);
+
+		line.Columns.Select(column => column.X).Should().Equal(0.0, 1.0, 2.0, 3.0, 10.0, 11.0);
+	}
+
+	[Fact]
+	public void AfterAppendsPastTheCap_AReplaceKeepsTheNewestAppendedColumnsPastItsEnd()
+	{
+		var line = new EnvelopeLine();
+		for (var x = 0; x <= ColumnCap; x++)
+		{
+			line.AppendColumn(Column(x));
+		}
+
+		line.ReplaceColumns([Column(-1.0), Column(ColumnCap / 2)], UnboundedRequestedEndX);
+
+		var newestAppended = Enumerable.Range((ColumnCap / 2) + 1, ColumnCap / 2).Select(x => (double)x);
+		double[] expected = [-1.0, ColumnCap / 2, .. newestAppended];
+		line.Columns.Select(column => column.X).Should().Equal(expected);
+	}
+
+	[Fact]
+	public void ATrimPastTheCap_KeepsEveryAppendedColumnInTheTail()
+	{
+		const int HistoryCount = 2 * TrimChunk;
+		var line = new EnvelopeLine();
+		line.ReplaceColumns(ColumnsFrom(-HistoryCount, HistoryCount), UnboundedRequestedEndX);
+		var appended = ColumnCap - HistoryCount + 1;
+		for (var x = 0; x < appended; x++)
+		{
+			line.AppendColumn(Column(x));
+		}
+
+		line.ReplaceColumns([Column(-1.0)], UnboundedRequestedEndX);
+
+		line.Columns.Should().HaveCount(1 + appended, "the trim removed history alone");
+		line.Columns[1].X.Should().Be(0.0);
+		line.Columns[^1].X.Should().Be(appended - 1);
+	}
+
+	[Fact]
+	public void AMergePastTheCap_TrimsTheOldestColumnsToTheCap()
+	{
+		const int Half = ColumnCap / 2;
+		var line = new EnvelopeLine();
+		line.ReplaceColumns(ColumnsFrom(-Half, Half), UnboundedRequestedEndX);
+		for (var x = 0; x < Half; x++)
+		{
+			line.AppendColumn(Column(x));
+		}
+
+		line.ReplaceColumns(ColumnsFrom(-Half - 1, Half + 1), UnboundedRequestedEndX);
+
+		line.Columns.Should().HaveCount(ColumnCap);
+		line.Columns[0].X.Should().Be(-Half, "the one column past the cap is the oldest history column");
+		line.Columns[^1].X.Should().Be(Half - 1);
+	}
+
+	[Fact]
+	public void AfterAFollowPhasePastTheCap_APanIntoThePastKeepsTheBandItRead()
+	{
+		var line = new EnvelopeLine();
+		line.ReplaceColumns(ColumnsFrom(0.0, 2), UnboundedRequestedEndX);
+		var liveX = 2.0;
+		while (line.Columns[0].X < TrimChunk)
+		{
+			line.AppendColumn(Column(liveX++));
+		}
+
+		var band = ColumnsFrom(-RawBandColumns, RawBandColumns);
+		line.ReplaceColumns(band, requestedEndX: 0.0);
+
+		line.Columns.Should().Equal(band, "the follow phase's tail lies past the range the pan read");
+
+		for (var appended = 0; appended < ColumnCap - RawBandColumns; appended++)
+		{
+			line.AppendColumn(Column(liveX++));
+		}
+
+		line.Columns[0].Should().Be(band[0], "the band keeps the budget of the whole buffer");
+	}
+
+	[Fact]
+	public void AFoldAfterAGap_OpensAColumnPastItAndFoldsIntoThatOne()
+	{
+		var line = new EnvelopeLine();
+		line.ReplaceColumns([Column(0.0), new EnvelopeColumn(1.0, double.NaN, double.NaN, double.NaN)], 1.0);
+
+		line.FoldIntoLastColumn(new EnvelopeColumn(1.0, 7.0, 7.0, 7.0)).Should().BeFalse("it would run backwards");
+		line.FoldIntoLastColumn(new EnvelopeColumn(2.0, 7.0, 7.0, 7.0)).Should().BeTrue();
+		line.FoldIntoLastColumn(new EnvelopeColumn(3.0, 9.0, 9.0, 9.0)).Should().BeTrue();
+
+		line.Columns.Select(column => column.X).Should().Equal(0.0, 1.0, 2.0);
+		double.IsNaN(line.Columns[1].Center).Should().BeTrue("the gap still breaks the line");
+		line.Columns[^1].Should().Be(new EnvelopeColumn(2.0, 7.0, 9.0, 9.0));
+	}
+
+	[Fact]
 	public void Render_ProjectsThroughLog10OnlyUnderALogTickGenerator()
 	{
 		var underLogTicks = RowsOfAFlatLine(new LogTickGenerator());
@@ -137,10 +288,11 @@ public sealed class EnvelopeLineTests
 		var line = new EnvelopeLine();
 		line.Axes.YAxis = plot.Axes.Left;
 		line.ReplaceColumns(
-		[
-			new EnvelopeColumn(0.0, FlatValue, FlatValue, FlatValue),
-			new EnvelopeColumn(1.0, FlatValue, FlatValue, FlatValue)
-		]);
+			[
+				new EnvelopeColumn(0.0, FlatValue, FlatValue, FlatValue),
+				new EnvelopeColumn(1.0, FlatValue, FlatValue, FlatValue)
+			],
+			UnboundedRequestedEndX);
 
 		var linearLimits = line.GetAxisLimits();
 		line.Axes.YAxis.TickGenerator = new LogTickGenerator();
@@ -161,10 +313,11 @@ public sealed class EnvelopeLineTests
 		plot.Add.Plottable(line);
 		line.Restyle(new Color(PenColorHex), PenLineStyle.Interpolated);
 		line.ReplaceColumns(
-		[
-			new EnvelopeColumn(0.0, FlatValue, FlatValue, FlatValue),
-			new EnvelopeColumn(1.0, FlatValue, FlatValue, FlatValue)
-		]);
+			[
+				new EnvelopeColumn(0.0, FlatValue, FlatValue, FlatValue),
+				new EnvelopeColumn(1.0, FlatValue, FlatValue, FlatValue)
+			],
+			UnboundedRequestedEndX);
 		plot.Axes.SetLimitsX(0.0, 1.0);
 		plot.Axes.SetLimitsY(LogAxisBottomDecade, LogAxisTopDecade);
 
@@ -172,6 +325,16 @@ public sealed class EnvelopeLineTests
 		var dataRect = plot.RenderManager.LastRender.Layout.DataRect;
 
 		return RedStroke.RowsIn(image.GetArrayRGB(), dataRect, (int)Math.Round(dataRect.HorizontalCenter));
+	}
+
+	private static EnvelopeColumn Column(double x)
+	{
+		return new EnvelopeColumn(x, 0.0, 1.0, 0.5);
+	}
+
+	private static EnvelopeColumn[] ColumnsFrom(double firstX, int count)
+	{
+		return [.. Enumerable.Range(0, count).Select(index => Column(firstX + index))];
 	}
 
 	private static void RenderFrame(Plot plot)
@@ -187,14 +350,15 @@ public sealed class EnvelopeLineTests
 
 		while (!cancellationToken.IsCancellationRequested && !renderTask.IsCompleted)
 		{
-			state.LoadHistory(longEnvelope);
-			state.LoadHistory(shortEnvelope);
+			var requestedTo = realtime.AddHours(1.0);
+			state.LoadHistory(longEnvelope, requestedTo);
+			state.LoadHistory(shortEnvelope, requestedTo);
 
 			realtime = realtime.AddSeconds(1);
 			state.AppendRealtime(realtime, 1.0);
-			state.FoldRealtime(0.5);
+			state.FoldRealtime(realtime, 0.5);
 
-			state.ClearHistory();
+			state.ClearHistory(requestedTo);
 
 			Thread.Sleep(_mutationPause);
 		}

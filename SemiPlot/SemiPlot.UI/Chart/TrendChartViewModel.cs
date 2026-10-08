@@ -565,10 +565,10 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 				Navigation.TrackDataExtents(envelope.Timestamps[0], envelope.Timestamps[^1]);
 			}
 
-			state.LoadHistory(envelope);
+			state.LoadHistory(envelope, request.ToUtc);
 		}
 
-		DropPensMissingFromHistory(envelopes, request.PenIds);
+		DropPensMissingFromHistory(envelopes, request);
 
 		_lastFetch = ShowsExactly(request.PenIds) ? request.Range : null;
 
@@ -612,12 +612,11 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	// Only the identifiers the request carried are considered: a pen added while the query was in flight was
 	// never asked about, and clearing it would drop a curve the result says nothing about.
-	private void DropPensMissingFromHistory(IReadOnlyList<PenHistoryEnvelope> envelopes,
-		IReadOnlyList<int> requestedPenIds)
+	private void DropPensMissingFromHistory(IReadOnlyList<PenHistoryEnvelope> envelopes, HistoryRequest request)
 	{
 		var returnedPenIds = envelopes.Select(envelope => envelope.PenId).ToHashSet();
 
-		foreach (var penId in requestedPenIds)
+		foreach (var penId in request.PenIds)
 		{
 			if (returnedPenIds.Contains(penId))
 			{
@@ -625,7 +624,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			}
 
 			_envelopesById.Remove(penId);
-			FindPen(penId)?.ClearHistory();
+			FindPen(penId)?.ClearHistory(request.ToUtc);
 		}
 	}
 
@@ -672,6 +671,13 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		try
 		{
 			var foldIntoColumn = Navigation.ActiveLayer != AggregationLayer.Raw;
+
+			// docs/architecture/data-integration.md#what-one-history-query-covers
+			if (foldIntoColumn && _lastFetch is { Layer: AggregationLayer.Raw })
+			{
+				_lastFetch = null;
+			}
+
 			_realtimeApplier.Apply(batch, foldIntoColumn);
 			RequestRedraw();
 		}

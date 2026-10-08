@@ -19,10 +19,12 @@ public sealed class EnvelopeLine : IPlottable
 	private readonly LineStyle _stroke = new() { Width = 1f };
 	private readonly List<EnvelopePoint> _pathPoints = [];
 
-	// The columns and the style are written on the UI thread only, through TrendPenState; read on the render
-	// thread in Render and GetAxisLimits. Every access from either thread runs under _renderStateLock.
+	// The columns, the history end and the style are written on the UI thread only, through TrendPenState; the
+	// render thread reads the columns and the style in Render and GetAxisLimits. Every access runs under the lock.
 	private readonly List<EnvelopeColumn> _columns = [];
 	private readonly Lock _renderStateLock = new();
+	// The last X the last ReplaceColumns wrote: every column past it is a live append.
+	private double _historyEndX = double.NegativeInfinity;
 	private Color _color = Colors.Black;
 	private PenLineStyle _penLineStyle = PenLineStyle.Interpolated;
 
@@ -114,20 +116,25 @@ public sealed class EnvelopeLine : IPlottable
 		}
 	}
 
-	internal void ReplaceColumns(IReadOnlyList<EnvelopeColumn> columns)
+	// docs/architecture/data-integration.md#what-one-history-query-covers
+	internal void ReplaceColumns(IReadOnlyList<EnvelopeColumn> columns, double requestedEndX)
 	{
 		lock (_renderStateLock)
 		{
-			_columns.Clear();
-			_columns.AddRange(columns);
-		}
-	}
+			var newHistoryEndX = columns.Count > 0 ? columns[^1].X : double.NegativeInfinity;
+			var keptTailStart = EnvelopePath.FirstAfter(_columns, Math.Max(_historyEndX, newHistoryEndX));
+			var keptTailEnd = Math.Max(keptTailStart, EnvelopePath.FirstAfter(_columns, requestedEndX));
 
-	internal void ClearColumns()
-	{
-		lock (_renderStateLock)
-		{
-			_columns.Clear();
+			_columns.RemoveRange(keptTailEnd, _columns.Count - keptTailEnd);
+			_columns.RemoveRange(0, keptTailStart);
+			_columns.InsertRange(0, columns);
+			_historyEndX = newHistoryEndX;
+
+			var overflow = _columns.Count - MaxColumns;
+			if (overflow > 0)
+			{
+				_columns.RemoveRange(0, overflow);
+			}
 		}
 	}
 
@@ -136,23 +143,12 @@ public sealed class EnvelopeLine : IPlottable
 	{
 		lock (_renderStateLock)
 		{
-			if (_columns.Count > 0 && column.X <= _columns[^1].X)
-			{
-				return false;
-			}
-
-			_columns.Add(column);
-
-			if (_columns.Count > MaxColumns)
-			{
-				_columns.RemoveRange(0, TrimChunk);
-			}
-
-			return true;
+			return AppendAfterLastColumn(column);
 		}
 	}
 
-	internal bool FoldIntoLastColumn(double value)
+	// docs/architecture/charting.md#per-pen-plottable-envelopeline
+	internal bool FoldIntoLastColumn(EnvelopeColumn sample)
 	{
 		lock (_renderStateLock)
 		{
@@ -163,19 +159,54 @@ public sealed class EnvelopeLine : IPlottable
 
 			var index = _columns.Count - 1;
 			var column = _columns[index];
-			if (double.IsNaN(column.Min) || double.IsNaN(column.Max))
+			var endsOnGap = double.IsNaN(column.Min) || double.IsNaN(column.Max);
+			if (endsOnGap)
 			{
-				return false;
+				return AppendAfterLastColumn(sample);
 			}
 
 			_columns[index] = column with
 			{
-				Min = Math.Min(column.Min, value),
-				Max = Math.Max(column.Max, value),
-				Center = value
+				Min = Math.Min(column.Min, sample.Min),
+				Max = Math.Max(column.Max, sample.Max),
+				Center = sample.Center
 			};
 
 			return true;
 		}
+	}
+
+	internal double? LastNonGapCenter()
+	{
+		lock (_renderStateLock)
+		{
+			for (var index = _columns.Count - 1; index >= 0; index--)
+			{
+				var center = _columns[index].Center;
+				if (!double.IsNaN(center))
+				{
+					return center;
+				}
+			}
+
+			return null;
+		}
+	}
+
+	private bool AppendAfterLastColumn(EnvelopeColumn column)
+	{
+		if (_columns.Count > 0 && column.X <= _columns[^1].X)
+		{
+			return false;
+		}
+
+		_columns.Add(column);
+
+		if (_columns.Count > MaxColumns)
+		{
+			_columns.RemoveRange(0, TrimChunk);
+		}
+
+		return true;
 	}
 }

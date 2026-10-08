@@ -68,12 +68,14 @@ public sealed class TrendChartRenderThreadTests
 		var linear = new Pen(1, "Pen 1", ["Group A"], "#ff0000");
 		var logarithmic = linear with { LogScaleOnStart = true };
 		var state = chart.AddPen(linear);
-		state.LoadHistory(new PenHistoryEnvelope(
-			linear.PenId,
-			[_historyStart, _historyStart.AddMinutes(1.0), _historyStart.AddMinutes(2.0)],
-			[0.0, 1e-3, 10.0],
-			[1e-6, 1.0, 100.0],
-			[1e-3, 0.1, 50.0]));
+		state.LoadHistory(
+			new PenHistoryEnvelope(
+				linear.PenId,
+				[_historyStart, _historyStart.AddMinutes(1.0), _historyStart.AddMinutes(2.0)],
+				[0.0, 1e-3, 10.0],
+				[1e-6, 1.0, 100.0],
+				[1e-3, 0.1, 50.0]),
+			_historyStart.AddMinutes(2.0));
 		chart.Plot.Axes.SetLimitsX(
 			LocalTimeAxis.ToAxis(_historyStart),
 			LocalTimeAxis.ToAxis(_historyStart.AddMinutes(2.0)));

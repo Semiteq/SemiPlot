@@ -31,7 +31,7 @@ public sealed class ChartRealtimeApplier(
 			{
 				if (foldIntoColumn)
 				{
-					state.FoldRealtime(penValues.Values[index]);
+					state.FoldRealtime(penValues.TimestampsUtc[index], penValues.Values[index]);
 				}
 				else
 				{

@@ -237,7 +237,8 @@ The window a query reads is wider than the window in view. `HistoryPrefetch.Expa
 (`SemiPlot.UI/Chart/HistoryPrefetch.cs`) adds one visible window width of margin on each side and
 asks for three times the column target, so the fetched range stays at one column per pixel. The left
 edge is clamped to the archive's first sample; the right edge is not, because a range reaching past
-the live edge is a successful empty read. A new window is drawn from the last fetch while it stays
+the live edge is a successful empty read. The provider's fresh tail therefore clamps at the present
+rather than at that edge ("Layer ladder"). A new window is drawn from the last fetch while it stays
 inside the inner band, half a window width in from each fetched edge, so a pan issues no query until
 the margin is half spent. A range that reaches the first sample has no left edge to approach, because
 no row lies before it: `HistoryPrefetch.Covers` takes `Navigation.FirstSample` and holds the left side
@@ -281,6 +282,29 @@ view with every pen shown. A pen removed and named again takes back its old plac
 that request can name the same pens and window as the read applied before the removal; it is pushed
 after that read was delivered, so it is read.
 
+A fold over Raw columns opens the gate too. At a coarse layer a realtime sample folds into the last
+column, and while the coarse read is in flight, failed or never applied, the columns in memory are still
+Raw: every sample of that phase folds into one Raw column. `TrendChartViewModel.ApplyRealtimeBatch`
+therefore clears the fetched range when it folds and that range is Raw, so a zoom back to the same Raw
+width reads the window again instead of drawing one straight segment across the folded span. A fold
+over a coarse range clears nothing: it widens a coarse column and leaves nothing to re-read, so a pan
+inside a coarse band still reads nothing.
+
+An apply keeps the live tail past its snapshot. A history read reads the archive as of its statement's
+snapshot, and the realtime poll keeps appending live columns while the read runs; the poll only moves
+forward, so it never delivers those samples again. A replace that dropped them would leave a hole as
+wide as the read's latency, drawn as one straight segment until a gesture re-reads the window.
+`EnvelopeLine.ReplaceColumns` therefore keeps the columns past the last X the previous replace wrote
+that lie after the new last column and at or before the right edge of the range the read asked for, at
+every layer: after a coarse envelope a kept column is a live sample the coarse read did not hold, and the
+next fold widens it (`charting.md`, "Realtime append / live-edge join"). A requested pen absent from the result
+keeps its tail the same way. The fold into the last coarse column is not kept: a sample folded after the
+next coarse read's snapshot leaves with the column it widened, and an extreme it carried shows again only
+when a later read covers that span. A pan into the past asks for a range that ends before the follow
+phase's tail, so the apply drops that tail and the band just read keeps the whole column buffer; a tail
+kept there would hold up to 100 000 columns and push the band out of the buffer within a few appends.
+Samples arriving after such a pan still append far right of the band, as they did before.
+
 One query runs at a time, and the newest request that arrived while it ran runs when it lands. No
 request waits when the newest push needs no read, and the window waiting behind a query is dropped
 when that query's read answers it. The two heads treat the query in flight differently:
@@ -323,8 +347,8 @@ like any other.
 The token is the trailing `cancellationToken` of `IDataProvider.QueryHistoryAsync`, threaded through
 `TrendCoordinator.QueryHistoryAsync`. `PostgresDataProvider` passes it to the connection open, to
 every `ExecuteReaderAsync` and to every row read of the window, the bucketed Raw window and the fresh
-tail, and the mapper rethrows the `OperationCanceledException` it ends in, so a cancelled read never
-becomes a failed `Result`. `PostgresHistoryReadTests.AReadCancelledMidStatementThrowsInsteadOfFailing`
+tail, and `QueryHistoryAsync` rethrows the `OperationCanceledException` it ends in from a catch of its
+own, ahead of the mapper, so a cancelled read never becomes a failed `Result`. `PostgresHistoryReadTests.AReadCancelledMidStatementThrowsInsteadOfFailing`
 cancels a Raw and a Minute read held on a lock of `trends`. A cancelled command costs one extra
 connection for the cancel request, and its own connection for at most two seconds more: Npgsql first
 sends PostgreSQL the cancel request, and if no answer arrives within `CancellationTimeout` (2000 ms by
@@ -346,6 +370,18 @@ function still reads and sorts every row of the range, and the range is three vi
 `PostgresHistoryReadTests.TheWidestRawWindowThePrefetchMarginAsksForComesBackBucketed` records
 `EXPLAIN (ANALYZE, TIMING OFF)` for the widest read the margin can ask for, and the plan's row counts
 and timing are what say what it costs.
+
+Every history read that passes its argument checks writes one `Debug` entry when it ends, at the same
+level as the realtime poll's entry per tick, so a run at `--logging-level Debug` interleaves both. The
+entry carries the layer, the UTC range, the column target, the pen count, the outcome (`Read`,
+`Failed` or `Cancelled`), the envelope count of a `Read` and the milliseconds since the checks passed.
+`PostgresDataProvider.QueryHistoryAsync` writes the entry from one `finally`: the outcome starts as
+`Failed`, the success path sets `Read`, and the catch of `OperationCanceledException` ahead of the mapper
+sets `Cancelled` and rethrows. A read rejected for its arguments issues no statement and writes no entry;
+its failed `Result` already names the argument.
+`PostgresHistoryReadTests.AHistoryReadLogsItsRequestOutcomeAndDuration` pins the entry of a Raw and a
+Minute read, `ADroppedTrendsTableFailsNamingTrends` the `Failed` one and
+`AReadCancelledMidStatementThrowsInsteadOfFailing` the `Cancelled` one.
 
 ## Layer ladder
 
@@ -380,11 +416,17 @@ Two adjustments the ladder needs are implemented:
 - **Hysteresis.** Layers switch on thresholds separated by a margin, so a window hovering on a
   boundary does not flip layer on every wheel notch.
 - **Fresh tail** (`FreshTail`, in the provider). Coarse layers are flushed on their own cadence, so a
-  window reaching "now" is short of up to one point spacing at its right edge. The provider reads
+  window reaching "now" is short of up to one period (four point spacings) at its right edge. The provider reads
   that edge from `l = 0` and merges it per pen. The seam is per pen — the newest coarse timestamp
   returned, or the window start when none was. A layer fresh within one of its own points reads no
   tail; otherwise the tail starts at the earliest seam, clamped to four point spacings back from the
-  window end. A pen whose seam precedes the tail's start contributes no tail row, because a range no
+  tail edge, and reads raw rows up to the window end. The tail edge is the window end or the present,
+  whichever is earlier: `PostgresDataProvider` reads the present from its injected `TimeProvider`
+  and converts it with `ToArchiveLocal`. The window end alone cannot serve, because the chart asks
+  for one visible window width past the visible end (`HistoryPrefetch.Expand`); in follow mode that
+  edge lies a whole window in the future, the clamp passes every seam, and a Minute read stops up to
+  one period short of the raw newest. A window wholly in the past clamps at its own end. A pen
+  whose seam precedes the tail's start contributes no tail row, because a range no
   row covers is not a gap and would draw as one straight segment. The tail's own raw read stays
   row-level: it issues `SparseHistoryWindow` at `l = 0`, not the bucketed statement, because the tail
   spans at most four coarse point spacings and no canvas is denser than that.
@@ -461,6 +503,18 @@ union timeline and the hand-off to the UI scheduler happen above the provider, i
 The first tick reads the baseline and emits nothing; every later tick reads the rows past
 `lastSeen`, converts them to UTC and emits them. `lastSeen` is the archive's own naive clock, not
 the local machine's, so a clock difference between the two hosts drops or repeats nothing.
+
+The fresh tail of a coarse history read is the one exception: it clamps at the viewer's own clock
+("Layer ladder"). That holds because the SCADA, its archive and the viewer share one machine
+`[DEC:machine-time-zone]`. Reading the archive's `now()` on the open connection would remove even that
+dependency, at the cost of one round trip per coarse read and a clock no test can set. A skew larger
+than the coarse layer's own lag skips the tail, which draws no wrong row: the series stops at the
+coarse newest, as it did before the tail existed.
+`PostgresHistoryReadTests.TheRangeTheChartAsksForReachesTheRawLayersNewest`,
+`TheVisibleTailWindowUnderALaterClockStillReachesTheRawLayersNewest` and
+`AClockBehindTheFreshSeamReadsNoTailRow` pin the clamp under a fixed clock. A test fixes the provider's
+clock by passing a `TimeProvider` to `ArchiveProviderFactory.Build`, which registers it ahead of
+`AddPostgresData`'s `TryAddSingleton(TimeProvider.System)`.
 
 The pen set can change while the viewer runs. `TrendCoordinator` holds it in a
 `BehaviorSubject<IReadOnlyList<int>>` seeded from its constructor's pens and subscribes through
@@ -805,3 +859,8 @@ When a chart is empty, check in this order. Each step distinguishes a different 
 6. Is `tpdefault` non-empty? Rows there mean the SCADA failed to create a daily partition. They are
    not a cause of an empty chart — every read still returns them — but partition elimination is
    lost for reads that cannot skip that partition.
+
+When the chart draws a straight segment across a span the archive holds, or fills slowly, run the
+viewer at `--logging-level Debug` and match the segment's timestamps against the history-read entries
+and the realtime poll's entries around them: each history read logs its layer, range, outcome and
+duration (`#what-one-history-query-covers`).

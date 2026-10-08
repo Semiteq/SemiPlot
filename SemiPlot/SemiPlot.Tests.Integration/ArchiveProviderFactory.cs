@@ -21,7 +21,10 @@ public static class ArchiveProviderFactory
 
 	// The caller disposes what comes back, which returns the pooled connections before
 	// ArchiveDatabase.DisposeAsync drops the database, and a pooled connection makes DROP DATABASE refuse.
-	public static ServiceProvider Build(string connectionString, ILoggerProvider? loggerProvider = null)
+	public static ServiceProvider Build(
+		string connectionString,
+		ILoggerProvider? loggerProvider = null,
+		TimeProvider? timeProvider = null)
 	{
 		var services = new ServiceCollection();
 
@@ -33,6 +36,12 @@ public static class ArchiveProviderFactory
 				builder.AddProvider(loggerProvider);
 			}
 		});
+
+		if (timeProvider is not null)
+		{
+			services.AddSingleton(timeProvider);
+		}
+
 		services.AddPostgresData(SettingsFor(connectionString));
 
 		return services.BuildServiceProvider();

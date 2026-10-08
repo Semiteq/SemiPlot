@@ -34,7 +34,9 @@ internal static class RenderedRise
 	/// </summary>
 	public static (bool OnDiagonal, bool OnHeldStep) Draw(TrendChartViewModel chart, TrendPenState pen, int channel)
 	{
-		pen.LoadHistory(new PenHistoryEnvelope(pen.Pen.PenId, [_start, _end], [Low, High], [Low, High], [Low, High]));
+		pen.LoadHistory(
+			new PenHistoryEnvelope(pen.Pen.PenId, [_start, _end], [Low, High], [Low, High], [Low, High]),
+			_end);
 
 		var plot = chart.Plot;
 		var yAxis = pen.Line.Axes.YAxis;

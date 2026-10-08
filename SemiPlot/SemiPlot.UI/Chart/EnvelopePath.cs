@@ -94,7 +94,7 @@ public static class EnvelopePath
 		return low;
 	}
 
-	private static int FirstAfter(IReadOnlyList<EnvelopeColumn> columns, double x)
+	internal static int FirstAfter(IReadOnlyList<EnvelopeColumn> columns, double x)
 	{
 		var low = 0;
 		var high = columns.Count;

@@ -48,7 +48,7 @@ public sealed class MessagePanelViewTests
 	{
 		var variant = App.VariantFor(theme);
 		using var scope = ThemeProbe.ApplyVariant(variant);
-		using var panel = new MessagePanelViewModel(new FixedClock(_stamp));
+		using var panel = new MessagePanelViewModel(new FixedClock(_stamp, _operatorZone));
 		panel.Report(new ArchiveFailureView("title", "detail", "remedy", severity));
 		var view = new MessagePanelView { DataContext = panel };
 		var window = new Window { Content = view };
@@ -73,7 +73,7 @@ public sealed class MessagePanelViewTests
 	public void TheEntryRow_ShowsTheLocalTimeAndHidesTheRepeatCountUntilItRepeats()
 	{
 		using var scope = ThemeProbe.ApplyVariant(ThemeVariant.Light);
-		using var panel = new MessagePanelViewModel(new FixedClock(_stamp));
+		using var panel = new MessagePanelViewModel(new FixedClock(_stamp, _operatorZone));
 		var failure = new ArchiveFailureView("title", "detail", "remedy", MessageSeverity.Warning);
 		panel.Report(failure);
 		var view = new MessagePanelView { DataContext = panel };
@@ -111,7 +111,7 @@ public sealed class MessagePanelViewTests
 	public void TheEmptyList_ShowsItsOwnLineAndYieldsToTheFirstEntry()
 	{
 		using var scope = ThemeProbe.ApplyVariant(ThemeVariant.Light);
-		using var panel = new MessagePanelViewModel(new FixedClock(_stamp));
+		using var panel = new MessagePanelViewModel(new FixedClock(_stamp, _operatorZone));
 		var view = new MessagePanelView { DataContext = panel };
 		var window = new Window { Content = view };
 		try
@@ -142,15 +142,5 @@ public sealed class MessagePanelViewTests
 			.OfType<TextBlock>()
 			.Where(text => text.IsVisible && text.Text is not null)
 			.Select(text => text.Text!);
-	}
-
-	private sealed class FixedClock(DateTimeOffset now) : TimeProvider
-	{
-		public override TimeZoneInfo LocalTimeZone => _operatorZone;
-
-		public override DateTimeOffset GetUtcNow()
-		{
-			return now;
-		}
 	}
 }

@@ -53,19 +53,20 @@ change, the previous value at the last poll tick and the new value about 100 ms 
 pair.
 
 **Column buffer and its two threads.** The plottable owns the column list and the `Lock` that guards it,
-both private. Every mutation goes through `ReplaceColumns`, `ClearColumns`, `AppendColumn` or
-`FoldIntoLastColumn`, each of which takes the lock, so no caller can reach the list without it.
-`Chart/TrendPenState` is the only caller of those four and calls them on the UI thread; `Render` and
+both private. Every mutation goes through `ReplaceColumns`, `AppendColumn` or `FoldIntoLastColumn`,
+each of which takes the lock, so no caller can reach the list without it.
+`Chart/TrendPenState` is the only caller of those three and calls them on the UI thread; `Render` and
 `GetAxisLimits` read on Avalonia's render thread under the same lock. `Render` holds it for the
 visible-column read alone (`EnvelopePath.VisibleRange` plus `EnvelopePath.Build`) and strokes the resulting
-points outside it, so a frame that meets a history load waits for the one `AddRange` that swaps the buffer,
-not for the conversion ahead of it: `LoadHistory` converts into a list local to the call and hands it over
-in one `ReplaceColumns`. The colour and the line style sit under the same lock: a catalogue read can
-change both after the first frame, so `Restyle` writes both on the UI thread and `Render` reads both
-under the lock. The list is capped at 100 000 columns, and the cap trims in chunks of one tenth: the
-append that passes it removes the oldest 10 000 columns in one `RemoveRange`. The list then lives between
-90 000 and 100 000 columns, and the shift under the lock runs once per 10 000 appends instead of on every
-append.
+points outside it, so a frame that meets a history load waits for the one merge that swaps the buffer, not
+for the conversion ahead of it: `LoadHistory` converts into a list local to the call and hands it over in
+one `ReplaceColumns`, which merges it with the live tail the list already holds. The last X the previous
+replace wrote, the colour and the line style sit under the same lock: a catalogue read can change the
+colour and the line style after the first frame, so `Restyle` writes them on the UI thread and `Render`
+reads them under the lock. The list is capped at 100 000 columns, and the cap trims in chunks of one
+tenth: the append that passes it removes the oldest 10 000 columns in one `RemoveRange`. The list then
+lives between 90 000 and 100 000 columns, and the shift under the lock runs once per 10 000 appends
+instead of on every append.
 
 **The plot's own lists and the render thread.** ScottPlot's `Plot.Render` holds `Plot.Sync` for the
 whole frame, and the plottable and axis lists it walks are ScottPlot's own, so the column lock cannot
@@ -83,8 +84,29 @@ meets the edit throws "Collection was modified" on the render thread, the crash 
 plottable's column list, which every render re-reads, so appends are live and nothing is re-set. The realtime
 tail appends one degenerate column (`Min == Max == Center == value`) at the live edge. At coarse layers
 (minute/hour/day) a realtime sample does **not** append — it folds into the current decimation column
-(`FoldRealtime` widens that column's `Min`/`Max` and moves its `Center`). Cursor and legend read the
-`Center` channel consistently across the seam.
+(`FoldRealtime` widens that column's `Min`/`Max` and moves its `Center`). A gap column takes no fold:
+when the last column is a `NaN` gap, as after a history envelope that ends on nulls, the sample opens a
+column at its own timestamp past the gap, and the samples after it fold into that one. The gap still draws
+as a break, and the line and `CurrentValue` resume at the first value instead of waiting for the next read.
+A sample at or before the gap's X is rejected, like any append at or before the last X. A pen with no
+column at all folds nothing. Cursor and legend read the `Center` channel consistently across the seam. The fold follows the layer in view, not the layer the columns
+were read at: until a coarse read lands, the columns are still Raw, and the fold over them opens the history
+gate so the return to Raw reads the folded span again
+(`data-integration.md#what-one-history-query-covers`).
+
+A history apply keeps the live tail past its snapshot. `EnvelopeLine.ReplaceColumns` takes the new
+columns and the right edge of the range the read asked for. It keeps every appended column whose X is
+after the new last column, all of them when the new list is empty, and drops those past the requested
+edge; then it trims the merge to the cap from the oldest end. An appended column is one past the last X
+the previous replace wrote, so only live appends survive and a previous band's history never does. A
+pan into the past asks for a range that ends before the follow phase's tail, so the tail goes and the
+band just read keeps the whole buffer. `TrendPenState.ClearHistory` is a replace with no columns, so a
+requested pen absent from a result keeps its tail too. `LoadHistory` and `ClearHistory` both set
+`CurrentValue` from the merged columns. An append at or before the last kept column is rejected,
+as before any other last column; at a coarse layer the next fold widens the last kept column
+(`data-integration.md#what-one-history-query-covers`). Only appended columns survive: a sample folded into
+the last coarse column after the next coarse read's snapshot is lost with that column, and an extreme it
+carried shows again only when a later read covers that span.
 
 **Axes / shared-X invariant.** Each pen gets its own `IYAxis`, keyed on the pen id; no two pens ever
 share one, whatever their unit or group. Every axis is a left axis — `Axes.Left` for the first pen,

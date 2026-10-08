@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Globalization;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
@@ -26,12 +27,15 @@ namespace SemiPlot.DataSource.Postgres;
 public sealed class PostgresDataProvider : IDataProvider, IDisposable
 {
 	private const string UncommissionedPenColor = "#808080";
+	private const string HistoryReadRequestTemplate =
+		"History read at {Layer} from {FromUtc:O} to {ToUtc:O}, {TargetColumnCount} columns for {PenCount} pens: ";
 
 	private readonly NpgsqlDataSource _dataSource;
 	private readonly ArchiveTimeConverter _timeConverter;
 	private readonly ArchiveExceptionMapper _exceptionMapper;
 	private readonly PostgresConnectionSettings _settings;
 	private readonly IScheduler _scheduler;
+	private readonly TimeProvider _timeProvider;
 	private readonly ILogger<PostgresDataProvider> _logger;
 
 	private readonly Subject<ArchiveConnectionState> _connectionFaultsSource = new();
@@ -53,6 +57,7 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		ArchiveExceptionMapper exceptionMapper,
 		PostgresConnectionSettings settings,
 		IScheduler scheduler,
+		TimeProvider timeProvider,
 		ILogger<PostgresDataProvider> logger)
 	{
 		_dataSource = dataSource;
@@ -60,6 +65,7 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		_exceptionMapper = exceptionMapper;
 		_settings = settings;
 		_scheduler = scheduler;
+		_timeProvider = timeProvider;
 		_logger = logger;
 		_connectionFaults = Subject.Synchronize(_connectionFaultsSource);
 	}
@@ -140,39 +146,33 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		}
 
 		var ids = penIds.ToArray();
+		var stopwatch = Stopwatch.StartNew();
+		var outcome = HistoryReadOutcome.Failed;
+		int? envelopeCount = null;
 
 		try
 		{
-			await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-
-			var fromLocal = _timeConverter.ToArchiveLocal(fromUtc);
-			var toLocal = _timeConverter.ToArchiveLocal(toUtc);
-
-			if (layer == AggregationLayer.Raw)
-			{
-				var buckets = await ReadBucketedWindowAsync(
-						connection,
-						ids,
-						fromLocal,
-						toLocal,
-						targetColumnCount,
-						cancellationToken)
-					.ConfigureAwait(false);
-
-				return Result.Ok(BucketedRowFold.Fold(buckets, _timeConverter));
-			}
-
-			var rows = await ReadWindowAsync(connection, ids, fromLocal, toLocal, layer, cancellationToken)
+			var envelopes = await ReadHistoryAsync(ids, fromUtc, toUtc, layer, targetColumnCount, cancellationToken)
 				.ConfigureAwait(false);
 
-			rows = await FillFreshTailAsync(connection, ids, fromLocal, toLocal, layer, rows, cancellationToken)
-				.ConfigureAwait(false);
+			outcome = HistoryReadOutcome.Read;
+			envelopeCount = envelopes.Count;
 
-			return Result.Ok(HistoryRowFold.Fold(rows, _timeConverter, targetColumnCount));
+			return Result.Ok(envelopes);
+		}
+		catch (OperationCanceledException)
+		{
+			outcome = HistoryReadOutcome.Cancelled;
+
+			throw;
 		}
 		catch (Exception exception)
 		{
 			return Result.Fail<IReadOnlyList<PenHistoryEnvelope>>(Map(exception, ArchiveStatements.TrendsRelation));
+		}
+		finally
+		{
+			LogHistoryRead(layer, fromUtc, toUtc, targetColumnCount, ids.Length, outcome, envelopeCount, stopwatch);
 		}
 	}
 
@@ -211,6 +211,90 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		// loop is not cancelled here), and OnNext on a disposed Subject<T> throws where OnNext after
 		// OnCompleted is a silent no-op. Subject<T> holds no unmanaged resource, so completing it is enough.
 		_connectionFaults.OnCompleted();
+	}
+
+	private async Task<IReadOnlyList<PenHistoryEnvelope>> ReadHistoryAsync(
+		int[] penIds,
+		DateTime fromUtc,
+		DateTime toUtc,
+		AggregationLayer layer,
+		int targetColumnCount,
+		CancellationToken cancellationToken)
+	{
+		await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+		var fromLocal = _timeConverter.ToArchiveLocal(fromUtc);
+		var toLocal = _timeConverter.ToArchiveLocal(toUtc);
+
+		if (layer == AggregationLayer.Raw)
+		{
+			var buckets = await ReadBucketedWindowAsync(
+					connection,
+					penIds,
+					fromLocal,
+					toLocal,
+					targetColumnCount,
+					cancellationToken)
+				.ConfigureAwait(false);
+
+			return BucketedRowFold.Fold(buckets, _timeConverter);
+		}
+
+		var rows = await ReadWindowAsync(connection, penIds, fromLocal, toLocal, layer, cancellationToken)
+			.ConfigureAwait(false);
+
+		var presentLocal = _timeConverter.ToArchiveLocal(_timeProvider.GetUtcNow().UtcDateTime);
+		var tailEdgeLocal = presentLocal < toLocal ? presentLocal : toLocal;
+
+		rows = await FillFreshTailAsync(
+				connection,
+				penIds,
+				fromLocal,
+				toLocal,
+				tailEdgeLocal,
+				layer,
+				rows,
+				cancellationToken)
+			.ConfigureAwait(false);
+
+		return HistoryRowFold.Fold(rows, _timeConverter, targetColumnCount);
+	}
+
+	private void LogHistoryRead(
+		AggregationLayer layer,
+		DateTime fromUtc,
+		DateTime toUtc,
+		int targetColumnCount,
+		int penCount,
+		HistoryReadOutcome outcome,
+		int? envelopeCount,
+		Stopwatch stopwatch)
+	{
+		if (envelopeCount is { } count)
+		{
+			_logger.LogDebug(
+				HistoryReadRequestTemplate + "{Outcome} {EnvelopeCount} envelopes after {ElapsedMilliseconds} ms.",
+				layer,
+				fromUtc,
+				toUtc,
+				targetColumnCount,
+				penCount,
+				outcome,
+				count,
+				stopwatch.ElapsedMilliseconds);
+
+			return;
+		}
+
+		_logger.LogDebug(
+			HistoryReadRequestTemplate + "{Outcome} after {ElapsedMilliseconds} ms.",
+			layer,
+			fromUtc,
+			toUtc,
+			targetColumnCount,
+			penCount,
+			outcome,
+			stopwatch.ElapsedMilliseconds);
 	}
 
 	private async Task PollAsync(
@@ -389,18 +473,20 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		return rows;
 	}
 
+	// docs/architecture/data-integration.md#layer-ladder
 	private static async Task<IReadOnlyList<HistoryRowFold.Row>> FillFreshTailAsync(
 		NpgsqlConnection connection,
 		int[] penIds,
 		DateTime fromLocal,
 		DateTime toLocal,
+		DateTime tailEdgeLocal,
 		AggregationLayer layer,
 		IReadOnlyList<HistoryRowFold.Row> coarseRows,
 		CancellationToken cancellationToken)
 	{
 		var seams = FreshTail.Seams(coarseRows, penIds, fromLocal);
 
-		if (FreshTail.Start(layer, seams, toLocal) is not { } tailStart)
+		if (FreshTail.Start(layer, seams, tailEdgeLocal) is not { } tailStart)
 		{
 			return coarseRows;
 		}
@@ -567,5 +653,12 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 	private Error Map(Exception exception, string relation)
 	{
 		return ArchiveFailureLog.LogIfUnexpected(_exceptionMapper.Map(exception, relation), exception, _logger);
+	}
+
+	private enum HistoryReadOutcome
+	{
+		Read,
+		Failed,
+		Cancelled
 	}
 }

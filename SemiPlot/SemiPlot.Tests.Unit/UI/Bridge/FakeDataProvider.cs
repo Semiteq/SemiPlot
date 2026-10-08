@@ -20,8 +20,8 @@ internal sealed class FakeDataProvider(
 {
 	// The default last-column center value an unoverridden layer returns; tests assert against this.
 	public const double DefaultCenter = 2.0;
-	// A deterministic epoch: tests assert batch structure and dispatch, not a history-to-realtime join.
-	private static readonly DateTime _realtimeEpoch = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+	public static readonly DateTime RealtimeEpoch = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
 	private readonly TimeSpan _realtimeInterval = realtimeInterval;
 
 	private readonly IScheduler _scheduler = scheduler;
@@ -202,7 +202,7 @@ internal sealed class FakeDataProvider(
 				: [.. subscribed
 				.Select((id, index) => new Sample(
 					id,
-					_realtimeEpoch
+					RealtimeEpoch
 					+ TimeSpan.FromTicks(_realtimeInterval.Ticks * (tick + 1))
 					+ (StaggerRealtimeTimestamps ? TimeSpan.FromMilliseconds(index) : TimeSpan.Zero),
 					id + tick))]);

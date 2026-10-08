@@ -37,6 +37,7 @@ public sealed class PostgresCompositionTests
 			new ArchiveExceptionMapper(settings),
 			settings,
 			DefaultScheduler.Instance,
+			TimeProvider.System,
 			NullLogger<PostgresDataProvider>.Instance);
 	}
 
@@ -123,6 +124,7 @@ public sealed class PostgresCompositionTests
 	[InlineData(typeof(IDataProvider))]
 	[InlineData(typeof(IPenCatalogueEditor))]
 	[InlineData(typeof(IScheduler))]
+	[InlineData(typeof(TimeProvider))]
 	[InlineData(typeof(NpgsqlDataSource))]
 	[InlineData(typeof(ArchiveExceptionMapper))]
 	[InlineData(typeof(ArchiveTimeConverter))]
@@ -142,6 +144,27 @@ public sealed class PostgresCompositionTests
 		using var services = BuildProvider();
 
 		services.GetRequiredService<IScheduler>().Should().NotBeNull();
+	}
+
+	[Fact]
+	public void AddPostgresDataResolvesTheSystemClock()
+	{
+		using var services = BuildProvider();
+
+		services.GetRequiredService<TimeProvider>().Should().BeSameAs(TimeProvider.System);
+	}
+
+	[Fact]
+	public void AClockRegisteredBeforeAddPostgresDataIsTheOneResolved()
+	{
+		var clock = new FixedClock(new DateTimeOffset(2026, 1, 1, 9, 5, 0, TimeSpan.Zero), TimeZoneInfo.Utc);
+		using var services = new ServiceCollection()
+			.AddLogging()
+			.AddSingleton<TimeProvider>(clock)
+			.AddPostgresData(Settings())
+			.BuildServiceProvider();
+
+		services.GetRequiredService<TimeProvider>().Should().BeSameAs(clock);
 	}
 
 	[Fact]

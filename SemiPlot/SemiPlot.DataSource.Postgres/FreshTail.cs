@@ -3,8 +3,7 @@ using SemiPlot.Core.Trends;
 namespace SemiPlot.DataSource.Postgres;
 
 /// <summary>
-/// The bound and the merge of the fresh tail: the raw rows a coarse window is short of at its right edge,
-/// because a coarse layer is flushed on its own cadence and its newest row is up to one point spacing old.
+/// The bound and the merge of the fresh tail: the raw rows a coarse window is short of at its right edge.
 /// No conversion happens on this path (docs/architecture/data-integration.md, Fresh tail).
 /// </summary>
 internal static class FreshTail
@@ -41,7 +40,7 @@ internal static class FreshTail
 	public static DateTime? Start(
 		AggregationLayer layer,
 		IReadOnlyDictionary<int, DateTime> seams,
-		DateTime windowEndLocal)
+		DateTime tailEdgeLocal)
 	{
 		if (layer == AggregationLayer.Raw || seams.Count == 0)
 		{
@@ -49,7 +48,7 @@ internal static class FreshTail
 		}
 
 		var spacing = layer.ToPointSpacing();
-		var clamped = windowEndLocal - (spacing * 4);
+		var clamped = tailEdgeLocal - (spacing * 4);
 		var earliestSeam = EarliestSeamReachingTheClamp(seams, clamped);
 
 		if (earliestSeam is null)
@@ -57,9 +56,9 @@ internal static class FreshTail
 			return null;
 		}
 
-		// A layer fresh within one of its own points is not short of anything a reader can see, so it
-		// costs no round trip.
-		return windowEndLocal - earliestSeam.Value <= spacing ? null : earliestSeam;
+		var isFreshWithinOnePoint = tailEdgeLocal - earliestSeam.Value <= spacing;
+
+		return isFreshWithinOnePoint ? null : earliestSeam;
 	}
 
 	private static DateTime? EarliestSeamReachingTheClamp(

@@ -1,8 +1,12 @@
+using System.Globalization;
+
 using AwesomeAssertions;
 
 using FluentResults;
 
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Testing;
 
 using Npgsql;
 
@@ -231,7 +235,8 @@ public sealed class PostgresHistoryReadTests(
 
 		var window = QuietWindow();
 		using var cancellation = new CancellationTokenSource();
-		await using var services = ArchiveProviderFactory.Build(database.PlotConnectionString);
+		using var logs = new FakeLoggerProvider();
+		await using var services = ArchiveProviderFactory.Build(database.PlotConnectionString, logs);
 
 		var read = services.GetRequiredService<IDataProvider>().QueryHistoryAsync(
 			_seededPenIds.Value,
@@ -251,6 +256,9 @@ public sealed class PostgresHistoryReadTests(
 			var settled = () => read.WaitAsync(_cancelledReadDeadline, testCancellation);
 
 			await settled.Should().ThrowAsync<OperationCanceledException>();
+
+			HistoryReadEntries(logs).Should().ContainSingle()
+				.Which.GetStructuredStateValue("Outcome").Should().Be("Cancelled");
 		}
 		finally
 		{
@@ -518,8 +526,16 @@ public sealed class PostgresHistoryReadTests(
 			TestContext.Current.CancellationToken);
 
 		var window = QuietWindow();
+		using var logs = new FakeLoggerProvider();
+		await using var services = ArchiveProviderFactory.Build(database.PlotConnectionString, logs);
 
-		var result = await ReadHistoryAsync(database.PlotConnectionString, window);
+		var result = await services.GetRequiredService<IDataProvider>().QueryHistoryAsync(
+			_seededPenIds.Value,
+			_timeConverter.ToUtc(window.From),
+			_timeConverter.ToUtc(window.To),
+			AggregationLayer.Raw,
+			ColumnTargetFor(window),
+			TestContext.Current.CancellationToken);
 
 		result.IsFailed.Should().BeTrue();
 
@@ -528,6 +544,10 @@ public sealed class PostgresHistoryReadTests(
 		error.Kind.Should().Be(ArchiveFault.TableMissing);
 		error.Detail.Should().Be("trends");
 		error.Database.Should().Be(database.Name);
+
+		var entry = HistoryReadEntries(logs).Should().ContainSingle().Which;
+		entry.GetStructuredStateValue("Outcome").Should().Be("Failed");
+		entry.GetStructuredStateValue("EnvelopeCount").Should().BeNull();
 	}
 
 	// Minute's point spacing is 15 s and its period four of those, so over the five-minute window below the
@@ -544,7 +564,7 @@ public sealed class PostgresHistoryReadTests(
 		var envelope = result.Value.Should().ContainSingle(candidate => candidate.PenId == FreshPenId).Which;
 
 		// The coarse rows, then every raw row after the pen's own seam. Without the tail the series would
-		// stop at 10:04:00 and the operator would read a value fifty seconds old as the current one.
+		// stop at 10:04:00 archive-local and the operator would read a value fifty seconds old as the current one.
 		envelope.Timestamps.Should().Equal(
 			ExpectedUtc(_freshCoarse.Concat(RawTimestamps().Where(timestamp => timestamp > _freshSeam))));
 
@@ -604,6 +624,100 @@ public sealed class PostgresHistoryReadTests(
 		GapColumnIndices(envelope).Should().BeEmpty();
 	}
 
+	// docs/architecture/data-integration.md#layer-ladder
+	[Fact]
+	public async Task TheRangeTheChartAsksForReachesTheRawLayersNewest()
+	{
+		await using var database = await WriteTailArchiveAsync(TestContext.Current.CancellationToken);
+
+		var result = await ReadMinuteTailAsync(database, ExpandedTailWindow(), ClockAt(_tailWindowTo));
+
+		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
+
+		var envelope = result.Value.Should().ContainSingle(candidate => candidate.PenId == FreshPenId).Which;
+
+		envelope.Timestamps.Should().Equal(
+			ExpectedUtc(_freshCoarse.Concat(RawTimestamps().Where(timestamp => timestamp > _freshSeam))));
+		envelope.Timestamps[^1].Should().Be(_timeConverter.ToUtc(_newestRawTimestamp));
+	}
+
+	[Fact]
+	public async Task TheVisibleTailWindowUnderALaterClockStillReachesTheRawLayersNewest()
+	{
+		await using var database = await WriteTailArchiveAsync(TestContext.Current.CancellationToken);
+		var window = new LocalWindow(_tailWindowFrom, _tailWindowTo);
+
+		var result = await ReadMinuteTailAsync(database, window, ClockAt(_tailWindowTo.AddDays(1)));
+
+		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
+
+		var envelope = result.Value.Should().ContainSingle(candidate => candidate.PenId == FreshPenId).Which;
+
+		envelope.Timestamps[^1].Should().Be(_timeConverter.ToUtc(_newestRawTimestamp));
+	}
+
+	// One minute behind the fresh seam: the lagging seam stays below the clamp, and the fresh seam is within one
+	// Minute point spacing of the present, so no tail is read. Over the visible window the window end alone
+	// would clamp at 10:04:00 archive-local and read one, so that window takes the present as its edge too.
+	[Theory]
+	[InlineData(true)]
+	[InlineData(false)]
+	public async Task AClockBehindTheFreshSeamReadsNoTailRow(bool overTheExpandedWindow)
+	{
+		await using var database = await WriteTailArchiveAsync(TestContext.Current.CancellationToken);
+		var window = overTheExpandedWindow ? ExpandedTailWindow() : new LocalWindow(_tailWindowFrom, _tailWindowTo);
+
+		var result = await ReadMinuteTailAsync(database, window, ClockAt(_freshSeam.AddMinutes(-1)));
+
+		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
+
+		result.Value.Select(envelope => envelope.PenId).Should().Equal(FreshPenId, LaggingPenId, ReachingPenId);
+		result.Value[0].Timestamps.Should().Equal(ExpectedUtc(_freshCoarse));
+		result.Value[1].Timestamps.Should().Equal(ExpectedUtc(_laggingCoarse));
+		result.Value[2].Timestamps.Should().Equal(ExpectedUtc(_reachingCoarse));
+	}
+
+	[Fact]
+	public async Task AHistoryReadLogsItsRequestOutcomeAndDuration()
+	{
+		await using var database = await WriteTailArchiveAsync(TestContext.Current.CancellationToken);
+		using var logs = new FakeLoggerProvider();
+		await using var services = ArchiveProviderFactory.Build(database.PlotConnectionString, logs);
+		var provider = services.GetRequiredService<IDataProvider>();
+		var window = new LocalWindow(_tailWindowFrom, _tailWindowTo);
+		int[] penIds = [FreshPenId, LaggingPenId, ReachingPenId];
+
+		foreach (var layer in new[] { AggregationLayer.Raw, AggregationLayer.Minute })
+		{
+			var result = await provider.QueryHistoryAsync(
+				penIds,
+				_timeConverter.ToUtc(window.From),
+				_timeConverter.ToUtc(window.To),
+				layer,
+				ColumnTargetFor(window),
+				TestContext.Current.CancellationToken);
+
+			result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
+		}
+
+		var entries = HistoryReadEntries(logs);
+
+		entries.Select(entry => entry.GetStructuredStateValue("Layer")).Should().Equal("Raw", "Minute");
+		entries.Should().AllSatisfy(entry =>
+		{
+			entry.Level.Should().Be(LogLevel.Debug);
+			LoggedUtc(entry, "FromUtc").Should().Be(_timeConverter.ToUtc(window.From));
+			LoggedUtc(entry, "ToUtc").Should().Be(_timeConverter.ToUtc(window.To));
+			entry.GetStructuredStateValue("TargetColumnCount").Should().Be(
+				ColumnTargetFor(window).ToString(CultureInfo.InvariantCulture));
+			entry.GetStructuredStateValue("Outcome").Should().Be("Read");
+			entry.GetStructuredStateValue("PenCount").Should().Be("3");
+			entry.GetStructuredStateValue("EnvelopeCount").Should().Be("3");
+			long.TryParse(entry.GetStructuredStateValue("ElapsedMilliseconds"), CultureInfo.InvariantCulture, out _)
+				.Should().BeTrue();
+		});
+	}
+
 	// SeedBefore mirrors a bound that lives in SQL, and nothing but this test links the two. It opens no
 	// connection, so it runs wherever the rest of the class skips.
 	[Fact]
@@ -638,6 +752,24 @@ public sealed class PostgresHistoryReadTests(
 		}
 
 		return false;
+	}
+
+	private static IReadOnlyList<FakeLogRecord> HistoryReadEntries(FakeLoggerProvider logs)
+	{
+		return
+		[
+			.. logs.Collector.GetSnapshot()
+				.Where(entry => entry.Category == typeof(PostgresDataProvider).FullName)
+				.Where(entry => entry.StructuredState?.Any(pair => pair.Key == "Outcome") == true)
+		];
+	}
+
+	private static DateTime LoggedUtc(FakeLogRecord entry, string key)
+	{
+		return DateTime.Parse(
+			entry.GetStructuredStateValue(key)!,
+			CultureInfo.InvariantCulture,
+			DateTimeStyles.RoundtripKind);
 	}
 
 	// The archive's first two minutes: inside the first archiving run, before any break.
@@ -725,9 +857,10 @@ public sealed class PostgresHistoryReadTests(
 		LocalWindow window,
 		IReadOnlyList<int> penIds,
 		AggregationLayer layer,
-		int targetColumnCount)
+		int targetColumnCount,
+		TimeProvider? clock = null)
 	{
-		await using var services = ArchiveProviderFactory.Build(connectionString);
+		await using var services = ArchiveProviderFactory.Build(connectionString, timeProvider: clock);
 
 		// January under the source zone: one offset, so the round trip is exact.
 		return await services.GetRequiredService<IDataProvider>().QueryHistoryAsync(
@@ -977,6 +1110,33 @@ public sealed class PostgresHistoryReadTests(
 			layer);
 	}
 
+	private static Task<Result<IReadOnlyList<PenHistoryEnvelope>>> ReadMinuteTailAsync(
+		ArchiveDatabase database,
+		LocalWindow window,
+		TimeProvider clock)
+	{
+		return ReadHistoryAsync(
+			database.PlotConnectionString,
+			window,
+			[FreshPenId, LaggingPenId, ReachingPenId],
+			AggregationLayer.Minute,
+			ColumnTargetFor(window),
+			clock);
+	}
+
+	// As HistoryPrefetch.Expand widens the chart's request.
+	private static LocalWindow ExpandedTailWindow()
+	{
+		var width = _tailWindowTo - _tailWindowFrom;
+
+		return new LocalWindow(_tailWindowFrom - width, _tailWindowTo + width);
+	}
+
+	private static FixedClock ClockAt(DateTime archiveLocal)
+	{
+		return new FixedClock(new DateTimeOffset(_timeConverter.ToUtc(archiveLocal)));
+	}
+
 	// The raw layer for all three pens plus a coarse layer that ends at a different instant for each.
 	private static IReadOnlyList<ArchiveRow> TailArchiveRows()
 	{
@@ -1043,4 +1203,12 @@ public sealed class PostgresHistoryReadTests(
 
 	// One column the bucketed statement is expected to return, in the chart's own UTC vocabulary.
 	private readonly record struct ExpectedBucket(DateTime Timestamp, double Center, double Min, double Max);
+
+	private sealed class FixedClock(DateTimeOffset now) : TimeProvider
+	{
+		public override DateTimeOffset GetUtcNow()
+		{
+			return now;
+		}
+	}
 }

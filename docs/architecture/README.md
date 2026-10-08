@@ -25,6 +25,9 @@ implementation plans see `docs/plans/`.
 - [scada-archive.md](./scada-archive.md) — the Simple-Scada 2 archive as it exists: tables and
   columns, archive layers, quality marks and gaps, write and retention behaviour, reader hazards,
   and what remains unverified.
+- [scada-archive-observed.md](./scada-archive-observed.md) - what a running Simple-Scada 2 server did
+  to the archive over 48 hours: every statement and when it ran, per-variable batching and write
+  latency, the coarse-layer selection rule, retention timing, outage replay and loss, disk per row.
 - [postgres-instance.md](./postgres-instance.md) — the instance as SemiPlot consumes it: the `semiplot`
   role's contract, the configuration tables and the columns read, the provisioning states the client
   must survive, retention and capacity. Installation, configuration, provisioning order and the role

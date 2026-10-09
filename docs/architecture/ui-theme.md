@@ -381,12 +381,12 @@ model is bound, and a view with no view model has no chart view model, where an 
 would be a white rectangle inside a dark window.
 
 `Chart/TrendChartView.axaml.cs` calls it from three places, and each is a different reason. `OnLoaded`
-paints the control's plot and refreshes it; `ActualThemeVariantChanged` repaints and refreshes it; the
-`ScalesRevision` subscription paints an axis the scale model created after bind time. That third path
+paints the control's plot and requests a frame; `ActualThemeVariantChanged` repaints and requests a frame;
+the `ScalesRevision` subscription paints an axis the scale model created after bind time. That third path
 runs once per pointer move during a pan, so it compares `TrendChartViewModel.AxisCount` with the count
-of the last paint and does nothing when the axis set did not grow, and it never calls
-`PlotControl.Refresh()` because every site that bumps `ScalesRevision` already follows with
-`RequestRedraw()`, which the view samples at the frame budget.
+of the last paint and does nothing when the axis set did not grow, and it never requests a frame itself
+because every site that bumps `ScalesRevision` already follows with
+`RequestRedraw()`, which the view joins into the next display frame.
 
 The minor gridlines take their colour on every axis but draw only on a log10 axis: `ChartAxisBinder` sets
 their width to 1 px when the drawn axis is logarithmic and to 0 otherwise (`charting.md#log10-y-axis`).

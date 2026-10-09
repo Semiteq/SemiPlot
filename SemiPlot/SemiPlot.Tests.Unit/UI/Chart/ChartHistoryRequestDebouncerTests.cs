@@ -1,3 +1,4 @@
+using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
 
@@ -8,6 +9,7 @@ using FluentResults;
 using Microsoft.Reactive.Testing;
 
 using SemiPlot.Core.Trends;
+using SemiPlot.UI.Chart;
 
 using Xunit;
 
@@ -20,6 +22,9 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 [Trait("Category", "Unit")]
 public sealed class ChartHistoryRequestDebouncerTests
 {
+	// Well under the query's own block, so a request that waited for the query cannot pass.
+	private static readonly TimeSpan _promptReturn = TimeSpan.FromSeconds(5.0);
+
 	[Fact]
 	public void RapidRequests_CollapseToOneTrailingQuery()
 	{
@@ -188,11 +193,54 @@ public sealed class ChartHistoryRequestDebouncerTests
 			debouncer.Request(RequestAtNotch(notch));
 		}
 
+		// The 2000 ms tick's admission runs one tick after it, on the data scheduler.
+		scheduler.AdvanceBy(1);
+
 		queryCount.Should().Be(5);
 
 		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 
 		queryCount.Should().Be(6);
+	}
+
+	// A debounce window no request outlives leaves the sample head as the only admission. The query blocks on
+	// a real thread before it returns its task, as a provider that opens its connection synchronously does.
+	[Fact]
+	public async Task RequestReturnsWhileAPacedAdmissionIsStartingItsQuery()
+	{
+		using var queryRelease = new ManualResetEventSlim();
+		var queryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		using var debouncer = new ChartHistoryRequestDebouncer(
+			(request, cancellation) =>
+			{
+				queryStarted.TrySetResult();
+				queryRelease.Wait(TestDeadline, cancellation);
+
+				return Task.FromResult(Ok(request));
+			},
+			(_, _) => { },
+			_ => { },
+			TimeSpan.FromHours(1.0),
+			TimeSpan.FromMilliseconds(10),
+			DefaultScheduler.Instance,
+			ImmediateScheduler.Instance);
+
+		try
+		{
+			debouncer.Request(RequestAtNotch(1));
+			await queryStarted.Task.WaitAsync(TestDeadline, TestContext.Current.CancellationToken);
+
+			var secondRequest = Task.Run(() => debouncer.Request(RequestAtNotch(2)), TestContext.Current.CancellationToken);
+			var returnedFirst = await Task.WhenAny(
+				secondRequest,
+				Task.Delay(_promptReturn, TestContext.Current.CancellationToken));
+
+			returnedFirst.Should().BeSameAs(secondRequest);
+		}
+		finally
+		{
+			queryRelease.Set();
+		}
 	}
 
 	[Fact]

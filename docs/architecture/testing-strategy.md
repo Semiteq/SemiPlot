@@ -170,43 +170,112 @@ and the assertion sits on rows: integration.
 ## Frame cost
 
 Per-frame cost is measured rather than asserted: nothing in the suite can time a real drag.
-`scripts/perf/trace-shares.py` reads a dotnet-trace Speedscope export and prints call count, total,
-mean and max milliseconds per frame.
+`scripts/perf/trace-shares.py` reads a dotnet-trace Speedscope export and prints the chart's frame
+cost and cadence.
 
 ```powershell
 dotnet-trace collect -p (Get-Process SemiPlot.UI).Id --format Speedscope --duration 00:00:45 -o drag.speedscope.json
-python scripts/perf/trace-shares.py drag.speedscope.speedscope.json
+python scripts/perf/trace-shares.py drag.speedscope.speedscope.json --skip-seconds 10
 ```
+
+`--skip-seconds` drops every run that starts within that many seconds of the export's start, so a
+capture that began before the warm-up ended is read past it. The export is sampled, about one stack
+every 1-2 ms, and a run is one span of consecutive samples: a call shorter than the interval shows
+only when a sample lands in it. Run counts of short frames are lower bounds; their milliseconds are
+the figure to compare. `NumericAutomatic.GenerateTicks` showed 0.2 runs per `RenderOnce` on the
+2026-10-08 drag, where ScottPlot called it about 18 times per frame.
+
+The script prints, past the skipped head:
+
+| Output | Read from |
+| --- | --- |
+| runs, total, mean and max ms of six frames | every thread |
+| `RenderOnce` start-to-start spacing p50, p90, max: all frames, and the drag phase, the gaps that hold the start of a `TrendChartView.OnPointerMoved` run | render thread, UI thread |
+| compositor frame interval: `ServerCompositor.RenderCore` start spacing, and the rate at its median | render thread |
+| pan step to next `RenderOnce`: from the start of a `TrendChartView.OnPointerMoved` run that holds `TrendChartViewModel.OnNavigationWindowChanged` to the next `RenderOnce` start | UI thread, render thread |
+| `NumericAutomatic.GenerateTicks` runs and ms per `RenderOnce` | render thread |
+| `LabelStyle.Measure` ms per `RenderOnce`, by calling frame | render thread |
+| `Monitor.Enter_Slowpath` runs under `TrendChartViewModel.OnNavigationWindowChanged`, count and max | UI thread |
+
+The UI thread is the profile whose stacks hold `Win32DispatcherImpl.RunLoop`, the render thread the one
+holding `WinUiCompositorConnection.RunLoop`; the script stops with a message when either is missing.
+Every percentile carries its sample count, because a pan step is seen only when a sample lands in it:
+19 in 10 s of the 2026-10-08 drag.
+
+Two captures check the chart on the demo stand, Release:
+
+- drag for 45 s: the drag-phase `RenderOnce` spacing p50 sits within 2 ms of the compositor frame
+  interval, the pan step to the next `RenderOnce` p50 is under 12 ms, `NumericAutomatic.GenerateTicks`
+  takes 0.12 ms or less per `RenderOnce` (below), and no `Monitor.Enter_Slowpath` run sits under
+  `TrendChartViewModel.OnNavigationWindowChanged`;
+- follow for 20 s with the demo writer running, no pointer in the window and no resize: `RenderOnce` runs
+  at least once per writer tick, less a small margin. A plot that stopped redrawing passes every other
+  check, the hover one included, so this capture is the lower bound that catches it;
+- hover without a button held over a still plot, follow off, for 20 s: `RenderOnce` runs about once per
+  writer tick, not once per pointer move (about 52 per second without the plot cache at 8 pens). The count
+  holds only when the follow capture passes as well (`charting.md#hover-and-the-plot-cache`).
 
 `OnNavigationWindowChanged` is the frame that carries `ApplyAxisModel`, whose cost now scales with the
 pen count rather than the group count: one `PenScale` and one `SetLimitsY` per pen per window change,
 50 on the bench catalogue against 5 before the axis became the pen.
 
-A hidden axis costs nothing to render. Measured on 2026-09-17 against ScottPlot 5.1.59, a 800x600
-plot over 30 frames at 0, 7, 49, 99 and 199 hidden axes spent 17.6, 14.3, 14.2, 14.7 and 18.4 ms per
-frame: the count of hidden axes does not move the frame, and one axis per pen does not regress the
-drag responsiveness `013f491` landed. Nothing is to be restructured for that cost without a capture
-that contradicts these numbers.
+A hidden axis used to cost its ticks. Measured on 2026-10-08 on `44bba75`, Release, 8 pens, Raw layer,
+one Y axis drawn: ScottPlot ran `NumericAutomatic.GenerateTicks` about 18 times per frame, the eight pen
+axes and the default right axis twice each, at 0.351 ms per `RenderOnce`, and `LabelStyle.Measure` took
+0.720 ms per `RenderOnce`, 0.281 ms of it under `GenerateTicks`. ScottPlot regenerates every Y axis at
+two lengths per frame and reads no `IsVisible` doing so, so a pen axis's generator now skips a hidden axis
+and reuses its last two results (`charting.md#ticks-for-the-drawn-axis-only`). The code leaves 4 calls
+per drag frame: the drawn Auto pen axis misses its cache at both lengths, because each pan step moves its
+range, and the default right axis keeps an uncached `NumericAutomatic`; 4/18 of the before figure is
+0.078 ms. The export is sampled, so the check reads the time with a margin for sampling noise: 0.12 ms or
+less of `GenerateTicks` per `RenderOnce`, 6/18 of the before figure. One hidden axis that still generated
+would add 2 calls per frame; seven would bring back the before figure. The 2026-09-17 measurement that
+found hidden axes free was taken on axes whose range was never set.
 
 dotnet-trace names the converted file `<name>.speedscope.json`, so the second argument repeats the
-extension. Six frames are printed: `RenderOnce`, `Polygon.Render` and `SKCanvas.DrawPath` on the
+extension. The six frames of the first table are `RenderOnce`, `Polygon.Render` and `SKCanvas.DrawPath` on the
 chart's frame path, `OnNavigationWindowChanged`, `ApplyHistory` and `QueryHistoryAsync` on its
 history path. A 45 s drag capture passes when `RenderOnce` averages 10 ms or less and
 `SKCanvas.DrawPath` totals 1 s or less.
 
+## Frames in a realised view
+
+A realised `TrendChartView` redraws on an animation frame (`charting.md#the-frame-paced-redraw`).
+`AvaloniaHeadlessPlatform.ForceRenderTimerTick()` ticks the server compositor and completes the
+committed batch; the frame callback runs on the `Render` dispatcher operation that follows. A test
+drives one frame as `Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+Dispatcher.UIThread.RunJobs();`, which `ChartViewTestBuilder.DriveOneFrame` holds. The first callback of
+an idle view runs on a plain `RunJobs()`. After a frame that invalidated the plot, Avalonia holds the
+next pulse until the batch that frame committed is processed, and the tick is what processes it.
+
+A plain `RunJobs()` also fires the real-time 60 Hz headless render timer once 16 ms have passed, and a
+callback that invalidated nothing waits on Avalonia's real-time 16 ms animation timer for its next
+pulse, not on the tick. A test therefore counts frames through `TrendChartView.ServedFrameCount`, never
+per `RunJobs()` call, and reads its baseline after the view settled: an attached view requests a frame
+from `OnLoaded`, which runs after the first pulse.
+
+`ServedFrameCount` is internal and nothing in production reads it: the one test-only member of the view,
+an exception to the rule against them. It counts the frame callbacks that served a request, so the tests
+pin coalescing and the pending mark through it, not the repaint. That the served frame invalidates the
+plot has no headless observable. The test application uses headless drawing, where `AvaPlot`'s draw
+operation gets no Skia lease and renders nothing, so ScottPlot's render count and `RenderFinished` never
+move from the realised view; the renderer's dirty set is internal to Avalonia; and a Skia-backed headless
+platform would be a second test application, which one test assembly cannot host beside the first.
+`Plot.RenderInMemory` does fire `RenderFinished` headless, which the data-area width tests use.
+
 ## The UI scheduler in a realised view
 
 A test that realises `TrendChartView` never passes `ImmediateScheduler.Instance` as the chart's UI
-scheduler. The view subscribes to `RedrawRequested`, and each redraw request schedules one emission
-33 ms ahead. `ImmediateScheduler` runs it inline after sleeping 33 ms on the calling thread, so every
-redraw blocks the dispatcher and paints inside the call that asked for it, which production never does.
-The schedule is one-shot, so nothing hangs; the hangs belong to `PenCatalogueSync`'s wait loop and the
-minimap band's next-read schedule (`AGENTS.md`, Test). Two schedulers work in its place.
+scheduler. The history debouncer delivers each result through `ObserveOn(uiScheduler)`, so over
+`ImmediateScheduler` the apply runs on whatever thread completed the query, a pool thread once the query
+awaits anything. The apply raises `RedrawRequested`, the view requests an animation frame, and
+`RequestAnimationFrame` throws off the UI thread. The hangs belong to `PenCatalogueSync`'s wait loop and
+the minimap band's next-read schedule (`AGENTS.md`, Test). Two schedulers work in its place.
 
-| Scheduler | When | Cost |
-| --- | --- | --- |
-| `TestScheduler` | the test drives time itself | none |
-| `AvaloniaScheduler.Instance` | the test needs the production seam, as `ChartPointerInputTests` does | a scheduled redraw is a 33 ms timer on the shared headless dispatcher until it fires or the view model is disposed, so the test disposes it |
+| Scheduler | When |
+| --- | --- |
+| `TestScheduler` | the test drives time itself |
+| `AvaloniaScheduler.Instance` | the test needs the production seam, as `ChartPointerInputTests` does |
 
 The same holds for a window that realises the chart indirectly: `ChartTestBuilder.CreateChart`, which the
 sidebar tests build on, hands its charts a virtual UI scheduler for this reason alone. Its

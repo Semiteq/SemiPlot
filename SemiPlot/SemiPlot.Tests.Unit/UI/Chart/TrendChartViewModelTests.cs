@@ -36,7 +36,6 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 public sealed class TrendChartViewModelTests
 {
 	private static readonly TimeSpan _testDeadline = TimeSpan.FromSeconds(10.0);
-	private static readonly TimeSpan _redrawDelay = TimeSpan.FromMilliseconds(33.0);
 	private static readonly DateTime _from = new(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
 	private static readonly DateTime _to = new(2026, 6, 15, 9, 0, 0, DateTimeKind.Utc);
 	private static readonly TimeSpan _realtimeInterval = TimeSpan.FromMilliseconds(10.0);
@@ -342,77 +341,53 @@ public sealed class TrendChartViewModelTests
 		using var subscription = viewModel.RedrawRequested.Subscribe(_ => redraws++);
 
 		viewModel.RestoreInitialScale();
-		scheduler.AdvanceBy(BatchWindow.Ticks * 2);
 
 		redraws.Should().Be(1);
 	}
 
 	[AvaloniaFact]
-	public void AnIdleChartSchedulesNoRedraw()
+	public void AnIdleChartRaisesNoRedraw_AndARequestRaisesOneAtOnce()
 	{
 		var uiScheduler = new QueueReadingScheduler();
 		using var viewModel = CreateChartOn(uiScheduler);
 		var redraws = 0;
 		using var subscription = viewModel.RedrawRequested.Subscribe(_ => redraws++);
 
-		uiScheduler.HasQueuedWork.Should().BeFalse("a chart with nothing to redraw schedules nothing");
-
-		viewModel.SetDeltaModeEnabled(true);
-		uiScheduler.AdvanceBy(_redrawDelay.Ticks);
-
-		redraws.Should().Be(1);
-		uiScheduler.HasQueuedWork.Should().BeFalse("the redraw was one emission, not a timer left running");
-	}
-
-	[AvaloniaFact]
-	public void AChartNoViewSubscribesToSchedulesNoRedraw()
-	{
-		var uiScheduler = new QueueReadingScheduler();
-		using var viewModel = CreateChartOn(uiScheduler);
+		redraws.Should().Be(0, "a chart with nothing to redraw raises nothing");
 
 		viewModel.SetDeltaModeEnabled(true);
 
-		uiScheduler.HasQueuedWork.Should().BeFalse("no view would draw the frame");
+		redraws.Should().Be(1, "the request is raised inside the call that made it");
+		uiScheduler.HasQueuedWork.Should().BeFalse("the redraw leaves nothing on the UI scheduler");
 	}
 
 	[AvaloniaFact]
-	public void DisposingTheChartCancelsTheScheduledRedraw()
+	public void DisposingTheChartCompletesTheRedrawSignal()
 	{
-		var uiScheduler = new QueueReadingScheduler();
-		var viewModel = CreateChartOn(uiScheduler);
+		var viewModel = CreateChartOn(new QueueReadingScheduler());
 		var redraws = 0;
-		using var subscription = viewModel.RedrawRequested.Subscribe(_ => redraws++);
-		viewModel.SetDeltaModeEnabled(true);
+		var isCompleted = false;
+		using var subscription = viewModel.RedrawRequested.Subscribe(_ => redraws++, () => isCompleted = true);
 
 		viewModel.Dispose();
 
-		uiScheduler.HasQueuedWork.Should().BeFalse("the disposed chart leaves nothing on the UI scheduler");
-		var advance = () => uiScheduler.AdvanceBy(_redrawDelay.Ticks * 2);
-		advance.Should().NotThrow();
+		isCompleted.Should().BeTrue("the view clears a pending frame when the signal completes");
 		redraws.Should().Be(0);
 	}
 
 	[AvaloniaFact]
-	public void ABurstOfRequestsRedrawsOncePerSpanAndOnceAfterTheLastRequest()
+	public void ABurstOfRequestsRaisesOneSignalPerRequest()
 	{
-		var uiScheduler = new QueueReadingScheduler();
-		using var viewModel = CreateChartOn(uiScheduler);
-		var redrawTimes = new List<TimeSpan>();
-		using var subscription = viewModel.RedrawRequested
-			.Subscribe(_ => redrawTimes.Add(TimeSpan.FromTicks(uiScheduler.Clock)));
+		using var viewModel = CreateChartOn(new QueueReadingScheduler());
+		var redraws = 0;
+		using var subscription = viewModel.RedrawRequested.Subscribe(_ => redraws++);
 
 		for (var request = 0; request <= 10; request++)
 		{
 			viewModel.SetDeltaModeEnabled(request % 2 == 0);
-			uiScheduler.AdvanceBy(TimeSpan.FromMilliseconds(10.0).Ticks);
 		}
 
-		uiScheduler.AdvanceBy(TimeSpan.FromSeconds(1.0).Ticks);
-
-		redrawTimes.Should().Equal(
-			TimeSpan.FromMilliseconds(33.0),
-			TimeSpan.FromMilliseconds(73.0),
-			TimeSpan.FromMilliseconds(113.0));
+		redraws.Should().Be(11, "the view, not the view model, joins the requests of one frame");
 	}
 
 	[AvaloniaFact]
@@ -1419,7 +1394,7 @@ public sealed class TrendChartViewModelTests
 		var penOneRead = provider.HistoryGate;
 		provider.HistoryGate = new();
 		viewModel.AddPen(new Pen(2, "Pen 2", ["Group A"], "#00ff00"));
-		scheduler.AdvanceBy(TimeSpan.FromMilliseconds(100).Ticks);
+		scheduler.AdvanceBy(TimeSpan.FromMilliseconds(100).Ticks + 1);
 
 		await ReleaseAndAwaitResults(viewModel, 1, () => penOneRead.SetResult(StaleEnvelopes()));
 		await AwaitQueryCount(provider, 2);
@@ -1961,8 +1936,8 @@ public sealed class TrendChartViewModelTests
 		provider.FailHistory = true;
 
 		chart.RequestInitialHistory();
-		// Past the debounce window and the 33 ms the recovery redraw waits, and short of the
-		// 400 ms cap interval, which would admit a second query for the same window.
+		// Past the debounce window and short of the 400 ms cap interval, which would admit a second query for
+		// the same window.
 		scheduler.AdvanceBy(TimeSpan.FromMilliseconds(200.0).Ticks);
 
 		messagePanel.Entries.Should().ContainSingle()
@@ -2087,8 +2062,8 @@ public sealed class TrendChartViewModelTests
 			valueWhenTheReportThrew, "the batches after the failed report still reach the pen");
 	}
 
-	// Both schedulers are virtual, unlike CreateViewModel's: these tests count the redraws a request schedules
-	// 33 ms ahead, and they drive the realtime stream by advancing time.
+	// Both schedulers are virtual, unlike CreateViewModel's: these tests drive the realtime stream and the
+	// history debouncer by advancing time.
 	private static (TrendChartViewModel ViewModel, TestScheduler Scheduler, MessagePanelViewModel Panel)
 		CreateReportingViewModel(TimeSpan realtimeInterval, out FakeDataProvider provider)
 	{

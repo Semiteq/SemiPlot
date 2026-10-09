@@ -1,5 +1,4 @@
 using ScottPlot;
-using ScottPlot.TickGenerators;
 
 using SemiPlot.Core.Trends;
 
@@ -25,7 +24,7 @@ public sealed class ChartAxisBinder(Plot plot)
 	{
 		if (_axesByPenId.TryGetValue(penId, out var axis))
 		{
-			axis.IsVisible = false;
+			SetDrawn(axis, false);
 		}
 	}
 
@@ -58,19 +57,37 @@ public sealed class ChartAxisBinder(Plot plot)
 				lock (_plot.Sync)
 				{
 					axis.TickGenerator = scale.IsLogarithmic
-						? new LogTickGenerator { Mask = mask }
-						: new NumericAutomatic();
+						? new LogTickGenerator { Mask = mask, IsDrawn = axis.IsVisible }
+						: new LinearTickGenerator { IsDrawn = axis.IsVisible };
 					SetLimits(axis, scale);
 					RefreshMinorGridWidth();
 				}
 			}
 
-			axis.IsVisible = scale.IsActive && pen is { IsVisible: true };
+			var isDrawn = scale.IsActive && pen is { IsVisible: true };
+			SetDrawn(axis, isDrawn);
 
-			if (axis.IsVisible)
+			if (isDrawn)
 			{
 				DrawGridFrom(axis);
 			}
+		}
+	}
+
+	// docs/architecture/charting.md#ticks-for-the-drawn-axis-only
+	private void SetDrawn(IYAxis axis, bool isDrawn)
+	{
+		var generator = (IDrawnTickGenerator)axis.TickGenerator;
+
+		if (axis.IsVisible == isDrawn && generator.IsDrawn == isDrawn)
+		{
+			return;
+		}
+
+		lock (_plot.Sync)
+		{
+			generator.IsDrawn = isDrawn;
+			axis.IsVisible = isDrawn;
 		}
 	}
 
@@ -135,6 +152,13 @@ public sealed class ChartAxisBinder(Plot plot)
 
 	private IYAxis CreateAxis()
 	{
-		return _axesByPenId.Count == 0 ? _plot.Axes.Left : _plot.Axes.AddLeftAxis();
+		var axis = _axesByPenId.Count == 0 ? _plot.Axes.Left : _plot.Axes.AddLeftAxis();
+
+		lock (_plot.Sync)
+		{
+			axis.TickGenerator = new LinearTickGenerator { IsDrawn = axis.IsVisible };
+		}
+
+		return axis;
 	}
 }

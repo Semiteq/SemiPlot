@@ -58,6 +58,7 @@ public sealed class ChartHistoryRequestDebouncer : IDisposable
 
 		var emissions = trailing
 			.Merge(paced)
+			.ObserveOn(dataScheduler)
 			.Subscribe(admission => Admit(admission.Pushed, admission.EndsGesture));
 
 		var queries = _admitted
@@ -85,7 +86,10 @@ public sealed class ChartHistoryRequestDebouncer : IDisposable
 		_isDisposed = true;
 		_subscription.Dispose();
 		_requests.Dispose();
-		_admitted.Dispose();
+
+		// Start can still push from the data or the completion thread past its disposed check; a completed
+		// subject drops that push, where a disposed one would throw on that thread.
+		_admitted.OnCompleted();
 
 		lock (_gate)
 		{

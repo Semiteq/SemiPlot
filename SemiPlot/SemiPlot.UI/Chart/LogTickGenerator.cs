@@ -7,18 +7,18 @@ using SemiPlot.Core.Trends;
 namespace SemiPlot.UI.Chart;
 
 /// <summary>Ticks of a log10 axis whose limits are in decades; majors read under the pen's mask.</summary>
-public sealed class LogTickGenerator : ITickGenerator
+public sealed class LogTickGenerator : IDrawnTickGenerator
 {
 	private const double LabelTolerance = 0.01;
 	private const NumberStyles LabelStyles = NumberStyles.Float | NumberStyles.AllowThousands;
 
-	// Regenerate alone touches the cache and publishes Ticks; it runs on the render thread under Plot.Sync.
-	private CachedTicks? _recent;
-	private CachedTicks? _older;
+	private readonly TickCache<TickKey> _cache = new();
 
 	// Written on the UI thread by ChartAxisBinder.Apply, read on the render thread in Regenerate; a reference
 	// write is atomic, so a frame sees either mask whole.
 	public string? Mask { get; set; }
+
+	public bool IsDrawn { get; set; }
 
 	public Tick[] Ticks { get; private set; } = [];
 
@@ -26,24 +26,21 @@ public sealed class LogTickGenerator : ITickGenerator
 
 	public void Regenerate(CoordinateRange range, Edge edge, PixelLength size, Paint paint, LabelStyle labelStyle)
 	{
+		if (!IsDrawn)
+		{
+			Ticks = [];
+			return;
+		}
+
 		var key = new TickKey(range.Min, range.Max, size.Length, Mask);
 
-		if (_recent is { } recent && recent.Key == key)
+		if (!_cache.TryFind(key, out var ticks))
 		{
-			Ticks = recent.Ticks;
-			return;
+			ticks = Generate(key);
+			_cache.Add(key, ticks);
 		}
 
-		if (_older is { } older && older.Key == key)
-		{
-			(_recent, _older) = (older, _recent);
-			Ticks = older.Ticks;
-			return;
-		}
-
-		var generated = Generate(key);
-		(_recent, _older) = (new CachedTicks(key, generated), _recent);
-		Ticks = generated;
+		Ticks = ticks;
 	}
 
 	/// <summary>An axis runs in decades while this generator ticks it; ScottPlot leaves an unbound axis null.</summary>
@@ -93,6 +90,4 @@ public sealed class LogTickGenerator : ITickGenerator
 	}
 
 	private readonly record struct TickKey(double MinLog, double MaxLog, float PixelLength, string? Mask);
-
-	private sealed record CachedTicks(TickKey Key, Tick[] Ticks);
 }

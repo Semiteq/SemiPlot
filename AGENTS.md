@@ -137,11 +137,15 @@ Two projects, split on one axis: needs a container or not.
   that lands schedules the next 2-60 s ahead, so over `ImmediateScheduler` and a synchronous fake it
   reads forever once an extent and a drawn pen exist, and `TestScheduler.Start()` never returns after a
   band read landed. A test builds it over a `TestScheduler` and never calls `Start()`
-  (`UI/Minimap/MinimapStand.cs`). The chart's redraw hangs nothing: it is a one-shot
-  schedule, which `ImmediateScheduler` runs inline after a 33 ms sleep. A headless test that realises
-  the chart still never passes an immediate UI scheduler, because it blocks the dispatcher on every
-  redraw; it passes a `TestScheduler` or `AvaloniaScheduler.Instance`
+  (`UI/Minimap/MinimapStand.cs`). A headless test that realises the chart never passes an immediate
+  UI scheduler, because a history result can then raise the redraw off the UI thread and the view's
+  `RequestAnimationFrame` throws there; it passes a `TestScheduler` or `AvaloniaScheduler.Instance`
   (`docs/architecture/testing-strategy.md#the-ui-scheduler-in-a-realised-view`).
+- The chart view redraws on an animation frame. A test drives one frame as
+  `Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); Dispatcher.UIThread.RunJobs();`
+  (`ChartViewTestBuilder.DriveOneFrame`) and counts frames through `TrendChartView.ServedFrameCount`,
+  never per `RunJobs()` call, because a plain `RunJobs()` can also fire the real-time 60 Hz headless
+  render timer (`docs/architecture/testing-strategy.md#frames-in-a-realised-view`).
 - A plain `[Fact]` body runs with no `SynchronizationContext`, so an `await` on a
   `TaskCompletionSource` completed by production code resumes inline on the completing thread. A gate
   awaited by the test and completed by production code takes

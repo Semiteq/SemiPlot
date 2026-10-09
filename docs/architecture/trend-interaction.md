@@ -89,6 +89,8 @@ operator interaction.
 - **Line style:** both stepped and interpolated, **configurable per pen**.
 - **Performance:** **FPS locked at 30**; data updates no faster than **10 Hz (100 ms)**; up to
   **50 displayed pens**.
+  *As-built note:* the chart redraws at most once per display frame (§RT-4,
+  charting.md#the-frame-paced-redraw).
 - **Decimation backend:** kept behind the data-provider **stub** for now; production backend
   will be **PostgreSQL**, but whether it stores pre-trimmed/layered data is **unknown** — the
   data layer must support either server-side aggregation or in-process decimation.
@@ -128,8 +130,8 @@ as-built mechanics that realize them:
   single chokepoint (`Chart/ChartHistoryRequestDebouncer`): `Throttle` collapses rapid notches to one
   trailing request after the gesture goes quiet, the query runs on the data scheduler, one at a time, and
   the newest window that arrived while it ran runs when it lands (so a read slower than the cap still
-  completes, and the newest window is the last applied). Per-zoom redraws are coalesced through the
-  redraw seam, one emission 33 ms after the first request of a span, not an inline refresh. The startup
+  completes, and the newest window is the last applied). Per-zoom redraws go through the redraw seam
+  and land on the next display frame with every request made before it, not an inline refresh. The startup
   `RequestInitialHistory` is an ordinary request on that path, so the initial load and gestures share one
   latest-wins history path; the first-snap `TrackDataExtents` path stays non-requerying (single initial
   load).
@@ -196,7 +198,7 @@ so there is one left-button gesture, not overlapping hidden branches.
   `Chart/ChartHoverReadout.BuildContent` string: the local timestamp plus every *visible* pen's value
   at the cursor X (one line per pen; gap or missing pen → dash). The overlay is suppressed while a drag
   is in progress or delta mode is active (`IsDragging || IsDeltaModeEnabled`) and is repositioned from
-  the coalesced `RedrawRequested` seam (after `Refresh()`) and on `SizeChanged` so it tracks
+  the chart's frame callback (after the plot's invalidation) and on `SizeChanged` so it tracks
   pan/zoom/resize/live-edge without per-event re-renders.
 - **Delta cursors (Δt / Δy) via an explicit navigation-bar mode.** The bar's "Delta" toggle
   (`NavigationBarViewModel.IsDeltaModeEnabled`) sets the chart into `DeltaPlacement`: two left clicks
@@ -320,7 +322,8 @@ and the render budget (§RT-4). The as-built rationale and mechanics:
   (`BucketedRawWindow`, `GROUP BY date_bin`), one row per column, so no raw stream reaches the
   client. The coarse layers fold in-process through `MinMaxDecimator`, over rows the SCADA already
   thinned. Both sit behind `IDataProvider` and reach the chart in one envelope vocabulary.
-- **Performance budget (§RT-4):** 30 FPS pan/zoom lock; input data ≤ 10 Hz; ≤ 50 simultaneous pens;
+- **Performance budget (§RT-4):** at most one redraw per display frame on pan/zoom; input data ≤ 10 Hz;
+  ≤ 50 simultaneous pens;
   points per pen handed to the chart ≈ viewport width × 2–4.
 
 ## Data quality & line rendering

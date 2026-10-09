@@ -632,7 +632,9 @@ public sealed class TrendLegendViewTests
 	{
 		chart.Navigation.TrackDataExtents(_from, _to);
 		chart.RequestInitialHistory();
-		_scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+
+		// The admission and the delivery each land one tick after the step that schedules them.
+		_scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 2);
 	}
 
 	private TrendChartViewModel CreateChart()

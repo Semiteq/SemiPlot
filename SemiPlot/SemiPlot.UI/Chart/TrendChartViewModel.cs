@@ -26,7 +26,6 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	private readonly TrendCoordinator _coordinator;
 	private readonly MessagePanelViewModel _messagePanel;
 	private readonly ILogger<TrendChartViewModel> _logger;
-	private readonly ChartRedrawSchedule _redrawSchedule;
 	private readonly ChartAxisBinder _axisBinder;
 	private readonly ChartPenSet _penSet;
 	private readonly ChartCursorReader _cursorReader;
@@ -37,6 +36,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	private readonly Dictionary<int, PenHistoryEnvelope> _envelopesById = [];
 	private readonly PenScaleModel _scaleModel = new();
 	private readonly Dictionary<int, PenScale> _scalesByPenId = [];
+	private readonly Subject<Unit> _redrawRequests = new();
 	private readonly Subject<Unit> _historyApplied = new();
 	private bool _isDisposed;
 	private bool _isHistoryStarted;
@@ -57,7 +57,6 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_coordinator = coordinator;
 		_messagePanel = messagePanel;
 		_logger = logger;
-		_redrawSchedule = new ChartRedrawSchedule(uiScheduler);
 		_axisBinder = new ChartAxisBinder(Plot);
 		_penSet = new ChartPenSet(Plot, _axisBinder);
 		_cursorReader = new ChartCursorReader(_penSet.ById, _envelopesById);
@@ -111,7 +110,8 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	public IReadOnlyDictionary<int, PenScaleSettings> ScaleSettings => _penSet.ScaleSettings;
 
-	public IObservable<Unit> RedrawRequested => _redrawSchedule.Redraws;
+	/// <summary>One signal per redraw request, raised at once on the caller's thread; completes on dispose.</summary>
+	public IObservable<Unit> RedrawRequested => _redrawRequests.AsObservable();
 
 	/// <summary>
 	/// One pulse per history result applied, on the UI scheduler.
@@ -183,7 +183,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_historyDebouncer.Dispose();
 		AxisScale.Dispose();
 		_disposables.Dispose();
-		_redrawSchedule.Dispose();
+		_redrawRequests.OnCompleted();
 		_historyApplied.Dispose();
 		Plot.Dispose();
 	}
@@ -695,6 +695,6 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	private void RequestRedraw()
 	{
-		_redrawSchedule.Request();
+		_redrawRequests.OnNext(Unit.Default);
 	}
 }

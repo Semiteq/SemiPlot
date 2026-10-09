@@ -36,6 +36,8 @@ public partial class TrendChartView : UserControl
 	private VerticalLine? _deltaFirstLine;
 	private VerticalLine? _deltaSecondLine;
 	private Point? _dragOrigin;
+	private int _frameSequence;
+	private int? _pendingFrame;
 
 	// -1 until the bound plot is painted once, so the first scale revision always repaints.
 	private int _paintedAxisCount = -1;
@@ -63,6 +65,9 @@ public partial class TrendChartView : UserControl
 		PlotControl.SizeChanged += (_, _) => RepositionCursorOverlay();
 	}
 
+	/// <summary>Animation-frame callbacks that served a redraw request since the view was built.</summary>
+	internal int ServedFrameCount { get; private set; }
+
 	protected override void OnLoaded(RoutedEventArgs e)
 	{
 		base.OnLoaded(e);
@@ -77,6 +82,8 @@ public partial class TrendChartView : UserControl
 
 	protected override void OnUnloaded(RoutedEventArgs e)
 	{
+		ClearPendingFrame();
+
 		if (Application.Current is { } application)
 		{
 			application.ActualThemeVariantChanged -= OnActualThemeVariantChanged;
@@ -93,7 +100,7 @@ public partial class TrendChartView : UserControl
 	private void RepaintChart()
 	{
 		ApplyChartPalette();
-		PlotControl.Refresh();
+		RequestFrame();
 	}
 
 	// docs/architecture/ui-theme.md#the-plot
@@ -121,9 +128,17 @@ public partial class TrendChartView : UserControl
 	// docs/architecture/charting.md#module-layout-avalonia-views--view-models--core-models
 	private static EventHandler<RenderDetails> ReportDataAreaWidthTo(TrendChartViewModel renderedViewModel)
 	{
+		float? lastPostedWidth = null;
+
 		return (_, renderDetails) =>
 		{
 			var dataAreaWidth = renderDetails.DataRect.Width;
+			if (dataAreaWidth == lastPostedWidth)
+			{
+				return;
+			}
+
+			lastPostedWidth = dataAreaWidth;
 			Dispatcher.UIThread.Post(() => renderedViewModel.ReportDataAreaWidth(dataAreaWidth));
 		};
 	}
@@ -131,6 +146,7 @@ public partial class TrendChartView : UserControl
 	private void OnDataContextChanged(object? sender, EventArgs eventArgs)
 	{
 		_disposables.Clear();
+		ClearPendingFrame();
 		_paintedAxisCount = -1;
 		_viewModel = DataContext as TrendChartViewModel;
 		AxisScale.DataContext = _viewModel?.AxisScale;
@@ -183,12 +199,46 @@ public partial class TrendChartView : UserControl
 
 		_disposables.Add(_viewModel.RedrawRequested
 			.Subscribe(
-				_ =>
-				{
-					PlotControl.Refresh();
-					RepositionCursorOverlay();
-				},
-				ReportFailureOf(nameof(TrendChartViewModel.RedrawRequested))));
+				_ => RequestFrame(),
+				ReportFailureOf(nameof(TrendChartViewModel.RedrawRequested)),
+				ClearPendingFrame));
+	}
+
+	// docs/architecture/charting.md#the-frame-paced-redraw
+	private void RequestFrame()
+	{
+		if (_pendingFrame is not null || TopLevel.GetTopLevel(this) is not { } topLevel)
+		{
+			return;
+		}
+
+		var frame = ++_frameSequence;
+		topLevel.RequestAnimationFrame(_ => ServeFrame(frame));
+		_pendingFrame = frame;
+	}
+
+	private void ServeFrame(int frame)
+	{
+		if (_pendingFrame != frame)
+		{
+			return;
+		}
+
+		_pendingFrame = null;
+
+		if (_viewModel is null || TopLevel.GetTopLevel(this) is null)
+		{
+			return;
+		}
+
+		PlotControl.InvalidateVisual();
+		RepositionCursorOverlay();
+		ServedFrameCount++;
+	}
+
+	private void ClearPendingFrame()
+	{
+		_pendingFrame = null;
 	}
 
 	// ChartPalette.Resolve throws on a dropped key. A pipeline that ends stops repainting the chart, so the
@@ -247,7 +297,7 @@ public partial class TrendChartView : UserControl
 			case ChartPressAction.PlaceDeltaCursor:
 				_viewModel.PlaceDeltaCursor(AnchorAt(position));
 				UpdateDeltaCursorLines();
-				PlotControl.Refresh();
+				RequestFrame();
 
 				break;
 
@@ -281,7 +331,7 @@ public partial class TrendChartView : UserControl
 		eventArgs.Pointer.Capture(PlotControl);
 
 		HideCursorOverlay();
-		PlotControl.Refresh();
+		RequestFrame();
 	}
 
 	private void OnPointerMoved(object? sender, PointerEventArgs eventArgs)

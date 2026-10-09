@@ -95,7 +95,7 @@ public sealed class ChartHistoryRequestCancellationTests
 			debouncer.Request(RequestAtNotch(notch));
 		}
 
-		scheduler.AdvanceBy(TimeSpan.FromMilliseconds(20).Ticks);
+		scheduler.AdvanceBy(TimeSpan.FromMilliseconds(20).Ticks + 1);
 		var running = queries.Started.Should().ContainSingle().Which;
 		running.Request.FromUtc.Should().Be(From.AddSeconds(LastNotchBeforeTheFirstTick));
 

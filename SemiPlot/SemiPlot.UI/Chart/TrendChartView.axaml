@@ -12,13 +12,18 @@
              x:DataType="chart:TrendChartViewModel">
 
     <Panel>
-        <scottplot:AvaPlot Name="PlotControl">
-            <FlyoutBase.AttachedFlyout>
-                <Flyout Placement="Pointer">
-                    <chart:AxisScalePanel Name="AxisScale" />
-                </Flyout>
-            </FlyoutBase.AttachedFlyout>
-        </scottplot:AvaPlot>
+        <Decorator Name="PlotLayer">
+            <Decorator.CacheMode>
+                <BitmapCache />
+            </Decorator.CacheMode>
+            <scottplot:AvaPlot Name="PlotControl">
+                <FlyoutBase.AttachedFlyout>
+                    <Flyout Placement="Pointer">
+                        <chart:AxisScalePanel Name="AxisScale" />
+                    </Flyout>
+                </FlyoutBase.AttachedFlyout>
+            </scottplot:AvaPlot>
+        </Decorator>
         <TextBlock Name="EmptyCatalogueMessage"
                    IsVisible="{Binding HasNoPens, FallbackValue=False}"
                    Foreground="{DynamicResource AppSecondaryForegroundBrush}"

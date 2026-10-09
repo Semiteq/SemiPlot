@@ -534,7 +534,9 @@ public sealed class TrendLegendViewModelTests
 	{
 		chart.Navigation.TrackDataExtents(from, to);
 		chart.RequestInitialHistory();
-		_scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 1);
+
+		// The admission and the delivery each land one tick after the step that schedules them.
+		_scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 2);
 	}
 
 	private static TrendLegendRowViewModel SingleRow(TrendLegendViewModel legend, int penId)

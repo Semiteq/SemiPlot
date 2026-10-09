@@ -2,6 +2,7 @@ using System.Reactive.Concurrency;
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
@@ -75,7 +76,18 @@ internal static class ChartViewTestBuilder
 		viewModel.Plot.RenderManager.LastRender.Layout.DataRect.HasArea.Should().BeTrue(
 			"the view's pixel-to-time maths reads the last render's data area");
 
-		return new ShownChart(window, plotControl);
+		return new ShownChart(window, plotControl)
+		{
+			View = view
+		};
+	}
+
+	/// <summary>One render pulse: docs/architecture/testing-strategy.md#frames-in-a-realised-view.</summary>
+	internal static void DriveOneFrame()
+	{
+		Dispatcher.UIThread.RunJobs();
+		AvaloniaHeadlessPlatform.ForceRenderTimerTick();
+		Dispatcher.UIThread.RunJobs();
 	}
 
 	internal static TrendChartViewModel CreateLoadedViewModel()
@@ -88,8 +100,7 @@ internal static class ChartViewTestBuilder
 			scheduler,
 			ImmediateScheduler.Instance,
 			_batchWindow);
-		// AvaloniaScheduler, as in production, and every test here disposes the view model:
-		// docs/architecture/testing-strategy.md#the-ui-scheduler-in-a-realised-view.
+		// AvaloniaScheduler, as in production: docs/architecture/testing-strategy.md#the-ui-scheduler-in-a-realised-view.
 		var viewModel = new TrendChartViewModel(
 			coordinator,
 			scheduler,
@@ -112,6 +123,8 @@ internal static class ChartViewTestBuilder
 	/// <summary>The window a test showed; disposing it closes the window.</summary>
 	internal sealed record ShownChart(Window Window, AvaPlot PlotControl) : IDisposable
 	{
+		public required TrendChartView View { get; init; }
+
 		public void Dispose()
 		{
 			Window.Close();

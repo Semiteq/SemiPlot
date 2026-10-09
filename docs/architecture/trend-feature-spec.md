@@ -217,8 +217,8 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 **Acceptance.** Core/test: feeding a point on a coarse layer widens the Min/Max of the last column without adding a new raw point.
 
 ### RT-4 — Update/render parameters (NICE)
-**Definition.** A data-update interval, pixel-aware thinning, a redraw FPS cap (overlay reposition from a coalesced RedrawRequested ~30 FPS).
-**Acceptance.** UI: redraw is no more frequent than the given FPS; pointer-move does not initiate a full plot redraw.
+**Definition.** A data-update interval, pixel-aware thinning, a redraw cap of one redraw per display frame (redraw requests join the window's next animation frame, which also repositions the overlay).
+**Acceptance.** UI: the plot redraws at most once per display frame; pointer-move does not initiate a full plot redraw.
 
 ---
 

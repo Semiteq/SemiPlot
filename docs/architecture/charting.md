@@ -115,16 +115,92 @@ would move it across the plot as the active pen changes. Non-active axes are
 `IsVisible = false`, and the active-pen switch toggles visibility without rebuilding. Scaling is
 driven per-axis via `SetLimitsY(min, max, axis)` from the Core `PenScaleModel` output (no global
 `AutoScale`). Every plottable is pinned to `plot.Axes.Bottom` explicitly at creation, so all pens
-share one X axis and per-pen axes are Y-only. Redraws are coalesced to at most 30 FPS by the
-`RedrawRequested` seam driving `AvaPlot.Refresh()`, which `Chart/ChartRedrawSchedule` owns for the view
-model: a redraw request schedules one emission 33 ms
-ahead on the UI scheduler unless one is already scheduled, and the requests inside that span join it.
-An idle chart, and a chart no view subscribes to, schedules no redraw; `Dispose` cancels a scheduled
-emission. Only data/window/visibility/gesture/
-delta-toggle changes drive ScottPlot redraws (through that coalescing seam); hover and pointer-exit do
-**not** call `AvaPlot.Refresh()`. A pointer-move updates only the cheap Avalonia cursor overlay, which
-is repositioned from the `RedrawRequested` seam (after `Refresh()`) and on `SizeChanged`. Keeping the
-re-rasterization off the per-pointer-event path is the point of the overlay.
+share one X axis and per-pen axes are Y-only.
+
+### Ticks for the drawn axis only
+
+ScottPlot 5.1.59 regenerates every Y axis twice per frame, at the figure height in
+`Layouts.Automatic.GetLayout` and at the data-area height in `RenderActions.RegenerateTicks`, and neither
+reads `IsVisible`; only `YAxisBase.Measure` and `Render` skip a hidden axis. So every pen axis carries an
+`IDrawnTickGenerator`, a `LinearTickGenerator` or a `LogTickGenerator`, whose `Regenerate` returns at once
+while `IsDrawn` is false. `LinearTickGenerator` wraps ScottPlot's `NumericAutomatic` and forwards
+`MaxTickCount` to it, which nothing in the application writes. Both keep their last two results in a
+`TickCache`: the linear one keyed on the limits, the length and the label font size, the log one on the
+limits, the length and the mask. The second length of a frame and every frame of a still axis reuse the
+published array. A drawn Auto axis still generates on every pan step, because `PenScaleModel` moves its
+range; a Manual axis hits the cache.
+
+`ChartAxisBinder` installs a `LinearTickGenerator` on every axis it creates, `Axes.Left` included, and on
+every switch back from log, each built with the axis's current `IsVisible` as its `IsDrawn`. It writes
+`IsDrawn` beside every `IsVisible` write, `HideAxis` included. ScottPlot reads the two at different points
+of one render pass under `Plot.Sync`: `IsDrawn` when it regenerates the ticks, `IsVisible` when it measures
+and draws the panel. So the binder changes both inside one `lock (Plot.Sync)`, and no frame measures or
+draws an axis whose generator skipped its ticks. It takes that lock only when a flag changes, on an
+active-pen switch or a pen shown or hidden. The `Apply` of a pan step finds both flags already at their
+values, returns before the lock and never waits on a render in progress. A hidden log axis keeps its
+`LogTickGenerator`, because the generator type is the axis's log flag (`#log10-y-axis`). The bottom
+`DateTimeAutomatic` axis and ScottPlot's default right axis keep their stock generators.
+
+A hidden generator publishes no ticks. The horizontal gridlines come from `Grid.YAxis`, so the plot draws
+none while no pen axis is drawn, as with the active pen switched off. `Grid.YAxis` stays on the last drawn
+axis until the binder moves it to the newly drawn one, so a frame that lands between hiding the old active
+axis and that move has no gridlines; it is the same frame that has no Y axis.
+
+### The frame-paced redraw
+
+The chart redraws at most once per display frame. `TrendChartViewModel.RequestRedraw` raises
+`RedrawRequested` at once, on the calling thread, when a view subscribes, and does nothing otherwise;
+`Dispose` completes the signal. The view coalesces: when no frame is pending it calls
+`TopLevel.RequestAnimationFrame`, and it marks a frame pending only after that call returned, so a view
+with no top level requests nothing and is free to request once attached. Avalonia runs the callback on
+the UI thread inside the next render pulse (`MediaContext` -> `Clock.Pulse`, a `Render` dispatcher
+operation), in the same job that records the visuals and commits the batch, so the plot's
+`InvalidateVisual()` lands in that frame. Every request until then joins the pending frame.
+
+The callback clears the pending mark. Only when the view still has a view model and a top level does it
+invalidate the plot, reposition the cursor overlay and count the frame in `ServedFrameCount`, which the
+tests read. `OnDataContextChanged`, `OnUnloaded` and the signal's completion clear the pending mark, so a
+callback that outlives its view, its view model or its plot does nothing. `OnLoaded`, the theme repaint,
+delta-cursor placement and the start of a pan request a frame through the same path; nothing in the view
+calls `AvaPlot.Refresh()`.
+
+`RequestAnimationFrame` verifies the UI thread, so `RequestRedraw` with a view subscribed is UI-thread
+only, and Avalonia enforces it; every caller runs on the UI scheduler. A request off the UI thread throws
+to its caller, and Rx then ends the view's subscription to the signal: the chart repaints afterwards only
+on the view's own requests, which the pending mark, set only after a request succeeded, still serves.
+Under Win32 the pulse follows the compositor's commits, one per display frame, so the redraw follows the
+display with no timer and no timer resolution in between.
+
+Only data, window, visibility, gesture and delta-toggle changes request a ScottPlot redraw; hover and
+pointer-exit do **not**. A pointer move updates only the Avalonia cursor overlay, which the frame
+callback repositions after the invalidation and `SizeChanged` repositions on a resize.
+
+### Hover and the plot cache
+
+The overlay does not keep the plot from re-rendering on its own: the crosshair's and the readout's dirty
+rects lie inside the plot, so the compositor replays `AvaPlot`'s draw operation, which is ScottPlot's whole
+`RenderOnce`, on every pointer move. Measured 2026-10-08 at 8 pens: about 52 renders per second while
+hovering, against about 33 inside a drag, ~2.4 ms each. A drag, a zoom and every follow tick change the plot
+itself, so they re-render in any design; only a hover over a still plot is wasted work.
+
+The plot is therefore cached, on its wrapper: `TrendChartView.axaml` puts `PlotControl` alone inside the
+`PlotLayer` decorator and sets `CacheMode` to a `BitmapCache` there, not on `AvaPlot`. The compositor keeps
+the plot's raster in that layer and blits it while only the overlay changes; the frame callback's
+`InvalidateVisual()` reaches the layer as a child's change and ScottPlot renders it once. Measured
+2026-10-09 at 8 pens: about one `RenderOnce` per second while hovering a still plot, from the data the writer
+appends, against about 52 without the cache; follow and drag render as often as without it.
+
+The cache sits on the wrapper because a `BitmapCache` on `AvaPlot` itself freezes the plot on its first
+frame: Avalonia 12 (12.0.5 through 12.1.3) adds a self-drawing visual's own dirty rect to the window's
+region before it switches to the visual's cache collector (`ServerCompositionVisual.Update.cs`, `PreSubgraph`),
+so the cache never sees the plot change and blits its first layer until a resize recreates it (no `RenderOnce`
+in 15 s of live follow, 2026-10-09). `ThePlotIsCachedThroughItsOnlyAncestor` pins the layout: the decorator
+holds the cache and `PlotControl` alone, `PlotControl` holds none. The headless platform returns a stub layer,
+so no headless test sees the freeze; the follow capture in `testing-strategy.md#frame-cost` does, and it reruns
+after every Avalonia upgrade.
+
+The layer costs one chart-sized texture per window, about 8 MB at 1920x1080 and 100% scaling and about 19 MB
+at 150%, and its text is grayscale-antialiased, because `EnableClearType` stays false.
 
 ### Log10 Y axis
 
@@ -146,7 +222,7 @@ frame and projects through the axis's own `GetPixel`, and the line keeps no flag
 the axis. `GetAxisLimits` reports no Y limits under a log axis, because its columns are in the pen's
 units and the axis runs in decades; nothing autoscales a pen's axis through ScottPlot today. The binder
 switches a type under one `lock (Plot.Sync)`: the generator (a new `LogTickGenerator`, or a new
-`NumericAutomatic` on the way back), the limits and the minor gridline width, so no frame draws decades
+`LinearTickGenerator` on the way back), the limits and the minor gridline width, so no frame draws decades
 under linear ticks or the reverse. A pan or an autoscale that keeps the type sets the limits as a linear
 axis does.
 
@@ -198,9 +274,9 @@ number parse reads, such as parentheses, is kept. A pen spanning decades needs a
 their gridlines and lose their labels. The binder writes `Mask` from `Pen.Format` on every `Apply` on the
 UI thread, and `Regenerate` reads it on the render thread under `Plot.Sync`, so a revised mask reaches
 the labels at the next catalogue read. ScottPlot regenerates each Y panel at two lengths per frame, so
-the generator caches the last two results, keyed on the limits, the length and the mask; a published
-`Ticks` array is never changed. `MaxTickCount` is unused, because `LogAxis.Ticks` bounds the count
-itself.
+the generator caches the last two results, keyed on the limits, the length and the mask
+(`#ticks-for-the-drawn-axis-only`); a published `Ticks` array is never changed. `MaxTickCount` is
+unused, because `LogAxis.Ticks` bounds the count itself.
 
 **Minor gridlines show on a log axis only.** The binder sets `Grid.YAxisStyle.MinorLineStyle.Width` to 1
 when it draws a log axis and to 0 otherwise, in the same step that assigns `Grid.YAxis`, and
@@ -283,9 +359,15 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   the sidebar row binds through it.
 - `Chart/ChartAxisBinder` — applies the `PenScaleModel` output to ScottPlot Y axes (one left axis per
   pen, `SetLimitsY`, shared-X pinning) and switches an axis between linear and log10: its limits in
-  decades, its tick generator and the minor gridline width (`#log10-y-axis`).
-- `Chart/LogTickGenerator` - the `ITickGenerator` of a log axis: `LogAxis.Ticks` with majors labelled
+  decades, its tick generator and the minor gridline width (`#log10-y-axis`); writes each generator's
+  `IsDrawn` beside the axis's `IsVisible` (`#ticks-for-the-drawn-axis-only`).
+- `Chart/IDrawnTickGenerator` - the `ITickGenerator` of a pen axis, which generates nothing while its
+  axis is not drawn (`#ticks-for-the-drawn-axis-only`).
+- `Chart/LinearTickGenerator` - the `IDrawnTickGenerator` of a linear axis: ScottPlot's `NumericAutomatic`
+  behind the two-entry cache (`#ticks-for-the-drawn-axis-only`).
+- `Chart/LogTickGenerator` - the `IDrawnTickGenerator` of a log axis: `LogAxis.Ticks` with majors labelled
   under the pen's mask, and the two-entry cache (`#log10-y-axis`).
+- `Chart/TickCache` - the two-entry cache both generators keep their last results in.
 - `Chart/ChartNavigationController` — owns the `TrendNavigationModel`, the layer ladder, the live-edge
   advance; raises `WindowChanged` (`NavigationWindow` = `[From, To]` + `Layer` +
   `RequiresHistoryRequery`). A ceiling is derived, not constant:
@@ -295,11 +377,12 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   writer:** `TrendChartViewModel.ReportDataAreaWidth`, called from `TrendChartView`'s
   `Plot.RenderManager.RenderFinished` handler — do not call `SetTargetColumnCount` from anywhere else,
   in the same style as the navigation bar's `IsSticky`. That seam carries the `DataRect` of the frame just
-  rasterised; `Plot.LastRender` read after `Refresh()` would still describe the previous frame, so a
+  rasterised; `Plot.LastRender` read when a frame is requested would still describe the previous frame, so a
   resize could leave the layer computed for the old canvas with nothing scheduled to correct it.
-  `RenderFinished` fires on Avalonia's render thread, so the handler posts every frame's width to the
-  UI thread and keeps no state of its own. A repeated width changes nothing: `SetTargetColumnCount` drops
-  an unchanged quantised count.
+  `RenderFinished` fires on Avalonia's render thread, so the handler posts the width to the UI thread,
+  and only when it differs from the last width it posted. The last width lives in the handler's closure
+  and is read and written on the render thread only. A repeated width would change nothing anyway:
+  `SetTargetColumnCount` drops an unchanged quantised count.
   A changed *quantised* count re-queries the window even when the layer survives, because it also
   invalidates the decimation width the visible data was fetched at. The re-query keys on the quantised
   count while the query resolution follows the unquantised width, so a resize inside the deadband
@@ -333,9 +416,6 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
 - `Chart/ChartRealtimeApplier` — the append-vs-fold rule per layer for incoming `RealtimeBatch`es.
   It walks each `PenRealtimeValues` on that pen's own timestamps, never on the batch's union, and
   hands the union's last timestamp to `ChartNavigationController.OnLiveEdge`.
-- `Chart/ChartRedrawSchedule` — the redraw coalescer behind `RedrawRequested`: the subject, the UI
-  scheduler, the scheduled emission and its flag. `Request()` schedules nothing while an emission is
-  pending or nothing observes; `Dispose()` cancels the pending one.
 - `Chart/ChartCursorReader` / `ChartDeltaCursorReader` — view-side state wrapping the Core cursor
   models, resolving the visible / active pens (`ChartDeltaCursorReader.FormatReadout` formats Δt/Δy).
 - `Chart/ChartHoverReadout` — pure static `BuildContent`: builds the readout string (local timestamp +

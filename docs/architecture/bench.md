@@ -360,12 +360,9 @@ own size — the headless platform draws nothing. Capture loss is driven through
 `IPointer.Capture(null)`, the path `Pointer.PlatformCaptureLost` routes into; a version that reroutes
 `PlatformCaptureLost` leaves the guard green.
 
-**A test that builds `TrendChartView` needs a UI scheduler that can defer.** `TrendChartViewModel`
-schedules each redraw once, 33 ms ahead on its UI scheduler. `ImmediateScheduler.Instance` runs that
-schedule inline after sleeping 33 ms on the calling thread, so every redraw blocks the dispatcher and
-paints inside the call that asked for it. Pass `AvaloniaScheduler.Instance` or a `TestScheduler`, and
-dispose every view model built on the Avalonia scheduler inside the test body, since a scheduled
-redraw is a 33 ms dispatcher timer that only the dispose cancels.
+**A test that builds `TrendChartView` passes `AvaloniaScheduler.Instance` or a `TestScheduler` as the
+UI scheduler.** Over `ImmediateScheduler.Instance` a history result can land off the UI thread, and the
+view's animation-frame request throws there (`testing-strategy.md#the-ui-scheduler-in-a-realised-view`).
 
 **What the guards do not cover.** The Win32 backend and the desktop `AppBuilder` chain are exercised
 by nothing headless; a desktop-only registration the chain is missing fails at `AppBuilder.Setup` in

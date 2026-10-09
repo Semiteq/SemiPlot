@@ -16,14 +16,13 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 public sealed class LogTickGeneratorTests
 {
 	private const float AxisPixels = 400f;
-	private const float PanelPixels = 380f;
 	private const string IntegerMask = "0";
 	private const string InvariantCultureName = "";
 
 	[Fact]
 	public void AMaskTooCoarseForTheSpacing_LeavesEveryMajorLabelDistinct()
 	{
-		var generator = new LogTickGenerator { Mask = IntegerMask };
+		var generator = new LogTickGenerator { Mask = IntegerMask, IsDrawn = true };
 		var range = new CoordinateRange(Math.Log10(100.0), Math.Log10(100.5));
 
 		Regenerate(generator, range, AxisPixels);
@@ -43,7 +42,7 @@ public sealed class LogTickGeneratorTests
 		double bottom, double top, string mask, double[] labelledValues, string[] labels)
 	{
 		using var culture = new CultureScope(InvariantCultureName);
-		var generator = new LogTickGenerator { Mask = mask };
+		var generator = new LogTickGenerator { Mask = mask, IsDrawn = true };
 
 		Regenerate(generator, new CoordinateRange(Math.Log10(bottom), Math.Log10(top)), AxisPixels);
 
@@ -51,22 +50,6 @@ public sealed class LogTickGeneratorTests
 		majors.Select(tick => tick.Label).Should().Equal(labels);
 		majors.Select(tick => Math.Pow(10.0, tick.Position)).Should().Equal(
 			labelledValues, (actual, expected) => Math.Abs(actual - expected) < expected * 1e-9);
-	}
-
-	[Fact]
-	public void TheTwoLengthsOfOneFrame_ReuseTheirTicks()
-	{
-		var generator = new LogTickGenerator();
-		var range = new CoordinateRange(-6.0, -1.0);
-
-		Regenerate(generator, range, AxisPixels);
-		var atAxis = generator.Ticks;
-		Regenerate(generator, range, PanelPixels);
-		var atPanel = generator.Ticks;
-		Regenerate(generator, range, AxisPixels);
-
-		generator.Ticks.Should().BeSameAs(atAxis);
-		atPanel.Should().NotBeSameAs(atAxis);
 	}
 
 	private static void Regenerate(LogTickGenerator generator, CoordinateRange range, float pixels)

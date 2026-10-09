@@ -263,7 +263,14 @@ the pens shown.
 
 A gesture that never goes quiet still fetches. `ChartHistoryRequestDebouncer` merges the trailing
 `Throttle` of 150 ms with a `Sample` of 400 ms over the same requests, so a continuous drag issues one
-query per 400 ms and one more after it stops.
+query per 400 ms and one more after it stops. `Throttle`, `Sample` and `Merge` hand an emission on
+while they hold their own locks, and `Request` takes the `Sample` lock on the UI thread, so the merged
+stream passes through `ObserveOn(dataScheduler)` and the debouncer admits and starts each query on the
+data scheduler after those locks are released, where a provider that blocks before its first `await`
+holds up no `Request`. The production data scheduler is `DefaultScheduler.Instance`, which Rx serves as a
+long-running scheduler, so `ObserveOn` drains on one dedicated thread per debouncer, one per chart window:
+the thread starts with the first admission, waits blocked between admissions and ends at `Dispose`. That
+thread, never a pool thread, carries each admission and the synchronous part of each query start.
 
 The chart alone knows what is drawn. It asks for a window only while its fetched range does not cover
 the window in view, and otherwise pushes `RequestNothing`. The debouncer keeps no drawn window of its

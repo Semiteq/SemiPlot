@@ -23,6 +23,11 @@ using SemiPlot.UI.Messages;
 
 using Xunit;
 
+using static SemiPlot.Tests.Unit.UI.Chart.ChartViewTestBuilder;
+
+using BitmapCache = Avalonia.Media.BitmapCache;
+
+
 namespace SemiPlot.Tests.Unit.UI.Chart;
 
 [Collection(ProcessGlobalStateCollection.Name)]
@@ -51,6 +56,23 @@ public sealed class TrendChartViewTests
 		viewModel.Navigation.TargetColumnCount.Should().Be(HistoryColumnTarget.MinColumns);
 
 		viewModel.Plot.RenderInMemory(2600, 800);
+		Dispatcher.UIThread.RunJobs();
+
+		viewModel.Navigation.TargetColumnCount.Should().Be(HistoryColumnTarget.MaxColumns);
+	}
+
+	[AvaloniaFact]
+	public void TwoRendersAtOneWidth_ReportTheWidthOnce()
+	{
+		using var viewModel = CreateViewModel();
+		_ = new TrendChartView { DataContext = viewModel };
+		viewModel.Plot.RenderInMemory(320, 240);
+		Dispatcher.UIThread.RunJobs();
+		viewModel.Navigation.TargetColumnCount.Should().Be(HistoryColumnTarget.MinColumns);
+
+		// A width reported past the view marks whether the second render posts its width again.
+		viewModel.ReportDataAreaWidth(2600.0);
+		viewModel.Plot.RenderInMemory(320, 240);
 		Dispatcher.UIThread.RunJobs();
 
 		viewModel.Navigation.TargetColumnCount.Should().Be(HistoryColumnTarget.MaxColumns);
@@ -180,13 +202,133 @@ public sealed class TrendChartViewTests
 		}
 	}
 
+	[AvaloniaFact]
+	public void ABurstOfRedrawRequests_JoinsOneFrame()
+	{
+		using var viewModel = CreateLoadedViewModel();
+		using var shown = ShowChart(viewModel);
+		DriveOneFrame();
+		var framesBefore = shown.View.ServedFrameCount;
+
+		for (var request = 0; request < 10; request++)
+		{
+			viewModel.SetDeltaModeEnabled(request % 2 == 0);
+		}
+
+		DriveOneFrame();
+
+		shown.View.ServedFrameCount.Should().Be(framesBefore + 1, "the requests before one frame join it");
+
+		DriveOneFrame();
+
+		shown.View.ServedFrameCount.Should().Be(framesBefore + 1, "a frame nothing requested serves nothing");
+	}
+
+	[AvaloniaFact]
+	public void ARequestOnADetachedView_LeavesTheNextRequestAfterAttachingServed()
+	{
+		using var viewModel = CreateLoadedViewModel();
+		var view = new TrendChartView { DataContext = viewModel };
+		viewModel.SetDeltaModeEnabled(true);
+		var window = new Window { Width = 900, Height = 600 };
+		try
+		{
+			window.Show();
+			DriveOneFrame();
+
+			window.Content = view;
+			DriveOneFrame();
+			DriveOneFrame();
+			var framesAfterAttaching = view.ServedFrameCount;
+			viewModel.SetDeltaModeEnabled(false);
+			DriveOneFrame();
+
+			framesAfterAttaching.Should().Be(1, "the view requests its first frame when it loads");
+			view.ServedFrameCount.Should().Be(2, "the request on the detached view left no frame pending");
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	// A thread of its own rather than an await, so the dispatcher runs no frame while the request is refused.
+	// docs/architecture/charting.md#the-frame-paced-redraw
+	[AvaloniaFact]
+	public void ARequestRefusedOffTheUiThread_LeavesTheViewsNextFrameServed()
+	{
+		using var scope = ThemeProbe.PreserveVariant();
+		var application = Application.Current!;
+		application.RequestedThemeVariant = ThemeVariant.Light;
+		using var viewModel = CreateLoadedViewModel();
+		using var shown = ShowChart(viewModel);
+		DriveOneFrame();
+		var framesBefore = shown.View.ServedFrameCount;
+		Exception? refusal = null;
+
+		var offTheUiThread = new Thread(() => refusal = Record.Exception(() => viewModel.SetActivePen(1)));
+		offTheUiThread.Start();
+		offTheUiThread.Join();
+		application.RequestedThemeVariant = ThemeVariant.Dark;
+		DriveOneFrame();
+
+		refusal.Should().BeOfType<InvalidOperationException>("RequestAnimationFrame verifies the UI thread");
+		shown.View.ServedFrameCount.Should().Be(framesBefore + 1, "the refused request left no frame pending");
+	}
+
+	[AvaloniaFact]
+	public void AFramePendingWhenTheViewModelIsDisposed_ServesNothing()
+	{
+		var viewModel = CreateLoadedViewModel();
+		using var shown = ShowChart(viewModel);
+		DriveOneFrame();
+		var framesBefore = shown.View.ServedFrameCount;
+		viewModel.SetDeltaModeEnabled(true);
+
+		viewModel.Dispose();
+		var drive = DriveOneFrame;
+
+		drive.Should().NotThrow();
+		shown.View.ServedFrameCount.Should().Be(framesBefore);
+	}
+
+	[AvaloniaFact]
+	public void AFramePendingWhenTheViewModelIsReplaced_ServesNothing()
+	{
+		using var viewModel = CreateLoadedViewModel();
+		using var replacement = CreateLoadedViewModel();
+		using var shown = ShowChart(viewModel);
+		DriveOneFrame();
+		var framesBefore = shown.View.ServedFrameCount;
+		viewModel.SetDeltaModeEnabled(true);
+
+		shown.View.DataContext = replacement;
+		DriveOneFrame();
+
+		shown.View.ServedFrameCount.Should().Be(framesBefore);
+	}
+
+	// docs/architecture/charting.md#hover-and-the-plot-cache
+	[AvaloniaFact]
+	public void ThePlotIsCachedThroughItsOnlyAncestor()
+	{
+		using var viewModel = CreateLoadedViewModel();
+		using var shown = ShowChart(viewModel);
+
+		var layer = shown.View.FindControl<Decorator>("PlotLayer");
+
+		layer.Should().NotBeNull();
+		layer!.CacheMode.Should().BeOfType<BitmapCache>();
+		layer.Child.Should().BeSameAs(shown.PlotControl);
+		shown.PlotControl.CacheMode.Should().BeNull();
+	}
+
 	private static ScottPlot.Color FigureBackgroundUnder(ThemeVariant variant)
 	{
 		return ThemeProbe.PlotColour("AppPanelBackgroundBrush", variant);
 	}
 
-	// Both schedulers are virtual here, unlike the other chart tests:
-	// docs/architecture/testing-strategy.md#the-ui-scheduler-in-a-realised-view.
+	// Both schedulers are virtual: docs/architecture/testing-strategy.md#the-ui-scheduler-in-a-realised-view.
 	private static TrendChartViewModel CreateViewModel()
 	{
 		var scheduler = new TestScheduler();

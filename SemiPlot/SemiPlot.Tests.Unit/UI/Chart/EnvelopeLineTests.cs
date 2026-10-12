@@ -22,7 +22,6 @@ public sealed class EnvelopeLineTests
 	private const int PlotHeight = 300;
 	private const double YAxisMin = -2.0;
 	private const double YAxisMax = 2.0;
-	private const int FrameBudget = 300;
 	private const int LongColumnCount = 6000;
 	private const int ShortColumnCount = 2000;
 	private const int GapEvery = 500;
@@ -35,8 +34,6 @@ public sealed class EnvelopeLineTests
 	private const double UnboundedRequestedEndX = double.PositiveInfinity;
 	private const int RawBandColumns = HistoryPrefetch.MarginColumnFactor * HistoryColumnTarget.MaxColumns;
 
-	private static readonly TimeSpan _runBudget = TimeSpan.FromSeconds(60);
-	private static readonly TimeSpan _joinBudget = TimeSpan.FromSeconds(30);
 	// Yields between rewrites so the render task reaches its frame budget inside the run budget.
 	private static readonly TimeSpan _mutationPause = TimeSpan.FromMilliseconds(1);
 	private static readonly DateTime _start = new(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
@@ -61,65 +58,57 @@ public sealed class EnvelopeLineTests
 		plot.GetPlottables().Should().Contain(line);
 		RenderFrame(plot);
 
-		using var cancellation = new CancellationTokenSource(_runBudget);
+		var longEnvelope = Envelope(LongColumnCount);
+		var shortEnvelope = Envelope(ShortColumnCount);
+		var realtime = _start.AddSeconds(LongColumnCount);
 
-		// Written by the render task, read by the test thread only after joining it.
-		var frames = 0;
-
-		var renderTask = Task.Run(
+		await RenderWhileMutating.RunAsync(
 			() =>
 			{
-				while (frames < FrameBudget && !cancellation.Token.IsCancellationRequested)
-				{
-					RenderFrame(plot);
-					_ = line.GetAxisLimits();
-					frames++;
-				}
+				RenderFrame(plot);
+				_ = line.GetAxisLimits();
 			},
-			TestContext.Current.CancellationToken);
+			() =>
+			{
+				var requestedTo = realtime.AddHours(1.0);
+				state.LoadHistory(longEnvelope, requestedTo);
+				state.LoadHistory(shortEnvelope, requestedTo);
 
-		Exception? failure;
+				realtime = realtime.AddSeconds(1);
+				state.AppendRealtime(realtime, 1.0);
+				state.FoldRealtime(realtime, 0.5);
 
-		try
-		{
-			RewriteColumns(state, renderTask, cancellation.Token);
-		}
-		finally
-		{
-			await cancellation.CancelAsync();
-			failure = await Record.ExceptionAsync(
-				() => renderTask.WaitAsync(_joinBudget, TestContext.Current.CancellationToken));
-		}
+				state.ClearHistory(requestedTo);
 
-		failure.Should().BeNull(
-			"the render thread must survive concurrent rewrites; it stopped at frame {0}",
-			frames);
-		frames.Should().Be(FrameBudget);
+				Thread.Sleep(_mutationPause);
+			},
+			"the render thread must survive concurrent rewrites");
 	}
 
 	[Fact]
 	public void AppendingPastTheCapTrimsOneChunk()
 	{
 		var line = new EnvelopeLine();
-		var peakCount = 0;
 
-		for (var index = 0; index <= ColumnCap; index++)
+		for (var index = 0; index < ColumnCap; index++)
 		{
 			line.AppendColumn(new EnvelopeColumn(index, 0.0, 1.0, 0.5)).Should().BeTrue();
-			peakCount = Math.Max(peakCount, line.Columns.Count);
 		}
 
-		line.Columns.Should().HaveCount(ColumnCap + 1 - TrimChunk);
-		line.Columns[0].X.Should().Be(TrimChunk);
-		peakCount.Should().Be(ColumnCap);
+		line.SnapshotColumns().Should().HaveCount(ColumnCap, "the cap itself trims nothing");
+
+		line.AppendColumn(new EnvelopeColumn(ColumnCap, 0.0, 1.0, 0.5)).Should().BeTrue();
+
+		line.SnapshotColumns().Should().HaveCount(ColumnCap + 1 - TrimChunk);
+		line.SnapshotColumns()[0].X.Should().Be(TrimChunk);
 
 		for (var index = ColumnCap + 1; index < ColumnCap + TrimChunk; index++)
 		{
 			line.AppendColumn(new EnvelopeColumn(index, 0.0, 1.0, 0.5));
 		}
 
-		line.Columns.Should().HaveCount(ColumnCap);
-		line.Columns[0].X.Should().Be(TrimChunk);
+		line.SnapshotColumns().Should().HaveCount(ColumnCap);
+		line.SnapshotColumns()[0].X.Should().Be(TrimChunk);
 	}
 
 	[Fact]
@@ -132,7 +121,7 @@ public sealed class EnvelopeLineTests
 
 		line.ReplaceColumns(ColumnsFrom(0.0, 4), UnboundedRequestedEndX);
 
-		line.Columns.Select(column => column.X).Should().Equal(
+		line.SnapshotColumns().Select(column => column.X).Should().Equal(
 			[0.0, 1.0, 2.0, 3.0, 11.0, 12.0],
 			"the replaced column at 10 is history, not a live append");
 	}
@@ -147,8 +136,9 @@ public sealed class EnvelopeLineTests
 
 		line.ReplaceColumns(ColumnsFrom(0.0, 3), UnboundedRequestedEndX);
 
-		line.Columns.Select(column => column.X).Should().Equal(0.0, 1.0, 2.0, 3.0);
-		line.Columns[2].Center.Should().Be(Column(2.0).Center, "the read's column replaces the live one at its X");
+		line.SnapshotColumns().Select(column => column.X).Should().Equal(0.0, 1.0, 2.0, 3.0);
+		line.SnapshotColumns()[2].Center.Should().Be(
+			Column(2.0).Center, "the read's column replaces the live one at its X");
 	}
 
 	[Fact]
@@ -162,7 +152,7 @@ public sealed class EnvelopeLineTests
 
 		line.ReplaceColumns(ColumnsFrom(0.0, 3), requestedEndX: 6.0);
 
-		line.Columns.Select(column => column.X).Should().Equal(0.0, 1.0, 2.0, 5.0, 6.0);
+		line.SnapshotColumns().Select(column => column.X).Should().Equal(0.0, 1.0, 2.0, 5.0, 6.0);
 	}
 
 	[Fact]
@@ -176,7 +166,7 @@ public sealed class EnvelopeLineTests
 
 		line.ReplaceColumns(ColumnsFrom(0.0, 4), UnboundedRequestedEndX);
 
-		line.Columns.Select(column => column.X).Should().Equal(0.0, 1.0, 2.0, 3.0, 10.0, 11.0);
+		line.SnapshotColumns().Select(column => column.X).Should().Equal(0.0, 1.0, 2.0, 3.0, 10.0, 11.0);
 	}
 
 	[Fact]
@@ -192,7 +182,7 @@ public sealed class EnvelopeLineTests
 
 		var newestAppended = Enumerable.Range((ColumnCap / 2) + 1, ColumnCap / 2).Select(x => (double)x);
 		double[] expected = [-1.0, ColumnCap / 2, .. newestAppended];
-		line.Columns.Select(column => column.X).Should().Equal(expected);
+		line.SnapshotColumns().Select(column => column.X).Should().Equal(expected);
 	}
 
 	[Fact]
@@ -209,9 +199,9 @@ public sealed class EnvelopeLineTests
 
 		line.ReplaceColumns([Column(-1.0)], UnboundedRequestedEndX);
 
-		line.Columns.Should().HaveCount(1 + appended, "the trim removed history alone");
-		line.Columns[1].X.Should().Be(0.0);
-		line.Columns[^1].X.Should().Be(appended - 1);
+		line.SnapshotColumns().Should().HaveCount(1 + appended, "the trim removed history alone");
+		line.SnapshotColumns()[1].X.Should().Be(0.0);
+		line.SnapshotColumns()[^1].X.Should().Be(appended - 1);
 	}
 
 	[Fact]
@@ -227,9 +217,9 @@ public sealed class EnvelopeLineTests
 
 		line.ReplaceColumns(ColumnsFrom(-Half - 1, Half + 1), UnboundedRequestedEndX);
 
-		line.Columns.Should().HaveCount(ColumnCap);
-		line.Columns[0].X.Should().Be(-Half, "the one column past the cap is the oldest history column");
-		line.Columns[^1].X.Should().Be(Half - 1);
+		line.SnapshotColumns().Should().HaveCount(ColumnCap);
+		line.SnapshotColumns()[0].X.Should().Be(-Half, "the one column past the cap is the oldest history column");
+		line.SnapshotColumns()[^1].X.Should().Be(Half - 1);
 	}
 
 	[Fact]
@@ -238,22 +228,24 @@ public sealed class EnvelopeLineTests
 		var line = new EnvelopeLine();
 		line.ReplaceColumns(ColumnsFrom(0.0, 2), UnboundedRequestedEndX);
 		var liveX = 2.0;
-		while (line.Columns[0].X < TrimChunk)
+		for (var appended = 0; appended < ColumnCap - 1; appended++)
 		{
 			line.AppendColumn(Column(liveX++));
 		}
 
+		line.SnapshotColumns()[0].X.Should().Be(TrimChunk, "the follow phase has trimmed one chunk");
+
 		var band = ColumnsFrom(-RawBandColumns, RawBandColumns);
 		line.ReplaceColumns(band, requestedEndX: 0.0);
 
-		line.Columns.Should().Equal(band, "the follow phase's tail lies past the range the pan read");
+		line.SnapshotColumns().Should().Equal(band, "the follow phase's tail lies past the range the pan read");
 
 		for (var appended = 0; appended < ColumnCap - RawBandColumns; appended++)
 		{
 			line.AppendColumn(Column(liveX++));
 		}
 
-		line.Columns[0].Should().Be(band[0], "the band keeps the budget of the whole buffer");
+		line.SnapshotColumns()[0].Should().Be(band[0], "the band keeps the budget of the whole buffer");
 	}
 
 	[Fact]
@@ -266,9 +258,9 @@ public sealed class EnvelopeLineTests
 		line.FoldIntoLastColumn(new EnvelopeColumn(2.0, 7.0, 7.0, 7.0)).Should().BeTrue();
 		line.FoldIntoLastColumn(new EnvelopeColumn(3.0, 9.0, 9.0, 9.0)).Should().BeTrue();
 
-		line.Columns.Select(column => column.X).Should().Equal(0.0, 1.0, 2.0);
-		double.IsNaN(line.Columns[1].Center).Should().BeTrue("the gap still breaks the line");
-		line.Columns[^1].Should().Be(new EnvelopeColumn(2.0, 7.0, 9.0, 9.0));
+		line.SnapshotColumns().Select(column => column.X).Should().Equal(0.0, 1.0, 2.0);
+		double.IsNaN(line.SnapshotColumns()[1].Center).Should().BeTrue("the gap still breaks the line");
+		line.SnapshotColumns()[^1].Should().Be(new EnvelopeColumn(2.0, 7.0, 9.0, 9.0));
 	}
 
 	[Fact]
@@ -324,7 +316,7 @@ public sealed class EnvelopeLineTests
 		using var image = plot.GetImage(PlotWidth, PlotHeight);
 		var dataRect = plot.RenderManager.LastRender.Layout.DataRect;
 
-		return RedStroke.RowsIn(image.GetArrayRGB(), dataRect, (int)Math.Round(dataRect.HorizontalCenter));
+		return StrokeProbe.RowsIn(image.GetArrayRGB(), dataRect, (int)Math.Round(dataRect.HorizontalCenter));
 	}
 
 	private static EnvelopeColumn Column(double x)
@@ -340,28 +332,6 @@ public sealed class EnvelopeLineTests
 	private static void RenderFrame(Plot plot)
 	{
 		using var image = plot.GetImage(PlotWidth, PlotHeight);
-	}
-
-	private static void RewriteColumns(TrendPenState state, Task renderTask, CancellationToken cancellationToken)
-	{
-		var longEnvelope = Envelope(LongColumnCount);
-		var shortEnvelope = Envelope(ShortColumnCount);
-		var realtime = _start.AddSeconds(LongColumnCount);
-
-		while (!cancellationToken.IsCancellationRequested && !renderTask.IsCompleted)
-		{
-			var requestedTo = realtime.AddHours(1.0);
-			state.LoadHistory(longEnvelope, requestedTo);
-			state.LoadHistory(shortEnvelope, requestedTo);
-
-			realtime = realtime.AddSeconds(1);
-			state.AppendRealtime(realtime, 1.0);
-			state.FoldRealtime(realtime, 0.5);
-
-			state.ClearHistory(requestedTo);
-
-			Thread.Sleep(_mutationPause);
-		}
 	}
 
 	private static PenHistoryEnvelope Envelope(int columnCount)

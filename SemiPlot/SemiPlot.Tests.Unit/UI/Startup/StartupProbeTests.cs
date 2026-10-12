@@ -64,18 +64,22 @@ public sealed class StartupProbeTests
 		container.GetRequiredService<IDataProvider>().Should().BeSameAs(dataProvider);
 	}
 
-	[Fact]
-	public async Task ReadAsync_FailedCatalogue_CarriesTheErrorAndDisposesTheContainer()
+	[Theory]
+	[InlineData(true, ArchiveFault.Unreachable)]
+	[InlineData(false, ArchiveFault.ReadFailed)]
+	public async Task ReadAsync_FailedRead_CarriesTheErrorAndDisposesTheContainer(
+		bool isCatalogueFailing, ArchiveFault expected)
 	{
 		var dataProvider = NewProvider();
-		dataProvider.FailPens = true;
+		dataProvider.FailPens = isCatalogueFailing;
+		dataProvider.FailExtent = !isCatalogueFailing;
 		var container = BuildContainer(dataProvider);
 
 		var result = await StartupProbe.ReadAsync(container, StartupProbe.DefaultReadBound);
 
 		result.IsFailed.Should().BeTrue();
 		result.Errors.Should().ContainSingle().Which.Should().BeOfType<ArchiveError>()
-			.Which.Kind.Should().Be(ArchiveFault.Unreachable);
+			.Which.Kind.Should().Be(expected);
 
 		var resolve = () => container.GetRequiredService<IDataProvider>();
 		resolve.Should().Throw<ObjectDisposedException>();
@@ -95,23 +99,6 @@ public sealed class StartupProbeTests
 
 		result.Errors.Should().ContainSingle().Which.Should().BeOfType<ArchiveError>()
 			.Which.Kind.Should().Be(ArchiveFault.Unreachable);
-	}
-
-	[Fact]
-	public async Task ReadAsync_FailedExtent_CarriesTheErrorAndDisposesTheContainer()
-	{
-		var dataProvider = NewProvider();
-		dataProvider.FailExtent = true;
-		var container = BuildContainer(dataProvider);
-
-		var result = await StartupProbe.ReadAsync(container, StartupProbe.DefaultReadBound);
-
-		result.IsFailed.Should().BeTrue();
-		result.Errors.Should().ContainSingle().Which.Should().BeOfType<ArchiveError>()
-			.Which.Kind.Should().Be(ArchiveFault.ReadFailed);
-
-		var resolve = () => container.GetRequiredService<IDataProvider>();
-		resolve.Should().Throw<ObjectDisposedException>();
 	}
 
 	[Fact]

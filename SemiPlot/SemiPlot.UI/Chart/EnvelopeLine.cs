@@ -28,7 +28,14 @@ public sealed class EnvelopeLine : IPlottable
 	private Color _color = Colors.Black;
 	private PenLineStyle _penLineStyle = PenLineStyle.Interpolated;
 
-	internal IReadOnlyList<EnvelopeColumn> Columns => _columns;
+	// docs/architecture/testing-strategy.md#frames-in-a-realised-view
+	internal IReadOnlyList<EnvelopeColumn> SnapshotColumns()
+	{
+		lock (_renderStateLock)
+		{
+			return [.. _columns];
+		}
+	}
 
 	public bool IsVisible { get; set; } = true;
 

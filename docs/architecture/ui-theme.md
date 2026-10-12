@@ -268,10 +268,8 @@ the field column, which starts 81.1 px from the panel's left edge in English and
 boxes end inside the 360 px. Each button is half the width,
 so the widest label keeps 176 - 24 - 137.3 = 14.7 px in Russian and 176 - 24 - 127.9 = 24.1 px in English. A
 longer label or message is measured the same way before it ships.
-`AxisScalePanelViewTests.AnInvertedPair_ShowsTheMessageKeepsThePanelsSizeAndEnterWritesNothing`,
-`AnEmptyField_ShowsTheMessageKeepsThePanelsSizeAndEnterWritesNothing` and
-`TheMessageLine_KeepsThePanelsSize_EmptyWithAOneLineRuleAndWithTheLogRule` gate the size under the test font,
-in both cultures. None of them checks the trimming: the test font is about twice as wide, and under it the Russian log
+`AxisScalePanelViewTests.TheMessageLine_KeepsThePanelsSize_EmptyWithAOneLineRuleAndWithTheLogRule` gates the
+size under the test font, in both cultures. It does not check the trimming: the test font is about twice as wide, and under it the Russian log
 rule needs three lines, so the measurement above is the only evidence that nothing is trimmed.
 
 ### A resizable window keeps its fixed parts

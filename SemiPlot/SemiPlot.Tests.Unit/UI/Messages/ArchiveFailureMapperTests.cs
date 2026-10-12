@@ -6,6 +6,7 @@ using FluentResults;
 
 using SemiPlot.Core.Configuration;
 using SemiPlot.Core.Data.Errors;
+using SemiPlot.DataSource.Postgres.Configuration;
 using SemiPlot.UI;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.Messages;
@@ -17,51 +18,320 @@ namespace SemiPlot.Tests.Unit.UI.Messages;
 
 // The mapper is a pure function over IError and touches no Avalonia type, so these are plain [Fact].
 // Every expected string is read from the resource set, so the assertions hold under either locale;
-// the substituted arguments are asserted on their own, because no locale may drop one.
+// the substituted arguments are part of the expected text, because no locale may drop one.
 [Collection(ProcessGlobalStateCollection.Name)]
 [Trait("Component", "UI")]
 [Trait("Area", "Messages")]
 [Trait("Category", "Unit")]
 public sealed class ArchiveFailureMapperTests
 {
-	[Theory]
-	[InlineData(
-		StartupArgumentsProblem.Missing, nameof(Resources.FailureStartupArgumentsMissingRemedy))]
-	[InlineData(
-		StartupArgumentsProblem.ValueMissing, nameof(Resources.FailureStartupArgumentsValueMissingRemedy))]
-	[InlineData(
-		StartupArgumentsProblem.Unknown, nameof(Resources.FailureStartupArgumentsUnknownRemedy))]
-	[InlineData(
-		StartupArgumentsProblem.ValueInvalid, nameof(Resources.FailureStartupArgumentsValueInvalidRemedy))]
-	public void StartupArguments_EveryProblemNamesTheKeyUnderOneTitle(
-		StartupArgumentsProblem kind,
-		string expectedRemedyKey)
-	{
-		var view = ArchiveFailureMapper.Map(
-			new StartupArgumentsError(kind, "--config-dir", StartupOptions.LoggingLevelValues));
+	private const string AppDirectory = @"C:\Config\app";
+	private const string ConnectionDirectory = @"C:\Config\connection";
+	private const string ArchiveAddress = "scada-host:5432";
+	private const string ArchiveDatabase = "semiplot";
 
-		view.Title.Should().Be(Resources.FailureStartupArgumentsTitle);
-		view.Detail.Should().Contain("--config-dir");
-		view.Remedy.Should().Be(Text(expectedRemedyKey));
+	private static readonly IReadOnlyDictionary<string, FailureCase> _startupArgumentCases =
+		new Dictionary<string, FailureCase>
+		{
+			["Missing"] = new(
+				new StartupArgumentsError(StartupArgumentsProblem.Missing, "--config-dir"),
+				() => Resources.FailureStartupArgumentsTitle,
+				() => Resources.FormatFailureStartupArgumentsMissingDetail("--config-dir"),
+				() => Resources.FailureStartupArgumentsMissingRemedy),
+			["ValueMissing"] = new(
+				new StartupArgumentsError(StartupArgumentsProblem.ValueMissing, "--config-dir"),
+				() => Resources.FailureStartupArgumentsTitle,
+				() => Resources.FormatFailureStartupArgumentsValueMissingDetail("--config-dir"),
+				() => Resources.FailureStartupArgumentsValueMissingRemedy),
+			["Unknown"] = new(
+				new StartupArgumentsError(StartupArgumentsProblem.Unknown, "--nonsense"),
+				() => Resources.FailureStartupArgumentsTitle,
+				() => Resources.FormatFailureStartupArgumentsUnknownDetail("--nonsense"),
+				() => Resources.FailureStartupArgumentsUnknownRemedy),
+			["ValueInvalid"] = new(
+				new StartupArgumentsError(
+					StartupArgumentsProblem.ValueInvalid,
+					StartupOptions.LoggingLevelKey,
+					StartupOptions.LoggingLevelValues),
+				() => Resources.FailureStartupArgumentsTitle,
+				() => Resources.FormatFailureStartupArgumentsValueInvalidDetail(
+					StartupOptions.LoggingLevelKey, StartupOptions.LoggingLevelValues),
+				() => Resources.FailureStartupArgumentsValueInvalidRemedy)
+		};
+
+	private static readonly IReadOnlyDictionary<string, FailureCase> _appSettingsCases =
+		new Dictionary<string, FailureCase>
+		{
+			["Unreadable"] = new(
+				new AppSettingsError(AppDirectory, AppSettingsProblem.Unreadable),
+				() => Resources.FailureAppSettingsRejectedTitle,
+				() => Resources.FormatFailureAppSettingsUnreadableDetail(AppDirectory),
+				() => Resources.FailureAppSettingsUnreadableRemedy),
+			["KeyMissing"] = new(
+				new AppSettingsError(AppDirectory, AppSettingsProblem.KeyMissing, AppSettingsLoader.ThemeKey),
+				() => Resources.FailureAppSettingsRejectedTitle,
+				() => Resources.FormatFailureAppSettingsKeyMissingDetail(AppDirectory, AppSettingsLoader.ThemeKey),
+				() => Resources.FailureAppSettingsKeyMissingRemedy),
+			["ValueInvalid"] = new(
+				new AppSettingsError(
+					AppDirectory, AppSettingsProblem.ValueInvalid, AppSettingsLoader.LocaleKey, "ru, en"),
+				() => Resources.FailureAppSettingsRejectedTitle,
+				() => Resources.FormatFailureAppSettingsValueInvalidDetail(
+					AppDirectory, AppSettingsLoader.LocaleKey, "ru, en"),
+				() => Resources.FailureAppSettingsValueInvalidRemedy)
+		};
+
+	private static readonly IReadOnlyDictionary<string, FailureCase> _sectionCases =
+		new Dictionary<string, FailureCase>
+		{
+			["AppDirectoryMissing"] = new(
+				new ConfigurationSectionError(
+					ConfigurationSectionName.App, AppDirectory, SectionProblem.DirectoryMissing),
+				() => Resources.FailureConfigurationSectionAppTitle,
+				() => Resources.FormatFailureConfigurationSectionDirectoryMissingDetail(AppDirectory),
+				() => Resources.FailureConfigurationSectionAppDirectoryMissingRemedy),
+			["ConnectionDirectoryMissing"] = new(
+				new ConfigurationSectionError(
+					ConfigurationSectionName.Connection, ConnectionDirectory, SectionProblem.DirectoryMissing),
+				() => Resources.FailureConfigurationSectionConnectionTitle,
+				() => Resources.FormatFailureConfigurationSectionDirectoryMissingDetail(ConnectionDirectory),
+				() => Resources.FailureConfigurationSectionConnectionDirectoryMissingRemedy),
+			["AppNoFiles"] = new(
+				new ConfigurationSectionError(ConfigurationSectionName.App, AppDirectory, SectionProblem.NoFiles),
+				() => Resources.FailureConfigurationSectionAppTitle,
+				() => Resources.FormatFailureConfigurationSectionNoFilesDetail(AppDirectory),
+				() => Resources.FailureConfigurationSectionAppNoFilesRemedy),
+			["ConnectionNoFiles"] = new(
+				new ConfigurationSectionError(
+					ConfigurationSectionName.Connection, ConnectionDirectory, SectionProblem.NoFiles),
+				() => Resources.FailureConfigurationSectionConnectionTitle,
+				() => Resources.FormatFailureConfigurationSectionNoFilesDetail(ConnectionDirectory),
+				() => Resources.FailureConfigurationSectionConnectionNoFilesRemedy),
+			["DuplicateKey"] = new(
+				new ConfigurationSectionError(
+					ConfigurationSectionName.App, AppDirectory, SectionProblem.DuplicateKey, "locale", ["app.yaml"]),
+				() => Resources.FailureConfigurationSectionAppTitle,
+				() => Resources.FormatFailureConfigurationSectionDuplicateKeyDetail("locale", "app.yaml", AppDirectory),
+				() => Resources.FailureConfigurationSectionDuplicateKeyRemedy),
+			["KeyConflict"] = new(
+				new ConfigurationSectionError(
+					ConfigurationSectionName.App,
+					AppDirectory,
+					SectionProblem.KeyConflict,
+					"locale",
+					["app.yaml", "site.yaml"]),
+				() => Resources.FailureConfigurationSectionAppTitle,
+				() => Resources.FormatFailureConfigurationSectionKeyConflictDetail(
+					"locale", "app.yaml", "site.yaml", AppDirectory),
+				() => Resources.FailureConfigurationSectionKeyConflictRemedy),
+			["Unreadable"] = new(
+				new ConfigurationSectionError(
+					ConfigurationSectionName.Connection,
+					ConnectionDirectory,
+					SectionProblem.Unreadable,
+					fileNames: ["connection.yaml"]),
+				() => Resources.FailureConfigurationSectionConnectionTitle,
+				() => Resources.FormatFailureConfigurationSectionUnreadableDetail(
+					ConnectionDirectory, "connection.yaml"),
+				() => Resources.FailureConfigurationSectionUnreadableRemedy),
+			["Unlistable"] = new(
+				new ConfigurationSectionError(
+					ConfigurationSectionName.Connection, ConnectionDirectory, SectionProblem.Unlistable),
+				() => Resources.FailureConfigurationSectionConnectionTitle,
+				() => Resources.FormatFailureConfigurationSectionUnlistableDetail(ConnectionDirectory),
+				() => Resources.FailureConfigurationSectionUnreadableRemedy),
+			["Unwritable"] = new(
+				new ConfigurationSectionError(
+					ConfigurationSectionName.Connection,
+					ConnectionDirectory,
+					SectionProblem.Unwritable,
+					fileNames: ["connection.yaml"]),
+				() => Resources.FailureConfigurationSectionConnectionTitle,
+				() => Resources.FormatFailureConfigurationSectionUnwritableDetail(
+					ConnectionDirectory, "connection.yaml"),
+				() => Resources.FailureConfigurationSectionUnwritableRemedy),
+			["KeyAbsent"] = new(
+				new ConfigurationSectionError(
+					ConfigurationSectionName.App, AppDirectory, SectionProblem.KeyAbsent, "theme"),
+				() => Resources.FailureConfigurationSectionAppTitle,
+				() => Resources.FormatFailureConfigurationSectionKeyAbsentDetail("theme", AppDirectory),
+				() => Resources.FailureConfigurationSectionKeyAbsentRemedy)
+		};
+
+	private static readonly IReadOnlyDictionary<string, FailureCase> _archiveCases =
+		new Dictionary<string, FailureCase>
+		{
+			["Unreachable"] = new(
+				Archive(ArchiveFault.Unreachable),
+				() => Resources.FailureArchiveUnreachableTitle,
+				() => Resources.FormatFailureArchiveUnreachableDetail(ArchiveName),
+				() => Resources.FailureArchiveUnreachableRemedy,
+				MessageSeverity.Warning),
+			["AccessDenied"] = new(
+				Archive(ArchiveFault.AccessDenied, "scada_reader"),
+				() => Resources.FailureArchiveAccessDeniedTitle,
+				() => Resources.FormatFailureArchiveAccessDeniedDetail(ArchiveAddress, "scada_reader", ArchiveDatabase),
+				() => Resources.FailureArchiveAccessDeniedRemedy),
+			["DatabaseMissing"] = new(
+				Archive(ArchiveFault.DatabaseMissing),
+				() => Resources.FailureArchiveNotProvisionedTitle,
+				() => Resources.FormatFailureArchiveDatabaseMissingDetail(ArchiveAddress, ArchiveDatabase),
+				() => Resources.FailureArchiveDatabaseMissingRemedy),
+			["TableMissing trends"] = new(
+				Archive(ArchiveFault.TableMissing, "trends"),
+				() => Resources.FailureArchiveNotProvisionedTitle,
+				() => Resources.FormatFailureArchiveTableMissingDetail(ArchiveName, "trends"),
+				() => Resources.FormatFailureArchiveTableMissingRemedy("trends")),
+			["TableMissing semiplot_tags"] = new(
+				Archive(ArchiveFault.TableMissing, "semiplot_tags"),
+				() => Resources.FailureArchiveNotProvisionedTitle,
+				() => Resources.FormatFailureArchiveTableMissingDetail(ArchiveName, "semiplot_tags"),
+				() => Resources.FormatFailureArchiveTableMissingRemedy("semiplot_tags")),
+			["QueryTimedOut"] = new(
+				Archive(ArchiveFault.QueryTimedOut),
+				() => Resources.FailureArchiveQueryTimedOutTitle,
+				() => Resources.FormatFailureArchiveQueryTimedOutDetail(ArchiveName),
+				() => Resources.FailureArchiveQueryTimedOutRemedy,
+				MessageSeverity.Warning),
+			["ReadFailed with a SQLSTATE"] = new(
+				Archive(ArchiveFault.ReadFailed, "22003"),
+				() => Resources.FailureArchiveReadFailedTitle,
+				() => Resources.FormatFailureArchiveReadFailedDetail(ArchiveName, "22003"),
+				() => Resources.FormatFailureArchiveReadFailedRemedy("22003"),
+				MessageSeverity.Warning),
+			["ReadFailed without a SQLSTATE"] = new(
+				Archive(ArchiveFault.ReadFailed),
+				() => Resources.FailureArchiveReadFailedTitle,
+				() => Resources.FormatFailureArchiveReadUnnamedDetail(ArchiveName),
+				() => Resources.FailureArchiveReadUnnamedRemedy,
+				MessageSeverity.Warning),
+			["ValueRejected"] = new(
+				Archive(ArchiveFault.ValueRejected, "Chamber pressure"),
+				() => Resources.FailureArchiveValueRejectedTitle,
+				() => Resources.FormatFailureArchiveValueRejectedDetail(ArchiveName, "Chamber pressure"),
+				() => Resources.FailureArchiveValueRejectedRemedy,
+				MessageSeverity.Warning),
+			["NameTaken"] = new(
+				Archive(ArchiveFault.NameTaken, "Etch gases"),
+				() => Resources.FailureArchiveNameTakenTitle,
+				() => Resources.FormatFailureArchiveNameTakenDetail(ArchiveName, "Etch gases"),
+				() => Resources.FailureArchiveNameTakenRemedy,
+				MessageSeverity.Warning),
+			["RowGone"] = new(
+				Archive(ArchiveFault.RowGone, "Etch gases"),
+				() => Resources.FailureArchiveRowGoneTitle,
+				() => Resources.FormatFailureArchiveRowGoneDetail(ArchiveName, "Etch gases"),
+				() => Resources.FailureArchiveRowGoneRemedy,
+				MessageSeverity.Warning),
+			["ConnectionLost"] = new(
+				new ArchiveError(ArchiveFault.ConnectionLost, "bench.example", 5432, "semiplot_dev", "3"),
+				() => Resources.FailureArchiveConnectionLostTitle,
+				() => Resources.FormatFailureArchiveConnectionLostDetail(
+					Resources.FormatFailureArchiveNameFormat("semiplot_dev", "bench.example:5432"), "3"),
+				() => Resources.FailureArchiveConnectionLostRemedy,
+				MessageSeverity.Warning),
+			["ShapeUnexpected"] = new(
+				Archive(ArchiveFault.ShapeUnexpected, "column \"v\" does not exist"),
+				() => Resources.FailureArchiveShapeUnexpectedTitle,
+				() => Resources.FormatFailureArchiveShapeUnexpectedDetail(ArchiveName, "column \"v\" does not exist"),
+				() => Resources.FailureArchiveShapeUnexpectedRemedy)
+		};
+
+	private static readonly IReadOnlyDictionary<string, FailureCase> _connectionFileCases =
+		new Dictionary<string, FailureCase>
+		{
+			["Unparseable"] = new(
+				new ConnectionFileError(ConnectionDirectory, ConnectionFileProblem.Unparseable, []),
+				() => Resources.FailureConnectionFileRejectedTitle,
+				() => Resources.FormatFailureConnectionFileUnparseableDetail(ConnectionDirectory),
+				() => Resources.FailureConnectionFileUnparseableRemedy),
+			["MissingField"] = new(
+				new ConnectionFileError(
+					ConnectionDirectory, ConnectionFileProblem.MissingField, [PostgresConnectionLoader.PasswordKey]),
+				() => Resources.FailureConnectionFileRejectedTitle,
+				() => Resources.FormatFailureConnectionFileMissingFieldDetail(
+					ConnectionDirectory, PostgresConnectionLoader.PasswordKey),
+				() => Resources.FailureConnectionFileMissingFieldRemedy),
+			["OutOfRange"] = new(
+				new ConnectionFileError(
+					ConnectionDirectory,
+					ConnectionFileProblem.OutOfRange,
+					[PostgresConnectionLoader.PortKey, PostgresConnectionLoader.PollIntervalKey]),
+				() => Resources.FailureConnectionFileRejectedTitle,
+				() => Resources.FormatFailureConnectionFileOutOfRangeDetail(
+					ConnectionDirectory,
+					$"{PostgresConnectionLoader.PortKey}, {PostgresConnectionLoader.PollIntervalKey}"),
+				() => Resources.FormatFailureConnectionFileOutOfRangeRemedy(
+					PostgresConnectionLoader.LowestPort,
+					PostgresConnectionLoader.HighestPort,
+					PostgresConnectionLoader.LowestPollIntervalMs)),
+			["HostNotIPv4"] = new(
+				new ConnectionFileError(
+					ConnectionDirectory, ConnectionFileProblem.HostNotIPv4, [PostgresConnectionLoader.HostKey]),
+				() => Resources.FailureConnectionFileRejectedTitle,
+				() => Resources.FormatFailureConnectionFileHostNotIPv4Detail(
+					ConnectionDirectory, PostgresConnectionLoader.HostKey),
+				() => Resources.FailureConnectionFileHostNotIPv4Remedy)
+		};
+
+	public static TheoryData<string> StartupArgumentKeys => [.. _startupArgumentCases.Keys];
+
+	public static TheoryData<string> AppSettingsKeys => [.. _appSettingsCases.Keys];
+
+	public static TheoryData<string> SectionKeys => [.. _sectionCases.Keys];
+
+	public static TheoryData<string> ArchiveKeys => [.. _archiveCases.Keys];
+
+	public static TheoryData<string> ConnectionFileKeys => [.. _connectionFileCases.Keys];
+
+	private static string ArchiveName => Resources.FormatFailureArchiveNameFormat(ArchiveDatabase, ArchiveAddress);
+
+	[Theory]
+	[MemberData(nameof(StartupArgumentKeys))]
+	public void StartupArguments_ReadTheirOwnTitleDetailAndRemedy(string caseName)
+	{
+		AssertMapsTo(_startupArgumentCases[caseName]);
+	}
+
+	[Theory]
+	[MemberData(nameof(AppSettingsKeys))]
+	public void AppSettings_ReadTheirOwnTitleDetailAndRemedy(string caseName)
+	{
+		AssertMapsTo(_appSettingsCases[caseName]);
+	}
+
+	[Theory]
+	[MemberData(nameof(SectionKeys))]
+	public void ConfigurationSection_ReadsItsOwnTitleDetailAndRemedy(string caseName)
+	{
+		AssertMapsTo(_sectionCases[caseName]);
+	}
+
+	[Theory]
+	[MemberData(nameof(ArchiveKeys))]
+	public void ArchiveFault_ReadsItsOwnTitleDetailAndRemedy(string caseName)
+	{
+		AssertMapsTo(_archiveCases[caseName]);
+	}
+
+	[Fact]
+	public void ArchiveQueryTimedOut_NamesTheSqlState()
+	{
+		ArchiveFailureMapper.Map(Archive(ArchiveFault.QueryTimedOut)).Detail.Should().Contain("57014");
 	}
 
 	[Fact]
 	public void StartupArguments_UnderTheBootstrapCulture_ReadInTheBootstrapLanguage()
 	{
-		var previous = CultureInfo.CurrentUICulture;
-		try
+		string neutral;
+		using (new CultureScope(CultureInfo.InvariantCulture.Name))
 		{
-			CultureInfo.CurrentUICulture = CultureInfo.InvariantCulture;
-			var neutral = ArgumentsTitle();
-
-			CultureInfo.CurrentUICulture = StartupSequence.CultureFor(StartupSequence.BootstrapLocale);
-
-			ArgumentsTitle().Should().NotBe(neutral);
+			neutral = ArgumentsTitle();
 		}
-		finally
-		{
-			CultureInfo.CurrentUICulture = previous;
-		}
+
+		using var bootstrap = new CultureScope(StartupSequence.CultureFor(StartupSequence.BootstrapLocale).Name);
+
+		ArgumentsTitle().Should().NotBe(neutral);
 	}
 
 	[Fact]
@@ -79,48 +349,6 @@ public sealed class ArchiveFailureMapperTests
 		{
 			CultureInfo.DefaultThreadCurrentUICulture = previous;
 		}
-	}
-
-	[Fact]
-	public void StartupArguments_EveryProblemCarriesItsOwnRemedy()
-	{
-		StartupArgumentsProblem[] problems =
-		[
-			StartupArgumentsProblem.Missing,
-			StartupArgumentsProblem.ValueMissing,
-			StartupArgumentsProblem.Unknown,
-			StartupArgumentsProblem.ValueInvalid
-		];
-
-		var remedies = problems
-			.Select(kind => ArchiveFailureMapper.Map(new StartupArgumentsError(kind, "--log-file")).Remedy)
-			.ToList();
-
-		remedies.Should().OnlyHaveUniqueItems();
-	}
-
-	[Fact]
-	public void StartupArgumentsValueInvalid_CarriesTheAcceptedSetIntoTheText()
-	{
-		var view = ArchiveFailureMapper.Map(
-			new StartupArgumentsError(
-				StartupArgumentsProblem.ValueInvalid,
-				StartupOptions.LoggingLevelKey,
-				StartupOptions.LoggingLevelValues));
-
-		view.Detail.Should()
-			.Contain(StartupOptions.LoggingLevelKey)
-			.And.Contain(StartupOptions.LoggingLevelValues);
-	}
-
-	[Fact]
-	public void StartupArgumentsUnknown_NamesWhatWasGivenRatherThanAKnownKey()
-	{
-		var view = ArchiveFailureMapper.Map(
-			new StartupArgumentsError(StartupArgumentsProblem.Unknown, "--nonsense"));
-
-		view.Detail.Should().Contain("--nonsense");
-		view.Remedy.Should().Be(Resources.FailureStartupArgumentsUnknownRemedy);
 	}
 
 	[Fact]
@@ -145,325 +373,10 @@ public sealed class ArchiveFailureMapperTests
 	}
 
 	[Theory]
-	[InlineData(ConfigurationSectionName.App, nameof(Resources.FailureConfigurationSectionAppTitle))]
-	[InlineData(
-		ConfigurationSectionName.Connection,
-		nameof(Resources.FailureConfigurationSectionConnectionTitle))]
-	public void ConfigurationSection_TitleNamesTheSection(ConfigurationSectionName section, string expectedKey)
+	[MemberData(nameof(ConnectionFileKeys))]
+	public void ConnectionFile_ReadsItsOwnTitleDetailAndRemedy(string caseName)
 	{
-		var view = ArchiveFailureMapper.Map(
-			new ConfigurationSectionError(section, @"C:\Config\app", SectionProblem.DirectoryMissing));
-
-		view.Title.Should().Be(Text(expectedKey));
-	}
-
-	[Fact]
-	public void ConfigurationSectionDirectoryMissing_NamesTheFolderAndTheKeysItMustCarry()
-	{
-		var view = ArchiveFailureMapper.Map(
-			new ConfigurationSectionError(
-				ConfigurationSectionName.App, @"C:\Config\app", SectionProblem.DirectoryMissing));
-
-		view.Detail.Should().Contain(@"C:\Config\app");
-		view.Remedy.Should().Be(Resources.FailureConfigurationSectionAppDirectoryMissingRemedy);
-	}
-
-	[Fact]
-	public void ConfigurationSectionDirectoryMissing_TheRemedyDiffersBetweenTheSections()
-	{
-		var app = ArchiveFailureMapper.Map(
-			new ConfigurationSectionError(
-				ConfigurationSectionName.App, @"C:\Config\app", SectionProblem.DirectoryMissing));
-		var connection = ArchiveFailureMapper.Map(
-			new ConfigurationSectionError(
-				ConfigurationSectionName.Connection,
-				@"C:\Config\connection",
-				SectionProblem.DirectoryMissing));
-
-		app.Remedy.Should().NotBe(connection.Remedy);
-	}
-
-	[Theory]
-	[InlineData(
-		ConfigurationSectionName.App,
-		@"C:\Config\app",
-		nameof(Resources.FailureConfigurationSectionAppNoFilesRemedy))]
-	[InlineData(
-		ConfigurationSectionName.Connection,
-		@"C:\Config\connection",
-		nameof(Resources.FailureConfigurationSectionConnectionNoFilesRemedy))]
-	public void ConfigurationSectionNoFiles_SendsTheOperatorToTheFileTheFolderNeeds(
-		ConfigurationSectionName section,
-		string directory,
-		string expectedKey)
-	{
-		var view = ArchiveFailureMapper.Map(
-			new ConfigurationSectionError(section, directory, SectionProblem.NoFiles));
-
-		view.Detail.Should().Contain(directory);
-		view.Remedy.Should().Be(Text(expectedKey));
-	}
-
-	[Fact]
-	public void ConfigurationSectionDuplicateKey_NamesTheKeyAndTheOneFile()
-	{
-		var view = ArchiveFailureMapper.Map(
-			new ConfigurationSectionError(
-				ConfigurationSectionName.App,
-				@"C:\Config\app",
-				SectionProblem.DuplicateKey,
-				"locale",
-				["app.yaml"]));
-
-		view.Detail.Should().Contain("locale").And.Contain("app.yaml").And.Contain(@"C:\Config\app");
-		view.Remedy.Should().Be(Resources.FailureConfigurationSectionDuplicateKeyRemedy);
-	}
-
-	[Fact]
-	public void ConfigurationSectionKeyConflict_NamesTheKeyAndBothFiles()
-	{
-		var view = ArchiveFailureMapper.Map(
-			new ConfigurationSectionError(
-				ConfigurationSectionName.App,
-				@"C:\Config\app",
-				SectionProblem.KeyConflict,
-				"locale",
-				["app.yaml", "site.yaml"]));
-
-		view.Detail.Should()
-			.Contain("locale")
-			.And.Contain("app.yaml")
-			.And.Contain("site.yaml")
-			.And.Contain(@"C:\Config\app");
-		view.Remedy.Should().Be(Resources.FailureConfigurationSectionKeyConflictRemedy);
-	}
-
-	[Fact]
-	public void ConfigurationSectionUnreadable_NamesTheFileThatFailed()
-	{
-		var view = ArchiveFailureMapper.Map(
-			new ConfigurationSectionError(
-				ConfigurationSectionName.Connection,
-				@"C:\Config\connection",
-				SectionProblem.Unreadable,
-				fileNames: ["connection.yaml"]));
-
-		view.Detail.Should().Contain("connection.yaml").And.Contain(@"C:\Config\connection");
-		view.Remedy.Should().Be(Resources.FailureConfigurationSectionUnreadableRemedy);
-	}
-
-	[Fact]
-	public void ConfigurationSectionUnlistable_TalksAboutTheFolderRatherThanAFile()
-	{
-		var view = ArchiveFailureMapper.Map(
-			new ConfigurationSectionError(
-				ConfigurationSectionName.Connection, @"C:\Config\connection", SectionProblem.Unlistable));
-
-		view.Detail.Should().Be(
-			Resources.FormatFailureConfigurationSectionUnlistableDetail(@"C:\Config\connection"));
-		view.Remedy.Should().Be(Resources.FailureConfigurationSectionUnreadableRemedy);
-	}
-
-	[Fact]
-	public void ConfigurationSectionUnwritable_NamesTheFileThatRefusedTheWrite()
-	{
-		var view = ArchiveFailureMapper.Map(
-			new ConfigurationSectionError(
-				ConfigurationSectionName.Connection,
-				@"C:\Config\connection",
-				SectionProblem.Unwritable,
-				fileNames: ["connection.yaml"]));
-
-		view.Detail.Should().Be(
-			Resources.FormatFailureConfigurationSectionUnwritableDetail(@"C:\Config\connection", "connection.yaml"));
-		view.Detail.Should().Contain("connection.yaml").And.Contain(@"C:\Config\connection");
-		view.Remedy.Should().Be(Resources.FailureConfigurationSectionUnwritableRemedy);
-	}
-
-	[Fact]
-	public void ConfigurationSectionKeyAbsent_NamesTheKeyAndTheFolder()
-	{
-		var view = ArchiveFailureMapper.Map(
-			new ConfigurationSectionError(
-				ConfigurationSectionName.App, @"C:\Config\app", SectionProblem.KeyAbsent, "theme"));
-
-		view.Detail.Should().Be(Resources.FormatFailureConfigurationSectionKeyAbsentDetail("theme", @"C:\Config\app"));
-		view.Detail.Should().Contain("theme").And.Contain(@"C:\Config\app");
-		view.Remedy.Should().Be(Resources.FailureConfigurationSectionKeyAbsentRemedy);
-	}
-
-	[Fact]
-	public void AppSettingsUnreadable_SendsTheOperatorToTheSectionFolder()
-	{
-		var view = ArchiveFailureMapper.Map(
-			new AppSettingsError(@"C:\Config\app", AppSettingsProblem.Unreadable));
-
-		view.Title.Should().Be(Resources.FailureAppSettingsRejectedTitle);
-		view.Detail.Should().Contain(@"C:\Config\app");
-		view.Remedy.Should().Be(Resources.FailureAppSettingsUnreadableRemedy);
-	}
-
-	[Fact]
-	public void AppSettingsKeyMissing_NamesTheKey()
-	{
-		var view = ArchiveFailureMapper.Map(
-			new AppSettingsError(@"C:\Config\app", AppSettingsProblem.KeyMissing, AppSettingsLoader.ThemeKey));
-
-		view.Title.Should().Be(Resources.FailureAppSettingsRejectedTitle);
-		view.Detail.Should().Contain(@"C:\Config\app").And.Contain(AppSettingsLoader.ThemeKey);
-		view.Remedy.Should().Be(Resources.FailureAppSettingsKeyMissingRemedy);
-	}
-
-	[Fact]
-	public void AppSettingsValueInvalid_NamesTheKeyAndItsAcceptedValues()
-	{
-		var view = ArchiveFailureMapper.Map(
-			new AppSettingsError(
-				@"C:\Config\app",
-				AppSettingsProblem.ValueInvalid,
-				AppSettingsLoader.LocaleKey,
-				"ru, en"));
-
-		view.Title.Should().Be(Resources.FailureAppSettingsRejectedTitle);
-		view.Detail.Should().Contain(AppSettingsLoader.LocaleKey).And.Contain("ru, en");
-		view.Remedy.Should().Be(Resources.FailureAppSettingsValueInvalidRemedy);
-	}
-
-	[Theory]
-	[InlineData(ConnectionFileProblem.Unparseable, nameof(Resources.FailureConnectionFileUnparseableRemedy))]
-	[InlineData(ConnectionFileProblem.MissingField, nameof(Resources.FailureConnectionFileMissingFieldRemedy))]
-	[InlineData(ConnectionFileProblem.OutOfRange, nameof(Resources.FailureConnectionFileOutOfRangeRemedy))]
-	[InlineData(ConnectionFileProblem.HostNotIPv4, nameof(Resources.FailureConnectionFileHostNotIPv4Remedy))]
-	public void ConnectionFileInvalid_RemedyFollowsTheProblem(ConnectionFileProblem kind, string expectedKey)
-	{
-		var view = ArchiveFailureMapper.Map(
-			new ConnectionFileError(@"C:\Config\connection", kind, "the reason"));
-
-		view.Title.Should().Be(Resources.FailureConnectionFileRejectedTitle);
-		view.Detail.Should().Contain(@"C:\Config\connection").And.Contain("the reason");
-		view.Remedy.Should().Be(Text(expectedKey));
-	}
-
-	[Fact]
-	public void ArchiveUnreachable_SendsTheOperatorToTheNetwork()
-	{
-		var view = ArchiveFailureMapper.Map(Archive(ArchiveFault.Unreachable));
-
-		view.Title.Should().Be(Resources.FailureArchiveUnreachableTitle);
-		view.Detail.Should().Contain("scada-host:5432").And.Contain("semiplot");
-		view.Remedy.Should().Be(Resources.FailureArchiveUnreachableRemedy);
-	}
-
-	[Fact]
-	public void ArchiveAccessDenied_SendsTheOperatorToTheCredentials()
-	{
-		var view = ArchiveFailureMapper.Map(Archive(ArchiveFault.AccessDenied, "scada_reader"));
-
-		view.Title.Should().Be(Resources.FailureArchiveAccessDeniedTitle);
-		view.Detail.Should().Contain("scada_reader").And.Contain("scada-host:5432").And.Contain("semiplot");
-		view.Remedy.Should().Be(Resources.FailureArchiveAccessDeniedRemedy);
-	}
-
-	[Fact]
-	public void ArchiveDatabaseMissing_SendsTheOperatorToSemibaseSite()
-	{
-		var view = ArchiveFailureMapper.Map(Archive(ArchiveFault.DatabaseMissing));
-
-		view.Title.Should().Be(Resources.FailureArchiveNotProvisionedTitle);
-		view.Detail.Should().Contain("scada-host:5432").And.Contain("semiplot");
-		view.Remedy.Should().Be(Resources.FailureArchiveDatabaseMissingRemedy);
-	}
-
-	[Theory]
-	[InlineData("trends")]
-	[InlineData("semiplot_tags")]
-	public void ArchiveTableMissing_NamesTheTableAndSendsTheOperatorToSemibaseSite(string table)
-	{
-		var view = ArchiveFailureMapper.Map(Archive(ArchiveFault.TableMissing, table));
-
-		view.Title.Should().Be(Resources.FailureArchiveNotProvisionedTitle);
-		view.Detail.Should().Contain(table);
-		view.Remedy.Should().Be(Resources.FormatFailureArchiveTableMissingRemedy(table));
-	}
-
-	// Both tables arrive from the same provisioning run, so the remedy may not branch on which one is
-	// absent. Substituting the table name out of each remedy leaves two strings that must be equal.
-	[Fact]
-	public void ArchiveTableMissing_TheRemedyDoesNotDependOnWhichTableIsAbsent()
-	{
-		var trendsRemedy = RemedyWithTableNameElided("trends");
-		var tagTableRemedy = RemedyWithTableNameElided("semiplot_tags");
-
-		trendsRemedy.Should().Be(tagTableRemedy);
-	}
-
-	private static string RemedyWithTableNameElided(string table)
-	{
-		var view = ArchiveFailureMapper.Map(Archive(ArchiveFault.TableMissing, table));
-
-		return view.Remedy.Replace(table, "<table>", StringComparison.Ordinal);
-	}
-
-	[Fact]
-	public void ArchiveQueryTimedOut_NamesTheSqlStateAndTheRolesBound()
-	{
-		var view = ArchiveFailureMapper.Map(Archive(ArchiveFault.QueryTimedOut));
-
-		view.Title.Should().Be(Resources.FailureArchiveQueryTimedOutTitle);
-		view.Detail.Should().Contain("scada-host:5432").And.Contain("57014");
-		view.Remedy.Should().Be(Resources.FailureArchiveQueryTimedOutRemedy);
-	}
-
-	[Fact]
-	public void ArchiveReadFailed_WithASqlState_NamesItForTheReport()
-	{
-		var view = ArchiveFailureMapper.Map(Archive(ArchiveFault.ReadFailed, "22003"));
-
-		view.Title.Should().Be(Resources.FailureArchiveReadFailedTitle);
-		view.Detail.Should().Contain("22003");
-		view.Remedy.Should().Be(Resources.FormatFailureArchiveReadFailedRemedy("22003"));
-	}
-
-	[Fact]
-	public void ArchiveReadFailed_WithoutASqlState_PointsAtTheClientSide()
-	{
-		var view = ArchiveFailureMapper.Map(Archive(ArchiveFault.ReadFailed));
-
-		view.Detail.Should().Be(Resources.FormatFailureArchiveReadUnnamedDetail(ArchiveName));
-		view.Remedy.Should().Be(Resources.FailureArchiveReadUnnamedRemedy);
-	}
-
-	[Fact]
-	public void ArchiveValueRejected_NamesThePenAndSendsTheOperatorToAnotherValue()
-	{
-		var view = ArchiveFailureMapper.Map(Archive(ArchiveFault.ValueRejected, "Chamber pressure"));
-
-		view.Title.Should().Be(Resources.FailureArchiveValueRejectedTitle);
-		view.Detail.Should().Be(Resources.FormatFailureArchiveValueRejectedDetail(ArchiveName, "Chamber pressure"));
-		view.Remedy.Should().Be(Resources.FailureArchiveValueRejectedRemedy);
-		view.Severity.Should().Be(MessageSeverity.Warning);
-	}
-
-	[Fact]
-	public void ArchiveNameTaken_NamesTheNameAskedFor()
-	{
-		var view = ArchiveFailureMapper.Map(Archive(ArchiveFault.NameTaken, "Etch gases"));
-
-		view.Title.Should().Be(Resources.FailureArchiveNameTakenTitle);
-		view.Detail.Should().Be(Resources.FormatFailureArchiveNameTakenDetail(ArchiveName, "Etch gases"));
-		view.Remedy.Should().Be(Resources.FailureArchiveNameTakenRemedy);
-		view.Severity.Should().Be(MessageSeverity.Warning);
-	}
-
-	[Fact]
-	public void ArchiveRowGone_NamesWhatIsGoneAndSendsTheOperatorToTheCurrentCatalogue()
-	{
-		var view = ArchiveFailureMapper.Map(Archive(ArchiveFault.RowGone, "Etch gases"));
-
-		view.Title.Should().Be(Resources.FailureArchiveRowGoneTitle);
-		view.Detail.Should().Be(Resources.FormatFailureArchiveRowGoneDetail(ArchiveName, "Etch gases"));
-		view.Remedy.Should().Be(Resources.FailureArchiveRowGoneRemedy);
-		view.Severity.Should().Be(MessageSeverity.Warning);
+		AssertMapsTo(_connectionFileCases[caseName]);
 	}
 
 	[Fact]
@@ -481,47 +394,13 @@ public sealed class ArchiveFailureMapperTests
 	[Fact]
 	public void StartupReadTimedOut_NamesTheReadInTheOperatorsLanguage()
 	{
-		var previous = CultureInfo.CurrentUICulture;
-		try
-		{
-			CultureInfo.CurrentUICulture = new CultureInfo("ru");
+		using var culture = new CultureScope("ru");
 
-			var view = ArchiveFailureMapper.Map(
-				new StartupReadTimedOutError(StartupRead.ArchiveExtent, TimeSpan.FromSeconds(30)));
-
-			view.Detail.Should().Be(Resources.FormatFailureStartupReadTimedOutDetail(
-				Resources.FailureStartupReadArchiveExtent, 30d));
-			view.Detail.Should().NotContain("archive extent").And.NotContain("pen catalogue");
-		}
-		finally
-		{
-			CultureInfo.CurrentUICulture = previous;
-		}
-	}
-
-	// A lost live edge is drawn as a banner over a chart that keeps its history, so the words say what is
-	// still true as well as what failed.
-	[Fact]
-	public void ArchiveConnectionLost_NamesTheRunAndLeavesTheHistoryStanding()
-	{
 		var view = ArchiveFailureMapper.Map(
-			new ArchiveError(ArchiveFault.ConnectionLost, "bench.example", 5432, "semiplot_dev", "3"));
+			new StartupReadTimedOutError(StartupRead.ArchiveExtent, TimeSpan.FromSeconds(30)));
 
-		view.Title.Should().Be(Resources.FailureArchiveConnectionLostTitle);
-		view.Detail.Should().Contain("semiplot_dev").And.Contain("bench.example:5432").And.Contain("3");
-		view.Remedy.Should().Be(Resources.FailureArchiveConnectionLostRemedy);
-	}
-
-	// The words stop where the knowledge stops: no shape is held on this side, so the detail quotes the
-	// server and the remedy points at the provisioning that owns the table.
-	[Fact]
-	public void ArchiveShapeUnexpected_QuotesTheServerAndSendsTheOperatorToTheProvisioning()
-	{
-		var view = ArchiveFailureMapper.Map(Archive(ArchiveFault.ShapeUnexpected, "column \"v\" does not exist"));
-
-		view.Title.Should().Be(Resources.FailureArchiveShapeUnexpectedTitle);
-		view.Detail.Should().Contain("scada-host:5432").And.Contain("column \"v\" does not exist");
-		view.Remedy.Should().Be(Resources.FailureArchiveShapeUnexpectedRemedy);
+		view.Detail.Should().Be(Resources.FormatFailureStartupReadTimedOutDetail(
+			Resources.FailureStartupReadArchiveExtent, 30d));
 	}
 
 	// The exception arm is what stops a throw on the startup path, a data source that cannot be built or
@@ -547,24 +426,31 @@ public sealed class ArchiveFailureMapperTests
 		view.Remedy.Should().Be(Resources.FailureUnknownRemedy);
 	}
 
+	private static void AssertMapsTo(FailureCase expected)
+	{
+		var view = ArchiveFailureMapper.Map(expected.Error);
+
+		view.Title.Should().Be(expected.Title());
+		view.Detail.Should().Be(expected.Detail());
+		view.Remedy.Should().Be(expected.Remedy());
+		view.Severity.Should().Be(expected.Severity);
+	}
+
 	private static string ArgumentsTitle()
 	{
 		return ArchiveFailureMapper.Map(
 			new StartupArgumentsError(StartupArgumentsProblem.Missing, StartupOptions.ConfigDirKey)).Title;
 	}
 
-	private static string ArchiveName => Resources.FormatFailureArchiveNameFormat("semiplot", "scada-host:5432");
-
-	private static string Text(string key)
-	{
-		var value = Resources.ResourceManager.GetString(key, Resources.Culture);
-		value.Should().NotBeNullOrWhiteSpace("'{0}' is read by the operator", key);
-
-		return value;
-	}
-
 	private static ArchiveError Archive(ArchiveFault kind, string detail = "")
 	{
-		return new ArchiveError(kind, "scada-host", 5432, "semiplot", detail);
+		return new ArchiveError(kind, "scada-host", 5432, ArchiveDatabase, detail);
 	}
+
+	private sealed record FailureCase(
+		IError Error,
+		Func<string> Title,
+		Func<string> Detail,
+		Func<string> Remedy,
+		MessageSeverity Severity = MessageSeverity.Error);
 }

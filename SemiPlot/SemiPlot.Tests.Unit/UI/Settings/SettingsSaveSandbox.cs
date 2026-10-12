@@ -9,6 +9,8 @@ using SemiPlot.DataSource.Postgres.Configuration;
 using SemiPlot.UI.Settings;
 using SemiPlot.UI.Startup;
 
+using static SemiPlot.Tests.Unit.ResultText;
+
 namespace SemiPlot.Tests.Unit.UI.Settings;
 
 /// <summary>A temporary copy of the shipped set with a filled password, and the save and its checks over it.</summary>
@@ -16,9 +18,11 @@ internal sealed class SettingsSaveSandbox : IDisposable
 {
 	public const string ConnectionFileName = "connection.yaml";
 
+	private readonly TemporaryDirectory _temporary = new("semiplot-settings-save");
+
 	public SettingsSaveSandbox()
 	{
-		ConfigDirectory = Directory.CreateTempSubdirectory("semiplot-settings-save-").FullName;
+		ConfigDirectory = _temporary.Path;
 		AppDirectory = Path.Combine(ConfigDirectory, StartupSequence.SettingsDirectoryName);
 		ConnectionDirectory = Path.Combine(ConfigDirectory, StartupProbe.ConnectionDirectoryName);
 		ShippedConfiguration.CopyTo(ConfigDirectory, "secret");
@@ -34,12 +38,7 @@ internal sealed class SettingsSaveSandbox : IDisposable
 
 	public void Dispose()
 	{
-		foreach (var file in Directory.GetFiles(ConfigDirectory, "*", SearchOption.AllDirectories))
-		{
-			File.SetAttributes(file, FileAttributes.Normal);
-		}
-
-		Directory.Delete(ConfigDirectory, recursive: true);
+		_temporary.Dispose();
 	}
 
 	public static Dictionary<ConfigurationSectionName, IReadOnlyDictionary<string, string>> Edit(
@@ -58,11 +57,6 @@ internal sealed class SettingsSaveSandbox : IDisposable
 		result.IsFailed.Should().BeTrue();
 
 		return result.Errors.Should().ContainSingle().Which.Should().BeOfType<TError>().Subject;
-	}
-
-	public static string Describe(IResultBase result)
-	{
-		return string.Join("; ", result.Errors.Select(error => error.Message));
 	}
 
 	public string DirectoryOf(ConfigurationSectionName section)

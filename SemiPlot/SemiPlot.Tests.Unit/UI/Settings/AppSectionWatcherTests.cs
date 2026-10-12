@@ -250,36 +250,29 @@ public sealed class AppSectionWatcherTests : IDisposable
 	[Fact]
 	public async Task AReplacedFileInARealFolderYieldsTheNewTheme()
 	{
-		var configDirectory = Directory.CreateTempSubdirectory("semiplot-app-watcher-").FullName;
-		try
-		{
-			var sectionDirectory = Directory.CreateDirectory(Path.Combine(configDirectory, "app")).FullName;
-			var stagingDirectory = Directory.CreateDirectory(Path.Combine(configDirectory, "staging")).FullName;
-			var target = Path.Combine(sectionDirectory, "app.yaml");
-			var staged = Path.Combine(stagingDirectory, "app.yaml");
-			File.WriteAllText(target, "locale: ru\ntheme: light\n");
-			File.WriteAllText(staged, "locale: ru\ntheme: dark\n");
-			var applied = new TaskCompletionSource<Result<AppThemeVariant>>(
-				TaskCreationOptions.RunContinuationsAsynchronously);
+		using var configDirectory = new TemporaryDirectory("semiplot-app-watcher");
+		var sectionDirectory = Directory.CreateDirectory(Path.Combine(configDirectory, "app")).FullName;
+		var stagingDirectory = Directory.CreateDirectory(Path.Combine(configDirectory, "staging")).FullName;
+		var target = Path.Combine(sectionDirectory, "app.yaml");
+		var staged = Path.Combine(stagingDirectory, "app.yaml");
+		File.WriteAllText(target, "locale: ru\ntheme: light\n");
+		File.WriteAllText(staged, "locale: ru\ntheme: dark\n");
+		var applied = new TaskCompletionSource<Result<AppThemeVariant>>(
+			TaskCreationOptions.RunContinuationsAsynchronously);
 
-			using var subscription = AppSectionWatcher.ThemeChanges(
-					AppSectionWatcher.Watch(() => AppSectionWatcher.Open(sectionDirectory), DefaultScheduler.Instance),
-					AppThemeVariant.Light,
-					() => AppSettingsLoader.Load(sectionDirectory),
-					DefaultScheduler.Instance,
-					ImmediateScheduler.Instance)
-				.Subscribe(theme => applied.TrySetResult(theme));
+		using var subscription = AppSectionWatcher.ThemeChanges(
+				AppSectionWatcher.Watch(() => AppSectionWatcher.Open(sectionDirectory), DefaultScheduler.Instance),
+				AppThemeVariant.Light,
+				() => AppSettingsLoader.Load(sectionDirectory),
+				DefaultScheduler.Instance,
+				ImmediateScheduler.Instance)
+			.Subscribe(theme => applied.TrySetResult(theme));
 
-			File.Replace(staged, target, Path.Combine(stagingDirectory, "app.yaml.replaced"));
+		File.Replace(staged, target, Path.Combine(stagingDirectory, "app.yaml.replaced"));
 
-			var theme = await applied.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-			theme.IsSuccess.Should().BeTrue(string.Join("; ", theme.Errors.Select(error => error.Message)));
-			theme.Value.Should().Be(AppThemeVariant.Dark);
-		}
-		finally
-		{
-			Directory.Delete(configDirectory, recursive: true);
-		}
+		var theme = await applied.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+		theme.IsSuccess.Should().BeTrue(ResultText.Describe(theme));
+		theme.Value.Should().Be(AppThemeVariant.Dark);
 	}
 
 	[Fact]
@@ -291,46 +284,40 @@ public sealed class AppSectionWatcherTests : IDisposable
 			return;
 		}
 
-		var configDirectory = Directory.CreateTempSubdirectory("semiplot-app-watcher-").FullName;
-		try
-		{
-			var sectionDirectory = Directory.CreateDirectory(Path.Combine(configDirectory, "app")).FullName;
-			var file = Path.Combine(sectionDirectory, "app.yaml");
-			File.WriteAllText(file, "locale: ru\ntheme: light\n");
-			var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-			var dark = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		using var configDirectory = new TemporaryDirectory("semiplot-app-watcher");
+		var sectionDirectory = Directory.CreateDirectory(Path.Combine(configDirectory, "app")).FullName;
+		var file = Path.Combine(sectionDirectory, "app.yaml");
+		File.WriteAllText(file, "locale: ru\ntheme: light\n");
+		var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+		var dark = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-			using var subscription = AppSectionWatcher.ThemeChanges(
-					AppSectionWatcher.Watch(() => AppSectionWatcher.Open(sectionDirectory), DefaultScheduler.Instance),
-					AppThemeVariant.Light,
-					() => AppSettingsLoader.Load(sectionDirectory),
-					DefaultScheduler.Instance,
-					ImmediateScheduler.Instance)
-				.Subscribe(theme =>
+		using var subscription = AppSectionWatcher.ThemeChanges(
+				AppSectionWatcher.Watch(() => AppSectionWatcher.Open(sectionDirectory), DefaultScheduler.Instance),
+				AppThemeVariant.Light,
+				() => AppSettingsLoader.Load(sectionDirectory),
+				DefaultScheduler.Instance,
+				ImmediateScheduler.Instance)
+			.Subscribe(theme =>
+			{
+				if (theme.IsFailed
+					&& theme.Errors.OfType<ExceptionalError>().Any(error => error.Exception is Win32Exception))
 				{
-					if (theme.IsFailed && theme.Errors.OfType<ExceptionalError>().Any(error => error.Exception is Win32Exception))
-					{
-						stopped.TrySetResult();
-					}
-					else if (theme.IsSuccess && theme.Value == AppThemeVariant.Dark)
-					{
-						dark.TrySetResult();
-					}
-				});
+					stopped.TrySetResult();
+				}
+				else if (theme.IsSuccess && theme.Value == AppThemeVariant.Dark)
+				{
+					dark.TrySetResult();
+				}
+			});
 
-			Directory.Delete(sectionDirectory, recursive: true);
-			await stopped.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-			await Task.Delay(AppSectionWatcher.QuietPeriod * 3, TestContext.Current.CancellationToken);
-			Directory.CreateDirectory(sectionDirectory);
-			File.WriteAllText(file, "locale: ru\ntheme: dark\n");
+		Directory.Delete(sectionDirectory, recursive: true);
+		await stopped.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+		await Task.Delay(AppSectionWatcher.QuietPeriod * 3, TestContext.Current.CancellationToken);
+		Directory.CreateDirectory(sectionDirectory);
+		File.WriteAllText(file, "locale: ru\ntheme: dark\n");
 
-			await dark.Task.WaitAsync(
-				AppSectionWatcher.ReopenInterval + TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-		}
-		finally
-		{
-			Directory.Delete(configDirectory, recursive: true);
-		}
+		await dark.Task.WaitAsync(
+			AppSectionWatcher.ReopenInterval + TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 	}
 
 	private void Watch(AppThemeVariant? appliedTheme)

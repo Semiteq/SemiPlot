@@ -11,11 +11,11 @@ namespace SemiPlot.Tests.Unit.UI.Startup;
 [Trait("Category", "Unit")]
 public sealed class LogFileTargetTests : IDisposable
 {
-	private readonly string _directory = Directory.CreateTempSubdirectory("semiplot-log-target-").FullName;
+	private readonly TemporaryDirectory _directory = new("semiplot-log-target");
 
 	public void Dispose()
 	{
-		Directory.Delete(_directory, recursive: true);
+		_directory.Dispose();
 	}
 
 	[Fact]
@@ -25,7 +25,7 @@ public sealed class LogFileTargetTests : IDisposable
 
 		var result = LogFileTarget.Prepare(path);
 
-		result.IsSuccess.Should().BeTrue(string.Join("; ", result.Errors.Select(error => error.Message)));
+		result.IsSuccess.Should().BeTrue(ResultText.Describe(result));
 		File.Exists(path).Should().BeTrue();
 	}
 

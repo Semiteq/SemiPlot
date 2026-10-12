@@ -108,16 +108,18 @@ tracked set.
 
 ## Test
 
-Two projects, split on one axis: needs a container or not.
+Two projects, split on one axis: crosses a machine boundary (a socket or a container) or not.
 
 | Project | Framework | References | Holds |
 | --- | --- | --- | --- |
-| `SemiPlot.Tests.Unit` | xunit v3 + `Avalonia.Headless.XUnit` | `SemiPlot.UI`, `SemiPlot.Core`, `SemiPlot.DataSource.Postgres`, `SemiPlot.Tools.ArchiveSeeder` | Every test that needs no container: the UI, the Core models, the seeder's generators and the provider's pure classes |
-| `SemiPlot.Tests.Integration` | xunit v3 + `Avalonia.Headless.XUnit` | the same four | The container harness, the container tests and the journeys, all in one xunit collection |
+| `SemiPlot.Tests.Unit` | xunit v3 + `Avalonia.Headless.XUnit` | `SemiPlot.UI`, `SemiPlot.Core`, `SemiPlot.DataSource.Postgres`, `SemiPlot.Tools.ArchiveSeeder` | Every test that opens no socket and starts no container: the UI, the Core models, the seeder's generators and the provider's pure classes |
+| `SemiPlot.Tests.Integration` | xunit v3 + `Avalonia.Headless.XUnit` | the same four | The container harness, the container tests and the journeys in one xunit collection, and the socket tests that need no server |
 
 - Each project carries its own `TestAppBuilder.cs` with `[assembly: AvaloniaTestApplication]`. Pure
   logic uses plain `[Fact]`; tests touching ReactiveUI/ScottPlot/Avalonia use
   `[AvaloniaFact]`/`[AvaloniaTheory]`.
+- What a view test owns, and how a pass-through layer is tested: `docs/architecture/testing-strategy.md`
+  ("What a realised-view test owns", "A pass-through layer").
 - Every click, clear, typed text and key press in a headless view test goes through
   `SemiPlot.Tests.Unit/UI/HeadlessInput.cs` (`Click`, `Clear`, `Type`, `Press`) on the `TopLevel` that
   shows the control; no test class carries a helper of its own for these four gestures.
@@ -178,7 +180,9 @@ Frame cost during a drag is measured, not asserted: `docs/architecture/testing-s
 
 ### Container tests
 
-Every test in `SemiPlot.Tests.Integration` needs a container runtime and nothing else:
+Every test of the `ArchiveDatabaseCollection` in `SemiPlot.Tests.Integration` needs a container runtime and
+nothing else. The socket classes (`RealtimePollTests`, `RealtimeSubscriptionDisposalTests`,
+`ConvergeReadinessTests`) carry no collection, take no fixture and run without a runtime.
 `SemiPlot/bench/Dockerfile` copies `/semibase` out of
 `ghcr.io/semiteq/semibase:latest`, which the fixture pulls ahead of the build, and runs
 `semibase bench` from `/docker-entrypoint-initdb.d/` before the published port opens. The container

@@ -8,9 +8,6 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 /// <summary>One pen drawn as a rise from 20 to 80 on a 0 to 100 axis, and its line read back as pixels.</summary>
 internal static class RenderedRise
 {
-	public const int Red = 0;
-	public const int Blue = 2;
-
 	private const int PlotWidth = 400;
 	private const int PlotHeight = 300;
 	private const double AxisMin = 0.0;
@@ -21,9 +18,6 @@ internal static class RenderedRise
 
 	// Rows either side of the probed height, so a one-pixel antialiased stroke cannot slip between probes.
 	private const int ProbeRows = 3;
-
-	// A channel this far above the other two is the stroke, not a grey grid line or an antialiased edge.
-	private const int DominanceThreshold = 24;
 
 	private static readonly DateTime _start = new(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
 	private static readonly DateTime _end = _start.AddMinutes(10.0);
@@ -59,10 +53,7 @@ internal static class RenderedRise
 
 		for (var row = centreRow - ProbeRows; row <= centreRow + ProbeRows; row++)
 		{
-			var strongest = pixels[row, column, channel];
-			var others = Math.Max(pixels[row, column, (channel + 1) % 3], pixels[row, column, (channel + 2) % 3]);
-
-			if (strongest - others >= DominanceThreshold)
+			if (StrokeProbe.Dominates(pixels, row, column, channel))
 			{
 				return true;
 			}

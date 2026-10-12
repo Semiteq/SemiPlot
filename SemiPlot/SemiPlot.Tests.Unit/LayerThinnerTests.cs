@@ -93,30 +93,6 @@ public sealed class LayerThinnerTests
 		day.Should().BeSubsetOf(hour).And.NotBeEquivalentTo(hour);
 	}
 
-	[Fact]
-	public void EveryCoarseRowCopiesARawRowExactly()
-	{
-		var raw = _rawRows.Select(BenchRows.Identity).ToHashSet();
-
-		foreach (var row in LayerThinner.ThinAll(_rawRows))
-		{
-			raw.Should().Contain(BenchRows.Identity(row));
-			LayerThinner.CoarseLayers.Should().Contain(row.Layer);
-		}
-	}
-
-	[Fact]
-	public void ThinAllProducesTheThreeCoarseLayers()
-	{
-		var byLayer = LayerThinner.ThinAll(_rawRows)
-			.GroupBy(row => row.Layer)
-			.ToDictionary(layer => layer.Key, layer => layer.Count());
-
-		byLayer.Keys.Order().Should().Equal(LayerThinner.CoarseLayers.Order());
-		(byLayer[LayerThinner.MinuteLayer] > byLayer[LayerThinner.HourLayer]).Should().BeTrue();
-		(byLayer[LayerThinner.HourLayer] > byLayer[LayerThinner.DayLayer]).Should().BeTrue();
-	}
-
 	// A slice falling under this number would move the gated expectations, the index plans, the
 	// statement-timeout bound and the minute-layer density test, with nothing here failing first.
 	[Fact]

@@ -42,7 +42,7 @@ public sealed class NavigationBarViewModelTests
 	public void PanPastLiveEdge_AutoDetachesStickyOnTheBar_JumpToNowReattaches()
 	{
 		var (chart, bar) = NavigationBarTestBuilder.CreateBar();
-		var liveEdge = DateTime.UtcNow;
+		var liveEdge = new DateTime(2026, 6, 1, 10, 0, 0, DateTimeKind.Utc);
 		chart.Navigation.TrackDataExtents(liveEdge - TimeSpan.FromDays(7.0), liveEdge);
 		bar.IsSticky.Should().BeTrue();
 
@@ -80,7 +80,7 @@ public sealed class NavigationBarViewModelTests
 	public void Dispose_UnsubscribesFromNavigation()
 	{
 		var (chart, bar) = NavigationBarTestBuilder.CreateBar();
-		var liveEdge = DateTime.UtcNow;
+		var liveEdge = new DateTime(2026, 6, 1, 10, 0, 0, DateTimeKind.Utc);
 		chart.Navigation.TrackDataExtents(liveEdge - TimeSpan.FromDays(7.0), liveEdge);
 
 		bar.Dispose();

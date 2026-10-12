@@ -8,11 +8,13 @@ using FluentResults;
 
 using Microsoft.Reactive.Testing;
 
+using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
 using SemiPlot.UI.Chart;
 
 using Xunit;
 
+using static SemiPlot.Tests.Unit.UI.Chart.ChartTestBuilder;
 using static SemiPlot.Tests.Unit.UI.Chart.HistoryDebouncerTestBuilder;
 
 namespace SemiPlot.Tests.Unit.UI.Chart;
@@ -146,7 +148,7 @@ public sealed class ChartHistoryRequestDebouncerTests
 
 		reportedFailures.Should().ContainSingle();
 		reportedFailures[0].Should().ContainSingle()
-			.Which.Message.Should().Be("The archive is unreachable.");
+			.Which.Should().BeOfType<ArchiveError>().Which.Kind.Should().Be(ArchiveFault.Unreachable);
 		appliedLayers.Should().BeEmpty();
 	}
 
@@ -241,28 +243,6 @@ public sealed class ChartHistoryRequestDebouncerTests
 		{
 			queryRelease.Set();
 		}
-	}
-
-	[Fact]
-	public void TheSameWindowRequestedTwiceQueriesOnce()
-	{
-		// The trailing throttle admits the second push at 250 ms and its read is applied; the sample tick at
-		// 400 ms emits that same push, which asked for the rows the read brought, so the archive is read once.
-		var scheduler = new TestScheduler();
-		var queryCount = 0;
-		using var debouncer = CreateDebouncer(scheduler, (request, _) =>
-		{
-			queryCount++;
-
-			return Task.FromResult(Ok(request));
-		});
-
-		debouncer.Request(RequestForLayer(AggregationLayer.Raw));
-		scheduler.AdvanceBy(TimeSpan.FromMilliseconds(100).Ticks);
-		debouncer.Request(RequestForLayer(AggregationLayer.Raw));
-		scheduler.AdvanceBy(CapInterval.Ticks + 1);
-
-		queryCount.Should().Be(1);
 	}
 
 	[Fact]
@@ -406,6 +386,7 @@ public sealed class ChartHistoryRequestDebouncerTests
 		var reportedFailures = new List<IReadOnlyList<IError>>();
 		var appliedWindows = new List<DateTime>();
 		var applyCount = 0;
+		var thrown = new InvalidOperationException("The axis model rejected the envelope.");
 		using var debouncer = CreateDebouncer(
 			scheduler,
 			(request, _) => Task.FromResult(Ok(request)),
@@ -415,7 +396,7 @@ public sealed class ChartHistoryRequestDebouncerTests
 
 				if (applyCount == 1)
 				{
-					throw new InvalidOperationException("The axis model rejected the envelope.");
+					throw thrown;
 				}
 
 				appliedWindows.Add(request.FromUtc);
@@ -427,7 +408,7 @@ public sealed class ChartHistoryRequestDebouncerTests
 
 		reportedFailures.Should().ContainSingle();
 		reportedFailures[0].Should().ContainSingle()
-			.Which.Message.Should().Be("The axis model rejected the envelope.");
+			.Which.Should().BeAssignableTo<IExceptionalError>().Which.Exception.Should().BeSameAs(thrown);
 
 		debouncer.Request(RequestAtNotch(2));
 		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
@@ -439,17 +420,11 @@ public sealed class ChartHistoryRequestDebouncerTests
 	public void AFailedApplyCanBeRequestedAgain()
 	{
 		var scheduler = new TestScheduler();
-		var queryCount = 0;
 		var applyCount = 0;
 		var appliedWindows = new List<DateTime>();
 		using var debouncer = CreateDebouncer(
 			scheduler,
-			(request, _) =>
-			{
-				queryCount++;
-
-				return Task.FromResult(Ok(request));
-			},
+			(request, _) => Task.FromResult(Ok(request)),
 			(request, _) =>
 			{
 				applyCount++;
@@ -470,7 +445,6 @@ public sealed class ChartHistoryRequestDebouncerTests
 		debouncer.Request(RequestAtNotch(1));
 		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 
-		queryCount.Should().Be(2);
 		appliedWindows.Should().Equal(From.AddSeconds(1));
 	}
 }

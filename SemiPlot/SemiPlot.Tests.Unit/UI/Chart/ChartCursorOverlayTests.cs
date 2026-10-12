@@ -13,13 +13,16 @@ public sealed class ChartCursorOverlayTests
 {
 	private static readonly DataRectPixels _dataRect = new(Left: 50.0, Right: 250.0, Top: 10.0, Bottom: 410.0);
 
-	[Fact]
-	public void Project_CursorInsideDataRect_PlacesLineAtCursorX()
+	[Theory]
+	[InlineData(150.0)]
+	[InlineData(50.0)]
+	[InlineData(250.0)]
+	public void Project_CursorInsideOrOnAnEdgeOfTheDataRect_PlacesLineAtCursorX(double cursorPixelX)
 	{
-		var placement = ChartCursorOverlay.Project(cursorPixelX: 150.0, _dataRect, renderScale: 1.0);
+		var placement = ChartCursorOverlay.Project(cursorPixelX, _dataRect, renderScale: 1.0);
 
 		placement.IsVisible.Should().BeTrue();
-		placement.LineX.Should().Be(150.0);
+		placement.LineX.Should().Be(cursorPixelX);
 	}
 
 	[Fact]
@@ -31,36 +34,15 @@ public sealed class ChartCursorOverlayTests
 		placement.LineBottom.Should().Be(_dataRect.Bottom);
 	}
 
-	[Fact]
-	public void Project_CursorOnLeftEdge_IsVisible()
+	[Theory]
+	[InlineData(49.0, 1.0)]
+	[InlineData(251.0, 1.0)]
+	[InlineData(150.0, 0.0)]
+	public void Project_CursorOutsideTheDataRectOrNonPositiveRenderScale_IsHidden(
+		double cursorPixelX,
+		double renderScale)
 	{
-		var placement = ChartCursorOverlay.Project(cursorPixelX: _dataRect.Left, _dataRect, renderScale: 1.0);
-
-		placement.IsVisible.Should().BeTrue();
-		placement.LineX.Should().Be(_dataRect.Left);
-	}
-
-	[Fact]
-	public void Project_CursorOnRightEdge_IsVisible()
-	{
-		var placement = ChartCursorOverlay.Project(cursorPixelX: _dataRect.Right, _dataRect, renderScale: 1.0);
-
-		placement.IsVisible.Should().BeTrue();
-		placement.LineX.Should().Be(_dataRect.Right);
-	}
-
-	[Fact]
-	public void Project_CursorLeftOfDataRect_IsHidden()
-	{
-		var placement = ChartCursorOverlay.Project(cursorPixelX: 49.0, _dataRect, renderScale: 1.0);
-
-		placement.IsVisible.Should().BeFalse();
-	}
-
-	[Fact]
-	public void Project_CursorRightOfDataRect_IsHidden()
-	{
-		var placement = ChartCursorOverlay.Project(cursorPixelX: 251.0, _dataRect, renderScale: 1.0);
+		var placement = ChartCursorOverlay.Project(cursorPixelX, _dataRect, renderScale);
 
 		placement.IsVisible.Should().BeFalse();
 	}
@@ -74,13 +56,5 @@ public sealed class ChartCursorOverlayTests
 		placement.LineX.Should().Be(100.0);
 		placement.LineTop.Should().Be(_dataRect.Top / 2.0);
 		placement.LineBottom.Should().Be(_dataRect.Bottom / 2.0);
-	}
-
-	[Fact]
-	public void Project_NonPositiveRenderScale_IsHidden()
-	{
-		var placement = ChartCursorOverlay.Project(cursorPixelX: 150.0, _dataRect, renderScale: 0.0);
-
-		placement.IsVisible.Should().BeFalse();
 	}
 }

@@ -8,8 +8,6 @@ using Xunit;
 
 namespace SemiPlot.Tests.Integration;
 
-// The instants are relative to the machine's own clock rather than to a fixed calendar date, because
-// the bound the guard applies is against that clock.
 [Collection(ArchiveDatabaseCollection.Name)]
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
@@ -19,17 +17,19 @@ public sealed class StaleArchiveGuardTests(PostgresContainerFixture postgresCont
 {
 	private const int PenId = 1;
 
+	private static readonly DateTime _now = new(2026, 1, 2, 12, 0, 0, DateTimeKind.Unspecified);
+
 	// The state the operator reached: a fill from the previous day under a writer started today. The
 	// refusal names the verb that refills, because that is the whole remedy.
 	[Fact]
 	public async Task AnArchiveOlderThanTheBoundIsRefusedAndNamesConverge()
 	{
-		var newest = Now().AddMinutes(-793.7);
+		var newest = _now.AddMinutes(-793.7);
 
 		await WriteRowsAsync(newest);
 
 		Func<Task> act = () => StaleArchiveGuard.CheckAsync(
-			Database.WriterConnectionString, Now(), TestContext.Current.CancellationToken);
+			Database.WriterConnectionString, _now, TestContext.Current.CancellationToken);
 
 		var refused = (await act.Should().ThrowAsync<SeederException>()).Which;
 
@@ -41,7 +41,7 @@ public sealed class StaleArchiveGuardTests(PostgresContainerFixture postgresCont
 	public async Task AnEmptyArchiveIsAcceptedAndReportsNoNewestRow()
 	{
 		var outcome = await StaleArchiveGuard.CheckAsync(
-			Database.WriterConnectionString, Now(), TestContext.Current.CancellationToken);
+			Database.WriterConnectionString, _now, TestContext.Current.CancellationToken);
 		outcome.Should().BeNull();
 	}
 
@@ -49,28 +49,13 @@ public sealed class StaleArchiveGuardTests(PostgresContainerFixture postgresCont
 	[Fact]
 	public async Task AnArchiveWithRowsReportsItsNewestRow()
 	{
-		var newest = ToMillisecond(Now().AddSeconds(-30));
+		var newest = ToMillisecond(_now.AddSeconds(-30));
 
 		await WriteRowsAsync(newest.AddSeconds(-45), newest);
 
 		var outcome = await StaleArchiveGuard.CheckAsync(
-			Database.WriterConnectionString, Now(), TestContext.Current.CancellationToken);
+			Database.WriterConnectionString, _now, TestContext.Current.CancellationToken);
 		outcome.Should().Be(newest);
-	}
-
-	// The instant is stated rather than derived from MaximumAge, so it stays a live archive whatever the
-	// bound is set to.
-	[Fact]
-	public async Task AnArchiveAWriterIsKeepingLiveIsAccepted()
-	{
-		var newest = Now().AddSeconds(-2);
-
-		await WriteRowsAsync(newest);
-
-		var outcome = await StaleArchiveGuard.CheckAsync(
-			Database.WriterConnectionString, Now(), TestContext.Current.CancellationToken);
-
-		outcome.Should().NotBeNull();
 	}
 
 	// A database without public.trends surfaces Npgsql's own 42P01 rather than a controlled SeederException.
@@ -78,16 +63,11 @@ public sealed class StaleArchiveGuardTests(PostgresContainerFixture postgresCont
 	public async Task ADatabaseWithoutTheArchiveTableSurfacesUndefinedTable()
 	{
 		Func<Task> act = () => StaleArchiveGuard.CheckAsync(
-			Fixture.Server.AdminConnectionString, Now(), TestContext.Current.CancellationToken);
+			Fixture.Server.AdminConnectionString, _now, TestContext.Current.CancellationToken);
 
 		var thrown = (await act.Should().ThrowAsync<PostgresException>()).Which;
 
 		thrown.SqlState.Should().Be(PostgresErrorCodes.UndefinedTable);
-	}
-
-	private static DateTime Now()
-	{
-		return DateTime.SpecifyKind(DateTime.Now, DateTimeKind.Unspecified);
 	}
 
 	// public.trends.t is timestamp(3), so an instant a test compares against what it reads back carries

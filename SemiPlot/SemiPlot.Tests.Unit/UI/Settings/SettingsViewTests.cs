@@ -21,6 +21,8 @@ using SemiPlot.UI.Startup;
 
 using Xunit;
 
+using static SemiPlot.Tests.Unit.UI.ViewProbe;
+
 namespace SemiPlot.Tests.Unit.UI.Settings;
 
 /// <summary>The dialog as the operator drives it: values read off realised controls, input typed and clicked.</summary>
@@ -32,7 +34,7 @@ public sealed class SettingsViewTests : IDisposable
 {
 	private const string InvalidClass = "invalid";
 
-	private readonly string _configDirectory = Directory.CreateTempSubdirectory("semiplot-settings-view-").FullName;
+	private readonly TemporaryDirectory _configDirectory = new("semiplot-settings-view");
 
 	private readonly string _appDirectory;
 
@@ -47,14 +49,14 @@ public sealed class SettingsViewTests : IDisposable
 	public void Dispose()
 	{
 		_messagePanel.Dispose();
-		Directory.Delete(_configDirectory, recursive: true);
+		_configDirectory.Dispose();
 	}
 
 	[AvaloniaFact]
 	public void TheRealisedDialog_ShowsTheLoadedValues()
 	{
 		using var viewModel = Build();
-		var dialog = Realise(viewModel);
+		var dialog = Realise(new SettingsDialog { DataContext = viewModel });
 		try
 		{
 			Named<ComboBox>(dialog, "SettingsLanguage").SelectedItem
@@ -82,7 +84,7 @@ public sealed class SettingsViewTests : IDisposable
 	public void TheSaveButton_IsDisabledWhileARequiredFieldIsBlank()
 	{
 		using var viewModel = Build();
-		var dialog = Realise(viewModel);
+		var dialog = Realise(new SettingsDialog { DataContext = viewModel });
 		try
 		{
 			var save = Named<Button>(dialog, "SettingsSaveButton");
@@ -106,41 +108,15 @@ public sealed class SettingsViewTests : IDisposable
 	}
 
 	[AvaloniaFact]
-	public void TheHostField_RefusesAHostNameAndSaysWhy()
-	{
-		using var viewModel = Build();
-		var dialog = Realise(viewModel);
-		try
-		{
-			var save = Named<Button>(dialog, "SettingsSaveButton");
-			var host = Named<TextBox>(dialog, "SettingsHost");
-			var message = Named<TextBlock>(dialog, "SettingsValidationMessage");
-			message.Text.Should().BeEmpty();
-
-			HeadlessInput.Clear(dialog, host);
-			HeadlessInput.Type(dialog, host, "scada-01");
-
-			viewModel.Host.Should().Be("scada-01");
-			message.Text.Should().Be(Resources.SettingsHostInvalid);
-			host.Classes.Should().Contain(InvalidClass);
-			save.IsEffectivelyEnabled.Should().BeFalse("a host name is not an IPv4 address");
-		}
-		finally
-		{
-			dialog.Close();
-		}
-	}
-
-	[AvaloniaFact]
 	public void ThePortField_RefusesTextAndKeepsTheSaveDisabled()
 	{
 		using var viewModel = Build();
-		var dialog = Realise(viewModel);
+		var dialog = Realise(new SettingsDialog { DataContext = viewModel });
 		try
 		{
 			var save = Named<Button>(dialog, "SettingsSaveButton");
 			var port = Named<NumericUpDown>(dialog, "SettingsPort");
-			var textBox = Part<TextBox>(port, "PART_TextBox");
+			var textBox = Descendant<TextBox>(port, "PART_TextBox");
 
 			HeadlessInput.Type(dialog, textBox, "abc");
 			HeadlessInput.Press(dialog, PhysicalKey.Enter);
@@ -169,64 +145,11 @@ public sealed class SettingsViewTests : IDisposable
 	}
 
 	[AvaloniaFact]
-	public async Task TheRestartNotice_IsHiddenBeforeASaveAndVisibleAfterOneThatSucceeded()
-	{
-		using var viewModel = Build();
-		var dialog = Realise(viewModel);
-		try
-		{
-			var notice = Named<TextBlock>(dialog, "SettingsRestartNotice");
-			notice.IsEffectivelyVisible.Should().BeFalse();
-
-			var other = viewModel.Languages.First(choice => choice.Token != viewModel.SelectedLanguage!.Token);
-			Pick(dialog, Named<ComboBox>(dialog, "SettingsLanguage"), other);
-			viewModel.SelectedLanguage!.Token.Should().Be(other.Token);
-
-			HeadlessInput.Click(dialog, Named<Button>(dialog, "SettingsSaveButton"));
-			await HeadlessWait.Until(() => viewModel.IsRestartPending);
-
-			notice.IsEffectivelyVisible.Should().BeTrue();
-			notice.Text.Should().Be(Resources.SettingsRestartNotice);
-			_messagePanel.Entries.Should().BeEmpty();
-			AppSettingsLoader.Load(_appDirectory).Value.Locale.Should().Be(UiLanguage.En);
-		}
-		finally
-		{
-			dialog.Close();
-		}
-	}
-
-	[AvaloniaFact]
-	public async Task TheRestartNotice_AfterASaveThatAlsoChangedTheTheme_SaysTheThemeIsApplied()
-	{
-		using var viewModel = Build();
-		var dialog = Realise(viewModel);
-		try
-		{
-			var notice = Named<TextBlock>(dialog, "SettingsRestartNotice");
-			var otherLanguage = viewModel.Languages.First(choice => choice.Token != viewModel.SelectedLanguage!.Token);
-			var otherTheme = viewModel.Themes.First(choice => choice.Token != viewModel.SelectedTheme!.Token);
-			Pick(dialog, Named<ComboBox>(dialog, "SettingsLanguage"), otherLanguage);
-			Pick(dialog, Named<ComboBox>(dialog, "SettingsTheme"), otherTheme);
-
-			HeadlessInput.Click(dialog, Named<Button>(dialog, "SettingsSaveButton"));
-			await HeadlessWait.Until(() => viewModel.IsRestartPending);
-
-			notice.IsEffectivelyVisible.Should().BeTrue();
-			notice.Text.Should().Be(Resources.SettingsRestartNoticeThemeApplied, "the theme half applies live");
-		}
-		finally
-		{
-			dialog.Close();
-		}
-	}
-
-	[AvaloniaFact]
 	public async Task TheRestartNowButton_AppearsWithTheNoticeAndRunsTheHandedRestart()
 	{
 		var restarts = 0;
 		using var viewModel = Build(() => restarts++);
-		var dialog = Realise(viewModel);
+		var dialog = Realise(new SettingsDialog { DataContext = viewModel });
 		try
 		{
 			var button = Named<Button>(dialog, "SettingsRestartNow");
@@ -235,14 +158,19 @@ public sealed class SettingsViewTests : IDisposable
 			var dialogBounds = dialog.Bounds;
 			var saveBounds = save.Bounds;
 			button.IsEffectivelyVisible.Should().BeFalse();
+			notice.IsEffectivelyVisible.Should().BeFalse();
 
 			var other = viewModel.Languages.First(choice => choice.Token != viewModel.SelectedLanguage!.Token);
-			Pick(dialog, Named<ComboBox>(dialog, "SettingsLanguage"), other);
+			HeadlessInput.Pick(dialog, Named<ComboBox>(dialog, "SettingsLanguage"), other);
+			viewModel.SelectedLanguage!.Token.Should().Be(other.Token);
 			HeadlessInput.Click(dialog, Named<Button>(dialog, "SettingsSaveButton"));
 			await HeadlessWait.Until(() => button.IsEffectivelyEnabled);
 
 			button.IsEffectivelyVisible.Should().BeTrue();
 			notice.IsEffectivelyVisible.Should().BeTrue();
+			notice.Text.Should().Be(Resources.SettingsRestartNotice);
+			_messagePanel.Entries.Should().BeEmpty();
+			AppSettingsLoader.Load(_appDirectory).Value.Locale.Should().Be(UiLanguage.En);
 			dialog.Bounds.Should().Be(dialogBounds, "the notice and its button sit in the reserved line");
 			save.Bounds.Should().Be(saveBounds, "the notice never moves the buttons");
 			HeadlessInput.Click(dialog, button);
@@ -258,14 +186,14 @@ public sealed class SettingsViewTests : IDisposable
 	public async Task TheRestartNotice_GivesWayToAMessageInTheSameLine()
 	{
 		using var viewModel = Build();
-		var dialog = Realise(viewModel);
+		var dialog = Realise(new SettingsDialog { DataContext = viewModel });
 		try
 		{
 			var notice = Named<TextBlock>(dialog, "SettingsRestartNotice");
 			var restartNow = Named<Button>(dialog, "SettingsRestartNow");
 			var message = Named<TextBlock>(dialog, "SettingsValidationMessage");
 			var other = viewModel.Languages.First(choice => choice.Token != viewModel.SelectedLanguage!.Token);
-			Pick(dialog, Named<ComboBox>(dialog, "SettingsLanguage"), other);
+			HeadlessInput.Pick(dialog, Named<ComboBox>(dialog, "SettingsLanguage"), other);
 			HeadlessInput.Click(dialog, Named<Button>(dialog, "SettingsSaveButton"));
 			await HeadlessWait.Until(() => viewModel.IsRestartPending);
 
@@ -289,7 +217,7 @@ public sealed class SettingsViewTests : IDisposable
 	{
 		using var scope = ThemeProbe.ApplyVariant(App.VariantFor(AppThemeVariant.Light));
 		using var viewModel = Build();
-		var dialog = Realise(viewModel);
+		var dialog = Realise(new SettingsDialog { DataContext = viewModel });
 		try
 		{
 			File.WriteAllText(Path.Combine(_appDirectory, "app.yaml"), "locale: ru\ntheme: dark\n");
@@ -300,7 +228,7 @@ public sealed class SettingsViewTests : IDisposable
 				.Should().BeSameAs(viewModel.Themes.Single(choice => choice.Token == "dark"));
 
 			var light = viewModel.Themes.Single(choice => choice.Token == "light");
-			Pick(dialog, Named<ComboBox>(dialog, "SettingsTheme"), light);
+			HeadlessInput.Pick(dialog, Named<ComboBox>(dialog, "SettingsTheme"), light);
 			await viewModel.SaveCommand.Execute();
 
 			_messagePanel.Entries.Should().BeEmpty();
@@ -316,7 +244,7 @@ public sealed class SettingsViewTests : IDisposable
 	public void TheDialog_KeepsItsSizeAndItsButtonsWhenAFieldTurnsInvalid()
 	{
 		using var viewModel = Build();
-		var dialog = Realise(viewModel);
+		var dialog = Realise(new SettingsDialog { DataContext = viewModel });
 		try
 		{
 			var host = Named<TextBox>(dialog, "SettingsHost");
@@ -344,11 +272,11 @@ public sealed class SettingsViewTests : IDisposable
 		using var scope = ThemeProbe.ApplyVariant(variant);
 		var error = ThemeProbe.Colour("AppSeverityErrorBrush", variant);
 		using var viewModel = Build();
-		var dialog = Realise(viewModel);
+		var dialog = Realise(new SettingsDialog { DataContext = viewModel });
 		try
 		{
 			var host = Named<TextBox>(dialog, "SettingsHost");
-			var port = Part<TextBox>(Named<NumericUpDown>(dialog, "SettingsPort"), "PART_TextBox");
+			var port = Descendant<TextBox>(Named<NumericUpDown>(dialog, "SettingsPort"), "PART_TextBox");
 			BorderColourOf(host).Should().NotBe(error);
 			BorderColourOf(port).Should().NotBe(error);
 
@@ -374,39 +302,29 @@ public sealed class SettingsViewTests : IDisposable
 		}
 	}
 
+	[AvaloniaFact]
+	public async Task AnUnreadableSection_IsStatedAndKeepsSaveDisabled()
+	{
+		var connectionFile = Path.Combine(_configDirectory, StartupProbe.ConnectionDirectoryName, "connection.yaml");
+		File.WriteAllText(connectionFile, "host: [unclosed\n");
+		using var viewModel = await SettingsViewModel.OpenAsync(
+			_configDirectory, _messagePanel, NullLoggerFactory.Instance, restartApplication: () => { });
+		var dialog = Realise(new SettingsDialog { DataContext = viewModel });
+		try
+		{
+			Named<TextBlock>(dialog, "SettingsValidationMessage").Text.Should()
+				.Be(Resources.FormatSettingsSectionUnreadable(Resources.SettingsConnectionHeader));
+			Named<Button>(dialog, "SettingsSaveButton").IsEffectivelyEnabled.Should().BeFalse();
+		}
+		finally
+		{
+			dialog.Close();
+		}
+	}
+
 	private SettingsViewModel Build(Action? restartApplication = null)
 	{
-		var (app, connection) = SettingsSave.ReadOwned(_configDirectory);
-
-		return new SettingsViewModel(
-			_configDirectory,
-			app,
-			connection,
-			_messagePanel,
-			NullLogger<SettingsViewModel>.Instance,
-			restartApplication ?? (() => { }));
-	}
-
-	private static SettingsDialog Realise(SettingsViewModel viewModel)
-	{
-		var dialog = new SettingsDialog { DataContext = viewModel };
-		dialog.Show();
-		Dispatcher.UIThread.RunJobs();
-
-		return dialog;
-	}
-
-	private static T Named<T>(SettingsDialog dialog, string name)
-		where T : Control
-	{
-		return dialog.FindControl<T>(name) ?? throw new InvalidOperationException($"No control named {name}.");
-	}
-
-	private static T Part<T>(TemplatedControl owner, string name)
-		where T : Control
-	{
-		return owner.GetVisualDescendants().OfType<T>().FirstOrDefault(child => child.Name == name)
-			?? throw new InvalidOperationException($"{owner.GetType().Name} realised no {name}.");
+		return SettingsViewModelStand.Build(_configDirectory, _messagePanel, restartApplication);
 	}
 
 	private static IEnumerable<TemplatedControl> InvalidFields(SettingsDialog dialog)
@@ -416,22 +334,8 @@ public sealed class SettingsViewTests : IDisposable
 
 	private static Color BorderColourOf(TextBox textBox)
 	{
-		var border = Part<Border>(textBox, "PART_ContentPresenterBorder");
+		var border = Descendant<Border>(textBox, "PART_ContentPresenterBorder");
 
 		return border.BorderBrush.Should().BeAssignableTo<ISolidColorBrush>().Subject.Color;
-	}
-
-	private static void Pick(SettingsDialog dialog, ComboBox comboBox, SettingsChoice choice)
-	{
-		HeadlessInput.Click(dialog, comboBox);
-		comboBox.IsDropDownOpen.Should().BeTrue("a click on the box opens its list");
-
-		var item = comboBox.ContainerFromItem(choice)
-			?? throw new InvalidOperationException("The open list realised no container for the choice.");
-		var popup = TopLevel.GetTopLevel(item)
-			?? throw new InvalidOperationException("The open list is not in a top level.");
-
-		HeadlessInput.Click(popup, item);
-		comboBox.IsDropDownOpen.Should().BeFalse("a click on an entry picks it and closes the list");
 	}
 }

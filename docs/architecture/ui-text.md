@@ -157,8 +157,15 @@ A refused save reads the same text as the startup failure for the same value, be
 `ArchiveFailureMapper.Map`. The save adds two `SectionProblem` arms, each with a detail and a remedy
 and the section's existing title: `FailureConfigurationSectionUnwritableDetail` and `...Remedy` for a
 file or staging folder the save cannot write, and `FailureConfigurationSectionKeyAbsentDetail` and
-`...Remedy` for an edited key no file of the folder carries. A host the loader refuses as not IPv4
-reads `FailureConnectionFileHostNotIPv4Remedy`, the remedy of the `HostNotIPv4` arm. A refusal from a loader names the
+`...Remedy` for an edited key no file of the folder carries. A refused connection folder reads one detail per `ConnectionFileProblem`:
+`FailureConnectionFileUnparseableDetail` (path), `FailureConnectionFileMissingFieldDetail` and
+`FailureConnectionFileOutOfRangeDetail` (path, comma-joined field names) and
+`FailureConnectionFileHostNotIPv4Detail` (path, the host field name), each with the remedy of the same arm
+(`FailureConnectionFileHostNotIPv4Remedy` for `HostNotIPv4`). `FailureConnectionFileOutOfRangeRemedy` takes
+the three `PostgresConnectionLoader` range constants (lowest port, highest port, lowest poll interval).
+`ArchiveFailureMapper` therefore references `SemiPlot.DataSource.Postgres`, the only provider; a second
+provider with its own bounds moves them onto `ConnectionFileError`. `ConnectionFileError` carries field names,
+never prose, so the detail follows the UI language. A refusal from a loader names the
 operator's section folder, never the staging copy it read; a staging folder that cannot be created is
 the one detail naming `<config-dir>` and the staging folder (`overview.md#the-settings-window`).
 

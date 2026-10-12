@@ -14,7 +14,7 @@ public sealed class PenScaleModelTests
 	private static readonly DateTime _origin = new(2026, 6, 16, 0, 0, 0, DateTimeKind.Utc);
 
 	[Fact]
-	public void Compute_ActivePenAxis_SurfacesItsRangeAndIsActive()
+	public void Compute_ActivePenAxis_SurfacesItsRangeAndOtherPensAutoscaleOnSeparateAxes()
 	{
 		var model = new PenScaleModel();
 		var settings = new[]
@@ -25,37 +25,18 @@ public sealed class PenScaleModelTests
 		var envelopes = new Dictionary<int, PenHistoryEnvelope>
 		{
 			[1] = Envelope(1, (0.0, 10.0), (2.0, 12.0)),
-			[2] = Envelope(2, (100.0, 200.0))
-		};
-
-		var scales = model.Compute(settings, envelopes, activePenId: 1, _origin, _origin.AddHours(1));
-
-		var active = scales.Single(scale => scale.PenId == 1);
-		active.IsActive.Should().BeTrue();
-		active.Min.Should().BeApproximately(0.0 - (12.0 * 0.05), 1e-9);
-		active.Max.Should().BeApproximately(12.0 + (12.0 * 0.05), 1e-9);
-
-		scales.Single(scale => scale.PenId == 2).IsActive.Should().BeFalse();
-	}
-
-	[Fact]
-	public void Compute_NonActivePens_AutoscaleIndividuallyOnSeparateAxes()
-	{
-		var model = new PenScaleModel();
-		var settings = new[]
-		{
-			new PenScaleSettings(PenId: 1),
-			new PenScaleSettings(PenId: 2)
-		};
-		var envelopes = new Dictionary<int, PenHistoryEnvelope>
-		{
-			[1] = Envelope(1, (0.0, 5.0)),
 			[2] = Envelope(2, (-3.0, 7.0))
 		};
 
 		var scales = model.Compute(settings, envelopes, activePenId: 1, _origin, _origin.AddHours(1));
 
 		scales.Should().HaveCount(2);
+
+		var active = scales.Single(scale => scale.PenId == 1);
+		active.IsActive.Should().BeTrue();
+		active.Min.Should().BeApproximately(0.0 - (12.0 * 0.05), 1e-9);
+		active.Max.Should().BeApproximately(12.0 + (12.0 * 0.05), 1e-9);
+
 		var second = scales.Single(scale => scale.PenId == 2);
 		second.IsActive.Should().BeFalse();
 		second.Min.Should().BeApproximately(-3.0 - (10.0 * 0.05), 1e-9);
@@ -162,20 +143,6 @@ public sealed class PenScaleModelTests
 	}
 
 	[Fact]
-	public void Compute_LogarithmicAxisOverDecades_PadsBeyondBothEnds()
-	{
-		var model = new PenScaleModel();
-		var settings = new[] { new PenScaleSettings(PenId: 1, IsLogarithmic: true) };
-		var envelopes = new Dictionary<int, PenHistoryEnvelope> { [1] = Envelope(1, (1e-6, 1e-4), (1e-3, 1e-2)) };
-
-		var scales = model.Compute(settings, envelopes, activePenId: 1, _origin, _origin.AddHours(2));
-
-		var logScale = scales.Should().ContainSingle().Which;
-		logScale.Min.Should().BeGreaterThan(0.0).And.BeLessThan(1e-6);
-		logScale.Max.Should().BeGreaterThan(1e-2);
-	}
-
-	[Fact]
 	public void Compute_FlatLogarithmicLine_PadsHalfADecadeOnEachSide()
 	{
 		var model = new PenScaleModel();
@@ -185,8 +152,6 @@ public sealed class PenScaleModelTests
 		var scales = model.Compute(settings, envelopes, activePenId: 1, _origin, _origin.AddHours(1));
 
 		var flat = scales.Should().ContainSingle().Which;
-		flat.Min.Should().BeLessThan(0.3);
-		flat.Max.Should().BeGreaterThan(0.3);
 		flat.Min.Should().BeApproximately(0.3 / Math.Sqrt(10.0), 1e-12);
 		flat.Max.Should().BeApproximately(0.3 * Math.Sqrt(10.0), 1e-12);
 	}

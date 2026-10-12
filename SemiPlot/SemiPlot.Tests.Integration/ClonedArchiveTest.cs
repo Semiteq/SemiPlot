@@ -7,6 +7,9 @@ namespace SemiPlot.Tests.Integration;
 public abstract class ClonedArchiveTest(PostgresContainerFixture fixture, CloneSource source)
 	: IAsyncLifetime
 {
+	// Bounds one awaited emission, so a regression fails the test instead of hanging the executable.
+	public static readonly TimeSpan GateBound = TimeSpan.FromSeconds(30);
+
 	private ArchiveDatabase? _archiveDatabase;
 
 	protected PostgresContainerFixture Fixture => fixture;
@@ -16,23 +19,14 @@ public abstract class ClonedArchiveTest(PostgresContainerFixture fixture, CloneS
 
 	public async ValueTask InitializeAsync()
 	{
-		_archiveDatabase = source is CloneSource.Template
-			? await fixture.CloneTemplateAsync()
-			: await fixture.CloneProvisionedAsync();
-
-		try
+		// The seed reaches Database, so the clone is published before the seed runs. A seed that throws has
+		// the clone dropped, and a lifecycle that throws is not owed a DisposeAsync.
+		_archiveDatabase = await fixture.CloneAsync(source, database =>
 		{
-			await SeedAsync();
-		}
-		// The clone already exists by now, and a lifecycle that throws is not owed a DisposeAsync. Dropping
-		// it here is what keeps a failed seeding from leaking a database and from being reported a second
-		// time, differently worded, by the fixture's own leave-nothing-behind check.
-		catch
-		{
-			await DisposeAsync();
+			_archiveDatabase = database;
 
-			throw;
-		}
+			return SeedAsync().AsTask();
+		});
 	}
 
 	protected virtual ValueTask SeedAsync()

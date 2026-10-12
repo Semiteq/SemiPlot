@@ -6,7 +6,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
-using SemiPlot.DataSource.Postgres;
 using SemiPlot.Tools.ArchiveSeeder;
 
 using Xunit;
@@ -40,75 +39,38 @@ public sealed class PostgresExtentReadTests(
 		result.Value.Should().Be(_seededExtent.Value);
 	}
 
-	[Fact]
-	public async Task AnEmptiedCatalogueYieldsAnEmptyExtent()
+	[Theory]
+	[InlineData(true)]
+	[InlineData(false)]
+	public async Task AnEmptiedCatalogueOrTrendsTableYieldsAnEmptyExtent(bool emptyTheCatalogue)
 	{
-		await using var database = await postgresContainerFixture.CloneTemplateAsync(
-			TestContext.Current.CancellationToken);
-
-		await ArchiveDatabase.ExecuteAsync(
-			database.AdminConnectionString,
-			ArchiveReadSupport.EmptyCatalogCommand,
+		await using var database = await postgresContainerFixture.CloneAsync(
+			CloneSource.Template,
+			clone => ArchiveDatabase.ExecuteAsync(
+				clone.AdminConnectionString,
+				emptyTheCatalogue ? ArchiveReadSupport.EmptyCatalogCommand : EmptyTrendsCommand,
+				TestContext.Current.CancellationToken),
 			TestContext.Current.CancellationToken);
 
 		var result = await ReadExtentAsync(database.PlotConnectionString);
 
 		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
-		result.Value.IsEmpty.Should().BeTrue();
-		result.Value.Should().Be(ArchiveExtent.Empty);
-	}
-
-	[Fact]
-	public async Task AnEmptyTrendsTableYieldsAnEmptyExtent()
-	{
-		await using var database = await postgresContainerFixture.CloneTemplateAsync(
-			TestContext.Current.CancellationToken);
-
-		await ArchiveDatabase.ExecuteAsync(
-			database.AdminConnectionString,
-			EmptyTrendsCommand,
-			TestContext.Current.CancellationToken);
-
-		var result = await ReadExtentAsync(database.PlotConnectionString);
-
-		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
-		result.Value.IsEmpty.Should().BeTrue();
 		result.Value.Should().Be(ArchiveExtent.Empty);
 	}
 
 	// The extent statement touches both relations, so either one missing names both: reporting trends
 	// alone would send the operator to a table that is still there.
-	[Fact]
-	public async Task ADroppedCatalogueFailsNamingEveryRelationTheReadTouches()
+	[Theory]
+	[InlineData(true)]
+	[InlineData(false)]
+	public async Task ADroppedRelationFailsNamingEveryRelationTheReadTouches(bool dropTheCatalogue)
 	{
-		await using var database = await postgresContainerFixture.CloneTemplateAsync(
-			TestContext.Current.CancellationToken);
-
-		await ArchiveDatabase.ExecuteAsync(
-			database.AdminConnectionString,
-			ArchiveReadSupport.DropCatalogCommand,
-			TestContext.Current.CancellationToken);
-
-		var result = await ReadExtentAsync(database.PlotConnectionString);
-
-		result.IsFailed.Should().BeTrue();
-
-		var error = result.Errors.OfType<ArchiveError>().Should().ContainSingle().Which;
-
-		error.Kind.Should().Be(ArchiveFault.TableMissing);
-		error.Detail.Should().Be("semiplot_tags, trends");
-		error.Database.Should().Be(database.Name);
-	}
-
-	[Fact]
-	public async Task ADroppedTrendsTableFailsNamingEveryRelationTheReadTouches()
-	{
-		await using var database = await postgresContainerFixture.CloneProvisionedAsync(
-			TestContext.Current.CancellationToken);
-
-		await ArchiveDatabase.ExecuteAsync(
-			database.WriterConnectionString,
-			ArchiveReadSupport.DropTrendsCommand,
+		await using var database = await postgresContainerFixture.CloneAsync(
+			dropTheCatalogue ? CloneSource.Template : CloneSource.Provisioned,
+			clone => ArchiveDatabase.ExecuteAsync(
+				dropTheCatalogue ? clone.AdminConnectionString : clone.WriterConnectionString,
+				dropTheCatalogue ? ArchiveReadSupport.DropCatalogCommand : ArchiveReadSupport.DropTrendsCommand,
+				TestContext.Current.CancellationToken),
 			TestContext.Current.CancellationToken);
 
 		var result = await ReadExtentAsync(database.PlotConnectionString);
@@ -131,13 +93,13 @@ public sealed class PostgresExtentReadTests(
 
 	private static ArchiveExtent GenerateSeededExtent()
 	{
-		var converter = new ArchiveTimeConverter(ArchiveProviderFactory.SourceTimeZone);
-
 		var timestamps = RawLayerGenerator.Generate(ArchiveTemplate.Slice)
 			.Where(row => row.Layer == ArchiveRow.RawLayer)
 			.Select(row => row.Timestamp)
 			.ToArray();
 
-		return new ArchiveExtent(converter.ToUtc(timestamps.Min()), converter.ToUtc(timestamps.Max()));
+		return new ArchiveExtent(
+			ArchiveProviderFactory.TimeConverter.ToUtc(timestamps.Min()),
+			ArchiveProviderFactory.TimeConverter.ToUtc(timestamps.Max()));
 	}
 }

@@ -175,6 +175,10 @@ public sealed class PenRegistrationTests(PostgresContainerFixture postgresContai
 
 	private Task<long> CountPensAsync(int[] penIds, CancellationToken cancellationToken)
 	{
-		return ArchiveDatabase.CountAsync(Database.AdminConnectionString, CountPensCommand, penIds, cancellationToken);
+		return ArchiveDatabase.ScalarAsync<long>(
+			Database.AdminConnectionString,
+			CountPensCommand,
+			parameters => parameters.AddWithValue("ids", penIds),
+			cancellationToken);
 	}
 }

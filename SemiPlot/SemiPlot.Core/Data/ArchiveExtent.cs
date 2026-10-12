@@ -1,5 +1,3 @@
-using System.Globalization;
-
 namespace SemiPlot.Core.Data;
 
 public sealed record ArchiveExtent(DateTime FirstUtc, DateTime LastUtc)
@@ -11,18 +9,4 @@ public sealed record ArchiveExtent(DateTime FirstUtc, DateTime LastUtc)
 	// applies its initializers and cannot know what the result will hold, so any stored flag is wrong for
 	// one of the two directions.
 	public bool IsEmpty => FirstUtc == default && LastUtc == default;
-
-	// The synthesized form prints the two timestamps alone, so Empty logs as year 0001, the exact
-	// misreading this type exists to prevent.
-	public override string ToString()
-	{
-		if (IsEmpty)
-		{
-			return $"{nameof(ArchiveExtent)} {{ IsEmpty = true }}";
-		}
-
-		return string.Create(
-			CultureInfo.InvariantCulture,
-			$"{nameof(ArchiveExtent)} {{ FirstUtc = {FirstUtc:O}, LastUtc = {LastUtc:O} }}");
-	}
 }

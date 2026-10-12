@@ -2,6 +2,7 @@ using FluentResults;
 
 using SemiPlot.Core.Configuration;
 using SemiPlot.Core.Data.Errors;
+using SemiPlot.DataSource.Postgres.Configuration;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.Startup;
 
@@ -103,18 +104,39 @@ public static class ArchiveFailureMapper
 
 	private static ArchiveFailureView MapConnectionFile(ConnectionFileError error)
 	{
-		return new ArchiveFailureView(
-			Resources.FailureConnectionFileRejectedTitle,
-			Resources.FormatFailureConnectionFileRejectedDetail(error.Path, error.Reason),
-			error.Kind switch
-			{
-				ConnectionFileProblem.Unparseable => Resources.FailureConnectionFileUnparseableRemedy,
-				ConnectionFileProblem.MissingField => Resources.FailureConnectionFileMissingFieldRemedy,
-				ConnectionFileProblem.OutOfRange => Resources.FailureConnectionFileOutOfRangeRemedy,
-				ConnectionFileProblem.HostNotIPv4 => Resources.FailureConnectionFileHostNotIPv4Remedy,
-				_ => Resources.FailureConnectionFileRejectedRemedy
-			},
-			MessageSeverity.Error);
+		var fields = string.Join(", ", error.Fields);
+
+		return error.Kind switch
+		{
+			ConnectionFileProblem.Unparseable => new ArchiveFailureView(
+				Resources.FailureConnectionFileRejectedTitle,
+				Resources.FormatFailureConnectionFileUnparseableDetail(error.Path),
+				Resources.FailureConnectionFileUnparseableRemedy,
+				MessageSeverity.Error),
+
+			ConnectionFileProblem.MissingField => new ArchiveFailureView(
+				Resources.FailureConnectionFileRejectedTitle,
+				Resources.FormatFailureConnectionFileMissingFieldDetail(error.Path, fields),
+				Resources.FailureConnectionFileMissingFieldRemedy,
+				MessageSeverity.Error),
+
+			ConnectionFileProblem.OutOfRange => new ArchiveFailureView(
+				Resources.FailureConnectionFileRejectedTitle,
+				Resources.FormatFailureConnectionFileOutOfRangeDetail(error.Path, fields),
+				Resources.FormatFailureConnectionFileOutOfRangeRemedy(
+					PostgresConnectionLoader.LowestPort,
+					PostgresConnectionLoader.HighestPort,
+					PostgresConnectionLoader.LowestPollIntervalMs),
+				MessageSeverity.Error),
+
+			ConnectionFileProblem.HostNotIPv4 => new ArchiveFailureView(
+				Resources.FailureConnectionFileRejectedTitle,
+				Resources.FormatFailureConnectionFileHostNotIPv4Detail(error.Path, fields),
+				Resources.FailureConnectionFileHostNotIPv4Remedy,
+				MessageSeverity.Error),
+
+			_ => throw new ArgumentOutOfRangeException(nameof(error), error.Kind, null)
+		};
 	}
 
 	private static ArchiveFailureView MapArchive(ArchiveError error)

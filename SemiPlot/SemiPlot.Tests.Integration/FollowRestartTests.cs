@@ -1,7 +1,5 @@
 using AwesomeAssertions;
 
-using Npgsql;
-
 using SemiPlot.Tools.ArchiveSeeder;
 
 using Xunit;
@@ -84,14 +82,9 @@ public sealed class FollowRestartTests(PostgresContainerFixture postgresContaine
 		return new("Host=127.0.0.1;Database=archive", TimeSpan.FromSeconds(1), PenCount, 1L, ChangeSeconds);
 	}
 
-	private async Task<long> CountRawRowsAsync(CancellationToken cancellationToken)
+	private Task<long> CountRawRowsAsync(CancellationToken cancellationToken)
 	{
-		await using var connection = new NpgsqlConnection(Database.WriterConnectionString);
-
-		await connection.OpenAsync(cancellationToken);
-
-		await using var command = new NpgsqlCommand(_countRawRowsCommand, connection);
-
-		return (long)(await command.ExecuteScalarAsync(cancellationToken))!;
+		return ArchiveDatabase.ScalarAsync<long>(
+			Database.WriterConnectionString, _countRawRowsCommand, cancellationToken: cancellationToken);
 	}
 }

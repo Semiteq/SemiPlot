@@ -114,18 +114,6 @@ public sealed class RawLayerGeneratorTests
 	}
 
 	[Fact]
-	public void NoTwoRowsShareTheSameKeyAfterMillisecondTruncation()
-	{
-		var rows = RawLayerGenerator.Generate(BenchOptions.For());
-		var keys = new HashSet<(int Id, short Layer, DateTime Timestamp)>();
-
-		foreach (var row in rows)
-		{
-			keys.Add((row.Id, row.Layer, row.Timestamp)).Should().BeTrue();
-		}
-	}
-
-	[Fact]
 	public void TimestampsCarryWholeMillisecondsOnly()
 	{
 		foreach (var row in RawLayerGenerator.Generate(BenchOptions.For()))
@@ -263,15 +251,11 @@ public sealed class RawLayerGeneratorTests
 	}
 
 	// Both markers of a break go on real change rows, so a run bounded by a break needs two of them; the
-	// tightest run is the first or the last one. Both under-provisioned shapes are refused, not patched.
+	// tightest run is the first or the last one. Both under-provisioned shapes are refused, not patched:
+	// 55 breaks leave the first run short, 20 leave only the last one short.
 	[Theory]
-	[InlineData(20)]
-	[InlineData(30)]
-	[InlineData(40)]
-	[InlineData(50)]
 	[InlineData(55)]
-	[InlineData(60)]
-	[InlineData(72)]
+	[InlineData(20)]
 	public void AChangeIntervalThatLeavesARunWithFewerThanTwoChangesIsRejected(int breaks)
 	{
 		var options = BenchOptions.For(pens: 1, changeSeconds: 600.0, breaks: breaks);

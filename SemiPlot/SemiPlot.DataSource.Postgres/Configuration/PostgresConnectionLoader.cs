@@ -143,8 +143,8 @@ public static class PostgresConnectionLoader
 			dto.Schema ?? DefaultSchema);
 	}
 
-	// The reason never repeats what the exception said: a parser message embeds the offending scalar, and
-	// the password is a scalar. The raw detail rides on CausedBy, where only the log reads it.
+	// The error carries no text of the exception: a parser message embeds the offending scalar, and the
+	// password is a scalar. The raw detail rides on CausedBy, where only the log reads it.
 	private static Result<PostgresConnectionDto> Deserialize(string sectionDirectory, string content)
 	{
 		try
@@ -156,7 +156,7 @@ public static class PostgresConnectionLoader
 			var error = new ConnectionFileError(
 				sectionDirectory,
 				ConnectionFileProblem.Unparseable,
-				"a key carries a value this format does not accept");
+				[]);
 
 			return Result.Fail<PostgresConnectionDto>(error.CausedBy(new ExceptionalError(exception)));
 		}
@@ -194,7 +194,7 @@ public static class PostgresConnectionLoader
 
 		return missing.Count == 0
 			? Result.Ok()
-			: Invalid(sectionDirectory, ConnectionFileProblem.MissingField, missing, "absent or blank");
+			: Invalid(sectionDirectory, ConnectionFileProblem.MissingField, missing);
 	}
 
 	private static Result ValidateRanges(string sectionDirectory, PostgresConnectionDto dto)
@@ -213,7 +213,7 @@ public static class PostgresConnectionLoader
 
 		return outOfRange.Count == 0
 			? Result.Ok()
-			: Invalid(sectionDirectory, ConnectionFileProblem.OutOfRange, outOfRange, "outside the range this build accepts");
+			: Invalid(sectionDirectory, ConnectionFileProblem.OutOfRange, outOfRange);
 	}
 
 	private static Result ValidateHost(string sectionDirectory, string? host)
@@ -223,20 +223,14 @@ public static class PostgresConnectionLoader
 			: Result.Fail(new ConnectionFileError(
 				sectionDirectory,
 				ConnectionFileProblem.HostNotIPv4,
-				$"the field '{HostKey}' is not an IPv4 address of four decimal numbers from 0 to 255"));
+				[HostKey]));
 	}
 
 	private static Result Invalid(
 		string sectionDirectory,
 		ConnectionFileProblem kind,
-		IReadOnlyCollection<string> fieldNames,
-		string complaint)
+		IReadOnlyList<string> fieldNames)
 	{
-		var names = string.Join("', '", fieldNames);
-		var subject = fieldNames.Count == 1 ? "field" : "fields";
-		var verb = fieldNames.Count == 1 ? "is" : "are";
-
-		return Result.Fail(
-			new ConnectionFileError(sectionDirectory, kind, $"the required {subject} '{names}' {verb} {complaint}"));
+		return Result.Fail(new ConnectionFileError(sectionDirectory, kind, fieldNames));
 	}
 }

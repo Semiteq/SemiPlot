@@ -7,6 +7,7 @@ using FluentResults;
 using Microsoft.Reactive.Testing;
 
 using SemiPlot.Core.Trends;
+using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.UI.Chart;
 
 using Xunit;
@@ -18,8 +19,6 @@ internal static class HistoryDebouncerTestBuilder
 	public static readonly TimeSpan DebounceWindow = TimeSpan.FromMilliseconds(150);
 	public static readonly TimeSpan CapInterval = TimeSpan.FromMilliseconds(400);
 	public static readonly TimeSpan TestDeadline = TimeSpan.FromSeconds(10.0);
-	public static readonly DateTime From = new(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
-	public static readonly DateTime To = new(2026, 6, 15, 9, 0, 0, DateTimeKind.Utc);
 
 	// The emission head runs on the TestScheduler and every delivery on the thread the query completed on.
 	public static ChartHistoryRequestDebouncer CreateDebouncer(
@@ -38,8 +37,7 @@ internal static class HistoryDebouncerTestBuilder
 			ImmediateScheduler.Instance);
 	}
 
-	// A released query's continuation, and the query the pipeline starts behind it, run on the thread Rx
-	// resumes the task on.
+	// A plain [Fact] never touches Dispatcher.UIThread, so it polls here and not through HeadlessWait.
 	public static async Task AwaitCondition(Func<bool> condition)
 	{
 		var deadline = DateTime.UtcNow + TestDeadline;
@@ -60,17 +58,21 @@ internal static class HistoryDebouncerTestBuilder
 
 	public static Result<IReadOnlyList<PenHistoryEnvelope>> Unreachable()
 	{
-		return Result.Fail<IReadOnlyList<PenHistoryEnvelope>>("The archive is unreachable.");
+		return Result.Fail<IReadOnlyList<PenHistoryEnvelope>>(FakeDataProvider.UnreachableArchive());
 	}
 
 	public static HistoryRequest RequestForLayer(AggregationLayer layer)
 	{
-		return RequestOver([1], From, To, layer);
+		return RequestOver([1], ChartTestBuilder.From, ChartTestBuilder.To, layer);
 	}
 
 	public static HistoryRequest RequestAtNotch(int notch)
 	{
-		return RequestOver([1], From.AddSeconds(notch), To.AddSeconds(notch), AggregationLayer.Raw);
+		return RequestOver(
+			[1],
+			ChartTestBuilder.From.AddSeconds(notch),
+			ChartTestBuilder.To.AddSeconds(notch),
+			AggregationLayer.Raw);
 	}
 
 	public static HistoryRequest RequestOver(

@@ -37,7 +37,6 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	private readonly PenScaleModel _scaleModel = new();
 	private readonly Dictionary<int, PenScale> _scalesByPenId = [];
 	private readonly Subject<Unit> _redrawRequests = new();
-	private readonly Subject<Unit> _historyApplied = new();
 	private bool _isDisposed;
 	private bool _isHistoryStarted;
 	// Decimation width of every history query, in columns: the last width the render seam reported. The
@@ -113,11 +112,6 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	/// <summary>One signal per redraw request, raised at once on the caller's thread; completes on dispose.</summary>
 	public IObservable<Unit> RedrawRequested => _redrawRequests.AsObservable();
 
-	/// <summary>
-	/// One pulse per history result applied, on the UI scheduler.
-	/// </summary>
-	public IObservable<Unit> HistoryApplied => _historyApplied;
-
 	/// <summary>The pens in catalogue order; a new list, and a change notification, per catalogue applied.</summary>
 	public IReadOnlyList<TrendPenState> Pens => _penSet.Ordered;
 
@@ -184,7 +178,6 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		AxisScale.Dispose();
 		_disposables.Dispose();
 		_redrawRequests.OnCompleted();
-		_historyApplied.Dispose();
 		Plot.Dispose();
 	}
 
@@ -588,7 +581,6 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		}
 
 		RequestRedraw();
-		_historyApplied.OnNext(Unit.Default);
 	}
 
 	// The axis is applied whatever the window in view holds, because the whole-envelope fallback is the best

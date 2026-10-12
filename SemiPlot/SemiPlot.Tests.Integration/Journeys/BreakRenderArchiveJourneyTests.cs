@@ -1,6 +1,4 @@
 using System.Reactive.Concurrency;
-using System.Reactive.Linq;
-using System.Reactive.Threading.Tasks;
 
 using Avalonia.Headless.XUnit;
 
@@ -12,7 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using ScottPlot;
 
 using SemiPlot.Core.Data;
-using SemiPlot.DataSource.Postgres;
 using SemiPlot.Tools.ArchiveSeeder;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
@@ -55,8 +52,6 @@ public sealed class BreakRenderArchiveJourneyTests(
 	// inside a drawn run rather than between two of its rows.
 	private static readonly TimeSpan _probeOffset = TimeSpan.FromMinutes(1);
 
-	private static readonly ArchiveTimeConverter _timeConverter = new(ArchiveProviderFactory.SourceTimeZone);
-
 	[AvaloniaFact]
 	public async Task TheFirstSeededBreakLeavesTheRenderedCurvesBroken()
 	{
@@ -86,9 +81,9 @@ public sealed class BreakRenderArchiveJourneyTests(
 		var stopped = FirstBreak();
 		OpenWindowOn(chart.Navigation, extent.Value.FirstUtc, stopped);
 
-		var historyApplied = chart.HistoryApplied.FirstAsync().ToTask();
+		var scalesBefore = chart.ScalesRevision;
 		chart.RequestInitialHistory();
-		await historyApplied;
+		await JourneyWait.Until(() => chart.ScalesRevision > scalesBefore);
 
 		var (pixels, dataRect) = Render(chart);
 
@@ -102,7 +97,9 @@ public sealed class BreakRenderArchiveJourneyTests(
 	{
 		var stopped = BreakPlan.Create(ArchiveTemplate.Slice).Breaks[0];
 
-		return new ArchiveBreak(_timeConverter.ToUtc(stopped.Start), _timeConverter.ToUtc(stopped.End));
+		return new ArchiveBreak(
+			ArchiveProviderFactory.TimeConverter.ToUtc(stopped.Start),
+			ArchiveProviderFactory.TimeConverter.ToUtc(stopped.End));
 	}
 
 	// Opens the navigation controller on the break, not the startup window (App.axaml.cs:137's last hour,

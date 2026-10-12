@@ -35,15 +35,22 @@ and built from the commit under test. Its value is diagnosis.
 | --- | --- |
 | Decimation, navigation, scale, cursor geometry | `SemiPlot.Tests.Unit/Core/Data/MinMaxDecimatorTests.cs`, `Core/Trends/TrendNavigationModelTests.cs`, `PenScaleModelTests.cs`, `MinimapGeometryTests.cs`, `Chart/CursorReadoutModelTests.cs`, `DeltaCursorModelTests.cs` |
 | The seeder's generation rules | `SemiPlot.Tests.Unit/LayerThinnerTests.cs`, `RawLayerGeneratorTests.cs`, `BreakGenerationTests.cs`, `PartitionScriptTests.cs` |
-| The demo writer's own rules and the command line | `SemiPlot.Tests.Unit/LiveTailGeneratorTests.cs`, `SharedLatticeTests.cs`, `SeederCommandTests.cs`. Its coarse flush is not here: the selection is a statement the server executes, so `Integration/CoarseFlushTests.cs` carries it, gated |
-| Error construction and extent arithmetic | `SemiPlot.Tests.Unit/Errors/DataErrorTests.cs`, `Data/ArchiveExtentTests.cs` |
+| The demo writer's own rules and the command line | `SemiPlot.Tests.Unit/LiveTailGeneratorTests.cs`, `SharedLatticeTests.cs`, `SeederCommandTests.cs`. Its coarse flush is not here: it reads the finer layer back from the server and thins it with `LayerThinner.Thin`, so `Integration/CoarseFlushTests.cs` carries it, gated |
+| The error types' shape and extent arithmetic | `SemiPlot.Tests.Unit/Errors/DataErrorTests.cs`, `Data/ArchiveExtentTests.cs` |
 | The provider's statement text and its binder | `SemiPlot.Tests.Unit/Postgres/ArchiveStatementTextTests.cs` |
-| The live edge's own rules, and the fresh tail's bound | `SemiPlot.Tests.Unit/Postgres/RealtimePollTests.cs`, `Postgres/FreshTailBoundTests.cs` |
+| The fresh tail's bound, and a tick's own command timeout | `SemiPlot.Tests.Unit/Postgres/FreshTailBoundTests.cs`, `Postgres/ArchiveStatementTextTests.cs` |
 | The vendor's observed row shape | `SemiPlot.Tests.Unit/Fixtures/RealArchiveFixtureTests.cs` over `Fixtures/real-archive-rows.csv` |
 | The shipped configuration set | `SemiPlot.Tests.Unit/DeliveredConfigurationTests.cs` over `ConfigFiles/**`, linked into the output directory by `SemiPlot.Tests.Unit.csproj` |
 | The live theme's pipeline, its watcher and `App`'s wiring of both | `SemiPlot.Tests.Unit/UI/Settings/AppSectionWatcherTests.cs`, `UI/Startup/AppConfigurationTests.cs`; the wall-clock exception below |
+| A pen's buffer and its derived state | `SemiPlot.Tests.Unit/UI/Chart/TrendPenStateTests.cs` |
 
-The last two rows are the ones that mislead. A test reading a committed CSV, or the tracked YAML the
+Shared helpers sit beside the tests that use them, one home each: `ResultText` (a failed result read in an
+assertion), `TemporaryDirectory`, `FixedClock`, `HeadlessInput` (the four gestures), `ViewProbe` (find, measure,
+show and close a window), `Postgres/FoldTestData` and `UI/Chart/ChartTestBuilder`, with `ChartViewTestBuilder`
+for the realised view.
+
+The rows for the vendor's row shape and the shipped configuration set are the ones that mislead. A test
+reading a committed CSV, or the tracked YAML the
 installation ships, is still a unit test: the file is data, versioned by git, and cannot change
 underneath the test. Touching a file is not crossing a boundary.
 
@@ -67,12 +74,28 @@ they stay ungated on both CI legs.
 `UI/HeadlessWait.cs` is the second, and the approved wait for a hop from a pool thread back to the
 dispatcher that an `[AvaloniaFact]` test cannot drive. A `ReactiveCommand` whose task finishes on the pool
 reaches the view through an `AvaloniaScheduler` post, and `Dispatcher.UIThread.RunJobs()` can drain the
-queue before that post lands. `HeadlessWait.Until` checks the awaited outcome every 10 ms, pumping the
-dispatcher between checks, and throws after 30 s. The exception reaches no further: the clock bounds the
-wait and no test asserts on elapsed time, and a pipeline that takes an `IScheduler` runs on a
-`TestScheduler` instead. Its users besides the theme tests are `UI/MainWindow/MainWindowViewTests.cs`,
-`UI/Startup/StartupFailureWindowTests.cs`, `UI/Settings/SettingsViewModelTests.cs`, `SettingsViewTests.cs`,
-`UI/PenEditor/PenEditorViewTests.cs` and `PenGroupsViewTests.cs`.
+queue before that post lands. `HeadlessWait.Until` checks the awaited outcome every 10 ms, pumps the
+dispatcher between checks, and throws after 30 s. Only `[AvaloniaFact]` and `[AvaloniaTheory]` bodies call
+it. A plain `[Fact]` must not touch `Dispatcher.UIThread`, not even `CheckAccess()`: on a thread with no
+dispatcher it installs that thread as the UI thread, and a pool thread that does so while the Avalonia
+session resets its dispatcher kills the session's dispatch thread and hangs the suite. A plain `[Fact]`
+polls through `HistoryDebouncerTestBuilder.AwaitCondition`, which references no Avalonia type. The exception
+reaches no further: the clock bounds the wait and no test asserts on elapsed time, and a pipeline that takes
+an `IScheduler` runs on a `TestScheduler` instead. Its users besides the theme tests are
+`UI/MainWindow/MainWindowViewTests.cs`, `UI/Startup/StartupFailureWindowTests.cs`,
+`UI/Settings/SettingsViewModelTests.cs`, `SettingsViewTests.cs`, `UI/Chart/TrendChartViewModelTests.cs` and
+`ChartTestBuilder`.
+
+`Journeys/JourneyWait.cs` is its copy for the journeys, with the same contract (10 ms poll, dispatcher pump,
+30 s bound), except that it pumps unconditionally, which is safe only because every journey is an
+`[AvaloniaFact]`: Integration cannot reference the unit project, and the copy is the accepted cross-project kind,
+like `FixedClock`. A journey waits for `TrendChartViewModel.ScalesRevision` to pass the value it read before
+the request. `ApplyHistory` writes it through `ApplyAxisModel`, with only the redraw after it, so the render
+that follows sees the applied axis. A test over a held history query waits through
+`ChartTestBuilder.ReleaseAndAwait`, which counts `RedrawRequested` pulses from before the release: the redraw
+is the apply's last statement and a production signal, while the columns, the query count and `ActiveLayer`
+move before the apply ends. A release that also applies a catalogue or pans redraws more than once, so each
+call site passes its own count.
 
 Two pieces of state are process-global and the project runs its classes in parallel: the UI culture
 (`CultureInfo.DefaultThreadCurrentUICulture` / `CurrentUICulture`) and the application's theme
@@ -89,11 +112,29 @@ seed floor; the bucketed raw window's own outer `ORDER BY id, t`, its
 `GROUP BY id, segment, date_bin(@bucket, t, @from)` and its `l = 0` window bound; the realtime poll's
 `l = 0` filter and its `ORDER BY t`; the realtime baseline's `l = 0` filter and its
 `DISTINCT unnest(@ids)`. Four statements take parameters, each through a binder of its own pinned
-against the statement's parameter names: `PostgresDataProvider.BindWindow`,
-`PostgresDataProvider.BindBucketedWindow`, `RealtimePoll.BindPoll` and `RealtimePoll.BindBaseline`.
-`BindBucketedWindow` carries two assertions more, on the bucket it derives from the window and the
+against the statement's parameter names: `PostgresDataProvider.BindLocalWindow`,
+`PostgresDataProvider.BindLocalBucketedWindow`, `RealtimePoll.BindPoll` and `RealtimePoll.BindBaseline`.
+`BindLocalBucketedWindow` carries two assertions more, on the bucket it derives from the window and the
 column target and on its one-millisecond floor. `data-integration.md` names the constants and quotes
 no SQL, so there is no second copy to drift.
+
+`TrendCoordinator.BatchWindow` is `internal` so `TrendCoordinatorTests` advance a `TestScheduler` by the
+production window instead of repeating the 100 ms literal; the constant is the one test seam the class widens.
+
+### What a realised-view test owns
+
+A `*ViewTests` class asserts what only a realised view shows: a binding reaching a control, a gesture
+routed to a command, layout and size, focus and keyboard routing, and any outcome the code-behind itself
+decides (`PenEditorWindow`'s drain and `_textEdit` slot, `TrendChartView`'s axis repaint) and any outcome only
+a realised control can trigger (the view model's `_isReorderingRows` guard against the grid's echo). An
+outcome the view model decides is asserted in the view-model test; the view test drives
+one representative case of the binding.
+
+### A pass-through layer
+
+A member whose body is `return inner(args)` keeps one test proving the forward; the inner layer owns every
+case. A forward that adds a layer-owned argument (`ChartNavigationController` passes its own `_liveEdge`; a
+loader names its own section) keeps one test for that argument.
 
 ## Integration tests
 
@@ -107,23 +148,33 @@ There are three families — the same category with different foreign parties.
 `PostgresExtentReadTests`, `PostgresHistoryReadTests`, `RealtimePollReadTests`,
 `RealtimeSubscriptionTests`, `RealtimeEmptyArchiveTests`,
 `ArchiveWriterTransactionTests`, `CoarseFlushTests`,
-`ExplainPlanTests`, `PenCatalogueEditorTests`, `PenRegistrationTests`, `LiveCatalogueTests`. Seams guarded: statement text, type mapping, the demo writer's server-side
-thinning against `LayerThinner`'s own selection,
+`ExplainPlanTests`, `PenCatalogueEditorTests`, `PenRegistrationTests`, `LiveCatalogueTests`. The realtime classes
+share `RealtimeArchive` (rows, subscription and append path), `BatchCollector` and `ArmedGate`. Seams
+guarded: statement text, type mapping, the demo writer's coarse
+flush (`CoarseFlushTests` pins period bounds, which periods close, the NULL skip, `ON CONFLICT` and the
+opening-row statement; the thinning itself is `LayerThinner.Thin`'s, tested in Unit),
 the naive-local-to-UTC conversion, partition pruning, and the grant chain — reads and the editor's
 writes run as `semiplot`, so a privilege that never reached the role fails here instead of at
 commissioning. The container is the delivery mechanism for a real server, nothing more.
 
+**Against a socket, with no server** — `RealtimePollTests` (the live edge's failure ladder, every tick
+connecting to `127.0.0.1:1`), `RealtimeSubscriptionDisposalTests` and `ConvergeReadinessTests` (a loopback
+listener). They cross the machine boundary and need no container, so they carry no collection and take no
+`PostgresContainerFixture`; a missing container runtime does not fail them. `UnreachableArchive.Settings`
+gives them the unreachable address and an adjustable poll interval.
+
 **Against a real Avalonia** — `SemiPlot.Tests.Unit/UI/`, under `[AvaloniaFact]`:
 `ChartPointerInputTests`, `MinimapPointerInputTests`, `MinimapHoverTests`, `MinimapViewTests`, `TrendChartViewTests`,
-`NavigationBarViewTests`, `AppMenuBarTests`, `AppStatusBarViewTests`, `MainWindowViewTests`, `MessagePanelViewTests`, `ThemeTests`,
+`NavigationBarViewTests`, `AppMenuBarTests`, `AppStatusBarViewTests`, `MainWindowViewTests`, `MessagePanelViewTests`,
+`TrendLegendViewTests`, `PenEditorViewTests`, `PenGroupsViewTests`, `ThemeTests`,
 `StartupFailureWindowTests`, `TrendWindowTests`, `AppMainWindowTests`,
 `TrendCoordinatorTests` with `FakeDataProvider`. Seams guarded: the dispatcher, layout, hit-testing,
 pointer capture and event routing. Real framework, synthetic data. These are what catch a rendering-stack version bump.
 The headless platform draws no pixels, so `Minimap/MinimapBand.Render` has no test: `MinimapViewTests`
 pins the figures it receives, and the minimap's smoke walk on the demo stand covers what it paints.
 
-**Against a real rasterizer** — `SemiPlot.Tests.Unit/UI/Chart/ChartGapRenderTests.cs`, a plain `[Fact]`
-with no Avalonia: it renders through SkiaSharp and asserts on pixels that a `NaN` column breaks the
+**Against a real rasterizer** — `SemiPlot.Tests.Unit/UI/Chart/ChartGapRenderTests.cs`, under `[AvaloniaFact]`:
+it renders through SkiaSharp and asserts on pixels that a `NaN` column breaks the
 line. `LogAxisRenderTests.cs` renders a log axis the same way and asserts on pixels that the 1e-4 plateau
 of a 1e-6..1e-2 axis draws at the data area's vertical middle and that a plateau at `0`, or under the
 axis minimum, draws 2 px above the data area's bottom row. `EnvelopeLineTests.cs` uses the same rasterizer
@@ -131,8 +182,9 @@ twice. As a render thread, not for its pixels: a background task renders frames 
 rewrites the same pen's columns, and the pin is that the render task throws nothing and reaches its frame
 budget, the run bounded by that budget and a cancellation token. And for its pixels in
 `Render_ProjectsThroughLog10OnlyUnderALogTickGenerator`: one flat line lands inside a -6..-2 axis only
-while the axis carries a `LogTickGenerator`. Both pixel probes go through `RedStroke`, the red-dominance
-band of `ChartGapRenderTests`.
+while the axis carries a `LogTickGenerator`. `StrokeProbe` (`UI/Chart/StrokeProbe.cs`) is the only
+pixel probe: the channel-dominance band that `ChartGapRenderTests`, `LogAxisRenderTests`, `EnvelopeLineTests`,
+`TrendChartCatalogueTests`, `TrendChartViewModelTests` and `RenderedRise` all read, so no test class carries a threshold of its own.
 
 An integration test must not cross a second foreign boundary in the same assertion, and must not
 exercise the production composition root. The moment it does either, a failure stops naming a seam.
@@ -263,6 +315,10 @@ move from the realised view; the renderer's dirty set is internal to Avalonia; a
 platform would be a second test application, which one test assembly cannot host beside the first.
 `Plot.RenderInMemory` does fire `RenderFinished` headless, which the data-area width tests use.
 
+`EnvelopeLine.SnapshotColumns()` is the chart's data seam, beside `ServedFrameCount`: internal, no production reader,
+and the alternative is a pixel probe. It returns a snapshot taken under the line's lock, because the render
+thread reads the list while the UI thread writes it, so a test never loops over it per append.
+
 ## The UI scheduler in a realised view
 
 A test that realises `TrendChartView` never passes `ImmediateScheduler.Instance` as the chart's UI
@@ -281,7 +337,7 @@ The same holds for a window that realises the chart indirectly: `ChartTestBuilde
 sidebar tests build on, hands its charts a virtual UI scheduler for this reason alone. Its
 `CreateViewModel` takes the immediate UI scheduler and so serves only tests that realise no view.
 `MainWindowTestBuilder` composes the window through the production builder, `TrendWindow.Build`, over a
-`TestScheduler`, and no test builds a window's parts by hand.
+`TestScheduler`, and no window test builds a window's parts by hand.
 
 No test starts a process. `MainWindowTestBuilder` and `TestLaunch.LauncherAt` give every window an
 `InstanceLauncher` over a recording seam, its internal four-argument constructor, because the default
@@ -289,12 +345,13 @@ launcher would start the test host; `InstanceLauncherTests` pins the start info 
 
 ## Where the boundaries between projects fall
 
-Two projects, peers, and the line between them is one question: does the test need a container?
+Two projects, peers, and the line between them is one question: does the test cross a machine boundary, a
+socket or a container? A test that opens none runs in Unit.
 
 | Project | Holds | References |
 | --- | --- | --- |
-| `SemiPlot.Tests.Unit` | every test that needs no container: the UI, the Core models, the seeder's generators, the provider's pure classes | `SemiPlot.UI`, `SemiPlot.Core`, `SemiPlot.DataSource.Postgres`, `SemiPlot.Tools.ArchiveSeeder` |
-| `SemiPlot.Tests.Integration` | the container harness, the container tests and the journeys, in one xunit collection | the same four |
+| `SemiPlot.Tests.Unit` | every test that opens no socket and starts no container: the UI, the Core models, the seeder's generators, the provider's pure classes | `SemiPlot.UI`, `SemiPlot.Core`, `SemiPlot.DataSource.Postgres`, `SemiPlot.Tools.ArchiveSeeder` |
+| `SemiPlot.Tests.Integration` | the container harness, the container tests and the journeys in one xunit collection, and the socket tests that need no server | the same four |
 
 Neither references the other, and both target plain `net10.0`, so both build on the Linux runner and
 the target framework separates nothing. An xunit v3 test project is one executable, so the split also
@@ -305,12 +362,15 @@ Nothing skips. `SemiPlot.Tests.Unit` runs on any machine with the SDK, and
 `SemiPlot/SemiPlot.Tests.Unit/xunit.runner.json` sets `failSkips` so a skipped test there is a
 failure on both CI legs; in `SemiPlot.Tests.Integration` a missing container runtime throws out of
 `PostgresContainerFixture.InitializeAsync`, and xunit fails every test of the collection with
-`TestPipelineException`.
+`TestPipelineException`. Only the container collection fails as a whole: the socket classes carry no
+collection and run without a runtime.
 
 CI has two jobs: `unit-windows` runs `SemiPlot.Tests.Unit` on `windows-latest`, the platform the
 viewer ships on, and `linux` builds the solution once on `ubuntu-latest` and runs both projects, the
 runner's Docker daemon serving the fixture. The Windows runner cannot host a Linux container and runs
-`SemiPlot.Tests.Integration` nowhere but the Linux leg.
+`SemiPlot.Tests.Integration` nowhere but the Linux leg. That includes `RealtimePollTests`,
+`RealtimeSubscriptionDisposalTests` and `ConvergeReadinessTests`: they need no container, but they live in
+Integration, so they run only on the Linux leg.
 
 ## Ownership
 

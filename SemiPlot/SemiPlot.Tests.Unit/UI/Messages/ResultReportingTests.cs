@@ -4,6 +4,7 @@ using FluentResults;
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging.Testing;
 
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.UI.Localization;
@@ -62,7 +63,7 @@ public sealed class ResultReportingTests
 	public void ReportFailure_WritesOneLogLineAtTheSeveritysLevel()
 	{
 		using var panel = new MessagePanelViewModel();
-		var logger = new RecordingLogger();
+		var logger = new FakeLogger();
 
 		panel.ReportFailure(
 			new ArchiveError(ArchiveFault.Unreachable, "scada-host", 5432, "semiplot"),
@@ -71,14 +72,14 @@ public sealed class ResultReportingTests
 			new ArchiveError(ArchiveFault.TableMissing, "scada-host", 5432, "semiplot", "trends"),
 			logger);
 
-		logger.Levels.Should().Equal(LogLevel.Warning, LogLevel.Error);
+		logger.Levels().Should().Equal(LogLevel.Warning, LogLevel.Error);
 	}
 
 	[Fact]
 	public void ReportFailure_DropsARepeatOfTheNewestEntryToDebug()
 	{
 		using var panel = new MessagePanelViewModel();
-		var logger = new RecordingLogger();
+		var logger = new FakeLogger();
 		var unreachable = new ArchiveError(ArchiveFault.Unreachable, "scada-host", 5432, "semiplot");
 
 		panel.ReportFailure(unreachable, logger);
@@ -89,7 +90,7 @@ public sealed class ResultReportingTests
 			logger);
 
 		panel.Entries.Should().HaveCount(2);
-		logger.Levels.Should().Equal(
+		logger.Levels().Should().Equal(
 			LogLevel.Warning, LogLevel.Debug, LogLevel.Debug, LogLevel.Error);
 	}
 
@@ -111,7 +112,7 @@ public sealed class ResultReportingTests
 	public void TryReportFailure_WithAPanelThatThrows_KeepsTheFailureInTheLog()
 	{
 		using var panel = new MessagePanelViewModel();
-		var logger = new RecordingLogger();
+		var logger = new FakeLogger();
 		ReportingTestDoubles.PoisonEntries(panel);
 
 		var report = () => panel.TryReportFailure(
@@ -119,6 +120,6 @@ public sealed class ResultReportingTests
 			logger);
 
 		report.Should().NotThrow();
-		logger.Levels.Should().Equal([LogLevel.Warning, LogLevel.Error]);
+		logger.Levels().Should().Equal([LogLevel.Warning, LogLevel.Error]);
 	}
 }

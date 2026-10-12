@@ -1,15 +1,9 @@
-using System.Reactive.Concurrency;
-
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Threading;
-using Avalonia.VisualTree;
 
 using AwesomeAssertions;
-
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Reactive.Testing;
 
 using ReactiveUI.Avalonia;
 
@@ -17,9 +11,7 @@ using ScottPlot.Avalonia;
 
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Bridge;
-using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
-using SemiPlot.UI.Messages;
 
 namespace SemiPlot.Tests.Unit.UI.Chart;
 
@@ -28,9 +20,6 @@ internal static class ChartViewTestBuilder
 {
 	private const int WindowWidth = 900;
 	private const int WindowHeight = 600;
-
-	private static readonly TimeSpan _batchWindow = TimeSpan.FromMilliseconds(33.0);
-	private static readonly DateTime _from = new(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
 
 	/// <summary>The pixel of the active pen's axis region nearest the plot's left edge.</summary>
 	internal static Point AxisRegionPoint(TrendChartViewModel viewModel)
@@ -64,10 +53,9 @@ internal static class ChartViewTestBuilder
 			Content = view
 		};
 
-		window.Show();
-		Dispatcher.UIThread.RunJobs();
+		ViewProbe.Realise(window);
 
-		var plotControl = view.GetVisualDescendants().OfType<AvaPlot>().Single();
+		var plotControl = ViewProbe.Named<AvaPlot>(view, "PlotControl");
 		// Both sides, because RenderInMemory takes both: a zero either way reaches ScottPlot as a throw
 		// rather than as a stated failure.
 		plotControl.Bounds.Width.Should().BeGreaterThan(0.0, "the shown window must lay the chart view out");
@@ -92,30 +80,19 @@ internal static class ChartViewTestBuilder
 
 	internal static TrendChartViewModel CreateLoadedViewModel()
 	{
-		var scheduler = new TestScheduler();
-		var provider = new FakeDataProvider(scheduler, TimeSpan.FromMilliseconds(10.0));
-		var coordinator = new TrendCoordinator(
-			provider,
-			provider.Pens,
-			scheduler,
-			ImmediateScheduler.Instance,
-			_batchWindow);
 		// AvaloniaScheduler, as in production: docs/architecture/testing-strategy.md#the-ui-scheduler-in-a-realised-view.
-		var viewModel = new TrendChartViewModel(
-			coordinator,
-			scheduler,
-			AvaloniaScheduler.Instance,
-			new MessagePanelViewModel(),
-			NullLogger<TrendChartViewModel>.Instance);
-		var state = viewModel.AddPen(new Pen(1, "Pen 1", ["Group A"], "#ff0000"));
+		var viewModel = ChartTestBuilder.CreateViewModel(
+			ChartTestBuilder.RealtimeInterval,
+			uiScheduler: AvaloniaScheduler.Instance).ViewModel;
+		var state = viewModel.AddPen(FakeDataProvider.FirstPen);
 		state.LoadHistory(
 			new PenHistoryEnvelope(
 				1,
-				[_from, _from.AddMinutes(1.0)],
+				[ChartTestBuilder.From, ChartTestBuilder.From.AddMinutes(1.0)],
 				[1.0, 3.0],
 				[5.0, 9.0],
 				[2.0, 6.0]),
-			_from.AddMinutes(1.0));
+			ChartTestBuilder.From.AddMinutes(1.0));
 
 		return viewModel;
 	}

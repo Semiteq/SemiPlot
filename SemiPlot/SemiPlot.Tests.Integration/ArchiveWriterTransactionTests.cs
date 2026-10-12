@@ -147,43 +147,24 @@ public sealed class ArchiveWriterTransactionTests(PostgresContainerFixture postg
 		return rows;
 	}
 
-	private async Task<bool> ScalarIsTrueAsync(string statement, CancellationToken cancellationToken)
+	private Task<bool> ScalarIsTrueAsync(string statement, CancellationToken cancellationToken)
 	{
-		return await ScalarAsync(statement, cancellationToken) is true;
+		return ArchiveDatabase.ScalarAsync<bool>(
+			Database.AdminConnectionString, statement, cancellationToken: cancellationToken);
 	}
 
-	private async Task<long> CountRowsAsync(CancellationToken cancellationToken)
+	private Task<long> CountRowsAsync(CancellationToken cancellationToken)
 	{
-		return (long)(await ScalarAsync(CountRowsCommand, cancellationToken))!;
+		return ArchiveDatabase.ScalarAsync<long>(
+			Database.AdminConnectionString, CountRowsCommand, cancellationToken: cancellationToken);
 	}
 
-	private async Task<object?> ScalarAsync(string statement, CancellationToken cancellationToken)
+	private Task<IReadOnlyList<string>> PartitionNamesAsync(CancellationToken cancellationToken)
 	{
-		await using var connection = new NpgsqlConnection(Database.AdminConnectionString);
-
-		await connection.OpenAsync(cancellationToken);
-
-		await using var command = new NpgsqlCommand(statement, connection);
-
-		return await command.ExecuteScalarAsync(cancellationToken);
-	}
-
-	private async Task<IReadOnlyList<string>> PartitionNamesAsync(CancellationToken cancellationToken)
-	{
-		await using var connection = new NpgsqlConnection(Database.AdminConnectionString);
-
-		await connection.OpenAsync(cancellationToken);
-
-		await using var command = new NpgsqlCommand(PartitionNamesCommand, connection);
-		await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-
-		var names = new List<string>();
-
-		while (await reader.ReadAsync(cancellationToken))
-		{
-			names.Add(reader.GetString(0));
-		}
-
-		return names;
+		return ArchiveDatabase.ReadAsync(
+			Database.AdminConnectionString,
+			PartitionNamesCommand,
+			reader => reader.GetString(0),
+			cancellationToken: cancellationToken);
 	}
 }

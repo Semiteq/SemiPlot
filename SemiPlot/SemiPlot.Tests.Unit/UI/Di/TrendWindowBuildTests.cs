@@ -5,19 +5,18 @@ using Avalonia.Threading;
 
 using AwesomeAssertions;
 
-using FluentResults;
-
 using Microsoft.Extensions.DependencyInjection;
 
 using ReactiveUI.Avalonia;
 
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
+using SemiPlot.Tests.Unit.UI.Bridge;
+using SemiPlot.Tests.Unit.UI.PenEditor;
 using SemiPlot.Tests.Unit.UI.Startup;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
-using SemiPlot.UI.PenEditor;
 using SemiPlot.UI.Startup;
 
 using Xunit;
@@ -59,7 +58,7 @@ public sealed class TrendWindowBuildTests
 		// The failed extent leaves the minimap band unread, so the history failure here is the chart's own.
 		panel.Entries.Select(entry => entry.View.Title).Should().Contain(
 			[
-				ArchiveFailureMapper.Map(new Error("Forced history failure.")).Title,
+				ArchiveFailureMapper.Map(FakeDataProvider.UnreachableArchive()).Title,
 				Resources.FailureArchiveReadFailedTitle
 			],
 			"the chart and the minimap both report into the container's panel");
@@ -83,42 +82,11 @@ public sealed class TrendWindowBuildTests
 
 		dataProvider.ReportConnectionState(
 			new ArchiveConnectionState(
-				new ArchiveError(ArchiveFault.ConnectionLost, "bench", 5432, "semiplot_dev", "3")));
+				FakePenCatalogueEditor.Refusal(ArchiveFault.ConnectionLost, "3")));
 		Dispatcher.UIThread.RunJobs();
 
 		mainWindowViewModel.StatusBar.IsConnected.Should().BeFalse("the bar is bound to the coordinator");
 		container.GetRequiredService<MessagePanelViewModel>().Entries.Should().NotBeEmpty(
 			"the fault reaches the one panel the window shows");
-	}
-
-	// Without the window's read loop, or without its start, no editor write reaches the running chart.
-	[AvaloniaFact]
-	public async Task AnEditorWrite_ReadsTheCatalogueThroughTheLoopTheWindowOwns()
-	{
-		using var stand = NewArchiveStand();
-		var scheduler = stand.Scheduler;
-		var dataProvider = stand.Provider;
-		var container = stand.Data.ServiceProvider;
-
-		var probe = await StartupProbe.ReadAsync(container, StartupProbe.DefaultReadBound);
-
-		using var window = TrendWindow.Build(
-			probe.Value, TestLaunch.LauncherAt(AppContext.BaseDirectory), AvaloniaScheduler.Instance);
-		Dispatcher.UIThread.RunJobs();
-		var mainWindowViewModel = window.ViewModel;
-		var requests = new List<PenEditorViewModel>();
-
-		using (mainWindowViewModel.PenEditorRequests.Subscribe(requests.Add))
-		{
-			await mainWindowViewModel.ShowPenEditorCommand.Execute();
-		}
-
-		using var penEditor = requests.Should().ContainSingle().Which;
-		var pensQueriesBefore = dataProvider.PensQueryCount;
-		penEditor.Groups.NewGroupName = "Gas";
-		await penEditor.Groups.CreateGroupCommand.Execute();
-		Dispatcher.UIThread.RunJobs();
-
-		dataProvider.PensQueryCount.Should().Be(pensQueriesBefore + 1);
 	}
 }

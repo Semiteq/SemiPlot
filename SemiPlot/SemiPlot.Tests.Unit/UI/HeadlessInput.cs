@@ -54,4 +54,18 @@ internal static class HeadlessInput
 		topLevel.KeyReleaseQwerty(key, RawInputModifiers.None);
 		Dispatcher.UIThread.RunJobs();
 	}
+
+	internal static void Pick(TopLevel topLevel, ComboBox comboBox, object choice)
+	{
+		Click(topLevel, comboBox);
+		comboBox.IsDropDownOpen.Should().BeTrue("a click on the box opens its list");
+
+		var item = comboBox.ContainerFromItem(choice)
+			?? throw new InvalidOperationException("The open list realised no container for the choice.");
+		var popup = TopLevel.GetTopLevel(item)
+			?? throw new InvalidOperationException("The open list is not in a top level.");
+
+		Click(popup, item);
+		comboBox.IsDropDownOpen.Should().BeFalse("a click on an entry picks it and closes the list");
+	}
 }

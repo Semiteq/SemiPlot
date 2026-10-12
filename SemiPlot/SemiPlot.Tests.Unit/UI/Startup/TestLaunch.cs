@@ -23,4 +23,9 @@ internal static class TestLaunch
 		return new InstanceLauncher(
 			OptionsAt(configDirectory), HostPath, entryAssemblyPath: null, start ?? (_ => { }));
 	}
+
+	public static AppSettingsError FailedStartup()
+	{
+		return new AppSettingsError("app", AppSettingsProblem.KeyMissing, AppSettingsLoader.LocaleKey);
+	}
 }

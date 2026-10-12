@@ -37,7 +37,7 @@ public sealed class ChartAxisRegion
 			return null;
 		}
 
-		var (panelLeft, panelRight) = HorizontalBand(axis.Edge, dataRect, size, offset);
+		var (panelLeft, panelRight) = HorizontalBand(dataRect, size, offset);
 
 		return new ChartAxisRegion(
 			panelLeft,
@@ -55,18 +55,10 @@ public sealed class ChartAxisRegion
 	}
 
 	private static (float Left, float Right) HorizontalBand(
-		Edge edge,
 		PixelRect dataRect,
 		float size,
 		float offset)
 	{
-		if (edge == Edge.Right)
-		{
-			var left = dataRect.Right + offset;
-
-			return (left, left + size);
-		}
-
 		var right = dataRect.Left - offset;
 
 		return (right - size, right);

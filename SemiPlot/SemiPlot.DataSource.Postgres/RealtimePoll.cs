@@ -23,7 +23,13 @@ internal readonly record struct RealtimeTick(IReadOnlyList<Sample> Samples, Arch
 /// The live edge of one subscription, as an awaitable read rather than as an observable; one instance per
 /// subscription, and not thread-safe, the caller drives it from one loop at a time.
 /// </summary>
-internal sealed class RealtimePoll
+internal sealed class RealtimePoll(
+	NpgsqlDataSource dataSource,
+	ArchiveTimeConverter timeConverter,
+	ArchiveExceptionMapper exceptionMapper,
+	PostgresConnectionSettings settings,
+	int[] penIds,
+	ILogger logger)
 {
 	// q = 32 marks the last sample before a break; read for the debug line only
 	// (docs/architecture/scada-archive.md, Quality and gaps).
@@ -35,53 +41,15 @@ internal sealed class RealtimePoll
 
 	private static readonly IReadOnlyList<Sample> _noSamples = [];
 
-	private readonly NpgsqlDataSource _dataSource;
-
-	private readonly ArchiveTimeConverter _timeConverter;
-
-	private readonly ArchiveExceptionMapper _exceptionMapper;
-
-	private readonly PostgresConnectionSettings _settings;
-
-	private readonly ILogger _logger;
-
-	private readonly int[] _penIds;
-
 	private int _consecutiveFailures;
 
 	private bool _faultRaised;
 
 	private bool _reportedConnected;
 
-	public RealtimePoll(
-		NpgsqlDataSource dataSource,
-		ArchiveTimeConverter timeConverter,
-		ArchiveExceptionMapper exceptionMapper,
-		PostgresConnectionSettings settings,
-		int[] penIds,
-		ILogger logger)
-	{
-		ArgumentNullException.ThrowIfNull(dataSource);
-		ArgumentNullException.ThrowIfNull(timeConverter);
-		ArgumentNullException.ThrowIfNull(exceptionMapper);
-		ArgumentNullException.ThrowIfNull(settings);
-		ArgumentNullException.ThrowIfNull(penIds);
-		ArgumentNullException.ThrowIfNull(logger);
-
-		_dataSource = dataSource;
-		_timeConverter = timeConverter;
-		_exceptionMapper = exceptionMapper;
-		_settings = settings;
-		_penIds = penIds;
-		_logger = logger;
-	}
-
-	/// <summary>
-	/// The newest archive timestamp this subscription has read, in the archive's own naive wall clock, or
-	/// null while the baseline is still unread. It only ever moves forward. Never taken from the local
-	/// clock: a clock difference between the two hosts would drop or repeat the first seconds.
-	/// </summary>
-	public DateTime? LastSeen { get; private set; }
+	// The archive's own naive wall clock, null until the baseline is read; never taken from the local clock:
+	// a clock difference between the two hosts would drop or repeat the first seconds.
+	private DateTime? _lastSeen;
 
 	/// <summary>
 	/// One tick. The first one establishes the baseline and emits no sample; every later one emits the
@@ -91,11 +59,11 @@ internal sealed class RealtimePoll
 	{
 		try
 		{
-			await using var connection = await _dataSource
+			await using var connection = await dataSource
 				.OpenConnectionAsync(cancellationToken)
 				.ConfigureAwait(false);
 
-			var samples = LastSeen is { } lastSeen
+			var samples = _lastSeen is { } lastSeen
 				? await ReadSamplesAsync(connection, lastSeen, cancellationToken).ConfigureAwait(false)
 				: await ReadBaselineAsync(connection, cancellationToken).ConfigureAwait(false);
 
@@ -148,7 +116,7 @@ internal sealed class RealtimePoll
 	{
 		await using var command = CreateTickCommand(ArchiveStatements.RealtimeBaseline, connection);
 
-		BindBaseline(command, _penIds);
+		BindBaseline(command, penIds);
 
 		var answer = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
 
@@ -156,12 +124,12 @@ internal sealed class RealtimePoll
 		{
 			Advance(baseline);
 
-			_logger.LogDebug("The realtime baseline for {PenCount} variables is {Baseline:O}.", _penIds.Length,
+			logger.LogDebug("The realtime baseline for {PenCount} variables is {Baseline:O}.", penIds.Length,
 				baseline);
 		}
 		else
 		{
-			_logger.LogDebug("The {PenCount} subscribed variables carry no archived row yet.", _penIds.Length);
+			logger.LogDebug("The {PenCount} subscribed variables carry no archived row yet.", penIds.Length);
 		}
 
 		return _noSamples;
@@ -174,7 +142,7 @@ internal sealed class RealtimePoll
 	{
 		await using var command = CreateTickCommand(ArchiveStatements.RealtimePoll, connection);
 
-		BindPoll(command, _penIds, lastSeen);
+		BindPoll(command, penIds, lastSeen);
 
 		await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
@@ -209,12 +177,12 @@ internal sealed class RealtimePoll
 				continue;
 			}
 
-			samples.Add(new Sample(reader.GetInt32(0), _timeConverter.ToUtc(archiveLocal), reader.GetDouble(2)));
+			samples.Add(new Sample(reader.GetInt32(0), timeConverter.ToUtc(archiveLocal), reader.GetDouble(2)));
 		}
 
 		Advance(newest);
 
-		_logger.LogDebug(
+		logger.LogDebug(
 			"The realtime poll read {RowCount} rows past {LastSeen:O}: {SampleCount} samples, {DroppedCount} "
 			+ "dropped for a null value, {BreakMarkCount} marking the last sample before a break.",
 			rowCount,
@@ -228,9 +196,9 @@ internal sealed class RealtimePoll
 
 	private void Advance(DateTime archiveLocal)
 	{
-		if (LastSeen is null || archiveLocal > LastSeen)
+		if (_lastSeen is null || archiveLocal > _lastSeen)
 		{
-			LastSeen = archiveLocal;
+			_lastSeen = archiveLocal;
 		}
 	}
 
@@ -251,11 +219,11 @@ internal sealed class RealtimePoll
 
 	private ArchiveConnectionState? Fail(Exception exception)
 	{
-		var error = _exceptionMapper.Map(exception, ArchiveStatements.TrendsRelation);
+		var error = exceptionMapper.Map(exception, ArchiveStatements.TrendsRelation);
 
 		_consecutiveFailures++;
 
-		_logger.LogWarning(
+		logger.LogWarning(
 			exception,
 			"The realtime poll tick failed, {ConsecutiveFailures} in a row: {Reason}",
 			_consecutiveFailures,
@@ -270,9 +238,9 @@ internal sealed class RealtimePoll
 
 		return new ArchiveConnectionState(new ArchiveError(
 			ArchiveFault.ConnectionLost,
-			_settings.Host,
-			_settings.Port,
-			_settings.Database,
+			settings.Host,
+			settings.Port,
+			settings.Database,
 			ArchiveConnectionState.ConsecutiveFailuresBeforeFault.ToString(CultureInfo.InvariantCulture)));
 	}
 }

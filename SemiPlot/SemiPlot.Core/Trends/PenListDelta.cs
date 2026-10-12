@@ -12,8 +12,6 @@ public sealed record PenListDelta(
 	/// <summary>Nothing added, removed or revised; a new order alone is no change.</summary>
 	public bool IsEmpty => Added.Count == 0 && RemovedPenIds.Count == 0 && Revised.Count == 0;
 
-	public bool ChangesPenSet => Added.Count > 0 || RemovedPenIds.Count > 0;
-
 	public static PenListDelta Between(IReadOnlyList<Pen> previous, IReadOnlyList<Pen> current)
 	{
 		var previousById = previous.ToDictionary(pen => pen.PenId);

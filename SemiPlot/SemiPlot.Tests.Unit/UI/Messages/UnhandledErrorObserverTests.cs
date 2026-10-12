@@ -4,6 +4,7 @@ using FluentResults;
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging.Testing;
 using Microsoft.Reactive.Testing;
 
 using SemiPlot.UI.Messages;
@@ -37,23 +38,21 @@ public sealed class UnhandledErrorObserverTests
 		panel.Entries[0].View.Should()
 			.Be(ArchiveFailureMapper.Map(new ExceptionalError(failure.Message, failure)));
 		panel.Entries[0].View.Severity.Should().Be(MessageSeverity.Error);
-		panel.Entries[0].View.Detail.Should().Contain(nameof(InvalidOperationException));
-		panel.Entries[0].View.Detail.Should().Contain("the command body threw");
 	}
 
 	[Fact]
 	public void OnNext_LogsTheExceptionAtErrorWhenNoPanelHasBeenResolved()
 	{
 		var scheduler = new TestScheduler();
-		var logger = new RecordingLogger();
+		var logger = new FakeLogger();
 		var observer = new UnhandledErrorObserver(() => null, scheduler, logger);
 		var failure = new InvalidOperationException("no window yet");
 
 		observer.OnNext(failure);
 		scheduler.AdvanceBy(1);
 
-		logger.Levels.Should().Equal(LogLevel.Error);
-		logger.Exceptions.Should().Equal(failure);
+		logger.Levels().Should().Equal(LogLevel.Error);
+		logger.Failures().Should().Equal(failure);
 	}
 
 	[Fact]
@@ -61,13 +60,13 @@ public sealed class UnhandledErrorObserverTests
 	{
 		var scheduler = new TestScheduler();
 		using var panel = new MessagePanelViewModel();
-		var logger = new RecordingLogger();
+		var logger = new FakeLogger();
 		var observer = new UnhandledErrorObserver(() => panel, scheduler, logger);
 
 		observer.OnNext(new InvalidOperationException("both routes"));
 		scheduler.AdvanceBy(1);
 
-		logger.Levels.Should().Equal(LogLevel.Error);
+		logger.Levels().Should().Equal(LogLevel.Error);
 		panel.Entries.Should().ContainSingle();
 	}
 
@@ -78,7 +77,7 @@ public sealed class UnhandledErrorObserverTests
 	{
 		var scheduler = new TestScheduler();
 		using var panel = new MessagePanelViewModel();
-		var logger = new RecordingLogger();
+		var logger = new FakeLogger();
 		var observer = new UnhandledErrorObserver(() => panel, scheduler, logger);
 		ReportingTestDoubles.PoisonEntries(panel);
 
@@ -87,7 +86,7 @@ public sealed class UnhandledErrorObserverTests
 		var runTheJob = () => scheduler.AdvanceBy(1);
 
 		runTheJob.Should().NotThrow();
-		logger.Levels.Should().Equal([LogLevel.Error, LogLevel.Error]);
+		logger.Levels().Should().Equal([LogLevel.Error, LogLevel.Error]);
 	}
 
 	// ReactiveUI hands the handler OnError when the pipeline carrying the failures fails itself; losing

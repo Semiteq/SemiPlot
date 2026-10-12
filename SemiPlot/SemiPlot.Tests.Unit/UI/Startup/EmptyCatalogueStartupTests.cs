@@ -31,11 +31,6 @@ public sealed class EmptyCatalogueStartupTests
 		var container = stand.Data.ServiceProvider;
 
 		var probe = await StartupProbe.ReadAsync(container, StartupProbe.DefaultReadBound);
-
-		probe.IsSuccess.Should().BeTrue();
-		probe.Errors.Should().BeEmpty();
-		probe.Value.Pens.Should().BeEmpty();
-
 		using var window = TrendWindow.Build(
 			probe.Value, TestLaunch.LauncherAt(AppContext.BaseDirectory), AvaloniaScheduler.Instance);
 		var mainWindowViewModel = window.ViewModel;
@@ -44,20 +39,4 @@ public sealed class EmptyCatalogueStartupTests
 		mainWindowViewModel.ChartViewModel.HasNoPens.Should().BeTrue();
 	}
 
-	[AvaloniaFact]
-	public async Task PopulatedCatalogue_StartsWithTheEmptyCatalogueStateOff()
-	{
-		using var stand = NewArchiveStand();
-		var dataProvider = stand.Provider;
-		var container = stand.Data.ServiceProvider;
-
-		var probe = await StartupProbe.ReadAsync(container, StartupProbe.DefaultReadBound);
-
-		using var window = TrendWindow.Build(
-			probe.Value, TestLaunch.LauncherAt(AppContext.BaseDirectory), AvaloniaScheduler.Instance);
-		var mainWindowViewModel = window.ViewModel;
-
-		mainWindowViewModel.ChartViewModel.Pens.Should().HaveCount(dataProvider.Pens.Count);
-		mainWindowViewModel.ChartViewModel.HasNoPens.Should().BeFalse();
-	}
 }

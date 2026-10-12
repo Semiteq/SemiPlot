@@ -160,7 +160,7 @@ public static class SettingsSave
 				section.Section, sectionDirectory, section.Problem, section.Key, section.FileNames),
 			AppSettingsError settings => new AppSettingsError(
 				sectionDirectory, settings.Kind, settings.Key, settings.AcceptedValues),
-			ConnectionFileError file => new ConnectionFileError(sectionDirectory, file.Kind, file.Reason),
+			ConnectionFileError file => new ConnectionFileError(sectionDirectory, file.Kind, file.Fields),
 			_ => throw new UnreachableException($"A section loader returned {error.GetType().Name}.")
 		};
 

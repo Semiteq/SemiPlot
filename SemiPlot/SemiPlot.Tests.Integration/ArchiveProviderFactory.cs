@@ -17,7 +17,9 @@ public static class ArchiveProviderFactory
 	// all read the same, so the time boundary would be invisible to every assertion in this folder.
 	public static readonly TimeZoneInfo SourceTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Berlin");
 
-	private static readonly TimeSpan _pollInterval = TimeSpan.FromSeconds(1);
+	public static readonly ArchiveTimeConverter TimeConverter = new(SourceTimeZone);
+
+	public static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
 
 	// The caller disposes what comes back, which returns the pooled connections before
 	// ArchiveDatabase.DisposeAsync drops the database, and a pooled connection makes DROP DATABASE refuse.
@@ -58,7 +60,7 @@ public static class ArchiveProviderFactory
 			Username: builder.Username ?? string.Empty,
 			Password: builder.Password ?? string.Empty,
 			SourceTimeZone: SourceTimeZone,
-			PollInterval: _pollInterval,
+			PollInterval: PollInterval,
 			Schema: Schema);
 	}
 }

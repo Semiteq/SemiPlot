@@ -9,8 +9,6 @@ public sealed class DeltaCursorModel
 
 	public DateTime? SecondCursor { get; private set; }
 
-	public bool HasBothCursors => FirstCursor.HasValue && SecondCursor.HasValue;
-
 	// A third placement starts a fresh measurement from the new point.
 	public void Place(DateTime cursorTime)
 	{

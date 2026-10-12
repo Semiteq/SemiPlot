@@ -49,27 +49,16 @@ public sealed class LogAxisRenderTests
 			"1e-4 is two decades above 1e-6 and two below 1e-2");
 	}
 
-	[Fact]
-	public void AZeroPlateau_DrawsTwoPixelsAboveTheDataAreasBottomRow()
+	[Theory]
+	[InlineData(ZeroPlateau, "a non-positive sample is pinned above the axis frame, not hidden under it")]
+	[InlineData(BelowTheAxisPlateau, "a positive sample under the axis minimum lands on the floor, as zero does")]
+	public void APlateauOnTheFloor_DrawsTwoPixelsAboveTheDataAreasBottomRow(int plateau, string because)
 	{
 		var render = Render();
 
-		var rows = render.RowsAtPlateau(ZeroPlateau);
+		var rows = render.RowsAtPlateau(plateau);
 
-		rows.Should().NotBeEmpty("a non-positive sample is pinned above the axis frame, not hidden under it");
-		BandCentre(rows).Should().BeApproximately(
-			render.DataRect.Bottom - PinnedFloorPixels,
-			FloorTolerancePixels);
-	}
-
-	[Fact]
-	public void APlateauBelowTheAxisMinimum_DrawsOnTheFloorBesideZero()
-	{
-		var render = Render();
-
-		var rows = render.RowsAtPlateau(BelowTheAxisPlateau);
-
-		rows.Should().NotBeEmpty("a positive sample under the axis minimum lands on the floor, as zero does");
+		rows.Should().NotBeEmpty(because);
 		BandCentre(rows).Should().BeApproximately(
 			render.DataRect.Bottom - PinnedFloorPixels,
 			FloorTolerancePixels);
@@ -134,7 +123,7 @@ public sealed class LogAxisRenderTests
 	{
 		public IReadOnlyList<int> RowsAtPlateau(int plateau)
 		{
-			return RedStroke.RowsIn(Pixels, DataRect, PlateauColumns[plateau]);
+			return StrokeProbe.RowsIn(Pixels, DataRect, PlateauColumns[plateau]);
 		}
 	}
 }

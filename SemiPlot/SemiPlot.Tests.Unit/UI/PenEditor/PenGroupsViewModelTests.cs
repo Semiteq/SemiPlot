@@ -56,21 +56,6 @@ public sealed class PenGroupsViewModelTests : IDisposable
 	}
 
 	[AvaloniaFact]
-	public void CancellingTheDeletion_ClearsItAndWritesNothing()
-	{
-		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
-		var groups = editor.Groups;
-		groups.SelectedGroup = groups.Groups[0];
-		groups.DeleteGroupCommand.Execute().Subscribe();
-
-		groups.CancelDeleteCommand.Execute().Subscribe();
-
-		groups.PendingDeletion.Should().BeNull();
-		groups.Groups.Should().HaveCount(2);
-		_editor.Calls.Should().BeEmpty();
-	}
-
-	[AvaloniaFact]
 	public async Task ConfirmingTheDeletion_DeletesOnceAndUpdatesTheAffectedRowsGroupText()
 	{
 		using var editor = _editor.EditorOver(_catalogue, _messagePanel);

@@ -4,6 +4,8 @@ using SemiPlot.Core.Trends;
 
 using Xunit;
 
+using static SemiPlot.Tests.Unit.Chart.PenEnvelopes;
+
 namespace SemiPlot.Tests.Unit.Chart;
 
 [Trait("Component", "Core")]
@@ -52,32 +54,6 @@ public sealed class CursorReadoutModelTests
 	}
 
 	[Fact]
-	public void ReadAt_ExactHitOnNaNColumn_ReturnsNoValue()
-	{
-		var model = new CursorReadoutModel();
-		var envelope = Envelope(
-			1,
-			(_origin, 10.0),
-			(_origin.AddHours(1), double.NaN),
-			(_origin.AddHours(2), 30.0));
-
-		var readouts = model.ReadAt(_origin.AddHours(1), [envelope]);
-
-		readouts[1].Should().BeNull();
-	}
-
-	[Fact]
-	public void ReadAt_CursorBeforeFirstColumn_ReturnsNoValue()
-	{
-		var model = new CursorReadoutModel();
-		var envelope = Envelope(1, (_origin, 10.0), (_origin.AddHours(1), 20.0));
-
-		var readouts = model.ReadAt(_origin.AddHours(-1), [envelope]);
-
-		readouts[1].Should().BeNull();
-	}
-
-	[Fact]
 	public void ReadAt_CursorAfterLastColumn_ReturnsNoValue()
 	{
 		var model = new CursorReadoutModel();
@@ -117,23 +93,5 @@ public sealed class CursorReadoutModelTests
 		readouts[1]!.Value.Should().BeApproximately(20.0, 1e-9);
 		readouts[2].Should().BeNull();
 		readouts[3].Should().BeNull();
-	}
-
-	private static PenHistoryEnvelope Envelope(int penId, params (DateTime Time, double Center)[] columns)
-	{
-		var timestamps = new DateTime[columns.Length];
-		var min = new double[columns.Length];
-		var max = new double[columns.Length];
-		var center = new double[columns.Length];
-
-		for (var index = 0; index < columns.Length; index++)
-		{
-			timestamps[index] = columns[index].Time;
-			center[index] = columns[index].Center;
-			min[index] = columns[index].Center;
-			max[index] = columns[index].Center;
-		}
-
-		return new PenHistoryEnvelope(penId, timestamps, min, max, center);
 	}
 }

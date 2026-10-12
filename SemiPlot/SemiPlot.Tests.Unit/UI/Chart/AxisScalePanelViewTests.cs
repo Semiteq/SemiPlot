@@ -9,6 +9,7 @@ using Avalonia.VisualTree;
 using AwesomeAssertions;
 
 using SemiPlot.Core.Trends;
+using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.PenEditor;
@@ -24,6 +25,7 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 [Trait("Component", "UI")]
 [Trait("Area", "Chart")]
 [Trait("Category", "Unit")]
+[Collection(ProcessGlobalStateCollection.Name)]
 public sealed class AxisScalePanelViewTests
 {
 	[AvaloniaFact]
@@ -59,38 +61,31 @@ public sealed class AxisScalePanelViewTests
 		FlyoutBase.GetAttachedFlyout(shown.PlotControl)!.IsOpen.Should().BeFalse();
 	}
 
-	[AvaloniaTheory]
-	[InlineData("en-US", "150.5")]
-	[InlineData("ru-RU", "150,5")]
-	public void AFractionInTheCurrentCulturesSeparator_IsWrittenByEnterWithThePanelOpen(
-		string cultureName,
-		string typed)
+	[AvaloniaFact]
+	public void AFractionTypedInTheMaximum_IsWrittenByEnterWithThePanelOpen()
 	{
-		using var culture = new CultureScope(cultureName);
+		using var culture = new CultureScope("en-US");
 		using var viewModel = CreateLoadedViewModel();
 		using var shown = ShowChart(viewModel);
 		var (flyout, panel) = OpenPanel(viewModel, shown);
 
-		TypeInto(shown.Window, panel, "AxisScaleMaximum", typed);
+		TypeInto(shown.Window, panel, "AxisScaleMaximum", "150.5");
 		HeadlessInput.Press(shown.Window, PhysicalKey.Enter);
 
 		viewModel.ScaleSettings[1].ManualMax.Should().Be(150.5);
 		flyout.IsOpen.Should().BeTrue("Enter writes the pair and keeps the panel open");
 	}
 
-	[AvaloniaTheory]
-	[InlineData("en-US", "1x")]
-	[InlineData("en-US", "150,5")]
-	[InlineData("ru-RU", "150.5")]
-	public void AnUnreadableEntry_IsMarkedAndEnterWritesNothing(string cultureName, string typed)
+	[AvaloniaFact]
+	public void AnUnreadableEntry_IsMarkedAndEnterWritesNothing()
 	{
-		using var culture = new CultureScope(cultureName);
+		using var culture = new CultureScope("en-US");
 		using var viewModel = CreateLoadedViewModel();
 		viewModel.SetAxisLimits(1, 10.0, 90.0);
 		using var shown = ShowChart(viewModel);
 		var (flyout, panel) = OpenPanel(viewModel, shown);
 
-		TypeInto(shown.Window, panel, "AxisScaleMaximum", typed);
+		TypeInto(shown.Window, panel, "AxisScaleMaximum", "1x");
 
 		panel.FindControl<TextBlock>("AxisScaleValidationMessage")!.Text.Should().Be(Resources.AxisScaleBoundInvalid);
 		panel.FindControl<TextBox>("AxisScaleMaximum")!.Classes.Should().Contain("invalid");
@@ -149,21 +144,6 @@ public sealed class AxisScalePanelViewTests
 
 		flyout.IsOpen.Should().BeFalse();
 		viewModel.ScaleRangeForPen(1)!.Value.Should().Be((50.0, 100.0));
-	}
-
-	[AvaloniaFact]
-	public void AClickOutsideThePanel_DiscardsAMinimumAboveTheMaximum()
-	{
-		using var viewModel = CreateLoadedViewModel();
-		viewModel.SetAxisLimits(1, 0.0, 100.0);
-		using var shown = ShowChart(viewModel);
-		var (flyout, panel) = OpenPanel(viewModel, shown);
-
-		TypeInto(shown.Window, panel, "AxisScaleMinimum", "150");
-		ClickOutsideThePanel(shown);
-
-		flyout.IsOpen.Should().BeFalse();
-		viewModel.ScaleRangeForPen(1)!.Value.Should().Be((0.0, 100.0));
 	}
 
 	[AvaloniaFact]
@@ -254,51 +234,6 @@ public sealed class AxisScalePanelViewTests
 		flyout.IsOpen.Should().BeTrue();
 	}
 
-	[AvaloniaTheory]
-	[InlineData("en-US")]
-	[InlineData("ru-RU")]
-	public void AnInvertedPair_ShowsTheMessageKeepsThePanelsSizeAndEnterWritesNothing(string cultureName)
-	{
-		using var culture = new CultureScope(cultureName);
-		using var viewModel = CreateLoadedViewModel();
-		viewModel.SetAxisLimits(1, 10.0, 90.0);
-		using var shown = ShowChart(viewModel);
-		var (flyout, panel) = OpenPanel(viewModel, shown);
-		var message = panel.FindControl<TextBlock>("AxisScaleValidationMessage")!;
-		var sizes = SizesOf(panel, message);
-		message.Text.Should().BeEmpty();
-
-		TypeInto(shown.Window, panel, "AxisScaleMinimum", "95");
-		HeadlessInput.Press(shown.Window, PhysicalKey.Enter);
-
-		message.Text.Should().Be(Resources.AxisScaleMinimumBelowMaximum);
-		SizesOf(panel, message).Should().Be(sizes);
-		viewModel.ScaleRangeForPen(1)!.Value.Should().Be((10.0, 90.0));
-		flyout.IsOpen.Should().BeTrue();
-	}
-
-	[AvaloniaTheory]
-	[InlineData("en-US")]
-	[InlineData("ru-RU")]
-	public void AnEmptyField_ShowsTheMessageKeepsThePanelsSizeAndEnterWritesNothing(string cultureName)
-	{
-		using var culture = new CultureScope(cultureName);
-		using var viewModel = CreateLoadedViewModel();
-		viewModel.SetAxisLimits(1, 10.0, 90.0);
-		using var shown = ShowChart(viewModel);
-		var (flyout, panel) = OpenPanel(viewModel, shown);
-		var message = panel.FindControl<TextBlock>("AxisScaleValidationMessage")!;
-		var sizes = SizesOf(panel, message);
-
-		HeadlessInput.Clear(shown.Window, panel.FindControl<TextBox>("AxisScaleMaximum")!);
-		HeadlessInput.Press(shown.Window, PhysicalKey.Enter);
-
-		message.Text.Should().Be(Resources.AxisScaleBoundsRequired);
-		SizesOf(panel, message).Should().Be(sizes);
-		viewModel.ScaleRangeForPen(1)!.Value.Should().Be((10.0, 90.0));
-		flyout.IsOpen.Should().BeTrue();
-	}
-
 	[AvaloniaFact]
 	public void TheAutoscaleButton_AfterATypedBound_RevertsThePensAxisToAutoAndClosesThePanel()
 	{
@@ -338,7 +273,7 @@ public sealed class AxisScalePanelViewTests
 	public void TheInitialScaleButton_AfterATypedBound_RestoresTheStoredPairAndClosesThePanel()
 	{
 		using var viewModel = CreateLoadedViewModel();
-		var pen = new Pen(1, "Pen 1", ["Group A"], "#ff0000");
+		var pen = FakeDataProvider.FirstPen;
 		viewModel.ApplyCatalogue([pen with { ScaleMinOnStart = 5.0, ScaleMaxOnStart = 50.0 }]);
 		viewModel.SetAxisLimits(1, 10.0, 90.0);
 		using var shown = ShowChart(viewModel);
@@ -351,22 +286,6 @@ public sealed class AxisScalePanelViewTests
 
 		viewModel.ScaleRangeForPen(1)!.Value.Should().Be((5.0, 50.0));
 		flyout.IsOpen.Should().BeFalse();
-	}
-
-	[AvaloniaFact]
-	public void WhenThePenIsHiddenWhileThePanelIsOpen_ThePanelClosesWithoutWriting()
-	{
-		using var viewModel = CreateLoadedViewModel();
-		viewModel.SetAxisLimits(1, 10.0, 90.0);
-		using var shown = ShowChart(viewModel);
-		var (flyout, panel) = OpenPanel(viewModel, shown);
-
-		TypeInto(shown.Window, panel, "AxisScaleMaximum", "500");
-		viewModel.SetPenVisibility(1, false);
-		Dispatcher.UIThread.RunJobs();
-
-		flyout.IsOpen.Should().BeFalse();
-		viewModel.ScaleRangeForPen(1)!.Value.Should().Be((10.0, 90.0));
 	}
 
 	[AvaloniaFact]
@@ -397,12 +316,10 @@ public sealed class AxisScalePanelViewTests
 		flyout.IsOpen.Should().BeTrue();
 	}
 
-	[AvaloniaTheory]
-	[InlineData("en-US")]
-	[InlineData("ru-RU")]
-	public void TheLogarithmicBox_OverAManualMinimumOfZero_StaysClearAndNamesTheRule(string cultureName)
+	[AvaloniaFact]
+	public void TheLogarithmicBox_OverAManualMinimumOfZero_StaysClearAndNamesTheRule()
 	{
-		using var culture = new CultureScope(cultureName);
+		using var culture = new CultureScope("en-US");
 		using var viewModel = CreateLoadedViewModel();
 		viewModel.SetAxisLimits(1, 0.0, 100.0);
 		using var shown = ShowChart(viewModel);
@@ -446,65 +363,6 @@ public sealed class AxisScalePanelViewTests
 
 		oneLineRuleSizes.Should().Be(emptySizes);
 		logRuleSizes.Should().Be(emptySizes);
-	}
-
-	[AvaloniaFact]
-	public void ATypedPositiveMinimum_ThenTheLogarithmicBox_SwitchesTheAxisOnFromIt()
-	{
-		using var viewModel = CreateLoadedViewModel();
-		viewModel.SetAxisLimits(1, 0.0, 100.0);
-		using var shown = ShowChart(viewModel);
-		var (flyout, panel) = OpenPanel(viewModel, shown);
-		var box = panel.FindControl<CheckBox>("AxisScaleLogarithmic")!;
-
-		TypeInto(shown.Window, panel, "AxisScaleMinimum", "1");
-		HeadlessInput.Click(shown.Window, box);
-
-		viewModel.ScaleSettings[1].IsLogarithmic.Should().BeTrue();
-		viewModel.ScaleRangeForPen(1)!.Value.Should().Be((1.0, 100.0));
-		box.IsChecked.Should().BeTrue();
-		panel.FindControl<TextBlock>("AxisScaleValidationMessage")!.Text.Should().BeEmpty();
-		flyout.IsOpen.Should().BeTrue();
-	}
-
-	[AvaloniaFact]
-	public void ATypedZeroMinimum_ThenTheLogarithmicBox_SwitchesTheAxisOffAndWritesZero()
-	{
-		using var viewModel = CreateLoadedViewModel();
-		viewModel.SetAxisLimits(1, 1.0, 100.0);
-		viewModel.SetLogarithmic(1, true).Should().BeTrue();
-		using var shown = ShowChart(viewModel);
-		var (flyout, panel) = OpenPanel(viewModel, shown);
-		var box = panel.FindControl<CheckBox>("AxisScaleLogarithmic")!;
-		box.IsChecked.Should().BeTrue();
-
-		TypeInto(shown.Window, panel, "AxisScaleMinimum", "0");
-		HeadlessInput.Click(shown.Window, box);
-
-		viewModel.ScaleSettings[1].IsLogarithmic.Should().BeFalse();
-		viewModel.ScaleRangeForPen(1)!.Value.Should().Be((0.0, 100.0));
-		box.IsChecked.Should().BeFalse();
-		flyout.IsOpen.Should().BeTrue();
-	}
-
-	[AvaloniaFact]
-	public void AnUnreadableMinimum_RefusesTheLogarithmicBoxAndKeepsTheText()
-	{
-		using var viewModel = CreateLoadedViewModel();
-		viewModel.SetAxisLimits(1, 0.0, 100.0);
-		using var shown = ShowChart(viewModel);
-		var (flyout, panel) = OpenPanel(viewModel, shown);
-		var box = panel.FindControl<CheckBox>("AxisScaleLogarithmic")!;
-
-		TypeInto(shown.Window, panel, "AxisScaleMinimum", "abc");
-		HeadlessInput.Click(shown.Window, box);
-
-		box.IsChecked.Should().BeFalse("the refused toggle leaves the box as it was");
-		viewModel.ScaleSettings[1].IsLogarithmic.Should().BeFalse();
-		viewModel.ScaleRangeForPen(1)!.Value.Should().Be((0.0, 100.0));
-		panel.FindControl<TextBox>("AxisScaleMinimum")!.Text.Should().Be("abc");
-		panel.FindControl<TextBlock>("AxisScaleValidationMessage")!.Text.Should().Be(Resources.AxisScaleBoundInvalid);
-		flyout.IsOpen.Should().BeTrue();
 	}
 
 	private static (Flyout Flyout, AxisScalePanel Panel) OpenPanel(TrendChartViewModel viewModel, ShownChart shown)

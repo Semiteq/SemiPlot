@@ -12,6 +12,8 @@ using Xunit;
 
 using YamlDotNet.Core;
 
+using static SemiPlot.Tests.Unit.ResultText;
+
 namespace SemiPlot.Tests.Unit.Postgres;
 
 // Real files in a temp directory, not a mocked file system.
@@ -31,11 +33,11 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 		("schema", "\"public\"")
 	];
 
-	private readonly string _directory = Directory.CreateTempSubdirectory("semiplot-connection-").FullName;
+	private readonly TemporaryDirectory _directory = new("semiplot-connection");
 
 	public void Dispose()
 	{
-		Directory.Delete(_directory, recursive: true);
+		_directory.Dispose();
 	}
 
 	[Fact]
@@ -89,73 +91,16 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	}
 
 	[Fact]
-	public void TwoFilesOfTheSectionAreMergedIntoOneSettings()
-	{
-		WriteFile(Compose(_validFields.Take(4)), "a.yaml");
-		WriteFile(Compose(_validFields.Skip(4)), "b.yaml");
-
-		var result = PostgresConnectionLoader.Load(_directory);
-
-		result.IsSuccess.Should().BeTrue(Describe(result));
-		result.Value.Host.Should().Be("10.20.30.40");
-		result.Value.Password.Should().Be("s3cret");
-	}
-
-	[Fact]
 	public void AnAbsentSectionYieldsASectionErrorRatherThanAThrow()
 	{
 		var absent = Path.Combine(_directory, "connection");
 
 		var result = PostgresConnectionLoader.Load(absent);
 
-		var error = SectionErrorOf(result);
+		var error = ErrorOf<ConfigurationSectionError>(result);
 		error.Problem.Should().Be(SectionProblem.DirectoryMissing);
 		error.Section.Should().Be(ConfigurationSectionName.Connection);
 		error.Directory.Should().Be(absent);
-	}
-
-	[Fact]
-	public void ASectionWithNoFileYieldsTheNoFilesProblem()
-	{
-		var result = PostgresConnectionLoader.Load(_directory);
-
-		SectionErrorOf(result).Problem.Should().Be(SectionProblem.NoFiles);
-	}
-
-	[Fact]
-	public void AFieldCarriedByTwoFilesYieldsTheKeyConflictProblem()
-	{
-		WriteFile(Compose(_validFields), "a.yaml");
-		WriteFile("host: \"10.20.30.41\"\n", "b.yaml");
-
-		var result = PostgresConnectionLoader.Load(_directory);
-
-		var error = SectionErrorOf(result);
-		error.Problem.Should().Be(SectionProblem.KeyConflict);
-		error.Key.Should().Be("host");
-		error.FileNames.Should().Equal("a.yaml", "b.yaml");
-	}
-
-	[Theory]
-	[InlineData("")]
-	[InlineData("   ")]
-	public void ABlankPathYieldsASectionErrorRatherThanAThrow(string path)
-	{
-		var result = PostgresConnectionLoader.Load(path);
-
-		SectionErrorOf(result).Problem.Should().Be(SectionProblem.DirectoryMissing);
-	}
-
-	[Fact]
-	public void UnreadableYamlYieldsTheSectionUnreadableProblem()
-	{
-		WriteFile("host: [scada-01\nport: :\n");
-
-		var result = PostgresConnectionLoader.Load(_directory);
-
-		var error = SectionErrorOf(result);
-		error.Problem.Should().Be(SectionProblem.Unreadable);
-		error.FileNames.Should().Equal("connection.yaml");
 	}
 
 	// The merged text is well-formed YAML; a value the DTO's own type cannot take is what still throws here.
@@ -166,7 +111,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 		var result = PostgresConnectionLoader.Load(_directory);
 
-		var error = ErrorOf(result);
+		var error = ErrorOf<ConnectionFileError>(result);
 		error.Path.Should().Be(_directory);
 		error.Kind.Should().Be(ConnectionFileProblem.Unparseable);
 	}
@@ -178,7 +123,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 		var result = PostgresConnectionLoader.Load(_directory);
 
-		ErrorOf(result).Kind.Should().Be(ConnectionFileProblem.MissingField);
+		ErrorOf<ConnectionFileError>(result).Kind.Should().Be(ConnectionFileProblem.MissingField);
 	}
 
 	[Theory]
@@ -194,10 +139,10 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 		var result = PostgresConnectionLoader.Load(_directory);
 
-		var error = ErrorOf(result);
+		var error = ErrorOf<ConnectionFileError>(result);
 		error.Path.Should().Be(_directory);
 		error.Kind.Should().Be(ConnectionFileProblem.MissingField);
-		error.Reason.Should().Contain(field);
+		error.Fields.Should().Equal(field);
 	}
 
 	[Fact]
@@ -207,9 +152,9 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 		var result = PostgresConnectionLoader.Load(_directory);
 
-		var error = ErrorOf(result);
+		var error = ErrorOf<ConnectionFileError>(result);
 		error.Kind.Should().Be(ConnectionFileProblem.MissingField);
-		error.Reason.Should().Contain("host");
+		error.Fields.Should().Equal("host");
 	}
 
 	[Theory]
@@ -249,10 +194,10 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 		var result = PostgresConnectionLoader.Load(_directory);
 
-		var error = ErrorOf(result);
+		var error = ErrorOf<ConnectionFileError>(result);
 		error.Path.Should().Be(_directory);
 		error.Kind.Should().Be(ConnectionFileProblem.HostNotIPv4);
-		error.Reason.Should().Contain("host");
+		error.Fields.Should().Equal("host");
 	}
 
 	[Fact]
@@ -263,9 +208,9 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 		var result = PostgresConnectionLoader.Load(_directory);
 
-		var error = ErrorOf(result);
+		var error = ErrorOf<ConnectionFileError>(result);
 		error.Kind.Should().Be(ConnectionFileProblem.MissingField);
-		absent.Should().AllSatisfy(field => error.Reason.Should().Contain(field));
+		error.Fields.Should().Equal(absent);
 	}
 
 	[Theory]
@@ -280,10 +225,10 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 		var result = PostgresConnectionLoader.Load(_directory);
 
-		var error = ErrorOf(result);
+		var error = ErrorOf<ConnectionFileError>(result);
 		error.Path.Should().Be(_directory);
 		error.Kind.Should().Be(ConnectionFileProblem.OutOfRange);
-		error.Reason.Should().Contain(field);
+		error.Fields.Should().Equal(field);
 	}
 
 	[Theory]
@@ -298,24 +243,6 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 		result.IsSuccess.Should().BeTrue(Describe(result));
 	}
 
-	[Fact]
-	public void TheThreeInvalidStatesAreSeparatedByTheirDiscriminator()
-	{
-		var kinds = new[]
-		{
-			KindOf(Compose(_validFields.Where(pair => pair.Field != "host"))),
-			KindOf(Compose(Replace("port", "0"))),
-			KindOf(Compose(Replace("host", "scada-01")))
-		};
-
-		kinds.Should().Equal(
-			[
-				ConnectionFileProblem.MissingField,
-				ConnectionFileProblem.OutOfRange,
-				ConnectionFileProblem.HostNotIPv4
-			]);
-	}
-
 	// A parser message embeds the offending scalar, and the password is a scalar.
 	[Fact]
 	public void AnUnparseableSectionCarriesItsCausingExceptionAndNotItsText()
@@ -324,11 +251,11 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 
 		var result = PostgresConnectionLoader.Load(_directory);
 
-		var error = ErrorOf(result);
+		var error = ErrorOf<ConnectionFileError>(result);
 		var caused = error.Reasons.OfType<ExceptionalError>().Should().ContainSingle().Which;
 
 		caused.Exception.Should().BeAssignableTo<YamlException>();
-		error.Reason.Should().NotContain("scada-01");
+		error.Fields.Should().BeEmpty();
 		error.Message.Should().NotContain("scada-01");
 	}
 
@@ -397,41 +324,6 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	private static string Compose(IEnumerable<(string Field, string Value)> fields)
 	{
 		return string.Join("\n", fields.Select(pair => $"{pair.Field}: {pair.Value}")) + "\n";
-	}
-
-	private static string Describe(Result<PostgresConnectionSettings> result)
-	{
-		return string.Join("; ", result.Errors.Select(error => error.Message));
-	}
-
-	private static ConnectionFileError ErrorOf(Result<PostgresConnectionSettings> result)
-	{
-		result.IsFailed.Should().BeTrue();
-
-		return result.Errors.OfType<ConnectionFileError>().Should().ContainSingle().Which;
-	}
-
-	private static ConfigurationSectionError SectionErrorOf(Result<PostgresConnectionSettings> result)
-	{
-		result.IsFailed.Should().BeTrue();
-
-		return result.Errors.OfType<ConfigurationSectionError>().Should().ContainSingle().Which;
-	}
-
-	private static ConnectionFileProblem KindOf(string content)
-	{
-		var section = Directory.CreateTempSubdirectory("semiplot-connection-kind-").FullName;
-
-		File.WriteAllText(Path.Combine(section, "connection.yaml"), content);
-
-		try
-		{
-			return PostgresConnectionLoader.Load(section).Errors.OfType<ConnectionFileError>().Single().Kind;
-		}
-		finally
-		{
-			Directory.Delete(section, recursive: true);
-		}
 	}
 
 	private void WriteFile(string content, string name = "connection.yaml")

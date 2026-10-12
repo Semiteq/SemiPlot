@@ -15,7 +15,7 @@ public sealed class SeededArchive(PostgresContainerFixture postgresContainerFixt
 
 	public async ValueTask InitializeAsync()
 	{
-		_archiveDatabase = await postgresContainerFixture.CloneTemplateAsync();
+		_archiveDatabase = await postgresContainerFixture.CloneAsync(CloneSource.Template);
 	}
 
 	public async ValueTask DisposeAsync()

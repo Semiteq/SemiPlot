@@ -59,8 +59,8 @@ operator interaction.
 - **Scheduler seam:** Core keeps the bare `IScheduler` (`DefaultScheduler.Instance`) for data timing;
   the UI scheduler (`AvaloniaScheduler.Instance`) is captured in `AfterSetup` and passed explicitly to
   the coordinator — `TrendCoordinator(IDataProvider dataProvider, IReadOnlyList<Pen> pens,
-  IScheduler dataScheduler, IScheduler uiScheduler, TimeSpan? batchWindow = null)`,
-  `Buffer` on the data scheduler, `ObserveOn` on the UI one. No second `IScheduler` container registration.
+  IScheduler dataScheduler, IScheduler uiScheduler)`,
+  `Buffer` (the 100 ms `TrendCoordinator.BatchWindow`) on the data scheduler, `ObserveOn` on the UI one. No second `IScheduler` container registration.
   The pen catalogue is passed in because the coordinator needs the pen identifiers in its constructor
   and `QueryPensAsync` cannot be awaited there; the composition root hands over the start sequence's
   read, and a later pen set arrives through `SetPens` (`data-integration.md#realtime`).

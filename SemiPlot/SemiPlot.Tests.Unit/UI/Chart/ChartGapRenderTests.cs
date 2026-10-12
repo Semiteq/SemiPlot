@@ -1,19 +1,12 @@
-using System.Reactive.Concurrency;
-
 using Avalonia.Headless.XUnit;
 
 using AwesomeAssertions;
 
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Reactive.Testing;
 
 using ScottPlot;
 
 using SemiPlot.Core.Trends;
-using SemiPlot.Tests.Unit.UI.Bridge;
-using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
-using SemiPlot.UI.Messages;
 
 using Xunit;
 
@@ -39,9 +32,6 @@ public sealed class ChartGapRenderTests
 	private const int TargetColumnCount = 200;
 	private const double AxisMin = 0.0;
 	private const double AxisMax = 100.0;
-	// The pen draws #ff0000 and its band the same hue at low opacity over a white background, so a red
-	// dominance this wide is drawn data and not an antialiased edge of a grey grid line or tick label.
-	private const int RedDominanceThreshold = 24;
 
 	// Archive-shaped input at the window-to-break ratio that matters: the vendor's shortest q = 32/q = 16
 	// pair (3.5 s) over a 120 s window is a 34:1 ratio, ~20 of the ~690 data-area pixel columns. Over a
@@ -57,8 +47,6 @@ public sealed class ChartGapRenderTests
 	// column fails here rather than quietly turning the blank-column assertion into a formality.
 	private const int MinimumBreakColumns = 12;
 
-	private static readonly TimeSpan _batchWindow = TimeSpan.FromMilliseconds(33);
-	private static readonly DateTime _from = new(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
 
 	[AvaloniaFact]
 	public void NaNGapColumn_LeavesTheGapCentreWithoutPenColor_WhileBothSidesStillCarryTheLine()
@@ -82,7 +70,7 @@ public sealed class ChartGapRenderTests
 	[AvaloniaFact]
 	public void ArchiveShapedBreak_WithTheFoldsNullAnchor_LeavesEveryBreakColumnWithoutPenColor()
 	{
-		var (timestamps, values) = ArchiveShapedBreak(withAnchor: true);
+		var (timestamps, values) = ArchiveShapedBreak();
 		var (plot, pixels, dataRect) = RenderSeries(
 			timestamps, values, ArchiveTimeAt(0.0), ArchiveTimeAt(ArchiveWindowSeconds));
 		var markerTime = MarkerTime();
@@ -137,7 +125,7 @@ public sealed class ChartGapRenderTests
 		DateTime windowStart,
 		DateTime windowEnd)
 	{
-		var viewModel = CreateViewModel();
+		var viewModel = ChartTestBuilder.CreateViewModel(ChartTestBuilder.RealtimeInterval).ViewModel;
 		var state = viewModel.AddPen(new Pen(PenId, "Pen 1", ["Group A"], PenColorHex));
 		state.LoadHistory(MinMaxDecimator.Decimate(PenId, timestamps, values, TargetColumnCount), windowEnd);
 
@@ -150,25 +138,6 @@ public sealed class ChartGapRenderTests
 		return (plot, image.GetArrayRGB(), plot.RenderManager.LastRender.Layout.DataRect);
 	}
 
-	private static TrendChartViewModel CreateViewModel()
-	{
-		var scheduler = new TestScheduler();
-		var provider = new FakeDataProvider(scheduler, TimeSpan.FromMilliseconds(10));
-		var coordinator = new TrendCoordinator(
-			provider,
-			provider.Pens,
-			scheduler,
-			ImmediateScheduler.Instance,
-			_batchWindow);
-
-		return new TrendChartViewModel(
-			coordinator,
-			scheduler,
-			ImmediateScheduler.Instance,
-			new MessagePanelViewModel(),
-			NullLogger<TrendChartViewModel>.Instance);
-	}
-
 	private static int ColumnAt(Plot plot, DateTime timestampUtc)
 	{
 		var pixel = plot.GetPixel(new Coordinates(LocalTimeAxis.ToAxis(timestampUtc), AxisMin));
@@ -178,21 +147,7 @@ public sealed class ChartGapRenderTests
 
 	private static bool ColumnCarriesPenColor(byte[,,] pixels, PixelRect dataRect, int column)
 	{
-		var firstRow = (int)Math.Ceiling(dataRect.Top) + 1;
-		var lastRow = (int)Math.Floor(dataRect.Bottom) - 1;
-
-		for (var row = firstRow; row <= lastRow; row++)
-		{
-			var red = pixels[row, column, 0];
-			var green = pixels[row, column, 1];
-			var blue = pixels[row, column, 2];
-			if (red - Math.Max(green, blue) >= RedDominanceThreshold)
-			{
-				return true;
-			}
-		}
-
-		return false;
+		return StrokeProbe.RowsIn(pixels, dataRect, column).Count > 0;
 	}
 
 	private static IReadOnlyList<DateTime> Timestamps()
@@ -228,11 +183,9 @@ public sealed class ChartGapRenderTests
 		return values;
 	}
 
-	// Rows arrive at a fixed poll interval with the broken span simply absent; withAnchor: false drops the
-	// fold's null anchor after the q = 32 row, leaving one segment: the plausible-but-wrong rendering this
-	// test exists to reject.
-	private static (IReadOnlyList<DateTime> Timestamps, IReadOnlyList<double?> Values) ArchiveShapedBreak(
-		bool withAnchor)
+	// Rows arrive at a fixed poll interval with the broken span simply absent; the fold's null anchor follows
+	// the q = 32 row.
+	private static (IReadOnlyList<DateTime> Timestamps, IReadOnlyList<double?> Values) ArchiveShapedBreak()
 	{
 		var capacity = ArchivePollsBeforeBreak + ArchivePollsAfterBreak + 1;
 		var timestamps = new List<DateTime>(capacity);
@@ -246,11 +199,8 @@ public sealed class ChartGapRenderTests
 
 		// The q = 32 marker row is the last one appended above: its value is kept and the null goes after
 		// it, one tick later, never in its place.
-		if (withAnchor)
-		{
-			timestamps.Add(timestamps[^1].AddTicks(1));
-			values.Add(null);
-		}
+		timestamps.Add(timestamps[^1].AddTicks(1));
+		values.Add(null);
 
 		var resumptionSeconds = ((ArchivePollsBeforeBreak - 1) * ArchivePollSeconds) + ArchiveBreakSeconds;
 		for (var index = 0; index < ArchivePollsAfterBreak; index++)
@@ -269,7 +219,7 @@ public sealed class ChartGapRenderTests
 
 	private static DateTime ArchiveTimeAt(double offsetSeconds)
 	{
-		return _from.AddSeconds(offsetSeconds);
+		return ChartTestBuilder.From.AddSeconds(offsetSeconds);
 	}
 
 	// A varying signal so every decimated column keeps a Min/Max spread: a column whose Min equals its Max
@@ -281,6 +231,6 @@ public sealed class ChartGapRenderTests
 
 	private static DateTime TimeAt(int index)
 	{
-		return _from.AddSeconds(index);
+		return ChartTestBuilder.From.AddSeconds(index);
 	}
 }

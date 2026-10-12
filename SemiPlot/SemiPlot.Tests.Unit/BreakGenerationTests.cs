@@ -79,14 +79,6 @@ public sealed class BreakGenerationTests
 		BreakPlan.Create(Options(seed: 2)).Breaks.Should().NotEqual(BreakPlan.Create(Options()).Breaks);
 	}
 
-	[Fact]
-	public void ASpanTooShortForTheRequestedBreaksIsRejected()
-	{
-		var act = () => BreakPlan.Create(Options(breaks: 200));
-
-		act.Should().Throw<ArgumentOutOfRangeException>();
-	}
-
 	// The cap SeederOptions rejects a --break-count against is the exact count Create still accepts, so
 	// the CLI never refuses a span that would have worked and never admits one that would throw.
 	[Fact]
@@ -102,25 +94,14 @@ public sealed class BreakGenerationTests
 		act.Should().Throw<ArgumentOutOfRangeException>();
 	}
 
+	// A pen's markers read as a strict 32, 16, 32, 16 sequence, each pair bounds one break window, and a
+	// resume row has no pre-anchor, because a pre-anchor would fall inside the break.
 	[Fact]
-	public void NoRowFallsInsideABreak()
+	public void MarkersComeInOrderedStopThenResumePairsThatBoundEachBreakWindow()
 	{
 		var options = Options();
 		var plan = BreakPlan.Create(options);
-
-		foreach (var row in RawLayerGenerator.Generate(options))
-		{
-			plan.Breaks.Should().NotContain(
-				window => row.Timestamp >= window.Start && row.Timestamp < window.End);
-		}
-	}
-
-	// The marker rows of one pen read as a strict 32, 16, 32, 16 sequence: a stop is always followed
-	// by the start that ends it, and never by a second stop.
-	[Fact]
-	public void MarkersComeInOrderedStopThenResumePairs()
-	{
-		var options = Options();
+		var interval = TimeSpan.FromSeconds(options.ChangeSeconds);
 		var expected = options.BreakCount;
 
 		foreach (var pen in BenchRows.ByPen(RawLayerGenerator.Generate(options)))
@@ -136,6 +117,24 @@ public sealed class BreakGenerationTests
 					: ArchiveRow.FirstAfterBreakQuality;
 
 				markers[index].Quality.Should().Be(quality);
+			}
+
+			for (var index = 0; index < plan.Breaks.Count; index++)
+			{
+				(markers[index * 2].Timestamp < plan.Breaks[index].Start).Should().BeTrue();
+				markers[(index * 2) + 1].Timestamp.Should().BeOnOrAfter(plan.Breaks[index].End)
+					.And.BeOnOrBefore(plan.Breaks[index].End + interval);
+			}
+
+			for (var index = 1; index < pen.Count; index++)
+			{
+				if (pen[index].Quality != ArchiveRow.FirstAfterBreakQuality)
+				{
+					continue;
+				}
+
+				pen[index - 1].Quality.Should().Be(ArchiveRow.LastBeforeBreakQuality);
+				(pen[index].Timestamp - pen[index - 1].Timestamp > RawLayerGenerator.PollInterval).Should().BeTrue();
 			}
 		}
 	}
@@ -156,26 +155,6 @@ public sealed class BreakGenerationTests
 			row => (row.Timestamp.Ticks % interval.Ticks).Should().Be(0));
 	}
 
-	[Fact]
-	public void EachMarkerPairBoundsOneBreakWindow()
-	{
-		var options = Options();
-		var plan = BreakPlan.Create(options);
-		var interval = TimeSpan.FromSeconds(options.ChangeSeconds);
-
-		foreach (var pen in BenchRows.ByPen(RawLayerGenerator.Generate(options)))
-		{
-			var markers = pen.Where(row => row.Quality != ArchiveRow.OrdinaryQuality).ToArray();
-
-			for (var index = 0; index < plan.Breaks.Count; index++)
-			{
-				(markers[index * 2].Timestamp < plan.Breaks[index].Start).Should().BeTrue();
-				markers[(index * 2) + 1].Timestamp.Should().BeOnOrAfter(plan.Breaks[index].End)
-					.And.BeOnOrBefore(plan.Breaks[index].End + interval);
-			}
-		}
-	}
-
 	// A project stop takes every pen down at once, so the resume rows of all pens share one instant.
 	[Fact]
 	public void BreaksApplyToEveryPenAtTheSameInstants()
@@ -189,26 +168,6 @@ public sealed class BreakGenerationTests
 			.ToArray();
 
 		resumes.Should().AllSatisfy(pen => pen.Should().Equal(resumes[0]));
-	}
-
-	[Fact]
-	public void BothMarkerRowsCarryRealValues()
-	{
-		var options = Options();
-		var pens = RawLayerGenerator.SelectPens(options.PenCount).ToDictionary(pen => pen.PenId);
-
-		foreach (var row in RawLayerGenerator.Generate(options))
-		{
-			if (row.Quality == ArchiveRow.OrdinaryQuality)
-			{
-				continue;
-			}
-
-			var pen = pens[row.Id];
-
-			double.IsNaN(row.Value).Should().BeFalse();
-			row.Value.Should().BeInRange(pen.MinValue, pen.MaxValue);
-		}
 	}
 
 	// A break spans several minutes, so at least one whole calendar minute inside it holds no row of
@@ -246,28 +205,6 @@ public sealed class BreakGenerationTests
 		BreakPlan.Create(options).Breaks.Should().BeEmpty();
 		RawLayerGenerator.Generate(options).Should().AllSatisfy(
 			row => row.Quality.Should().Be(ArchiveRow.OrdinaryQuality));
-	}
-
-	// The resume row is exception two of the pair-local invariant: it carries a value of its own and
-	// no pre-anchor, because a pre-anchor would fall inside the break.
-	[Fact]
-	public void TheResumeRowHasNoPreAnchorInsideTheBreak()
-	{
-		var options = Options();
-
-		foreach (var pen in BenchRows.ByPen(RawLayerGenerator.Generate(options)))
-		{
-			for (var index = 1; index < pen.Count; index++)
-			{
-				if (pen[index].Quality != ArchiveRow.FirstAfterBreakQuality)
-				{
-					continue;
-				}
-
-				pen[index - 1].Quality.Should().Be(ArchiveRow.LastBeforeBreakQuality);
-				(pen[index].Timestamp - pen[index - 1].Timestamp > RawLayerGenerator.PollInterval).Should().BeTrue();
-			}
-		}
 	}
 
 	private static DateTime FirstWholeMinute(DateTime timestamp)

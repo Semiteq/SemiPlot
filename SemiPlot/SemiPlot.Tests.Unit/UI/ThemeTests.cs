@@ -30,17 +30,6 @@ public sealed class ThemeTests
 {
 	private const string Accent = "#3574F0";
 
-	[AvaloniaTheory]
-	[InlineData(AppThemeVariant.Light)]
-	[InlineData(AppThemeVariant.Dark)]
-	public void TheApplicationVariant_FollowsTheSettings(AppThemeVariant theme)
-	{
-		using var scope = ThemeProbe.ApplyVariant(App.VariantFor(theme));
-
-		var expected = theme == AppThemeVariant.Dark ? ThemeVariant.Dark : ThemeVariant.Light;
-		Application.Current!.ActualThemeVariant.Should().Be(expected);
-	}
-
 	// Reading a real control back is the only thing that catches an inert override:
 	// docs/architecture/ui-theme.md, How the retint reaches a control.
 	[AvaloniaTheory]

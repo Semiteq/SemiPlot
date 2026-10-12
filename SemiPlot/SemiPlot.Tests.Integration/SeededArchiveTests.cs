@@ -15,7 +15,7 @@ namespace SemiPlot.Tests.Integration;
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
 [Trait("Category", "Integration")]
-public sealed class SeededArchiveTests(PostgresContainerFixture postgresContainerFixture, SeededArchive seededArchive)
+public sealed class SeededArchiveTests(SeededArchive seededArchive)
 	: IClassFixture<SeededArchive>
 {
 	private const string TotalRowsCommand = "SELECT count(*) FROM public.trends;";
@@ -30,19 +30,11 @@ public sealed class SeededArchiveTests(PostgresContainerFixture postgresContaine
 	[Fact]
 	public async Task PerLayerRowCountsMatchTheGenerator()
 	{
-		var counts = new List<(short Layer, long Rows)>();
-
-		await using var connection = await OpenPlotConnectionAsync();
-		await using var command = new NpgsqlCommand(
+		var counts = await ArchiveDatabase.ReadAsync(
+			seededArchive.Database.PlotConnectionString,
 			"SELECT l, count(*) FROM public.trends GROUP BY l ORDER BY l;",
-			connection);
-
-		await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
-
-		while (await reader.ReadAsync(TestContext.Current.CancellationToken))
-		{
-			counts.Add((reader.GetInt16(0), reader.GetInt64(1)));
-		}
+			reader => (reader.GetInt16(0), reader.GetInt64(1)),
+			cancellationToken: TestContext.Current.CancellationToken);
 
 		counts.Should().Equal(_generated.Value);
 	}
@@ -127,59 +119,6 @@ public sealed class SeededArchiveTests(PostgresContainerFixture postgresContaine
 		}
 	}
 
-	[Fact]
-	public async Task TheTagCatalogueHoldsOneRowPerSeededPen()
-	{
-		var expected = RawLayerGenerator.SelectPens(ArchiveTemplate.Slice.PenCount)
-			.Select(pen => (pen.PenId, pen.Name))
-			.OrderBy(pen => pen.PenId)
-			.ToArray();
-
-		(await TagsAsync(seededArchive.Database.PlotConnectionString)).Should().Equal(expected);
-	}
-
-	private static async Task<IReadOnlyList<(int Id, string Name)>> TagsAsync(string connectionString)
-	{
-		var tags = new List<(int, string)>();
-
-		await using var connection = new NpgsqlConnection(connectionString);
-
-		await connection.OpenAsync(TestContext.Current.CancellationToken);
-
-		await using var command = new NpgsqlCommand(
-			"SELECT id, name FROM public.semiplot_tags ORDER BY id;",
-			connection);
-		await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
-
-		while (await reader.ReadAsync(TestContext.Current.CancellationToken))
-		{
-			tags.Add((reader.GetInt32(0), reader.GetString(1)));
-		}
-
-		return tags;
-	}
-
-	// The upsert is what makes a template rebuild idempotent.
-	// It runs against a clone of its own, since it rewrites what it wrote.
-	[Fact]
-	public async Task WritingTheTagCatalogueTwiceUpdatesTheRowsInPlace()
-	{
-		await using var database = await postgresContainerFixture.CloneTemplateAsync(
-			TestContext.Current.CancellationToken);
-
-		var pens = RawLayerGenerator.SelectPens(ArchiveTemplate.Slice.PenCount);
-		var renamed = pens.Select(pen => pen with { Name = pen.Name + " rewritten" }).ToArray();
-		var writer = new TagCatalogWriter(database.AdminConnectionString);
-
-		await writer.WriteAsync(pens, TestContext.Current.CancellationToken);
-		var second = await writer.WriteAsync(renamed, TestContext.Current.CancellationToken);
-
-		second.Should().Be(pens.Count);
-
-		(await TagsAsync(database.AdminConnectionString)).Should().Equal(
-			[.. renamed.Select(pen => (pen.PenId, pen.Name)).OrderBy(tag => tag.PenId)]);
-	}
-
 	// The seeder through its own entry point, against a database that already carries an archive.
 	[Fact]
 	public async Task TheSeederRefusesToWriteIntoASeededDatabase()
@@ -236,29 +175,28 @@ public sealed class SeededArchiveTests(PostgresContainerFixture postgresContaine
 
 	private async Task<ArchiveRow> FirstRawRowAsync()
 	{
-		await using var connection = await OpenPlotConnectionAsync();
-		await using var command = new NpgsqlCommand(
+		var rows = await ArchiveDatabase.ReadAsync(
+			seededArchive.Database.PlotConnectionString,
 			$"SELECT id, l, t, v, q FROM public.trends WHERE l = {ArchiveRow.RawLayer} ORDER BY id, t LIMIT 1;",
-			connection);
+			reader => new ArchiveRow(
+				reader.GetInt32(0),
+				reader.GetInt16(1),
+				reader.GetDateTime(2),
+				reader.GetDouble(3),
+				reader.GetInt32(4)),
+			cancellationToken: TestContext.Current.CancellationToken);
 
-		await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+		rows.Should().ContainSingle("the archive holds no raw row.");
 
-		(await reader.ReadAsync(TestContext.Current.CancellationToken)).Should().BeTrue("the archive holds no raw row.");
-
-		return new ArchiveRow(
-			reader.GetInt32(0),
-			reader.GetInt16(1),
-			reader.GetDateTime(2),
-			reader.GetDouble(3),
-			reader.GetInt32(4));
+		return rows[0];
 	}
 
-	private async Task<T> PlotScalarAsync<T>(string statement)
+	private Task<T> PlotScalarAsync<T>(string statement)
 	{
-		await using var connection = await OpenPlotConnectionAsync();
-		await using var command = new NpgsqlCommand(statement, connection);
-
-		return (T)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+		return ArchiveDatabase.ScalarAsync<T>(
+			seededArchive.Database.PlotConnectionString,
+			statement,
+			cancellationToken: TestContext.Current.CancellationToken);
 	}
 
 	private async Task<NpgsqlConnection> OpenPlotConnectionAsync()

@@ -1,3 +1,4 @@
+using SemiPlot.Tools.ArchiveSeeder;
 using SemiPlot.UI.Startup;
 
 namespace SemiPlot.Tests.Unit.UI.Settings;
@@ -5,13 +6,23 @@ namespace SemiPlot.Tests.Unit.UI.Settings;
 /// <summary>Copies of the tracked <c>ConfigFiles/</c> set, which a test edits in place of the set itself.</summary>
 internal static class ShippedConfiguration
 {
-	private static readonly string _root = Path.Combine(AppContext.BaseDirectory, "ConfigFiles");
+	public static string Root { get; } = Path.Combine(AppContext.BaseDirectory, "ConfigFiles");
+
+	public static string SectionDirectory(string section)
+	{
+		return Path.Combine(Root, section);
+	}
+
+	public static string ConnectionBody()
+	{
+		return File.ReadAllText(ConnectionFileWriter.PathFor(Root));
+	}
 
 	public static void CopyTo(string configDirectory, string? password = null)
 	{
-		foreach (var file in Directory.GetFiles(_root, "*", SearchOption.AllDirectories))
+		foreach (var file in Directory.GetFiles(Root, "*", SearchOption.AllDirectories))
 		{
-			var target = Path.Combine(configDirectory, Path.GetRelativePath(_root, file));
+			var target = Path.Combine(configDirectory, Path.GetRelativePath(Root, file));
 			Directory.CreateDirectory(Path.GetDirectoryName(target)!);
 			File.Copy(file, target, overwrite: true);
 		}
@@ -22,9 +33,9 @@ internal static class ShippedConfiguration
 		}
 	}
 
-	public static string CopyToTemporaryDirectory()
+	public static TemporaryDirectory CopyToTemporaryDirectory()
 	{
-		var configDirectory = Directory.CreateTempSubdirectory("semiplot-shipped-configuration-").FullName;
+		var configDirectory = new TemporaryDirectory("semiplot-shipped-configuration");
 		CopyTo(configDirectory);
 
 		return configDirectory;

@@ -7,6 +7,8 @@ using SemiPlot.UI.Chart;
 
 using Xunit;
 
+using static SemiPlot.Tests.Unit.UI.Chart.TickRegeneration;
+
 namespace SemiPlot.Tests.Unit.UI.Chart;
 
 [Collection(ProcessGlobalStateCollection.Name)]
@@ -15,11 +17,9 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 [Trait("Category", "Unit")]
 public sealed class ChartAxisBinderTests
 {
-	private const float AxisPixels = 400f;
 	private const double DecadeTolerance = 1e-12;
 	private const string ExponentMask = "0.0E+0";
 	private const string FinerExponentMask = "0.00E+0";
-	private const string FixedPointMask = "0.000";
 
 	private static readonly TimeSpan _lockTimeout = TimeSpan.FromSeconds(10.0);
 	private static readonly TimeSpan _heldRenderWindow = TimeSpan.FromMilliseconds(200.0);
@@ -46,13 +46,16 @@ public sealed class ChartAxisBinderTests
 
 		binder.Apply([Scale(1, isActive: true), Scale(2), Scale(3)], pens);
 		DrawnPenIds(binder).Should().Equal(1);
+		VisibleAxes(binder).Should().ContainSingle().Which.Edge.Should().Be(Edge.Left);
 
 		binder.Apply([Scale(1), Scale(2, isActive: true), Scale(3)], pens);
 		DrawnPenIds(binder).Should().Equal(2);
+		VisibleAxes(binder).Should().ContainSingle().Which.Edge.Should().Be(Edge.Left);
 
 		pens[2].SetVisibility(false);
 		binder.Apply([Scale(1), Scale(2, isActive: true), Scale(3)], pens);
 		DrawnPenIds(binder).Should().BeEmpty();
+		VisibleAxes(binder).Should().BeEmpty("only a visible pen's axis may be drawn");
 	}
 
 	[Fact]
@@ -85,34 +88,7 @@ public sealed class ChartAxisBinderTests
 		axis.TickGenerator.Should().BeOfType<LinearTickGenerator>().Which.IsDrawn.Should().BeFalse();
 	}
 
-	[Fact]
-	public void ChangingTheActivePen_LeavesTheOneVisibleAxisOnTheLeft()
-	{
-		using var plot = new Plot();
-		var binder = new ChartAxisBinder(plot);
-		var pens = Pens(1, 2);
-
-		binder.Apply([Scale(1, isActive: true), Scale(2)], pens);
-		VisibleAxes(binder).Should().ContainSingle().Which.Edge.Should().Be(Edge.Left);
-
-		binder.Apply([Scale(1), Scale(2, isActive: true)], pens);
-		VisibleAxes(binder).Should().ContainSingle().Which.Edge.Should().Be(Edge.Left);
-	}
-
 	// Only a visible pen's axis may be drawn, so the switched-off active pen leaves the plot with none.
-	[Fact]
-	public void TheActivePenSwitchedOff_DrawsNoAxisAtAll()
-	{
-		using var plot = new Plot();
-		var binder = new ChartAxisBinder(plot);
-		var pens = Pens(1, 2);
-		pens[1].SetVisibility(false);
-
-		binder.Apply([Scale(1, isActive: true), Scale(2)], pens);
-
-		VisibleAxes(binder).Should().BeEmpty();
-	}
-
 	[Fact]
 	public void TheDrawnAxis_OwnsTheHorizontalGridlines()
 	{
@@ -160,6 +136,7 @@ public sealed class ChartAxisBinderTests
 	[Fact]
 	public void AMaskRevision_ChangesTheMajorLabels()
 	{
+		using var culture = new CultureScope("");
 		using var plot = new Plot();
 		var binder = new ChartAxisBinder(plot);
 		var pens = Pens(1);
@@ -172,24 +149,9 @@ public sealed class ChartAxisBinderTests
 		binder.Apply(scales, pens);
 		var after = MajorTicks(binder.AxesByPenId[1]);
 
-		before.Should().NotBeEmpty().And.AllSatisfy(tick => tick.Label.Should().Be(LabelOf(tick, ExponentMask)));
-		after.Should().NotBeEmpty().And.AllSatisfy(tick => tick.Label.Should().Be(LabelOf(tick, FinerExponentMask)));
-	}
-
-	[Fact]
-	public void AFixedPointMask_LabelsNoMajorWithTheZeroItCannotTellFromTheDecade()
-	{
-		using var plot = new Plot();
-		var binder = new ChartAxisBinder(plot);
-		var pens = Pens(1);
-		pens[1].Revise(pens[1].Pen with { Format = FixedPointMask });
-
-		binder.Apply([LogScale(1, 1e-6, 1e-1, isActive: true)], pens);
-
-		MajorTicks(binder.AxesByPenId[1]).Select(tick => tick.Label).Should().Equal(
-			PenValueFormat.Format(1e-3, FixedPointMask),
-			PenValueFormat.Format(1e-2, FixedPointMask),
-			PenValueFormat.Format(1e-1, FixedPointMask));
+		before.Select(tick => tick.Label).Should().Equal("1.0E-6", "1.0E-5", "1.0E-4", "1.0E-3", "1.0E-2", "1.0E-1");
+		after.Select(tick => tick.Label).Should().Equal(
+			"1.00E-6", "1.00E-5", "1.00E-4", "1.00E-3", "1.00E-2", "1.00E-1");
 	}
 
 	[Fact]
@@ -263,15 +225,9 @@ public sealed class ChartAxisBinderTests
 
 	private static List<Tick> MajorTicks(IYAxis axis)
 	{
-		using var paint = Paint.NewDisposablePaint();
-		axis.RegenerateTicks(new PixelLength(AxisPixels), paint);
+		Regenerate(axis);
 
 		return [.. axis.TickGenerator.Ticks.Where(tick => tick.IsMajor)];
-	}
-
-	private static string LabelOf(Tick tick, string mask)
-	{
-		return PenValueFormat.Format(Math.Pow(10.0, tick.Position), mask);
 	}
 
 	private static IEnumerable<IYAxis> VisibleAxes(ChartAxisBinder binder)

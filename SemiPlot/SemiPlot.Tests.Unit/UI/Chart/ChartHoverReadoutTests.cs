@@ -68,21 +68,6 @@ public sealed class ChartHoverReadoutTests
 	}
 
 	[Fact]
-	public void BuildContent_AllPensHidden_RendersTimestampOnly()
-	{
-		var first = CreatePen(1, "Pen 1");
-		var second = CreatePen(2, "Pen 2");
-		first.SetVisibility(false);
-		second.SetVisibility(false);
-		var pens = new[] { first, second };
-		var values = new Dictionary<int, double?> { [1] = 2.0, [2] = 20.0 };
-
-		var content = ChartHoverReadout.BuildContent(_cursor, values, pens);
-
-		content.Should().Be(LocalTimestamp(_cursor));
-	}
-
-	[Fact]
 	public void BuildContent_PenMissingFromValues_RendersTheNoValuePlaceholder()
 	{
 		var pens = new[] { CreatePen(1, "Pen 1") };

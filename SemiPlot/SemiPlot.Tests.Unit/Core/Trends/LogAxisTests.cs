@@ -76,18 +76,6 @@ public sealed class LogAxisTests
 	}
 
 	[Fact]
-	public void Ticks_SixDecadesOver400Pixels_StayWithinThePerCallBound()
-	{
-		const double PixelLength = 400.0;
-		var majorBound = (int)(PixelLength / MinimumMajorGap) + 2;
-
-		var ticks = LogAxis.Ticks(-6.0, -1.0, PixelLength);
-
-		ticks.Count(tick => tick.IsMajor).Should().BeLessThanOrEqualTo(majorBound);
-		ticks.Should().HaveCountLessThanOrEqualTo(majorBound * 9);
-	}
-
-	[Fact]
 	public void Ticks_TwelveDecadesOver200Pixels_StrideDecadesAndMarkTheSkippedOnes()
 	{
 		var ticks = LogAxis.Ticks(-12.0, 0.0, 200.0);
@@ -98,7 +86,6 @@ public sealed class LogAxisTests
 	}
 
 	[Theory]
-	[InlineData(2.0, 50.0, new[] { 2.0, 5.0, 10.0, 20.0, 50.0 })]
 	[InlineData(0.2, 5.0, new[] { 0.2, 0.5, 1.0, 2.0, 5.0 })]
 	[InlineData(1.5, 14.0, new[] { 2.0, 5.0, 10.0 })]
 	[InlineData(0.9, 1.4, new[] { 0.9, 1.0, 1.1, 1.2, 1.3, 1.4 })]

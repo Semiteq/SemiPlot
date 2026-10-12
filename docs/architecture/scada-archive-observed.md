@@ -441,8 +441,8 @@ restart, checked after the second midnight and after the 02:00 maintenance. Star
 were not copied into layer 3 either.
 
 The customer dump (`SemiPlot.Tests.Unit/Fixtures/real-archive-rows.csv`, build unknown) has
-22 layer-3 rows within two hours of one day, markers included. Whether layer 3 is written may
-therefore depend on the build or the licence; it cannot be assumed on a plant.
+22 layer-3 rows within two hours of one day, markers included. The vendor's support states that
+the day layer is not used from 2.7.5.0 on `[SUP:20261009]`, so the dump comes from an earlier build.
 
 ## What tpdefault holds
 
@@ -609,7 +609,6 @@ For SemiBase and the plant:
 
 | Question | Why it is open | How to settle it |
 | --- | --- | --- |
-| Which builds or licences write layer 3? | The customer dump has it, 2.7.6.0 demo-64 does not | `select count(*) from trends where l = 3` on the plant |
 | What sets the 600 s anchor offset? | The customer dump shows one poll tick instead | a variable with a different poll rate, or an OPC variable |
 | Why do rarely changing variables wait longer than the ~8 min flush? | Not visible from the database side | none without the server code |
 | Which variables does the 02:09:37 write cover, and is it tied to the clock or the start? | Seen for the constant variable both nights and for `Step2` once | a run started at a different time of day |

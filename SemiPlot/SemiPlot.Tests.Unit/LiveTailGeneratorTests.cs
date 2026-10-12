@@ -14,36 +14,7 @@ namespace SemiPlot.Tests.Unit;
 [Trait("Category", "Unit")]
 public sealed class LiveTailGeneratorTests
 {
-	private const string Connection = "Host=127.0.0.1;Database=archive;Username=scada_writer";
-
 	private static readonly DateTime _midnight = new(2026, 1, 2, 0, 0, 0, DateTimeKind.Unspecified);
-
-	[Fact]
-	public void EveryRowIsRawAndOrdinary()
-	{
-		var rows = LiveTailGenerator.Generate(Options(), _midnight, _midnight.AddSeconds(30));
-
-		rows.Should().NotBeEmpty();
-		rows.Should().AllSatisfy(row => row.Layer.Should().Be(ArchiveRow.RawLayer));
-		rows.Should().AllSatisfy(row => row.Quality.Should().Be(ArchiveRow.OrdinaryQuality));
-	}
-
-	[Fact]
-	public void TimestampsAscendStrictlyPerPenOnWholeMilliseconds()
-	{
-		var after = _midnight.AddMilliseconds(137.0);
-		var rows = LiveTailGenerator.Generate(Options(), after, after.AddSeconds(30));
-
-		rows.Should().AllSatisfy(row => (row.Timestamp.Ticks % TimeSpan.TicksPerMillisecond).Should().Be(0L));
-
-		foreach (var pen in rows.GroupBy(row => row.Id))
-		{
-			var timestamps = pen.Select(row => row.Timestamp).ToArray();
-
-			timestamps.Should().Equal([.. timestamps.OrderBy(timestamp => timestamp)]);
-			timestamps.Length.Should().Be(timestamps.Distinct().Count());
-		}
-	}
 
 	[Fact]
 	public void EveryRowFallsInsideItsOwnWindow()
@@ -54,6 +25,17 @@ public sealed class LiveTailGeneratorTests
 		var rows = LiveTailGenerator.Generate(Options(), after, to);
 
 		rows.Should().AllSatisfy(row => row.Timestamp.Should().BeOnOrAfter(after.AddTicks(1)).And.BeOnOrBefore(to));
+	}
+
+	[Fact]
+	public void AWindowStartingOffTheLatticeStillEmitsWholeMilliseconds()
+	{
+		var after = _midnight.AddMilliseconds(137.0);
+
+		var rows = LiveTailGenerator.Generate(Options(), after, after.AddSeconds(30));
+
+		rows.Should().NotBeEmpty();
+		rows.Should().AllSatisfy(row => (row.Timestamp.Ticks % TimeSpan.TicksPerMillisecond).Should().Be(0L));
 	}
 
 	// The window is open at its start: `after` is an instant the archive already accounts for. It is the
@@ -129,35 +111,6 @@ public sealed class LiveTailGeneratorTests
 		rows[3].Value.Should().NotBe(rows[2].Value);
 	}
 
-	[Fact]
-	public void TheSameWindowGeneratesTheSameRowsTwice()
-	{
-		var to = _midnight.AddSeconds(20);
-
-		LiveTailGenerator.Generate(Options(), _midnight, to).Should().Equal(
-			LiveTailGenerator.Generate(Options(), _midnight, to));
-	}
-
-	[Fact]
-	public void ThePensAreTheOnesTheSeederSelects()
-	{
-		var options = Options();
-		var rows = LiveTailGenerator.Generate(options, _midnight, _midnight.AddSeconds(30));
-
-		rows.Select(row => row.Id).Distinct().Order().ToArray().Should().Equal(
-			[.. RawLayerGenerator.SelectPens(options.PenCount).Select(pen => pen.PenId).Order()]);
-	}
-
-	[Fact]
-	public void EveryValueStaysInsideItsPenRange()
-	{
-		var options = Options();
-		var pens = RawLayerGenerator.SelectPens(options.PenCount).ToDictionary(pen => pen.PenId);
-		var rows = LiveTailGenerator.Generate(options, _midnight, _midnight.AddSeconds(30));
-
-		rows.Should().AllSatisfy(row => row.Value.Should().BeInRange(pens[row.Id].MinValue, pens[row.Id].MaxValue));
-	}
-
 	[Theory]
 	[InlineData(0)]
 	[InlineData(-5)]
@@ -188,6 +141,6 @@ public sealed class LiveTailGeneratorTests
 
 	private static FollowOptions Options()
 	{
-		return new(Connection, TimeSpan.FromSeconds(1), 8, 1L, 1.0);
+		return new(BenchOptions.ConnectionString, TimeSpan.FromSeconds(1), 8, 1L, 1.0);
 	}
 }

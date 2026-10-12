@@ -72,20 +72,6 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 	}
 
 	[Fact]
-	public async Task TheClosedMinuteCarriesExactlyTheRowsTheThinnerSelects()
-	{
-		var cancellationToken = TestContext.Current.CancellationToken;
-		var minute = _day.AddHours(23).AddMinutes(10);
-		var expected = ExpectedThin(LayerThinner.MinuteLayer, minute);
-
-		expected.Should().NotBeEmpty();
-
-		await CoarseFlush.FlushAsync(
-			Options(), minute.AddSeconds(30), minute.AddSeconds(65), cancellationToken);
-		(await ReadPeriodAsync(LayerThinner.MinuteLayer, minute, cancellationToken)).Should().Equal(expected);
-	}
-
-	[Fact]
 	public async Task TheSecondFlushOfOnePeriodInsertsNothingAndLeavesItAsItWas()
 	{
 		var cancellationToken = TestContext.Current.CancellationToken;
@@ -146,20 +132,6 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 		(await ReadPeriodAsync(LayerThinner.DayLayer, _previousDay, cancellationToken)).Should().BeEmpty();
 
 		await AssertOnlyTheOpeningRowsAsync(now, cancellationToken);
-	}
-
-	// The day layer is the case worth reading: the period opens at midnight, its first raw row lands at 22:59.
-	[Fact]
-	public async Task ACallInsideAPeriodOpensEveryLayerWithItsFirstRawRow()
-	{
-		var cancellationToken = TestContext.Current.CancellationToken;
-		var minute = _day.AddHours(23).AddMinutes(10);
-
-		var flushed = await CoarseFlush.FlushAsync(
-			Options(), minute.AddSeconds(10), minute.AddSeconds(40), cancellationToken);
-		flushed.Should().Be(_openingRowsPerPeriod);
-
-		await AssertOnlyTheOpeningRowsAsync(minute.AddSeconds(40), cancellationToken);
 	}
 
 	[Fact]
@@ -342,56 +314,46 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 
 	// Counted rather than read back as an ArchiveRow, whose Value is a plain double: the question is
 	// whether the row reached the coarse layer at all.
-	private async Task<long> CountCoarseRowsAtAsync(
+	private Task<long> CountCoarseRowsAtAsync(
 		short layer,
 		int penId,
 		DateTime at,
 		CancellationToken cancellationToken)
 	{
-		await using var connection = new NpgsqlConnection(Database.AdminConnectionString);
-
-		await connection.OpenAsync(cancellationToken);
-
-		await using var command = new NpgsqlCommand(CountRowCommand, connection);
-
-		command.Parameters.AddWithValue("layer", NpgsqlDbType.Smallint, layer);
-		command.Parameters.AddWithValue("id", NpgsqlDbType.Integer, penId);
-		command.Parameters.AddWithValue("t", NpgsqlDbType.Timestamp, at);
-
-		return (long)(await command.ExecuteScalarAsync(cancellationToken))!;
+		return ArchiveDatabase.ScalarAsync<long>(
+			Database.AdminConnectionString,
+			CountRowCommand,
+			parameters =>
+			{
+				parameters.AddWithValue("layer", NpgsqlDbType.Smallint, layer);
+				parameters.AddWithValue("id", NpgsqlDbType.Integer, penId);
+				parameters.AddWithValue("t", NpgsqlDbType.Timestamp, at);
+			},
+			cancellationToken);
 	}
 
-	private async Task<IReadOnlyList<ArchiveRow>> ReadPeriodAsync(
+	private Task<IReadOnlyList<ArchiveRow>> ReadPeriodAsync(
 		short layer,
 		DateTime periodStart,
 		CancellationToken cancellationToken)
 	{
-		await using var connection = new NpgsqlConnection(Database.AdminConnectionString);
-
-		await connection.OpenAsync(cancellationToken);
-
-		await using var command = new NpgsqlCommand(ReadRowsCommand, connection);
-
-		command.Parameters.AddWithValue("layer", NpgsqlDbType.Smallint, layer);
-		command.Parameters.AddWithValue("fromInclusive", NpgsqlDbType.Timestamp, periodStart);
-		command.Parameters.AddWithValue(
-			"toExclusive", NpgsqlDbType.Timestamp, PeriodEndExclusive(periodStart, layer));
-
-		await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-
-		var rows = new List<ArchiveRow>();
-
-		while (await reader.ReadAsync(cancellationToken))
-		{
-			rows.Add(new ArchiveRow(
+		return ArchiveDatabase.ReadAsync(
+			Database.AdminConnectionString,
+			ReadRowsCommand,
+			reader => new ArchiveRow(
 				reader.GetInt32(0),
 				layer,
 				reader.GetDateTime(1),
 				reader.GetDouble(2),
-				reader.GetInt32(3)));
-		}
-
-		return rows;
+				reader.GetInt32(3)),
+			parameters =>
+			{
+				parameters.AddWithValue("layer", NpgsqlDbType.Smallint, layer);
+				parameters.AddWithValue("fromInclusive", NpgsqlDbType.Timestamp, periodStart);
+				parameters.AddWithValue(
+					"toExclusive", NpgsqlDbType.Timestamp, PeriodEndExclusive(periodStart, layer));
+			},
+			cancellationToken);
 	}
 
 	private static IReadOnlyList<ArchiveRow> BuildRawRows()

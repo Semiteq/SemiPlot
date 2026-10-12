@@ -8,13 +8,13 @@ using Avalonia.Threading;
 
 using AwesomeAssertions;
 
+using FluentResults;
+
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Reactive.Testing;
 
 using SemiPlot.DataSource.Postgres.Configuration;
 using SemiPlot.Tests.Unit.UI.Settings;
 using SemiPlot.UI;
-using SemiPlot.UI.Localization;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
 using SemiPlot.UI.Settings;
@@ -41,7 +41,7 @@ public sealed class StartupFailureWindowTests
 	public void AFailedStartShowsTheFailureWindowWithItsOwnPanel()
 	{
 		using var scope = new AppStateScope();
-		var failedStart = FailedStartup();
+		var failedStart = TestLaunch.FailedStartup();
 
 		App.ConfigureFailed(scope.App, settings: null, failedStart, options: null);
 
@@ -53,17 +53,7 @@ public sealed class StartupFailureWindowTests
 		viewModel.MessagePanel.Should().BeSameAs(
 			App.ResolveMessagePanel(), "the ReactiveUI handler reaches the panel this window shows");
 
-		var scheduler = new TestScheduler();
-		var observer = new UnhandledErrorObserver(App.ResolveMessagePanel, scheduler, NullLogger.Instance);
-
-		observer.OnNext(new InvalidOperationException("a command body threw"));
-		scheduler.AdvanceBy(1);
-
-		viewModel.MessagePanel.Entries.Should().ContainSingle()
-			.Which.View.Detail.Should().Contain("a command body threw");
-
-		window.Show();
-		Dispatcher.UIThread.RunJobs();
+		ViewProbe.Realise(window);
 		window.Close();
 		Dispatcher.UIThread.RunJobs();
 
@@ -79,13 +69,12 @@ public sealed class StartupFailureWindowTests
 		using var viewModel = NewFailureViewModel(AppContext.BaseDirectory);
 		var window = new StartupFailureWindow { DataContext = viewModel };
 
-		window.Show();
-		Dispatcher.UIThread.RunJobs();
+		ViewProbe.Realise(window);
 
 		ReadText(window, "StartupFailureTitle").Should().Be(_failure.Title);
 		ReadText(window, "StartupFailureDetail").Should().Be(_failure.Detail);
 		ReadText(window, "StartupFailureRemedy").Should().Be(_failure.Remedy);
-		window.FindControl<Border>("MessagePanel")!.IsVisible.Should()
+		ViewProbe.Named<Border>(window, "MessagePanel").IsVisible.Should()
 			.BeFalse("nothing has reported into this window's panel, so it carries no row");
 		window.Close();
 	}
@@ -96,6 +85,7 @@ public sealed class StartupFailureWindowTests
 		using var viewModel = NewFailureViewModel(configDirectory: null);
 
 		viewModel.OffersSettings.Should().BeFalse("a failed argument parse names no directory");
+		((ICommand)viewModel.ShowSettingsCommand).CanExecute(null).Should().BeFalse();
 		ButtonIsVisible(viewModel, "StartupFailureSettings").Should().BeFalse();
 	}
 
@@ -106,57 +96,40 @@ public sealed class StartupFailureWindowTests
 	[InlineData("key-absent")]
 	public void TheSettingsButton_IsHiddenWhenASectionCannotSave(string fault)
 	{
-		var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
-		try
+		using var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
+		switch (fault)
 		{
-			switch (fault)
-			{
-				case "missing-directory":
-					Directory.Delete(configDirectory, recursive: true);
-					break;
-				case "no-files-in-a-section":
-					File.Delete(Path.Combine(configDirectory, StartupProbe.ConnectionDirectoryName, "connection.yaml"));
-					break;
-				case "key-absent":
-					var appWithoutLocale = Path.Combine(configDirectory, StartupSequence.SettingsDirectoryName, "app.yaml");
-					File.WriteAllText(appWithoutLocale, "theme: light\n");
-					break;
-				default:
-					var appFile = Path.Combine(configDirectory, StartupSequence.SettingsDirectoryName, "app.yaml");
-					File.WriteAllText(appFile, "locale: [unclosed\n");
-					break;
-			}
-
-			using var viewModel = NewFailureViewModel(configDirectory);
-
-			viewModel.OffersSettings.Should().BeFalse();
-			((ICommand)viewModel.ShowSettingsCommand).CanExecute(null).Should().BeFalse();
-			ButtonIsVisible(viewModel, "StartupFailureSettings").Should().BeFalse();
-		}
-		finally
-		{
-			if (Directory.Exists(configDirectory))
-			{
+			case "missing-directory":
 				Directory.Delete(configDirectory, recursive: true);
-			}
+				break;
+			case "no-files-in-a-section":
+				File.Delete(Path.Combine(configDirectory, StartupProbe.ConnectionDirectoryName, "connection.yaml"));
+				break;
+			case "key-absent":
+				var appWithoutLocale = Path.Combine(configDirectory, StartupSequence.SettingsDirectoryName, "app.yaml");
+				File.WriteAllText(appWithoutLocale, "theme: light\n");
+				break;
+			default:
+				var appFile = Path.Combine(configDirectory, StartupSequence.SettingsDirectoryName, "app.yaml");
+				File.WriteAllText(appFile, "locale: [unclosed\n");
+				break;
 		}
+
+		using var viewModel = NewFailureViewModel(configDirectory);
+
+		viewModel.OffersSettings.Should().BeFalse();
+		((ICommand)viewModel.ShowSettingsCommand).CanExecute(null).Should().BeFalse();
+		ButtonIsVisible(viewModel, "StartupFailureSettings").Should().BeFalse();
 	}
 
 	[AvaloniaFact]
 	public void TheSettingsButton_IsShownOverAnEmptyPassword()
 	{
-		var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
-		try
-		{
-			using var viewModel = NewFailureViewModel(configDirectory);
+		using var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
+		using var viewModel = NewFailureViewModel(configDirectory);
 
-			viewModel.OffersSettings.Should().BeTrue();
-			ButtonIsVisible(viewModel, "StartupFailureSettings").Should().BeTrue();
-		}
-		finally
-		{
-			Directory.Delete(configDirectory, recursive: true);
-		}
+		viewModel.OffersSettings.Should().BeTrue();
+		ButtonIsVisible(viewModel, "StartupFailureSettings").Should().BeTrue();
 	}
 
 	[AvaloniaFact]
@@ -164,10 +137,9 @@ public sealed class StartupFailureWindowTests
 	{
 		using var viewModel = NewFailureViewModel(AppContext.BaseDirectory);
 		var window = new StartupFailureWindow { DataContext = viewModel };
-		window.Show();
-		Dispatcher.UIThread.RunJobs();
+		ViewProbe.Realise(window);
 
-		HeadlessInput.Click(window, window.FindControl<Button>("StartupFailureExit")!);
+		HeadlessInput.Click(window, ViewProbe.Named<Button>(window, "StartupFailureExit"));
 
 		window.IsVisible.Should().BeFalse("ExitRequests reaches the window's Close");
 	}
@@ -177,10 +149,9 @@ public sealed class StartupFailureWindowTests
 	{
 		using var viewModel = NewFailureViewModel(AppContext.BaseDirectory);
 		var window = new StartupFailureWindow { DataContext = viewModel };
-		window.Show();
-		Dispatcher.UIThread.RunJobs();
+		ViewProbe.Realise(window);
 
-		HeadlessInput.Click(window, window.FindControl<Button>("StartupFailureAbout")!);
+		HeadlessInput.Click(window, ViewProbe.Named<Button>(window, "StartupFailureAbout"));
 		await HeadlessWait.Until(() => window.OwnedWindows.OfType<AboutDialog>().Any());
 
 		window.OwnedWindows.OfType<AboutDialog>().Single().Close();
@@ -191,36 +162,28 @@ public sealed class StartupFailureWindowTests
 	[AvaloniaFact]
 	public async Task TheSettingsButton_OpensTheDialogOverTheWindowAndTheWindowDisposesItsViewModel()
 	{
-		var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
-		try
-		{
-			using var viewModel = NewFailureViewModel(configDirectory);
-			var window = new StartupFailureWindow { DataContext = viewModel };
-			window.Show();
-			Dispatcher.UIThread.RunJobs();
+		using var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
+		using var viewModel = NewFailureViewModel(configDirectory);
+		var window = new StartupFailureWindow { DataContext = viewModel };
+		ViewProbe.Realise(window);
 
-			HeadlessInput.Click(window, window.FindControl<Button>("StartupFailureSettings")!);
-			await HeadlessWait.Until(() => window.OwnedWindows.OfType<SettingsDialog>().Any());
+		HeadlessInput.Click(window, ViewProbe.Named<Button>(window, "StartupFailureSettings"));
+		await HeadlessWait.Until(() => window.OwnedWindows.OfType<SettingsDialog>().Any());
 
-			var dialog = window.OwnedWindows.OfType<SettingsDialog>().Single();
-			var settings = dialog.DataContext.Should().BeOfType<SettingsViewModel>().Which;
-			settings.Host.Should().Be("127.0.0.1");
-			viewModel.MessagePanel.Entries.Should().BeEmpty();
+		var dialog = window.OwnedWindows.OfType<SettingsDialog>().Single();
+		var settings = dialog.DataContext.Should().BeOfType<SettingsViewModel>().Which;
+		settings.Host.Should().Be("127.0.0.1");
+		viewModel.MessagePanel.Entries.Should().BeEmpty();
 
-			dialog.Close();
-			Dispatcher.UIThread.RunJobs();
+		dialog.Close();
+		Dispatcher.UIThread.RunJobs();
 
-			// A disposed command stops following its inputs, and the shipped blank password left it disabled.
-			settings.Password = "secret";
-			((ICommand)settings.SaveCommand).CanExecute(null).Should()
-				.BeFalse("the window disposes the view model its dialog showed");
-			window.OwnedWindows.Should().BeEmpty();
-			window.Close();
-		}
-		finally
-		{
-			Directory.Delete(configDirectory, recursive: true);
-		}
+		// A disposed command stops following its inputs, and the shipped blank password left it disabled.
+		settings.Password = "secret";
+		((ICommand)settings.SaveCommand).CanExecute(null).Should()
+			.BeFalse("the window disposes the view model its dialog showed");
+		window.OwnedWindows.Should().BeEmpty();
+		window.Close();
 	}
 
 	[AvaloniaFact]
@@ -228,94 +191,51 @@ public sealed class StartupFailureWindowTests
 	{
 		using var viewModel = NewFailureViewModel(AppContext.BaseDirectory);
 
-		viewModel.ReportFailure(new InvalidOperationException("the dialog refused"));
+		var thrown = new InvalidOperationException("the dialog refused");
+
+		viewModel.ReportFailure(thrown);
 
 		viewModel.MessagePanel.Entries.Should().ContainSingle()
-			.Which.View.Detail.Should().Contain("the dialog refused");
+			.Which.View.Should().Be(ArchiveFailureMapper.Map(new ExceptionalError(thrown)));
 		viewModel.MessagePanel.IsVisible.Should().BeTrue();
-	}
-
-	[AvaloniaFact]
-	public void TheSettingsCommand_WithoutAConfigurationDirectory_CannotExecute()
-	{
-		using var viewModel = NewFailureViewModel(configDirectory: null);
-
-		((ICommand)viewModel.ShowSettingsCommand).CanExecute(null).Should().BeFalse();
 	}
 
 	[AvaloniaFact]
 	public async Task TheSettingsDialog_OverAnEmptyPassword_WritesItIntoTheExistingConnectionFileAndRestarts()
 	{
-		var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
-		try
-		{
-			var started = 0;
-			using var viewModel = NewFailureViewModel(configDirectory, _ => started++);
-			var window = new StartupFailureWindow { DataContext = viewModel };
-			window.Show();
-			Dispatcher.UIThread.RunJobs();
-			HeadlessInput.Click(window, window.FindControl<Button>("StartupFailureSettings")!);
-			await HeadlessWait.Until(() => window.OwnedWindows.OfType<SettingsDialog>().Any());
-			var dialog = window.OwnedWindows.OfType<SettingsDialog>().Single();
-			var settings = dialog.DataContext.Should().BeOfType<SettingsViewModel>().Which;
-			var save = dialog.FindControl<Button>("SettingsSaveButton")!;
+		using var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
+		var started = 0;
+		using var viewModel = NewFailureViewModel(configDirectory, _ => started++);
+		var window = new StartupFailureWindow { DataContext = viewModel };
+		ViewProbe.Realise(window);
+		HeadlessInput.Click(window, ViewProbe.Named<Button>(window, "StartupFailureSettings"));
+		await HeadlessWait.Until(() => window.OwnedWindows.OfType<SettingsDialog>().Any());
+		var dialog = window.OwnedWindows.OfType<SettingsDialog>().Single();
+		var settings = dialog.DataContext.Should().BeOfType<SettingsViewModel>().Which;
+		var save = ViewProbe.Named<Button>(dialog, "SettingsSaveButton");
 
-			save.IsEffectivelyEnabled.Should().BeFalse("the shipped password is empty");
-			HeadlessInput.Type(dialog, dialog.FindControl<TextBox>("SettingsPassword")!, "secret");
+		save.IsEffectivelyEnabled.Should().BeFalse("the shipped password is empty");
+		HeadlessInput.Type(dialog, ViewProbe.Named<TextBox>(dialog, "SettingsPassword"), "secret");
 
-			save.IsEffectivelyEnabled.Should().BeTrue(settings.ValidationMessage);
-			HeadlessInput.Click(dialog, save);
-			var restartNow = dialog.FindControl<Button>("SettingsRestartNow")!;
-			await HeadlessWait.Until(() => restartNow.IsEffectivelyEnabled);
+		save.IsEffectivelyEnabled.Should().BeTrue(settings.ValidationMessage);
+		HeadlessInput.Click(dialog, save);
+		var restartNow = ViewProbe.Named<Button>(dialog, "SettingsRestartNow");
+		await HeadlessWait.Until(() => restartNow.IsEffectivelyEnabled);
 
-			var connectionDirectory = Path.Combine(configDirectory, StartupProbe.ConnectionDirectoryName);
-			PostgresConnectionLoader.Load(connectionDirectory).Value.Password.Should().Be("secret");
-			Directory.GetFiles(connectionDirectory).Should().ContainSingle().Which.Should().EndWith("connection.yaml");
-			viewModel.MessagePanel.Entries.Should().BeEmpty();
+		var connectionDirectory = Path.Combine(configDirectory, StartupProbe.ConnectionDirectoryName);
+		PostgresConnectionLoader.Load(connectionDirectory).Value.Password.Should().Be("secret");
+		Directory.GetFiles(connectionDirectory).Should().ContainSingle().Which.Should().EndWith("connection.yaml");
+		viewModel.MessagePanel.Entries.Should().BeEmpty();
 
-			HeadlessInput.Click(dialog, restartNow);
-			Dispatcher.UIThread.RunJobs();
+		HeadlessInput.Click(dialog, restartNow);
+		Dispatcher.UIThread.RunJobs();
 
-			started.Should().Be(1);
-			window.IsVisible.Should().BeFalse("the restart closes the failure window");
+		started.Should().Be(1);
+		window.IsVisible.Should().BeFalse("the restart closes the failure window");
 
-			dialog.Close();
-			Dispatcher.UIThread.RunJobs();
-			window.Close();
-		}
-		finally
-		{
-			Directory.Delete(configDirectory, recursive: true);
-		}
-	}
-
-	[AvaloniaFact]
-	public async Task TheSettingsDialog_OverAnUnreadableSection_StatesTheSectionAndKeepsSaveDisabled()
-	{
-		var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
-		try
-		{
-			var messagePanel = new MessagePanelViewModel();
-			var loggerFactory = NullLoggerFactory.Instance;
-			var connectionFile = Path.Combine(configDirectory, StartupProbe.ConnectionDirectoryName, "connection.yaml");
-			File.WriteAllText(connectionFile, "host: [unclosed\n");
-
-			using var settings = await SettingsViewModel.OpenAsync(
-				configDirectory, messagePanel, loggerFactory, restartApplication: () => { });
-			var dialog = new SettingsDialog { DataContext = settings };
-			dialog.Show();
-			Dispatcher.UIThread.RunJobs();
-
-			dialog.FindControl<TextBlock>("SettingsValidationMessage")!.Text.Should()
-				.Be(Resources.FormatSettingsSectionUnreadable(Resources.SettingsConnectionHeader));
-			dialog.FindControl<Button>("SettingsSaveButton")!.IsEffectivelyEnabled.Should().BeFalse();
-			dialog.Close();
-			messagePanel.Dispose();
-		}
-		finally
-		{
-			Directory.Delete(configDirectory, recursive: true);
-		}
+		dialog.Close();
+		Dispatcher.UIThread.RunJobs();
+		window.Close();
 	}
 
 	[AvaloniaFact]
@@ -340,10 +260,9 @@ public sealed class StartupFailureWindowTests
 			windowVisibleWhenTheCopyStarted = window!.IsVisible;
 		});
 		window = new StartupFailureWindow { DataContext = viewModel };
-		window.Show();
-		Dispatcher.UIThread.RunJobs();
+		ViewProbe.Realise(window);
 
-		HeadlessInput.Click(window, window.FindControl<Button>("StartupFailureRestart")!);
+		HeadlessInput.Click(window, ViewProbe.Named<Button>(window, "StartupFailureRestart"));
 
 		started.Should().Be(1);
 		windowVisibleWhenTheCopyStarted.Should().BeTrue("the window closes after the copy started");
@@ -367,33 +286,26 @@ public sealed class StartupFailureWindowTests
 	[AvaloniaFact]
 	public void AFailedStartWithLaunchOptions_OffersRestartAndSettingsOverTheirDirectory()
 	{
-		var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
-		try
-		{
-			using var scope = new AppStateScope();
+		using var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
+		using var scope = new AppStateScope();
 
-			App.ConfigureFailed(scope.App, settings: null, FailedStartup(), TestLaunch.OptionsAt(configDirectory));
+		App.ConfigureFailed(
+			scope.App, settings: null, TestLaunch.FailedStartup(), TestLaunch.OptionsAt(configDirectory));
 
-			var window = scope.App.CreateMainWindow();
-			var viewModel = window.DataContext.Should().BeOfType<StartupFailureViewModel>().Which;
-			viewModel.OffersRestart.Should().BeTrue();
-			viewModel.OffersSettings.Should().BeTrue();
-			window.Close();
-			Dispatcher.UIThread.RunJobs();
-		}
-		finally
-		{
-			Directory.Delete(configDirectory, recursive: true);
-		}
+		var window = scope.App.CreateMainWindow();
+		var viewModel = window.DataContext.Should().BeOfType<StartupFailureViewModel>().Which;
+		viewModel.OffersRestart.Should().BeTrue();
+		viewModel.OffersSettings.Should().BeTrue();
+		window.Close();
+		Dispatcher.UIThread.RunJobs();
 	}
 
 	private static bool ButtonIsVisible(StartupFailureViewModel viewModel, string name)
 	{
 		var window = new StartupFailureWindow { DataContext = viewModel };
-		window.Show();
-		Dispatcher.UIThread.RunJobs();
+		ViewProbe.Realise(window);
 
-		var visible = window.FindControl<Button>(name)!.IsVisible;
+		var visible = ViewProbe.Named<Button>(window, name).IsVisible;
 		window.Close();
 
 		return visible;
@@ -406,11 +318,6 @@ public sealed class StartupFailureWindowTests
 		var launcher = configDirectory is null ? null : TestLaunch.LauncherAt(configDirectory, start);
 
 		return new StartupFailureViewModel(_failure, launcher, NullLoggerFactory.Instance);
-	}
-
-	private static AppSettingsError FailedStartup()
-	{
-		return new AppSettingsError("app", AppSettingsProblem.KeyMissing, AppSettingsLoader.LocaleKey);
 	}
 
 	private static string? ReadText(Window window, string name)

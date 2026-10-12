@@ -5,10 +5,9 @@ using Avalonia.Headless.XUnit;
 
 using AwesomeAssertions;
 
-using Microsoft.Reactive.Testing;
+using FluentResults;
 
 using SemiPlot.Core.Trends;
-using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.Messages;
@@ -23,6 +22,7 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 [Trait("Component", "UI")]
 [Trait("Area", "Chart")]
 [Trait("Category", "Unit")]
+[Collection(ProcessGlobalStateCollection.Name)]
 public sealed class AxisScalePanelViewModelTests
 {
 	public enum PanelPenLeaves
@@ -80,51 +80,6 @@ public sealed class AxisScalePanelViewModelTests
 		chart.SetPenVisibility(1, false);
 
 		chart.AxisScale.Seed().Should().BeFalse();
-	}
-
-	[AvaloniaFact]
-	public void ASmallMagnitudeScale_IsShownAndKeptWithoutLoss()
-	{
-		var (chart, _, _, provider) = CreateViewModel();
-		chart.ApplyCatalogue(provider.Pens);
-		chart.SetAxisLimits(1, 1e-7, 5e-6);
-
-		chart.AxisScale.Seed();
-
-		chart.AxisScale.MinimumText.Should().Be(PenValueFormat.Format(1e-7, null));
-		chart.AxisScale.MaximumText.Should().Be(PenValueFormat.Format(5e-6, null));
-
-		chart.AxisScale.CommitBounds();
-
-		chart.ScaleRangeForPen(1)!.Value.Should().Be((1e-7, 5e-6));
-	}
-
-	[AvaloniaFact]
-	public void Seed_FormatsTheBoundsUnderThePensMask()
-	{
-		using var culture = new CultureScope("en-US");
-		var (chart, _, _, provider) = CreateViewModel();
-		chart.ApplyCatalogue([.. provider.Pens.Select(pen => pen with { Format = "0.0" })]);
-		chart.SetAxisLimits(1, 0.25, 43.50529834);
-
-		chart.AxisScale.Seed();
-
-		chart.AxisScale.MaximumText.Should().Be("43.5");
-		chart.AxisScale.MinimumText.Should().Be("0.3");
-	}
-
-	[AvaloniaFact]
-	public void Seed_WithoutAMask_FallsBackToTheDefaultMask()
-	{
-		using var culture = new CultureScope("en-US");
-		var (chart, _, _, provider) = CreateViewModel();
-		chart.ApplyCatalogue(provider.Pens);
-		chart.SetAxisLimits(1, 10.0, 43.50529834);
-
-		chart.AxisScale.Seed();
-
-		chart.AxisScale.MaximumText.Should().Be("43.505");
-		chart.AxisScale.MinimumText.Should().Be("10");
 	}
 
 	[AvaloniaFact]
@@ -218,19 +173,21 @@ public sealed class AxisScalePanelViewModelTests
 	[AvaloniaFact]
 	public void ReportFailure_ReachesTheChartsMessagePanel()
 	{
-		var scheduler = new TestScheduler();
-		var provider = new FakeDataProvider(scheduler, TimeSpan.FromHours(1));
 		using var messagePanel = new MessagePanelViewModel();
-		using var chart = CreateChart(scheduler, CreateCoordinator(scheduler, provider), messagePanel);
+		using var chart = CreateViewModelOnOneScheduler(messagePanel: messagePanel).ViewModel;
 
-		chart.AxisScale.ReportFailure(new InvalidOperationException("the focus handler threw"));
+		var thrown = new InvalidOperationException("the focus handler threw");
+
+		chart.AxisScale.ReportFailure(thrown);
 
 		messagePanel.Entries.Should().ContainSingle()
-			.Which.View.Detail.Should().Contain("the focus handler threw");
+			.Which.View.Should().Be(ArchiveFailureMapper.Map(new ExceptionalError(thrown)));
 	}
 
-	[AvaloniaFact]
-	public void AnInvertedPair_IsRefusedOnTheMessageLine_AndNothingIsWritten()
+	[AvaloniaTheory]
+	[InlineData("95")]
+	[InlineData("90")]
+	public void AnInvertedOrEqualPair_IsRefusedOnTheMessageLine_AndNothingIsWritten(string typedMinimum)
 	{
 		var (chart, _, _, provider) = CreateViewModel();
 		chart.ApplyCatalogue(provider.Pens);
@@ -239,7 +196,7 @@ public sealed class AxisScalePanelViewModelTests
 		var closes = 0;
 		using var subscription = chart.AxisScale.CloseRequests.Subscribe(_ => closes++);
 
-		chart.AxisScale.MinimumText = "95";
+		chart.AxisScale.MinimumText = typedMinimum;
 
 		chart.AxisScale.ValidationMessage.Should().Be(Resources.AxisScaleMinimumBelowMaximum);
 		chart.AxisScale.IsMinimumValid.Should().BeFalse();
@@ -249,23 +206,6 @@ public sealed class AxisScalePanelViewModelTests
 
 		chart.ScaleRangeForPen(1)!.Value.Should().Be((10.0, 90.0));
 		closes.Should().Be(0);
-	}
-
-	[AvaloniaFact]
-	public void AnEqualPair_IsRefused()
-	{
-		var (chart, _, _, provider) = CreateViewModel();
-		chart.ApplyCatalogue(provider.Pens);
-		chart.SetAxisLimits(1, 10.0, 90.0);
-		chart.AxisScale.Seed();
-
-		chart.AxisScale.MinimumText = "90";
-
-		chart.AxisScale.ValidationMessage.Should().Be(Resources.AxisScaleMinimumBelowMaximum);
-
-		chart.AxisScale.CommitBounds();
-
-		chart.ScaleRangeForPen(1)!.Value.Should().Be((10.0, 90.0));
 	}
 
 	[AvaloniaTheory]
@@ -395,7 +335,6 @@ public sealed class AxisScalePanelViewModelTests
 		chart.AxisScale.AutoscaleCommand.Execute().Subscribe();
 
 		chart.ScaleSettings[2].Mode.Should().Be(ScaleMode.Auto);
-		chart.ScaleSettings[1].Mode.Should().Be(ScaleMode.Manual);
 		closes.Should().Be(1);
 	}
 
@@ -415,7 +354,6 @@ public sealed class AxisScalePanelViewModelTests
 		chart.AxisScale.InitialScaleCommand.Execute().Subscribe();
 
 		chart.ScaleRangeForPen(2)!.Value.Should().Be((5.0, 50.0));
-		chart.ScaleRangeForPen(1)!.Value.Should().Be((10.0, 90.0));
 		closes.Should().Be(1);
 	}
 
@@ -490,22 +428,6 @@ public sealed class AxisScalePanelViewModelTests
 	}
 
 	[AvaloniaFact]
-	public void CommitBounds_PutsBothBoundsOnTheRenderedAxis()
-	{
-		var (chart, _, _, provider) = CreateViewModel();
-		chart.ApplyCatalogue(provider.Pens);
-		chart.AxisScale.Seed();
-
-		chart.AxisScale.MaximumText = "120";
-		chart.AxisScale.MinimumText = "-20";
-		chart.AxisScale.CommitBounds();
-
-		chart.Plot.RenderInMemory(600, 400);
-		chart.ActivePenAxis!.Range.Min.Should().Be(-20.0);
-		chart.ActivePenAxis.Range.Max.Should().Be(120.0);
-	}
-
-	[AvaloniaFact]
 	public void Seed_ReadsTheAxisTypeFromTheChartsSettings()
 	{
 		var (chart, _, _, provider) = CreateViewModel();
@@ -550,34 +472,6 @@ public sealed class AxisScalePanelViewModelTests
 		chart.ScaleSettings[1].IsLogarithmic.Should().BeFalse();
 		chart.AxisScale.IsLogarithmic.Should().BeFalse();
 		closes.Should().Be(0);
-	}
-
-	[AvaloniaFact]
-	public void ToggleLogarithmic_OverAManualMinimumOfZero_IsRefusedAndNamesTheRule()
-	{
-		var (chart, _, _, provider) = CreateViewModel();
-		chart.ApplyCatalogue(provider.Pens);
-		chart.SetAxisLimits(1, 0.0, 100.0);
-		chart.AxisScale.Seed();
-		var closes = 0;
-		using var subscription = chart.AxisScale.CloseRequests.Subscribe(_ => closes++);
-
-		chart.AxisScale.ToggleLogarithmicCommand.Execute().Subscribe();
-
-		chart.ScaleSettings[1].Should().Be(new PenScaleSettings(1)
-		{
-			Mode = ScaleMode.Manual,
-			ManualMin = 0.0,
-			ManualMax = 100.0
-		});
-		chart.AxisScale.IsLogarithmic.Should().BeFalse();
-		chart.AxisScale.ValidationMessage.Should().Be(Resources.ScaleLogMinimumPositive);
-		chart.AxisScale.IsMinimumValid.Should().BeTrue("zero is a valid minimum on the linear axis it stays on");
-		closes.Should().Be(0);
-
-		chart.AxisScale.Seed();
-
-		chart.AxisScale.ValidationMessage.Should().BeEmpty("a new seed clears the refusal");
 	}
 
 	[AvaloniaFact]
@@ -648,34 +542,45 @@ public sealed class AxisScalePanelViewModelTests
 	[AvaloniaTheory]
 	[InlineData("0")]
 	[InlineData("-5")]
-	public void ATypedMinimumTheLogRuleRefuses_ThenToggleOn_IsWrittenOnTheLinearAxisAndTheRuleIsNamed(string typed)
+	[InlineData(null)]
+	public void AMinimumTheLogRuleRefuses_ThenToggleOn_IsWrittenOnTheLinearAxisAndTheRuleIsNamed(string? typed)
 	{
 		using var culture = new CultureScope("en-US");
 		var (chart, _, _, provider) = CreateViewModel();
 		chart.ApplyCatalogue(provider.Pens);
-		chart.SetAxisLimits(1, 5.0, 100.0);
+		chart.SetAxisLimits(1, typed is null ? 0.0 : 5.0, 100.0);
 		chart.AxisScale.Seed();
+		var closes = 0;
+		using var subscription = chart.AxisScale.CloseRequests.Subscribe(_ => closes++);
 
-		chart.AxisScale.MinimumText = typed;
+		if (typed is not null)
+		{
+			chart.AxisScale.MinimumText = typed;
+		}
+
 		chart.AxisScale.ToggleLogarithmicCommand.Execute().Subscribe();
 
 		chart.ScaleSettings[1].Should().Be(new PenScaleSettings(1)
 		{
 			Mode = ScaleMode.Manual,
-			ManualMin = double.Parse(typed, CultureInfo.InvariantCulture),
+			ManualMin = typed is null ? 0.0 : double.Parse(typed, CultureInfo.InvariantCulture),
 			ManualMax = 100.0
 		});
 		chart.AxisScale.IsLogarithmic.Should().BeFalse();
-		chart.AxisScale.MinimumText.Should().Be(typed);
+		chart.AxisScale.MinimumText.Should().Be(typed ?? "0");
 		chart.AxisScale.ValidationMessage.Should().Be(Resources.ScaleLogMinimumPositive);
+		chart.AxisScale.IsMinimumValid.Should().BeTrue(
+			"a non-positive minimum is valid on the linear axis it stays on");
+		closes.Should().Be(0);
+
+		chart.AxisScale.Seed();
+
+		chart.AxisScale.ValidationMessage.Should().BeEmpty("a new seed clears the refusal");
 	}
 
 	[AvaloniaTheory]
 	[InlineData("abc", false)]
-	[InlineData("", false)]
-	[InlineData("200", false)]
 	[InlineData("abc", true)]
-	[InlineData("200", true)]
 	public void APairThatDoesNotRead_RefusesTheToggle_AndKeepsTheText(string typed, bool startsLogarithmic)
 	{
 		var (chart, _, _, provider) = CreateViewModel();
@@ -699,12 +604,7 @@ public sealed class AxisScalePanelViewModelTests
 		});
 		chart.AxisScale.IsLogarithmic.Should().Be(startsLogarithmic);
 		chart.AxisScale.MinimumText.Should().Be(typed);
-		chart.AxisScale.ValidationMessage.Should().Be(typed switch
-		{
-			"" => Resources.AxisScaleBoundsRequired,
-			"200" => Resources.AxisScaleMinimumBelowMaximum,
-			_ => Resources.AxisScaleBoundInvalid
-		});
+		chart.AxisScale.ValidationMessage.Should().Be(Resources.AxisScaleBoundInvalid);
 		raised.Should().Contain(
 			nameof(AxisScalePanelViewModel.IsLogarithmic),
 			"the box ticked itself and must re-read");

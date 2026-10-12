@@ -6,6 +6,8 @@ using SemiPlot.UI.Chart;
 
 using Xunit;
 
+using static SemiPlot.Tests.Unit.UI.Chart.TickRegeneration;
+
 namespace SemiPlot.Tests.Unit.UI.Chart;
 
 [Collection(ProcessGlobalStateCollection.Name)]
@@ -14,7 +16,6 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 [Trait("Category", "Unit")]
 public sealed class ChartTickGeneratorTests
 {
-	private const float AxisPixels = 400f;
 	private const float PanelPixels = 380f;
 
 	private static readonly CoordinateRange _linearRange = new(0.0, 100.0);
@@ -22,17 +23,6 @@ public sealed class ChartTickGeneratorTests
 	private static readonly CoordinateRange _decades = new(-6.0, -1.0);
 
 	public static TheoryData<string> Generators => [nameof(LinearTickGenerator), nameof(LogTickGenerator)];
-
-	[Theory]
-	[MemberData(nameof(Generators))]
-	public void AHiddenGenerator_GeneratesNothing(string generatorName)
-	{
-		var generator = Create(generatorName);
-
-		Regenerate(generator, RangeFor(generator), AxisPixels);
-
-		generator.Ticks.Should().BeEmpty();
-	}
 
 	[Theory]
 	[MemberData(nameof(Generators))]
@@ -106,11 +96,5 @@ public sealed class ChartTickGeneratorTests
 	private static CoordinateRange RangeFor(IDrawnTickGenerator generator)
 	{
 		return generator is LogTickGenerator ? _decades : _linearRange;
-	}
-
-	private static void Regenerate(ITickGenerator generator, CoordinateRange range, float pixels)
-	{
-		using var paint = Paint.NewDisposablePaint();
-		generator.Regenerate(range, Edge.Left, new PixelLength(pixels), paint, new LabelStyle());
 	}
 }

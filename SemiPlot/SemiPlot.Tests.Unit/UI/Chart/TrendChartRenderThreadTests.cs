@@ -29,19 +29,16 @@ public sealed class TrendChartRenderThreadTests
 	// The narrow canvas leaves a data area under the minimum column count, the wide one over the maximum.
 	private const int NarrowPlotWidth = 320;
 	private const int WidePlotWidth = 2600;
-	private const int FrameBudget = 300;
 	private const int JoiningPenCount = 20;
 	private const int TestTimeoutMilliseconds = 120_000;
 
-	private static readonly TimeSpan _runBudget = TimeSpan.FromSeconds(60);
-	private static readonly TimeSpan _joinBudget = TimeSpan.FromSeconds(30);
 	private static readonly DateTime _historyStart = new(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
 
 	[AvaloniaFact(Timeout = TestTimeoutMilliseconds)]
 	public async Task ApplyCatalogue_WhileTheRenderThreadDraws_DoesNotThrow()
 	{
 		using var chart = CreateChart(new TestScheduler());
-		IReadOnlyList<Pen> kept = [new Pen(1, "Pen 1", ["Group A"], "#ff0000")];
+		IReadOnlyList<Pen> kept = [FakeDataProvider.FirstPen];
 		IReadOnlyList<Pen> joined =
 		[
 			.. kept,
@@ -50,8 +47,8 @@ public sealed class TrendChartRenderThreadTests
 		chart.ApplyCatalogue(kept);
 		RenderFrame(chart.Plot);
 
-		await DrawWhileMutating(
-			chart,
+		await RenderWhileMutating.RunAsync(
+			() => RenderFrame(chart.Plot),
 			() =>
 			{
 				chart.ApplyCatalogue(joined);
@@ -65,7 +62,7 @@ public sealed class TrendChartRenderThreadTests
 	public async Task TogglingTheAxisType_WhileTheRenderThreadDraws_DoesNotThrow()
 	{
 		using var chart = CreateChart(new TestScheduler());
-		var linear = new Pen(1, "Pen 1", ["Group A"], "#ff0000");
+		var linear = FakeDataProvider.FirstPen;
 		var logarithmic = linear with { LogScaleOnStart = true };
 		var state = chart.AddPen(linear);
 		state.LoadHistory(
@@ -84,8 +81,8 @@ public sealed class TrendChartRenderThreadTests
 		chart.ActivePenAxis!.TickGenerator.Should().BeOfType<LogTickGenerator>("the loop below must switch types");
 		RenderFrame(chart.Plot);
 
-		await DrawWhileMutating(
-			chart,
+		await RenderWhileMutating.RunAsync(
+			() => RenderFrame(chart.Plot),
 			() =>
 			{
 				chart.ApplyCatalogue([logarithmic]);
@@ -116,8 +113,8 @@ public sealed class TrendChartRenderThreadTests
 	public void ApplyCatalogue_RaisesNoNotificationWhileThePlotIsLocked()
 	{
 		using var chart = CreateChart(new TestScheduler());
-		var first = new Pen(1, "Pen 1", ["Group A"], "#ff0000");
-		var second = new Pen(2, "Pen 2", ["Group A"], "#00ff00");
+		var first = FakeDataProvider.FirstPen;
+		var second = FakeDataProvider.SecondPen;
 		chart.ApplyCatalogue([first, second]);
 		chart.SetActivePen(second.PenId);
 		var raised = new List<(string? Name, bool IsLockHeld)>();
@@ -182,45 +179,6 @@ public sealed class TrendChartRenderThreadTests
 
 		first.Navigation.TargetColumnCount.Should().Be(HistoryColumnTarget.MaxColumns, "the view let go of it");
 		second.Navigation.TargetColumnCount.Should().Be(HistoryColumnTarget.MinColumns);
-	}
-
-	/// <summary>Repeats the mutation on the test thread while a render task draws the frame budget.</summary>
-	private static async Task DrawWhileMutating(TrendChartViewModel chart, Action mutate, string because)
-	{
-		using var cancellation = new CancellationTokenSource(_runBudget);
-
-		// Written by the render task, read by the test thread only after joining it.
-		var frames = 0;
-
-		var renderTask = Task.Run(
-			() =>
-			{
-				while (frames < FrameBudget && !cancellation.Token.IsCancellationRequested)
-				{
-					RenderFrame(chart.Plot);
-					frames++;
-				}
-			},
-			TestContext.Current.CancellationToken);
-
-		Exception? failure;
-
-		try
-		{
-			while (!cancellation.Token.IsCancellationRequested && !renderTask.IsCompleted)
-			{
-				mutate();
-			}
-		}
-		finally
-		{
-			await cancellation.CancelAsync();
-			failure = await Record.ExceptionAsync(
-				() => renderTask.WaitAsync(_joinBudget, TestContext.Current.CancellationToken));
-		}
-
-		failure.Should().BeNull(because + "; the render thread stopped at frame {0}", frames);
-		frames.Should().Be(FrameBudget);
 	}
 
 	private static async Task RenderFrameAsTheRenderThreadDoes(Plot plot, int width, int height)

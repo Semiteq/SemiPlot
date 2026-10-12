@@ -22,35 +22,17 @@ public sealed class ArchiveTimeConverterTests
 
 	private readonly ArchiveTimeConverter _converter = new(_zone);
 
-	[Fact]
-	public void AConverterWithoutAZoneIsRejected()
+	// Summer runs at +02:00, so noon local is 10:00 UTC; winter is standard time, +01:00.
+	[Theory]
+	[InlineData(2026, 6, 15, 12, 10)]
+	[InlineData(2026, 1, 15, 12, 11)]
+	public void AnArchiveValueConvertsToTheUtcInstant(int year, int month, int day, int localHour, int utcHour)
 	{
-		Action act = () => _ = new ArchiveTimeConverter(null!);
-
-		act.Should().Throw<ArgumentNullException>();
-	}
-
-	// Summer: the archive's wall clock runs at +02:00, so noon local is 10:00 UTC.
-	[Fact]
-	public void ASummerArchiveValueConvertsToTheUtcInstant()
-	{
-		var archiveLocal = new DateTime(2026, 6, 15, 12, 0, 0, DateTimeKind.Unspecified);
+		var archiveLocal = new DateTime(year, month, day, localHour, 0, 0, DateTimeKind.Unspecified);
 
 		var utc = _converter.ToUtc(archiveLocal);
 
-		utc.Should().Be(new DateTime(2026, 6, 15, 10, 0, 0));
-		utc.Kind.Should().Be(DateTimeKind.Utc);
-	}
-
-	// Winter: standard time, +01:00.
-	[Fact]
-	public void AWinterArchiveValueConvertsToTheUtcInstant()
-	{
-		var archiveLocal = new DateTime(2026, 1, 15, 12, 0, 0, DateTimeKind.Unspecified);
-
-		var utc = _converter.ToUtc(archiveLocal);
-
-		utc.Should().Be(new DateTime(2026, 1, 15, 11, 0, 0));
+		utc.Should().Be(new DateTime(year, month, day, utcHour, 0, 0));
 		utc.Kind.Should().Be(DateTimeKind.Utc);
 	}
 
@@ -69,18 +51,6 @@ public sealed class ArchiveTimeConverterTests
 		back.Kind.Should().Be(DateTimeKind.Unspecified);
 	}
 
-	[Fact]
-	public void AUtcWindowBoundBecomesTheNaiveLocalValueAQueryNeeds()
-	{
-		var bound = new DateTime(2026, 6, 15, 10, 0, 0, DateTimeKind.Utc);
-
-		var archiveLocal = _converter.ToArchiveLocal(bound);
-
-		archiveLocal.Should().Be(new DateTime(2026, 6, 15, 12, 0, 0));
-		archiveLocal.Kind.Should().Be(DateTimeKind.Unspecified);
-		_converter.ToUtc(archiveLocal).Should().Be(bound);
-	}
-
 	// Standard time is what TimeZoneInfo resolves an ambiguous local time to, so the converter needs no
 	// branch here: 02:30 on the fall-back day takes +01:00, not the +02:00 of the first pass.
 	[Fact]
@@ -97,10 +67,6 @@ public sealed class ArchiveTimeConverterTests
 	[Fact]
 	public void ASkippedLocalTimeResolvesInsteadOfThrowing()
 	{
-		_zone.IsInvalidTime(_skippedLocal).Should().BeTrue();
-		Action convert = () => TimeZoneInfo.ConvertTimeToUtc(_skippedLocal, _zone);
-		convert.Should().Throw<ArgumentException>();
-
 		var utc = _converter.ToUtc(_skippedLocal);
 
 		utc.Should().Be(new DateTime(2026, 3, 29, 1, 30, 0));

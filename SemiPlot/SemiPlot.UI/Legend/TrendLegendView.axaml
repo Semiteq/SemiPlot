@@ -97,6 +97,7 @@
                                                               Margin="0,0,4,0" />
 
                                                     <Border Grid.Column="1"
+                                                            Name="RowColor"
                                                             Width="12"
                                                             Height="12"
                                                             CornerRadius="6"
@@ -105,6 +106,7 @@
                                                             Background="{Binding PenState.Pen.Color, Converter={x:Static legend:LegendConverters.HexToBrush}}" />
 
                                                     <TextBlock Grid.Column="2"
+                                                               Name="RowName"
                                                                Text="{Binding PenState.Pen.Name}"
                                                                VerticalAlignment="Center" />
 

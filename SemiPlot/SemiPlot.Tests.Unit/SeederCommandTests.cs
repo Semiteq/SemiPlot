@@ -106,7 +106,6 @@ public sealed class SeederCommandTests
 		var run = await RunAsync(["--connection", Connection, "--follow", "1", option, value]);
 
 		AssertRejectedWith(run, option);
-		AssertRejectedWith(run, "seeding run");
 	}
 
 	[Theory]
@@ -241,39 +240,30 @@ public sealed class SeederCommandTests
 	}
 
 	[Fact]
-	public async Task AConvergeRunAcceptsAChangeInterval()
+	public async Task AConvergeRunAcceptsAChangeIntervalAndAnEnd()
 	{
 		var run = await RunAsync(
 		[
 			"converge", "--connection", Connection, "--admin-connection", "Host=127.0.0.1;Database=postgres",
-			"--config-dir", "C:\\config", "--change-seconds", "0.5"
-		]);
-
-		run.ExitCode.Should().Be(0);
-		run.Converge.Should().BeOfType<ConvergeOptions>().Which.ChangeSeconds.Should().Be(0.5);
-	}
-
-	[Fact]
-	public async Task AConvergeRunAcceptsAnEnd()
-	{
-		var run = await RunAsync(
-		[
-			"converge", "--connection", Connection, "--admin-connection", "Host=127.0.0.1;Database=postgres",
-			"--config-dir", "C:\\config", "--end", EndText
+			"--config-dir", "C:\\config", "--change-seconds", "0.5", "--end", EndText
 		]);
 
 		run.ExitCode.Should().Be(0);
 
 		var options = run.Converge.Should().BeOfType<ConvergeOptions>().Which;
 
+		options.ChangeSeconds.Should().Be(0.5);
 		options.End.Should().Be(new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Unspecified));
 	}
 
 	[Theory]
-	[InlineData("--connection")]
-	[InlineData("--admin-connection")]
-	[InlineData("--config-dir")]
-	public async Task AConvergeRunRejectsAMissingRequiredOption(string missing)
+	[InlineData("--connection", false)]
+	[InlineData("--admin-connection", false)]
+	[InlineData("--config-dir", false)]
+	[InlineData("--connection", true)]
+	[InlineData("--admin-connection", true)]
+	[InlineData("--config-dir", true)]
+	public async Task AConvergeRunRejectsAMissingOrBlankRequiredOption(string option, bool blank)
 	{
 		(string Flag, string Value)[] every =
 		[
@@ -286,38 +276,19 @@ public sealed class SeederCommandTests
 
 		foreach (var (flag, value) in every)
 		{
-			if (flag != missing)
+			if (flag != option)
 			{
 				arguments.Add(flag);
 				arguments.Add(value);
 			}
+			else if (blank)
+			{
+				arguments.Add(flag);
+				arguments.Add("");
+			}
 		}
 
-		AssertRejectedWith(await RunAsync([.. arguments]), missing);
-	}
-
-	[Theory]
-	[InlineData("--connection")]
-	[InlineData("--admin-connection")]
-	[InlineData("--config-dir")]
-	public async Task AConvergeRunRejectsABlankRequiredOption(string blank)
-	{
-		(string Flag, string Value)[] every =
-		[
-			("--connection", Connection),
-			("--admin-connection", "Host=127.0.0.1;Database=postgres"),
-			("--config-dir", "C:\\config")
-		];
-
-		var arguments = new List<string> { "converge" };
-
-		foreach (var (flag, value) in every)
-		{
-			arguments.Add(flag);
-			arguments.Add(flag == blank ? "" : value);
-		}
-
-		AssertRejectedWith(await RunAsync([.. arguments]), blank);
+		AssertRejectedWith(await RunAsync([.. arguments]), option);
 	}
 
 	private static void AssertRejectedWith(SeederOutcome run, string expectedFragment)

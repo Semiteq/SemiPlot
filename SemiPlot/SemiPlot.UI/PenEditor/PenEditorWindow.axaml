@@ -180,7 +180,8 @@
                         </ListBox.ItemsPanel>
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="local:PenRowViewModel">
-                                <Grid Height="{x:Static local:PenEditorWindow.RowHeight}"
+                                <Grid Name="RowGrid"
+                                      Height="{x:Static local:PenEditorWindow.RowHeight}"
                                       ColumnDefinitions="{StaticResource PenTableColumns}">
 
                                 <TextBlock Grid.Column="0"

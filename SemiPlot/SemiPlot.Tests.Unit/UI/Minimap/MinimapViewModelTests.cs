@@ -8,6 +8,7 @@ using AwesomeAssertions;
 using FluentResults;
 
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Testing;
 
 using ReactiveUI;
 
@@ -15,6 +16,7 @@ using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Messages;
+using SemiPlot.Tests.Unit.UI.PenEditor;
 using SemiPlot.UI.Messages;
 using SemiPlot.UI.Minimap;
 
@@ -46,7 +48,7 @@ public sealed class MinimapViewModelTests
 	public async Task LoadExtentAsync_WithAnEmptyExtent_LeavesHasExtentFalse()
 	{
 		using var stand = new MinimapStand();
-		stand.Provider.ArchiveExtentOverride = ArchiveExtent.Empty;
+		stand.Provider.Pens = [];
 
 		await stand.LoadExtentAsync();
 
@@ -134,7 +136,7 @@ public sealed class MinimapViewModelTests
 		stand.ViewModel.HasExtent.Should().BeFalse();
 		stand.Panel.Entries.Should().ContainSingle()
 			.Which.View.Should().Be(ArchiveFailureMapper.Map(
-				new ArchiveError(ArchiveFault.ReadFailed, "bench", 5432, "semiplot_dev", "42601")));
+				FakePenCatalogueEditor.Refusal(ArchiveFault.ReadFailed, "42601")));
 	}
 
 	[AvaloniaTheory]
@@ -205,12 +207,13 @@ public sealed class MinimapViewModelTests
 	{
 		using var stand = new MinimapStand();
 		var provider = stand.Provider;
+		var pens = provider.Pens;
 		provider.FailExtent = readFails;
-		provider.ArchiveExtentOverride = readFails ? null : ArchiveExtent.Empty;
+		provider.Pens = readFails ? pens : [];
 		await stand.LoadExtentAsync();
 		stand.ViewModel.HasExtent.Should().BeFalse();
 		provider.FailExtent = false;
-		provider.ArchiveExtentOverride = null;
+		provider.Pens = pens;
 		provider.GateExtent = true;
 		var newest = _extentLast + TimeSpan.FromMinutes(5.0);
 
@@ -229,13 +232,13 @@ public sealed class MinimapViewModelTests
 	[AvaloniaFact]
 	public async Task ASteadyExtentFailure_RetriesOnceAMinuteAndReportsOncePerOutage()
 	{
-		var logger = new RecordingLogger<MinimapViewModel>();
+		var logger = new FakeLogger<MinimapViewModel>();
 		using var stand = new MinimapStand(logger);
 		var provider = stand.Provider;
 		provider.FailExtent = true;
 		await stand.LoadExtentAsync();
 		stand.Panel.Entries.Should().ContainSingle();
-		var warningsAtStart = logger.Levels.Count(level => level == LogLevel.Warning);
+		var warningsAtStart = logger.Levels().Count(level => level == LogLevel.Warning);
 
 		// The catalogue sync's own entry tops the panel, as it does during an outage, so a repeat of the
 		// extent's entry would not coalesce with it.
@@ -250,7 +253,7 @@ public sealed class MinimapViewModelTests
 
 		provider.ExtentQueryCount.Should().Be(4, "the read at start, one on the first sample and one a minute after each");
 		stand.Panel.Entries.Should().HaveCount(2, "the retries add no entry");
-		logger.Levels.Count(level => level == LogLevel.Warning).Should().Be(warningsAtStart + 3);
+		logger.Levels().Count(level => level == LogLevel.Warning).Should().Be(warningsAtStart + 3);
 
 		provider.FailExtent = false;
 		stand.Scheduler.AdvanceBy(TimeSpan.FromMinutes(1.0).Ticks);

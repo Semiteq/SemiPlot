@@ -1,6 +1,5 @@
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
-using System.Reactive.Threading.Tasks;
 
 using Avalonia.Headless.XUnit;
 
@@ -11,7 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
-using SemiPlot.DataSource.Postgres;
 using SemiPlot.Tools.ArchiveSeeder;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
@@ -23,7 +21,7 @@ namespace SemiPlot.Tests.Integration.Journeys;
 
 // Proves a row written while the app runs reaches the chart's live edge exactly once, composing
 // TrendCoordinator, TrendChartViewModel and navigation over RealtimeSubscriptionTests' provider rule.
-// Clones the template because this class appends; every wait is an awaited emission, never a timeout.
+// Clones the template because this class appends; every wait is an awaited emission bounded by GateBound.
 [Collection(ArchiveDatabaseCollection.Name)]
 [Trait("Component", "UI")]
 [Trait("Area", "Chart")]
@@ -31,65 +29,31 @@ namespace SemiPlot.Tests.Integration.Journeys;
 public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgresContainerFixture)
 	: ClonedArchiveTest(postgresContainerFixture, CloneSource.Template)
 {
-	private static readonly ArchiveTimeConverter _timeConverter = new(ArchiveProviderFactory.SourceTimeZone);
-
 	[AvaloniaFact]
 	public async Task ARowWrittenAfterStartupReachesTheChartOnceAndMovesItsLiveEdge()
 	{
-		await using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
-		var dataProvider = services.GetRequiredService<IDataProvider>();
-		var dataScheduler = services.GetRequiredService<IScheduler>();
-		var catalogue = await dataProvider.QueryPensAsync();
-		var extent = await dataProvider.QueryArchiveExtentAsync();
+		await using var stand = await OpenStandAsync();
+		var catalogue = stand.Catalogue;
+		var chart = stand.Chart;
+		var batches = stand.Batches;
 
-		catalogue.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(catalogue));
-		extent.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(extent));
-		extent.Value.IsEmpty.Should().BeFalse("the live edge is asserted against the archive's own last row");
+		stand.Extent.IsEmpty.Should().BeFalse("the live edge is asserted against the archive's own last row");
 
-		var seededLastUtc = extent.Value.LastUtc;
-		var seededLastLocal = _timeConverter.ToArchiveLocal(seededLastUtc);
+		var seededLastUtc = stand.Extent.LastUtc;
+		var seededLastLocal = ArchiveProviderFactory.TimeConverter.ToArchiveLocal(seededLastUtc);
 		var firstAppendLocal = seededLastLocal.AddSeconds(1);
 		var secondAppendLocal = seededLastLocal.AddSeconds(2);
-		var firstAppendUtc = _timeConverter.ToUtc(firstAppendLocal);
-		var secondAppendUtc = _timeConverter.ToUtc(secondAppendLocal);
+		var firstAppendUtc = ArchiveProviderFactory.TimeConverter.ToUtc(firstAppendLocal);
+		var secondAppendUtc = ArchiveProviderFactory.TimeConverter.ToUtc(secondAppendLocal);
 
-		using var coordinator = new TrendCoordinator(
-			dataProvider, catalogue.Value, dataScheduler, ImmediateScheduler.Instance);
-
-		// Before the view model, because its constructor takes the first RefCount subscription on
-		// RealtimeBatches and that is what starts the poll. A gate opened after the poll's first tick would
-		// have nothing left to wait for and would never complete.
-		using var armed = new ArmedGate(coordinator.ConnectionFaults);
-		using var chart = new TrendChartViewModel(
-			coordinator,
-			dataScheduler,
-			ImmediateScheduler.Instance,
-			new MessagePanelViewModel(),
-			NullLogger<TrendChartViewModel>.Instance);
-		using var batches = new BatchCollector(coordinator.RealtimeBatches);
-
-		chart.ApplyCatalogue(catalogue.Value);
-
-		chart.Navigation.SeedFromArchiveExtent(extent.Value);
-
-		var historyApplied = chart.HistoryApplied.FirstAsync().ToTask();
-		chart.RequestInitialHistory();
-		await historyApplied;
-
-		chart.Navigation.ActiveLayer.Should().Be(
-			AggregationLayer.Raw,
-			"only the raw layer appends a realtime sample as a point of its own; a coarse layer folds it "
-			+ "into the last column instead, and the live-edge assertions below read the appended point");
 		chart.Navigation.IsSticky.Should().BeTrue("a window that does not follow the edge cannot be moved by it");
 		chart.Navigation.To.Should().Be(seededLastUtc, "the window opens on the archive's own last sample");
-
-		await armed.Reached;
 
 		// The gate is taken before the write and awaited after it, so the delivery cannot slip between them.
 		var firstDelivery = batches.NextBatch();
 
-		await AppendAsync(firstAppendLocal, catalogue.Value, tick: 1);
-		await firstDelivery;
+		await AppendAsync(firstAppendLocal, catalogue, tick: 1);
+		await firstDelivery.WaitAsync(GateBound, TestContext.Current.CancellationToken);
 
 		var afterTheFirstWrite = batches.Batches;
 
@@ -97,19 +61,17 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 			1,
 			"one write of one row per variable is one batch: a second batch here is the same row delivered "
 			+ "twice");
-		AssertCarries(afterTheFirstWrite[0], firstAppendUtc, catalogue.Value, tick: 1);
-		firstAppendUtc.Should().BeAfter(
-			seededLastUtc, "a delivered sample must be newer than everything the archive already held");
+		AssertCarries(afterTheFirstWrite[0], firstAppendUtc, catalogue, tick: 1);
 
 		var secondDelivery = batches.NextBatch();
 
-		await AppendAsync(secondAppendLocal, catalogue.Value, tick: 2);
-		await secondDelivery;
+		await AppendAsync(secondAppendLocal, catalogue, tick: 2);
+		await secondDelivery.WaitAsync(GateBound, TestContext.Current.CancellationToken);
 
 		var afterTheSecondWrite = batches.Batches;
 
 		afterTheSecondWrite.Should().HaveCount(2);
-		AssertCarries(afterTheSecondWrite[1], secondAppendUtc, catalogue.Value, tick: 2);
+		AssertCarries(afterTheSecondWrite[1], secondAppendUtc, catalogue, tick: 2);
 
 		// The monotonic lastSeen rule, read from the consumer's side: two writes, two timestamps, in order
 		// and each of them once. A poll binding its lower bound inclusively would repeat the first here.
@@ -130,62 +92,99 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 	[AvaloniaFact]
 	public async Task RowsOnAVariableOfTheirOwnReachTheChartWithoutBreakingAnyPen()
 	{
-		await using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
-		var dataProvider = services.GetRequiredService<IDataProvider>();
-		var dataScheduler = services.GetRequiredService<IScheduler>();
-		var catalogue = await dataProvider.QueryPensAsync();
-		var extent = await dataProvider.QueryArchiveExtentAsync();
+		await using var stand = await OpenStandAsync();
+		var catalogue = stand.Catalogue;
+		var chart = stand.Chart;
 
-		catalogue.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(catalogue));
-		extent.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(extent));
-		catalogue.Value.Count.Should().BeGreaterThan(
+		catalogue.Count.Should().BeGreaterThan(
 			1, "a timestamp only one pen sampled needs a second pen to be absent from it");
 
-		var seededLastLocal = _timeConverter.ToArchiveLocal(extent.Value.LastUtc);
+		var seededLastLocal = ArchiveProviderFactory.TimeConverter.ToArchiveLocal(stand.Extent.LastUtc);
+		var delivery = stand.Batches.NextBatch();
 
-		using var coordinator = new TrendCoordinator(
-			dataProvider, catalogue.Value, dataScheduler, ImmediateScheduler.Instance);
-
-		using var armed = new ArmedGate(coordinator.ConnectionFaults);
-		using var chart = new TrendChartViewModel(
-			coordinator,
-			dataScheduler,
-			ImmediateScheduler.Instance,
-			new MessagePanelViewModel(),
-			NullLogger<TrendChartViewModel>.Instance);
-		using var batches = new BatchCollector(coordinator.RealtimeBatches);
-
-		chart.ApplyCatalogue(catalogue.Value);
-
-		chart.Navigation.SeedFromArchiveExtent(extent.Value);
-
-		var historyApplied = chart.HistoryApplied.FirstAsync().ToTask();
-		chart.RequestInitialHistory();
-		await historyApplied;
-
-		chart.Navigation.ActiveLayer.Should().Be(
-			AggregationLayer.Raw, "a coarse layer folds a realtime sample instead of appending a point");
-
-		await armed.Reached;
-
-		var delivery = batches.NextBatch();
-
-		await AppendStaggeredAsync(seededLastLocal, catalogue.Value, tick: 1);
-		await delivery;
+		await AppendStaggeredAsync(seededLastLocal, catalogue, tick: 1);
+		await delivery.WaitAsync(GateBound, TestContext.Current.CancellationToken);
 
 		// One COPY is one transaction, so the whole set becomes visible to a single poll tick and reaches
 		// the coordinator as one buffer window.
-		var batch = batches.Batches.Should().ContainSingle().Subject;
+		var batch = stand.Batches.Batches.Should().ContainSingle().Subject;
 
-		batch.Timestamps.Should().HaveCount(catalogue.Value.Count);
+		batch.Timestamps.Should().HaveCount(catalogue.Count);
 		batch.Pens.Should().AllSatisfy(values => values.TimestampsUtc.Should().ContainSingle());
 		batch.Pens.SelectMany(values => values.TimestampsUtc).Should().OnlyHaveUniqueItems();
 
 		chart.Pens.Should().AllSatisfy(pen =>
 		{
-			pen.Line.Columns.Should().NotContain(column => double.IsNaN(column.Center));
+			pen.Line.SnapshotColumns().Should().NotContain(column => double.IsNaN(column.Center));
 			pen.CurrentValue.Should().Be(ValueFor(pen.Pen.PenId, tick: 1));
 		});
+	}
+
+	// Only the raw layer appends a realtime sample as a point of its own; a coarse layer folds it
+	// into the last column instead, and the assertions read the appended point.
+	private async Task<LiveEdgeStand> OpenStandAsync()
+	{
+		var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
+		LiveEdgeStand? stand = null;
+
+		try
+		{
+			var dataProvider = services.GetRequiredService<IDataProvider>();
+			var dataScheduler = services.GetRequiredService<IScheduler>();
+			var catalogue = await dataProvider.QueryPensAsync();
+			var extent = await dataProvider.QueryArchiveExtentAsync();
+
+			catalogue.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(catalogue));
+			extent.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(extent));
+
+			var coordinator = new TrendCoordinator(
+				dataProvider, catalogue.Value, dataScheduler, ImmediateScheduler.Instance);
+
+			// Before the view model, because its constructor takes the first RefCount subscription on
+			// RealtimeBatches and that is what starts the poll. A gate opened after the poll's first tick would
+			// have nothing left to wait for and would never complete.
+			var armed = new ArmedGate(coordinator.ConnectionFaults);
+			var messagePanel = new MessagePanelViewModel();
+			var chart = new TrendChartViewModel(
+				coordinator,
+				dataScheduler,
+				ImmediateScheduler.Instance,
+				messagePanel,
+				NullLogger<TrendChartViewModel>.Instance);
+			var batches = new BatchCollector<RealtimeBatch>(coordinator.RealtimeBatches);
+			stand = new LiveEdgeStand(
+				services, coordinator, armed, chart, messagePanel, batches, catalogue.Value, extent.Value);
+
+			chart.ApplyCatalogue(catalogue.Value);
+
+			chart.Navigation.SeedFromArchiveExtent(extent.Value);
+
+			var scalesBefore = chart.ScalesRevision;
+			chart.RequestInitialHistory();
+			await JourneyWait.Until(() => chart.ScalesRevision > scalesBefore);
+
+			// A failed history read also bumps ScalesRevision, so the wait alone does not prove the read landed.
+			messagePanel.HasEntries.Should().BeFalse("the initial history read has to succeed");
+
+			chart.Navigation.ActiveLayer.Should().Be(AggregationLayer.Raw);
+
+			await armed.Armed(1).WaitAsync(GateBound, TestContext.Current.CancellationToken);
+
+			return stand;
+		}
+		catch
+		{
+			if (stand is null)
+			{
+				await services.DisposeAsync();
+			}
+			else
+			{
+				await stand.DisposeAsync();
+			}
+
+			throw;
+		}
 	}
 
 	// One row per variable, written through the appending path ArchiveWriter takes for a follow run: the
@@ -244,87 +243,33 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 		return penId + (tick * 0.25);
 	}
 
-	// Completed from the poll's own thread, inside the connection stream's notification. It runs its
-	// continuation asynchronously because an inline one would resume the test body on that thread, off the
-	// Avalonia dispatcher this test builds ScottPlot and view-model state on.
-	private sealed class ArmedGate : IDisposable
+	private sealed class LiveEdgeStand(
+		ServiceProvider services,
+		TrendCoordinator coordinator,
+		ArmedGate armed,
+		TrendChartViewModel chart,
+		MessagePanelViewModel messagePanel,
+		BatchCollector<RealtimeBatch> batches,
+		IReadOnlyList<Pen> catalogue,
+		ArchiveExtent extent) : IAsyncDisposable
 	{
-		private readonly TaskCompletionSource _reached = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		public TrendChartViewModel Chart => chart;
 
-		private readonly IDisposable _subscription;
+		public BatchCollector<RealtimeBatch> Batches => batches;
 
-		public ArmedGate(IObservable<ArchiveConnectionState> states)
+		public IReadOnlyList<Pen> Catalogue => catalogue;
+
+		public ArchiveExtent Extent => extent;
+
+		public async ValueTask DisposeAsync()
 		{
-			_subscription = states.Subscribe(state =>
-			{
-				if (state.IsConnected)
-				{
-					_reached.TrySetResult();
-				}
-			});
-		}
+			batches.Dispose();
+			chart.Dispose();
+			messagePanel.Dispose();
+			armed.Dispose();
+			coordinator.Dispose();
 
-		public Task Reached => _reached.Task;
-
-		public void Dispose()
-		{
-			_subscription.Dispose();
-		}
-	}
-
-	// Collects every delivered batch and hands out a gate for the next one, one subscription for the whole
-	// test, so a repeat arriving between two awaits is still recorded and the exactly-once assertion covers it.
-	private sealed class BatchCollector : IDisposable
-	{
-		private readonly List<RealtimeBatch> _batches = [];
-
-		private readonly Lock _guard = new();
-
-		private readonly IDisposable _subscription;
-
-		private TaskCompletionSource? _nextBatch;
-
-		public BatchCollector(IObservable<RealtimeBatch> batches)
-		{
-			_subscription = batches.Subscribe(Collect);
-		}
-
-		public IReadOnlyList<RealtimeBatch> Batches
-		{
-			get
-			{
-				lock (_guard)
-				{
-					return [.. _batches];
-				}
-			}
-		}
-
-		public Task NextBatch()
-		{
-			lock (_guard)
-			{
-				var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-
-				_nextBatch = gate;
-
-				return gate.Task;
-			}
-		}
-
-		public void Dispose()
-		{
-			_subscription.Dispose();
-		}
-
-		private void Collect(RealtimeBatch batch)
-		{
-			lock (_guard)
-			{
-				_batches.Add(batch);
-
-				_nextBatch?.TrySetResult();
-			}
+			await services.DisposeAsync();
 		}
 	}
 }

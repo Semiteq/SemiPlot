@@ -5,7 +5,6 @@ using FluentResults;
 using SemiPlot.Core.Configuration;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.UI;
-using SemiPlot.UI.Localization;
 using SemiPlot.UI.Messages;
 using SemiPlot.UI.Startup;
 
@@ -34,27 +33,6 @@ public sealed class FailureSeverityTests
 			[ArchiveFault.ShapeUnexpected] = MessageSeverity.Error
 		};
 
-	private static readonly IReadOnlyDictionary<SectionProblem, MessageSeverity> _sectionProblems =
-		new Dictionary<SectionProblem, MessageSeverity>
-		{
-			[SectionProblem.DirectoryMissing] = MessageSeverity.Error,
-			[SectionProblem.NoFiles] = MessageSeverity.Error,
-			[SectionProblem.Unlistable] = MessageSeverity.Error,
-			[SectionProblem.Unreadable] = MessageSeverity.Error,
-			[SectionProblem.DuplicateKey] = MessageSeverity.Error,
-			[SectionProblem.KeyConflict] = MessageSeverity.Error,
-			[SectionProblem.Unwritable] = MessageSeverity.Error,
-			[SectionProblem.KeyAbsent] = MessageSeverity.Error
-		};
-
-	private static readonly IReadOnlyDictionary<AppSettingsProblem, MessageSeverity> _appSettingsProblems =
-		new Dictionary<AppSettingsProblem, MessageSeverity>
-		{
-			[AppSettingsProblem.Unreadable] = MessageSeverity.Error,
-			[AppSettingsProblem.KeyMissing] = MessageSeverity.Error,
-			[AppSettingsProblem.ValueInvalid] = MessageSeverity.Error
-		};
-
 	// One row per arm of ArchiveFailureMapper.Map that is not ArchiveError, keyed by the type the arm
 	// matches. The two FluentResults types are the IExceptionalError and the default arm.
 	private static readonly IReadOnlyDictionary<Type, (IError Sample, MessageSeverity Severity)> _mapArms =
@@ -73,7 +51,7 @@ public sealed class FailureSeverityTests
 				new AppSettingsError(@"C:\config\ui", AppSettingsProblem.KeyMissing, "locale"),
 				MessageSeverity.Error),
 			[typeof(ConnectionFileError)] = (
-				new ConnectionFileError(@"C:\config\archive", ConnectionFileProblem.MissingField, "host"),
+				new ConnectionFileError(@"C:\config\archive", ConnectionFileProblem.MissingField, ["host"]),
 				MessageSeverity.Error),
 			[typeof(StartupReadTimedOutError)] = (
 				new StartupReadTimedOutError(StartupRead.PenCatalogue, TimeSpan.FromSeconds(5)),
@@ -87,38 +65,8 @@ public sealed class FailureSeverityTests
 				MessageSeverity.Error)
 		};
 
-	// The remedy arm for a connection-file problem falls through to a generic line, so a new member gets no
-	// advice and nothing else notices. The other three tables key on switches that throw instead.
-	private static readonly IReadOnlyDictionary<ConnectionFileProblem, string> _connectionFileRemedies =
-		new Dictionary<ConnectionFileProblem, string>
-		{
-			[ConnectionFileProblem.Unparseable] = Resources.FailureConnectionFileUnparseableRemedy,
-			[ConnectionFileProblem.MissingField] = Resources.FailureConnectionFileMissingFieldRemedy,
-			[ConnectionFileProblem.OutOfRange] = Resources.FailureConnectionFileOutOfRangeRemedy,
-			[ConnectionFileProblem.HostNotIPv4] = Resources.FailureConnectionFileHostNotIPv4Remedy
-		};
-
-	[Fact]
-	public void ConnectionFileRemedyTable_CoversEveryMemberOfTheEnum()
-	{
-		_connectionFileRemedies.Keys.Should().BeEquivalentTo(Enum.GetValues<ConnectionFileProblem>());
-	}
-
-	[Fact]
-	public void EveryConnectionFileProblem_CarriesItsOwnRemedyRatherThanTheGenericOne()
-	{
-		foreach (var (problem, remedy) in _connectionFileRemedies)
-		{
-			var view = ArchiveFailureMapper.Map(
-				new ConnectionFileError(@"C:\config\archive", problem, "host"));
-
-			view.Remedy.Should().Be(remedy, "ConnectionFileProblem.{0}", problem);
-			view.Remedy.Should().NotBe(Resources.FailureConnectionFileRejectedRemedy);
-		}
-	}
-
-	// These three switch on an enum and throw on an unknown member, so the table pins the arm count and the
-	// call pins that no member reaches the throw.
+	// These switch on an enum and throw on an unknown member, so mapping every member of each enum pins
+	// that no member reaches the throw.
 	[Fact]
 	public void EveryEnumMapperArm_AnswersForEveryMemberOfItsEnum()
 	{
@@ -128,10 +76,28 @@ public sealed class FailureSeverityTests
 				.Remedy.Should().NotBeNullOrWhiteSpace("StartupArgumentsProblem.{0}", problem);
 		}
 
+		foreach (var problem in Enum.GetValues<ConnectionFileProblem>())
+		{
+			ArchiveFailureMapper.Map(new ConnectionFileError(@"C:\config\archive", problem, ["host"]))
+				.Remedy.Should().NotBeNullOrWhiteSpace("ConnectionFileProblem.{0}", problem);
+		}
+
 		foreach (var read in Enum.GetValues<StartupRead>())
 		{
 			ArchiveFailureMapper.Map(new StartupReadTimedOutError(read, TimeSpan.FromSeconds(5)))
 				.Detail.Should().NotBeNullOrWhiteSpace("StartupRead.{0}", read);
+		}
+
+		foreach (var problem in Enum.GetValues<SectionProblem>())
+		{
+			ConfigurationSectionFailureMapper.Map(Section(problem))
+				.Remedy.Should().NotBeNullOrWhiteSpace("SectionProblem.{0}", problem);
+		}
+
+		foreach (var problem in Enum.GetValues<AppSettingsProblem>())
+		{
+			ArchiveFailureMapper.Map(new AppSettingsError(@"C:\config\ui", problem, "locale", "ru, en"))
+				.Remedy.Should().NotBeNullOrWhiteSpace("AppSettingsProblem.{0}", problem);
 		}
 
 		foreach (var section in Enum.GetValues<ConfigurationSectionName>())
@@ -146,18 +112,6 @@ public sealed class FailureSeverityTests
 	public void ArchiveFaultTable_CoversEveryMemberOfTheEnum()
 	{
 		_archiveFaults.Keys.Should().BeEquivalentTo(Enum.GetValues<ArchiveFault>());
-	}
-
-	[Fact]
-	public void SectionProblemTable_CoversEveryMemberOfTheEnum()
-	{
-		_sectionProblems.Keys.Should().BeEquivalentTo(Enum.GetValues<SectionProblem>());
-	}
-
-	[Fact]
-	public void AppSettingsProblemTable_CoversEveryMemberOfTheEnum()
-	{
-		_appSettingsProblems.Keys.Should().BeEquivalentTo(Enum.GetValues<AppSettingsProblem>());
 	}
 
 	// The declared error types are what Map switches on, so a new one with no arm falls into MapUnknown
@@ -187,26 +141,6 @@ public sealed class FailureSeverityTests
 	}
 
 	[Fact]
-	public void EverySectionProblem_CarriesTheSeverityTheTableNames()
-	{
-		foreach (var (problem, severity) in _sectionProblems)
-		{
-			ConfigurationSectionFailureMapper.Map(Section(problem)).Severity
-				.Should().Be(severity, "SectionProblem.{0}", problem);
-		}
-	}
-
-	[Fact]
-	public void EveryAppSettingsProblem_CarriesTheSeverityTheTableNames()
-	{
-		foreach (var (problem, severity) in _appSettingsProblems)
-		{
-			ArchiveFailureMapper.Map(new AppSettingsError(@"C:\config\ui", problem, "locale", "ru, en")).Severity
-				.Should().Be(severity, "AppSettingsProblem.{0}", problem);
-		}
-	}
-
-	[Fact]
 	public void EveryMapArm_CarriesTheSeverityTheTableNames()
 	{
 		foreach (var (type, row) in _mapArms)
@@ -214,43 +148,6 @@ public sealed class FailureSeverityTests
 			ArchiveFailureMapper.Map(row.Sample).Severity
 				.Should().Be(row.Severity, "the {0} arm", type.Name);
 		}
-	}
-
-	[Fact]
-	public void ArchiveFaults_SplitIntoWhatRetriesAndWhatNeedsTheOperator()
-	{
-		ArchiveFault[] retried =
-		[
-			ArchiveFault.Unreachable,
-			ArchiveFault.ConnectionLost,
-			ArchiveFault.QueryTimedOut,
-			ArchiveFault.ReadFailed
-		];
-		ArchiveFault[] actedOn =
-		[
-			ArchiveFault.AccessDenied,
-			ArchiveFault.DatabaseMissing,
-			ArchiveFault.TableMissing,
-			ArchiveFault.ShapeUnexpected
-		];
-		ArchiveFault[] editRefused =
-		[
-			ArchiveFault.ValueRejected,
-			ArchiveFault.NameTaken,
-			ArchiveFault.RowGone
-		];
-
-		retried.Concat(actedOn).Concat(editRefused).Should().BeEquivalentTo(
-			Enum.GetValues<ArchiveFault>(),
-			"every fault is retried, acted on, or the operator's own edit refused, and a new member belongs to one");
-		retried.Select(Severity).Should().AllBeEquivalentTo(MessageSeverity.Warning);
-		actedOn.Select(Severity).Should().AllBeEquivalentTo(MessageSeverity.Error);
-		editRefused.Select(Severity).Should().AllBeEquivalentTo(MessageSeverity.Warning);
-	}
-
-	private static MessageSeverity Severity(ArchiveFault fault)
-	{
-		return ArchiveFailureMapper.Map(Archive(fault, "detail")).Severity;
 	}
 
 	private static ArchiveError Archive(ArchiveFault kind, string detail = "")

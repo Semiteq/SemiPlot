@@ -5,7 +5,8 @@ using Avalonia.Threading;
 namespace SemiPlot.Tests.Unit.UI;
 
 /// <summary>
-/// Waits for a condition a headless view test cannot advance itself, pumping the dispatcher meanwhile.
+/// Waits for a condition a headless view test cannot advance itself, pumping the dispatcher meanwhile. Only an
+/// <c>[AvaloniaFact]</c> or <c>[AvaloniaTheory]</c> body calls it.
 /// </summary>
 internal static class HeadlessWait
 {
@@ -23,6 +24,7 @@ internal static class HeadlessWait
 			}
 
 			await Task.Delay(10);
+
 			Dispatcher.UIThread.RunJobs();
 		}
 	}

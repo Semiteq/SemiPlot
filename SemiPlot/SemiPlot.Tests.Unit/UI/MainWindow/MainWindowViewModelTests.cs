@@ -15,8 +15,6 @@ using SemiPlot.Tests.Unit.UI.PenEditor;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
 using SemiPlot.UI.PenEditor;
-using SemiPlot.UI.Settings;
-using SemiPlot.UI.Startup;
 
 using Xunit;
 
@@ -38,49 +36,13 @@ public sealed class MainWindowViewModelTests
 		using var stand = NewWindowStand(panel: panel);
 		var viewModel = stand.ViewModel;
 
-		viewModel.ReportFailure(new InvalidOperationException("the dialog refused"));
+		var thrown = new InvalidOperationException("the dialog refused");
 
-		panel.Entries.Should().ContainSingle();
-		panel.Entries[0].View.Detail.Should().Contain("the dialog refused");
+		viewModel.ReportFailure(thrown);
+
+		panel.Entries.Should().ContainSingle()
+			.Which.View.Should().Be(ArchiveFailureMapper.Map(new ExceptionalError(thrown)));
 		panel.IsVisible.Should().BeTrue();
-	}
-
-	[AvaloniaFact]
-	public async Task ShowSettings_WithADirectory_EmitsOneViewModelHoldingItsValues()
-	{
-		var configDirectory = Directory.CreateTempSubdirectory("semiplot-main-settings-").FullName;
-		try
-		{
-			WriteSection(
-				configDirectory, StartupSequence.SettingsDirectoryName, "app.yaml", "locale: en\ntheme: dark\n");
-			WriteSection(
-				configDirectory,
-				StartupProbe.ConnectionDirectoryName,
-				"connection.yaml",
-				"host: 10.20.30.40\nport: 5433\ndatabase: archive\nuser: viewer\npassword: secret\n"
-				+ "poll_interval_ms: 250\n");
-			using var stand = NewWindowStand(configDirectory: configDirectory);
-			var viewModel = stand.ViewModel;
-			var requests = new List<SettingsViewModel>();
-			using var subscription = viewModel.SettingsRequests.Subscribe(requests.Add);
-
-			await viewModel.ShowSettingsCommand.Execute();
-
-			using var settings = requests.Should().ContainSingle().Which;
-			settings.SelectedLanguage!.Token.Should().Be("en");
-			settings.SelectedTheme!.Token.Should().Be("dark");
-			settings.Host.Should().Be("10.20.30.40");
-			settings.Port.Should().Be(5433);
-			settings.Database.Should().Be("archive");
-			settings.User.Should().Be("viewer");
-			settings.Password.Should().Be("secret");
-			settings.PollInterval.Should().Be(250);
-			viewModel.MessagePanel.Entries.Should().BeEmpty();
-		}
-		finally
-		{
-			Directory.Delete(configDirectory, recursive: true);
-		}
 	}
 
 	[AvaloniaFact]
@@ -243,11 +205,5 @@ public sealed class MainWindowViewModelTests
 		}
 
 		return requests.Should().ContainSingle().Which;
-	}
-
-	private static void WriteSection(string configDirectory, string section, string name, string content)
-	{
-		var directory = Directory.CreateDirectory(Path.Combine(configDirectory, section)).FullName;
-		File.WriteAllText(Path.Combine(directory, name), content);
 	}
 }

@@ -89,46 +89,23 @@ public sealed class AppMenuBarTests
 		items[1].Command.Should().BeSameAs(viewModel.ShowPenEditorCommand);
 	}
 
-	[AvaloniaFact]
-	public void NavigationBarItem_TakesItsCheckStateFromTheCommandAndWritesNothingBack()
+	[AvaloniaTheory]
+	[InlineData("ViewNavigationBar")]
+	[InlineData("ViewLegend")]
+	[InlineData("ViewMinimap")]
+	public void ToggleItem_TakesItsCheckStateFromTheCommandAndWritesNothingBack(string itemName)
 	{
 		using var stand = NewWindowStand();
 		var viewModel = stand.ViewModel;
 		var menuBar = ShowMenuBar(viewModel);
+		(ReactiveCommand<RxUnit, RxUnit> Command, Func<bool> Flag) toggle = itemName switch
+		{
+			"ViewNavigationBar" => (viewModel.ToggleNavigationBarCommand, () => viewModel.IsNavigationBarVisible),
+			"ViewLegend" => (viewModel.ToggleLegendCommand, () => viewModel.IsLegendVisible),
+			_ => (viewModel.ToggleMinimapCommand, () => viewModel.IsMinimapVisible)
+		};
 
-		AssertTheCommandIsTheOnlyWriter(
-			menuBar,
-			"ViewNavigationBar",
-			viewModel.ToggleNavigationBarCommand,
-			() => viewModel.IsNavigationBarVisible);
-	}
-
-	[AvaloniaFact]
-	public void LegendItem_TakesItsCheckStateFromTheCommandAndWritesNothingBack()
-	{
-		using var stand = NewWindowStand();
-		var viewModel = stand.ViewModel;
-		var menuBar = ShowMenuBar(viewModel);
-
-		AssertTheCommandIsTheOnlyWriter(
-			menuBar,
-			"ViewLegend",
-			viewModel.ToggleLegendCommand,
-			() => viewModel.IsLegendVisible);
-	}
-
-	[AvaloniaFact]
-	public void MinimapItem_TakesItsCheckStateFromTheCommandAndWritesNothingBack()
-	{
-		using var stand = NewWindowStand();
-		var viewModel = stand.ViewModel;
-		var menuBar = ShowMenuBar(viewModel);
-
-		AssertTheCommandIsTheOnlyWriter(
-			menuBar,
-			"ViewMinimap",
-			viewModel.ToggleMinimapCommand,
-			() => viewModel.IsMinimapVisible);
+		AssertTheCommandIsTheOnlyWriter(menuBar, itemName, toggle.Command, toggle.Flag);
 	}
 
 	// The item writes IsVisible and reads IsVisible back, through the real window so the row it claims to

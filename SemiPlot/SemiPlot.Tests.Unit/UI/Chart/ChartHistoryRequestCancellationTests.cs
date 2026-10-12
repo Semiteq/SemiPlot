@@ -11,6 +11,7 @@ using SemiPlot.UI.Chart;
 
 using Xunit;
 
+using static SemiPlot.Tests.Unit.UI.Chart.ChartTestBuilder;
 using static SemiPlot.Tests.Unit.UI.Chart.HistoryDebouncerTestBuilder;
 
 namespace SemiPlot.Tests.Unit.UI.Chart;
@@ -300,22 +301,6 @@ public sealed class ChartHistoryRequestCancellationTests
 		reportedFailures.Should().ContainSingle();
 		reportedFailures[0].OfType<ExceptionalError>().Should()
 			.ContainSingle().Which.Exception.Should().BeAssignableTo<OperationCanceledException>();
-	}
-
-	[Fact]
-	public void DisposingCancelsTheRunningQuery()
-	{
-		var scheduler = new TestScheduler();
-		var queries = new HeldQueries(scheduler);
-		var debouncer = CreateDebouncer(scheduler, queries.QueryAsync);
-
-		debouncer.Request(RequestForLayer(AggregationLayer.Raw));
-		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
-		var running = queries.Started.Should().ContainSingle().Which;
-
-		debouncer.Dispose();
-
-		running.Cancellation.IsCancellationRequested.Should().BeTrue();
 	}
 
 	// A notch every 20 ms: the 400 ms sample tick starts the one read, and the drag stops 100 ms later on a

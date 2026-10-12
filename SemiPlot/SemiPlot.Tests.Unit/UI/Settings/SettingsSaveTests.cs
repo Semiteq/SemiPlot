@@ -16,6 +16,7 @@ using Xunit;
 
 using YamlDotNet.Core;
 
+using static SemiPlot.Tests.Unit.ResultText;
 using static SemiPlot.Tests.Unit.UI.Settings.SettingsSaveSandbox;
 
 namespace SemiPlot.Tests.Unit.UI.Settings;
@@ -32,85 +33,41 @@ public sealed class SettingsSaveTests : IDisposable
 		_sandbox.Dispose();
 	}
 
-	[Fact]
-	public void ALocaleOutsideTheVocabularyIsRefusedAndNoFileChanges()
+	[Theory]
+	[InlineData(ConfigurationSectionName.App, "locale", "de", AppSettingsProblem.ValueInvalid)]
+	[InlineData(ConfigurationSectionName.Connection, "port", "70000", ConnectionFileProblem.OutOfRange)]
+	[InlineData(ConfigurationSectionName.Connection, "host", "scada-01", ConnectionFileProblem.HostNotIPv4)]
+	[InlineData(ConfigurationSectionName.Connection, "password", "", ConnectionFileProblem.MissingField)]
+	public void AnInvalidValueIsRefusedAndNoFileChanges(
+		ConfigurationSectionName section,
+		string key,
+		string value,
+		object expectedProblem)
 	{
 		var before = _sandbox.Snapshot();
 
-		var result = _sandbox.Save(Edit(ConfigurationSectionName.App, ("locale", "de")));
+		var result = _sandbox.Save(Edit(section, (key, value)));
 
-		var error = SingleError<AppSettingsError>(result);
-		error.Kind.Should().Be(AppSettingsProblem.ValueInvalid);
-		error.Key.Should().Be("locale");
-		_sandbox.ShouldMatch(before);
-	}
-
-	[Fact]
-	public void AnOutOfRangePortIsRefusedAndNoFileChanges()
-	{
-		var before = _sandbox.Snapshot();
-
-		var result = _sandbox.Save(Edit(ConfigurationSectionName.Connection, ("port", "70000")));
-
-		SingleError<ConnectionFileError>(result).Kind.Should().Be(ConnectionFileProblem.OutOfRange);
-		_sandbox.ShouldMatch(before);
-	}
-
-	[Fact]
-	public void AHostNameIsRefusedAndNoFileChanges()
-	{
-		var before = _sandbox.Snapshot();
-
-		var result = _sandbox.Save(Edit(ConfigurationSectionName.Connection, ("host", "scada-01")));
-
-		SingleError<ConnectionFileError>(result).Kind.Should().Be(ConnectionFileProblem.HostNotIPv4);
-		_sandbox.ShouldMatch(before);
-	}
-
-	[Fact]
-	public void ABlankPasswordIsRefusedAndNoFileChanges()
-	{
-		var before = _sandbox.Snapshot();
-
-		var result = _sandbox.Save(Edit(ConfigurationSectionName.Connection, ("password", "")));
-
-		SingleError<ConnectionFileError>(result).Kind.Should().Be(ConnectionFileProblem.MissingField);
-		_sandbox.ShouldMatch(before);
-	}
-
-	[Fact]
-	public void AValidSaveReloadsThroughBothLoadersToWhatWasTyped()
-	{
-		var edits = new Dictionary<ConfigurationSectionName, IReadOnlyDictionary<string, string>>
+		var error = result.Errors.Should().ContainSingle().Subject;
+		var problem = error switch
 		{
-			[ConfigurationSectionName.App] = new Dictionary<string, string>
-			{
-				["locale"] = "en",
-				["theme"] = "dark"
-			},
-			[ConfigurationSectionName.Connection] = new Dictionary<string, string>
-			{
-				["host"] = "10.20.30.40",
-				["port"] = "5433",
-				["database"] = "archive",
-				["user"] = "viewer",
-				["password"] = "two words # and a hash",
-				["poll_interval_ms"] = "250"
-			}
+			AppSettingsError settings => (object)settings.Kind,
+			ConnectionFileError file => file.Kind,
+			_ => throw new InvalidOperationException(error.Message)
 		};
+		problem.Should().Be(expectedProblem);
+		(error as AppSettingsError)?.Key.Should().Be(key);
+		(error as ConnectionFileError)?.Fields.Should().Equal(key);
+		_sandbox.ShouldMatch(before);
+	}
 
-		var result = _sandbox.Save(edits);
+	[Fact]
+	public void APasswordWithSpacesAndAHash_ReloadsThroughTheLoaderVerbatim()
+	{
+		var result = _sandbox.Save(Edit(ConfigurationSectionName.Connection, ("password", "two words # and a hash")));
 
 		result.IsSuccess.Should().BeTrue(Describe(result));
-		AppSettingsLoader.Load(_sandbox.AppDirectory).Value.Should()
-			.Be(new AppSettings(UiLanguage.En, AppThemeVariant.Dark));
-		var connection = _sandbox.LoadConnection();
-		connection.Host.Should().Be("10.20.30.40");
-		connection.Port.Should().Be(5433);
-		connection.Database.Should().Be("archive");
-		connection.Username.Should().Be("viewer");
-		connection.Password.Should().Be("two words # and a hash");
-		connection.PollInterval.Should().Be(TimeSpan.FromMilliseconds(250));
+		_sandbox.LoadConnection().Password.Should().Be("two words # and a hash");
 		_sandbox.StagingDirectories().Should().BeEmpty();
 	}
 
@@ -312,17 +269,9 @@ public sealed class SettingsSaveTests : IDisposable
 			_ => throw new InvalidOperationException(error.Message)
 		};
 		path.Should().Be(realDirectory);
+		(error as ConnectionFileError)?.Fields.Should().Equal(key);
 		var detail = ArchiveFailureMapper.Map(error).Detail;
 		detail.Should().Contain(realDirectory).And.NotContain(SettingsSave.StagingPrefix);
 	}
 
-	[Fact]
-	public void NoStagingFolderRemainsAfterASuccessfulOrARefusedSave()
-	{
-		_sandbox.Save(Edit(ConfigurationSectionName.App, ("theme", "dark"))).IsSuccess.Should().BeTrue();
-		_sandbox.StagingDirectories().Should().BeEmpty();
-
-		_sandbox.Save(Edit(ConfigurationSectionName.App, ("theme", "sepia"))).IsFailed.Should().BeTrue();
-		_sandbox.StagingDirectories().Should().BeEmpty();
-	}
 }

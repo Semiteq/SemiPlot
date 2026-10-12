@@ -1,13 +1,14 @@
 using AwesomeAssertions;
 
-using FluentResults;
-
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.DataSource.Postgres.Configuration;
+using SemiPlot.Tests.Unit.UI.Settings;
 using SemiPlot.Tools.ArchiveSeeder;
 using SemiPlot.UI.Startup;
 
 using Xunit;
+
+using static SemiPlot.Tests.Unit.ResultText;
 
 namespace SemiPlot.Tests.Unit;
 
@@ -16,21 +17,20 @@ namespace SemiPlot.Tests.Unit;
 [Trait("Category", "Unit")]
 public sealed class DeliveredConfigurationTests : IDisposable
 {
-	private const string ShippedRoot = "ConfigFiles";
-
 	private const string ShippedPasswordKey = "password: \"\"";
 
-	private readonly string _directory = Directory.CreateTempSubdirectory("semiplot-delivered-").FullName;
+	private readonly TemporaryDirectory _directory = new("semiplot-delivered");
 
 	public void Dispose()
 	{
-		Directory.Delete(_directory, recursive: true);
+		_directory.Dispose();
 	}
 
 	[Fact]
 	public void TheShippedAppSectionLoads()
 	{
-		var result = AppSettingsLoader.Load(Shipped(StartupSequence.SettingsDirectoryName));
+		var result = AppSettingsLoader.Load(
+			ShippedConfiguration.SectionDirectory(StartupSequence.SettingsDirectoryName));
 
 		result.IsSuccess.Should().BeTrue(Describe(result));
 		result.Value.Should().Be(new AppSettings(UiLanguage.Ru, AppThemeVariant.Light));
@@ -39,21 +39,21 @@ public sealed class DeliveredConfigurationTests : IDisposable
 	[Fact]
 	public void TheShippedConnectionSectionCarriesNoCredential()
 	{
-		var result = PostgresConnectionLoader.Load(Shipped(StartupProbe.ConnectionDirectoryName));
+		var result = PostgresConnectionLoader.Load(
+			ShippedConfiguration.SectionDirectory(StartupProbe.ConnectionDirectoryName));
 
 		result.IsFailed.Should().BeTrue();
 
 		var error = result.Errors.OfType<ConnectionFileError>().Single();
 
 		error.Kind.Should().Be(ConnectionFileProblem.MissingField);
-		error.Reason.Should().Contain("password");
+		error.Fields.Should().Equal("password");
 	}
 
 	[Fact]
 	public void TheShippedConnectionSectionIsValidOnceItCarriesACredential()
 	{
-		var body = File.ReadAllText(
-			Path.Combine(Shipped(StartupProbe.ConnectionDirectoryName), ConnectionFileWriter.FileName));
+		var body = ShippedConfiguration.ConnectionBody();
 
 		body.Should().Contain(ShippedPasswordKey);
 
@@ -79,18 +79,8 @@ public sealed class DeliveredConfigurationTests : IDisposable
 	{
 		ConnectionFileWriter.DirectoryName.Should().Be(StartupProbe.ConnectionDirectoryName);
 
-		var target = ConnectionFileWriter.PathFor(Path.Combine(AppContext.BaseDirectory, ShippedRoot));
+		var target = ConnectionFileWriter.PathFor(ShippedConfiguration.Root);
 
 		File.Exists(target).Should().BeTrue(target);
-	}
-
-	private static string Shipped(string section)
-	{
-		return Path.Combine(AppContext.BaseDirectory, ShippedRoot, section);
-	}
-
-	private static string Describe<TValue>(Result<TValue> result)
-	{
-		return string.Join("; ", result.Errors.Select(error => error.Message));
 	}
 }

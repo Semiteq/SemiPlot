@@ -33,14 +33,6 @@ public sealed class CompositionRootTests
 	}
 
 	[Fact]
-	public void Container_ResolvesDataProvider()
-	{
-		using var provider = BuildContainer();
-
-		provider.GetRequiredService<IDataProvider>().Should().NotBeNull();
-	}
-
-	[Fact]
 	public void Container_ResolvesThePenCatalogueEditor()
 	{
 		using var provider = BuildContainer();
@@ -49,19 +41,12 @@ public sealed class CompositionRootTests
 	}
 
 	[Fact]
-	public void Container_ResolvesDataScheduler()
+	public void Container_ResolvesTheSchedulerAndLogging()
 	{
 		using var provider = BuildContainer();
 
-		provider.GetRequiredService<IScheduler>().Should().NotBeNull();
-	}
-
-	[Fact]
-	public void Container_ResolvesLogging()
-	{
-		using var provider = BuildContainer();
-
-		provider.GetRequiredService<ILogger<MainWindowViewModel>>().Should().NotBeNull();
+		provider.GetRequiredService<IScheduler>();
+		provider.GetRequiredService<ILogger<MainWindowViewModel>>();
 	}
 
 	[Fact]

@@ -83,8 +83,6 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 	/// </summary>
 	public IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<int> penIds)
 	{
-		ArgumentNullException.ThrowIfNull(penIds);
-
 		var subscribedIds = penIds.ToArray();
 
 		return Observable.Create<IReadOnlyList<Sample>>(observer =>
@@ -130,21 +128,6 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		int targetColumnCount,
 		CancellationToken cancellationToken = default)
 	{
-		ArgumentNullException.ThrowIfNull(penIds);
-
-		var arguments = ValidateArguments(fromUtc, toUtc, targetColumnCount);
-
-		if (arguments.IsFailed)
-		{
-			return Result.Fail<IReadOnlyList<PenHistoryEnvelope>>(arguments.Errors);
-		}
-
-		// Behind the Result checks on purpose: a failed Result wins over the throw.
-		if (!Enum.IsDefined(layer))
-		{
-			throw new ArgumentOutOfRangeException(nameof(layer), layer, "Unknown aggregation layer.");
-		}
-
 		var ids = penIds.ToArray();
 		var stopwatch = Stopwatch.StartNew();
 		var outcome = HistoryReadOutcome.Failed;
@@ -342,40 +325,8 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		}
 	}
 
-	internal static void BindWindow(
-		NpgsqlCommand command,
-		ArchiveTimeConverter timeConverter,
-		int[] penIds,
-		DateTime fromUtc,
-		DateTime toUtc,
-		AggregationLayer layer)
-	{
-		BindLocalWindow(
-			command,
-			penIds,
-			timeConverter.ToArchiveLocal(fromUtc),
-			timeConverter.ToArchiveLocal(toUtc),
-			layer);
-	}
-
-	internal static void BindBucketedWindow(
-		NpgsqlCommand command,
-		ArchiveTimeConverter timeConverter,
-		int[] penIds,
-		DateTime fromUtc,
-		DateTime toUtc,
-		int targetColumnCount)
-	{
-		BindLocalBucketedWindow(
-			command,
-			penIds,
-			timeConverter.ToArchiveLocal(fromUtc),
-			timeConverter.ToArchiveLocal(toUtc),
-			targetColumnCount);
-	}
-
 	// Bound on the archive's own wall clock: a UTC round trip is not injective across DST.
-	private static void BindLocalWindow(
+	internal static void BindLocalWindow(
 		NpgsqlCommand command,
 		int[] penIds,
 		DateTime fromLocal,
@@ -391,7 +342,7 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		command.Parameters.Add(new NpgsqlParameter("to", NpgsqlDbType.Timestamp) { Value = toLocal });
 	}
 
-	private static void BindLocalBucketedWindow(
+	internal static void BindLocalBucketedWindow(
 		NpgsqlCommand command,
 		int[] penIds,
 		DateTime fromLocal,
@@ -501,21 +452,6 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 			.ConfigureAwait(false);
 
 		return FreshTail.Merge(coarseRows, tailRows, seams, tailStart);
-	}
-
-	private static Result ValidateArguments(DateTime fromUtc, DateTime toUtc, int targetColumnCount)
-	{
-		if (fromUtc > toUtc)
-		{
-			return Result.Fail($"Invalid range: fromUtc ({fromUtc:O}) is after toUtc ({toUtc:O}).");
-		}
-
-		if (targetColumnCount < 1)
-		{
-			return Result.Fail($"Invalid target column count: {targetColumnCount} (must be at least one).");
-		}
-
-		return Result.Ok();
 	}
 
 	private static HistoryRowFold.Row ReadHistoryRow(NpgsqlDataReader reader)

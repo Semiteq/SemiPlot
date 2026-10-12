@@ -7,7 +7,6 @@ using Avalonia.Interactivity;
 
 using AwesomeAssertions;
 
-using ScottPlot;
 using ScottPlot.Avalonia;
 
 using SemiPlot.UI.Chart;
@@ -41,9 +40,10 @@ public sealed class ChartPointerInputTests
 		var (window, plotControl) = shown;
 		var pressAt = DataAreaCenter(viewModel);
 		var moveTo = new Point(pressAt.X - DragDistancePixels, pressAt.Y);
-		var expectedShift = AnchorAt(viewModel.Plot, pressAt) - AnchorAt(viewModel.Plot, moveTo);
 		var fromBefore = viewModel.Navigation.From;
 		var widthBefore = viewModel.Navigation.To - viewModel.Navigation.From;
+		var dataAreaWidth = viewModel.Plot.RenderManager.LastRender.Layout.DataRect.Width;
+		var expectedShift = widthBefore * (DragDistancePixels / dataAreaWidth);
 
 		window.MouseDown(ToWindow(plotControl, window, pressAt), MouseButton.Left);
 		viewModel.IsDragging.Should().BeTrue("the press must reach the view and start a drag");
@@ -135,13 +135,5 @@ public sealed class ChartPointerInputTests
 	{
 		return plotControl.TranslatePoint(plotPoint, window)
 			?? throw new InvalidOperationException("The plot control is not in the window's visual tree.");
-	}
-
-	// Mirrors TrendChartView.AnchorAt: the same conversion the handlers apply to a pointer position.
-	private static DateTime AnchorAt(Plot plot, Point plotPoint)
-	{
-		var x = plot.GetCoordinates(new Pixel((float)plotPoint.X, (float)plotPoint.Y)).X;
-
-		return LocalTimeAxis.FromAxis(x);
 	}
 }

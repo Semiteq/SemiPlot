@@ -35,7 +35,7 @@ public sealed class ConvergeTests(PostgresContainerFixture postgresContainerFixt
 		{
 			var first = await Converge.RunAsync(options, TestContext.Current.CancellationToken);
 
-			Console.WriteLine($"readiness wait: {first.ReadinessWait}");
+			TestContext.Current.TestOutputHelper?.WriteLine($"readiness wait: {first.ReadinessWait}");
 
 			first.RowsWritten.Should().Be(ExpectedRowCount());
 			first.TagsWritten.Should().Be(ArchiveTemplate.Slice.PenCount);
@@ -90,28 +90,25 @@ public sealed class ConvergeTests(PostgresContainerFixture postgresContainerFixt
 
 	private static Task<long> RowCountAsync(PostgresServer server, string database)
 	{
-		return ScalarAsync<long>(server.PlotConnectionStringFor(database), "SELECT count(*) FROM public.trends;");
+		return ArchiveDatabase.ScalarAsync<long>(
+			server.PlotConnectionStringFor(database),
+			"SELECT count(*) FROM public.trends;",
+			cancellationToken: TestContext.Current.CancellationToken);
 	}
 
 	private static Task<long> TagCountAsync(PostgresServer server, string database)
 	{
-		return ScalarAsync<long>(
-			server.AdminConnectionStringFor(database), "SELECT count(*) FROM public.semiplot_tags;");
+		return ArchiveDatabase.ScalarAsync<long>(
+			server.AdminConnectionStringFor(database),
+			"SELECT count(*) FROM public.semiplot_tags;",
+			cancellationToken: TestContext.Current.CancellationToken);
 	}
 
 	private static Task<uint> DatabaseOidAsync(PostgresServer server, string database)
 	{
-		return ScalarAsync<uint>(server.AdminConnectionString, $"SELECT oid FROM pg_database WHERE datname = '{database}';");
-	}
-
-	private static async Task<T> ScalarAsync<T>(string connectionString, string statement)
-	{
-		await using var connection = new NpgsqlConnection(connectionString);
-
-		await connection.OpenAsync(TestContext.Current.CancellationToken);
-
-		await using var command = new NpgsqlCommand(statement, connection);
-
-		return (T)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+		return ArchiveDatabase.ScalarAsync<uint>(
+			server.AdminConnectionString,
+			$"SELECT oid FROM pg_database WHERE datname = '{database}';",
+			cancellationToken: TestContext.Current.CancellationToken);
 	}
 }

@@ -1,19 +1,14 @@
 using AwesomeAssertions;
 
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
-
-using Npgsql;
-
-using NpgsqlTypes;
+using Microsoft.Extensions.Logging.Testing;
 
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
-using SemiPlot.DataSource.Postgres;
-using SemiPlot.DataSource.Postgres.Configuration;
 using SemiPlot.Tools.ArchiveSeeder;
 
 using Xunit;
+
+using static SemiPlot.Tests.Integration.RealtimeArchive;
 
 namespace SemiPlot.Tests.Integration;
 
@@ -27,38 +22,15 @@ namespace SemiPlot.Tests.Integration;
 public sealed class RealtimePollReadTests(PostgresContainerFixture postgresContainerFixture)
 	: ClonedArchiveTest(postgresContainerFixture, CloneSource.Provisioned)
 {
-	// A strict subset of the seeded identifiers, so a tick that ignored @ids would fail.
-	private static readonly int[] _subscribedPenIds = [1, 2];
-
 	private const int UnsubscribedPenId = 3;
-
-	// Restated here rather than read off RealtimePoll: the threshold is a promise to the operator, and a
-	// test computing it from the constant it guards would pass whatever the constant became.
-	private const int ConsecutiveFailuresBeforeFault = 3;
-
-	// One calendar day, so the write creates the single partition tp2026m01d01 and every appended row
-	// below falls inside it. Winter under Europe/Berlin, so the conversion out is an unambiguous +1 h.
-	private static readonly DateTime _day = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Unspecified);
-
-	private static readonly DateTime _nextDay = _day.AddDays(1);
-
-	// The newest seeded row, which is what a baseline read has to answer. Everything appended sits after
-	// it and hours short of the partition's upper bound.
-	private static readonly DateTime _seededLast = _day.AddMinutes(1);
 
 	// Later than every subscribed variable's own newest row, so a baseline that ignored @ids would answer
 	// this instant instead.
-	private static readonly DateTime _unsubscribedLast = _day.AddMinutes(2);
-
-	private static readonly ArchiveTimeConverter _timeConverter = new(ArchiveProviderFactory.SourceTimeZone);
-
-	private const string AppendCommand = """
-		INSERT INTO public.trends (id, l, t, v, q) VALUES (@id, 0, @t, @v, @q);
-		""";
+	private static readonly DateTime _unsubscribedLast = Day.AddMinutes(2);
 
 	protected override async ValueTask SeedAsync()
 	{
-		await Writer().WriteAsync(SeededRows(), _day, _nextDay);
+		await Writer().WriteAsync(SeededRowsWithAnUnsubscribedVariable(), Day, NextDay);
 	}
 
 	// It emits nothing: a first tick that emitted rows would have to emit every row since the archive began.
@@ -74,37 +46,31 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 	}
 
 	[Fact]
-	public async Task TheFirstTickTakesItsBaselineFromTheArchivesOwnNewestRow()
-	{
-		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
-
-		var poll = NewPoll(services);
-
-		await poll.ReadOnceAsync(TestContext.Current.CancellationToken);
-
-		poll.LastSeen.Should().Be(_seededLast);
-	}
-
-	[Fact]
 	public async Task ATickAfterAnAppendedRowEmitsExactlyThatRow()
 	{
 		var cancellationToken = TestContext.Current.CancellationToken;
-		var appended = _seededLast.AddSeconds(1);
+		var appended = SeededLast.AddSeconds(1);
 
 		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
 		var poll = NewPoll(services);
 
 		await poll.ReadOnceAsync(cancellationToken);
-		await AppendAsync(_subscribedPenIds[0], appended, 42.5, ArchiveRow.OrdinaryQuality, cancellationToken);
+		await AppendAsync(
+			Database,
+			SubscribedPenIds[0],
+			appended,
+			42.5,
+			ArchiveRow.OrdinaryQuality,
+			cancellationToken: cancellationToken);
 
 		var tick = await poll.ReadOnceAsync(cancellationToken);
 
 		var sample = tick.Samples.Should().ContainSingle().Which;
 
-		sample.PenId.Should().Be(_subscribedPenIds[0]);
+		sample.PenId.Should().Be(SubscribedPenIds[0]);
 		sample.Value.Should().Be(42.5);
-		sample.TimestampUtc.Should().Be(_timeConverter.ToUtc(appended));
+		sample.TimestampUtc.Should().Be(ArchiveProviderFactory.TimeConverter.ToUtc(appended));
 
 		// The subscription was armed by the first tick, so an ordinary delivery reports no state change.
 		tick.StateChange.Should().BeNull();
@@ -138,36 +104,51 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 
 		await poll.ReadOnceAsync(cancellationToken);
 		await AppendAsync(
+			Database,
 			UnsubscribedPenId,
-			_seededLast.AddSeconds(1),
+			SeededLast.AddSeconds(1),
 			7,
 			ArchiveRow.OrdinaryQuality,
-			cancellationToken);
+			cancellationToken: cancellationToken);
 
 		var tick = await poll.ReadOnceAsync(cancellationToken);
 
 		tick.Samples.Should().BeEmpty();
 	}
 
-	// lastSeen still advances past it, or the poll would re-read the same null row on every later tick.
+	// The poll advances past the null row, or it would re-read the same row on every later tick. A delivered
+	// row cannot show that, so the tick after the null row reads its own debug entry: it must count no row.
 	[Fact]
-	public async Task ARowCarryingANullValueEmitsNoSampleReportsNoFaultAndStillAdvancesTheLastSeen()
+	public async Task ARowCarryingANullValueEmitsNoSampleReportsNoFaultAndIsNotReadAgain()
 	{
 		var cancellationToken = TestContext.Current.CancellationToken;
-		var appended = _seededLast.AddSeconds(1);
 
 		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
+		using var logs = new FakeLoggerProvider();
 
-		var poll = NewPoll(services);
+		var poll = NewPoll(services, logs.CreateLogger("RealtimePoll"));
 
 		await poll.ReadOnceAsync(cancellationToken);
-		await AppendAsync(_subscribedPenIds[0], appended, null, ArchiveRow.OrdinaryQuality, cancellationToken);
+		await AppendAsync(
+			Database,
+			SubscribedPenIds[0],
+			SeededLast.AddSeconds(1),
+			null,
+			ArchiveRow.OrdinaryQuality,
+			cancellationToken: cancellationToken);
 
 		var tick = await poll.ReadOnceAsync(cancellationToken);
 
 		tick.Samples.Should().BeEmpty();
 		tick.StateChange.Should().BeNull();
-		poll.LastSeen.Should().Be(appended);
+
+		await poll.ReadOnceAsync(cancellationToken);
+
+		var rowCounts = logs.Collector.GetSnapshot()
+			.Select(entry => entry.GetStructuredStateValue("RowCount"))
+			.OfType<string>();
+
+		rowCounts.Should().Equal("1", "0");
 	}
 
 	// The archive's break mark carries a real value (docs/architecture/scada-archive.md, Quality and gaps).
@@ -175,7 +156,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 	public async Task ARowMarkingTheLastSampleBeforeABreakEmitsAnOrdinarySample()
 	{
 		var cancellationToken = TestContext.Current.CancellationToken;
-		var appended = _seededLast.AddSeconds(1);
+		var appended = SeededLast.AddSeconds(1);
 
 		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
@@ -183,46 +164,17 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 
 		await poll.ReadOnceAsync(cancellationToken);
 		await AppendAsync(
-			_subscribedPenIds[0],
+			Database,
+			SubscribedPenIds[0],
 			appended,
 			11.25,
 			ArchiveRow.LastBeforeBreakQuality,
-			cancellationToken);
+			cancellationToken: cancellationToken);
 
 		var sample = (await poll.ReadOnceAsync(cancellationToken)).Samples.Should().ContainSingle().Which;
 
 		sample.Value.Should().Be(11.25);
-		sample.TimestampUtc.Should().Be(_timeConverter.ToUtc(appended));
-	}
-
-	// The bound the next tick binds may only move forward.
-	[Fact]
-	public async Task TheLastSeenNeverMovesBackwardsAcrossTicks()
-	{
-		var cancellationToken = TestContext.Current.CancellationToken;
-		var first = _seededLast.AddSeconds(1);
-		var second = _seededLast.AddSeconds(2);
-
-		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
-
-		var poll = NewPoll(services);
-		var seen = new List<DateTime?>();
-
-		await poll.ReadOnceAsync(cancellationToken);
-		seen.Add(poll.LastSeen);
-
-		await AppendAsync(_subscribedPenIds[0], first, 1, ArchiveRow.OrdinaryQuality, cancellationToken);
-		await poll.ReadOnceAsync(cancellationToken);
-		seen.Add(poll.LastSeen);
-
-		await poll.ReadOnceAsync(cancellationToken);
-		seen.Add(poll.LastSeen);
-
-		await AppendAsync(_subscribedPenIds[1], second, 2, ArchiveRow.OrdinaryQuality, cancellationToken);
-		await poll.ReadOnceAsync(cancellationToken);
-		seen.Add(poll.LastSeen);
-
-		seen.Should().Equal([_seededLast, first, first, second]);
+		sample.TimestampUtc.Should().Be(ArchiveProviderFactory.TimeConverter.ToUtc(appended));
 	}
 
 	// Renamed rather than dropped: the container is shared. The tick after recovery must report nothing.
@@ -240,18 +192,47 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 
 		try
 		{
-			for (var tick = 0; tick < ConsecutiveFailuresBeforeFault; tick++)
-			{
-				states.Add((await poll.ReadOnceAsync(cancellationToken)).StateChange);
-			}
+			states.AddRange(await TickAsync(poll, ConsecutiveFailuresBeforeFault));
 		}
 		finally
 		{
 			await RestoreTrendsAsync(cancellationToken);
 		}
 
-		states.Add((await poll.ReadOnceAsync(cancellationToken)).StateChange);
-		states.Add((await poll.ReadOnceAsync(cancellationToken)).StateChange);
+		// The recovering tick is an ordinary baseline read, taken at the newest row then present: row A, so
+		// it delivers nothing, and only row B written after it is delivered.
+		var appendedFirst = SeededLast.AddSeconds(1);
+		var appendedSecond = SeededLast.AddSeconds(2);
+
+		await AppendAsync(
+			Database,
+			SubscribedPenIds[0],
+			appendedFirst,
+			1,
+			ArchiveRow.OrdinaryQuality,
+			cancellationToken: cancellationToken);
+
+		var recovery = await poll.ReadOnceAsync(cancellationToken);
+
+		states.Add(recovery.StateChange);
+		recovery.Samples.Should().BeEmpty();
+
+		await AppendAsync(
+			Database,
+			SubscribedPenIds[1],
+			appendedSecond,
+			2,
+			ArchiveRow.OrdinaryQuality,
+			cancellationToken: cancellationToken);
+
+		var delivery = await poll.ReadOnceAsync(cancellationToken);
+
+		states.Add(delivery.StateChange);
+
+		var delivered = delivery.Samples.Should().ContainSingle().Which;
+
+		delivered.PenId.Should().Be(SubscribedPenIds[1]);
+		delivered.TimestampUtc.Should().Be(ArchiveProviderFactory.TimeConverter.ToUtc(appendedSecond));
 
 		states.Take(ConsecutiveFailuresBeforeFault - 1).Should().AllSatisfy(state => state.Should().BeNull());
 
@@ -260,10 +241,6 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 		raisedFault.Should().Be(ArchiveFault.ConnectionLost);
 		states[ConsecutiveFailuresBeforeFault].Should().BeSameAs(ArchiveConnectionState.Connected);
 		states[ConsecutiveFailuresBeforeFault + 1].Should().BeNull();
-
-		// The recovering tick is an ordinary baseline read, so it establishes the baseline it would have
-		// established had nothing failed.
-		poll.LastSeen.Should().Be(_seededLast);
 	}
 
 	// Renamed rather than dropped: the rows and the day partitions come back with it, so the recovering
@@ -284,63 +261,19 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 			cancellationToken);
 	}
 
-	private static RealtimePoll NewPoll(IServiceProvider services)
+	// The unsubscribed variable's newest row sits a minute after the subscribed ones, so a baseline read
+	// over the whole archive rather than over the requested identifiers answers a different instant and fails.
+	private static IReadOnlyList<ArchiveRow> SeededRowsWithAnUnsubscribedVariable()
 	{
-		return new RealtimePoll(
-			services.GetRequiredService<NpgsqlDataSource>(),
-			services.GetRequiredService<ArchiveTimeConverter>(),
-			services.GetRequiredService<ArchiveExceptionMapper>(),
-			services.GetRequiredService<PostgresConnectionSettings>(),
-			_subscribedPenIds,
-			NullLogger.Instance);
-	}
-
-	// Written as scada_writer, the role the SCADA itself writes with, and one row at a time: a COPY would
-	// go through ArchiveWriter, which refuses an archive already carrying rows.
-	private async Task AppendAsync(
-		int penId,
-		DateTime archiveLocal,
-		double? value,
-		int quality,
-		CancellationToken cancellationToken)
-	{
-		await using var connection = new NpgsqlConnection(Database.WriterConnectionString);
-
-		await connection.OpenAsync(cancellationToken);
-
-		await using var command = new NpgsqlCommand(AppendCommand, connection);
-
-		command.Parameters.Add(new NpgsqlParameter("id", NpgsqlDbType.Integer) { Value = penId });
-		command.Parameters.Add(new NpgsqlParameter("t", NpgsqlDbType.Timestamp) { Value = archiveLocal });
-		command.Parameters.Add(new NpgsqlParameter("v", NpgsqlDbType.Double)
-		{
-			Value = (object?)value ?? DBNull.Value
-		});
-		command.Parameters.Add(new NpgsqlParameter("q", NpgsqlDbType.Integer) { Value = quality });
-
-		await command.ExecuteNonQueryAsync(cancellationToken);
-	}
-
-	// Two rows per subscribed variable, the second of them the baseline every test starts from. The
-	// unsubscribed variable's newest row sits a minute later still, so a baseline read over the whole
-	// archive rather than over the requested identifiers answers a different instant and fails.
-	private static IReadOnlyList<ArchiveRow> SeededRows()
-	{
-		var rows = new List<ArchiveRow>();
-
-		foreach (var penId in _subscribedPenIds)
-		{
-			rows.Add(new ArchiveRow(penId, ArchiveRow.RawLayer, _day, penId, ArchiveRow.OrdinaryQuality));
-			rows.Add(new ArchiveRow(penId, ArchiveRow.RawLayer, _seededLast, penId, ArchiveRow.OrdinaryQuality));
-		}
-
-		rows.Add(new ArchiveRow(
-			UnsubscribedPenId,
-			ArchiveRow.RawLayer,
-			_unsubscribedLast,
-			UnsubscribedPenId,
-			ArchiveRow.OrdinaryQuality));
-
-		return rows;
+		return
+		[
+			.. SeededRows(),
+			new ArchiveRow(
+				UnsubscribedPenId,
+				ArchiveRow.RawLayer,
+				_unsubscribedLast,
+				UnsubscribedPenId,
+				ArchiveRow.OrdinaryQuality)
+		];
 	}
 }

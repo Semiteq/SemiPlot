@@ -11,12 +11,11 @@ namespace SemiPlot.UI.Bridge;
 
 public sealed class TrendCoordinator : IDisposable
 {
-	private static readonly TimeSpan _defaultBatchWindow = TimeSpan.FromMilliseconds(100);
+	internal static readonly TimeSpan BatchWindow = TimeSpan.FromMilliseconds(100);
 
 	private readonly IDataProvider _dataProvider;
 	private readonly IScheduler _dataScheduler;
 	private readonly IScheduler _uiScheduler;
-	private readonly TimeSpan _batchWindow;
 	private readonly BehaviorSubject<IReadOnlyList<int>> _penIds;
 
 	// Own subject so disposal stops forwarding to every consumer.
@@ -35,13 +34,11 @@ public sealed class TrendCoordinator : IDisposable
 		IDataProvider dataProvider,
 		IReadOnlyList<Pen> pens,
 		IScheduler dataScheduler,
-		IScheduler uiScheduler,
-		TimeSpan? batchWindow = null)
+		IScheduler uiScheduler)
 	{
 		_dataProvider = dataProvider;
 		_dataScheduler = dataScheduler;
 		_uiScheduler = uiScheduler;
-		_batchWindow = batchWindow ?? _defaultBatchWindow;
 		_penIds = new BehaviorSubject<IReadOnlyList<int>>([.. pens.Select(pen => pen.PenId)]);
 		RealtimeBatches = BuildRealtimeBatches();
 		RealtimeFailures = _realtimeFailures.ObserveOn(_uiScheduler);
@@ -110,7 +107,7 @@ public sealed class TrendCoordinator : IDisposable
 		return _penIds
 			.Select(_dataProvider.Subscribe)
 			.Switch()
-			.Buffer(_batchWindow, _dataScheduler)
+			.Buffer(BatchWindow, _dataScheduler)
 			.Select(TryBuildRealtimeBatch)
 			.Where(batch => batch is { Timestamps.Count: > 0 })
 			.Select(batch => batch!)

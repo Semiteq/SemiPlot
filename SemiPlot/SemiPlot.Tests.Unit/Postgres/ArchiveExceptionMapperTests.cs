@@ -110,18 +110,14 @@ public sealed class ArchiveExceptionMapperTests
 
 		error.Kind.Should().Be(ArchiveFault.ShapeUnexpected);
 		error.Detail.Should().Be("the server said so");
-		error.Message.Should().Contain("the server said so");
 		AssertEndpoint(error);
 	}
 
 	[Fact]
 	public void AnUnmappedSqlStateProducesReadFailedCarryingTheSqlState()
 	{
-		var result = Result.Fail(Map(Postgres("42P07")));
+		var readFailed = Map(Postgres("42P07"));
 
-		result.IsFailed.Should().BeTrue();
-
-		var readFailed = result.Errors.OfType<ArchiveError>().Should().ContainSingle().Which;
 		readFailed.Kind.Should().Be(ArchiveFault.ReadFailed);
 		readFailed.Detail.Should().Be("42P07");
 		AssertEndpoint(readFailed);

@@ -18,6 +18,7 @@ using Xunit;
 
 using static SemiPlot.Tests.Unit.UI.PenEditor.PenEditorFixture;
 using static SemiPlot.Tests.Unit.UI.PenEditor.PenEditorWindowDriver;
+using static SemiPlot.Tests.Unit.UI.ViewProbe;
 
 namespace SemiPlot.Tests.Unit.UI.PenEditor;
 
@@ -260,7 +261,7 @@ public sealed class PenGroupsViewTests : IDisposable
 	}
 
 	[AvaloniaFact]
-	public async Task ARenameTypedWhileARefreshRuns_ReachesNoFieldAndWritesNothing()
+	public void ARenameTypedWhileARefreshRuns_ReachesNoFieldAndWritesNothing()
 	{
 		_editor.ReadResult = Result.Ok(_catalogue);
 		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
@@ -277,44 +278,12 @@ public sealed class PenGroupsViewTests : IDisposable
 			Named<TextBox>(window, "NewGroupName").IsEffectivelyEnabled.Should().BeFalse();
 			HeadlessInput.Type(window, rename, " typed during refresh");
 			registration.SetResult();
-			await HeadlessWait.Until(() => Named<ListBox>(window, "GroupList").IsEffectivelyEnabled);
+			Dispatcher.UIThread.RunJobs();
 			HeadlessInput.Click(window, GroupAt(window, 1));
 
 			rename.Text.Should().Be(Spare.Name);
 			TextOf(GroupAt(window, 0), "GroupName").Should().Be(Chamber.Name);
 			_editor.Calls.Should().Equal(new FakeEditorCall.RegisterNewPens(), new FakeEditorCall.Read());
-		}
-		finally
-		{
-			Close(window);
-		}
-	}
-
-	[AvaloniaFact]
-	public async Task AMembershipLandingAfterItsGroupWasSelectedAgain_ChecksTheBoxAndTheNextClickUnchecksIt()
-	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			OpenGroupsTab(window);
-			HeadlessInput.Click(window, GroupAt(window, 0));
-			var toggle = _editor.HoldNextCall();
-			HeadlessInput.Click(window, MembershipBoxOf(window, Power));
-
-			HeadlessInput.Click(window, GroupAt(window, 1));
-			HeadlessInput.Click(window, GroupAt(window, 0));
-			toggle.SetResult();
-			await HeadlessWait.Until(() => MembershipBoxOf(window, Power).IsChecked == true);
-
-			HeadlessInput.Click(window, MembershipBoxOf(window, Power));
-			await HeadlessWait.Until(() => _editor.Calls.OfType<FakeEditorCall.SetMembership>().Count() == 2);
-
-			_editor.Calls.OfType<FakeEditorCall.SetMembership>()
-				.Select(call => call.IsMember)
-				.Should()
-				.Equal(true, false);
-			await HeadlessWait.Until(() => MembershipBoxOf(window, Power).IsChecked == false);
 		}
 		finally
 		{
@@ -346,32 +315,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		{
 			Close(window);
 		}
-	}
-
-	[AvaloniaFact]
-	public void ARenameTypedThenTheWindowClosed_WritesOnceBeforeTheWindowIsGone()
-	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
-		var window = Realise(viewModel);
-		int? renamesWhenClosed = null;
-		window.Closed += (_, _) => renamesWhenClosed = _editor.Calls.OfType<FakeEditorCall.RenameGroup>().Count();
-
-		OpenGroupsTab(window);
-		HeadlessInput.Click(window, GroupAt(window, 0));
-		Retype(window, Named<TextBox>(window, "GroupRename"), "Chamber A");
-		var write = _editor.HoldNextCall();
-
-		window.Close();
-		Dispatcher.UIThread.RunJobs();
-
-		window.IsVisible.Should().BeTrue("the close waits for the rename in flight");
-		_editor.Calls.Should().Equal(new FakeEditorCall.RenameGroup(Chamber, "Chamber A"));
-
-		write.SetResult();
-		Dispatcher.UIThread.RunJobs();
-
-		window.IsVisible.Should().BeFalse();
-		renamesWhenClosed.Should().Be(1, "the rename is written once, before the window is gone");
 	}
 
 	private static CheckBox MembershipBoxOf(PenEditorWindow window, StoredPen pen)

@@ -20,6 +20,8 @@ internal sealed class FakeDataProvider(
 {
 	// The default last-column center value an unoverridden layer returns; tests assert against this.
 	public const double DefaultCenter = 2.0;
+	public static readonly Pen FirstPen = new(1, "Pen 1", ["Group A"], "#ff0000");
+	public static readonly Pen SecondPen = new(2, "Pen 2", ["Group A"], "#00ff00");
 	public static readonly DateTime RealtimeEpoch = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
 	private readonly TimeSpan _realtimeInterval = realtimeInterval;
@@ -37,8 +39,6 @@ internal sealed class FakeDataProvider(
 	public DateTime ArchiveFirstUtc { get; set; } = new(2025, 12, 25, 0, 0, 0, DateTimeKind.Utc);
 
 	public DateTime ArchiveLastUtc { get; set; } = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-
-	public ArchiveExtent? ArchiveExtentOverride { get; set; }
 
 	public bool FailHistory { get; set; }
 
@@ -83,9 +83,6 @@ internal sealed class FakeDataProvider(
 	// A history read that throws instead of answering, the shape of a defect rather than of an outage.
 	public Exception? HistoryReadException { get; set; }
 
-	public IReadOnlyList<HistoryQuery> ChartHistoryQueries =>
-		[.. HistoryQueries.Where(query => query.TargetColumnCount != MinimapBandFeed.MinimapColumns)];
-
 	public IReadOnlyList<HistoryQuery> BandHistoryQueries =>
 		[.. HistoryQueries.Where(query => query.TargetColumnCount == MinimapBandFeed.MinimapColumns)];
 
@@ -103,6 +100,9 @@ internal sealed class FakeDataProvider(
 	public int? LastQueriedTargetColumnCount => LastHistoryQuery?.TargetColumnCount;
 
 	public CancellationToken LastQueriedCancellationToken => LastHistoryQuery?.CancellationToken ?? default;
+
+	private IReadOnlyList<HistoryQuery> ChartHistoryQueries =>
+		[.. HistoryQueries.Where(query => query.TargetColumnCount != MinimapBandFeed.MinimapColumns)];
 
 	private HistoryQuery? LastHistoryQuery => ChartHistoryQueries is [.., var last] ? last : null;
 
@@ -128,11 +128,7 @@ internal sealed class FakeDataProvider(
 	// Runs on the thread that opens or closes a live edge subscription, as it opens or closes it.
 	public Action? LiveSubscriptionChanging { get; set; }
 
-	public IReadOnlyList<Pen> Pens { get; set; } = pens ??
-		[
-			new Pen(1, "Pen 1", ["Group A"], "#ff0000"),
-			new Pen(2, "Pen 2", ["Group A"], "#00ff00")
-		];
+	public IReadOnlyList<Pen> Pens { get; set; } = pens ?? [FirstPen, SecondPen];
 
 	// Off by default: every pen shares one timestamp per tick. Set, each pen's sample offsets by its own
 	// position, matching the real archive's per-variable, change-based delivery, where two variables rarely
@@ -220,7 +216,7 @@ internal sealed class FakeDataProvider(
 		if (FailPens)
 		{
 			return Task.FromResult(
-				Result.Fail<IReadOnlyList<Pen>>(new ArchiveError(ArchiveFault.Unreachable, "bench", 5432, "semiplot_dev")));
+				Result.Fail<IReadOnlyList<Pen>>(UnreachableArchive()));
 		}
 
 		if (GatePens)
@@ -251,7 +247,7 @@ internal sealed class FakeDataProvider(
 
 		if (FailHistory)
 		{
-			return Task.FromResult(Result.Fail<IReadOnlyList<PenHistoryEnvelope>>("Forced history failure."));
+			return Task.FromResult(Result.Fail<IReadOnlyList<PenHistoryEnvelope>>(UnreachableArchive()));
 		}
 
 		if (GatedLayer == layer)
@@ -283,7 +279,7 @@ internal sealed class FakeDataProvider(
 		if (FailExtent)
 		{
 			return Task.FromResult(
-				Result.Fail<ArchiveExtent>(new ArchiveError(ArchiveFault.ReadFailed, "bench", 5432, "semiplot_dev", "42601")));
+				Result.Fail<ArchiveExtent>(BenchArchiveError(ArchiveFault.ReadFailed, "42601")));
 		}
 
 		if (GateExtent)
@@ -291,18 +287,29 @@ internal sealed class FakeDataProvider(
 			return ExtentGate.Task;
 		}
 
-		return Task.FromResult(Result.Ok(ArchiveExtentOverride ?? CatalogueExtent()));
+		return Task.FromResult(Result.Ok(CatalogueExtent()));
+	}
+
+	/// <summary>An archive failure against the bench address, which every fake answers with.</summary>
+	public static ArchiveError BenchArchiveError(ArchiveFault fault, string detail = "")
+	{
+		return new ArchiveError(fault, "bench", 5432, "semiplot_dev", detail);
+	}
+
+	public static ArchiveError UnreachableArchive()
+	{
+		return BenchArchiveError(ArchiveFault.Unreachable);
 	}
 
 	private sealed class PoisonedSampleList : IReadOnlyList<Sample>
 	{
 		public int Count => 1;
 
-		public Sample this[int index] => throw new InvalidOperationException("Poisoned realtime window.");
+		public Sample this[int index] => throw new PoisonedWindowException();
 
 		public IEnumerator<Sample> GetEnumerator()
 		{
-			throw new InvalidOperationException("Poisoned realtime window.");
+			throw new PoisonedWindowException();
 		}
 
 		IEnumerator IEnumerable.GetEnumerator()
@@ -317,6 +324,9 @@ internal sealed class FakeDataProvider(
 		return Pens.Count == 0 ? ArchiveExtent.Empty : new ArchiveExtent(ArchiveFirstUtc, ArchiveLastUtc);
 	}
 }
+
+/// <summary>What a poisoned realtime window throws, so a test tells it from any other failure by type.</summary>
+internal sealed class PoisonedWindowException() : InvalidOperationException("Poisoned realtime window.");
 
 internal sealed record HistoryQuery(
 	IReadOnlyList<int> PenIds,

@@ -14,22 +14,15 @@ using Xunit;
 namespace SemiPlot.Tests.Integration;
 
 // The gated tests that read a query plan instead of a result. EXPLAIN without ANALYZE executes
-// nothing and ANALYZE writes no rows, so this class shares the SeededArchive clone and honours its
-// leave-it-as-you-found-it contract.
+// nothing, so the tests share one analysed clone.
 [Collection(ArchiveDatabaseCollection.Name)]
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
 [Trait("Category", "Integration")]
 public sealed class ExplainPlanTests(
-	SeededArchive seededArchive)
-	: IClassFixture<SeededArchive>
+	AnalysedArchive analysedArchive)
+	: IClassFixture<AnalysedArchive>
 {
-	// The template is built by COPY and never analysed, so the planner may pick a sequential scan with
-	// no stats. ANALYZE needs table ownership or MAINTAIN, which only the admin connection holds.
-	private const string AnalyseTrendsCommand = "ANALYZE public.trends;";
-
-	private const string AnalyseCatalogCommand = "ANALYZE public.semiplot_tags;";
-
 	// One per per-variable subquery: the extent statement carries a bounded min(t) and a bounded max(t)
 	// per configured variable.
 	private const int BoundedSubqueryCount = 2;
@@ -101,9 +94,7 @@ public sealed class ExplainPlanTests(
 	[Fact]
 	public async Task TheExtentPlanReachesEveryRowHoldingPartitionThroughAnIndex()
 	{
-		var database = seededArchive.Database;
-
-		await AnalyseAsync(database, TestContext.Current.CancellationToken);
+		var database = analysedArchive.Database;
 
 		var plan = await ExplainAsync(
 			database.PlotConnectionString,
@@ -125,9 +116,7 @@ public sealed class ExplainPlanTests(
 	[Fact]
 	public async Task TheSeededWindowPlanWalksBackToTheSeedWithinItsBound()
 	{
-		var database = seededArchive.Database;
-
-		await AnalyseAsync(database, TestContext.Current.CancellationToken);
+		var database = analysedArchive.Database;
 
 		var plan = await ExplainAsync(
 			database.PlotConnectionString,
@@ -145,27 +134,13 @@ public sealed class ExplainPlanTests(
 				+ "directly nor through a bitmap, so the read finds its rows by reading rows it does not "
 				+ $"want.{Environment.NewLine}{plan}");
 
-		var seedWalk = _seedBackwardWalk.Match(plan);
-
-		seedWalk.Success.Should().BeTrue(
-			"The seed branch reaches no row-holding trends partition through a backward index scan, so "
-				+ "the row before the window is no longer found by stepping to one index edge."
-				+ $"{Environment.NewLine}{plan}");
-
-		seedWalk.Groups["condition"].Value.Should().Contain("t >=");
-
-		(_dayPartitionRead.Count(plan) <= MaximumDayPartitionsRead).Should().BeTrue(
-			"The seed's backwards seek has lost its lower bound: the plan reads more day partitions than "
-				+ "a look-back of one partition width can reach, which on a longer archive is one probe "
-				+ $"per older day, per pen, on every window change.{Environment.NewLine}{plan}");
+		AssertSeedWalkStaysWithinItsBound(plan, "seeded window");
 	}
 
 	[Fact]
 	public async Task TheSeededWindowPlanReadsNoOlderPartitionForAPenWithNoPriorRows()
 	{
-		var database = seededArchive.Database;
-
-		await AnalyseAsync(database, TestContext.Current.CancellationToken);
+		var database = analysedArchive.Database;
 
 		var plan = await ExplainAsync(
 			database.PlotConnectionString,
@@ -193,9 +168,7 @@ public sealed class ExplainPlanTests(
 	[Fact]
 	public async Task TheBucketedRawPlanFeedsItsWindowAggregateThroughAnIndex()
 	{
-		var database = seededArchive.Database;
-
-		await AnalyseAsync(database, TestContext.Current.CancellationToken);
+		var database = analysedArchive.Database;
 
 		var plan = await ExplainAsync(
 			database.PlotConnectionString,
@@ -216,26 +189,14 @@ public sealed class ExplainPlanTests(
 				+ "window: its input is neither an index scan nor a bitmap over one, so counting the break "
 				+ $"markers now costs a read of rows outside the window.{Environment.NewLine}{plan}");
 
-		var seedWalk = _seedBackwardWalk.Match(plan);
-
-		seedWalk.Success.Should().BeTrue(
-			"The bucketed statement's seed branch reaches no row-holding trends partition through a "
-				+ $"backward index scan.{Environment.NewLine}{plan}");
-
-		seedWalk.Groups["condition"].Value.Should().Contain("t >=");
-
-		(_dayPartitionRead.Count(plan) <= MaximumDayPartitionsRead).Should().BeTrue(
-			"The bucketed statement's seed seek has lost its lower bound: the plan reads more day "
-				+ $"partitions than a look-back of one partition width can reach.{Environment.NewLine}{plan}");
+		AssertSeedWalkStaysWithinItsBound(plan, "bucketed");
 	}
 
 	// The poll's own index plan.
 	[Fact]
 	public async Task ThePollPlanReachesItsRowsThroughAnIndex()
 	{
-		var database = seededArchive.Database;
-
-		await AnalyseAsync(database, TestContext.Current.CancellationToken);
+		var database = analysedArchive.Database;
 
 		var plan = await ExplainAsync(
 			database.PlotConnectionString,
@@ -258,9 +219,7 @@ public sealed class ExplainPlanTests(
 	[Fact]
 	public async Task TheBaselinePlanReachesEachBoundByAnIndexEdge()
 	{
-		var database = seededArchive.Database;
-
-		await AnalyseAsync(database, TestContext.Current.CancellationToken);
+		var database = analysedArchive.Database;
 
 		var plan = await ExplainAsync(
 			database.PlotConnectionString,
@@ -279,6 +238,23 @@ public sealed class ExplainPlanTests(
 				+ $"rows the bound does not need.{Environment.NewLine}{plan}");
 	}
 
+	// An unbounded seek is one probe per older day, per pen, on every window change.
+	private static void AssertSeedWalkStaysWithinItsBound(string plan, string statement)
+	{
+		var seedWalk = _seedBackwardWalk.Match(plan);
+
+		seedWalk.Success.Should().BeTrue(
+			$"The {statement} statement's seed branch reaches no row-holding trends partition through a backward "
+				+ "index scan, so the row before the window is no longer found by stepping to one index edge."
+				+ $"{Environment.NewLine}{plan}");
+
+		seedWalk.Groups["condition"].Value.Should().Contain("t >=");
+
+		(_dayPartitionRead.Count(plan) <= MaximumDayPartitionsRead).Should().BeTrue(
+			$"The {statement} statement's seed seek has lost its lower bound: the plan reads more day partitions "
+				+ $"than a look-back of one partition width can reach.{Environment.NewLine}{plan}");
+	}
+
 	// Near the archive's end, which is where a live subscription's bound always sits: the poll reads the
 	// tail written since the previous tick, never a span of the archive.
 	private static DateTime PolledFrom()
@@ -286,14 +262,13 @@ public sealed class ExplainPlanTests(
 		return ArchiveTemplate.Slice.End - _polledTail;
 	}
 
-	// Bound through the shipped binder, over a UTC converter so the seeder's timestamps pass unchanged.
+	// The seeder's timestamps are the archive's own wall clock already.
 	private static void BindWindowParametersAt(NpgsqlCommand command, DateTime windowStart)
 	{
-		var from = DateTime.SpecifyKind(windowStart, DateTimeKind.Utc);
+		var from = DateTime.SpecifyKind(windowStart, DateTimeKind.Unspecified);
 
-		PostgresDataProvider.BindWindow(
+		PostgresDataProvider.BindLocalWindow(
 			command,
-			new ArchiveTimeConverter(TimeZoneInfo.Utc),
 			ExplainedPenIds(),
 			from,
 			from + _explainedWindow,
@@ -302,11 +277,10 @@ public sealed class ExplainPlanTests(
 
 	private static void BindBucketedParametersAt(NpgsqlCommand command, DateTime windowStart)
 	{
-		var from = DateTime.SpecifyKind(windowStart, DateTimeKind.Utc);
+		var from = DateTime.SpecifyKind(windowStart, DateTimeKind.Unspecified);
 
-		PostgresDataProvider.BindBucketedWindow(
+		PostgresDataProvider.BindLocalBucketedWindow(
 			command,
-			new ArchiveTimeConverter(TimeZoneInfo.Utc),
 			ExplainedPenIds(),
 			from,
 			from + _explainedWindow,
@@ -318,13 +292,6 @@ public sealed class ExplainPlanTests(
 		return [.. RawLayerGenerator.SelectPens(ArchiveTemplate.Slice.PenCount)
 			.Take(ExplainedPenCount)
 			.Select(pen => pen.PenId)];
-	}
-
-	private static async Task AnalyseAsync(ArchiveDatabase database, CancellationToken cancellationToken)
-	{
-		await ArchiveDatabase.ExecuteAsync(database.AdminConnectionString, AnalyseTrendsCommand, cancellationToken);
-
-		await ArchiveDatabase.ExecuteAsync(database.AdminConnectionString, AnalyseCatalogCommand, cancellationToken);
 	}
 
 	// EXPLAIN runs as semiplot, the role production reads with. A statement carrying parameters has

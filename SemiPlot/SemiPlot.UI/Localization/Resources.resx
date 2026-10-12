@@ -261,20 +261,26 @@
   <data name="FailureConnectionFileRejectedTitle" xml:space="preserve">
     <value>SemiPlot cannot read the archive connection settings</value>
   </data>
-  <data name="FailureConnectionFileRejectedDetail" xml:space="preserve">
-    <value>SemiPlot rejected the connection folder '{0}': {1}</value>
+  <data name="FailureConnectionFileUnparseableDetail" xml:space="preserve">
+    <value>SemiPlot cannot parse a file of the connection folder '{0}': a key carries a value this format does not accept.</value>
   </data>
-  <data name="FailureConnectionFileRejectedRemedy" xml:space="preserve">
-    <value>Correct the value the reason names in a file of that folder.</value>
+  <data name="FailureConnectionFileMissingFieldDetail" xml:space="preserve">
+    <value>SemiPlot rejected the connection folder '{0}': required fields are absent or blank: {1}.</value>
+  </data>
+  <data name="FailureConnectionFileOutOfRangeDetail" xml:space="preserve">
+    <value>SemiPlot rejected the connection folder '{0}': values outside the range this build accepts: {1}.</value>
+  </data>
+  <data name="FailureConnectionFileHostNotIPv4Detail" xml:space="preserve">
+    <value>SemiPlot rejected the connection folder '{0}': the field '{1}' is not an IPv4 address of four decimal numbers from 0 to 255.</value>
   </data>
   <data name="FailureConnectionFileUnparseableRemedy" xml:space="preserve">
-    <value>Correct the syntax of the configuration file in that folder.</value>
+    <value>Correct the value whose type the field does not accept, such as a port that is not a number.</value>
   </data>
   <data name="FailureConnectionFileMissingFieldRemedy" xml:space="preserve">
-    <value>Every field is required. Add the field the reason names to a file in that folder.</value>
+    <value>Every field is required. Add the fields the detail lists to a file in that folder.</value>
   </data>
   <data name="FailureConnectionFileOutOfRangeRemedy" xml:space="preserve">
-    <value>Correct the value the reason names to one inside the range it states.</value>
+    <value>Set port to a number from {0} to {1} and poll_interval_ms to {2} or more.</value>
   </data>
   <data name="FailureConnectionFileHostNotIPv4Remedy" xml:space="preserve">
     <value>Set the host to an IPv4 address of four numbers from 0 to 255, such as 127.0.0.1. A host name is not accepted.</value>

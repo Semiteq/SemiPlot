@@ -32,34 +32,18 @@ public sealed class PartitionScriptTests
 		PartitionScript.PartitionName(noon).Should().Be("tp2026m08d04");
 	}
 
-	[Fact]
-	public void TheStatementBoundsRunFromMidnightToTheNextMidnight()
+	[Theory]
+	[InlineData(2026, 1, 1, "tp2026m01d01", "2026-01-01", "2026-01-02")]
+	[InlineData(2026, 1, 31, "tp2026m01d31", "2026-01-31", "2026-02-01")]
+	[InlineData(2026, 12, 31, "tp2026m12d31", "2026-12-31", "2027-01-01")]
+	public void TheStatementBoundsRunFromMidnightToTheNextMidnight(
+		int year, int month, int day, string partition, string from, string to)
 	{
-		var statement = PartitionScript.CreateStatement(new DateTime(2026, 1, 1));
+		var statement = PartitionScript.CreateStatement(new DateTime(year, month, day));
 
 		statement.Should().Be(
-			"CREATE TABLE IF NOT EXISTS public.tp2026m01d01 PARTITION OF public.trends "
-				+ "FOR VALUES FROM ('2026-01-01 00:00:00') TO ('2026-01-02 00:00:00');");
-	}
-
-	[Fact]
-	public void AMonthBoundaryClosesOnTheFirstOfTheNextMonth()
-	{
-		var statement = PartitionScript.CreateStatement(new DateTime(2026, 1, 31));
-
-		statement.Should().Be(
-			"CREATE TABLE IF NOT EXISTS public.tp2026m01d31 PARTITION OF public.trends "
-				+ "FOR VALUES FROM ('2026-01-31 00:00:00') TO ('2026-02-01 00:00:00');");
-	}
-
-	[Fact]
-	public void AYearBoundaryClosesOnTheFirstOfTheNextYear()
-	{
-		var statement = PartitionScript.CreateStatement(new DateTime(2026, 12, 31));
-
-		statement.Should().Be(
-			"CREATE TABLE IF NOT EXISTS public.tp2026m12d31 PARTITION OF public.trends "
-				+ "FOR VALUES FROM ('2026-12-31 00:00:00') TO ('2027-01-01 00:00:00');");
+			$"CREATE TABLE IF NOT EXISTS public.{partition} PARTITION OF public.trends "
+				+ $"FOR VALUES FROM ('{from} 00:00:00') TO ('{to} 00:00:00');");
 	}
 
 	// --end is exclusive, so the newest row falls strictly before it. A partition for the following day
@@ -124,25 +108,5 @@ public sealed class PartitionScriptTests
 		statements.Count.Should().Be(PartitionScript.CoveredDays(start, end).Count);
 		statements.Should().AllSatisfy(statement => statement.Should().StartWith("CREATE TABLE IF NOT EXISTS public.tp"));
 		statements.Distinct(StringComparer.Ordinal).Count().Should().Be(statements.Count);
-	}
-
-	// The standard slice the fixture seeds: one day ending exactly on midnight, so exactly one partition.
-	[Fact]
-	public void TheStandardSliceBuildsOneStatement()
-	{
-		var options = BenchOptions.For();
-
-		var statements = PartitionScript.CreateStatements(options.Start, options.End);
-
-		StatementNames(statements).Should().Equal(["tp2026m01d01"]);
-	}
-
-	private static IReadOnlyList<string> StatementNames(IEnumerable<string> statements)
-	{
-		return [.. statements
-			.Select(statement => statement
-				.Split(' ')
-				.First(token => token.StartsWith("public.tp", StringComparison.Ordinal)))
-			.Select(token => token["public.".Length..])];
 	}
 }

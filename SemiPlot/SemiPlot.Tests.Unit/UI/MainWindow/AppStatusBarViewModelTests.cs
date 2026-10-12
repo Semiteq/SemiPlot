@@ -4,10 +4,15 @@ using System.Resources;
 
 using AwesomeAssertions;
 
+using FluentResults;
+
+using Microsoft.Extensions.Logging.Testing;
+
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Messages;
+using SemiPlot.Tests.Unit.UI.PenEditor;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
@@ -29,7 +34,7 @@ namespace SemiPlot.Tests.Unit.UI.MainWindow;
 public sealed class AppStatusBarViewModelTests
 {
 	private static readonly ArchiveConnectionState _lost =
-		new(new ArchiveError(ArchiveFault.ConnectionLost, "bench", 5432, "semiplot_dev", "3"));
+		new(FakePenCatalogueEditor.Refusal(ArchiveFault.ConnectionLost, "3"));
 
 	[Fact]
 	public void Connected_AsTheFirstTick_WritesNoEntry()
@@ -107,8 +112,7 @@ public sealed class AppStatusBarViewModelTests
 		states.OnNext(_lost);
 
 		panel.Entries.Should().HaveCount(2);
-		panel.Entries[0].View.Detail.Should().Contain(nameof(InvalidOperationException));
-		panel.Entries[0].View.Detail.Should().Contain("the log sink threw");
+		panel.Entries[0].View.Should().Be(ArchiveFailureMapper.Map(new ExceptionalError(logger.Thrown)));
 		panel.Entries[1].View.Severity.Should().Be(MessageSeverity.Warning);
 
 		states.OnNext(ArchiveConnectionState.Connected);
@@ -124,7 +128,7 @@ public sealed class AppStatusBarViewModelTests
 	public void AThrowOutOfThePanel_IsLoggedAndTheStreamSurvives()
 	{
 		using var panel = new MessagePanelViewModel();
-		var logger = new RecordingLogger<AppStatusBarViewModel>();
+		var logger = new FakeLogger<AppStatusBarViewModel>();
 		using var states = new Subject<ArchiveConnectionState>();
 		using var statusBar = new AppStatusBarViewModel(
 			panel, states, NavigationAtRawLayer(), logger);
@@ -132,8 +136,8 @@ public sealed class AppStatusBarViewModelTests
 
 		states.OnNext(_lost);
 
-		logger.Failures.Should().HaveCount(2, "the failure being reported is logged before the refusal is");
-		logger.Failures.Should().OnlyContain(entry => entry.Message == "the bound list threw");
+		logger.Failures().Should().HaveCount(2, "the failure being reported is logged before the refusal is");
+		logger.Failures().Should().AllBeOfType<PoisonedPanelException>();
 
 		poison.Dispose();
 		states.OnNext(ArchiveConnectionState.Connected);
@@ -164,26 +168,18 @@ public sealed class AppStatusBarViewModelTests
 	[InlineData(AggregationLayer.Day, "StatusLayerDay")]
 	public void LayerText_ForEachMember_IsTheRussianResourceValue(AggregationLayer layer, string key)
 	{
-		var previous = CultureInfo.CurrentUICulture;
-		try
-		{
-			CultureInfo.CurrentUICulture = new CultureInfo("ru");
-			var expectedName = RussianSet().GetString(key);
-			expectedName.Should().NotBeNullOrWhiteSpace();
-			expectedName.Should().NotBe(layer.ToString());
+		using var culture = new CultureScope("ru");
+		var expectedName = RussianSet().GetString(key);
+		expectedName.Should().NotBeNullOrWhiteSpace();
+		expectedName.Should().NotBe(layer.ToString());
 
-			using var panel = new MessagePanelViewModel();
-			var navigation = NavigationAtRawLayer();
-			using var statusBar = NewStatusBar(panel, navigation: navigation);
-			DriveToLayer(navigation, layer);
+		using var panel = new MessagePanelViewModel();
+		var navigation = NavigationAtRawLayer();
+		using var statusBar = NewStatusBar(panel, navigation: navigation);
+		DriveToLayer(navigation, layer);
 
-			statusBar.ActiveLayer.Should().Be(layer);
-			statusBar.LayerText.Should().Be(Resources.FormatStatusLayerFormat(expectedName!));
-		}
-		finally
-		{
-			CultureInfo.CurrentUICulture = previous;
-		}
+		statusBar.ActiveLayer.Should().Be(layer);
+		statusBar.LayerText.Should().Be(Resources.FormatStatusLayerFormat(expectedName!));
 	}
 
 	[Fact]

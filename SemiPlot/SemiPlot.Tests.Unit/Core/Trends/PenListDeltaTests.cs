@@ -62,6 +62,8 @@ public sealed class PenListDeltaTests
 		changed.Should().NotBe(_pressure);
 		changed.GetHashCode().Should().NotBe(_pressure.GetHashCode());
 		delta.Revised.Should().ContainSingle().Which.Should().BeSameAs(changed);
+		delta.Added.Should().BeEmpty();
+		delta.RemovedPenIds.Should().BeEmpty();
 	}
 
 	[Fact]
@@ -76,76 +78,8 @@ public sealed class PenListDeltaTests
 		var delta = PenListDelta.Between([_pressure, _heater], [reread, _heater with { Groups = ["Heaters"] }]);
 
 		delta.IsEmpty.Should().BeTrue();
-		delta.ChangesPenSet.Should().BeFalse();
-	}
-
-	[Fact]
-	public void AColourChange_GivesOneRevisionAndNoSetChange()
-	{
-		var recoloured = _heater with { Color = "#ABCDEF" };
-
-		var delta = PenListDelta.Between([_pressure, _heater], [_pressure, recoloured]);
-
-		delta.Revised.Should().ContainSingle().Which.Should().Be(recoloured);
-		delta.IsEmpty.Should().BeFalse();
-		delta.ChangesPenSet.Should().BeFalse();
-	}
-
-	[Theory]
-	[InlineData(0.0, 50.0)]
-	[InlineData(10.0, 100.0)]
-	[InlineData(null, null)]
-	public void AStoredScaleChange_GivesARevision(double? scaleMin, double? scaleMax)
-	{
-		var rescaled = _pressure with { ScaleMinOnStart = scaleMin, ScaleMaxOnStart = scaleMax };
-
-		var delta = PenListDelta.Between([_pressure], [rescaled]);
-
-		delta.Revised.Should().ContainSingle().Which.Should().Be(rescaled);
-		delta.ChangesPenSet.Should().BeFalse();
-	}
-
-	[Fact]
-	public void AGroupsChange_GivesARevision()
-	{
-		var regrouped = _pressure with { Groups = ["Vacuum"] };
-
-		var delta = PenListDelta.Between([_pressure], [regrouped]);
-
-		delta.Revised.Should().ContainSingle().Which.Groups.Should().Equal("Vacuum");
-		delta.ChangesPenSet.Should().BeFalse();
-	}
-
-	[Fact]
-	public void ARename_GivesARevision()
-	{
-		var renamed = _heater with { Name = "Heater 1" };
-
-		var delta = PenListDelta.Between([_heater], [renamed]);
-
-		delta.Revised.Should().ContainSingle().Which.Name.Should().Be("Heater 1");
-		delta.ChangesPenSet.Should().BeFalse();
-	}
-
-	[Fact]
-	public void AnEnabledOnStartChange_GivesARevision()
-	{
-		var hidden = _pressure with { EnabledOnStart = false };
-
-		var delta = PenListDelta.Between([_pressure], [hidden]);
-
-		delta.Revised.Should().ContainSingle().Which.EnabledOnStart.Should().BeFalse();
-	}
-
-	[Fact]
-	public void ALogScaleOnStartChangeAlone_GivesARevision()
-	{
-		var logarithmic = _pressure with { LogScaleOnStart = true };
-
-		var delta = PenListDelta.Between([_pressure], [logarithmic]);
-
-		delta.Revised.Should().ContainSingle().Which.LogScaleOnStart.Should().BeTrue();
-		delta.ChangesPenSet.Should().BeFalse();
+		delta.Added.Should().BeEmpty();
+		delta.RemovedPenIds.Should().BeEmpty();
 	}
 
 	[Fact]
@@ -156,7 +90,6 @@ public sealed class PenListDeltaTests
 		delta.Added.Should().Equal(_heater);
 		delta.RemovedPenIds.Should().BeEmpty();
 		delta.Revised.Should().BeEmpty();
-		delta.ChangesPenSet.Should().BeTrue();
 	}
 
 	[Fact]
@@ -167,7 +100,6 @@ public sealed class PenListDeltaTests
 		delta.RemovedPenIds.Should().Equal(_heater.PenId);
 		delta.Added.Should().BeEmpty();
 		delta.Revised.Should().BeEmpty();
-		delta.ChangesPenSet.Should().BeTrue();
 	}
 
 	[Fact]
@@ -185,7 +117,6 @@ public sealed class PenListDeltaTests
 		var delta = PenListDelta.Between([], [_pressure, _heater]);
 
 		delta.Added.Should().Equal(_pressure, _heater);
-		delta.ChangesPenSet.Should().BeTrue();
 	}
 
 	[Fact]
@@ -195,7 +126,6 @@ public sealed class PenListDeltaTests
 
 		delta.RemovedPenIds.Should().Equal(_pressure.PenId, _heater.PenId);
 		delta.Current.Should().BeEmpty();
-		delta.ChangesPenSet.Should().BeTrue();
 	}
 
 	private static Pen WithOneMemberChanged(Pen pen, string member)

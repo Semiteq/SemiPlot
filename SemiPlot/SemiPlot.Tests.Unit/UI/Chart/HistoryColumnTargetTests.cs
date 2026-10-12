@@ -12,37 +12,14 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 public sealed class HistoryColumnTargetTests
 {
 	[Theory]
-	[InlineData(0.0)]
-	[InlineData(-10.0)]
-	[InlineData(double.NaN)]
-	public void FromDataAreaWidth_NoRenderedAreaYet_Throws(double width)
+	[InlineData(900.0, 900)]
+	[InlineData(100.0, HistoryColumnTarget.MinColumns)]
+	[InlineData(5000.0, HistoryColumnTarget.MaxColumns)]
+	[InlineData(900.6, 901)]
+	public void FromDataAreaWidth_RequestsOneColumnPerPixelRoundedAndClampedToTheBounds(
+		double width,
+		int expectedColumns)
 	{
-		var act = () => HistoryColumnTarget.FromDataAreaWidth(width);
-
-		act.Should().Throw<ArgumentOutOfRangeException>();
-	}
-
-	[Fact]
-	public void FromDataAreaWidth_WidthInRange_RequestsOneColumnPerPixel()
-	{
-		HistoryColumnTarget.FromDataAreaWidth(900.0).Should().Be(900);
-	}
-
-	[Fact]
-	public void FromDataAreaWidth_NarrowArea_ClampsUpToMinimum()
-	{
-		HistoryColumnTarget.FromDataAreaWidth(100.0).Should().Be(HistoryColumnTarget.MinColumns);
-	}
-
-	[Fact]
-	public void FromDataAreaWidth_WideArea_ClampsDownToMaximum()
-	{
-		HistoryColumnTarget.FromDataAreaWidth(5000.0).Should().Be(HistoryColumnTarget.MaxColumns);
-	}
-
-	[Fact]
-	public void FromDataAreaWidth_FractionalWidth_RoundsToNearestColumn()
-	{
-		HistoryColumnTarget.FromDataAreaWidth(900.6).Should().Be(901);
+		HistoryColumnTarget.FromDataAreaWidth(width).Should().Be(expectedColumns);
 	}
 }

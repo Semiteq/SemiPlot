@@ -27,8 +27,6 @@ public sealed class RealArchiveGapTests
 	private static readonly DateTime _lastRowBeforeTheAbsence = new(2000, 1, 1, 13, 50, 46, 437);
 	private static readonly DateTime _firstRowAfterTheAbsence = new(2000, 1, 1, 13, 55, 4, 814);
 
-	private static readonly ArchiveTimeConverter _utcConverter = new(TimeZoneInfo.Utc);
-
 	// The fixture's extract holds four break markers per pen against three resumptions: its last break
 	// runs past the right edge of the extract, which is the trailing-break case from real data.
 	[Theory]
@@ -48,7 +46,7 @@ public sealed class RealArchiveGapTests
 		// Counting rather than finding: a fold that nulls the marker instead of appending after it keeps
 		// the row count, and a fold that anchors after q = 16 as well produces seven anchors here.
 		envelope.Timestamps.Count.Should().Be(run.Count + breakMarkers);
-		NaNColumnCount(envelope).Should().Be(breakMarkers);
+		FoldTestData.NaNColumnCount(envelope).Should().Be(breakMarkers);
 	}
 
 	// The marker pair the extract was chosen around: q = 32 at 13:55:04.814 and q = 16 at 13:55:08.369,
@@ -73,7 +71,7 @@ public sealed class RealArchiveGapTests
 		var envelope = FoldOf(slice);
 
 		envelope.Timestamps.Count.Should().Be(slice.Length + 1);
-		NaNColumnCount(envelope).Should().Be(1);
+		FoldTestData.NaNColumnCount(envelope).Should().Be(1);
 
 		// The marker's own sample survives as a real column and the anchor goes one tick after it.
 		envelope.Timestamps[0].Should().Be(Utc(opening.Timestamp));
@@ -151,12 +149,7 @@ public sealed class RealArchiveGapTests
 			.Select(row => new HistoryRowFold.Row(row.Id, row.Timestamp, row.Value, row.Quality))
 			.ToArray();
 
-		return HistoryRowFold.Fold(folded, _utcConverter, NoDecimation).Should().ContainSingle().Which;
-	}
-
-	private static int NaNColumnCount(PenHistoryEnvelope envelope)
-	{
-		return envelope.Center.Count(double.IsNaN);
+		return HistoryRowFold.Fold(folded, FoldTestData.UtcConverter, NoDecimation).Should().ContainSingle().Which;
 	}
 
 	private static int IndexOf(PenHistoryEnvelope envelope, DateTime archiveLocal)

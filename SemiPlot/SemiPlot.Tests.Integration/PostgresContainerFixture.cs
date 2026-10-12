@@ -44,15 +44,34 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 	public PostgresServer Server =>
 		_postgresServer ?? throw new InvalidOperationException("The fixture was used before it was initialised.");
 
-	public Task<ArchiveDatabase> CloneTemplateAsync(CancellationToken cancellationToken = default)
+	/// <summary>A seed that throws drops the clone.</summary>
+	public async Task<ArchiveDatabase> CloneAsync(
+		CloneSource source,
+		Func<ArchiveDatabase, Task>? seed = null,
+		CancellationToken cancellationToken = default)
 	{
-		return ArchiveDatabase.CloneAsync(Server, ArchiveTemplate.Name, cancellationToken);
-	}
+		var database = await ArchiveDatabase.CloneAsync(
+			Server,
+			source is CloneSource.Template ? ArchiveTemplate.Name : BenchRoles.ProvisionedDatabase,
+			cancellationToken);
 
-	// A database carrying the roles, the grants and an empty public.trends, and no seeded row.
-	public Task<ArchiveDatabase> CloneProvisionedAsync(CancellationToken cancellationToken = default)
-	{
-		return ArchiveDatabase.CloneAsync(Server, BenchRoles.ProvisionedDatabase, cancellationToken);
+		if (seed is null)
+		{
+			return database;
+		}
+
+		try
+		{
+			await seed(database);
+		}
+		catch
+		{
+			await database.DisposeAsync();
+
+			throw;
+		}
+
+		return database;
 	}
 
 	public async ValueTask InitializeAsync()
@@ -72,11 +91,11 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
 
 	private async Task<PostgresServer> StartContainerAsync()
 	{
-		using var startup = new CancellationTokenSource(_startupBound);
-
 		// Ahead of the build, so the tag the Dockerfile's FROM names is the newest one the registry serves;
 		// `docs/architecture/bench.md` states why the tag moves on purpose.
 		await DockerCli.PullProvisionerAsync(_startupBound);
+
+		using var startup = new CancellationTokenSource(_startupBound);
 
 		var image = new ImageFromDockerfileBuilder()
 			.WithName(BenchImage)

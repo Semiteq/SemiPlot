@@ -71,11 +71,10 @@ public sealed class ArchiveDatabase(PostgresServer postgresServer, string name) 
 		await command.ExecuteNonQueryAsync(cancellationToken);
 	}
 
-	/// <summary>Runs a <c>count(*)</c> statement that binds the ids as <c>@ids</c>.</summary>
-	public static async Task<long> CountAsync(
+	public static async Task<T> ScalarAsync<T>(
 		string connectionString,
 		string statement,
-		int[] ids,
+		Action<NpgsqlParameterCollection>? bind = null,
 		CancellationToken cancellationToken = default)
 	{
 		await using var connection = new NpgsqlConnection(connectionString);
@@ -84,9 +83,41 @@ public sealed class ArchiveDatabase(PostgresServer postgresServer, string name) 
 
 		await using var command = new NpgsqlCommand(statement, connection);
 
-		command.Parameters.AddWithValue("ids", ids);
+		bind?.Invoke(command.Parameters);
 
-		return (long)(await command.ExecuteScalarAsync(cancellationToken) ?? 0L);
+		var scalar = await command.ExecuteScalarAsync(cancellationToken);
+
+		return scalar is T value
+			? value
+			: throw new InvalidOperationException(
+				$"The statement answered {scalar ?? "NULL"} where a {typeof(T).Name} was expected.");
+	}
+
+	public static async Task<IReadOnlyList<TRow>> ReadAsync<TRow>(
+		string connectionString,
+		string statement,
+		Func<NpgsqlDataReader, TRow> readRow,
+		Action<NpgsqlParameterCollection>? bind = null,
+		CancellationToken cancellationToken = default)
+	{
+		var rows = new List<TRow>();
+
+		await using var connection = new NpgsqlConnection(connectionString);
+
+		await connection.OpenAsync(cancellationToken);
+
+		await using var command = new NpgsqlCommand(statement, connection);
+
+		bind?.Invoke(command.Parameters);
+
+		await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+		while (await reader.ReadAsync(cancellationToken))
+		{
+			rows.Add(readRow(reader));
+		}
+
+		return rows;
 	}
 
 	public async ValueTask DisposeAsync()

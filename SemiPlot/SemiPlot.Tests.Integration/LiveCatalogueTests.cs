@@ -8,7 +8,6 @@ using Microsoft.Extensions.Logging.Testing;
 
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
-using SemiPlot.DataSource.Postgres;
 using SemiPlot.Tools.ArchiveSeeder;
 
 using Xunit;
@@ -32,6 +31,8 @@ public sealed class LiveCatalogueTests(PostgresContainerFixture postgresContaine
 	private const int HandEditedId = 106;
 
 	private const string VacuumGroup = "Vacuum";
+
+	private const string FallbackColorArgument = "FallbackColor";
 
 	private const string StoredMaskArgument = "StoredMask";
 
@@ -67,7 +68,7 @@ public sealed class LiveCatalogueTests(PostgresContainerFixture postgresContaine
 	}
 
 	[Fact]
-	public async Task AColourWrittenThroughTheEditor_GivesOneRevisionCarryingIt()
+	public async Task AColourAndAMembershipWrittenThroughTheEditor_GiveOneRevisionCarryingBoth()
 	{
 		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
@@ -75,11 +76,22 @@ public sealed class LiveCatalogueTests(PostgresContainerFixture postgresContaine
 		var editor = services.GetRequiredService<IPenCatalogueEditor>();
 		var before = await ReadPensAsync(provider);
 
-		var written = await editor.ChangeAsync(
+		var colourWritten = await editor.ChangeAsync(
 			await StoredPenAsync(editor, HeaterId),
 			new PenSettingChange.Color("#ABCDEF"));
 
-		written.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(written));
+		colourWritten.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(colourWritten));
+
+		var catalogue = await editor.ReadAsync();
+
+		catalogue.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(catalogue));
+
+		var membershipWritten = await editor.SetMembershipAsync(
+			catalogue.Value.Pens.Should().ContainSingle(pen => pen.Id == HeaterId).Which,
+			catalogue.Value.Groups.Should().ContainSingle(group => group.Name == VacuumGroup).Which,
+			true);
+
+		membershipWritten.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(membershipWritten));
 
 		var delta = PenListDelta.Between(before, await ReadPensAsync(provider));
 
@@ -87,11 +99,14 @@ public sealed class LiveCatalogueTests(PostgresContainerFixture postgresContaine
 
 		revised.PenId.Should().Be(HeaterId);
 		revised.Color.Should().Be("#ABCDEF");
-		delta.ChangesPenSet.Should().BeFalse();
+		before.Should().ContainSingle(pen => pen.PenId == HeaterId).Which.Groups.Should().NotContain(VacuumGroup);
+		revised.Groups.Should().Contain(VacuumGroup);
+		delta.Added.Should().BeEmpty();
+		delta.RemovedPenIds.Should().BeEmpty();
 	}
 
 	[Fact]
-	public async Task AMembershipWrittenThroughTheEditor_GivesARevisionWhoseGroupsDiffer()
+	public async Task AColourWrittenThroughTheEditor_GivesOneRevisionOfThatPen()
 	{
 		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
@@ -99,25 +114,21 @@ public sealed class LiveCatalogueTests(PostgresContainerFixture postgresContaine
 		var editor = services.GetRequiredService<IPenCatalogueEditor>();
 		var before = await ReadPensAsync(provider);
 
-		var catalogue = await editor.ReadAsync();
+		var colourWritten = await editor.ChangeAsync(
+			await StoredPenAsync(editor, HeaterId),
+			new PenSettingChange.Color("#ABCDEF"));
 
-		catalogue.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(catalogue));
-
-		var written = await editor.SetMembershipAsync(
-			catalogue.Value.Pens.Should().ContainSingle(pen => pen.Id == HeaterId).Which,
-			catalogue.Value.Groups.Should().ContainSingle(group => group.Name == VacuumGroup).Which,
-			true);
-
-		written.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(written));
+		colourWritten.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(colourWritten));
 
 		var delta = PenListDelta.Between(before, await ReadPensAsync(provider));
 
 		var revised = delta.Revised.Should().ContainSingle().Which;
 
 		revised.PenId.Should().Be(HeaterId);
-		before.Should().ContainSingle(pen => pen.PenId == HeaterId).Which.Groups.Should().NotContain(VacuumGroup);
-		revised.Groups.Should().Contain(VacuumGroup);
-		delta.ChangesPenSet.Should().BeFalse();
+		revised.Color.Should().Be("#ABCDEF");
+		revised.Groups.Should().Equal(before.Single(pen => pen.PenId == HeaterId).Groups);
+		delta.Added.Should().BeEmpty();
+		delta.RemovedPenIds.Should().BeEmpty();
 	}
 
 	[Fact]
@@ -131,7 +142,7 @@ public sealed class LiveCatalogueTests(PostgresContainerFixture postgresContaine
 		await ReadPensAsync(provider);
 		await ReadPensAsync(provider);
 
-		LevelsOf(logs, typeof(PostgresDataProvider).FullName!).Should().Equal(LogLevel.Warning, LogLevel.Debug);
+		LevelsOf(logs, UncommissionedId, FallbackColorArgument).Should().Equal(LogLevel.Warning, LogLevel.Debug);
 	}
 
 	[Fact]
@@ -191,16 +202,6 @@ public sealed class LiveCatalogueTests(PostgresContainerFixture postgresContaine
 		catalogue.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(catalogue));
 
 		return catalogue.Value.Pens.Should().ContainSingle(pen => pen.Id == penId).Which;
-	}
-
-	private static IReadOnlyList<LogLevel> LevelsOf(FakeLoggerProvider logs, string category)
-	{
-		return
-		[
-			.. logs.Collector.GetSnapshot()
-				.Where(entry => entry.Category == category)
-				.Select(entry => entry.Level)
-		];
 	}
 
 	/// <summary>The levels of the entries about one pen that carry the named argument.</summary>

@@ -10,6 +10,7 @@ using AwesomeAssertions;
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
+using SemiPlot.Tests.Unit.UI.PenEditor;
 using SemiPlot.UI;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.MainWindow;
@@ -30,7 +31,7 @@ namespace SemiPlot.Tests.Unit.UI.MainWindow;
 public sealed class AppStatusBarViewTests
 {
 	private static readonly ArchiveConnectionState _lost =
-		new(new ArchiveError(ArchiveFault.ConnectionLost, "bench", 5432, "semiplot_dev", "3"));
+		new(FakePenCatalogueEditor.Refusal(ArchiveFault.ConnectionLost, "3"));
 
 	[AvaloniaFact]
 	public void ConnectionIndicator_CarriesTheStateClassAndOpensThePanel()

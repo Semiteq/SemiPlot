@@ -23,7 +23,7 @@ using static SemiPlot.Tests.Unit.UI.PenEditor.PenEditorFixture;
 namespace SemiPlot.Tests.Unit.UI.PenEditor;
 
 // The scale drafts read under CultureInfo.CurrentCulture, so a test that types a number sets the culture
-// itself and restores it in finally.
+// through a CultureScope.
 [Collection(ProcessGlobalStateCollection.Name)]
 [Trait("Component", "UI")]
 [Trait("Area", "Chart")]
@@ -134,10 +134,12 @@ public sealed class PenFormViewModelTests : IDisposable
 		form.Row.Pen.Should().Be(Pressure with { ScaleMinOnStart = -20, ScaleMaxOnStart = 80 });
 	}
 
-	[AvaloniaFact]
-	public async Task EmptyingBothScaleBounds_WritesAPairOfNulls()
+	[AvaloniaTheory]
+	[InlineData(0.0, false)]
+	[InlineData(1.0, true)]
+	public async Task EmptyingBothScaleBounds_WritesAPairOfNulls(double storedMinimum, bool logScaleOnStart)
 	{
-		var form = FormFor(Pressure);
+		var form = FormFor(Pressure with { ScaleMinOnStart = storedMinimum, LogScaleOnStart = logScaleOnStart });
 
 		form.ScaleMinOnStart = string.Empty;
 		form.ScaleMaxOnStart = string.Empty;
@@ -175,23 +177,14 @@ public sealed class PenFormViewModelTests : IDisposable
 	[AvaloniaFact]
 	public async Task UnderTheRussianCulture_ACommaBoundCommitsItsValue()
 	{
-		var previous = CultureInfo.CurrentCulture;
+		using var culture = new CultureScope("ru-RU");
+		var form = FormFor(Pressure with { ScaleMinOnStart = null, ScaleMaxOnStart = null });
 
-		try
-		{
-			CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("ru-RU");
-			var form = FormFor(Pressure with { ScaleMinOnStart = null, ScaleMaxOnStart = null });
+		form.ScaleMinOnStart = "1,5";
+		form.ScaleMaxOnStart = "2,25";
+		await form.EndEditAsync(PenField.ScaleOnStart);
 
-			form.ScaleMinOnStart = "1,5";
-			form.ScaleMaxOnStart = "2,25";
-			await form.EndEditAsync(PenField.ScaleOnStart);
-
-			_editor.Changes.Select(call => call.Setting).Should().Equal(new PenSettingChange.ScaleOnStart(1.5, 2.25));
-		}
-		finally
-		{
-			CultureInfo.CurrentCulture = previous;
-		}
+		_editor.Changes.Select(call => call.Setting).Should().Equal(new PenSettingChange.ScaleOnStart(1.5, 2.25));
 	}
 
 	[AvaloniaTheory]
@@ -200,36 +193,27 @@ public sealed class PenFormViewModelTests : IDisposable
 	[InlineData("1e999")]
 	public async Task UnderTheRussianCulture_ANonFiniteBoundIsRefused(string bound)
 	{
-		var previous = CultureInfo.CurrentCulture;
+		using var culture = new CultureScope("ru-RU");
+		var russian = CultureInfo.CurrentCulture;
+		var form = FormFor(Pressure);
 
-		try
+		form.ScaleMaxOnStart = bound switch
 		{
-			var russian = CultureInfo.GetCultureInfo("ru-RU");
-			CultureInfo.CurrentCulture = russian;
-			var form = FormFor(Pressure);
+			"NaNSymbol" => russian.NumberFormat.NaNSymbol,
+			"PositiveInfinitySymbol" => russian.NumberFormat.PositiveInfinitySymbol,
+			_ => bound
+		};
+		await form.EndEditAsync(PenField.ScaleOnStart);
 
-			form.ScaleMaxOnStart = bound switch
-			{
-				"NaNSymbol" => russian.NumberFormat.NaNSymbol,
-				"PositiveInfinitySymbol" => russian.NumberFormat.PositiveInfinitySymbol,
-				_ => bound
-			};
-			await form.EndEditAsync(PenField.ScaleOnStart);
-
-			_editor.Calls.Should().BeEmpty();
-			form.IsScaleMaxOnStartValid.Should().BeFalse();
-			form.Message.Should().Be(Resources.PenFormScaleBoundInvalid);
-		}
-		finally
-		{
-			CultureInfo.CurrentCulture = previous;
-		}
+		_editor.Calls.Should().BeEmpty();
+		form.IsScaleMaxOnStartValid.Should().BeFalse();
+		form.Message.Should().Be(Resources.PenFormScaleBoundInvalid);
 	}
 
 	[AvaloniaFact]
 	public async Task AFailedWrite_RevertsMarksSaysWhyAndReportsOnce()
 	{
-		var refusal = new ArchiveError(ArchiveFault.NameTaken, "bench", 5432, "semiplot_dev", "Chamber pressure");
+		var refusal = FakePenCatalogueEditor.Refusal(ArchiveFault.NameTaken, "Chamber pressure");
 		_editor.ChangeResult = Result.Fail(refusal);
 		var form = FormFor(Pressure);
 
@@ -403,17 +387,18 @@ public sealed class PenFormViewModelTests : IDisposable
 	}
 
 	[AvaloniaTheory]
-	[InlineData("0.00")]
-	[InlineData("#,##0.0;(#,##0.0)")]
-	[InlineData("%0.0")]
-	[InlineData("")]
-	public void TheMaskPreview_IsTheSampleUnderTheDraft(string mask)
+	[InlineData("0.00", "1234.57")]
+	[InlineData("#,##0.0;(#,##0.0)", "1,234.6")]
+	[InlineData("%0.0", "1234.568")]
+	[InlineData("", "1234.568")]
+	public void TheMaskPreview_IsTheSampleUnderTheDraft(string mask, string expected)
 	{
+		using var culture = new CultureScope(string.Empty);
 		var form = FormFor(Pressure);
 
 		form.Mask = mask;
 
-		form.MaskPreview.Should().Be(PenValueFormat.Format(PenFormViewModel.MaskPreviewSample, mask));
+		form.MaskPreview.Should().Be(expected);
 	}
 
 	[AvaloniaFact]
@@ -441,27 +426,27 @@ public sealed class PenFormViewModelTests : IDisposable
 			new PenSettingChange.EnabledOnStart(false));
 	}
 
-	[AvaloniaFact]
-	public async Task TheLogBoxTickedOverAPositiveStoredMinimum_WritesTheFlag()
+	[AvaloniaTheory]
+	[InlineData(1.0, 100.0, false, true)]
+	[InlineData(null, null, false, true)]
+	[InlineData(0.0, 100.0, true, false)]
+	public async Task TheLogBoxChosenOverAPairItAccepts_WritesTheFlag(
+		double? storedMinimum, double? storedMaximum, bool storedFlag, bool chosen)
 	{
-		var form = FormFor(Pressure with { ScaleMinOnStart = 1 });
+		var pen = Pressure with
+		{
+			ScaleMinOnStart = storedMinimum,
+			ScaleMaxOnStart = storedMaximum,
+			LogScaleOnStart = storedFlag
+		};
+		var form = FormFor(pen);
 
-		await form.ChooseLogScaleOnStartAsync(true);
+		await form.ChooseLogScaleOnStartAsync(chosen);
 
-		_editor.Changes.Select(call => call.Setting).Should().Equal(new PenSettingChange.LogScaleOnStart(true));
-		form.Row.Pen.LogScaleOnStart.Should().BeTrue();
-		form.LogScaleOnStart.Should().BeTrue();
+		_editor.Changes.Select(call => call.Setting).Should().Equal(new PenSettingChange.LogScaleOnStart(chosen));
+		form.Row.Pen.LogScaleOnStart.Should().Be(chosen);
+		form.LogScaleOnStart.Should().Be(chosen);
 		form.Message.Should().BeEmpty();
-	}
-
-	[AvaloniaFact]
-	public async Task TheLogBoxTickedOverAnEmptyPair_WritesTheFlag()
-	{
-		var form = FormFor(Argon);
-
-		await form.ChooseLogScaleOnStartAsync(true);
-
-		_editor.Changes.Select(call => call.Setting).Should().Equal(new PenSettingChange.LogScaleOnStart(true));
 	}
 
 	[AvaloniaTheory]
@@ -508,16 +493,6 @@ public sealed class PenFormViewModelTests : IDisposable
 	}
 
 	[AvaloniaFact]
-	public async Task TheLogBoxUntickedOverAStoredMinimumOfZero_WritesTheFlag()
-	{
-		var form = FormFor(Pressure with { LogScaleOnStart = true });
-
-		await form.ChooseLogScaleOnStartAsync(false);
-
-		_editor.Changes.Select(call => call.Setting).Should().Equal(new PenSettingChange.LogScaleOnStart(false));
-	}
-
-	[AvaloniaFact]
 	public async Task AScaleDraftWithMinimumZero_IsRefusedWhileTheFlagIsOn()
 	{
 		var form = FormFor(Argon with { LogScaleOnStart = true });
@@ -535,18 +510,6 @@ public sealed class PenFormViewModelTests : IDisposable
 		form.ScaleMinOnStart.Should().BeEmpty();
 		form.ScaleMaxOnStart.Should().BeEmpty();
 		form.Message.Should().Be(Resources.ScaleLogMinimumPositive);
-	}
-
-	[AvaloniaFact]
-	public async Task EmptyingThePairWhileTheFlagIsOn_WritesAPairOfNulls()
-	{
-		var form = FormFor(Pressure with { ScaleMinOnStart = 1, LogScaleOnStart = true });
-
-		form.ScaleMinOnStart = string.Empty;
-		form.ScaleMaxOnStart = string.Empty;
-		await form.EndEditAsync(PenField.ScaleOnStart);
-
-		_editor.Changes.Select(call => call.Setting).Should().Equal(new PenSettingChange.ScaleOnStart(null, null));
 	}
 
 	private PenFormViewModel FormFor(StoredPen pen)

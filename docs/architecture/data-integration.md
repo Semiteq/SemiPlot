@@ -72,13 +72,14 @@ Contract points every implementation keeps:
   the envelopes is unspecified; consumers key by `PenId`.
 - A pen with neither a window row nor a seed row gets no envelope rather than an empty one.
   `TrendChartViewModel.ApplyHistory` clears the curve of every requested pen the result omits.
-- Every read answers with a `Result`. Only two things leave the provider as exceptions:
-  `ArgumentNullException` for a null `penIds` and `ArgumentOutOfRangeException` for an undefined
-  `AggregationLayer` — both defects in the caller — plus `OperationCanceledException`, which
-  `ArchiveExceptionMapper` rethrows rather than mapping. Nothing else crosses to the UI thread
-  (`DA-1`).
-- An inverted window, a target column count below one, or a pen identifier outside the archive's
-  32-bit range is a failed `Result` with a plain message.
+- Every read answers with a `Result`. Only `OperationCanceledException` leaves the provider as an
+  exception, which `ArchiveExceptionMapper` rethrows rather than mapping. Nothing else crosses to the
+  UI thread (`DA-1`).
+- The provider checks no argument of `QueryHistoryAsync`; its callers keep the invariants. The layer
+  always comes from `LayerForWidth`, never from a cast. The column count is
+  `HistoryColumnTarget.FromDataAreaWidth`'s clamp to 256…2048 times the margin factor, or the
+  minimap's constant 250. The window keeps `fromUtc` before `toUtc`: `TrendNavigationModel` holds it at
+  least one second wide, and the minimap's bounds are `min(t)` and `max(t)` of the archive.
 - A history read whose `cancellationToken` is cancelled ends in `OperationCanceledException`, never in
   a failed `Result`. The chart treats only that exception, while its own token is cancelled, as its
   own cancellation.
@@ -220,7 +221,7 @@ container. The editor's statements are in the table above.
 | Realtime baseline | `RealtimeBaseline` | The extent's lateral shape over `DISTINCT unnest(@ids)`: one index probe per variable. `NULL` means no row yet — a state, not a failure. |
 
 Four statements bind parameters through a binder of their own, each pinned against its statement's
-parameter names: `PostgresDataProvider.BindWindow`, `PostgresDataProvider.BindBucketedWindow`,
+parameter names: `PostgresDataProvider.BindLocalWindow`, `PostgresDataProvider.BindLocalBucketedWindow`,
 `RealtimePoll.BindPoll` and `RealtimePoll.BindBaseline`. A gap explanation over `messages` is
 designed but not shipped; nothing issues it.
 
@@ -378,14 +379,13 @@ function still reads and sorts every row of the range, and the range is three vi
 `EXPLAIN (ANALYZE, TIMING OFF)` for the widest read the margin can ask for, and the plan's row counts
 and timing are what say what it costs.
 
-Every history read that passes its argument checks writes one `Debug` entry when it ends, at the same
+Every history read writes one `Debug` entry when it ends, at the same
 level as the realtime poll's entry per tick, so a run at `--logging-level Debug` interleaves both. The
 entry carries the layer, the UTC range, the column target, the pen count, the outcome (`Read`,
-`Failed` or `Cancelled`), the envelope count of a `Read` and the milliseconds since the checks passed.
+`Failed` or `Cancelled`), the envelope count of a `Read` and the milliseconds since the read started.
 `PostgresDataProvider.QueryHistoryAsync` writes the entry from one `finally`: the outcome starts as
 `Failed`, the success path sets `Read`, and the catch of `OperationCanceledException` ahead of the mapper
-sets `Cancelled` and rethrows. A read rejected for its arguments issues no statement and writes no entry;
-its failed `Result` already names the argument.
+sets `Cancelled` and rethrows.
 `PostgresHistoryReadTests.AHistoryReadLogsItsRequestOutcomeAndDuration` pins the entry of a Raw and a
 Minute read, `ADroppedTrendsTableFailsNamingTrends` the `Failed` one and
 `AReadCancelledMidStatementThrowsInsteadOfFailing` the `Cancelled` one.
@@ -517,8 +517,7 @@ The fresh tail of a coarse history read is the one exception: it clamps at the v
 dependency, at the cost of one round trip per coarse read and a clock no test can set. A skew larger
 than the coarse layer's own lag skips the tail, which draws no wrong row: the series stops at the
 coarse newest, as it did before the tail existed.
-`PostgresHistoryReadTests.TheRangeTheChartAsksForReachesTheRawLayersNewest`,
-`TheVisibleTailWindowUnderALaterClockStillReachesTheRawLayersNewest` and
+`PostgresHistoryReadTests.TheRangeTheChartAsksForReachesTheRawLayersNewest` and
 `AClockBehindTheFreshSeamReadsNoTailRow` pin the clamp under a fixed clock. A test fixes the provider's
 clock by passing a `TimeProvider` to `ArchiveProviderFactory.Build`, which registers it ahead of
 `AddPostgresData`'s `TryAddSingleton(TimeProvider.System)`.
@@ -600,7 +599,7 @@ empty window, an empty `semiplot_tags` — travel in the success channel.
 
 | Type | Fields |
 | --- | --- |
-| `ConnectionFileError` | path, kind (`Unparseable` \| `MissingField` \| `OutOfRange` \| `HostNotIPv4`), reason |
+| `ConnectionFileError` | path, kind (`Unparseable` \| `MissingField` \| `OutOfRange` \| `HostNotIPv4`), field names |
 | `ConfigurationSectionError` | section (`App` \| `Connection`), directory, problem (`DirectoryMissing` \| `NoFiles` \| `Unlistable` \| `Unreadable` \| `DuplicateKey` \| `KeyConflict` \| `Unwritable` \| `KeyAbsent`), key, file names |
 | `ArchiveError` | kind (`ArchiveFault`), host, port, database, detail |
 
@@ -652,8 +651,7 @@ are `Error`, because nothing recovers until someone changes a grant, a schema or
 `Unreachable`, `ConnectionLost`, `QueryTimedOut` and `ReadFailed` are `Warning`, because the poll
 loop retries by itself. `ValueRejected`, `NameTaken` and `RowGone` are `Warning` too: the operator's
 own edit was refused, and the next edit is the remedy.
-`FailureSeverityTests.ArchiveFaults_SplitIntoWhatRetriesAndWhatNeedsTheOperator` holds them as a third
-bucket. `ConnectionLost` never opens the startup-failure window; it is an entry in the message panel
+`FailureSeverityTests.EveryArchiveFault_CarriesTheSeverityTheTableNames` pins that split. `ConnectionLost` never opens the startup-failure window; it is an entry in the message panel
 under a chart that works.
 
 The eleven rows above are the `ArchiveError` arm alone. `Map` has eight further arms — the startup
@@ -663,8 +661,9 @@ startup read timeout, an `IExceptionalError` and the `_` fallback — and every 
 something. The app settings and the configuration section arms are also reachable later, from the live
 theme's reload and the settings save, and the same holds there (`overview.md#the-live-theme`). `MessageSeverity.Info` has exactly one writer in the whole tree, the connection-restored
 entry `AppStatusBarViewModel` writes. `SemiPlot.Tests.Unit/UI/Messages/FailureSeverityTests.cs`
-holds one table per enum the two mappers switch on and asserts each table covers `Enum.GetValues`,
-so a new member leaves a table short and turns red.
+holds the `ArchiveFault` severity table and asserts it covers `Enum.GetValues<ArchiveFault>()`; the
+app-settings severities are pinned in `ArchiveFailureMapperTests`, and `EveryEnumMapperArm_AnswersForEveryMemberOfItsEnum`
+calls every other enum-switching arm with every member, so a new member that reaches the throw turns red.
 
 ### No failure stops at the log
 

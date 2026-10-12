@@ -12,41 +12,22 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 [Trait("Category", "Unit")]
 public sealed class EnvelopePathTests
 {
-	[Fact]
-	public void VisibleRange_EmptyColumns_IsEmpty()
+	// The last two rows have no overlap: the boundary column stays alone, which draws nothing the viewport can show.
+	[Theory]
+	[InlineData(0, 0.0, 10.0, 0, 0)]
+	[InlineData(5, 1.5, 2.5, 1, 4)]
+	[InlineData(5, 1.0, 3.0, 0, 5)]
+	[InlineData(5, -10.0, 10.0, 0, 5)]
+	[InlineData(5, -3.0, -1.0, 0, 1)]
+	[InlineData(5, 9.0, 11.0, 4, 5)]
+	public void VisibleRange_KeepsOneColumnBeyondEachEdgeOfTheWindow(
+		int columnCount,
+		double from,
+		double to,
+		int expectedStart,
+		int expectedEnd)
 	{
-		EnvelopePath.VisibleRange([], 0.0, 10.0).Should().Be((0, 0));
-	}
-
-	[Fact]
-	public void VisibleRange_WindowInsideTheData_KeepsOneColumnBeyondEachEdge()
-	{
-		EnvelopePath.VisibleRange(Lattice(5), 1.5, 2.5).Should().Be((1, 4));
-	}
-
-	[Fact]
-	public void VisibleRange_WindowLandingOnColumns_StillKeepsOneColumnBeyondEachEdge()
-	{
-		EnvelopePath.VisibleRange(Lattice(5), 1.0, 3.0).Should().Be((0, 5));
-	}
-
-	[Fact]
-	public void VisibleRange_WindowWiderThanTheData_IsEveryColumn()
-	{
-		EnvelopePath.VisibleRange(Lattice(5), -10.0, 10.0).Should().Be((0, 5));
-	}
-
-	// No overlap leaves the boundary column alone, which draws nothing the viewport can show.
-	[Fact]
-	public void VisibleRange_WindowEntirelyBeforeTheData_IsTheFirstColumnOnly()
-	{
-		EnvelopePath.VisibleRange(Lattice(5), -3.0, -1.0).Should().Be((0, 1));
-	}
-
-	[Fact]
-	public void VisibleRange_WindowEntirelyAfterTheData_IsTheLastColumnOnly()
-	{
-		EnvelopePath.VisibleRange(Lattice(5), 9.0, 11.0).Should().Be((4, 5));
+		EnvelopePath.VisibleRange(Lattice(columnCount), from, to).Should().Be((expectedStart, expectedEnd));
 	}
 
 	[Fact]

@@ -13,11 +13,11 @@ namespace SemiPlot.Tests.Unit;
 [Trait("Category", "Unit")]
 public sealed class ConnectionFileWriterTests : IDisposable
 {
-	private readonly string _directory = Directory.CreateTempSubdirectory("semiplot-connection-file-").FullName;
+	private readonly TemporaryDirectory _directory = new("semiplot-connection-file");
 
 	public void Dispose()
 	{
-		Directory.Delete(_directory, recursive: true);
+		_directory.Dispose();
 	}
 
 	[Fact]

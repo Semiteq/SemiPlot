@@ -111,18 +111,10 @@ public sealed class ResourcesTests
 	[Fact]
 	public void TheUiCulture_SelectsTheRussianSet()
 	{
-		var previous = CultureInfo.CurrentUICulture;
-		try
-		{
-			CultureInfo.CurrentUICulture = RussianCulture;
+		using var culture = new CultureScope(RussianCulture.Name);
 
-			Resources.NavigationJumpToNow.Should().Be(ReadSet(RussianCulture)["NavigationJumpToNow"]);
-			Resources.NavigationJumpToNow.Should().NotBe(ReadSet(CultureInfo.InvariantCulture)["NavigationJumpToNow"]);
-		}
-		finally
-		{
-			CultureInfo.CurrentUICulture = previous;
-		}
+		Resources.NavigationJumpToNow.Should().Be(ReadSet(RussianCulture)["NavigationJumpToNow"]);
+		Resources.NavigationJumpToNow.Should().NotBe(ReadSet(CultureInfo.InvariantCulture)["NavigationJumpToNow"]);
 	}
 
 	private static CultureInfo RussianCulture => new("ru");

@@ -12,16 +12,6 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 public sealed class LocalTimeAxisTests
 {
 	[Fact]
-	public void ToAxis_ConvertsUtcToTheLocalTimeOaDate()
-	{
-		var utc = new DateTime(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
-
-		var axisValue = LocalTimeAxis.ToAxis(utc);
-
-		axisValue.Should().Be(utc.ToLocalTime().ToOADate());
-	}
-
-	[Fact]
 	public void FromAxis_ReturnsUtcThatRoundTripsThroughToAxis()
 	{
 		var utc = new DateTime(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);

@@ -11,7 +11,7 @@ internal static class DockerCli
 	// reported and the build goes on with the cached image (docs/architecture/bench.md#where-the-provisioning-comes-from).
 	public static async Task PullProvisionerAsync(TimeSpan bound)
 	{
-		var (exitCode, _, error) = await RunAsync(["pull", "--quiet", ProvisionerTag], bound);
+		var (exitCode, error) = await RunAsync(["pull", "--quiet", ProvisionerTag], bound);
 
 		if (exitCode != 0)
 		{
@@ -20,7 +20,7 @@ internal static class DockerCli
 		}
 	}
 
-	private static async Task<(int ExitCode, string Output, string Error)> RunAsync(
+	private static async Task<(int ExitCode, string Error)> RunAsync(
 		string[] arguments,
 		TimeSpan bound)
 	{
@@ -43,20 +43,22 @@ internal static class DockerCli
 			using var process = Process.Start(startInfo)
 								?? throw new InvalidOperationException("docker did not start.");
 
+			// Standard output is redirected so the pull prints nothing into the test log; it is drained, not kept.
 			var output = process.StandardOutput.ReadToEndAsync(bounded.Token);
 			var error = process.StandardError.ReadToEndAsync(bounded.Token);
 
 			await process.WaitForExitAsync(bounded.Token);
+			await output;
 
-			return (process.ExitCode, (await output).Trim(), (await error).Trim());
+			return (process.ExitCode, (await error).Trim());
 		}
 		catch (Win32Exception exception)
 		{
-			return (-1, string.Empty, $"the docker CLI is not on PATH: {exception.Message}");
+			return (-1, $"the docker CLI is not on PATH: {exception.Message}");
 		}
 		catch (OperationCanceledException)
 		{
-			return (-1, string.Empty, $"docker {arguments[0]} did not finish within {bound}.");
+			return (-1, $"docker {arguments[0]} did not finish within {bound}.");
 		}
 	}
 }

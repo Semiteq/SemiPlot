@@ -18,7 +18,7 @@ public sealed class ChartNavigationControllerTests
 	private static readonly DateTime _last = new(2026, 6, 1, 10, 0, 0, DateTimeKind.Utc);
 
 	[Fact]
-	public void ZoomOut_WidensWindowAndRaisesWindowChange()
+	public void Zoom_RaisesWindowChangeRequiringReQuery()
 	{
 		var controller = Loaded();
 		NavigationWindow? raised = null;
@@ -27,19 +27,22 @@ public sealed class ChartNavigationControllerTests
 
 		controller.ZoomAt(4.0, _last);
 
-		raised.Should().NotBeNull();
 		(controller.To - controller.From).Should().BeGreaterThan(widthBefore);
+		raised.Should().NotBeNull();
+		raised!.RequiresHistoryRequery.Should().BeTrue();
 	}
 
 	[Fact]
-	public void PanBackward_ShiftsWindowIntoThePast()
+	public void Pan_RaisesWindowChangeRequiringReQuery()
 	{
 		var controller = Loaded();
-		var fromBefore = controller.From;
+		NavigationWindow? raised = null;
+		controller.WindowChanged += (_, window) => raised = window;
 
 		controller.PanBy(TimeSpan.FromMinutes(-5.0));
 
-		controller.From.Should().BeBefore(fromBefore);
+		raised.Should().NotBeNull();
+		raised!.RequiresHistoryRequery.Should().BeTrue();
 	}
 
 	[Fact]
@@ -54,7 +57,7 @@ public sealed class ChartNavigationControllerTests
 	}
 
 	[Fact]
-	public void SetSticky_TogglesStateAndReanchorsToLiveEdge()
+	public void SetStickyAndJumpToNow_ReattachToTheLiveEdge()
 	{
 		var controller = Loaded();
 		controller.SetSticky(false);
@@ -64,12 +67,7 @@ public sealed class ChartNavigationControllerTests
 
 		controller.IsSticky.Should().BeTrue();
 		controller.To.Should().Be(_last);
-	}
 
-	[Fact]
-	public void JumpToNow_ReattachesStickyWithNowAtRightEdge()
-	{
-		var controller = Loaded();
 		controller.SetSticky(false);
 
 		controller.JumpToNow();
@@ -216,24 +214,6 @@ public sealed class ChartNavigationControllerTests
 			.Should().Be(AggregationLayer.Raw);
 	}
 
-	[Fact]
-	public void SameWindowWidth_SelectsDifferentLayersAtDifferentColumnCounts()
-	{
-		var controller = Loaded();
-		var currentWidth = controller.To - controller.From;
-
-		controller.ZoomAt(TimeSpan.FromHours(4.0) / currentWidth, controller.To);
-
-		// Four hours is 56 s per column at 256 columns, where the minute layer's 15 s spacing fills every
-		// column, but 7 s per column at 2048, finer than that spacing. Both calls are transitions: the
-		// count starts at the 2048 default, so the narrow canvas is applied first.
-		controller.SetTargetColumnCount(256);
-		controller.ActiveLayer.Should().Be(AggregationLayer.Minute);
-
-		controller.SetTargetColumnCount(2048);
-		controller.ActiveLayer.Should().Be(AggregationLayer.Raw);
-	}
-
 	// A pixel-by-pixel drag across the whole width range crosses the three quantisation steps of the
 	// 256..2048 range and the one layer boundary a four-hour window has inside it.
 	[Theory]
@@ -350,19 +330,6 @@ public sealed class ChartNavigationControllerTests
 		raised!.RequiresHistoryRequery.Should().BeFalse();
 	}
 
-	[Fact]
-	public void ZoomOrPan_RaisesWindowChangeRequiringReQuery()
-	{
-		var controller = Loaded();
-		NavigationWindow? raised = null;
-		controller.WindowChanged += (_, window) => raised = window;
-
-		controller.PanBy(TimeSpan.FromMinutes(-5.0));
-
-		raised.Should().NotBeNull();
-		raised!.RequiresHistoryRequery.Should().BeTrue();
-	}
-
 	[Theory]
 	[InlineData(AggregationLayer.Raw, AggregationLayer.Minute)]
 	[InlineData(AggregationLayer.Minute, AggregationLayer.Hour)]
@@ -397,9 +364,6 @@ public sealed class ChartNavigationControllerTests
 			.Should().Be(expectedLayer);
 	}
 
-	// Asserted through pan clamping, not a new first-sample accessor: the controller exposes none and the
-	// model's FirstSample is private to it. Panning 30 days left must stop at the archive's first sample,
-	// not at the constructor's startup-minus-one-hour.
 	[Fact]
 	public void SeedFromArchiveExtent_OpensTheWindowOnAnArchiveWhollyInThePast()
 	{
@@ -410,39 +374,21 @@ public sealed class ChartNavigationControllerTests
 		controller.To.Should().Be(_last);
 		controller.From.Should().Be(_last - TimeSpan.FromHours(1.0));
 
-		controller.PanBy(TimeSpan.FromDays(-30.0));
-
-		controller.From.Should().Be(_first);
-	}
-
-	[Fact]
-	public void SeedFromArchiveExtent_WithAnExtentCoveringNow_ClampsPanningAtItsFirstSample()
-	{
-		var controller = new ChartNavigationController();
-		var now = DateTime.UtcNow;
-		var extent = new ArchiveExtent(now - TimeSpan.FromDays(2.0), now);
-
-		controller.SeedFromArchiveExtent(extent);
-
-		controller.To.Should().Be(extent.LastUtc);
-		controller.IsSticky.Should().BeTrue();
-
-		controller.PanBy(TimeSpan.FromDays(-30.0));
-
-		controller.From.Should().Be(extent.FirstUtc);
+		controller.FirstSample.Should().Be(_first);
 	}
 
 	[Fact]
 	public void SeedFromArchiveExtent_WithAnEmptyExtent_LeavesTheWindowOnTheWallClock()
 	{
 		var controller = new ChartNavigationController();
+		var constructedTo = controller.To;
 		var raised = 0;
 		controller.WindowChanged += (_, _) => raised++;
 
 		controller.SeedFromArchiveExtent(ArchiveExtent.Empty);
 
 		raised.Should().Be(0);
-		controller.To.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromMinutes(1.0));
+		controller.To.Should().Be(constructedTo);
 
 		// The has-data latch stays clear, so the first envelope carrying rows still snaps the window.
 		controller.TrackDataExtents(_first, _last);

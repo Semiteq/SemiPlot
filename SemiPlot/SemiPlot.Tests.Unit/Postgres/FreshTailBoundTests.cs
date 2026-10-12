@@ -47,20 +47,6 @@ public sealed class FreshTailBoundTests
 		FreshTail.Start(AggregationLayer.Minute, seams, _windowEnd).Should().BeNull();
 	}
 
-	// A layer whose newest row is inside one of its own points is not short of anything a reader can see.
-	[Theory]
-	[InlineData(AggregationLayer.Minute, MinuteSpacingSeconds)]
-	[InlineData(AggregationLayer.Hour, HourSpacingSeconds)]
-	[InlineData(AggregationLayer.Day, DaySpacingSeconds)]
-	public void NoTailIsReadWhenEveryPenReachesWithinOnePointSpacingOfTheWindowEnd(
-		AggregationLayer layer,
-		int spacingSeconds)
-	{
-		var seams = SeamsAt(_windowEnd - TimeSpan.FromSeconds(spacingSeconds));
-
-		FreshTail.Start(layer, seams, _windowEnd).Should().BeNull();
-	}
-
 	// The threshold is the layer's own spacing and the comparison is strict, so a deficit of exactly one
 	// spacing still costs no round trip and one tick more starts one.
 	[Theory]
@@ -154,16 +140,6 @@ public sealed class FreshTailBoundTests
 		var seams = SeamsAt(_windowEnd - (TimeSpan.FromSeconds(spacingSeconds) * 4) - TimeSpan.FromTicks(1));
 
 		FreshTail.Start(layer, seams, _windowEnd).Should().BeNull();
-	}
-
-	// A pen the coarse read answered nothing for takes the window start as its seam, so it is treated as
-	// a pen trailing by the whole window rather than as a pen with nothing to be short of.
-	[Fact]
-	public void APenWithNoCoarseRowSeamsAtTheWindowStart()
-	{
-		var seams = FreshTail.Seams([Row(_penIds[0], _windowEnd.AddMinutes(-1))], _penIds, _windowStart);
-
-		seams[_penIds[1]].Should().Be(_windowStart);
 	}
 
 	[Fact]

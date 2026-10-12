@@ -4,10 +4,12 @@ using FluentResults;
 
 using SemiPlot.Core.Configuration;
 using SemiPlot.DataSource.Postgres.Configuration;
+using SemiPlot.Tests.Unit.UI.Settings;
 using SemiPlot.Tools.ArchiveSeeder;
-using SemiPlot.UI.Startup;
 
 using Xunit;
+
+using static SemiPlot.Tests.Unit.ResultText;
 
 namespace SemiPlot.Tests.Unit.Core.Configuration;
 
@@ -16,7 +18,7 @@ namespace SemiPlot.Tests.Unit.Core.Configuration;
 [Trait("Category", "Unit")]
 public sealed class ConfigurationSectionWriterTests : IDisposable
 {
-	private readonly string _root = Directory.CreateTempSubdirectory("semiplot-section-writer-").FullName;
+	private readonly TemporaryDirectory _root = new("semiplot-section-writer");
 
 	private readonly string _section;
 
@@ -30,7 +32,7 @@ public sealed class ConfigurationSectionWriterTests : IDisposable
 
 	public void Dispose()
 	{
-		Directory.Delete(_root, recursive: true);
+		_root.Dispose();
 	}
 
 	[Theory]
@@ -106,7 +108,7 @@ public sealed class ConfigurationSectionWriterTests : IDisposable
 	[InlineData("two words # and a hash")]
 	public void APasswordThatAlsoReadsAsYamlSurvivesAsText(string password)
 	{
-		WriteFile(ConnectionFileWriter.FileName, ShippedConnectionBody());
+		WriteFile(ConnectionFileWriter.FileName, ShippedConfiguration.ConnectionBody());
 
 		Staged(ConfigurationSectionName.Connection, ("password", password));
 
@@ -119,7 +121,7 @@ public sealed class ConfigurationSectionWriterTests : IDisposable
 	[Fact]
 	public void TheUntouchedKeysOfARewrittenFileStillLoad()
 	{
-		WriteFile(ConnectionFileWriter.FileName, ShippedConnectionBody() + "schema: archive\n");
+		WriteFile(ConnectionFileWriter.FileName, ShippedConfiguration.ConnectionBody() + "schema: archive\n");
 
 		Staged(ConfigurationSectionName.Connection, ("host", "10.20.30.40"), ("password", "secret"));
 
@@ -140,7 +142,8 @@ public sealed class ConfigurationSectionWriterTests : IDisposable
 		WriteFile("app.yaml", "locale: ru\ntheme: light\n");
 		var owned = OwnedOf(ConfigurationSectionName.App);
 
-		var error = ErrorOf(Stage(owned, ConfigurationSectionName.App, ("operator_note", "added")));
+		var error = ErrorOf<ConfigurationSectionError>(
+			Stage(owned, ConfigurationSectionName.App, ("operator_note", "added")));
 
 		error.Problem.Should().Be(SectionProblem.KeyAbsent);
 		error.Key.Should().Be("operator_note");
@@ -154,7 +157,7 @@ public sealed class ConfigurationSectionWriterTests : IDisposable
 		var owned = OwnedOf(ConfigurationSectionName.App);
 		WriteFile("app.yaml", "locale: ru\n");
 
-		var error = ErrorOf(Stage(owned, ConfigurationSectionName.App, ("theme", "dark")));
+		var error = ErrorOf<ConfigurationSectionError>(Stage(owned, ConfigurationSectionName.App, ("theme", "dark")));
 
 		error.Problem.Should().Be(SectionProblem.KeyAbsent);
 		error.Key.Should().Be("theme");
@@ -168,7 +171,7 @@ public sealed class ConfigurationSectionWriterTests : IDisposable
 		var owned = OwnedOf(ConfigurationSectionName.App);
 		File.Delete(Path.Combine(_section, "a.yaml"));
 
-		var error = ErrorOf(Stage(owned, ConfigurationSectionName.App, ("locale", "en")));
+		var error = ErrorOf<ConfigurationSectionError>(Stage(owned, ConfigurationSectionName.App, ("locale", "en")));
 
 		error.Problem.Should().Be(SectionProblem.Unreadable);
 		error.FileNames.Should().Equal("a.yaml");
@@ -182,7 +185,7 @@ public sealed class ConfigurationSectionWriterTests : IDisposable
 		var owned = OwnedOf(ConfigurationSectionName.App);
 		Directory.Delete(_section, recursive: true);
 
-		var error = ErrorOf(Stage(owned, ConfigurationSectionName.App));
+		var error = ErrorOf<ConfigurationSectionError>(Stage(owned, ConfigurationSectionName.App));
 
 		error.Problem.Should().Be(SectionProblem.Unlistable);
 		error.Directory.Should().Be(_section);
@@ -213,7 +216,7 @@ public sealed class ConfigurationSectionWriterTests : IDisposable
 		var owned = OwnedOf(ConfigurationSectionName.App);
 		Directory.Delete(_staging);
 
-		var error = ErrorOf(Stage(owned, ConfigurationSectionName.App));
+		var error = ErrorOf<ConfigurationSectionError>(Stage(owned, ConfigurationSectionName.App));
 
 		error.Problem.Should().Be(SectionProblem.Unwritable);
 		error.FileNames.Should().Equal("app.yaml");
@@ -227,7 +230,7 @@ public sealed class ConfigurationSectionWriterTests : IDisposable
 		var owned = OwnedOf(ConfigurationSectionName.App);
 		Directory.Delete(_staging);
 
-		var error = ErrorOf(Stage(owned, ConfigurationSectionName.App, ("theme", "dark")));
+		var error = ErrorOf<ConfigurationSectionError>(Stage(owned, ConfigurationSectionName.App, ("theme", "dark")));
 
 		error.Problem.Should().Be(SectionProblem.Unwritable);
 		error.FileNames.Should().Equal("app.yaml");
@@ -270,30 +273,8 @@ public sealed class ConfigurationSectionWriterTests : IDisposable
 		return owned.Value.Values;
 	}
 
-	private static string ShippedConnectionBody()
-	{
-		return File.ReadAllText(
-			Path.Combine(
-				AppContext.BaseDirectory,
-				"ConfigFiles",
-				StartupProbe.ConnectionDirectoryName,
-				ConnectionFileWriter.FileName));
-	}
-
 	private void WriteFile(string name, string content)
 	{
 		File.WriteAllText(Path.Combine(_section, name), content);
-	}
-
-	private static ConfigurationSectionError ErrorOf<TValue>(Result<TValue> result)
-	{
-		result.IsFailed.Should().BeTrue();
-
-		return result.Errors.OfType<ConfigurationSectionError>().Should().ContainSingle().Subject;
-	}
-
-	private static string Describe<TValue>(Result<TValue> result)
-	{
-		return string.Join("; ", result.Errors.Select(error => error.Message));
 	}
 }

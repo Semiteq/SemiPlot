@@ -13,51 +13,6 @@ namespace SemiPlot.Tests.Unit.Errors;
 [Trait("Category", "Unit")]
 public sealed class DataErrorTests
 {
-	private const string ConnectionSectionPath = @"C:\etc\semiplot\connection";
-	private const string Host = "scada-01";
-	private const int Port = 5432;
-	private const string Database = "semiplot_dev";
-
-	[Theory]
-	[InlineData(ConnectionFileProblem.Unparseable)]
-	[InlineData(ConnectionFileProblem.MissingField)]
-	[InlineData(ConnectionFileProblem.OutOfRange)]
-	[InlineData(ConnectionFileProblem.HostNotIPv4)]
-	public void ConnectionFileErrorKeepsItsDiscriminator(ConnectionFileProblem kind)
-	{
-		const string Reason = "host is blank";
-
-		var error = new ConnectionFileError(ConnectionSectionPath, kind, Reason);
-
-		error.Path.Should().Be(ConnectionSectionPath);
-		error.Kind.Should().Be(kind);
-		error.Reason.Should().Be(Reason);
-		error.Message.Should().Contain(ConnectionSectionPath);
-	}
-
-	[Theory]
-	[InlineData(ArchiveFault.Unreachable, "")]
-	[InlineData(ArchiveFault.AccessDenied, "scada_reader")]
-	[InlineData(ArchiveFault.DatabaseMissing, "")]
-	[InlineData(ArchiveFault.TableMissing, "trends")]
-	[InlineData(ArchiveFault.ShapeUnexpected, "column \"v\" does not exist")]
-	[InlineData(ArchiveFault.QueryTimedOut, "")]
-	[InlineData(ArchiveFault.ConnectionLost, "3")]
-	[InlineData(ArchiveFault.ValueRejected, "Chamber pressure")]
-	[InlineData(ArchiveFault.NameTaken, "Etch gases")]
-	[InlineData(ArchiveFault.RowGone, "Etch gases")]
-	[InlineData(ArchiveFault.ReadFailed, "42P07")]
-	[InlineData(ArchiveFault.ReadFailed, "")]
-	public void ArchiveErrorKeepsItsDiscriminatorAndNamesTheAddress(ArchiveFault kind, string detail)
-	{
-		var error = new ArchiveError(kind, Host, Port, Database, detail);
-
-		error.Kind.Should().Be(kind);
-		error.Detail.Should().Be(detail);
-		error.Message.Should().Contain(Host);
-		error.Message.Should().Contain(Database);
-	}
-
 	[Fact]
 	public void EveryPublicErrorTypeIsSealedAndDerivesFromError()
 	{

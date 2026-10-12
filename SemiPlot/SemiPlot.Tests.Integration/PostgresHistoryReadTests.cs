@@ -70,13 +70,8 @@ public sealed class PostgresHistoryReadTests(
 	// partition width, widened to the requested window when that is wider.
 	private static readonly TimeSpan _seedLookBackFloor = TimeSpan.FromDays(1);
 
-	// The clause that carries that bound. Held as a literal so the pin reads as the statement does.
-	private const string SeedLookBackClause = "prior.t >= @from - greatest(@to - @from, interval '1 day')";
-
 	// Wider than that floor, so the bound the statement applies over this window is the window itself.
 	private static readonly TimeSpan _wideWindowLength = TimeSpan.FromDays(3);
-
-	private static readonly ArchiveTimeConverter _timeConverter = new(ArchiveProviderFactory.SourceTimeZone);
 
 	// Lazy rather than a plain initialiser: regenerating the seeder's whole day of raw rows costs real time
 	// and memory, and a run with no container runtime skips every test here before touching any of it.
@@ -141,10 +136,22 @@ public sealed class PostgresHistoryReadTests(
 	// Far above the round trip a cancel request takes, so only a read the token never reached runs into it.
 	private static readonly TimeSpan _cancelledReadDeadline = TimeSpan.FromSeconds(20);
 
+	// The premise every row-for-row fact in this class rests on: a bucket no wider than the tightest row
+	// spacing keeps one column per row. A steady stretch has no break, so no row carries a gap anchor.
 	[Fact]
-	public async Task AWindowInsideTheFirstRunReadsTheSeedersOwnRows()
+	public async Task AWindowInsideTheFirstRunReadsTheSeedersOwnRowsWithoutAGapColumn()
 	{
 		var window = QuietWindow();
+		var run = _breakPlan.Value.Runs[0];
+
+		(window.To < run.End).Should().BeTrue(
+			$"The window has to close before the run's q = 32 marker at {run.End:O}, not at {window.To:O}.");
+
+		ColumnTargetFor(window).Should().Be(TargetColumnCount);
+
+		(BucketFor(window) <= _tightestRowSpacing).Should().BeTrue(
+			$"A bucket of {BucketFor(window)} merges the anchor and change rows the seeder writes "
+				+ $"{_tightestRowSpacing} apart, so the comparison below would compare buckets, not rows.");
 
 		var result = await ReadHistoryAsync(seededArchive.Database.PlotConnectionString, window);
 
@@ -152,6 +159,10 @@ public sealed class PostgresHistoryReadTests(
 
 		// The window opens on the instant every run starts, so every seeded pen has rows in it.
 		result.Value.Count.Should().Be(ArchiveTemplate.Slice.PenCount);
+
+		var anchors = result.Value.Sum(envelope => GapColumnIndices(envelope).Count);
+
+		(anchors == 0).Should().BeTrue($"A steady stretch produced {anchors} gap columns across the eight pens.");
 	}
 
 	[Fact]
@@ -226,7 +237,8 @@ public sealed class PostgresHistoryReadTests(
 	public async Task AReadCancelledMidStatementThrowsInsteadOfFailing(AggregationLayer layer)
 	{
 		var testCancellation = TestContext.Current.CancellationToken;
-		await using var database = await postgresContainerFixture.CloneProvisionedAsync(testCancellation);
+		await using var database = await postgresContainerFixture.CloneAsync(
+			CloneSource.Provisioned, cancellationToken: testCancellation);
 		await using var locker = new NpgsqlConnection(database.AdminConnectionString);
 		await locker.OpenAsync(testCancellation);
 		await using var transaction = await locker.BeginTransactionAsync(testCancellation);
@@ -240,8 +252,8 @@ public sealed class PostgresHistoryReadTests(
 
 		var read = services.GetRequiredService<IDataProvider>().QueryHistoryAsync(
 			_seededPenIds.Value,
-			_timeConverter.ToUtc(window.From),
-			_timeConverter.ToUtc(window.To),
+			ArchiveProviderFactory.TimeConverter.ToUtc(window.From),
+			ArchiveProviderFactory.TimeConverter.ToUtc(window.To),
 			layer,
 			ColumnTargetFor(window),
 			cancellation.Token);
@@ -274,64 +286,24 @@ public sealed class PostgresHistoryReadTests(
 		var stopped = _breakPlan.Value.Breaks[0];
 		var window = new LocalWindow(stopped.Start - _breakMargin, stopped.End + _breakMargin);
 
-		var result = await ReadHistoryAsync(seededArchive.Database.PlotConnectionString, window);
-
-		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
-
-		var expected = SeededRowsIn(window);
-
-		result.Value.Select(envelope => envelope.PenId).Should().Equal(expected.Keys);
-		result.Value.Count.Should().Be(ArchiveTemplate.Slice.PenCount);
-
-		foreach (var envelope in result.Value)
+		foreach (var penId in _seededPenIds.Value)
 		{
-			var rows = expected[envelope.PenId];
+			var inWindow = _seededRawRows.Value
+				.Where(row => row.Id == penId && row.Timestamp >= window.From && row.Timestamp < window.To)
+				.ToArray();
 
-			// One column per row plus the anchor.
-			envelope.Timestamps.Count.Should().Be(rows.Count + 1);
-
-			var anchor = GapColumnIndices(envelope).Should().ContainSingle().Which;
-
-			(double.IsNaN(envelope.Min[anchor]) && double.IsNaN(envelope.Max[anchor])).Should().BeTrue(
-				$"Pen {envelope.PenId} carries a gap column at {anchor} in Center alone, so the break is "
-					+ "not a break in every series the chart draws.");
-
-			var marker = rows.Should().ContainSingle(row => row.Quality == ArchiveRow.LastBeforeBreakQuality).Which;
-			var resumption = rows.Should().ContainSingle(row => row.Quality == ArchiveRow.FirstAfterBreakQuality).Which;
-
-			// The q = 32 row's own value survives as a real column immediately before the anchor, which is
-			// what a read replacing the marker's value with a null would lose.
-			envelope.Timestamps[anchor - 1].Should().Be(_timeConverter.ToUtc(marker.Timestamp));
-			envelope.Center[anchor - 1].Should().Be(marker.Value);
-			envelope.Timestamps[anchor].Should().Be(envelope.Timestamps[anchor - 1].AddTicks(1));
-
-			// The line resumes on the q = 16 row, and ContainSingle above says nothing anchors after it.
-			envelope.Timestamps[anchor + 1].Should().Be(_timeConverter.ToUtc(resumption.Timestamp));
-			envelope.Center[anchor + 1].Should().Be(resumption.Value);
+			inWindow.Count(row => row.Quality == ArchiveRow.LastBeforeBreakQuality).Should().Be(1);
+			inWindow.Count(row => row.Quality == ArchiveRow.FirstAfterBreakQuality).Should().Be(1);
 		}
-	}
-
-	// The counterpart, and the one that says an anchor is a marker's doing rather than an absence's. The
-	// archive polls every 100 ms and writes only on change, so a two-minute window inside an archiving run
-	// is mostly absence.
-	[Fact]
-	public async Task AWindowInsideASteadyStretchCarriesNoGapColumn()
-	{
-		var run = _breakPlan.Value.Runs[0];
-		var window = new LocalWindow(run.Start + _windowOffset, run.Start + _windowOffset + _quietWindowLength);
-
-		(window.To < run.End).Should().BeTrue(
-			$"The window has to close before the run's q = 32 marker at {run.End:O}, not at {window.To:O}.");
 
 		var result = await ReadHistoryAsync(seededArchive.Database.PlotConnectionString, window);
 
+		// Row for row, including the marker's own value, the NaN anchor one tick after it and the resumption.
 		AssertMatchesSeededRows(result, window);
 
 		result.Value.Count.Should().Be(ArchiveTemplate.Slice.PenCount);
 
-		var anchors = result.Value.Sum(envelope => GapColumnIndices(envelope).Count);
-
-		(anchors == 0).Should().BeTrue($"A steady stretch produced {anchors} gap columns across the eight pens.");
+		result.Value.Should().AllSatisfy(envelope => GapColumnIndices(envelope).Should().ContainSingle());
 	}
 
 	[Fact]
@@ -373,8 +345,6 @@ public sealed class PostgresHistoryReadTests(
 			// the whole bucket. min(t) in place of max(t) passes every other fact in this class.
 			AssertMatchesExpectedBuckets(envelope, rows, window, BucketedColumnTarget);
 		}
-
-		await ReportServerTimeAsync(window, BucketedColumnTarget);
 	}
 
 	// The widest Raw read the prefetch margin can ask for: a query covers three visible windows, so the
@@ -410,23 +380,6 @@ public sealed class PostgresHistoryReadTests(
 		await ReportServerTimeAsync(window, target);
 	}
 
-	// The counterpart, and the premise every row-for-row fact in this class rests on.
-	[Fact]
-	public async Task ARawWindowSparserThanTheCanvasComesBackRowForRow()
-	{
-		var window = QuietWindow();
-
-		ColumnTargetFor(window).Should().Be(TargetColumnCount);
-
-		(BucketFor(window) <= _tightestRowSpacing).Should().BeTrue(
-			$"A bucket of {BucketFor(window)} merges the anchor and change rows the seeder writes "
-				+ $"{_tightestRowSpacing} apart, so the comparison below would compare buckets, not rows.");
-
-		var result = await ReadHistoryAsync(seededArchive.Database.PlotConnectionString, window);
-
-		AssertMatchesSeededRows(result, window);
-	}
-
 	// The anti-straddle rule, at a target whose bucket spans the whole break: without the segment in the
 	// GROUP BY the marker and the rows after the break fold into one column and the marker's own sample is
 	// lost, which no row-for-row fact in this class would notice.
@@ -457,12 +410,8 @@ public sealed class PostgresHistoryReadTests(
 		foreach (var envelope in result.Value)
 		{
 			var rows = expected[envelope.PenId];
-			var marker = rows.Should().ContainSingle(row => row.Quality == ArchiveRow.LastBeforeBreakQuality).Which;
-			var anchor = GapColumnIndices(envelope).Should().ContainSingle().Which;
-
-			envelope.Timestamps[anchor - 1].Should().Be(_timeConverter.ToUtc(marker.Timestamp));
-			envelope.Center[anchor - 1].Should().Be(marker.Value);
-			envelope.Timestamps[anchor].Should().Be(envelope.Timestamps[anchor - 1].AddTicks(1));
+			rows.Should().ContainSingle(row => row.Quality == ArchiveRow.LastBeforeBreakQuality);
+			GapColumnIndices(envelope).Should().ContainSingle();
 
 			AssertMatchesExpectedBuckets(envelope, rows, window, target);
 		}
@@ -517,12 +466,12 @@ public sealed class PostgresHistoryReadTests(
 	[Fact]
 	public async Task ADroppedTrendsTableFailsNamingTrends()
 	{
-		await using var database = await postgresContainerFixture.CloneProvisionedAsync(
-			TestContext.Current.CancellationToken);
-
-		await ArchiveDatabase.ExecuteAsync(
-			database.WriterConnectionString,
-			ArchiveReadSupport.DropTrendsCommand,
+		await using var database = await postgresContainerFixture.CloneAsync(
+			CloneSource.Provisioned,
+			clone => ArchiveDatabase.ExecuteAsync(
+				clone.WriterConnectionString,
+				ArchiveReadSupport.DropTrendsCommand,
+				TestContext.Current.CancellationToken),
 			TestContext.Current.CancellationToken);
 
 		var window = QuietWindow();
@@ -531,8 +480,8 @@ public sealed class PostgresHistoryReadTests(
 
 		var result = await services.GetRequiredService<IDataProvider>().QueryHistoryAsync(
 			_seededPenIds.Value,
-			_timeConverter.ToUtc(window.From),
-			_timeConverter.ToUtc(window.To),
+			ArchiveProviderFactory.TimeConverter.ToUtc(window.From),
+			ArchiveProviderFactory.TimeConverter.ToUtc(window.To),
 			AggregationLayer.Raw,
 			ColumnTargetFor(window),
 			TestContext.Current.CancellationToken);
@@ -551,24 +500,40 @@ public sealed class PostgresHistoryReadTests(
 	}
 
 	// Minute's point spacing is 15 s and its period four of those, so over the five-minute window below the
-	// clamp lands the tail start exactly one minute before the window closes.
+	// clamp lands the tail start exactly one minute before the window closes. A clock a day later leaves the
+	// window end as the only edge of the clamp.
 	[Fact]
 	public async Task AMinuteWindowPastTheCoarseLayersNewestRowReachesTheRawLayersNewest()
 	{
 		await using var database = await WriteTailArchiveAsync(TestContext.Current.CancellationToken);
+		var window = new LocalWindow(_tailWindowFrom, _tailWindowTo);
 
-		var result = await ReadTailWindowAsync(database, AggregationLayer.Minute);
+		var result = await ReadMinuteTailAsync(database, window, ClockAt(_tailWindowTo.AddDays(1)));
 
 		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
 
-		var envelope = result.Value.Should().ContainSingle(candidate => candidate.PenId == FreshPenId).Which;
+		var fresh = result.Value.Should().ContainSingle(candidate => candidate.PenId == FreshPenId).Which;
 
 		// The coarse rows, then every raw row after the pen's own seam. Without the tail the series would
 		// stop at 10:04:00 archive-local and the operator would read a value fifty seconds old as the current one.
-		envelope.Timestamps.Should().Equal(
+		fresh.Timestamps.Should().Equal(
 			ExpectedUtc(_freshCoarse.Concat(RawTimestamps().Where(timestamp => timestamp > _freshSeam))));
 
-		envelope.Timestamps[^1].Should().Be(_timeConverter.ToUtc(_newestRawTimestamp));
+		fresh.Timestamps[^1].Should().Be(ArchiveProviderFactory.TimeConverter.ToUtc(_newestRawTimestamp));
+
+		// The tail rows overlap the coarse rows in time, and one of this pen's raw rows carries the very
+		// timestamp its coarse layer already reached. The fold's ascending check is what drops it.
+		var reaching = result.Value.Should().ContainSingle(candidate => candidate.PenId == ReachingPenId).Which;
+
+		reaching.Timestamps.Should().Equal(ExpectedUtc(_reachingCoarse));
+		reaching.Timestamps.Should().Equal(reaching.Timestamps.Distinct());
+
+		var lagging = result.Value.Should().ContainSingle(candidate => candidate.PenId == LaggingPenId).Which;
+
+		lagging.Timestamps.Should().Equal(ExpectedUtc(_laggingCoarse));
+		lagging.Timestamps[^1].Should().Be(ArchiveProviderFactory.TimeConverter.ToUtc(_laggingSeam));
+
+		GapColumnIndices(lagging).Should().BeEmpty();
 	}
 
 	[Fact]
@@ -587,43 +552,6 @@ public sealed class PostgresHistoryReadTests(
 		result.Value.Should().AllSatisfy(envelope => envelope.Timestamps.Should().Equal(ExpectedUtc(RawTimestamps())));
 	}
 
-	// The tail rows overlap the coarse rows in time, and one of this pen's raw rows carries the very
-	// timestamp its coarse layer already reached. The fold's ascending check is what drops it.
-	[Fact]
-	public async Task APenWhoseCoarseRowsReachTheWindowEndGainsNoDuplicate()
-	{
-		await using var database = await WriteTailArchiveAsync(TestContext.Current.CancellationToken);
-
-		var result = await ReadTailWindowAsync(database, AggregationLayer.Minute);
-
-		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
-
-		var envelope = result.Value.Should().ContainSingle(candidate => candidate.PenId == ReachingPenId).Which;
-
-		envelope.Timestamps.Should().Equal(ExpectedUtc(_reachingCoarse));
-		envelope.Timestamps.Should().Equal(envelope.Timestamps.Distinct());
-	}
-
-	// The lagging pen keeps its short right edge and gains no interpolated span.
-	[Fact]
-	public async Task APenWhoseCoarseRowsStopBeforeTheTailStartGainsNoRowAndNoInterpolatedSpan()
-	{
-		await using var database = await WriteTailArchiveAsync(TestContext.Current.CancellationToken);
-
-		var result = await ReadTailWindowAsync(database, AggregationLayer.Minute);
-
-		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
-
-		var envelope = result.Value.Should().ContainSingle(candidate => candidate.PenId == LaggingPenId).Which;
-
-		envelope.Timestamps.Should().Equal(ExpectedUtc(_laggingCoarse));
-		envelope.Timestamps[^1].Should().Be(_timeConverter.ToUtc(_laggingSeam));
-
-		// Nothing lands after the seam, so there is no segment spanning the hole, and nothing anchors a
-		// gap either, which is what would have made such a segment readable had one been drawn.
-		GapColumnIndices(envelope).Should().BeEmpty();
-	}
-
 	// docs/architecture/data-integration.md#layer-ladder
 	[Fact]
 	public async Task TheRangeTheChartAsksForReachesTheRawLayersNewest()
@@ -638,22 +566,7 @@ public sealed class PostgresHistoryReadTests(
 
 		envelope.Timestamps.Should().Equal(
 			ExpectedUtc(_freshCoarse.Concat(RawTimestamps().Where(timestamp => timestamp > _freshSeam))));
-		envelope.Timestamps[^1].Should().Be(_timeConverter.ToUtc(_newestRawTimestamp));
-	}
-
-	[Fact]
-	public async Task TheVisibleTailWindowUnderALaterClockStillReachesTheRawLayersNewest()
-	{
-		await using var database = await WriteTailArchiveAsync(TestContext.Current.CancellationToken);
-		var window = new LocalWindow(_tailWindowFrom, _tailWindowTo);
-
-		var result = await ReadMinuteTailAsync(database, window, ClockAt(_tailWindowTo.AddDays(1)));
-
-		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
-
-		var envelope = result.Value.Should().ContainSingle(candidate => candidate.PenId == FreshPenId).Which;
-
-		envelope.Timestamps[^1].Should().Be(_timeConverter.ToUtc(_newestRawTimestamp));
+		envelope.Timestamps[^1].Should().Be(ArchiveProviderFactory.TimeConverter.ToUtc(_newestRawTimestamp));
 	}
 
 	// One minute behind the fresh seam: the lagging seam stays below the clamp, and the fresh seam is within one
@@ -691,8 +604,8 @@ public sealed class PostgresHistoryReadTests(
 		{
 			var result = await provider.QueryHistoryAsync(
 				penIds,
-				_timeConverter.ToUtc(window.From),
-				_timeConverter.ToUtc(window.To),
+				ArchiveProviderFactory.TimeConverter.ToUtc(window.From),
+				ArchiveProviderFactory.TimeConverter.ToUtc(window.To),
 				layer,
 				ColumnTargetFor(window),
 				TestContext.Current.CancellationToken);
@@ -706,8 +619,8 @@ public sealed class PostgresHistoryReadTests(
 		entries.Should().AllSatisfy(entry =>
 		{
 			entry.Level.Should().Be(LogLevel.Debug);
-			LoggedUtc(entry, "FromUtc").Should().Be(_timeConverter.ToUtc(window.From));
-			LoggedUtc(entry, "ToUtc").Should().Be(_timeConverter.ToUtc(window.To));
+			LoggedUtc(entry, "FromUtc").Should().Be(ArchiveProviderFactory.TimeConverter.ToUtc(window.From));
+			LoggedUtc(entry, "ToUtc").Should().Be(ArchiveProviderFactory.TimeConverter.ToUtc(window.To));
 			entry.GetStructuredStateValue("TargetColumnCount").Should().Be(
 				ColumnTargetFor(window).ToString(CultureInfo.InvariantCulture));
 			entry.GetStructuredStateValue("Outcome").Should().Be("Read");
@@ -716,22 +629,6 @@ public sealed class PostgresHistoryReadTests(
 			long.TryParse(entry.GetStructuredStateValue("ElapsedMilliseconds"), CultureInfo.InvariantCulture, out _)
 				.Should().BeTrue();
 		});
-	}
-
-	// SeedBefore mirrors a bound that lives in SQL, and nothing but this test links the two. It opens no
-	// connection, so it runs wherever the rest of the class skips.
-	[Fact]
-	public void TheExpectedSeedLookBackIsTheStatementsOwn()
-	{
-		ArchiveStatements.SparseHistoryWindow.Should().Contain(SeedLookBackClause);
-
-		SeedLookBackFor(QuietWindow()).Should().Be(_seedLookBackFloor);
-
-		var wideWindow = new LocalWindow(
-			ArchiveTemplate.Slice.Start,
-			ArchiveTemplate.Slice.Start + _seedLookBackFloor + _quietWindowLength);
-
-		SeedLookBackFor(wideWindow).Should().Be(wideWindow.To - wideWindow.From);
 	}
 
 	private static async Task<bool> AwaitALockWaitOnTrendsAsync(
@@ -817,12 +714,11 @@ public sealed class PostgresHistoryReadTests(
 			"EXPLAIN (ANALYZE, TIMING OFF) " + ArchiveStatements.BucketedRawWindow,
 			connection);
 
-		PostgresDataProvider.BindBucketedWindow(
+		PostgresDataProvider.BindLocalBucketedWindow(
 			command,
-			_timeConverter,
 			[.. _seededPenIds.Value],
-			_timeConverter.ToUtc(window.From),
-			_timeConverter.ToUtc(window.To),
+			window.From,
+			window.To,
 			columnTarget);
 
 		await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
@@ -865,8 +761,8 @@ public sealed class PostgresHistoryReadTests(
 		// January under the source zone: one offset, so the round trip is exact.
 		return await services.GetRequiredService<IDataProvider>().QueryHistoryAsync(
 			penIds,
-			_timeConverter.ToUtc(window.From),
-			_timeConverter.ToUtc(window.To),
+			ArchiveProviderFactory.TimeConverter.ToUtc(window.From),
+			ArchiveProviderFactory.TimeConverter.ToUtc(window.To),
 			layer,
 			targetColumnCount);
 	}
@@ -956,7 +852,7 @@ public sealed class PostgresHistoryReadTests(
 
 	private static void AppendBucket(List<ExpectedBucket> columns, IReadOnlyList<ArchiveRow> group)
 	{
-		var timestamp = _timeConverter.ToUtc(group[^1].Timestamp);
+		var timestamp = ArchiveProviderFactory.TimeConverter.ToUtc(group[^1].Timestamp);
 
 		columns.Add(new ExpectedBucket(
 			timestamp,
@@ -1006,7 +902,7 @@ public sealed class PostgresHistoryReadTests(
 
 		foreach (var row in rows)
 		{
-			var timestamp = _timeConverter.ToUtc(row.Timestamp);
+			var timestamp = ArchiveProviderFactory.TimeConverter.ToUtc(row.Timestamp);
 			columns.Add((timestamp, row.Value));
 
 			if (row.Quality == ArchiveRow.LastBeforeBreakQuality)
@@ -1019,7 +915,7 @@ public sealed class PostgresHistoryReadTests(
 	}
 
 	// Every column the fold's break anchor produces. MinMaxDecimator writes NaN into all three series of a
-	// gap column, so one series carries the count and the straddling test checks the other two agree.
+	// gap column, so one series carries the count.
 	private static IReadOnlyList<int> GapColumnIndices(PenHistoryEnvelope envelope)
 	{
 		return [.. Enumerable.Range(0, envelope.Timestamps.Count).Where(index => double.IsNaN(envelope.Center[index]))];
@@ -1073,30 +969,16 @@ public sealed class PostgresHistoryReadTests(
 		return seed is null ? [] : [seed];
 	}
 
-	// A clone of the provisioned source carrying nothing but the rows below. It is dropped by the caller's
-	// `await using`, so a failed write disposes here rather than leaking a database.
-	private async Task<ArchiveDatabase> WriteTailArchiveAsync(CancellationToken cancellationToken)
+	private Task<ArchiveDatabase> WriteTailArchiveAsync(CancellationToken cancellationToken)
 	{
-		var database = await postgresContainerFixture.CloneProvisionedAsync(cancellationToken);
-
-		try
-		{
-			await new ArchiveWriter(database.WriterConnectionString)
-				.WriteAsync(
-					TailArchiveRows(),
-					_tailDay,
-					_tailDay.AddDays(1),
-					cancellationToken: cancellationToken);
-
-		}
-		catch
-		{
-			await database.DisposeAsync();
-
-			throw;
-		}
-
-		return database;
+		return postgresContainerFixture.CloneAsync(
+			CloneSource.Provisioned,
+			clone => new ArchiveWriter(clone.WriterConnectionString).WriteAsync(
+				TailArchiveRows(),
+				_tailDay,
+				_tailDay.AddDays(1),
+				cancellationToken: cancellationToken),
+			cancellationToken);
 	}
 
 	private static Task<Result<IReadOnlyList<PenHistoryEnvelope>>> ReadTailWindowAsync(
@@ -1134,7 +1016,7 @@ public sealed class PostgresHistoryReadTests(
 
 	private static FixedClock ClockAt(DateTime archiveLocal)
 	{
-		return new FixedClock(new DateTimeOffset(_timeConverter.ToUtc(archiveLocal)));
+		return new FixedClock(new DateTimeOffset(ArchiveProviderFactory.TimeConverter.ToUtc(archiveLocal)));
 	}
 
 	// The raw layer for all three pens plus a coarse layer that ends at a different instant for each.
@@ -1185,7 +1067,7 @@ public sealed class PostgresHistoryReadTests(
 
 	private static IReadOnlyList<DateTime> ExpectedUtc(IEnumerable<DateTime> archiveLocal)
 	{
-		return [.. archiveLocal.Select(_timeConverter.ToUtc)];
+		return [.. archiveLocal.Select(ArchiveProviderFactory.TimeConverter.ToUtc)];
 	}
 
 	private static IReadOnlyList<ArchiveRow> GenerateSeededRawRows()

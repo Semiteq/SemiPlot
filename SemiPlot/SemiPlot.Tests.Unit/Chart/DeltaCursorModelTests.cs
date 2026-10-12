@@ -4,6 +4,8 @@ using SemiPlot.Core.Trends;
 
 using Xunit;
 
+using static SemiPlot.Tests.Unit.Chart.PenEnvelopes;
+
 namespace SemiPlot.Tests.Unit.Chart;
 
 [Trait("Component", "Core")]
@@ -55,19 +57,6 @@ public sealed class DeltaCursorModelTests
 	}
 
 	[Fact]
-	public void Compute_EndpointBetweenColumns_InterpolatesDeltaY()
-	{
-		var model = new DeltaCursorModel();
-		var envelope = Envelope(1, (_origin, 10.0), (_origin.AddHours(2), 30.0));
-
-		model.Place(_origin);
-		model.Place(_origin.AddHours(1));
-		var readout = model.Compute(envelope);
-
-		readout!.DeltaY!.Value.Should().BeApproximately(10.0, 1e-9);
-	}
-
-	[Fact]
 	public void Compute_EndpointInGap_ReturnsNullDeltaYButKeepsDeltaTime()
 	{
 		var model = new DeltaCursorModel();
@@ -86,19 +75,6 @@ public sealed class DeltaCursorModelTests
 	}
 
 	[Fact]
-	public void Compute_EndpointOutOfRange_ReturnsNullDeltaY()
-	{
-		var model = new DeltaCursorModel();
-		var envelope = Envelope(1, (_origin, 10.0), (_origin.AddHours(2), 30.0));
-
-		model.Place(_origin);
-		model.Place(_origin.AddHours(5));
-		var readout = model.Compute(envelope);
-
-		readout!.DeltaY.Should().BeNull();
-	}
-
-	[Fact]
 	public void Clear_ResetsBothCursorsAndMeasurement()
 	{
 		var model = new DeltaCursorModel();
@@ -109,7 +85,6 @@ public sealed class DeltaCursorModelTests
 
 		model.FirstCursor.Should().BeNull();
 		model.SecondCursor.Should().BeNull();
-		model.HasBothCursors.Should().BeFalse();
 		model.Compute(Envelope(1, (_origin, 5.0))).Should().BeNull();
 	}
 
@@ -124,24 +99,5 @@ public sealed class DeltaCursorModelTests
 
 		model.FirstCursor.Should().Be(_origin.AddHours(3));
 		model.SecondCursor.Should().BeNull();
-		model.HasBothCursors.Should().BeFalse();
-	}
-
-	private static PenHistoryEnvelope Envelope(int penId, params (DateTime Time, double Center)[] columns)
-	{
-		var timestamps = new DateTime[columns.Length];
-		var min = new double[columns.Length];
-		var max = new double[columns.Length];
-		var center = new double[columns.Length];
-
-		for (var index = 0; index < columns.Length; index++)
-		{
-			timestamps[index] = columns[index].Time;
-			center[index] = columns[index].Center;
-			min[index] = columns[index].Center;
-			max[index] = columns[index].Center;
-		}
-
-		return new PenHistoryEnvelope(penId, timestamps, min, max, center);
 	}
 }

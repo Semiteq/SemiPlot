@@ -5,6 +5,7 @@ using AwesomeAssertions;
 using FluentResults;
 
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Testing;
 
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Messages;
@@ -84,7 +85,7 @@ public sealed class MinimapBandFeedTests
 	[AvaloniaFact]
 	public async Task AnOutage_ReportsOnceAndLogsEveryRepeat()
 	{
-		var logger = new RecordingLogger<MinimapViewModel>();
+		var logger = new FakeLogger<MinimapViewModel>();
 		using var stand = new MinimapStand(logger);
 		stand.ShowPens();
 		stand.Provider.FailHistory = true;
@@ -102,7 +103,8 @@ public sealed class MinimapBandFeedTests
 		}
 
 		stand.Panel.Entries.Should().HaveCount(2, "the band's repeats add no entry");
-		logger.Levels.Count(level => level == LogLevel.Warning).Should().Be(2);
+		logger.Levels().Count(level => level == LogLevel.Warning).Should()
+			.Be(3, "the first report logs its own warning and each repeat adds one");
 
 		stand.Provider.FailHistory = false;
 		stand.AdvanceToNextBandRead();
@@ -286,7 +288,7 @@ public sealed class MinimapBandFeedTests
 	[AvaloniaFact]
 	public async Task ARepeatedThrowingRead_LogsItsExceptionAtWarning()
 	{
-		var logger = new RecordingLogger<MinimapViewModel>();
+		var logger = new FakeLogger<MinimapViewModel>();
 		using var stand = new MinimapStand(logger);
 		var thrown = new InvalidOperationException("the band read threw");
 		stand.ShowPens();
@@ -296,8 +298,9 @@ public sealed class MinimapBandFeedTests
 
 		stand.AdvanceToNextBandRead();
 
-		logger.Levels.Should().Contain(LogLevel.Warning);
-		logger.Exceptions[logger.Levels.LastIndexOf(LogLevel.Warning)].Should().BeSameAs(thrown);
+		logger.Levels().Should().Contain(LogLevel.Warning);
+		logger.Collector.GetSnapshot().Last(record => record.Level == LogLevel.Warning).Exception.Should().BeSameAs(
+			thrown);
 	}
 
 	[AvaloniaFact]

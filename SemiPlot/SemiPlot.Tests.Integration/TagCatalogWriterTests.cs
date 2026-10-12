@@ -1,7 +1,5 @@
 using AwesomeAssertions;
 
-using Npgsql;
-
 using SemiPlot.Tools.ArchiveSeeder;
 
 using Xunit;
@@ -77,10 +75,11 @@ public sealed class TagCatalogWriterTests(PostgresContainerFixture postgresConta
 	{
 		await using var database = await WrittenSliceAsync();
 
-		var written = await ReadAsync(
-			database,
+		var written = await ArchiveDatabase.ReadAsync(
+			database.AdminConnectionString,
 			LogScaleFlagsCommand,
-			reader => (PenId: reader.GetInt32(0), LogScaleOnStart: reader.GetBoolean(1)));
+			reader => (PenId: reader.GetInt32(0), LogScaleOnStart: reader.GetBoolean(1)),
+			cancellationToken: TestContext.Current.CancellationToken);
 
 		written.Should().Equal(
 		[
@@ -124,6 +123,27 @@ public sealed class TagCatalogWriterTests(PostgresContainerFixture postgresConta
 		memberships.Count(membership => membership.PenId == SyntheticPenCatalog.TwoGroupPenId).Should().Be(1);
 		memberships.Should().NotContain(membership => membership.Group == droppedGroup);
 		(await GroupNamesAsync(database)).Should().NotContain(droppedGroup);
+	}
+
+	// The upsert is what makes a template rebuild idempotent.
+	[Fact]
+	public async Task WritingTheTagCatalogueTwiceUpdatesTheRowsInPlace()
+	{
+		await using var database = await WrittenSliceAsync();
+
+		var renamed = Slice().Select(pen => pen with { Name = pen.Name + " rewritten" }).ToArray();
+
+		var second = await new TagCatalogWriter(database.AdminConnectionString)
+			.WriteAsync(renamed, TestContext.Current.CancellationToken);
+
+		second.Should().Be(renamed.Length);
+
+		(await ArchiveDatabase.ReadAsync(
+			database.AdminConnectionString,
+			"SELECT id, name FROM public.semiplot_tags ORDER BY id;",
+			reader => (reader.GetInt32(0), reader.GetString(1)),
+			cancellationToken: TestContext.Current.CancellationToken)).Should().Equal(
+			[.. renamed.Select(pen => (pen.PenId, pen.Name)).OrderBy(tag => tag.PenId)]);
 	}
 
 	// The two-group pen loses its second group, which nothing else in the slice carries.
@@ -170,60 +190,43 @@ public sealed class TagCatalogWriterTests(PostgresContainerFixture postgresConta
 		];
 	}
 
-	private async Task<ArchiveDatabase> WrittenSliceAsync()
+	private Task<ArchiveDatabase> WrittenSliceAsync()
 	{
-		var database = await postgresContainerFixture.CloneProvisionedAsync(TestContext.Current.CancellationToken);
-
-		await new TagCatalogWriter(database.AdminConnectionString)
-			.WriteAsync(Slice(), TestContext.Current.CancellationToken);
-
-		return database;
+		return postgresContainerFixture.CloneAsync(
+			CloneSource.Provisioned,
+			clone => new TagCatalogWriter(clone.AdminConnectionString)
+				.WriteAsync(Slice(), TestContext.Current.CancellationToken),
+			TestContext.Current.CancellationToken);
 	}
 
 	private static async Task<IReadOnlyList<string>> GroupNamesAsync(ArchiveDatabase database)
 	{
-		return await ReadAsync(database, GroupNamesCommand, reader => reader.GetString(0));
+		return await ArchiveDatabase.ReadAsync(
+			database.AdminConnectionString,
+			GroupNamesCommand,
+			reader => reader.GetString(0),
+			cancellationToken: TestContext.Current.CancellationToken);
 	}
 
 	private static async Task<IReadOnlyList<(int PenId, string Group)>> MembershipsAsync(ArchiveDatabase database)
 	{
-		return await ReadAsync(
-			database,
+		return await ArchiveDatabase.ReadAsync(
+			database.AdminConnectionString,
 			MembershipsCommand,
-			reader => (reader.GetInt32(0), reader.GetString(1)));
+			reader => (reader.GetInt32(0), reader.GetString(1)),
+			cancellationToken: TestContext.Current.CancellationToken);
 	}
 
 	private static async Task<IReadOnlyList<(int PenId, double? Min, double? Max)>> StoredScalesAsync(
 		ArchiveDatabase database)
 	{
-		return await ReadAsync(
-			database,
+		return await ArchiveDatabase.ReadAsync(
+			database.AdminConnectionString,
 			StoredScalesCommand,
 			reader => (
 				reader.GetInt32(0),
 				reader.IsDBNull(1) ? (double?)null : reader.GetDouble(1),
-				reader.IsDBNull(2) ? (double?)null : reader.GetDouble(2)));
-	}
-
-	private static async Task<IReadOnlyList<TRow>> ReadAsync<TRow>(
-		ArchiveDatabase database,
-		string commandText,
-		Func<NpgsqlDataReader, TRow> readRow)
-	{
-		var rows = new List<TRow>();
-
-		await using var connection = new NpgsqlConnection(database.AdminConnectionString);
-
-		await connection.OpenAsync(TestContext.Current.CancellationToken);
-
-		await using var command = new NpgsqlCommand(commandText, connection);
-		await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
-
-		while (await reader.ReadAsync(TestContext.Current.CancellationToken))
-		{
-			rows.Add(readRow(reader));
-		}
-
-		return rows;
+				reader.IsDBNull(2) ? (double?)null : reader.GetDouble(2)),
+			cancellationToken: TestContext.Current.CancellationToken);
 	}
 }

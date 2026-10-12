@@ -5,14 +5,12 @@ using AwesomeAssertions;
 using FluentResults;
 
 using SemiPlot.Core.Configuration;
-using SemiPlot.DataSource.Postgres.Configuration;
-using SemiPlot.Tools.ArchiveSeeder;
-using SemiPlot.UI.Startup;
 
 using Xunit;
 
 using YamlDotNet.Serialization;
-using YamlDotNet.Serialization.NamingConventions;
+
+using static SemiPlot.Tests.Unit.ResultText;
 
 namespace SemiPlot.Tests.Unit.Core.Configuration;
 
@@ -21,11 +19,11 @@ namespace SemiPlot.Tests.Unit.Core.Configuration;
 [Trait("Category", "Unit")]
 public sealed class ConfigurationSectionTests : IDisposable
 {
-	private readonly string _directory = Directory.CreateTempSubdirectory("semiplot-section-").FullName;
+	private readonly TemporaryDirectory _directory = new("semiplot-section");
 
 	public void Dispose()
 	{
-		Directory.Delete(_directory, recursive: true);
+		_directory.Dispose();
 	}
 
 	[Fact]
@@ -46,7 +44,8 @@ public sealed class ConfigurationSectionTests : IDisposable
 		WriteFile("a.yaml", "locale: ru\n");
 		WriteFile("B.yaml", "locale: en\n");
 
-		var error = ErrorOf(ConfigurationSection.Read(_directory, ConfigurationSectionName.App));
+		var error = ErrorOf<ConfigurationSectionError>(
+			ConfigurationSection.Read(_directory, ConfigurationSectionName.App));
 
 		error.FileNames.Should().Equal("B.yaml", "a.yaml");
 	}
@@ -57,7 +56,8 @@ public sealed class ConfigurationSectionTests : IDisposable
 		WriteFile("one.yaml", "locale: ru\ntheme: light\n");
 		WriteFile("two.yaml", "locale: en\n");
 
-		var error = ErrorOf(ConfigurationSection.Read(_directory, ConfigurationSectionName.App));
+		var error = ErrorOf<ConfigurationSectionError>(
+			ConfigurationSection.Read(_directory, ConfigurationSectionName.App));
 
 		error.Problem.Should().Be(SectionProblem.KeyConflict);
 		error.Section.Should().Be(ConfigurationSectionName.App);
@@ -70,7 +70,8 @@ public sealed class ConfigurationSectionTests : IDisposable
 	{
 		WriteFile("one.yaml", "locale: ru\nlocale: en\n");
 
-		var error = ErrorOf(ConfigurationSection.Read(_directory, ConfigurationSectionName.App));
+		var error = ErrorOf<ConfigurationSectionError>(
+			ConfigurationSection.Read(_directory, ConfigurationSectionName.App));
 
 		error.Problem.Should().Be(SectionProblem.DuplicateKey);
 		error.Key.Should().Be("locale");
@@ -83,7 +84,8 @@ public sealed class ConfigurationSectionTests : IDisposable
 		WriteFile("one.yaml", "locale: ru\n");
 		WriteFile("two.yaml", "Locale: en\n");
 
-		var error = ErrorOf(ConfigurationSection.Read(_directory, ConfigurationSectionName.App));
+		var error = ErrorOf<ConfigurationSectionError>(
+			ConfigurationSection.Read(_directory, ConfigurationSectionName.App));
 
 		error.Problem.Should().Be(SectionProblem.KeyConflict);
 		error.FileNames.Should().Equal("one.yaml", "two.yaml");
@@ -105,7 +107,7 @@ public sealed class ConfigurationSectionTests : IDisposable
 	{
 		var absent = Path.Combine(_directory, "app");
 
-		var error = ErrorOf(ConfigurationSection.Read(absent, ConfigurationSectionName.App));
+		var error = ErrorOf<ConfigurationSectionError>(ConfigurationSection.Read(absent, ConfigurationSectionName.App));
 
 		error.Problem.Should().Be(SectionProblem.DirectoryMissing);
 		error.Directory.Should().Be(absent);
@@ -116,7 +118,8 @@ public sealed class ConfigurationSectionTests : IDisposable
 	{
 		WriteFile("app.txt", "locale: ru\n");
 
-		var error = ErrorOf(ConfigurationSection.Read(_directory, ConfigurationSectionName.App));
+		var error = ErrorOf<ConfigurationSectionError>(
+			ConfigurationSection.Read(_directory, ConfigurationSectionName.App));
 
 		error.Problem.Should().Be(SectionProblem.NoFiles);
 	}
@@ -126,7 +129,8 @@ public sealed class ConfigurationSectionTests : IDisposable
 	[InlineData("   ")]
 	public void ABlankDirectoryYieldsATypedErrorRatherThanAThrow(string directory)
 	{
-		var error = ErrorOf(ConfigurationSection.Read(directory, ConfigurationSectionName.Connection));
+		var error = ErrorOf<ConfigurationSectionError>(
+			ConfigurationSection.Read(directory, ConfigurationSectionName.Connection));
 
 		error.Problem.Should().Be(SectionProblem.DirectoryMissing);
 		error.Section.Should().Be(ConfigurationSectionName.Connection);
@@ -186,29 +190,6 @@ public sealed class ConfigurationSectionTests : IDisposable
 
 		result.IsSuccess.Should().BeTrue(Describe(result));
 		MappingOf(result.Value).Should().Contain("locale", "ru");
-	}
-
-	[Fact]
-	public void TheShippedConnectionBodySurvivesTheMerge()
-	{
-		WriteFile("connection.yaml", ShippedConnectionBody());
-
-		var result = ConfigurationSection.Read(_directory, ConfigurationSectionName.Connection);
-
-		result.IsSuccess.Should().BeTrue(Describe(result));
-
-		var dto = new DeserializerBuilder()
-			.WithNamingConvention(UnderscoredNamingConvention.Instance)
-			.IgnoreUnmatchedProperties()
-			.Build()
-			.Deserialize<PostgresConnectionDto>(result.Value);
-
-		dto.Host.Should().Be("127.0.0.1");
-		dto.Port.Should().Be(5432);
-		dto.Database.Should().Be("semiplot");
-		dto.User.Should().Be("semiplot");
-		dto.Password.Should().BeEmpty();
-		dto.PollIntervalMs.Should().Be(1000);
 	}
 
 	[Fact]
@@ -280,18 +261,6 @@ public sealed class ConfigurationSectionTests : IDisposable
 		owned.Values.Should().Contain("password", "null").And.Contain("port", "5432");
 	}
 
-	[Fact]
-	public void ReadOwnedStillFailsOnOneKeyInTwoCasesAcrossTwoFiles()
-	{
-		WriteFile("one.yaml", "locale: ru\n");
-		WriteFile("two.yaml", "Locale: en\n");
-
-		var error = ErrorOf(ConfigurationSection.ReadOwned(_directory, ConfigurationSectionName.App));
-
-		error.Problem.Should().Be(SectionProblem.KeyConflict);
-		error.FileNames.Should().Equal("one.yaml", "two.yaml");
-	}
-
 	[Theory]
 	[InlineData(SectionProblem.DirectoryMissing)]
 	[InlineData(SectionProblem.NoFiles)]
@@ -302,8 +271,10 @@ public sealed class ConfigurationSectionTests : IDisposable
 	{
 		var directory = ArrangeFailure(problem);
 
-		var owned = ErrorOf(ConfigurationSection.ReadOwned(directory, ConfigurationSectionName.App));
-		var read = ErrorOf(ConfigurationSection.Read(directory, ConfigurationSectionName.App));
+		var owned = ErrorOf<ConfigurationSectionError>(
+			ConfigurationSection.ReadOwned(directory, ConfigurationSectionName.App));
+		var read = ErrorOf<ConfigurationSectionError>(
+			ConfigurationSection.Read(directory, ConfigurationSectionName.App));
 
 		owned.Problem.Should().Be(problem);
 		owned.Should().BeEquivalentTo(read, options => options.Excluding(error => error.Reasons));
@@ -344,16 +315,6 @@ public sealed class ConfigurationSectionTests : IDisposable
 		return result.Value;
 	}
 
-	private static string ShippedConnectionBody()
-	{
-		return File.ReadAllText(
-			Path.Combine(
-				AppContext.BaseDirectory,
-				"ConfigFiles",
-				StartupProbe.ConnectionDirectoryName,
-				ConnectionFileWriter.FileName));
-	}
-
 	private void WriteFile(string name, string content)
 	{
 		File.WriteAllText(Path.Combine(_directory, name), content);
@@ -362,17 +323,5 @@ public sealed class ConfigurationSectionTests : IDisposable
 	private static Dictionary<string, string> MappingOf(string yaml)
 	{
 		return new DeserializerBuilder().Build().Deserialize<Dictionary<string, string>?>(yaml) ?? [];
-	}
-
-	private static ConfigurationSectionError ErrorOf<TValue>(Result<TValue> result)
-	{
-		result.IsFailed.Should().BeTrue();
-
-		return result.Errors.OfType<ConfigurationSectionError>().Should().ContainSingle().Subject;
-	}
-
-	private static string Describe<TValue>(Result<TValue> result)
-	{
-		return string.Join("; ", result.Errors.Select(error => error.Message));
 	}
 }

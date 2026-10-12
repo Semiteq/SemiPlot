@@ -25,9 +25,6 @@ public sealed class TrendLegendViewModelTests
 	private const string CyrillicCapitalIo = "\u0401";
 	private const string CyrillicCapitalEn = "\u041d";
 
-	private static readonly TimeSpan _historyDebounceWindow = TimeSpan.FromMilliseconds(150);
-	private static readonly DateTime _from = new(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
-	private static readonly DateTime _to = new(2026, 6, 15, 9, 0, 0, DateTimeKind.Utc);
 	private readonly TestScheduler _scheduler = new();
 
 	[AvaloniaFact]
@@ -213,8 +210,10 @@ public sealed class TrendLegendViewModelTests
 		Group(legend, "Watchlist").SwitchState.Should().BeNull();
 	}
 
-	[AvaloniaFact]
-	public void TheSwitchOnAMixedHeader_SwitchesEveryPenOn()
+	[AvaloniaTheory]
+	[InlineData(false)]
+	[InlineData(true)]
+	public void TheSwitchOnAHeaderThatIsMixedOrOff_SwitchesEveryPenOn(bool isSecondPenOff)
 	{
 		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
@@ -222,24 +221,7 @@ public sealed class TrendLegendViewModelTests
 		using var legend = new TrendLegendViewModel(chart);
 		var heaters = Group(legend, "Heaters");
 		chart.SetPenVisibility(1, false);
-
-		heaters.SwitchGroupCommand.Execute().Subscribe();
-
-		chart.FindPen(1)!.IsVisible.Should().BeTrue();
-		chart.FindPen(2)!.IsVisible.Should().BeTrue();
-		heaters.SwitchState.Should().BeTrue();
-	}
-
-	[AvaloniaFact]
-	public void TheSwitchOnAnOffHeader_SwitchesEveryPenOn()
-	{
-		var chart = CreateChart();
-		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
-		chart.AddPen(new Pen(2, "Pen 2", ["Heaters"], "#00ff00"));
-		using var legend = new TrendLegendViewModel(chart);
-		var heaters = Group(legend, "Heaters");
-		chart.SetPenVisibility(1, false);
-		chart.SetPenVisibility(2, false);
+		chart.SetPenVisibility(2, !isSecondPenOff);
 
 		heaters.SwitchGroupCommand.Execute().Subscribe();
 
@@ -363,23 +345,6 @@ public sealed class TrendLegendViewModelTests
 	}
 
 	[AvaloniaFact]
-	public void ToggleVisibilityCommand_SwitchesThePenOffAndOnAgain()
-	{
-		var chart = CreateChart();
-		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
-		using var legend = new TrendLegendViewModel(chart);
-		var row = SingleRow(legend, 1);
-
-		row.ToggleVisibilityCommand.Execute().Subscribe();
-
-		chart.FindPen(1)!.IsVisible.Should().BeFalse();
-
-		row.ToggleVisibilityCommand.Execute().Subscribe();
-
-		chart.FindPen(1)!.IsVisible.Should().BeTrue();
-	}
-
-	[AvaloniaFact]
 	public void TheRow_FollowsAChangeOfTheChartsPenState()
 	{
 		var chart = CreateChart();
@@ -419,7 +384,7 @@ public sealed class TrendLegendViewModelTests
 		using var legend = new TrendLegendViewModel(chart);
 		var row = SingleRow(legend, 1);
 
-		LoadInitialHistory(chart, _from, _to);
+		ChartTestBuilder.LoadInitialHistory(chart, _scheduler, ChartTestBuilder.From, ChartTestBuilder.To);
 
 		row.CurrentValueText.Should().Be(PenValueFormat.Format(2.0, "0.000"));
 		row.CurrentValueText.Should().NotBe(PenValueFormat.Format(2.0, PenValueFormat.FallbackMask));
@@ -443,7 +408,7 @@ public sealed class TrendLegendViewModelTests
 		var pen = new Pen(1, "Pen 1", ["Heaters"], "#ff0000", "kPa", "0.0");
 		chart.AddPen(pen);
 		using var legend = new TrendLegendViewModel(chart);
-		LoadInitialHistory(chart, _from, _to);
+		ChartTestBuilder.LoadInitialHistory(chart, _scheduler, ChartTestBuilder.From, ChartTestBuilder.To);
 
 		chart.ApplyCatalogue([pen with { Name = "Heater 01", Color = "#00ff00", Unit = "Pa", Format = "0.000" }]);
 		legend.Rebuild();
@@ -528,15 +493,6 @@ public sealed class TrendLegendViewModelTests
 
 		replacedFollowedOnAnnouncement.Should().BeTrue();
 		SingleRow(legend, 2).IsActive.Should().BeTrue();
-	}
-
-	private void LoadInitialHistory(TrendChartViewModel chart, DateTime from, DateTime to)
-	{
-		chart.Navigation.TrackDataExtents(from, to);
-		chart.RequestInitialHistory();
-
-		// The admission and the delivery each land one tick after the step that schedules them.
-		_scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 2);
 	}
 
 	private static TrendLegendRowViewModel SingleRow(TrendLegendViewModel legend, int penId)

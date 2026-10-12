@@ -261,20 +261,26 @@
   <data name="FailureConnectionFileRejectedTitle" xml:space="preserve">
     <value>Не удаётся прочитать настройки подключения к базе данных</value>
   </data>
-  <data name="FailureConnectionFileRejectedDetail" xml:space="preserve">
-    <value>SemiPlot отклонил каталог подключения «{0}»: {1}</value>
+  <data name="FailureConnectionFileUnparseableDetail" xml:space="preserve">
+    <value>SemiPlot не может разобрать файл в каталоге подключения «{0}»: ключ содержит значение недопустимого формата.</value>
   </data>
-  <data name="FailureConnectionFileRejectedRemedy" xml:space="preserve">
-    <value>Исправьте в файлах этого каталога значение, названное в причине.</value>
+  <data name="FailureConnectionFileMissingFieldDetail" xml:space="preserve">
+    <value>SemiPlot отклонил каталог подключения «{0}»: обязательные поля отсутствуют или пусты: {1}.</value>
+  </data>
+  <data name="FailureConnectionFileOutOfRangeDetail" xml:space="preserve">
+    <value>SemiPlot отклонил каталог подключения «{0}»: значения полей вне допустимого диапазона: {1}.</value>
+  </data>
+  <data name="FailureConnectionFileHostNotIPv4Detail" xml:space="preserve">
+    <value>SemiPlot отклонил каталог подключения «{0}»: в поле «{1}» не IPv4-адрес: нужны четыре десятичных числа от 0 до 255.</value>
   </data>
   <data name="FailureConnectionFileUnparseableRemedy" xml:space="preserve">
-    <value>Исправьте синтаксис в файле конфигурации этого каталога.</value>
+    <value>Исправьте значение неверного типа, например порт, который не является числом.</value>
   </data>
   <data name="FailureConnectionFileMissingFieldRemedy" xml:space="preserve">
-    <value>Все поля обязательны. Добавьте в файл этого каталога поле, названное в причине.</value>
+    <value>Все поля обязательны. Добавьте поля из сообщения в файл этого каталога.</value>
   </data>
   <data name="FailureConnectionFileOutOfRangeRemedy" xml:space="preserve">
-    <value>Задайте значение из диапазона, указанного в причине.</value>
+    <value>Задайте port от {0} до {1} и poll_interval_ms не меньше {2}.</value>
   </data>
   <data name="FailureConnectionFileHostNotIPv4Remedy" xml:space="preserve">
     <value>Укажите в поле host IPv4-адрес из четырёх чисел от 0 до 255, например 127.0.0.1. Имя сервера не принимается.</value>

@@ -1,28 +1,23 @@
-using System.Reactive.Concurrency;
-
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Styling;
 using Avalonia.Threading;
-using Avalonia.VisualTree;
 
 using AwesomeAssertions;
 
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Reactive.Testing;
 
 using ScottPlot.Avalonia;
 
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Bridge;
-using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.Localization;
-using SemiPlot.UI.Messages;
 
 using Xunit;
 
+using static SemiPlot.Tests.Unit.UI.Chart.ChartTestBuilder;
 using static SemiPlot.Tests.Unit.UI.Chart.ChartViewTestBuilder;
 
 using BitmapCache = Avalonia.Media.BitmapCache;
@@ -36,52 +31,11 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 [Trait("Category", "Unit")]
 public sealed class TrendChartViewTests
 {
-	private static readonly TimeSpan _batchWindow = TimeSpan.FromMilliseconds(33);
-
-	[AvaloniaFact]
-	public void RenderedFrame_ReportsItsDataAreaWidthToTheViewModel()
-	{
-		using var viewModel = CreateViewModel();
-
-		// Binding the view is the whole setup: it subscribes the seam to the view model's plot.
-		_ = new TrendChartView { DataContext = viewModel };
-
-		viewModel.Navigation.TargetColumnCount.Should().Be(HistoryColumnTarget.MaxColumns);
-
-		// A canvas this narrow leaves a data area under the minimum column count, so the reported width
-		// lands on MinColumns whatever the exact axis padding is.
-		viewModel.Plot.RenderInMemory(320, 240);
-		Dispatcher.UIThread.RunJobs();
-
-		viewModel.Navigation.TargetColumnCount.Should().Be(HistoryColumnTarget.MinColumns);
-
-		viewModel.Plot.RenderInMemory(2600, 800);
-		Dispatcher.UIThread.RunJobs();
-
-		viewModel.Navigation.TargetColumnCount.Should().Be(HistoryColumnTarget.MaxColumns);
-	}
-
-	[AvaloniaFact]
-	public void TwoRendersAtOneWidth_ReportTheWidthOnce()
-	{
-		using var viewModel = CreateViewModel();
-		_ = new TrendChartView { DataContext = viewModel };
-		viewModel.Plot.RenderInMemory(320, 240);
-		Dispatcher.UIThread.RunJobs();
-		viewModel.Navigation.TargetColumnCount.Should().Be(HistoryColumnTarget.MinColumns);
-
-		// A width reported past the view marks whether the second render posts its width again.
-		viewModel.ReportDataAreaWidth(2600.0);
-		viewModel.Plot.RenderInMemory(320, 240);
-		Dispatcher.UIThread.RunJobs();
-
-		viewModel.Navigation.TargetColumnCount.Should().Be(HistoryColumnTarget.MaxColumns);
-	}
 
 	[AvaloniaFact]
 	public void DetachedViewModel_NoLongerReceivesWidthReports()
 	{
-		using var viewModel = CreateViewModel();
+		using var viewModel = CreateChart(new TestScheduler());
 		var view = new TrendChartView { DataContext = viewModel };
 
 		viewModel.Plot.RenderInMemory(320, 240);
@@ -101,13 +55,12 @@ public sealed class TrendChartViewTests
 	{
 		using var scope = ThemeProbe.PreserveVariant();
 		var application = Application.Current!;
-		using var viewModel = CreateViewModel();
+		using var viewModel = CreateChart(new TestScheduler());
 		var window = new Window { Content = new TrendChartView { DataContext = viewModel } };
 		try
 		{
 			application.RequestedThemeVariant = ThemeVariant.Light;
-			window.Show();
-			Dispatcher.UIThread.RunJobs();
+			ViewProbe.Realise(window);
 			var light = viewModel.Plot.FigureBackground.Color;
 
 			application.RequestedThemeVariant = ThemeVariant.Dark;
@@ -122,6 +75,24 @@ public sealed class TrendChartViewTests
 		}
 	}
 
+	// docs/architecture/ui-theme.md#the-plot
+	[AvaloniaFact]
+	public void AnAxisAddedAfterTheFirstPaint_IsPaintedUnderTheCurrentTheme()
+	{
+		using var scope = ThemeProbe.ApplyVariant(ThemeVariant.Dark);
+		using var viewModel = CreateLoadedViewModel();
+		using var shown = ShowChart(viewModel);
+		DriveOneFrame();
+		var axesBefore = viewModel.AxisCount;
+
+		var added = viewModel.AddPen(FakeDataProvider.SecondPen);
+		DriveOneFrame();
+
+		viewModel.AxisCount.Should().Be(axesBefore + 1);
+		added.Line.Axes.YAxis.TickLabelStyle.ForeColor
+			.Should().Be(ThemeProbe.PlotColour("AppSecondaryForegroundBrush", ThemeVariant.Dark));
+	}
+
 	[AvaloniaFact]
 	public void AViewWithNoViewModel_StillPaintsTheChartAreaFromThePalette()
 	{
@@ -131,10 +102,9 @@ public sealed class TrendChartViewTests
 		try
 		{
 			application.RequestedThemeVariant = ThemeVariant.Dark;
-			window.Show();
-			Dispatcher.UIThread.RunJobs();
+			ViewProbe.Realise(window);
 
-			var plot = window.GetVisualDescendants().OfType<AvaPlot>().Single().Plot;
+			var plot = ((TrendChartView)window.Content!).FindControl<AvaPlot>("PlotControl")!.Plot;
 
 			plot.FigureBackground.Color.Should().Be(FigureBackgroundUnder(ThemeVariant.Dark));
 		}
@@ -149,12 +119,11 @@ public sealed class TrendChartViewTests
 	{
 		using var scope = ThemeProbe.PreserveVariant();
 		var application = Application.Current!;
-		using var viewModel = CreateViewModel();
+		using var viewModel = CreateChart(new TestScheduler());
 		var window = new Window { Content = new TrendChartView { DataContext = viewModel } };
 
 		application.RequestedThemeVariant = ThemeVariant.Light;
-		window.Show();
-		Dispatcher.UIThread.RunJobs();
+		ViewProbe.Realise(window);
 
 		window.Close();
 		Dispatcher.UIThread.RunJobs();
@@ -171,16 +140,13 @@ public sealed class TrendChartViewTests
 	[AvaloniaFact]
 	public void EmptyCatalogueMessage_ShowsWithNoPensAndWithdrawsWhenOneArrives()
 	{
-		using var viewModel = CreateViewModel();
-		var window = new Window { Content = new TrendChartView { DataContext = viewModel } };
+		using var viewModel = CreateChart(new TestScheduler());
+		var view = new TrendChartView { DataContext = viewModel };
+		var window = new Window { Content = view };
 		try
 		{
-			window.Show();
-			Dispatcher.UIThread.RunJobs();
-			var message = window
-				.GetVisualDescendants()
-				.OfType<TextBlock>()
-				.Single(block => block.Name == "EmptyCatalogueMessage");
+			ViewProbe.Realise(window);
+			var message = ViewProbe.Named<TextBlock>(view, "EmptyCatalogueMessage");
 
 			message.IsVisible.Should().BeTrue();
 			message.Text.Should().Be(Resources.FormatEmptyCatalogueMessage(
@@ -326,25 +292,5 @@ public sealed class TrendChartViewTests
 	private static ScottPlot.Color FigureBackgroundUnder(ThemeVariant variant)
 	{
 		return ThemeProbe.PlotColour("AppPanelBackgroundBrush", variant);
-	}
-
-	// Both schedulers are virtual: docs/architecture/testing-strategy.md#the-ui-scheduler-in-a-realised-view.
-	private static TrendChartViewModel CreateViewModel()
-	{
-		var scheduler = new TestScheduler();
-		var provider = new FakeDataProvider(scheduler, TimeSpan.FromMilliseconds(10));
-		var coordinator = new TrendCoordinator(
-			provider,
-			provider.Pens,
-			scheduler,
-			ImmediateScheduler.Instance,
-			_batchWindow);
-
-		return new TrendChartViewModel(
-			coordinator,
-			scheduler,
-			scheduler,
-			new MessagePanelViewModel(),
-			NullLogger<TrendChartViewModel>.Instance);
 	}
 }

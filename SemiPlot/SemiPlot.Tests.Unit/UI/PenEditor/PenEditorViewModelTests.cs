@@ -343,28 +343,6 @@ public sealed class PenEditorViewModelTests : IDisposable
 	}
 
 	[AvaloniaFact]
-	public async Task WhenIdle_CompletesOnlyAfterEveryQueuedCall()
-	{
-		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
-		editor.SelectedRow = editor.Rows[1];
-		var gate = _editor.HoldNextCall();
-
-		editor.SelectedForm!.Name = "First";
-		_ = editor.SelectedForm.EndEditAsync(PenField.Name);
-		editor.SelectedForm.Unit = "kPa";
-		_ = editor.SelectedForm.EndEditAsync(PenField.Unit);
-		var idle = editor.WhenIdleAsync();
-
-		idle.IsCompleted.Should().BeFalse();
-
-		gate.SetResult();
-		await idle;
-
-		_editor.Changes.Should().HaveCount(2);
-		editor.Rows[1].Pen.Should().Be(Pressure with { Name = "First", Unit = "kPa" });
-	}
-
-	[AvaloniaFact]
 	public void ReportFailure_AddsOneMessagePanelEntry()
 	{
 		using var editor = _editor.EditorOver(_catalogue, _messagePanel);

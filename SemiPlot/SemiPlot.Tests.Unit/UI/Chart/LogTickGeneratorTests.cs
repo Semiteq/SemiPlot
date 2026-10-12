@@ -7,6 +7,8 @@ using SemiPlot.UI.Chart;
 
 using Xunit;
 
+using static SemiPlot.Tests.Unit.UI.Chart.TickRegeneration;
+
 namespace SemiPlot.Tests.Unit.UI.Chart;
 
 [Collection(ProcessGlobalStateCollection.Name)]
@@ -15,7 +17,6 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 [Trait("Category", "Unit")]
 public sealed class LogTickGeneratorTests
 {
-	private const float AxisPixels = 400f;
 	private const string IntegerMask = "0";
 	private const string InvariantCultureName = "";
 
@@ -50,11 +51,5 @@ public sealed class LogTickGeneratorTests
 		majors.Select(tick => tick.Label).Should().Equal(labels);
 		majors.Select(tick => Math.Pow(10.0, tick.Position)).Should().Equal(
 			labelledValues, (actual, expected) => Math.Abs(actual - expected) < expected * 1e-9);
-	}
-
-	private static void Regenerate(LogTickGenerator generator, CoordinateRange range, float pixels)
-	{
-		using var paint = Paint.NewDisposablePaint();
-		generator.Regenerate(range, Edge.Left, new PixelLength(pixels), paint, new LabelStyle());
 	}
 }

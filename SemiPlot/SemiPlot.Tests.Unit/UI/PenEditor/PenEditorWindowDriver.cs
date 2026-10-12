@@ -1,6 +1,4 @@
 using Avalonia.Controls;
-using Avalonia.Threading;
-using Avalonia.VisualTree;
 
 using AwesomeAssertions;
 
@@ -13,18 +11,13 @@ internal static class PenEditorWindowDriver
 {
 	public static PenEditorWindow Realise(PenEditorViewModel viewModel)
 	{
-		var window = new PenEditorWindow { DataContext = viewModel };
-		window.Show();
-		Dispatcher.UIThread.RunJobs();
-
-		return window;
+		return ViewProbe.Realise(new PenEditorWindow { DataContext = viewModel });
 	}
 
 	// The window waits for the edits in progress and closes on a posted job.
 	public static void Close(PenEditorWindow window)
 	{
-		window.Close();
-		Dispatcher.UIThread.RunJobs();
+		ViewProbe.Dismiss(window);
 		window.IsVisible.Should().BeFalse("the close request completes once the edits are written");
 	}
 
@@ -34,12 +27,6 @@ internal static class PenEditorWindowDriver
 		HeadlessInput.Type(window, field, text);
 	}
 
-	public static T Named<T>(PenEditorWindow window, string name)
-		where T : Control
-	{
-		return window.FindControl<T>(name) ?? throw new InvalidOperationException($"No control named {name}.");
-	}
-
 	public static bool IsOnScreen(Control control)
 	{
 		return control.IsEffectivelyVisible && TopLevel.GetTopLevel(control) is not null && control.Bounds.Height > 0;
@@ -47,31 +34,23 @@ internal static class PenEditorWindowDriver
 
 	public static Control RowAt(PenEditorWindow window, int index)
 	{
-		return Named<ListBox>(window, "PenTable").ContainerFromIndex(index)
+		return ViewProbe.Named<ListBox>(window, "PenTable").ContainerFromIndex(index)
 			?? throw new InvalidOperationException($"The table realised no row {index}.");
 	}
 
 	public static void OpenGroupsTab(PenEditorWindow window)
 	{
-		HeadlessInput.Click(window, Named<TabItem>(window, "GroupsTab"));
+		HeadlessInput.Click(window, ViewProbe.Named<TabItem>(window, "GroupsTab"));
 	}
 
 	public static Control GroupAt(PenEditorWindow window, int index)
 	{
-		return Named<ListBox>(window, "GroupList").ContainerFromIndex(index)
+		return ViewProbe.Named<ListBox>(window, "GroupList").ContainerFromIndex(index)
 			?? throw new InvalidOperationException($"The group list realised no row {index}.");
-	}
-
-	// A row template carries its own name scope, so a cell is reached through the visual tree.
-	public static T Cell<T>(Control row, string name)
-		where T : Control
-	{
-		return row.GetVisualDescendants().OfType<T>().FirstOrDefault(cell => cell.Name == name)
-			?? throw new InvalidOperationException($"The row realised no {name}.");
 	}
 
 	public static string? TextOf(Control row, string name)
 	{
-		return Cell<TextBlock>(row, name).Text;
+		return ViewProbe.Descendant<TextBlock>(row, name).Text;
 	}
 }

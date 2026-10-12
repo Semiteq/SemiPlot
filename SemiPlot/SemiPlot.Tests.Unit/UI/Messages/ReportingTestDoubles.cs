@@ -1,12 +1,12 @@
 using System.Collections.Specialized;
 
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Testing;
 
 using SemiPlot.UI.Messages;
 
 namespace SemiPlot.Tests.Unit.UI.Messages;
 
-/// <summary>The doubles every reporting test needs: a panel that refuses the entry, and two log sinks.</summary>
 internal static class ReportingTestDoubles
 {
 	/// <summary>Makes the panel's bound collection throw on every edit, until the returned handle is disposed.</summary>
@@ -20,7 +20,7 @@ internal static class ReportingTestDoubles
 
 	private static void AlwaysThrow(object? sender, NotifyCollectionChangedEventArgs arguments)
 	{
-		throw new InvalidOperationException("the bound list threw");
+		throw new PoisonedPanelException();
 	}
 
 	private sealed class Unpoison(INotifyCollectionChanged entries) : IDisposable
@@ -32,44 +32,29 @@ internal static class ReportingTestDoubles
 	}
 }
 
-/// <summary>Keeps every level and exception the code under test wrote, in the order it wrote them.</summary>
-internal class RecordingLogger : ILogger
+/// <summary>What the poisoned panel throws, so a test tells it from any other failure by type.</summary>
+internal sealed class PoisonedPanelException() : InvalidOperationException("the bound list threw");
+
+/// <summary>Reads what a <see cref="FakeLogger"/> kept, in the order the code under test wrote it.</summary>
+internal static class FakeLoggerReading
 {
-	public List<LogLevel> Levels { get; } = [];
-
-	public List<Exception?> Exceptions { get; } = [];
-
-	public IReadOnlyList<Exception> Failures => [.. Exceptions.OfType<Exception>()];
-
-	public IDisposable? BeginScope<TState>(TState state)
-		where TState : notnull
+	public static IReadOnlyList<LogLevel> Levels(this FakeLogger logger)
 	{
-		return null;
+		return [.. logger.Collector.GetSnapshot().Select(record => record.Level)];
 	}
 
-	public bool IsEnabled(LogLevel logLevel)
+	public static IReadOnlyList<Exception> Failures(this FakeLogger logger)
 	{
-		return true;
-	}
-
-	public void Log<TState>(
-		LogLevel logLevel,
-		EventId eventId,
-		TState state,
-		Exception? exception,
-		Func<TState, Exception?, string> formatter)
-	{
-		Levels.Add(logLevel);
-		Exceptions.Add(exception);
+		return [.. logger.Collector.GetSnapshot().Select(record => record.Exception).OfType<Exception>()];
 	}
 }
-
-internal sealed class RecordingLogger<TCategory> : RecordingLogger, ILogger<TCategory>;
 
 /// <summary>A log sink that refuses, either on every call or only on the first one.</summary>
 internal class ThrowingLogger(bool throwsOnce = false) : ILogger
 {
 	private bool _hasThrown;
+
+	public InvalidOperationException Thrown { get; } = new("the log sink threw");
 
 	public IDisposable? BeginScope<TState>(TState state)
 		where TState : notnull
@@ -96,7 +81,7 @@ internal class ThrowingLogger(bool throwsOnce = false) : ILogger
 
 		_hasThrown = true;
 
-		throw new InvalidOperationException("the log sink threw");
+		throw Thrown;
 	}
 }
 

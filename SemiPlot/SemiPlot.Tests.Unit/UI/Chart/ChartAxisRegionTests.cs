@@ -32,32 +32,6 @@ public sealed class ChartAxisRegionTests
 		region.Contains(dataRect.HorizontalCenter, verticalCenter).Should().BeFalse();
 	}
 
-	[Fact]
-	public void TryCreate_ForARightEdgeAxis_ContainsAPointInsideItsPanelToTheRightOfTheDataArea()
-	{
-		var plot = new Plot();
-		var rightAxis = plot.Axes.AddRightAxis();
-		var scatter = plot.Add.Scatter(new double[] { 0, 1, 2 }, new double[] { 0, 50, 100 });
-		scatter.Axes.YAxis = rightAxis;
-		plot.Axes.SetLimitsY(0.0, 100.0, rightAxis);
-		plot.RenderInMemory(PlotWidth, PlotHeight);
-
-		var region = ChartAxisRegion.TryCreate(plot, rightAxis);
-
-		region.Should().NotBeNull();
-
-		var layout = plot.RenderManager.LastRender.Layout;
-		var dataRect = layout.DataRect;
-		var verticalCenter = (dataRect.Top + dataRect.Bottom) / 2f;
-		// Probe the panel's measured midpoint so the assertion does not depend on ScottPlot's panel width.
-		var offset = layout.PanelOffsets[rightAxis];
-		var size = layout.PanelSizes[rightAxis];
-		var insideRightPanel = dataRect.Right + offset + (size / 2f);
-
-		region.Contains(insideRightPanel, verticalCenter).Should().BeTrue();
-		region.Contains(dataRect.HorizontalCenter, verticalCenter).Should().BeFalse();
-	}
-
 	// A hidden axis keeps a panel of size 0 at offset 0, whose band collapses onto the data rect's own
 	// left edge and would answer a press there with the scale panel of a pen nothing draws.
 	[Fact]

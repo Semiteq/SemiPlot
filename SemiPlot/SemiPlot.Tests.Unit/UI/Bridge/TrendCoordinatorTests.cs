@@ -7,6 +7,8 @@ using Microsoft.Reactive.Testing;
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
+using SemiPlot.Tests.Unit.UI.Chart;
+using SemiPlot.Tests.Unit.UI.PenEditor;
 using SemiPlot.UI.Bridge;
 
 using Xunit;
@@ -18,32 +20,28 @@ namespace SemiPlot.Tests.Unit.UI.Bridge;
 [Trait("Category", "Unit")]
 public sealed class TrendCoordinatorTests
 {
-	private static readonly TimeSpan _batchWindow = TimeSpan.FromMilliseconds(33);
-	private static readonly DateTime _from = new(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
-	private static readonly DateTime _to = new(2026, 6, 15, 9, 0, 0, DateTimeKind.Utc);
-
 	[Fact]
 	public void RealtimeBatches_EmitOnePerBufferWindow()
 	{
-		var (coordinator, scheduler, _) = CreateCoordinator(realtimeInterval: TimeSpan.FromMilliseconds(10));
+		var (coordinator, scheduler, _) = CreateCoordinator(realtimeInterval: ChartTestBuilder.RealtimeInterval);
 		var batches = new List<RealtimeBatch>();
 		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
 
-		scheduler.AdvanceBy(_batchWindow.Ticks);
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
 		batches.Should().HaveCount(1);
 
-		scheduler.AdvanceBy(_batchWindow.Ticks);
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
 		batches.Should().HaveCount(2);
 	}
 
 	[Fact]
 	public void RealtimeBatch_CarriesOneEntryPerPen()
 	{
-		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: TimeSpan.FromMilliseconds(10));
+		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: ChartTestBuilder.RealtimeInterval);
 		var batches = new List<RealtimeBatch>();
 		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
 
-		scheduler.AdvanceBy(_batchWindow.Ticks);
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
 
 		var batch = batches.Single();
 		batch.Pens.Should().HaveCount(provider.Pens.Count);
@@ -58,12 +56,12 @@ public sealed class TrendCoordinatorTests
 	[Fact]
 	public void RealtimeBatch_KeepsEachPenOnItsOwnTimestamps()
 	{
-		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: TimeSpan.FromMilliseconds(10));
+		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: ChartTestBuilder.RealtimeInterval);
 		provider.StaggerRealtimeTimestamps = true;
 		var batches = new List<RealtimeBatch>();
 		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
 
-		scheduler.AdvanceBy(_batchWindow.Ticks);
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
 
 		var batch = batches.Single();
 		batch.Timestamps.Should().HaveCount(batch.Pens.Sum(values => values.TimestampsUtc.Count));
@@ -72,41 +70,19 @@ public sealed class TrendCoordinatorTests
 	}
 
 	[Fact]
-	public async Task QueryHistoryAsync_PassesThroughToProviderWithTargetColumnCountAndToken()
-	{
-		var (coordinator, _, provider) = CreateCoordinator();
-		using var cancellation = new CancellationTokenSource();
-
-		var result = await coordinator.QueryHistoryAsync(
-			[1, 2],
-			_from,
-			_to,
-			AggregationLayer.Minute,
-			256,
-			cancellation.Token);
-
-		result.IsSuccess.Should().BeTrue();
-		result.Value.Select(pen => pen.PenId).Should().Equal(1, 2);
-		provider.LastQueriedLayer.Should().Be(AggregationLayer.Minute);
-		provider.LastQueriedTargetColumnCount.Should().Be(256);
-		provider.LastQueriedCancellationToken.Should().Be(cancellation.Token);
-	}
-
-	[Fact]
 	public void RealtimeBatches_WithAnEmptyCatalog_EmitNothing()
 	{
 		var scheduler = new TestScheduler();
-		var provider = new FakeDataProvider(scheduler, TimeSpan.FromMilliseconds(10));
+		var provider = new FakeDataProvider(scheduler, ChartTestBuilder.RealtimeInterval);
 		using var coordinator = new TrendCoordinator(
 			provider,
 			[],
 			scheduler,
-			ImmediateScheduler.Instance,
-			_batchWindow);
+			ImmediateScheduler.Instance);
 		var batches = new List<RealtimeBatch>();
 		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
 
-		scheduler.AdvanceBy(_batchWindow.Ticks * 5);
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks * 5);
 
 		batches.Should().BeEmpty();
 	}
@@ -140,7 +116,7 @@ public sealed class TrendCoordinatorTests
 		using var subscription = coordinator.ConnectionFaults.Subscribe(states.Add);
 
 		provider.ReportConnectionState(
-			new ArchiveConnectionState(new ArchiveError(ArchiveFault.ConnectionLost, "bench", 5432, "semiplot_dev", "3")));
+			new ArchiveConnectionState(FakePenCatalogueEditor.Refusal(ArchiveFault.ConnectionLost, "3")));
 		uiScheduler.AdvanceBy(1);
 
 		states.Should().ContainSingle().Which.IsConnected.Should().BeFalse();
@@ -168,19 +144,19 @@ public sealed class TrendCoordinatorTests
 	[Fact]
 	public void AConnectionFault_LeavesTheRealtimeBatchesUntouched()
 	{
-		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: TimeSpan.FromMilliseconds(10));
+		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: ChartTestBuilder.RealtimeInterval);
 		using var ownedCoordinator = coordinator;
 		var batches = new List<RealtimeBatch>();
 		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
 
-		scheduler.AdvanceBy(_batchWindow.Ticks);
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
 
 		provider.ReportConnectionState(
-			new ArchiveConnectionState(new ArchiveError(ArchiveFault.ConnectionLost, "bench", 5432, "semiplot_dev", "3")));
+			new ArchiveConnectionState(FakePenCatalogueEditor.Refusal(ArchiveFault.ConnectionLost, "3")));
 
 		batches.Should().HaveCount(1);
 
-		scheduler.AdvanceBy(_batchWindow.Ticks);
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
 
 		batches.Should().HaveCount(2);
 	}
@@ -191,25 +167,24 @@ public sealed class TrendCoordinatorTests
 	public void AFaultingRealtimeStream_ReachesTheFailureChannelInsteadOfTheScheduler()
 	{
 		var scheduler = new TestScheduler();
-		var provider = new FakeDataProvider(scheduler, TimeSpan.FromMilliseconds(10))
+		var thrown = new InvalidOperationException("the provider ended the live edge");
+		var provider = new FakeDataProvider(scheduler, ChartTestBuilder.RealtimeInterval)
 		{
-			RealtimeStreamFailure = new InvalidOperationException("the provider ended the live edge")
+			RealtimeStreamFailure = thrown
 		};
 		using var coordinator = new TrendCoordinator(
 			provider,
 			provider.Pens,
 			scheduler,
-			ImmediateScheduler.Instance,
-			_batchWindow);
+			ImmediateScheduler.Instance);
 		var failures = new List<Exception>();
 		using var reported = coordinator.RealtimeFailures.Subscribe(failures.Add);
 		using var liveEdge = coordinator.RealtimeBatches.Subscribe(_ => { });
 
-		var advance = () => scheduler.AdvanceBy(_batchWindow.Ticks * 2);
+		var advance = () => scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks * 2);
 
 		advance.Should().NotThrow();
-		failures.Should().ContainSingle()
-			.Which.Message.Should().Be("the provider ended the live edge");
+		failures.Should().ContainSingle().Which.Should().BeSameAs(thrown);
 	}
 
 	[Fact]
@@ -229,15 +204,15 @@ public sealed class TrendCoordinatorTests
 	[Fact]
 	public void AFailedWindowAfterDisposal_LeavesTheStreamAlive()
 	{
-		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: TimeSpan.FromMilliseconds(10));
+		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: ChartTestBuilder.RealtimeInterval);
 		var batches = new List<RealtimeBatch>();
 		var failures = new List<Exception>();
 		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add, failures.Add);
-		scheduler.AdvanceBy(_batchWindow.Ticks);
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
 		coordinator.Dispose();
 		provider.PoisonRealtimeWindow = true;
 
-		var advance = () => scheduler.AdvanceBy(_batchWindow.Ticks * 3);
+		var advance = () => scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks * 3);
 
 		advance.Should().NotThrow();
 		failures.Should().BeEmpty("the subject is completed at disposal, not disposed");
@@ -246,16 +221,16 @@ public sealed class TrendCoordinatorTests
 	[Fact]
 	public void SetPens_WithAnAddedId_ReachesTheOneSubscriberOfTheLiveEdge()
 	{
-		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: TimeSpan.FromMilliseconds(10));
+		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: ChartTestBuilder.RealtimeInterval);
 		using var ownedCoordinator = coordinator;
 		var batches = new List<RealtimeBatch>();
 		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
-		scheduler.AdvanceBy(_batchWindow.Ticks);
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
 		batches.Should().ContainSingle().Which.Pens.Select(values => values.PenId).Should().Equal(1, 2);
 
 		provider.Pens = [.. provider.Pens, new Pen(3, "Pen 3", ["Group B"], "#0000ff")];
 		coordinator.SetPens([1, 2, 3]);
-		scheduler.AdvanceBy(_batchWindow.Ticks);
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
 
 		batches.Should().HaveCount(2);
 		batches[1].Pens.Select(values => values.PenId).Should().Equal(1, 2, 3);
@@ -264,16 +239,16 @@ public sealed class TrendCoordinatorTests
 	[Fact]
 	public void SetPens_LeavesTheProviderHoldingExactlyOneLiveSubscription()
 	{
-		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: TimeSpan.FromMilliseconds(10));
+		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: ChartTestBuilder.RealtimeInterval);
 		using var ownedCoordinator = coordinator;
 		using var subscription = coordinator.RealtimeBatches.Subscribe(_ => { });
-		scheduler.AdvanceBy(_batchWindow.Ticks);
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
 		provider.OpenLiveSubscriptionCount.Should().Be(1);
 
 		coordinator.SetPens([1]);
-		scheduler.AdvanceBy(_batchWindow.Ticks);
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
 		coordinator.SetPens([1, 2]);
-		scheduler.AdvanceBy(_batchWindow.Ticks);
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
 
 		provider.OpenLiveSubscriptionCount.Should().Be(1);
 	}
@@ -281,17 +256,17 @@ public sealed class TrendCoordinatorTests
 	[Fact]
 	public void AProviderFailureAfterASwitch_ReachesRealtimeFailuresOnce()
 	{
-		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: TimeSpan.FromMilliseconds(10));
+		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: ChartTestBuilder.RealtimeInterval);
 		using var ownedCoordinator = coordinator;
 		var failures = new List<Exception>();
 		using var reported = coordinator.RealtimeFailures.Subscribe(failures.Add);
 		using var liveEdge = coordinator.RealtimeBatches.Subscribe(_ => { });
-		scheduler.AdvanceBy(_batchWindow.Ticks);
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
 
 		var streamFailure = new InvalidOperationException("the provider ended the switched live edge");
 		provider.RealtimeStreamFailure = streamFailure;
 		coordinator.SetPens([1]);
-		var advance = () => scheduler.AdvanceBy(_batchWindow.Ticks * 3);
+		var advance = () => scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks * 3);
 
 		advance.Should().NotThrow();
 		failures.Should().ContainSingle().Which.Should().BeSameAs(streamFailure);
@@ -301,13 +276,12 @@ public sealed class TrendCoordinatorTests
 		CreateCoordinator(TimeSpan? realtimeInterval = null, IScheduler? uiScheduler = null)
 	{
 		var scheduler = new TestScheduler();
-		var provider = new FakeDataProvider(scheduler, realtimeInterval ?? TimeSpan.FromMilliseconds(10));
+		var provider = new FakeDataProvider(scheduler, realtimeInterval ?? ChartTestBuilder.RealtimeInterval);
 		var coordinator = new TrendCoordinator(
 			provider,
 			provider.Pens,
 			scheduler,
-			uiScheduler ?? ImmediateScheduler.Instance,
-			_batchWindow);
+			uiScheduler ?? ImmediateScheduler.Instance);
 
 		return (coordinator, scheduler, provider);
 	}

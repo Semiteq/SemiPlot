@@ -391,8 +391,9 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   until the next navigation gesture re-queries at the current width.
   Every window change that asks for a re-query passes the prefetch gate below before a query leaves:
   the flag says the data may be stale, `HistoryPrefetch.Covers` says whether it is.
-- `Chart/HistoryColumnTarget` — pixel width → column count (one per pixel, clamped to 256…2048; a
-  non-positive width has no canvas behind it and is rejected). The unquantised value is what every
+- `Chart/HistoryColumnTarget` — pixel width → column count (one per pixel, clamped to 256…2048). A
+  non-positive or NaN width has no canvas behind it, so `TrendChartViewModel.ReportDataAreaWidth` drops it and
+  keeps the last width. The unquantised value is what every
   history query asks the provider to decimate to, times the three windows the prefetch below fetches;
   `TrendChartViewModel` keeps the last reported one and stands on `MaxColumns` until the first render
   reports.
@@ -581,8 +582,7 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
 A running chart follows the stored catalogue (`overview.md#the-live-catalogue`).
 `Core/Trends/PenListDelta.Between` compares two reads: `Added`, `RemovedPenIds`, `Revised` (the new record of
 each pen whose stored settings differ) and `Current`, the new read. `IsEmpty` is true when nothing was
-added, removed or revised, so a new order alone is no change; `ChangesPenSet` is true when a pen was
-added or removed.
+added, removed or revised, so a new order alone is no change.
 
 `TrendChartViewModel.ApplyCatalogue(catalogue)` takes the read itself, `delta.Current`, and compares it
 with the pens the chart shows, not with the read before it. `ChartPenSet.Apply` computes that

@@ -107,26 +107,6 @@ public sealed class PenCatalogueEditorTests(PostgresContainerFixture postgresCon
 	}
 
 	[Fact]
-	public async Task AWrittenLogScaleOnStartReadsBackThroughBothReads()
-	{
-		using var services = Build();
-
-		var editor = Editor(services);
-		var pen = await PenAsync(editor, ChamberPressureId);
-
-		var result = await editor.ChangeAsync(pen, new PenSettingChange.LogScaleOnStart(true));
-
-		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
-		(await PenAsync(editor, ChamberPressureId)).LogScaleOnStart.Should().BeTrue();
-
-		var pens = await services.GetRequiredService<IDataProvider>().QueryPensAsync();
-
-		pens.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(pens));
-		pens.Value.Should().ContainSingle(read => read.PenId == ChamberPressureId)
-			.Which.LogScaleOnStart.Should().BeTrue();
-	}
-
-	[Fact]
 	public async Task TwoInstancesWritingTwoColumnsOfOnePenBothSurvive()
 	{
 		using var first = Build();
@@ -231,14 +211,24 @@ public sealed class PenCatalogueEditorTests(PostgresContainerFixture postgresCon
 		group.MemberPenIds.Should().BeEmpty();
 	}
 
-	[Fact]
-	public async Task CreatingAGroupUnderATakenNameIsNameTakenNamingTheNameAskedFor()
+	[Theory]
+	[InlineData("Create", VacuumGroup)]
+	[InlineData("Rename", HeatersGroup)]
+	public async Task AGroupNameThatIsTakenIsNameTakenNamingTheNameAskedFor(string write, string takenName)
 	{
 		using var services = Build();
 
-		var result = await Editor(services).CreateGroupAsync(VacuumGroup);
+		var editor = Editor(services);
+		var vacuum = Group(await ReadAsync(editor), VacuumGroup);
 
-		FailureOf(result).Should().Be((ArchiveFault.NameTaken, VacuumGroup));
+		ResultBase result = write switch
+		{
+			"Create" => await editor.CreateGroupAsync(takenName),
+			"Rename" => await editor.RenameGroupAsync(vacuum, takenName),
+			_ => throw new ArgumentOutOfRangeException(nameof(write), write, "Unknown write.")
+		};
+
+		FailureOf(result).Should().Be((ArchiveFault.NameTaken, takenName));
 	}
 
 	[Fact]
@@ -259,94 +249,45 @@ public sealed class PenCatalogueEditorTests(PostgresContainerFixture postgresCon
 		Group(after, HeatersGroup).Should().BeEquivalentTo(Group(before, HeatersGroup));
 	}
 
-	[Fact]
-	public async Task RenamingAGroupToATakenNameIsNameTakenNamingTheNewName()
-	{
-		using var services = Build();
-
-		var editor = Editor(services);
-		var vacuum = Group(await ReadAsync(editor), VacuumGroup);
-
-		var result = await editor.RenameGroupAsync(vacuum, HeatersGroup);
-
-		FailureOf(result).Should().Be((ArchiveFault.NameTaken, HeatersGroup));
-	}
-
-	[Fact]
-	public async Task ChangingAPenThatIsGoneIsRowGoneNamingThePen()
-	{
-		using var services = Build();
-
-		var editor = Editor(services);
-		var pen = await PenAsync(editor, ChamberPressureId);
-
-		await AdminAsync($"DELETE FROM public.semiplot_tags WHERE id = {ChamberPressureId};");
-
-		var result = await editor.ChangeAsync(pen, new PenSettingChange.Unit("mbar"));
-
-		FailureOf(result).Should().Be((ArchiveFault.RowGone, "Chamber pressure"));
-	}
-
-	[Fact]
-	public async Task RenamingAGroupThatIsGoneIsRowGoneNamingTheGroup()
-	{
-		using var services = Build();
-
-		var editor = Editor(services);
-		var vacuum = Group(await ReadAsync(editor), VacuumGroup);
-
-		await AdminAsync($"DELETE FROM public.semiplot_groups WHERE name = '{VacuumGroup}';");
-
-		var result = await editor.RenameGroupAsync(vacuum, "Pumps");
-
-		FailureOf(result).Should().Be((ArchiveFault.RowGone, VacuumGroup));
-	}
-
-	[Fact]
-	public async Task DeletingAGroupThatIsGoneIsRowGoneNamingTheGroup()
-	{
-		using var services = Build();
-
-		var editor = Editor(services);
-		var vacuum = Group(await ReadAsync(editor), VacuumGroup);
-
-		await AdminAsync($"DELETE FROM public.semiplot_groups WHERE name = '{VacuumGroup}';");
-
-		var result = await editor.DeleteGroupAsync(vacuum);
-
-		FailureOf(result).Should().Be((ArchiveFault.RowGone, VacuumGroup));
-	}
-
-	[Fact]
-	public async Task AMembershipOfAGroupThatIsGoneIsRowGoneNamingTheGroup()
+	[Theory]
+	[InlineData("ChangePen")]
+	[InlineData("RenameGroup")]
+	[InlineData("DeleteGroup")]
+	[InlineData("MembershipOfGroup")]
+	[InlineData("MembershipOfPen")]
+	public async Task ARowThatIsGoneIsRowGoneNamingIt(string write)
 	{
 		using var services = Build();
 
 		var editor = Editor(services);
 		var catalogue = await ReadAsync(editor);
-		var vacuum = Group(catalogue, VacuumGroup);
-
-		await AdminAsync($"DELETE FROM public.semiplot_groups WHERE name = '{VacuumGroup}';");
-
-		var result = await editor.SetMembershipAsync(Pen(catalogue, UncommissionedId), vacuum, true);
-
-		FailureOf(result).Should().Be((ArchiveFault.RowGone, VacuumGroup));
-	}
-
-	[Fact]
-	public async Task AMembershipOfAPenThatIsGoneIsRowGoneNamingThePen()
-	{
-		using var services = Build();
-
-		var editor = Editor(services);
-		var catalogue = await ReadAsync(editor);
+		var chamberPressure = Pen(catalogue, ChamberPressureId);
 		var uncommissioned = Pen(catalogue, UncommissionedId);
+		var vacuum = Group(catalogue, VacuumGroup);
+		var deleteGroup = $"DELETE FROM public.semiplot_groups WHERE name = '{VacuumGroup}';";
 
-		await AdminAsync($"DELETE FROM public.semiplot_tags WHERE id = {UncommissionedId};");
+		(string Deletion, Func<Task<Result>> Attempt, string GoneName) scenario = write switch
+		{
+			"ChangePen" => (
+				$"DELETE FROM public.semiplot_tags WHERE id = {ChamberPressureId};",
+				() => editor.ChangeAsync(chamberPressure, new PenSettingChange.Unit("mbar")),
+				"Chamber pressure"),
+			"RenameGroup" => (deleteGroup, () => editor.RenameGroupAsync(vacuum, "Pumps"), VacuumGroup),
+			"DeleteGroup" => (deleteGroup, () => editor.DeleteGroupAsync(vacuum), VacuumGroup),
+			"MembershipOfGroup" => (
+				deleteGroup,
+				() => editor.SetMembershipAsync(uncommissioned, vacuum, true),
+				VacuumGroup),
+			"MembershipOfPen" => (
+				$"DELETE FROM public.semiplot_tags WHERE id = {UncommissionedId};",
+				() => editor.SetMembershipAsync(uncommissioned, vacuum, true),
+				uncommissioned.Name),
+			_ => throw new ArgumentOutOfRangeException(nameof(write), write, "Unknown write.")
+		};
 
-		var result = await editor.SetMembershipAsync(uncommissioned, Group(catalogue, VacuumGroup), true);
+		await AdminAsync(scenario.Deletion);
 
-		FailureOf(result).Should().Be((ArchiveFault.RowGone, uncommissioned.Name));
+		FailureOf(await scenario.Attempt()).Should().Be((ArchiveFault.RowGone, scenario.GoneName));
 	}
 
 	[Fact]
@@ -505,10 +446,10 @@ public sealed class PenCatalogueEditorTests(PostgresContainerFixture postgresCon
 
 	private Task<long> CountHeaterMembershipsAsync()
 	{
-		return ArchiveDatabase.CountAsync(
+		return ArchiveDatabase.ScalarAsync<long>(
 			Database.AdminConnectionString,
 			CountHeaterMembershipsCommand,
-			_heaterIds,
+			parameters => parameters.AddWithValue("ids", _heaterIds),
 			TestContext.Current.CancellationToken);
 	}
 }

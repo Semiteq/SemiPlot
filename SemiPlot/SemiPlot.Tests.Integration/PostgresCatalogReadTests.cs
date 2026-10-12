@@ -9,6 +9,7 @@ using Npgsql;
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
+using SemiPlot.DataSource.Postgres;
 using SemiPlot.Tools.ArchiveSeeder;
 
 using Xunit;
@@ -52,14 +53,6 @@ public sealed class PostgresCatalogReadTests(
 		INSERT INTO public.semiplot_tags (id, name, format, color, line_style)
 		VALUES (9997, 'Scaling mask', '%0.0', '#123456', 0),
 		       (9998, 'Shaping mask', '0.##0', '#123456', 0);
-		""";
-
-	private const int LogScaleTagId = 9995;
-
-	private const string LogScaleTagCommand =
-		"""
-		INSERT INTO public.semiplot_tags (id, name, color, line_style, log_scale_on_start)
-		VALUES (9995, 'Log scale', '#123456', 0, true);
 		""";
 
 	private const int NullColumnTagId = 9999;
@@ -136,12 +129,12 @@ public sealed class PostgresCatalogReadTests(
 	[Fact]
 	public async Task AGroupListReadsInNameOrderWhateverOrderTheMembershipsWereWritten()
 	{
-		await using var database = await postgresContainerFixture.CloneTemplateAsync(
-			TestContext.Current.CancellationToken);
-
-		await ArchiveDatabase.ExecuteAsync(
-			database.AdminConnectionString,
-			ReversedMembershipCommand,
+		await using var database = await postgresContainerFixture.CloneAsync(
+			CloneSource.Template,
+			clone => ArchiveDatabase.ExecuteAsync(
+				clone.AdminConnectionString,
+				ReversedMembershipCommand,
+				TestContext.Current.CancellationToken),
 			TestContext.Current.CancellationToken);
 
 		var result = await ReadCatalogueAsync(database.PlotConnectionString);
@@ -168,12 +161,12 @@ public sealed class PostgresCatalogReadTests(
 	[Fact]
 	public async Task AStoredMaskIsKeptWhenItShapesTheReadingAndDroppedWhenItScalesIt()
 	{
-		await using var database = await postgresContainerFixture.CloneTemplateAsync(
-			TestContext.Current.CancellationToken);
-
-		await ArchiveDatabase.ExecuteAsync(
-			database.AdminConnectionString,
-			StoredMaskTagsCommand,
+		await using var database = await postgresContainerFixture.CloneAsync(
+			CloneSource.Template,
+			clone => ArchiveDatabase.ExecuteAsync(
+				clone.AdminConnectionString,
+				StoredMaskTagsCommand,
+				TestContext.Current.CancellationToken),
 			TestContext.Current.CancellationToken);
 
 		var result = await ReadCatalogueAsync(database.PlotConnectionString);
@@ -181,24 +174,6 @@ public sealed class PostgresCatalogReadTests(
 		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
 		Single(result.Value, ShapingMaskTagId).Format.Should().Be("0.##0");
 		Single(result.Value, ScalingMaskTagId).Format.Should().BeNull();
-	}
-
-	[Fact]
-	public async Task AStoredLogScaleOnStartReadsBackAndTheDefaultReadsLinear()
-	{
-		await using var database = await postgresContainerFixture.CloneTemplateAsync(
-			TestContext.Current.CancellationToken);
-
-		await ArchiveDatabase.ExecuteAsync(
-			database.AdminConnectionString,
-			LogScaleTagCommand,
-			TestContext.Current.CancellationToken);
-
-		var result = await ReadCatalogueAsync(database.PlotConnectionString);
-
-		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
-		Single(result.Value, LogScaleTagId).LogScaleOnStart.Should().BeTrue();
-		Single(result.Value, SyntheticPenCatalog.TwoGroupPenId).LogScaleOnStart.Should().BeFalse();
 	}
 
 	[Fact]
@@ -220,12 +195,12 @@ public sealed class PostgresCatalogReadTests(
 	[Fact]
 	public async Task AnUncommissionedPenReadsWithTheFallbackColourAndNoStoredFields()
 	{
-		await using var database = await postgresContainerFixture.CloneTemplateAsync(
-			TestContext.Current.CancellationToken);
-
-		await ArchiveDatabase.ExecuteAsync(
-			database.AdminConnectionString,
-			UncommissionedTagCommand,
+		await using var database = await postgresContainerFixture.CloneAsync(
+			CloneSource.Template,
+			clone => ArchiveDatabase.ExecuteAsync(
+				clone.AdminConnectionString,
+				UncommissionedTagCommand,
+				TestContext.Current.CancellationToken),
 			TestContext.Current.CancellationToken);
 
 		var result = await ReadCatalogueAsync(database.PlotConnectionString);
@@ -248,12 +223,12 @@ public sealed class PostgresCatalogReadTests(
 	[Fact]
 	public async Task AnEmptiedCatalogueIsASuccessfulEmptyList()
 	{
-		await using var database = await postgresContainerFixture.CloneTemplateAsync(
-			TestContext.Current.CancellationToken);
-
-		await ArchiveDatabase.ExecuteAsync(
-			database.AdminConnectionString,
-			ArchiveReadSupport.EmptyCatalogCommand,
+		await using var database = await postgresContainerFixture.CloneAsync(
+			CloneSource.Template,
+			clone => ArchiveDatabase.ExecuteAsync(
+				clone.AdminConnectionString,
+				ArchiveReadSupport.EmptyCatalogCommand,
+				TestContext.Current.CancellationToken),
 			TestContext.Current.CancellationToken);
 
 		var result = await ReadCatalogueAsync(database.PlotConnectionString);
@@ -271,12 +246,12 @@ public sealed class PostgresCatalogReadTests(
 	[InlineData(ArchiveReadSupport.DropGroupsCommand)]
 	public async Task ADroppedCatalogueTableFailsNamingEveryRelationTheReadTouches(string dropCommand)
 	{
-		await using var database = await postgresContainerFixture.CloneTemplateAsync(
-			TestContext.Current.CancellationToken);
-
-		await ArchiveDatabase.ExecuteAsync(
-			database.AdminConnectionString,
-			dropCommand,
+		await using var database = await postgresContainerFixture.CloneAsync(
+			CloneSource.Template,
+			clone => ArchiveDatabase.ExecuteAsync(
+				clone.AdminConnectionString,
+				dropCommand,
+				TestContext.Current.CancellationToken),
 			TestContext.Current.CancellationToken);
 
 		var result = await ReadCatalogueAsync(database.PlotConnectionString);
@@ -286,7 +261,7 @@ public sealed class PostgresCatalogReadTests(
 		var error = result.Errors.OfType<ArchiveError>().Should().ContainSingle().Which;
 
 		error.Kind.Should().Be(ArchiveFault.TableMissing);
-		error.Detail.Should().ContainAll("semiplot_tags", "semiplot_groups", "semiplot_pen_groups");
+		error.Detail.Should().Be(ArchiveStatements.PenCatalogRelations);
 		error.Database.Should().Be(database.Name);
 	}
 

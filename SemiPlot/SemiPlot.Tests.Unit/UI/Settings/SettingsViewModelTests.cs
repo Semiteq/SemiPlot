@@ -5,8 +5,6 @@ using Avalonia.Headless.XUnit;
 
 using AwesomeAssertions;
 
-using Microsoft.Extensions.Logging.Abstractions;
-
 using ReactiveUI;
 
 using SemiPlot.DataSource.Postgres.Configuration;
@@ -25,7 +23,7 @@ namespace SemiPlot.Tests.Unit.UI.Settings;
 [Trait("Category", "Unit")]
 public sealed class SettingsViewModelTests : IDisposable
 {
-	private readonly string _configDirectory = Directory.CreateTempSubdirectory("semiplot-settings-vm-").FullName;
+	private readonly TemporaryDirectory _configDirectory = new("semiplot-settings-vm");
 
 	private readonly string _appDirectory;
 
@@ -43,7 +41,7 @@ public sealed class SettingsViewModelTests : IDisposable
 	public void Dispose()
 	{
 		_messagePanel.Dispose();
-		Directory.Delete(_configDirectory, recursive: true);
+		_configDirectory.Dispose();
 	}
 
 	[AvaloniaFact]
@@ -215,7 +213,7 @@ public sealed class SettingsViewModelTests : IDisposable
 	}
 
 	[AvaloniaFact]
-	public async Task ChangingOnlyTheThemeLeavesTheConnectionFileByteIdentical()
+	public async Task ChangingOnlyTheTheme_LeavesTheConnectionFileByteIdenticalAndSetsNoRestartNotice()
 	{
 		ShippedConfiguration.FillPassword(_configDirectory, "secret");
 		var before = File.ReadAllBytes(Path.Combine(_connectionDirectory, "connection.yaml"));
@@ -225,22 +223,9 @@ public sealed class SettingsViewModelTests : IDisposable
 		await viewModel.SaveCommand.Execute();
 
 		_messagePanel.Entries.Should().BeEmpty();
-		AppSettingsLoader.Load(_appDirectory).Value.Theme.Should().Be(AppThemeVariant.Dark);
-		File.ReadAllBytes(Path.Combine(_connectionDirectory, "connection.yaml")).Should().Equal(before);
-	}
-
-	[AvaloniaFact]
-	public async Task AThemeOnlySaveSetsNoRestartNotice()
-	{
-		ShippedConfiguration.FillPassword(_configDirectory, "secret");
-		using var viewModel = Build();
-		viewModel.SelectedTheme = viewModel.Themes.Single(choice => choice.Token == "dark");
-
-		await viewModel.SaveCommand.Execute();
-
-		_messagePanel.Entries.Should().BeEmpty();
 		viewModel.IsRestartPending.Should().BeFalse("every process applies a saved theme live");
 		AppSettingsLoader.Load(_appDirectory).Value.Theme.Should().Be(AppThemeVariant.Dark);
+		File.ReadAllBytes(Path.Combine(_connectionDirectory, "connection.yaml")).Should().Equal(before);
 	}
 
 	[AvaloniaFact]
@@ -544,15 +529,7 @@ public sealed class SettingsViewModelTests : IDisposable
 
 	private SettingsViewModel Build(Action? restartApplication = null)
 	{
-		var (app, connection) = SettingsSave.ReadOwned(_configDirectory);
-
-		return new SettingsViewModel(
-			_configDirectory,
-			app,
-			connection,
-			_messagePanel,
-			NullLogger<SettingsViewModel>.Instance,
-			restartApplication ?? (() => { }));
+		return SettingsViewModelStand.Build(_configDirectory, _messagePanel, restartApplication);
 	}
 
 	private static bool CanSave(SettingsViewModel viewModel)

@@ -9,11 +9,6 @@ public sealed record PenHistoryEnvelope
 		IReadOnlyList<double> max,
 		IReadOnlyList<double> center)
 	{
-		ArgumentNullException.ThrowIfNull(timestamps);
-		ArgumentNullException.ThrowIfNull(min);
-		ArgumentNullException.ThrowIfNull(max);
-		ArgumentNullException.ThrowIfNull(center);
-
 		if (min.Count != timestamps.Count || max.Count != timestamps.Count || center.Count != timestamps.Count)
 		{
 			throw new ArgumentException(

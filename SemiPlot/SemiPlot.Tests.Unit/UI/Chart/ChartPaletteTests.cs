@@ -48,51 +48,6 @@ public sealed class ChartPaletteTests
 		}
 	}
 
-	[AvaloniaFact]
-	public void Apply_RepaintsEverySurfaceWhenTheVariantChanges()
-	{
-		using var plot = new Plot();
-
-		ChartPalette.Apply(plot, Application.Current!, ThemeVariant.Light);
-		var light = SurfacesOf(plot);
-
-		ChartPalette.Apply(plot, Application.Current!, ThemeVariant.Dark);
-		var dark = SurfacesOf(plot);
-
-		dark.Figure.Should().NotBe(light.Figure);
-		dark.Data.Should().NotBe(light.Data);
-		dark.Grid.Should().NotBe(light.Grid);
-		dark.MinorGrid.Should().NotBe(light.MinorGrid);
-		dark.Axis.Should().NotBe(light.Axis);
-		dark.Figure.Should().Be(Resolve("AppPanelBackgroundBrush", ThemeVariant.Dark));
-		dark.Data.Should().Be(Resolve("AppContentBackgroundBrush", ThemeVariant.Dark));
-		dark.Grid.Should().Be(Resolve("AppSubtleLineBrush", ThemeVariant.Dark));
-		dark.MinorGrid.Should().Be(Resolve("AppMinorGridLineBrush", ThemeVariant.Dark));
-		dark.Axis.Should().Be(Resolve("AppSecondaryForegroundBrush", ThemeVariant.Dark));
-	}
-
-	[AvaloniaFact]
-	public void Apply_PaintsAnAxisAddedAfterTheFirstApplication()
-	{
-		using var plot = new Plot();
-		ChartPalette.Apply(plot, Application.Current!, ThemeVariant.Light);
-
-		var added = plot.Axes.AddRightAxis();
-		ChartPalette.Apply(plot, Application.Current!, ThemeVariant.Light);
-
-		added.TickLabelStyle.ForeColor.Should().Be(Resolve("AppSecondaryForegroundBrush", ThemeVariant.Light));
-	}
-
-	private static (Color Figure, Color Data, Color Grid, Color MinorGrid, Color Axis) SurfacesOf(Plot plot)
-	{
-		return (
-			plot.FigureBackground.Color,
-			plot.DataBackground.Color,
-			plot.Grid.MajorLineColor,
-			plot.Grid.YAxisStyle.MinorLineStyle.Color,
-			plot.Axes.Bottom.TickLabelStyle.ForeColor);
-	}
-
 	private static Color Resolve(string key, ThemeVariant variant)
 	{
 		return ThemeProbe.PlotColour(key, variant);

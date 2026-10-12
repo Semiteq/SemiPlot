@@ -53,8 +53,7 @@ public sealed class MainWindowViewTests
 			penCatalogueEditor: penCatalogueEditor, configDirectory: AppContext.BaseDirectory);
 		var viewModel = stand.ViewModel;
 		var window = new MainWindowView { DataContext = viewModel };
-		window.Show();
-		Dispatcher.UIThread.RunJobs();
+		ViewProbe.Realise(window);
 
 		HeadlessInput.Click(window, MenuItemNamed(window, "EditMenu"));
 		var editorItem = MenuItemNamed(window, "EditPensAndGroups");
@@ -82,75 +81,59 @@ public sealed class MainWindowViewTests
 	[AvaloniaFact]
 	public async Task EditSettings_ClickedOnTheRealisedWindow_OpensTheDialogOverIt()
 	{
-		var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
-		try
-		{
-			using var stand = NewWindowStand(configDirectory: configDirectory);
-			var viewModel = stand.ViewModel;
-			var window = new MainWindowView { DataContext = viewModel };
-			window.Show();
-			Dispatcher.UIThread.RunJobs();
+		using var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
+		using var stand = NewWindowStand(configDirectory: configDirectory);
+		var viewModel = stand.ViewModel;
+		var window = new MainWindowView { DataContext = viewModel };
+		ViewProbe.Realise(window);
 
-			HeadlessInput.Click(window, MenuItemNamed(window, "EditMenu"));
-			var settingsItem = MenuItemNamed(window, "EditSettings");
-			HeadlessInput.Click(
-				TopLevel.GetTopLevel(settingsItem)
-					?? throw new InvalidOperationException("The Edit menu opened no popup."),
-				settingsItem);
-			await HeadlessWait.Until(() => window.OwnedWindows.OfType<SettingsDialog>().Any());
+		HeadlessInput.Click(window, MenuItemNamed(window, "EditMenu"));
+		var settingsItem = MenuItemNamed(window, "EditSettings");
+		HeadlessInput.Click(
+			TopLevel.GetTopLevel(settingsItem)
+				?? throw new InvalidOperationException("The Edit menu opened no popup."),
+			settingsItem);
+		await HeadlessWait.Until(() => window.OwnedWindows.OfType<SettingsDialog>().Any());
 
-			var dialog = window.OwnedWindows.OfType<SettingsDialog>().Single();
-			var settings = dialog.DataContext.Should().BeOfType<SettingsViewModel>().Which;
-			settings.Host.Should().Be("127.0.0.1");
-			dialog.FindControl<TextBox>("SettingsHost")!.Text.Should().Be("127.0.0.1");
-			viewModel.MessagePanel.Entries.Should().BeEmpty();
+		var dialog = window.OwnedWindows.OfType<SettingsDialog>().Single();
+		var settings = dialog.DataContext.Should().BeOfType<SettingsViewModel>().Which;
+		settings.Host.Should().Be("127.0.0.1");
+		ViewProbe.Named<TextBox>(dialog, "SettingsHost").Text.Should().Be("127.0.0.1");
+		viewModel.MessagePanel.Entries.Should().BeEmpty();
 
-			dialog.Close();
-			Dispatcher.UIThread.RunJobs();
+		dialog.Close();
+		Dispatcher.UIThread.RunJobs();
 
-			window.OwnedWindows.Should().BeEmpty();
-			// A disposed command stops following its inputs, and the shipped blank password left it disabled.
-			settings.Password = "secret";
-			((ICommand)settings.SaveCommand).CanExecute(null).Should()
-				.BeFalse("the window disposes the view model its dialog showed");
-			window.Close();
-		}
-		finally
-		{
-			Directory.Delete(configDirectory, recursive: true);
-		}
+		window.OwnedWindows.Should().BeEmpty();
+		// A disposed command stops following its inputs, and the shipped blank password left it disabled.
+		settings.Password = "secret";
+		((ICommand)settings.SaveCommand).CanExecute(null).Should()
+			.BeFalse("the window disposes the view model its dialog showed");
+		window.Close();
 	}
 
 	[AvaloniaFact]
 	public async Task TheRestartNowButton_OfTheSettingsDialog_StartsACopyAndClosesTheWindow()
 	{
-		var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
-		try
-		{
-			var started = new List<ProcessStartInfo>();
-			using var stand = NewWindowStand(configDirectory: configDirectory, start: started.Add);
-			var window = new MainWindowView { DataContext = stand.ViewModel };
-			window.Show();
-			Dispatcher.UIThread.RunJobs();
-			await stand.ViewModel.ShowSettingsCommand.Execute();
-			await HeadlessWait.Until(() => window.OwnedWindows.OfType<SettingsDialog>().Any());
-			var dialog = window.OwnedWindows.OfType<SettingsDialog>().Single();
-			dialog.DataContext.Should().BeOfType<SettingsViewModel>();
+		using var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
+		var started = new List<ProcessStartInfo>();
+		using var stand = NewWindowStand(configDirectory: configDirectory, start: started.Add);
+		var window = new MainWindowView { DataContext = stand.ViewModel };
+		ViewProbe.Realise(window);
+		await stand.ViewModel.ShowSettingsCommand.Execute();
+		await HeadlessWait.Until(() => window.OwnedWindows.OfType<SettingsDialog>().Any());
+		var dialog = window.OwnedWindows.OfType<SettingsDialog>().Single();
+		dialog.DataContext.Should().BeOfType<SettingsViewModel>();
 
-			HeadlessInput.Type(dialog, dialog.FindControl<TextBox>("SettingsPassword")!, "secret");
-			HeadlessInput.Click(dialog, dialog.FindControl<Button>("SettingsSaveButton")!);
-			var restartNow = dialog.FindControl<Button>("SettingsRestartNow")!;
-			await HeadlessWait.Until(() => restartNow.IsEffectivelyEnabled);
-			HeadlessInput.Click(dialog, restartNow);
-			Dispatcher.UIThread.RunJobs();
+		HeadlessInput.Type(dialog, ViewProbe.Named<TextBox>(dialog, "SettingsPassword"), "secret");
+		HeadlessInput.Click(dialog, ViewProbe.Named<Button>(dialog, "SettingsSaveButton"));
+		var restartNow = ViewProbe.Named<Button>(dialog, "SettingsRestartNow");
+		await HeadlessWait.Until(() => restartNow.IsEffectivelyEnabled);
+		HeadlessInput.Click(dialog, restartNow);
+		Dispatcher.UIThread.RunJobs();
 
-			started.Should().ContainSingle();
-			window.IsVisible.Should().BeFalse("the restart closes the owning window");
-		}
-		finally
-		{
-			Directory.Delete(configDirectory, recursive: true);
-		}
+		started.Should().ContainSingle();
+		window.IsVisible.Should().BeFalse("the restart closes the owning window");
 	}
 
 	// The row binds the same flag the View menu writes and reads back, and a failure opens it: an entry that
@@ -187,8 +170,7 @@ public sealed class MainWindowViewTests
 		using var stand = NewWindowStand();
 		var viewModel = stand.ViewModel;
 		var window = new MainWindowView { DataContext = viewModel };
-		window.Show();
-		Dispatcher.UIThread.RunJobs();
+		ViewProbe.Realise(window);
 		var rows = new (string Name, Action Toggle)[]
 		{
 			("NavigationBar", () => viewModel.ToggleNavigationBarCommand.Execute().Subscribe()),
@@ -219,12 +201,11 @@ public sealed class MainWindowViewTests
 	{
 		using var stand = NewWindowStand();
 		var window = new MainWindowView { DataContext = stand.ViewModel };
-		window.Show();
-		Dispatcher.UIThread.RunJobs();
-		var row = window.FindControl<Border>("MinimapRow")!;
-		var minimap = window.FindControl<MinimapView>("Minimap")!;
-		var strip = minimap.FindControl<Canvas>("StripCanvas")!;
-		var lastLabel = minimap.FindControl<TextBlock>("ExtentLastLabel")!;
+		ViewProbe.Realise(window);
+		var row = ViewProbe.Named<Border>(window, "MinimapRow");
+		var minimap = ViewProbe.Named<MinimapView>(window, "Minimap");
+		var strip = ViewProbe.Named<Canvas>(minimap, "StripCanvas");
+		var lastLabel = ViewProbe.Named<TextBlock>(minimap, "ExtentLastLabel");
 
 		var label = MinimapViewStand.AreaIn(row, lastLabel);
 
@@ -243,8 +224,7 @@ public sealed class MainWindowViewTests
 		var window = new MainWindowView { DataContext = viewModel };
 		var panel = window.FindControl<Border>("LegendPanel");
 
-		window.Show();
-		Dispatcher.UIThread.RunJobs();
+		ViewProbe.Realise(window);
 
 		panel.Should().NotBeNull("'LegendPanel' is a named row of the window");
 		panel!.Width.Should().Be(TrendLegendViewModel.ExpandedWidth, "the panel opens expanded");
@@ -264,9 +244,8 @@ public sealed class MainWindowViewTests
 		using var stand = NewWindowStand();
 		var viewModel = stand.ViewModel;
 		var window = new MainWindowView { DataContext = viewModel };
-		window.Show();
-		Dispatcher.UIThread.RunJobs();
-		var panel = window.FindControl<Border>("LegendPanel")!;
+		ViewProbe.Realise(window);
+		var panel = ViewProbe.Named<Border>(window, "LegendPanel");
 		var handle = ResizeHandle(window);
 
 		Drag(window, handle, -60);
@@ -291,36 +270,14 @@ public sealed class MainWindowViewTests
 	}
 
 	[AvaloniaFact]
-	public void ADragOnTheHandle_StopsAtThePanelFloorAndAtTheChartFloor()
-	{
-		using var stand = NewWindowStand();
-		var viewModel = stand.ViewModel;
-		var window = new MainWindowView { DataContext = viewModel };
-		window.Show();
-		Dispatcher.UIThread.RunJobs();
-		var panel = window.FindControl<Border>("LegendPanel")!;
-		var chart = window.FindControl<Border>("ChartContent")!;
-		var handle = ResizeHandle(window);
-
-		Drag(window, handle, 5000);
-
-		panel.Bounds.Width.Should().Be(TrendLegendViewModel.PanelMinWidth);
-
-		Drag(window, handle, -5000);
-
-		chart.Bounds.Width.Should().Be(TrendLegendViewModel.ChartMinWidth);
-	}
-
-	[AvaloniaFact]
 	public void ShrinkingTheWindowAfterADrag_KeepsTheChartFloorAndGrowingItBackRestoresThePanel()
 	{
 		using var stand = NewWindowStand();
 		var viewModel = stand.ViewModel;
 		var window = new MainWindowView { DataContext = viewModel };
-		window.Show();
-		Dispatcher.UIThread.RunJobs();
-		var panel = window.FindControl<Border>("LegendPanel")!;
-		var chart = window.FindControl<Border>("ChartContent")!;
+		ViewProbe.Realise(window);
+		var panel = ViewProbe.Named<Border>(window, "LegendPanel");
+		var chart = ViewProbe.Named<Border>(window, "ChartContent");
 		var initialWindowWidth = window.Width;
 		Drag(window, ResizeHandle(window), -400);
 
@@ -341,9 +298,8 @@ public sealed class MainWindowViewTests
 		using var stand = NewWindowStand();
 		var viewModel = stand.ViewModel;
 		var window = new MainWindowView { DataContext = viewModel, Width = 500 };
-		window.Show();
-		Dispatcher.UIThread.RunJobs();
-		var chart = window.FindControl<Border>("ChartContent")!;
+		ViewProbe.Realise(window);
+		var chart = ViewProbe.Named<Border>(window, "ChartContent");
 
 		chart.Bounds.Width.Should().Be(TrendLegendViewModel.ChartMinWidth);
 	}
@@ -354,10 +310,9 @@ public sealed class MainWindowViewTests
 		using var stand = NewWindowStand();
 		var viewModel = stand.ViewModel;
 		var window = new MainWindowView { DataContext = viewModel };
-		window.Show();
-		Dispatcher.UIThread.RunJobs();
-		var chart = window.FindControl<Border>("ChartContent")!;
-		var contentGrid = window.FindControl<Grid>("ContentGrid")!;
+		ViewProbe.Realise(window);
+		var chart = ViewProbe.Named<Border>(window, "ChartContent");
+		var contentGrid = ViewProbe.Named<Grid>(window, "ContentGrid");
 
 		viewModel.ToggleLegendCommand.Execute().Subscribe();
 		Dispatcher.UIThread.RunJobs();
@@ -395,7 +350,7 @@ public sealed class MainWindowViewTests
 
 	private static MenuItem MenuItemNamed(Window window, string name)
 	{
-		var item = window.FindControl<AppMenuBar>("MenuBar")!.FindControl<MenuItem>(name);
+		var item = ViewProbe.Named<AppMenuBar>(window, "MenuBar").FindControl<MenuItem>(name);
 		item.Should().NotBeNull("'{0}' is a named item of the menu bar", name);
 
 		return item;

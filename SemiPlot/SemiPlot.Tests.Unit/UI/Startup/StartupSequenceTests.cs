@@ -20,14 +20,14 @@ namespace SemiPlot.Tests.Unit.UI.Startup;
 [Trait("Category", "Unit")]
 public sealed class StartupSequenceTests : IDisposable
 {
-	private readonly string _directory = Directory.CreateTempSubdirectory("semiplot-startup-sequence-").FullName;
+	private readonly TemporaryDirectory _directory = new("semiplot-startup-sequence");
 
 	private readonly CultureInfo? _previousCulture = CultureInfo.DefaultThreadCurrentUICulture;
 
 	public void Dispose()
 	{
 		CultureInfo.DefaultThreadCurrentUICulture = _previousCulture;
-		Directory.Delete(_directory, recursive: true);
+		_directory.Dispose();
 	}
 
 	[Fact]

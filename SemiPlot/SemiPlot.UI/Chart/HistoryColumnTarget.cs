@@ -11,12 +11,6 @@ public static class HistoryColumnTarget
 	// column count and is filtered by the caller, which keeps the last known width instead.
 	public static int FromDataAreaWidth(double dataAreaWidthPixels)
 	{
-		if (!(dataAreaWidthPixels > 0.0))
-		{
-			throw new ArgumentOutOfRangeException(
-				nameof(dataAreaWidthPixels), dataAreaWidthPixels, "Data area width must be positive.");
-		}
-
 		var rounded = (int)Math.Round(dataAreaWidthPixels);
 
 		return Math.Clamp(rounded, MinColumns, MaxColumns);

@@ -96,7 +96,7 @@ public sealed class EditorCallQueueTests
 	public async Task AFailedCall_NeverInvokesTheCallback()
 	{
 		var failed = await _queue.RunAsync(() => Task.FromResult(
-			Result.Fail(new ArchiveError(ArchiveFault.RowGone, "bench", 5432, "semiplot_dev", "Pressure"))));
+			Result.Fail(FakePenCatalogueEditor.Refusal(ArchiveFault.RowGone, "Pressure"))));
 
 		failed.IsFailed.Should().BeTrue();
 		_succeededCalls.Should().Be(0);

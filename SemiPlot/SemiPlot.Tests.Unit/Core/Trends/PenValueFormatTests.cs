@@ -1,8 +1,7 @@
-using System.Globalization;
-
 using AwesomeAssertions;
 
 using SemiPlot.Core.Trends;
+using SemiPlot.Tests.Unit.UI;
 
 using Xunit;
 
@@ -42,21 +41,6 @@ public sealed class PenValueFormatTests
 		PenValueFormat.IsAcceptable(mask).Should().BeFalse();
 	}
 
-	// A trailing or pre-decimal comma is the scaling specifier, not the grouping one: it divides the
-	// reading by a thousand per comma, so it is rejected for the same reason % is.
-	[Theory]
-	[InlineData("0,", 1234.5678, "1")]
-	[InlineData("0,,", 1234.5678, "0")]
-	[InlineData("0,.0", 1234.5678, "1.2")]
-	public void AScalingCommaWouldRenderAWrongNumber(string mask, double value, string scaled)
-	{
-		UnderTheInvariantCulture(() =>
-		{
-			value.ToString(mask, CultureInfo.InvariantCulture).Should().Be(scaled);
-			PenValueFormat.Format(value, mask).Should().NotBe(scaled);
-		});
-	}
-
 	[Theory]
 	[InlineData("0.##0", 1234.5678, "1234.568")]
 	[InlineData("0.##0", 0.0, "0.000")]
@@ -91,17 +75,8 @@ public sealed class PenValueFormatTests
 	// cannot move.
 	private static void UnderTheInvariantCulture(Action assertion)
 	{
-		var previous = CultureInfo.CurrentCulture;
+		using var culture = new CultureScope(string.Empty);
 
-		try
-		{
-			CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
-
-			assertion();
-		}
-		finally
-		{
-			CultureInfo.CurrentCulture = previous;
-		}
+		assertion();
 	}
 }

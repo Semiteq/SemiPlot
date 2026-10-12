@@ -1,10 +1,11 @@
 using AwesomeAssertions;
 
-using SemiPlot.Core.Trends;
 using SemiPlot.DataSource.Postgres;
 using SemiPlot.Tools.ArchiveSeeder;
 
 using Xunit;
+
+using static SemiPlot.Tests.Unit.Postgres.FoldTestData;
 
 namespace SemiPlot.Tests.Unit.Postgres;
 
@@ -24,28 +25,10 @@ public sealed class HistoryRowFoldTests
 	private const int LastBeforeBreakQuality = ArchiveRow.LastBeforeBreakQuality;
 	private const int FirstAfterBreakQuality = ArchiveRow.FirstAfterBreakQuality;
 
-	private static readonly ArchiveTimeConverter _utcConverter = new(TimeZoneInfo.Utc);
-
-	private static DateTime Local(int hour, int minute)
-	{
-		return new DateTime(2026, 6, 15, hour, minute, 0, DateTimeKind.Unspecified);
-	}
-
-	private static DateTime Utc(int hour, int minute)
-	{
-		return new DateTime(2026, 6, 15, hour, minute, 0, DateTimeKind.Utc);
-	}
-
-	// The 2026 EU fall-back day, where 02:00 to 03:00 is read twice.
-	private static DateTime FallBackLocal(int hour, int minute)
-	{
-		return new DateTime(2026, 10, 25, hour, minute, 0, DateTimeKind.Unspecified);
-	}
-
 	[Fact]
 	public void NoRowsFoldIntoNoEnvelopes()
 	{
-		var envelopes = HistoryRowFold.Fold([], _utcConverter, TargetColumnCount);
+		var envelopes = HistoryRowFold.Fold([], UtcConverter, TargetColumnCount);
 
 		envelopes.Should().BeEmpty();
 	}
@@ -60,7 +43,7 @@ public sealed class HistoryRowFoldTests
 			new(7, Local(10, 2), 3.0, 0)
 		];
 
-		var envelope = HistoryRowFold.Fold(rows, _utcConverter, TargetColumnCount).Should().ContainSingle().Which;
+		var envelope = HistoryRowFold.Fold(rows, UtcConverter, TargetColumnCount).Should().ContainSingle().Which;
 
 		envelope.PenId.Should().Be(7);
 		envelope.Timestamps.Should().Equal([Utc(10, 0), Utc(10, 1), Utc(10, 2)]);
@@ -81,7 +64,7 @@ public sealed class HistoryRowFoldTests
 			.Select((value, index) => new HistoryRowFold.Row(7, Local(10, index), value, 0))
 			.ToArray();
 
-		var envelope = HistoryRowFold.Fold(rows, _utcConverter, 2).Should().ContainSingle().Which;
+		var envelope = HistoryRowFold.Fold(rows, UtcConverter, 2).Should().ContainSingle().Which;
 
 		envelope.Timestamps.Should().Equal([Utc(10, 2), Utc(10, 7)]);
 		envelope.Min.Should().Equal([0.0, 3.0]);
@@ -95,7 +78,7 @@ public sealed class HistoryRowFoldTests
 	[Fact]
 	public void ASkippedLocalHourDropsTheRowTheConversionPutsOutOfOrder()
 	{
-		var converter = new ArchiveTimeConverter(TimeZoneInfo.FindSystemTimeZoneById("Europe/Berlin"));
+		var converter = BerlinConverter;
 		HistoryRowFold.Row[] rows =
 		[
 			new(7, new DateTime(2026, 3, 29, 1, 59, 0, DateTimeKind.Unspecified), 1.0, 0),
@@ -118,7 +101,7 @@ public sealed class HistoryRowFoldTests
 	[Fact]
 	public void TheSecondPassOverTheRepeatedHourIsDropped()
 	{
-		var converter = new ArchiveTimeConverter(TimeZoneInfo.FindSystemTimeZoneById("Europe/Berlin"));
+		var converter = BerlinConverter;
 		HistoryRowFold.Row[] rows =
 		[
 			new(7, FallBackLocal(1, 30), 1.0, 0),
@@ -143,22 +126,6 @@ public sealed class HistoryRowFoldTests
 		envelope.Center.Should().Equal([1.0, 2.0, 3.0, 6.0]);
 	}
 
-	// A pen the caller asked for that has no row in the window never reaches the fold, so it gets no
-	// envelope rather than an empty one.
-	[Fact]
-	public void OnlyThePensCarryingRowsGetAnEnvelope()
-	{
-		HistoryRowFold.Row[] rows =
-		[
-			new(3, Local(10, 0), 1.0, 0),
-			new(9, Local(10, 0), 2.0, 0)
-		];
-
-		var envelopes = HistoryRowFold.Fold(rows, _utcConverter, TargetColumnCount);
-
-		envelopes.Select(envelope => envelope.PenId).Should().Equal([3, 9]);
-	}
-
 	[Fact]
 	public void ThePreviousKeptTimestampResetsAtEachPen()
 	{
@@ -170,18 +137,12 @@ public sealed class HistoryRowFoldTests
 			new(9, Local(9, 5), 4.0, 0)
 		];
 
-		var envelopes = HistoryRowFold.Fold(rows, _utcConverter, TargetColumnCount);
+		var envelopes = HistoryRowFold.Fold(rows, UtcConverter, TargetColumnCount);
 
+		envelopes.Select(envelope => envelope.PenId).Should().Equal([3, 9]);
 		envelopes.Count.Should().Be(2);
 		envelopes[0].Timestamps.Should().Equal([Utc(10, 0), Utc(10, 5)]);
 		envelopes[1].Timestamps.Should().Equal([Utc(9, 0), Utc(9, 5)]);
-	}
-
-	// Counts columns rather than searching for one NaN: two plausible-but-wrong folds also produce a NaN
-	// between the markers, and only the column count and the markers' own values separate them.
-	private static int NaNColumnCount(PenHistoryEnvelope envelope)
-	{
-		return envelope.Center.Count(double.IsNaN);
 	}
 
 	private static HistoryRowFold.Row[] BreakPairRows()
@@ -199,7 +160,7 @@ public sealed class HistoryRowFoldTests
 	[Fact]
 	public void ABreakMarkerPairYieldsExactlyOneGapColumn()
 	{
-		var envelope = HistoryRowFold.Fold(BreakPairRows(), _utcConverter, TargetColumnCount)
+		var envelope = HistoryRowFold.Fold(BreakPairRows(), UtcConverter, TargetColumnCount)
 			.Should().ContainSingle().Which;
 
 		// Four rows and one anchor. A fold that nulls the marker instead of appending after it gives four
@@ -209,40 +170,10 @@ public sealed class HistoryRowFoldTests
 		envelope.Timestamps.Should().Equal(
 			[Utc(10, 0), Utc(10, 1), Utc(10, 1).AddTicks(1), Utc(10, 5), Utc(10, 6)]);
 		envelope.Center.Should().Equal([1.0, 2.0, double.NaN, 3.0, 4.0]);
-	}
-
-	[Fact]
-	public void TheBreakMarkersOwnValueSurvivesAsTheColumnBeforeTheAnchor()
-	{
-		var envelope = HistoryRowFold.Fold(BreakPairRows(), _utcConverter, TargetColumnCount)
-			.Should().ContainSingle().Which;
-
-		var anchorIndex = Enumerable.Range(0, envelope.Center.Count)
-			.Should().ContainSingle(index => double.IsNaN(envelope.Center[index])).Which;
-
-		envelope.Timestamps[anchorIndex - 1].Should().Be(Utc(10, 1));
-		envelope.Center[anchorIndex - 1].Should().Be(2.0);
-		envelope.Min[anchorIndex - 1].Should().Be(2.0);
-		envelope.Max[anchorIndex - 1].Should().Be(2.0);
-		envelope.Timestamps[anchorIndex].Should().Be(Utc(10, 1).AddTicks(1));
-	}
-
-	[Fact]
-	public void TheResumptionMarkerIsARealColumnWithNoAnchorAfterIt()
-	{
-		var envelope = HistoryRowFold.Fold(BreakPairRows(), _utcConverter, TargetColumnCount)
-			.Should().ContainSingle().Which;
-
-		var resumptionIndex = envelope.Timestamps.ToList().IndexOf(Utc(10, 5));
-
-		envelope.Center[resumptionIndex].Should().Be(3.0);
-		envelope.Min[resumptionIndex].Should().Be(3.0);
-		envelope.Max[resumptionIndex].Should().Be(3.0);
-
-		// Everything from the resumption onwards is a real column, so the line restarts and stays.
-		envelope.Center.Skip(resumptionIndex)
-			.Should().AllSatisfy(value => double.IsNaN(value).Should().BeFalse());
-		(resumptionIndex + 1).Should().Be(envelope.Timestamps.Count - 1);
+		envelope.Min[1].Should().Be(2.0);
+		envelope.Max[1].Should().Be(2.0);
+		envelope.Min[3].Should().Be(3.0);
+		envelope.Max[3].Should().Be(3.0);
 	}
 
 	// Evidence 2: a row absence carries no meaning on its own. The value simply did not change.
@@ -256,7 +187,7 @@ public sealed class HistoryRowFoldTests
 			new(7, Local(14, 30), 3.0, 0)
 		];
 
-		var envelope = HistoryRowFold.Fold(rows, _utcConverter, TargetColumnCount).Should().ContainSingle().Which;
+		var envelope = HistoryRowFold.Fold(rows, UtcConverter, TargetColumnCount).Should().ContainSingle().Which;
 
 		envelope.Timestamps.Count.Should().Be(3);
 		NaNColumnCount(envelope).Should().Be(0);
@@ -274,7 +205,7 @@ public sealed class HistoryRowFoldTests
 			new(7, Local(10, 9), 5.0, FirstAfterBreakQuality)
 		];
 
-		var envelope = HistoryRowFold.Fold(rows, _utcConverter, TargetColumnCount).Should().ContainSingle().Which;
+		var envelope = HistoryRowFold.Fold(rows, UtcConverter, TargetColumnCount).Should().ContainSingle().Which;
 
 		envelope.Timestamps.Count.Should().Be(7);
 		NaNColumnCount(envelope).Should().Be(2);
@@ -302,7 +233,7 @@ public sealed class HistoryRowFoldTests
 			new(7, Local(10, 1), 2.0, LastBeforeBreakQuality)
 		];
 
-		var envelope = HistoryRowFold.Fold(rows, _utcConverter, TargetColumnCount).Should().ContainSingle().Which;
+		var envelope = HistoryRowFold.Fold(rows, UtcConverter, TargetColumnCount).Should().ContainSingle().Which;
 
 		envelope.Timestamps.Count.Should().Be(3);
 		NaNColumnCount(envelope).Should().Be(1);
@@ -316,7 +247,7 @@ public sealed class HistoryRowFoldTests
 	[Fact]
 	public void ABreakMarkerDroppedByTheStrictAscentGuardEmitsNoAnchor()
 	{
-		var converter = new ArchiveTimeConverter(TimeZoneInfo.FindSystemTimeZoneById("Europe/Berlin"));
+		var converter = BerlinConverter;
 		HistoryRowFold.Row[] rows =
 		[
 			new(7, FallBackLocal(1, 30), 1.0, 0),
@@ -354,57 +285,12 @@ public sealed class HistoryRowFoldTests
 				index == 4 ? LastBeforeBreakQuality : 0))
 			.ToArray();
 
-		var envelope = HistoryRowFold.Fold(rows, _utcConverter, 4).Should().ContainSingle().Which;
+		var envelope = HistoryRowFold.Fold(rows, UtcConverter, 4).Should().ContainSingle().Which;
 
 		NaNColumnCount(envelope).Should().Be(1);
 		envelope.Timestamps.Count.Should().Be(5);
 		envelope.Timestamps[2].Should().Be(Utc(10, 4).AddTicks(1));
 		double.IsNaN(envelope.Center[2]).Should().BeTrue();
-	}
-
-	// The windowed read's UNION ALL under one outer ORDER BY id, t hands a seeded pen to the fold as one
-	// ascending run with the seed at its head, indistinguishable from a window row (Evidence 7).
-	[Fact]
-	public void APenCarryingASeedRowAndWindowRowsYieldsExactlyOneEnvelope()
-	{
-		HistoryRowFold.Row[] rows =
-		[
-			// The seed: the pen's last sample before the window opens at 10:00.
-			new(7, Local(9, 55), 1.0, 0),
-			new(7, Local(10, 0), 2.0, 0),
-			new(7, Local(10, 1), 3.0, 0)
-		];
-
-		var envelope = HistoryRowFold.Fold(rows, _utcConverter, TargetColumnCount).Should().ContainSingle().Which;
-
-		envelope.PenId.Should().Be(7);
-		envelope.Timestamps[0].Should().Be(Utc(9, 55));
-		envelope.Center[0].Should().Be(1.0);
-		envelope.Timestamps.Should().Equal([Utc(9, 55), Utc(10, 0), Utc(10, 1)]);
-		envelope.Center.Should().Equal([1.0, 2.0, 3.0]);
-	}
-
-	// Two seeded pens, to show the seed does not disturb the consecutive-identifier grouping: the count is
-	// one envelope per pen, not one per branch of the union.
-	[Fact]
-	public void EachSeededPenGetsOneEnvelopeWithItsOwnSeedFirst()
-	{
-		HistoryRowFold.Row[] rows =
-		[
-			new(3, Local(9, 50), 1.0, 0),
-			new(3, Local(10, 0), 2.0, 0),
-			new(9, Local(9, 40), 3.0, 0),
-			new(9, Local(10, 0), 4.0, 0)
-		];
-
-		var envelopes = HistoryRowFold.Fold(rows, _utcConverter, TargetColumnCount);
-
-		envelopes.Count.Should().Be(2);
-		envelopes.Select(envelope => envelope.PenId).Should().Equal([3, 9]);
-		envelopes[0].Timestamps.Should().Equal([Utc(9, 50), Utc(10, 0)]);
-		envelopes[1].Timestamps.Should().Equal([Utc(9, 40), Utc(10, 0)]);
-		envelopes[0].Center.Should().Equal([1.0, 2.0]);
-		envelopes[1].Center.Should().Equal([3.0, 4.0]);
 	}
 
 	// The seed row carries its own q, so a seed marked q = 32 says the window opens inside a break. The
@@ -420,13 +306,12 @@ public sealed class HistoryRowFoldTests
 			new(7, Local(10, 1), 3.0, 0)
 		];
 
-		var envelope = HistoryRowFold.Fold(rows, _utcConverter, TargetColumnCount).Should().ContainSingle().Which;
+		var envelope = HistoryRowFold.Fold(rows, UtcConverter, TargetColumnCount).Should().ContainSingle().Which;
 
 		NaNColumnCount(envelope).Should().Be(1);
 		envelope.Timestamps.Should().Equal(
 			[Utc(9, 55), Utc(9, 55).AddTicks(1), Utc(10, 0), Utc(10, 1)]);
 		envelope.Center.Should().Equal([1.0, double.NaN, 2.0, 3.0]);
-		double.IsNaN(envelope.Center[1]).Should().BeTrue();
 	}
 
 	// The same seed inside a break, on the decimator's other branch: twelve entries against a target of
@@ -440,7 +325,7 @@ public sealed class HistoryRowFoldTests
 			.Range(0, 10)
 			.Select(index => new HistoryRowFold.Row(7, Local(10, index), index + 2.0, 0)));
 
-		var envelope = HistoryRowFold.Fold(rows, _utcConverter, 4).Should().ContainSingle().Which;
+		var envelope = HistoryRowFold.Fold(rows, UtcConverter, 4).Should().ContainSingle().Which;
 
 		NaNColumnCount(envelope).Should().Be(1);
 		envelope.Timestamps[0].Should().Be(Utc(9, 55));

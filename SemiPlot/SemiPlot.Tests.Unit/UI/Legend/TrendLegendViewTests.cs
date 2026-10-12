@@ -24,6 +24,8 @@ using SemiPlot.UI.Startup;
 
 using Xunit;
 
+using static SemiPlot.Tests.Unit.UI.ViewProbe;
+
 using Pen = SemiPlot.Core.Trends.Pen;
 
 namespace SemiPlot.Tests.Unit.UI.Legend;
@@ -35,9 +37,6 @@ namespace SemiPlot.Tests.Unit.UI.Legend;
 [Trait("Category", "Unit")]
 public sealed class TrendLegendViewTests
 {
-	private static readonly TimeSpan _historyDebounceWindow = TimeSpan.FromMilliseconds(150);
-	private static readonly DateTime _from = new(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
-	private static readonly DateTime _to = new(2026, 6, 15, 9, 0, 0, DateTimeKind.Utc);
 	private readonly TestScheduler _scheduler = new();
 
 	[AvaloniaFact]
@@ -46,7 +45,7 @@ public sealed class TrendLegendViewTests
 		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Chamber pressure", ["Pressures"], "#ff0000", "kPa", "0.000"));
 		using var legend = new TrendLegendViewModel(chart);
-		LoadInitialHistory(chart);
+		ChartTestBuilder.LoadInitialHistory(chart, _scheduler, ChartTestBuilder.From, ChartTestBuilder.To);
 		var window = Realize(legend);
 
 		var texts = RowTexts(SingleRow(window));
@@ -60,7 +59,7 @@ public sealed class TrendLegendViewTests
 		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Chamber pressure", ["Pressures"], "#ff0000"));
 		using var legend = new TrendLegendViewModel(chart);
-		LoadInitialHistory(chart);
+		ChartTestBuilder.LoadInitialHistory(chart, _scheduler, ChartTestBuilder.From, ChartTestBuilder.To);
 		var window = Realize(legend);
 
 		var texts = RowTexts(SingleRow(window));
@@ -68,46 +67,16 @@ public sealed class TrendLegendViewTests
 		texts.Should().Equal("Chamber pressure", PenValueFormat.Format(2.0, PenValueFormat.FallbackMask));
 	}
 
-	// The state sits on the panel and the row reads it off the view's data context.
+	// The state sits on the panel and the row reads it off the view's data context. The label is read off the
+	// realised button rather than off the flag, because the button is what tells the operator which way the
+	// next press goes.
 	[AvaloniaFact]
-	public void TheCollapsedRow_ShowsTheNameAlone()
+	public void ThePanelToggle_CollapsesTheRowToItsNameAndExpandsItBack()
 	{
 		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Chamber pressure", ["Pressures"], "#ff0000", "kPa", "0.000"));
 		using var legend = new TrendLegendViewModel(chart);
-		LoadInitialHistory(chart);
-		var window = Realize(legend);
-
-		PressTheToggle(window);
-
-		RowTexts(SingleRow(window)).Should().Equal("Chamber pressure");
-	}
-
-	[AvaloniaFact]
-	public void TheRowExpandedAgain_CarriesTheMaskedValueAndTheUnitBack()
-	{
-		var chart = CreateChart();
-		chart.AddPen(new Pen(1, "Chamber pressure", ["Pressures"], "#ff0000", "kPa", "0.000"));
-		using var legend = new TrendLegendViewModel(chart);
-		LoadInitialHistory(chart);
-		var window = Realize(legend);
-
-		PressTheToggle(window);
-		PressTheToggle(window);
-
-		RowTexts(SingleRow(window))
-			.Should()
-			.Equal("Chamber pressure", PenValueFormat.Format(2.0, "0.000"), "kPa");
-	}
-
-	// The label is read off the realised button rather than off the flag, because the button is what
-	// tells the operator which way the next press goes.
-	[AvaloniaFact]
-	public void ThePanelWidthAndTheToggleLabel_FollowTheState()
-	{
-		var chart = CreateChart();
-		chart.AddPen(new Pen(1, "Chamber pressure", ["Pressures"], "#ff0000", "kPa", "0.000"));
-		using var legend = new TrendLegendViewModel(chart);
+		ChartTestBuilder.LoadInitialHistory(chart, _scheduler, ChartTestBuilder.From, ChartTestBuilder.To);
 		var window = Realize(legend);
 
 		legend.IsExpanded.Should().BeTrue("every start opens expanded");
@@ -119,6 +88,13 @@ public sealed class TrendLegendViewTests
 		legend.IsExpanded.Should().BeFalse();
 		legend.PanelWidth.Should().Be(TrendLegendViewModel.CollapsedWidth);
 		ToggleLabel(window).Should().Be(Resources.LegendExpandPanel);
+		RowTexts(SingleRow(window)).Should().Equal("Chamber pressure");
+
+		PressTheToggle(window);
+
+		RowTexts(SingleRow(window))
+			.Should()
+			.Equal("Chamber pressure", PenValueFormat.Format(2.0, "0.000"), "kPa");
 	}
 
 	// An allowlist, not a denylist: a control type nobody thought of is how a second editor arrives in a
@@ -192,10 +168,7 @@ public sealed class TrendLegendViewTests
 		using var legend = new TrendLegendViewModel(chart);
 		var window = Realize(legend);
 
-		var swatch = SingleRow(window)
-			.GetLogicalDescendants()
-			.OfType<Border>()
-			.Single(border => border.Width == 12);
+		var swatch = Descendants<Border>(window).Single(border => border.Name == "RowColor");
 
 		swatch.Height.Should().Be(12);
 		swatch.CornerRadius.Should().Be(new CornerRadius(6));
@@ -298,10 +271,22 @@ public sealed class TrendLegendViewTests
 
 		headerSwitch.IsChecked.Should().BeTrue();
 		chart.Pens.Should().AllSatisfy(pen => pen.IsVisible.Should().BeTrue());
+
+		HeadlessInput.Click(window, headerSwitch);
+
+		BoxStates(window).Should().Equal(false, false);
+		PenStates(chart).Should().Equal(false, false);
+
+		HeadlessInput.Click(window, headerSwitch);
+
+		BoxStates(window).Should().Equal(true, true);
+		PenStates(chart).Should().Equal(true, true);
 	}
 
+	// The chart switches the pen back after a click, so the box follows only if its one-way binding
+	// outlived the click.
 	[AvaloniaFact]
-	public void AClickOnARowBox_SwitchesItsPenAndTheBoxFollows()
+	public void APenSwitchedOnTheChart_MovesItsRowBoxBeforeAndAfterAClick()
 	{
 		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Heater 01", ["Heaters"], "#ff0000"));
@@ -318,38 +303,6 @@ public sealed class TrendLegendViewTests
 
 		BoxStates(window).Should().Equal(true, true);
 		PenStates(chart).Should().Equal(true, true);
-	}
-
-	[AvaloniaFact]
-	public void AClickOnTheGroupSwitch_LeavesEveryRowBoxAgreeingWithItsPen()
-	{
-		var chart = CreateChart();
-		chart.AddPen(new Pen(1, "Heater 01", ["Heaters"], "#ff0000"));
-		chart.AddPen(new Pen(2, "Heater 02", ["Heaters"], "#00ff00"));
-		using var legend = new TrendLegendViewModel(chart);
-		var window = Realize(legend);
-
-		HeadlessInput.Click(window, HeaderSwitches(window).Single());
-
-		BoxStates(window).Should().Equal(false, false);
-		PenStates(chart).Should().Equal(false, false);
-
-		HeadlessInput.Click(window, HeaderSwitches(window).Single());
-
-		BoxStates(window).Should().Equal(true, true);
-		PenStates(chart).Should().Equal(true, true);
-	}
-
-	// The chart switches the pen back after a click, so the box follows only if its one-way binding
-	// outlived the click.
-	[AvaloniaFact]
-	public void APenSwitchedOnTheChart_MovesItsRowBoxBeforeAndAfterAClick()
-	{
-		var chart = CreateChart();
-		chart.AddPen(new Pen(1, "Heater 01", ["Heaters"], "#ff0000"));
-		chart.AddPen(new Pen(2, "Heater 02", ["Heaters"], "#00ff00"));
-		using var legend = new TrendLegendViewModel(chart);
-		var window = Realize(legend);
 
 		chart.SetPenVisibility(2, false);
 		Dispatcher.UIThread.RunJobs();
@@ -380,22 +333,6 @@ public sealed class TrendLegendViewTests
 		Dispatcher.UIThread.RunJobs();
 
 		chart.FindPen(1)!.IsVisible.Should().BeTrue("the box is not a writer of the pen's visibility");
-	}
-
-	[AvaloniaFact]
-	public void APenSwitchedOnTheChart_ReDerivesEveryRealisedHeaderItSitsUnder()
-	{
-		var chart = CreateChart();
-		chart.AddPen(new Pen(1, "Heater 01", ["Heaters", "Watchlist"], "#ff0000"));
-		chart.AddPen(new Pen(2, "Heater 02", ["Heaters"], "#00ff00"));
-		using var legend = new TrendLegendViewModel(chart);
-		var window = Realize(legend);
-
-		chart.SetPenVisibility(1, false);
-		Dispatcher.UIThread.RunJobs();
-
-		HeaderTexts(window).Should().Equal(Caption("Heaters"), Caption("Watchlist"));
-		HeaderSwitches(window).Select(box => box.IsChecked).Should().Equal(null, false);
 	}
 
 	[AvaloniaTheory]
@@ -447,7 +384,7 @@ public sealed class TrendLegendViewTests
 		var header = Descendants<TextBlock>(window).Single(block => block.Name == "GroupHeader");
 		var rowBox = RowBoxes(window).Single();
 
-		LeftEdge(rowBox, window).Should().Be(LeftEdge(header, window));
+		LeftOf(rowBox, window).Should().Be(LeftOf(header, window));
 	}
 
 	[AvaloniaTheory]
@@ -495,7 +432,7 @@ public sealed class TrendLegendViewTests
 		var pen = new Pen(1, "Chamber pressure", ["Pressures"], "#ff0000", "kPa", "0.000");
 		chart.AddPen(pen);
 		using var legend = new TrendLegendViewModel(chart);
-		LoadInitialHistory(chart);
+		ChartTestBuilder.LoadInitialHistory(chart, _scheduler, ChartTestBuilder.From, ChartTestBuilder.To);
 		var window = Realize(legend);
 
 		chart.ApplyCatalogue([pen with { Unit = "Pa" }]);
@@ -584,18 +521,12 @@ public sealed class TrendLegendViewTests
 
 	private static TextBlock RowName(Border row)
 	{
-		return row.GetLogicalDescendants().OfType<TextBlock>().Single(block => Grid.GetColumn(block) == 2);
+		return row.GetLogicalDescendants().OfType<TextBlock>().Single(block => block.Name == "RowName");
 	}
 
 	private static Color? ColourOf(IBrush? brush)
 	{
 		return (brush as ISolidColorBrush)?.Color;
-	}
-
-	private static double LeftEdge(Control control, Window window)
-	{
-		return control.TranslatePoint(default, window)?.X
-			?? throw new InvalidOperationException("The control is not in the window's visual tree.");
 	}
 
 	// A row counts as marked only when both the bar shows and the fill paints the accent fill, so either half
@@ -626,15 +557,6 @@ public sealed class TrendLegendViewTests
 		where T : Control
 	{
 		return window.GetVisualDescendants().OfType<T>();
-	}
-
-	private void LoadInitialHistory(TrendChartViewModel chart)
-	{
-		chart.Navigation.TrackDataExtents(_from, _to);
-		chart.RequestInitialHistory();
-
-		// The admission and the delivery each land one tick after the step that schedules them.
-		_scheduler.AdvanceBy(_historyDebounceWindow.Ticks + 2);
 	}
 
 	private TrendChartViewModel CreateChart()

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
+using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.UI.Messages;
 using SemiPlot.UI.PenEditor;
 
@@ -72,7 +73,7 @@ internal sealed class FakePenCatalogueEditor : IPenCatalogueEditor
 	/// <summary>A refusal the fake can answer with, against the bench archive.</summary>
 	public static ArchiveError Refusal(ArchiveFault fault, string detail)
 	{
-		return new ArchiveError(fault, "bench", 5432, "semiplot_dev", detail);
+		return FakeDataProvider.BenchArchiveError(fault, detail);
 	}
 
 	/// <summary>The editor window's view model over the catalogue, writing through this fake.</summary>

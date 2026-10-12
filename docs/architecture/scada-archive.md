@@ -16,15 +16,31 @@ consumer either way `[DEC:read-only-consumer]`.
 
 Consequences that constrain every design decision downstream:
 
-- The schema is a vendor internal, not a sanctioned integration surface. A product upgrade or an
-  archive reconfiguration may recreate the tables.
+- The schema is a vendor internal, not a sanctioned integration surface. The vendor changes it at
+  most additively, a new column, keeping existing names and order `[SUP:20261009]`.
 - We never `ALTER` these tables and never create indexes or triggers on them. Anything we need
   additionally lives in our own `semiplot_*` objects `[DEC:additive-objects]`.
 - Archive system v1 used a different, per-variable table layout and is not supported here. Only
   v2 is described below.
-- Behaviour differs between builds: the day layer is the known case (see *Layers*). Statements
-  marked `[MEAS:capture-20261006]` were measured on 2.7.6.0 (`demo-64`); `[MEAS:dump-20260805]`
-  comes from a customer installation of unknown build.
+- Behaviour differs between builds: the day layer is not written from 2.7.5.0 on (see *Layers*).
+  Statements marked `[MEAS:capture-20261006]` were measured on 2.7.6.0 (`demo-64`);
+  `[MEAS:dump-20260805]` comes from a customer installation of an earlier build.
+
+## Vendor comment
+
+The vendor's support, asked about reading current values from an external application (issue
+#116), gave the following information `[SUP:20261009]`:
+
+- Current values are read from the built-in OPC UA server, the most performant and secure route.
+  The archive is not a source of current values.
+- An OPC UA client does not take a licence seat.
+- The node address `ns=3;s=<project ID><variable ID>` is stable; the variable ID equals `trends.id`.
+- The server offers no OPC UA HistoryRead, and none is planned. History is read from the database.
+- The archive write period is not configurable. The script procedure `WriteArchiveToDB(0)` flushes
+  the buffered changes to the database on demand, at a cost in database and disk load.
+- `trends` and `messages` change at most additively.
+- The day layer (`l = 3`) is not used from 2.7.5.0 on.
+- The 1899-12-30 rows in layers 1 and 2 are a bug, to be fixed in the next update.
 
 ## Database objects
 
@@ -172,10 +188,11 @@ fast variables arrived within 3 minutes after midnight, those of slow variables 
 later `[MEAS:capture-20261006]`. A variable's coarse rows are as late as its main-layer rows (see
 *Write behavior*).
 
-**The day layer depends on the build.** The customer archive holds `l = 3` rows within the same day,
-markers included `[MEAS:dump-20260805]`. Build 2.7.6.0 (`demo-64`) wrote no `l = 3` row at all in
-48 hours, including a full calendar day without a restart `[MEAS:capture-20261006]`. A reader cannot
-assume layer 3 is populated.
+**The day layer is not written from 2.7.5.0 on** `[SUP:20261009]`. Build 2.7.6.0 (`demo-64`)
+wrote no `l = 3` row in 48 hours, including a full calendar day without a restart
+`[MEAS:capture-20261006]`. The customer archive, from an earlier build, holds `l = 3` rows within the
+same day, markers included `[MEAS:dump-20260805]`. A reader uses the hour layer as the coarsest one
+and treats `l = 3` as absent.
 
 **Point spacing implied by the selection**, which is what decides when a layer is usable for
 rendering:
@@ -185,7 +202,7 @@ rendering:
 | `0` | | every archived change | the variable's archiving interval |
 | `1` | minute | up to 2 | 30 s |
 | `2` | hour | up to 2 | 30 min |
-| `3` | day | up to 2 where written | 12 h |
+| `3` | day | none from 2.7.5.0 on | |
 
 ## Quality and gaps
 
@@ -246,8 +263,8 @@ connections. It issues no `UPDATE` or `DELETE` on `trends`.
 
 **Per-variable buffering.** Values accumulate in a buffer per variable in the server and reach the
 database when the buffer holds about 50 rows or after about 8 minutes `[MEAS:capture-20261006]`. No
-setting controls either. The resulting delay between a sample's instant and its arrival in the
-table:
+setting controls either; a project script can force a flush with `WriteArchiveToDB(0)`
+`[SUP:20261009]`. The resulting delay between a sample's instant and its arrival in the table:
 
 | Kind of variable | Typical delay | Longest observed |
 | --- | --- | --- |
@@ -341,6 +358,7 @@ sequential scan of the current day's partition. Every query must carry the varia
 00:00:00` (Delphi's zero date, `v = 0`, `q = 0`) into layers 1 and 2, one per variable and layer in
 each project run. They land in `tpdefault` and stay there until 02:00 or the next start, so
 `min(t)` over a coarse layer without a time predicate returns 1899-12-30 `[MEAS:capture-20261006]`.
+The vendor confirms them as a bug to be fixed `[SUP:20261009]`.
 
 **`tpdefault` is not a fault signal by itself.** It always holds the junk rows above and, with a
 limit set, late rows of dropped days. Only rows dated today or later mean that a day partition was
@@ -353,7 +371,6 @@ Carried deliberately as open, to be settled by a controlled experiment rather th
 
 | Question | Why it is open | Impact |
 | --- | --- | --- |
-| Which builds or licences write the day layer? | The customer archive has it, 2.7.6.0 `demo-64` does not. | Wide windows read `l = 3`; an empty layer draws nothing. |
 | What sets the anchor offset: one poll tick, or 600 s? | The customer archive and 2.7.6.0 differ. | None for rendering: either way the step corner is a real sample. |
 | Why does a stepped integer sometimes keep a third row in a minute? | Seen in 4 minutes of one variable. | None for envelopes: the extremes are still present. |
 | Which broken-connection case loses the in-flight batch? | Two of three outages that broke connections lost one, the third none. | Silent holes; restart PostgreSQL only with the project stopped. |

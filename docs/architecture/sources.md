@@ -11,6 +11,7 @@ each claim is visible without reading the source.
 | Vendor manual | `[MAN:<page>]` | Stated by the Simple-Scada 2 manual. Strongest vendor evidence. |
 | Vendor forum | `[FORUM:<topic>]` | Stated by the vendor's own account on the official forum. Authoritative but informal; check the era flag. |
 | Our measurement | `[MEAS:<artifact>]` | Measured by us from a named artifact. Strongest evidence for behavior, weakest for generality. |
+| Vendor support | `[SUP:<date>]` | Written answer of the vendor's technical support to our question. Authoritative for the vendor's intent; weaker than a measurement for behaviour. |
 | Our decision | `[DEC:<key>]` | A choice we made. Not a fact about the world. |
 | Unverified | `UNVERIFIED` | Believed but not established. Never assert an unverified claim without this marker. |
 
@@ -56,6 +57,12 @@ replies from the vendor's own account.
 Vendor download page `https://simple-scada.com/download/` defines the demo builds: `DEMO-64`
 (feature-limited, 64 tags) and `DEMO-TIME` (full functionality, server limited to one hour of
 continuous operation; a restart grants another hour).
+
+## Vendor support
+
+| Marker | Exchange | What it establishes |
+| --- | --- | --- |
+| `[SUP:20261009]` | E-mail answer of Simple-Scada support (`support@simple-scada.com`), 2026-10-09, to questions on reading current values from an external application (issue #116) | The built-in OPC UA server is the most performant and secure way to read current values; other exchange routes are listed in the manual's FAQ (`faq-other.html`, item 13). An OPC UA client does not take a licence seat; only the desktop and web clients do. The node address `ns=3;s=<project ID><variable ID>` is stable, and the variable ID in it always equals `trends.id`. No OPC UA HistoryRead, none planned. The archive write period is not configurable; the undocumented script procedure `WriteArchiveToDB(0)` flushes the buffered archive to the database, changed values only, at a cost in database and disk load. The `trends` and `messages` structure changes at most additively (a new column); existing columns keep their names and order. The day layer (`l = 3`) is not used from 2.7.5.0 on. The 1899-12-30 rows in layers 1 and 2 are a bug, to be fixed in the next update. On the lost batch after a broken connection the answer suggests a rarely changing variable sent later and points to the query statistics on the server's "Базы данных" tab; it does not match the measured loss of a variable changing every second. |
 
 ## Our measurements
 

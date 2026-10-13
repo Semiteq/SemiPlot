@@ -36,6 +36,7 @@ public partial class TrendChartView : UserControl
 	private VerticalLine? _deltaFirstLine;
 	private VerticalLine? _deltaSecondLine;
 	private Point? _dragOrigin;
+	private bool _panStarted;
 	private int _frameSequence;
 	private int? _pendingFrame;
 
@@ -59,7 +60,8 @@ public partial class TrendChartView : UserControl
 		PlotControl.PointerWheelChanged += OnPointerWheelChanged;
 		PlotControl.PointerPressed += OnPointerPressed;
 		PlotControl.PointerMoved += OnPointerMoved;
-		PlotControl.PointerReleased += OnPointerReleased;
+		// AvaPlot's class handler releases the capture first, which would end the drag before a bubbling handler runs.
+		PlotControl.AddHandler(PointerReleasedEvent, OnPointerReleased, RoutingStrategies.Tunnel);
 		PlotControl.PointerCaptureLost += OnPointerCaptureLost;
 		PlotControl.PointerExited += OnPointerExited;
 		PlotControl.SizeChanged += (_, _) => RepositionCursorOverlay();
@@ -345,6 +347,12 @@ public partial class TrendChartView : UserControl
 
 		if (_dragOrigin is { } origin)
 		{
+			if (!_panStarted && !ChartPressRouter.IsPastClickSlop(origin, current))
+			{
+				return;
+			}
+
+			_panStarted = true;
 			var delta = AnchorAt(origin) - AnchorAt(current);
 			_dragOrigin = current;
 			_viewModel.Navigation.PanBy(delta);
@@ -358,13 +366,19 @@ public partial class TrendChartView : UserControl
 
 	private void OnPointerReleased(object? sender, PointerReleasedEventArgs eventArgs)
 	{
-		if (_dragOrigin is null)
+		if (_dragOrigin is not { } pressPoint || eventArgs.InitialPressMouseButton != MouseButton.Left)
 		{
 			return;
 		}
 
+		var panned = _panStarted;
+		// The view holds the capture here, so releasing it raises PointerCaptureLost, which ends the drag.
 		eventArgs.Pointer.Capture(null);
-		EndDrag();
+
+		if (!panned)
+		{
+			_viewModel?.PickPenAt(ToPixel(pressPoint));
+		}
 	}
 
 	// Capture can be lost mid-drag without a PointerReleased (window deactivation, focus steal); mirror the
@@ -382,6 +396,7 @@ public partial class TrendChartView : UserControl
 	private void EndDrag()
 	{
 		_dragOrigin = null;
+		_panStarted = false;
 		_viewModel?.EndDrag();
 		PlotControl.Cursor = _handCursor;
 	}
@@ -479,9 +494,14 @@ public partial class TrendChartView : UserControl
 		ReadoutBox.IsVisible = false;
 	}
 
+	private static Pixel ToPixel(Point point)
+	{
+		return new Pixel((float)point.X, (float)point.Y);
+	}
+
 	private DateTime AnchorAt(Point position)
 	{
-		var x = PlotControl.Plot.GetCoordinates(new Pixel((float)position.X, (float)position.Y)).X;
+		var x = PlotControl.Plot.GetCoordinates(ToPixel(position)).X;
 
 		return LocalTimeAxis.FromAxis(x);
 	}

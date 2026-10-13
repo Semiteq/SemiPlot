@@ -108,6 +108,9 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 ### PN-6 — Active pen (MUST)
 **Definition.** One pen can be "active"; delta measurements (CU-3) and context operations apply to the active pen. The active pen is chosen from the legend / by click.
 **Acceptance.** UI: selecting the active pen is reflected in the legend; Δy is measured against the active pen.
+**As built.** A left click in pan mode within 6 px of a visible pen's line and a click on its sidebar row both select the pen
+through `TrendChartViewModel.SetActivePen`; the active line is drawn 2 px wide above the others
+(`trend-interaction.md`, "Navigation & cursors").
 
 ### PN-7 — Line construction methods: Bézier and bad values (SHOULD)
 **Definition.** Additional segments (Bézier2/Bézier3) and a render mode for untrustworthy values (None/Dashed/Line).

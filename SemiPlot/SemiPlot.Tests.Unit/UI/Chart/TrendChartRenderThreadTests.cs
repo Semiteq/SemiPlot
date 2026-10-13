@@ -108,7 +108,7 @@ public sealed class TrendChartRenderThreadTests
 		lockHeldAtEachSwitch.Should().NotBeEmpty().And.AllSatisfy(isHeld => isHeld.Should().BeFalse());
 	}
 
-	// docs/architecture/charting.md#the-plots-own-lists-and-the-render-thread
+	// docs/architecture/charting.md#per-pen-plottable-envelopeline
 	[AvaloniaFact]
 	public void ApplyCatalogue_RaisesNoNotificationWhileThePlotIsLocked()
 	{
@@ -123,6 +123,27 @@ public sealed class TrendChartRenderThreadTests
 		chart.ApplyCatalogue([first]);
 		chart.ApplyCatalogue([first, second]);
 		chart.ApplyCatalogue([]);
+
+		raised.Should().Contain(entry => entry.Name == nameof(chart.ActivePenId));
+		raised.Should().Contain(entry => entry.Name == nameof(chart.DrawnPenId));
+		raised.Should().Contain(entry => entry.Name == nameof(chart.ScalesRevision));
+		raised.Should().AllSatisfy(entry => entry.IsLockHeld.Should().BeFalse());
+	}
+
+	// docs/architecture/charting.md#per-pen-plottable-envelopeline
+	[AvaloniaFact]
+	public void SetActivePen_RaisesNoNotificationWhileThePlotIsLocked()
+	{
+		using var chart = CreateChart(new TestScheduler());
+		var first = FakeDataProvider.FirstPen;
+		var second = FakeDataProvider.SecondPen;
+		chart.ApplyCatalogue([first, second]);
+		var raised = new List<(string? Name, bool IsLockHeld)>();
+		chart.PropertyChanged += (_, args) => raised.Add((args.PropertyName, Monitor.IsEntered(chart.Plot.Sync)));
+
+		chart.SetActivePen(second.PenId);
+		chart.SetPenVisibility(second.PenId, false);
+		chart.SetPenVisibility(second.PenId, true);
 
 		raised.Should().Contain(entry => entry.Name == nameof(chart.ActivePenId));
 		raised.Should().Contain(entry => entry.Name == nameof(chart.DrawnPenId));

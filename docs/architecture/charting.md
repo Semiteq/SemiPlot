@@ -37,6 +37,21 @@ keeps the crossing between two columns short; a column whose `Min` equals its `M
 pen holds the previous Y to the new column's X before the vertical move. It touches no Skia, so the culling
 window, the gap break and the step shape are unit-tested (`EnvelopePathTests`).
 
+**Hit distance.** `EnvelopeLine.DistanceTo(click, dataRect)` is the pixel distance from a point to the
+nearest stroked segment. It reads the same `VisibleRange` and `Build` vertices as `Render`, under the same
+lock, and projects them through the same `ProjectVertex`, log10 floor included. ScottPlot clips every
+plottable to the data area, so a click outside `dataRect` measures infinity and each segment is clipped to
+`dataRect` before it is measured (`EnvelopePath.ClippedSegmentDistance`): a line the chart does not draw
+under the click is never picked. A `StartsSegment` vertex opens a new segment, so no distance is taken
+across a gap. `Chart/ChartPenPick.Choose` applies the 6 px tolerance and the tie rule to the distances of
+all visible pens (`trend-interaction.md`, "Navigation & cursors").
+
+**Active stroke.** The active pen's line is 2 px wide and drawn above the others, which stay 1 px.
+`ChartPenSet.Emphasize` sets the widths through `EnvelopeLine.SetLineWidth` (written under the column lock,
+read by `Render` with the colour) and calls `Plot.MoveToTop` on the active line. `TrendChartViewModel`
+calls it under `lock (Plot.Sync)` on every change of the active pen: `SetActivePen`, a visibility change
+and a catalogue apply (inside its own `Plot.Sync` block). The call raises no notification inside the lock.
+
 **Gaps via NaN.** A column carrying `NaN` in `Min`/`Max` is the envelope's gap marker (and what
 `TrendPenState` encodes a null append as): `Build` breaks the path there and the next real column opens a
 new segment with a `MoveTo`. Every NaN a chart draws comes from the history path: `RealtimeBatch` carries
@@ -61,7 +76,8 @@ visible-column read alone (`EnvelopePath.VisibleRange` plus `EnvelopePath.Build`
 points outside it, so a frame that meets a history load waits for the one merge that swaps the buffer, not
 for the conversion ahead of it: `LoadHistory` converts into a list local to the call and hands it over in
 one `ReplaceColumns`, which merges it with the live tail the list already holds. The last X the previous
-replace wrote, the colour and the line style sit under the same lock: a catalogue read can change the
+replace wrote, the colour, the line style and the line width sit under the same lock, and `DistanceTo`
+reads the columns under it on the UI thread: a catalogue read can change the
 colour and the line style after the first frame, so `Restyle` writes them on the UI thread and `Render`
 reads them under the lock. The list is capped at 100 000 columns, and the cap trims in chunks of one
 tenth: the append that passes it removes the oldest 10 000 columns in one `RemoveRange`. The list then
@@ -346,9 +362,12 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   (Applying a catalogue read, below).
 - `Chart/ChartPenSet` — the pens the chart shows: one `TrendPenState`, one plottable and one
   `PenScaleSettings` per pen id, and `Ordered`, the same states in catalogue order, rebuilt from the
-  dictionary on every catalogue applied, so the two never hold different pens.
+  dictionary on every catalogue applied, so the two never hold different pens. It finds the pen nearest
+  a click (`PenNearest`) and emphasizes the active pen's line (`Emphasize`).
+- `Chart/ChartPenPick` — the pure pen choice rule: nearest distance within the 6 px tolerance, the active
+  pen on a tie, otherwise the first listed.
 - `Chart/EnvelopeLine` + `EnvelopePath` — the per-pen `IPlottable`, the private column buffer with the
-  lock over it and the four mutators that take it, and the pure geometry it strokes: the visible-column
+  lock over it and the mutators that take it, and the pure geometry it strokes: the visible-column
   search, the min/max point order, the gap break and the step shape.
 - `Chart/TrendPenState` — one pen's `EnvelopeLine`, `IsVisible`, `CurrentValue`, and the
   history-load / realtime-append / fold logic that drives those mutators. `Revise(Pen)` replaces the
@@ -429,6 +448,8 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
 - `Chart/LeftButtonTool` (enum `Pan | DeltaPlacement`) — the single left-button gesture state, sourced
   from the navigation bar's delta toggle.
 - `Chart/ChartAxisRegion` — Y-axis click-region hit-test (the axis panel band beside the data area).
+- `Chart/ChartPressRouter` — the pure routing of a left press (`EditAxisScale`, `PlaceDeltaCursor`,
+  `PanOrPickPen`) and the 4 px click slop that separates a pick from a pan.
 - `Chart/AxisScalePanel` + `AxisScalePanelViewModel` — the flyout that edits the drawn pen's two bounds
   and its axis type (`trend-interaction.md#the-axis-scale-panel`); `TrendChartViewModel.AxisScale` owns
   the view model.

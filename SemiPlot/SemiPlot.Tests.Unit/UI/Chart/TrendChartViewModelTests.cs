@@ -12,6 +12,8 @@ using Microsoft.Reactive.Testing;
 
 using ReactiveUI;
 
+using ScottPlot;
+
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Bridge;
@@ -33,6 +35,12 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 [Trait("Category", "Unit")]
 public sealed class TrendChartViewModelTests
 {
+	private const int PickWindowSeconds = 60;
+	private const double PickFirstValue = 20.0;
+	private const double PickSecondValue = 80.0;
+	private const double PickClearancePixels = 8.0;
+	private const double PickTieTolerancePixels = 1e-3;
+
 	[AvaloniaFact]
 	public void SetPenVisibility_TogglesPenAndPlottableState()
 	{
@@ -72,6 +80,60 @@ public sealed class TrendChartViewModelTests
 	}
 
 	[AvaloniaFact]
+	public void SetActivePen_MovesThatPensLineToTheTopOfThePlot()
+	{
+		var (viewModel, _, _, _) = CreateViewModel();
+		viewModel.AddPen(FakeDataProvider.FirstPen);
+		var second = viewModel.AddPen(FakeDataProvider.SecondPen);
+		viewModel.AddPen(new Pen(3, "Pen 3", ["Group B"], "#0000ff"));
+
+		viewModel.SetActivePen(second.Pen.PenId);
+
+		viewModel.Plot.PlottableList.Last().Should().BeSameAs(second.Line);
+	}
+
+	[AvaloniaFact]
+	public void ACatalogueThatAddsAPen_KeepsTheActivePensLineOnTop()
+	{
+		var (viewModel, _, _, _) = CreateViewModel();
+		var first = viewModel.AddPen(FakeDataProvider.FirstPen);
+		viewModel.AddPen(FakeDataProvider.SecondPen);
+
+		viewModel.AddPen(new Pen(3, "Pen 3", ["Group B"], "#0000ff"));
+
+		viewModel.ActivePenId.Should().Be(first.Pen.PenId);
+		viewModel.Plot.PlottableList.Last().Should().BeSameAs(first.Line);
+	}
+
+	[AvaloniaFact]
+	public void SwitchingTheActivePenOff_MovesTheLineOfTheNewActivePenToTheTop()
+	{
+		var (viewModel, _, _, _) = CreateViewModel();
+		viewModel.AddPen(FakeDataProvider.FirstPen);
+		var second = viewModel.AddPen(FakeDataProvider.SecondPen);
+		viewModel.AddPen(new Pen(3, "Pen 3", ["Group B"], "#0000ff"));
+
+		viewModel.SetPenVisibility(FakeDataProvider.FirstPen.PenId, false);
+
+		viewModel.ActivePenId.Should().Be(second.Pen.PenId);
+		viewModel.Plot.PlottableList.Last().Should().BeSameAs(second.Line);
+	}
+
+	[AvaloniaFact]
+	public void ACatalogueThatRemovesTheActivePen_PutsTheLineOfTheNewActivePenOnTop()
+	{
+		var (viewModel, _, _, _) = CreateViewModel();
+		var first = viewModel.AddPen(FakeDataProvider.FirstPen);
+		var second = viewModel.AddPen(FakeDataProvider.SecondPen);
+		var third = viewModel.AddPen(new Pen(3, "Pen 3", ["Group B"], "#0000ff"));
+
+		viewModel.ApplyCatalogue([second.Pen, third.Pen]);
+
+		viewModel.ActivePenId.Should().NotBe(first.Pen.PenId);
+		viewModel.Plot.PlottableList.Last().Should().BeSameAs(viewModel.FindPen(viewModel.ActivePenId)!.Line);
+	}
+
+	[AvaloniaFact]
 	public void SetActivePen_WithASwitchedOffPen_KeepsTheVisiblePenActive()
 	{
 		var (viewModel, _, _, _) = CreateViewModel();
@@ -82,6 +144,58 @@ public sealed class TrendChartViewModelTests
 
 		viewModel.ActivePenId.Should().Be(2);
 		viewModel.ActivePenAxis!.IsVisible.Should().BeTrue();
+	}
+
+	[AvaloniaFact]
+	public void PickPenAt_APixelOnAnotherPensLine_MakesThatPenActive()
+	{
+		var (viewModel, dataRect) = RenderTwoFlatPens(PickFirstValue, PickSecondValue);
+
+		viewModel.PickPenAt(PixelOnLine(viewModel, 2, PickSecondValue, dataRect));
+
+		viewModel.ActivePenId.Should().Be(2);
+	}
+
+	[AvaloniaFact]
+	public void PickPenAt_EmptySpace_LeavesTheActivePen()
+	{
+		var (viewModel, dataRect) = RenderTwoFlatPens(PickFirstValue, PickSecondValue);
+		var between = PixelOnLine(viewModel, 1, (PickFirstValue + PickSecondValue) / 2.0, dataRect);
+		DistanceTo(viewModel, 1, between, dataRect).Should().BeGreaterThan(PickClearancePixels);
+		DistanceTo(viewModel, 2, between, dataRect).Should().BeGreaterThan(PickClearancePixels);
+
+		viewModel.PickPenAt(between);
+
+		viewModel.ActivePenId.Should().Be(1);
+	}
+
+	[AvaloniaFact]
+	public void PickPenAt_AHiddenPensLine_IsNeverPicked()
+	{
+		var (viewModel, dataRect) = RenderTwoFlatPens(PickFirstValue, PickSecondValue);
+		var onSecondLine = PixelOnLine(viewModel, 2, PickSecondValue, dataRect);
+		viewModel.SetPenVisibility(2, false);
+
+		viewModel.PickPenAt(onSecondLine);
+
+		viewModel.ActivePenId.Should().Be(1);
+	}
+
+	[AvaloniaTheory]
+	[InlineData(1)]
+	[InlineData(2)]
+	public void PickPenAt_TwoLinesAtAnEqualDistance_KeepTheActivePen(int activePenId)
+	{
+		var (viewModel, dataRect) = RenderTwoFlatPens(PickFirstValue, PickFirstValue, activePenId);
+
+		var onBothLines = PixelOnLine(viewModel, 1, PickFirstValue, dataRect);
+		DistanceTo(viewModel, 1, onBothLines, dataRect).Should().BeLessThan(PickClearancePixels);
+		DistanceTo(viewModel, 2, onBothLines, dataRect).Should()
+			.BeApproximately(DistanceTo(viewModel, 1, onBothLines, dataRect), PickTieTolerancePixels);
+
+		viewModel.PickPenAt(onBothLines);
+
+		viewModel.ActivePenId.Should().Be(activePenId);
 	}
 
 	[AvaloniaFact]
@@ -1525,6 +1639,34 @@ public sealed class TrendChartViewModelTests
 
 		state.CurrentValue.Should().NotBe(
 			valueWhenTheReportThrew, "the batches after the failed report still reach the pen");
+	}
+
+	private static (TrendChartViewModel ViewModel, PixelRect DataRect) RenderTwoFlatPens(
+		double firstValue,
+		double secondValue,
+		int activePenId = 1)
+	{
+		var (viewModel, _, dataRect) = ChartTestBuilder.RenderTwoFlatPens(
+			(FakeDataProvider.FirstPen, firstValue),
+			(FakeDataProvider.SecondPen, secondValue),
+			PickWindowSeconds,
+			activePenId);
+
+		return (viewModel, dataRect);
+	}
+
+	private static double DistanceTo(TrendChartViewModel viewModel, int penId, Pixel click, PixelRect dataRect)
+	{
+		return viewModel.FindPen(penId)!.Line.DistanceTo(click, dataRect);
+	}
+
+	private static Pixel PixelOnLine(TrendChartViewModel viewModel, int penId, double value, PixelRect dataRect)
+	{
+		var axes = viewModel.FindPen(penId)!.Line.Axes;
+
+		return new Pixel(
+			axes.XAxis.GetPixel(LocalTimeAxis.ToAxis(From.AddSeconds(PickWindowSeconds / 2)), dataRect),
+			axes.YAxis.GetPixel(value, dataRect));
 	}
 
 	// The value a held query carries, distinct from every value the fake answers with, so the assertion says

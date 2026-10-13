@@ -88,11 +88,20 @@ internal static class ChartViewTestBuilder
 		state.LoadHistory(
 			new PenHistoryEnvelope(
 				1,
-				[ChartTestBuilder.From, ChartTestBuilder.From.AddMinutes(1.0)],
+				[ChartTestBuilder.From, ChartTestBuilder.To],
 				[1.0, 3.0],
 				[5.0, 9.0],
 				[2.0, 6.0]),
-			ChartTestBuilder.From.AddMinutes(1.0));
+			ChartTestBuilder.To);
+		viewModel.AddPen(FakeDataProvider.SecondPen).LoadHistory(
+			new PenHistoryEnvelope(
+				2,
+				[ChartTestBuilder.From, ChartTestBuilder.To],
+				[50.0, 50.0],
+				[50.0, 50.0],
+				[50.0, 50.0]),
+			ChartTestBuilder.To);
+		viewModel.Navigation.TrackDataExtents(ChartTestBuilder.From, ChartTestBuilder.To);
 
 		return viewModel;
 	}

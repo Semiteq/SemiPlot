@@ -32,6 +32,11 @@ public sealed class EnvelopeLineTests
 	private const double LogAxisBottomDecade = -6.0;
 	private const double LogAxisTopDecade = -2.0;
 	private const double UnboundedRequestedEndX = double.PositiveInfinity;
+	private const double TenByTenSpan = 10.0;
+	private const double HitTolerance = 1e-3;
+	private const double MissDistance = 10.0;
+	private const double PinnedFloorPixels = 2.0;
+	private const float ThickLineWidth = 5f;
 	private const int RawBandColumns = HistoryPrefetch.MarginColumnFactor * HistoryColumnTarget.MaxColumns;
 
 	// Yields between rewrites so the render task reaches its frame budget inside the run budget.
@@ -293,6 +298,168 @@ public sealed class EnvelopeLineTests
 		linearLimits.Should().Be(new AxisLimits(0.0, 1.0, FlatValue, FlatValue));
 		logLimits.Should().Be(
 			AxisLimits.HorizontalOnly(0.0, 1.0), "the columns are in data units, the axis in decades");
+	}
+
+	[Fact]
+	public void DistanceTo_AClickOnAnInterpolatedLine_IsZero()
+	{
+		using var plot = new Plot();
+		var (line, dataRect) = LineOverTenByTen(plot, [Flat(0.0, 2.0), Flat(10.0, 8.0)], PenLineStyle.Interpolated);
+
+		line.DistanceTo(PixelAt(line, dataRect, 5.0, 5.0), dataRect).Should().BeApproximately(0.0, HitTolerance);
+	}
+
+	[Fact]
+	public void DistanceTo_AClickOnASteppedHold_HitsItWhileAnInterpolatedPenOfTheSameColumnsDoesNot()
+	{
+		EnvelopeColumn[] columns = [Flat(0.0, 0.0), Flat(10.0, 10.0)];
+		using var steppedPlot = new Plot();
+		using var interpolatedPlot = new Plot();
+		var (stepped, steppedRect) = LineOverTenByTen(steppedPlot, columns, PenLineStyle.Stepped);
+		var (interpolated, interpolatedRect) = LineOverTenByTen(interpolatedPlot, columns, PenLineStyle.Interpolated);
+
+		stepped.DistanceTo(PixelAt(stepped, steppedRect, 5.0, 0.0), steppedRect)
+			.Should().BeApproximately(0.0, HitTolerance);
+		interpolated.DistanceTo(PixelAt(interpolated, interpolatedRect, 5.0, 0.0), interpolatedRect)
+			.Should().BeGreaterThan(MissDistance);
+	}
+
+	[Fact]
+	public void DistanceTo_AClickInsideATallColumn_IsZero()
+	{
+		using var plot = new Plot();
+		var (line, dataRect) = LineOverTenByTen(
+			plot,
+			[Flat(0.0, 5.0), new EnvelopeColumn(5.0, 0.0, 10.0, 5.0), Flat(10.0, 5.0)],
+			PenLineStyle.Interpolated);
+
+		line.DistanceTo(PixelAt(line, dataRect, 5.0, 8.0), dataRect).Should().BeApproximately(0.0, HitTolerance);
+	}
+
+	[Fact]
+	public void DistanceTo_AClickInTheMiddleOfAGap_IsTheDistanceToTheNearerStrokedVertex()
+	{
+		using var plot = new Plot();
+		var (line, dataRect) = LineOverTenByTen(
+			plot,
+			[
+				Flat(0.0, 5.0),
+				Flat(1.0, 5.0),
+				new EnvelopeColumn(5.0, double.NaN, double.NaN, double.NaN),
+				Flat(8.0, 5.0),
+				Flat(9.0, 5.0)
+			],
+			PenLineStyle.Interpolated);
+		var click = PixelAt(line, dataRect, 3.0, 5.0);
+		var nearerVertex = PixelAt(line, dataRect, 1.0, 5.0);
+
+		line.DistanceTo(click, dataRect).Should().BeApproximately(click.X - nearerVertex.X, HitTolerance);
+	}
+
+	[Fact]
+	public void DistanceTo_OnALog10Axis_AValueAtOrBelowZeroIsHitAtThePinnedFloor()
+	{
+		using var plot = new Plot();
+		var (line, dataRect) = LineOverTenByTen(
+			plot,
+			[Flat(0.0, 0.0), Flat(10.0, -5.0)],
+			PenLineStyle.Interpolated,
+			new LogTickGenerator(),
+			LogAxisBottomDecade,
+			LogAxisTopDecade);
+		var onTheFloor = new Pixel(line.Axes.XAxis.GetPixel(5.0, dataRect), dataRect.Bottom - PinnedFloorPixels);
+
+		line.DistanceTo(onTheFloor, dataRect).Should().BeApproximately(0.0, HitTolerance);
+	}
+
+	[Fact]
+	public void DistanceTo_ALineWithNoColumns_IsPositiveInfinity()
+	{
+		using var plot = new Plot();
+		var (line, dataRect) = LineOverTenByTen(plot, [], PenLineStyle.Interpolated);
+
+		line.DistanceTo(new Pixel(dataRect.HorizontalCenter, dataRect.VerticalCenter), dataRect)
+			.Should().Be(double.PositiveInfinity);
+	}
+
+	[Fact]
+	public void DistanceTo_AClickInTheMarginOutsideTheDataArea_IsPositiveInfinity()
+	{
+		using var plot = new Plot();
+		var (line, dataRect) = LineOverTenByTen(plot, [Flat(0.0, 5.0), Flat(10.0, 5.0)], PenLineStyle.Interpolated);
+		var onTheLine = PixelAt(line, dataRect, 5.0, 5.0);
+
+		line.DistanceTo(new Pixel(dataRect.Left - 1f, onTheLine.Y), dataRect).Should().Be(double.PositiveInfinity);
+	}
+
+	[Fact]
+	public void DistanceTo_ALineJustPastTheTopEdge_IsNotHitAtTheEdge()
+	{
+		using var plot = new Plot();
+		var (line, dataRect) = LineOverTenByTen(plot, [Flat(0.0, 10.1), Flat(10.0, 10.1)], PenLineStyle.Interpolated);
+		var atTheEdge = new Pixel(dataRect.HorizontalCenter, dataRect.Top);
+
+		line.DistanceTo(atTheEdge, dataRect).Should().Be(double.PositiveInfinity, "ScottPlot draws nothing there");
+	}
+
+	[Fact]
+	public void SetLineWidth_WidensTheDrawnStroke()
+	{
+		var thinRows = StrokeRowsAtWidth(1f);
+		var thickRows = StrokeRowsAtWidth(ThickLineWidth);
+
+		thickRows.Count.Should().BeGreaterThan(thinRows.Count);
+	}
+
+	private static IReadOnlyList<int> StrokeRowsAtWidth(float width)
+	{
+		using var plot = new Plot();
+		var (line, dataRect) = LineOverTenByTen(
+			plot,
+			[Flat(0.0, 5.0), Flat(10.0, 5.0)],
+			PenLineStyle.Interpolated);
+		line.SetLineWidth(width);
+
+		using var image = plot.GetImage(PlotWidth, PlotHeight);
+
+		return StrokeProbe.RowsIn(image.GetArrayRGB(), dataRect, (int)Math.Round(dataRect.HorizontalCenter));
+	}
+
+	private static (EnvelopeLine Line, PixelRect DataRect) LineOverTenByTen(
+		Plot plot,
+		EnvelopeColumn[] columns,
+		PenLineStyle lineStyle,
+		ITickGenerator? yTickGenerator = null,
+		double yMin = 0.0,
+		double yMax = TenByTenSpan)
+	{
+		var line = new EnvelopeLine();
+		line.Axes.XAxis = plot.Axes.Bottom;
+		line.Axes.YAxis = plot.Axes.Left;
+		if (yTickGenerator is not null)
+		{
+			plot.Axes.Left.TickGenerator = yTickGenerator;
+		}
+
+		plot.Add.Plottable(line);
+		line.Restyle(new Color(PenColorHex), lineStyle);
+		line.ReplaceColumns(columns, UnboundedRequestedEndX);
+		plot.Axes.SetLimitsX(0.0, TenByTenSpan);
+		plot.Axes.SetLimitsY(yMin, yMax);
+
+		using var image = plot.GetImage(PlotWidth, PlotHeight);
+
+		return (line, plot.RenderManager.LastRender.Layout.DataRect);
+	}
+
+	private static EnvelopeColumn Flat(double x, double y)
+	{
+		return new EnvelopeColumn(x, y, y, y);
+	}
+
+	private static Pixel PixelAt(EnvelopeLine line, PixelRect dataRect, double x, double y)
+	{
+		return new Pixel(line.Axes.XAxis.GetPixel(x, dataRect), line.Axes.YAxis.GetPixel(y, dataRect));
 	}
 
 	private static IReadOnlyList<int> RowsOfAFlatLine(ITickGenerator tickGenerator)

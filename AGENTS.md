@@ -319,7 +319,8 @@ No abbreviations in names.
 - A form never resizes on validation: fixed width, an `invalid` border class, one reserved message line
   (`docs/architecture/ui-theme.md#a-form-never-resizes-on-validation`).
 - The left-button gesture is one state, never overlapping branches: a `Chart/LeftButtonTool`
-  (`Pan | DeltaPlacement`) enum sourced from the navigation bar's delta toggle decides pan vs delta
+  (`Pan | DeltaPlacement`) enum sourced from the navigation bar's delta toggle decides pan-or-pick (a
+  release inside the 4 px slop picks a pen, `docs/architecture/trend-interaction.md`) vs delta
   placement, and the axis-region edit is a pre-branch ahead of it. The bar's `IsSticky` has a single
   writer (the `WindowChanged` handler refreshing from `Navigation.IsSticky`) — do not reintroduce
   imperative `IsSticky =` assignments.

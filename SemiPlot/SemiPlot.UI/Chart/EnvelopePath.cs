@@ -1,3 +1,5 @@
+using ScottPlot;
+
 using SemiPlot.Core.Trends;
 
 namespace SemiPlot.UI.Chart;
@@ -71,6 +73,70 @@ public static class EnvelopePath
 			destination.Add(new EnvelopePoint(column.X, exit, false));
 			previousY = exit;
 		}
+	}
+
+	// docs/architecture/charting.md#per-pen-plottable-envelopeline
+	public static double ClippedSegmentDistance(Pixel start, Pixel end, Pixel click, PixelRect bounds)
+	{
+		double dx = end.X - start.X;
+		double dy = end.Y - start.Y;
+		var enter = 0.0;
+		var leave = 1.0;
+
+		var isInside = ClipEdge(-dx, start.X - bounds.Left, ref enter, ref leave)
+			&& ClipEdge(dx, bounds.Right - start.X, ref enter, ref leave)
+			&& ClipEdge(-dy, start.Y - bounds.Top, ref enter, ref leave)
+			&& ClipEdge(dy, bounds.Bottom - start.Y, ref enter, ref leave);
+
+		if (!isInside || enter > leave)
+		{
+			return double.PositiveInfinity;
+		}
+
+		var clippedStart = new Pixel((float)(start.X + (enter * dx)), (float)(start.Y + (enter * dy)));
+		var clippedEnd = new Pixel((float)(start.X + (leave * dx)), (float)(start.Y + (leave * dy)));
+
+		return SegmentDistance(clippedStart, clippedEnd, click);
+	}
+
+	public static double SegmentDistance(Pixel start, Pixel end, Pixel point)
+	{
+		double dx = end.X - start.X;
+		double dy = end.Y - start.Y;
+		double px = point.X - start.X;
+		double py = point.Y - start.Y;
+		var lengthSquared = (dx * dx) + (dy * dy);
+		if (lengthSquared == 0.0)
+		{
+			return Math.Sqrt((px * px) + (py * py));
+		}
+
+		var along = Math.Clamp(((px * dx) + (py * dy)) / lengthSquared, 0.0, 1.0);
+		var offsetX = px - (along * dx);
+		var offsetY = py - (along * dy);
+
+		return Math.Sqrt((offsetX * offsetX) + (offsetY * offsetY));
+	}
+
+	// One edge of the Liang-Barsky test: false when the segment runs parallel to the edge on its outer side.
+	private static bool ClipEdge(double slope, double offset, ref double enter, ref double leave)
+	{
+		if (slope == 0.0)
+		{
+			return offset >= 0.0;
+		}
+
+		var crossing = offset / slope;
+		if (slope < 0.0)
+		{
+			enter = Math.Max(enter, crossing);
+		}
+		else
+		{
+			leave = Math.Min(leave, crossing);
+		}
+
+		return true;
 	}
 
 	private static int FirstAtOrAfter(IReadOnlyList<EnvelopeColumn> columns, double x)

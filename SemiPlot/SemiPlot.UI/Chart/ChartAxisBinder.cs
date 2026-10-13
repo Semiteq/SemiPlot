@@ -7,6 +7,8 @@ namespace SemiPlot.UI.Chart;
 public sealed class ChartAxisBinder(Plot plot)
 {
 	private const float LogMinorGridWidth = 1f;
+	// One width for every pen's axis, so switching the drawn axis never moves the data area; a wider label overflows.
+	private const float AxisPanelWidth = 56f;
 
 	private readonly Dictionary<int, IYAxis> _axesByPenId = [];
 	private readonly Plot _plot = plot;
@@ -88,7 +90,16 @@ public sealed class ChartAxisBinder(Plot plot)
 		{
 			generator.IsDrawn = isDrawn;
 			axis.IsVisible = isDrawn;
+			ReservePanel(axis, isDrawn);
 		}
+	}
+
+	// ScottPlot keeps MinimumSize for a hidden axis too, so only the drawn axis reserves its width.
+	private static void ReservePanel(IYAxis axis, bool isDrawn)
+	{
+		var width = isDrawn ? AxisPanelWidth : 0f;
+		axis.MinimumSize = width;
+		axis.MaximumSize = width;
 	}
 
 	private void SetLimits(IYAxis axis, PenScale scale)
@@ -157,6 +168,7 @@ public sealed class ChartAxisBinder(Plot plot)
 		lock (_plot.Sync)
 		{
 			axis.TickGenerator = new LinearTickGenerator { IsDrawn = axis.IsVisible };
+			ReservePanel(axis, axis.IsVisible);
 		}
 
 		return axis;

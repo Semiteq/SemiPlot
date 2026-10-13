@@ -180,10 +180,22 @@ single tool with an explicit state (`Chart/LeftButtonTool` = `Pan` | `DeltaPlace
 tool is sourced from the navigation bar's delta-mode toggle (`TrendChartViewModel.ActiveLeftButtonTool`),
 so there is one left-button gesture, not overlapping hidden branches.
 
-- **Scroll = zoom about the cursor anchor; left-drag = hand pan.** Press captures the pointer and
-  switches the cursor to a grab icon (`StandardCursorType.SizeAll`); each move pans the X window via
-  `TrendNavigationModel.Pan`; release ends the drag and restores the hand cursor. The hover readout
-  and crosshair (an Avalonia overlay) are suppressed for the duration of the drag.
+- **Scroll = zoom about the cursor anchor; left-drag = hand pan; left-click = pick a pen.** In `Pan`
+  tool a press outside the axis region routes to `ChartPressAction.PanOrPickPen`. The press captures the
+  pointer and switches the cursor to a grab icon (`StandardCursorType.SizeAll`). A move pans the X window
+  via `TrendNavigationModel.Pan` only once the pointer is more than the 4 px click slop
+  (`ChartPressRouter.IsPastClickSlop`) from the press point; from then on every move pans and the release
+  picks nothing. The slop exists because a pan of one pixel into the past detaches sticky, so the jitter
+  of a hand on a click would drop follow mode. A release inside the slop is a click:
+  `TrendChartViewModel.PickPenAt` measures the press point against every visible pen's line
+  (`ChartPenSet.PenNearest`) and `ChartPenPick.Choose` takes the nearest line within 6 px, which then goes
+  through `SetActivePen`, the same path the sidebar uses. At an equal distance the active pen keeps the
+  choice, otherwise the first pen in catalogue order wins; a click farther than 6 px from every line
+  changes nothing. Delta mode and the axis-region press never pick. The view registers
+  `OnPointerReleased` on the tunnel route: `AvaPlot`'s own class handler calls `Capture(null)` on release,
+  which ends the drag through `PointerCaptureLost` before a bubbling handler would run. Release ends the
+  drag and restores the hand cursor. The hover readout and crosshair (an Avalonia overlay) are suppressed
+  for the duration of the drag.
 - **Sticky to real-time by default.** A button detaches sticky (pan into the past); clicking it
   again re-attaches and returns to real-time. `WindowChanged` is the single writer of the navigation
   bar's `IsSticky` (refreshed from `Navigation.IsSticky`), so auto-detach and `JumpToNow` re-attach stay

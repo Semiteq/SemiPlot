@@ -62,6 +62,31 @@ public sealed class ChartPenSet(Plot plot, ChartAxisBinder axisBinder)
 		return true;
 	}
 
+	public int? PenNearest(Pixel click, PixelRect dataRect, int activePenId)
+	{
+		var candidates = Ordered
+			.Where(state => state.IsVisible)
+			.Select(state => (state.Pen.PenId, Distance: state.Line.DistanceTo(click, dataRect)));
+
+		return ChartPenPick.Choose(candidates, activePenId);
+	}
+
+	/// <summary>Raises nothing; the caller holds the plot's lock.</summary>
+	public void Emphasize(int activePenId)
+	{
+		foreach (var (penId, state) in _pensById)
+		{
+			var isActive = penId == activePenId;
+
+			state.Line.SetLineWidth(isActive ? EnvelopeLine.ActiveLineWidth : EnvelopeLine.DefaultLineWidth);
+		}
+
+		if (_pensById.TryGetValue(activePenId, out var active))
+		{
+			_plot.MoveToTop(active.Line);
+		}
+	}
+
 	private void Add(Pen pen)
 	{
 		var line = new EnvelopeLine();

@@ -11,7 +11,6 @@ using Microsoft.Reactive.Testing;
 using ScottPlot.Avalonia;
 
 using SemiPlot.Core.Trends;
-using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.Localization;
 
@@ -85,7 +84,7 @@ public sealed class TrendChartViewTests
 		DriveOneFrame();
 		var axesBefore = viewModel.AxisCount;
 
-		var added = viewModel.AddPen(FakeDataProvider.SecondPen);
+		var added = viewModel.AddPen(new Pen(3, "Pen 3", ["Group A"], "#0000ff"));
 		DriveOneFrame();
 
 		viewModel.AxisCount.Should().Be(axesBefore + 1);

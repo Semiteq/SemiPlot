@@ -32,19 +32,19 @@ public sealed class AxisScalePanelViewTests
 	public void ClickOnTheAxisRegion_OpensThePanelSeededWithTheDrawnPensBoundsNameAndUnit()
 	{
 		using var viewModel = CreateLoadedViewModel();
-		viewModel.AddPen(new Pen(2, "Pen 2", ["Group A"], "#00ff00", Unit: "sccm"));
-		viewModel.SetActivePen(2);
-		viewModel.SetAxisLimits(2, 10.0, 90.5);
+		viewModel.AddPen(new Pen(3, "Pen 3", ["Group A"], "#0000ff", Unit: "sccm"));
+		viewModel.SetActivePen(3);
+		viewModel.SetAxisLimits(3, 10.0, 90.5);
 		using var shown = ShowChart(viewModel);
 
 		var (flyout, panel) = OpenPanel(viewModel, shown);
 
 		flyout.IsOpen.Should().BeTrue("a press on the axis region opens the panel");
-		panel.FindControl<TextBlock>("AxisScalePenName")!.Text.Should().Be("Pen 2");
+		panel.FindControl<TextBlock>("AxisScalePenName")!.Text.Should().Be("Pen 3");
 		panel.FindControl<TextBlock>("AxisScalePenUnit")!.Text.Should().Be("sccm");
 		panel.FindControl<TextBox>("AxisScaleMaximum")!.Text.Should().Be(PenFormRules.FormatBound(90.5));
 		panel.FindControl<TextBox>("AxisScaleMinimum")!.Text.Should().Be(PenFormRules.FormatBound(10.0));
-		viewModel.ScaleSettings[2].Mode.Should().Be(ScaleMode.Manual, "the press writes nothing");
+		viewModel.ScaleSettings[3].Mode.Should().Be(ScaleMode.Manual, "the press writes nothing");
 	}
 
 	[AvaloniaFact]
@@ -53,6 +53,7 @@ public sealed class AxisScalePanelViewTests
 		using var viewModel = CreateLoadedViewModel();
 		using var shown = ShowChart(viewModel);
 		var axisPoint = AxisRegionPoint(viewModel);
+		viewModel.SetPenVisibility(2, false);
 		viewModel.SetPenVisibility(1, false);
 		viewModel.Plot.RenderInMemory((int)shown.PlotControl.Bounds.Width, (int)shown.PlotControl.Bounds.Height);
 

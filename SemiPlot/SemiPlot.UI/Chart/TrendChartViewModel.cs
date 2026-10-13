@@ -234,6 +234,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 				}
 
 				SettleActivePen();
+				_penSet.Emphasize(ActivePenId);
 				ApplyAxisModel();
 			}
 		}
@@ -271,6 +272,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 		state.SetVisibility(isVisible);
 		ActivateAVisiblePen();
+		EmphasizeActivePen();
 		this.RaisePropertyChanged(nameof(DrawnPenId));
 		ApplyAxisModel();
 		RequestRedraw();
@@ -288,10 +290,19 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		}
 
 		ActivePenId = penId;
+		EmphasizeActivePen();
 		ApplyAxisModel();
 		RequestRedraw();
 
 		return true;
+	}
+
+	public void PickPenAt(Pixel click)
+	{
+		if (_penSet.PenNearest(click, Plot.LastRender.DataRect, ActivePenId) is { } penId)
+		{
+			SetActivePen(penId);
+		}
 	}
 
 	public void BeginDrag()
@@ -463,6 +474,16 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 				return;
 			}
+		}
+	}
+
+	// Only the plot edit runs under the lock: a notification raised there deadlocks against the render thread
+	// (docs/architecture/charting.md#per-pen-plottable-envelopeline).
+	private void EmphasizeActivePen()
+	{
+		lock (Plot.Sync)
+		{
+			_penSet.Emphasize(ActivePenId);
 		}
 	}
 

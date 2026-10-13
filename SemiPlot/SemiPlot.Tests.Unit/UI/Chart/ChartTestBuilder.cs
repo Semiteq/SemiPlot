@@ -4,6 +4,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Reactive.Testing;
 
+using ScottPlot;
+
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.UI.Bridge;
@@ -21,6 +23,11 @@ internal static class ChartTestBuilder
 	public static readonly DateTime From = new(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
 	public static readonly DateTime To = new(2026, 6, 15, 9, 0, 0, DateTimeKind.Utc);
 	public static readonly TimeSpan RealtimeInterval = TimeSpan.FromMilliseconds(10);
+
+	public const int FlatPlotWidth = 800;
+	public const int FlatPlotHeight = 500;
+	public const double FlatPlotAxisMin = 0.0;
+	public const double FlatPlotAxisMax = 100.0;
 
 	// Both schedulers are virtual: docs/architecture/testing-strategy.md#the-ui-scheduler-in-a-realised-view.
 	public static TrendChartViewModel CreateChart(TestScheduler scheduler, FakeDataProvider? provider = null)
@@ -110,6 +117,37 @@ internal static class ChartTestBuilder
 		release();
 
 		await HeadlessWait.Until(() => Volatile.Read(ref seen) >= redraws);
+	}
+
+	public static (TrendChartViewModel ViewModel, byte[,,] Pixels, PixelRect DataRect) RenderTwoFlatPens(
+		(Pen Pen, double Value) first,
+		(Pen Pen, double Value) second,
+		int windowSeconds,
+		int activePenId)
+	{
+		var viewModel = CreateViewModel(RealtimeInterval).ViewModel;
+		var windowEnd = From.AddSeconds(windowSeconds);
+		AddFlatPen(viewModel, first.Pen, windowEnd, first.Value);
+		AddFlatPen(viewModel, second.Pen, windowEnd, second.Value);
+
+		var plot = viewModel.Plot;
+		plot.Axes.SetLimitsX(LocalTimeAxis.ToAxis(From), LocalTimeAxis.ToAxis(windowEnd));
+		viewModel.SetActivePen(activePenId);
+		foreach (var penId in new[] { first.Pen.PenId, second.Pen.PenId })
+		{
+			plot.Axes.SetLimitsY(FlatPlotAxisMin, FlatPlotAxisMax, viewModel.FindPen(penId)!.Line.Axes.YAxis);
+		}
+
+		using var image = plot.GetImage(FlatPlotWidth, FlatPlotHeight);
+
+		return (viewModel, image.GetArrayRGB(), plot.RenderManager.LastRender.Layout.DataRect);
+	}
+
+	private static void AddFlatPen(TrendChartViewModel viewModel, Pen pen, DateTime windowEnd, double value)
+	{
+		viewModel.AddPen(pen).LoadHistory(
+			new PenHistoryEnvelope(pen.PenId, [From, windowEnd], [value, value], [value, value], [value, value]),
+			windowEnd);
 	}
 
 	/// <summary>Adds one pen after the ones the chart shows, as a catalogue read naming it does.</summary>

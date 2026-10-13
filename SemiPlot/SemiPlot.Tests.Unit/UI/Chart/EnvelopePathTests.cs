@@ -1,5 +1,7 @@
 using AwesomeAssertions;
 
+using ScottPlot;
+
 using SemiPlot.Core.Trends;
 using SemiPlot.UI.Chart;
 
@@ -12,6 +14,8 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 [Trait("Category", "Unit")]
 public sealed class EnvelopePathTests
 {
+	private static readonly PixelRect _bounds = new(0, 10, 10, 0);
+
 	// The last two rows have no overlap: the boundary column stays alone, which draws nothing the viewport can show.
 	[Theory]
 	[InlineData(0, 0.0, 10.0, 0, 0)]
@@ -143,6 +147,61 @@ public sealed class EnvelopePathTests
 			new EnvelopePoint(1.0, 2.0, false),
 			new EnvelopePoint(2.0, 2.0, false),
 			new EnvelopePoint(2.0, 3.0, false));
+	}
+
+	[Theory]
+	[InlineData(5.0, 0.0, 0.0)]
+	[InlineData(5.0, 3.0, 3.0)]
+	[InlineData(13.0, 0.0, 3.0)]
+	[InlineData(-3.0, 4.0, 5.0)]
+	public void SegmentDistance_HorizontalSegment_MeasuresToTheNearestPointOfIt(double x, double y, double expected)
+	{
+		var distance = EnvelopePath.SegmentDistance(new Pixel(0, 0), new Pixel(10, 0), new Pixel((float)x, (float)y));
+
+		distance.Should().BeApproximately(expected, 1e-9);
+	}
+
+	[Fact]
+	public void SegmentDistance_PointOnAVerticalSegment_IsZero()
+	{
+		var distance = EnvelopePath.SegmentDistance(new Pixel(2, 0), new Pixel(2, 10), new Pixel(2, 7));
+
+		distance.Should().BeApproximately(0.0, 1e-9);
+	}
+
+	[Fact]
+	public void SegmentDistance_DegenerateSegment_MeasuresToItsPoint()
+	{
+		var distance = EnvelopePath.SegmentDistance(new Pixel(1, 1), new Pixel(1, 1), new Pixel(4, 5));
+
+		distance.Should().BeApproximately(5.0, 1e-9);
+	}
+
+	[Fact]
+	public void ClippedSegmentDistance_ASegmentRunningPastTheBounds_MeasuresToTheInsidePartOnly()
+	{
+		var distance = EnvelopePath.ClippedSegmentDistance(
+			new Pixel(5, -20), new Pixel(5, 30), new Pixel(5, 12), _bounds);
+
+		distance.Should().BeApproximately(2.0, 1e-9);
+	}
+
+	[Fact]
+	public void ClippedSegmentDistance_ASegmentOutsideTheBounds_IsPositiveInfinity()
+	{
+		var distance = EnvelopePath.ClippedSegmentDistance(
+			new Pixel(0, 12), new Pixel(10, 12), new Pixel(5, 10), _bounds);
+
+		distance.Should().Be(double.PositiveInfinity);
+	}
+
+	[Fact]
+	public void ClippedSegmentDistance_ASegmentInsideTheBounds_IsItsPlainDistance()
+	{
+		var distance = EnvelopePath.ClippedSegmentDistance(
+			new Pixel(2, 2), new Pixel(8, 2), new Pixel(5, 6), _bounds);
+
+		distance.Should().BeApproximately(4.0, 1e-9);
 	}
 
 	private static List<EnvelopePoint> Build(IReadOnlyList<EnvelopeColumn> columns, PenLineStyle lineStyle)

@@ -16,10 +16,13 @@ public sealed class EnvelopeLine : IPlottable
 	// docs/architecture/charting.md#log10-y-axis
 	private const float PinnedFloorPixels = 2f;
 
-	private readonly LineStyle _stroke = new() { Width = 1f };
+	internal const float DefaultLineWidth = 1f;
+	internal const float ActiveLineWidth = 2f;
+
+	private readonly LineStyle _stroke = new();
 	private readonly List<EnvelopePoint> _pathPoints = [];
 
-	// The columns, the history end and the style are written on the UI thread only, through TrendPenState; the
+	// The UI thread writes the columns, the history end and the style, and reads the columns to pick a pen; the
 	// render thread reads the columns and the style in Render and GetAxisLimits. Every access runs under the lock.
 	private readonly List<EnvelopeColumn> _columns = [];
 	private readonly Lock _renderStateLock = new();
@@ -27,6 +30,7 @@ public sealed class EnvelopeLine : IPlottable
 	private double _historyEndX = double.NegativeInfinity;
 	private Color _color = Colors.Black;
 	private PenLineStyle _penLineStyle = PenLineStyle.Interpolated;
+	private float _lineWidth = DefaultLineWidth;
 
 	// docs/architecture/testing-strategy.md#frames-in-a-realised-view
 	internal IReadOnlyList<EnvelopeColumn> SnapshotColumns()
@@ -83,6 +87,7 @@ public sealed class EnvelopeLine : IPlottable
 		lock (_renderStateLock)
 		{
 			_stroke.Color = _color;
+			_stroke.Width = _lineWidth;
 			var (first, lastExclusive) = EnvelopePath.VisibleRange(_columns, Axes.XAxis.Min, Axes.XAxis.Max);
 			EnvelopePath.Build(_columns, first, lastExclusive, _penLineStyle, _pathPoints);
 		}
@@ -92,26 +97,70 @@ public sealed class EnvelopeLine : IPlottable
 			return;
 		}
 
-		var yAxis = Axes.YAxis;
-		var isLogarithmic = LogTickGenerator.IsLogarithmic(yAxis);
-		var floor = yAxis.GetCoordinate(rp.DataRect.Bottom - PinnedFloorPixels, rp.DataRect);
+		var logFloor = LogFloorOf(rp.DataRect);
 
 		using var path = new SKPath();
 		foreach (var point in _pathPoints)
 		{
-			var pixelX = Axes.XAxis.GetPixel(point.X, rp.DataRect);
-			var pixelY = yAxis.GetPixel(isLogarithmic ? LogAxis.Project(point.Y, floor) : point.Y, rp.DataRect);
+			var pixel = ProjectVertex(point, rp.DataRect, logFloor);
 			if (point.StartsSegment)
 			{
-				path.MoveTo(pixelX, pixelY);
+				path.MoveTo(pixel.X, pixel.Y);
 			}
 			else
 			{
-				path.LineTo(pixelX, pixelY);
+				path.LineTo(pixel.X, pixel.Y);
 			}
 		}
 
 		Drawing.DrawLines(rp.Canvas, rp.Paint, path, _stroke);
+	}
+
+	// docs/architecture/charting.md#per-pen-plottable-envelopeline
+	internal double DistanceTo(Pixel click, PixelRect dataRect)
+	{
+		if (!dataRect.Contains(click))
+		{
+			return double.PositiveInfinity;
+		}
+
+		List<EnvelopePoint> vertices = [];
+		lock (_renderStateLock)
+		{
+			var (first, lastExclusive) = EnvelopePath.VisibleRange(_columns, Axes.XAxis.Min, Axes.XAxis.Max);
+			EnvelopePath.Build(_columns, first, lastExclusive, _penLineStyle, vertices);
+		}
+
+		var logFloor = LogFloorOf(dataRect);
+		var nearest = double.PositiveInfinity;
+		var previous = default(Pixel);
+		foreach (var vertex in vertices)
+		{
+			var pixel = ProjectVertex(vertex, dataRect, logFloor);
+			if (!vertex.StartsSegment)
+			{
+				nearest = Math.Min(nearest, EnvelopePath.ClippedSegmentDistance(previous, pixel, click, dataRect));
+			}
+
+			previous = pixel;
+		}
+
+		return nearest;
+	}
+
+	// The Y a non-positive value is pinned to on a log10 axis; null on a linear one.
+	private double? LogFloorOf(PixelRect dataRect)
+	{
+		return LogTickGenerator.IsLogarithmic(Axes.YAxis)
+			? Axes.YAxis.GetCoordinate(dataRect.Bottom - PinnedFloorPixels, dataRect)
+			: null;
+	}
+
+	private Pixel ProjectVertex(EnvelopePoint vertex, PixelRect dataRect, double? logFloor)
+	{
+		var y = logFloor is { } floor ? LogAxis.Project(vertex.Y, floor) : vertex.Y;
+
+		return new Pixel(Axes.XAxis.GetPixel(vertex.X, dataRect), Axes.YAxis.GetPixel(y, dataRect));
 	}
 
 	public void Restyle(Color color, PenLineStyle lineStyle)
@@ -120,6 +169,14 @@ public sealed class EnvelopeLine : IPlottable
 		{
 			_color = color;
 			_penLineStyle = lineStyle;
+		}
+	}
+
+	internal void SetLineWidth(float width)
+	{
+		lock (_renderStateLock)
+		{
+			_lineWidth = width;
 		}
 	}
 

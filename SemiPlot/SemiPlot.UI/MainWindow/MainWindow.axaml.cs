@@ -6,6 +6,7 @@ using Avalonia.Interactivity;
 
 using ReactiveUI.Avalonia;
 
+using SemiPlot.UI.Export;
 using SemiPlot.UI.Legend;
 using SemiPlot.UI.PenEditor;
 
@@ -34,7 +35,12 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 			about => DialogOpener.ShowAbout(this, about, viewModel.ReportFailure)));
 		_requests.Add(viewModel.SettingsRequests.Subscribe(
 			settings => DialogOpener.ShowSettings(this, settings, viewModel.ReportFailure)));
-		_requests.Add(viewModel.PenEditorRequests.Subscribe(ShowPenEditor));
+		_requests.Add(viewModel.PenEditorRequests.Subscribe(
+			penEditor => DialogOpener.ShowOwnedDialog(
+				this, () => new PenEditorWindow { DataContext = penEditor }, penEditor, viewModel.ReportFailure)));
+		_requests.Add(viewModel.ExportRequests.Subscribe(
+			export => DialogOpener.ShowOwnedDialog(
+				this, () => new CsvExportWindow { DataContext = export }, export, viewModel.ReportFailure)));
 		viewModel.LegendViewModel.FitPanel(MaximumPanelWidth());
 	}
 
@@ -64,21 +70,5 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 	private double MaximumPanelWidth()
 	{
 		return ContentGrid.Bounds.Width - TrendLegendViewModel.ChartMinWidth - PanelResizeHandle.Width;
-	}
-
-	private async void ShowPenEditor(PenEditorViewModel penEditor)
-	{
-		try
-		{
-			await new PenEditorWindow { DataContext = penEditor }.ShowDialog(this);
-		}
-		catch (Exception exception)
-		{
-			(DataContext as MainWindowViewModel)?.ReportFailure(exception);
-		}
-		finally
-		{
-			penEditor.Dispose();
-		}
 	}
 }

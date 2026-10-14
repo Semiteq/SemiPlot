@@ -16,12 +16,16 @@ using ReactiveUI.Avalonia;
 
 using Semi.Avalonia;
 
+using SemiPlot.Core.Export;
+using SemiPlot.DataSource.Postgres.Configuration;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
 using SemiPlot.UI.Settings;
 using SemiPlot.UI.Startup;
 
 using Serilog.Extensions.Logging;
+
+using LocalizedText = SemiPlot.UI.Localization.Resources;
 
 namespace SemiPlot.UI;
 
@@ -129,7 +133,12 @@ public class App : Application
 		ApplyAppearance(app, settings);
 
 		app._messagePanel = startup.ServiceProvider.GetRequiredService<MessagePanelViewModel>();
-		app._trendWindow = TrendWindow.Build(startup, new InstanceLauncher(options), AvaloniaScheduler.Instance);
+		app._trendWindow = TrendWindow.Build(
+			startup,
+			new InstanceLauncher(options),
+			AvaloniaScheduler.Instance,
+			CsvDialectFor(settings?.Locale ?? StartupSequence.BootstrapLocale),
+			startup.ServiceProvider.GetRequiredService<PostgresConnectionSettings>().SourceTimeZone);
 		app._themeWatch = WatchTheme(app, options.ConfigDir, settings);
 	}
 
@@ -230,6 +239,23 @@ public class App : Application
 		// already read in.
 		SemiTheme.OverrideLocaleResources(
 			app, SemiLocaleFor(settings?.Locale ?? StartupSequence.BootstrapLocale));
+	}
+
+	internal static CsvDialect CsvDialectFor(UiLanguage locale)
+	{
+		var entry = SettingsVocabulary.Of(locale);
+		var header = new CsvHeader(
+			ResourceIn(nameof(LocalizedText.ExportCsvHeaderPen), entry.UiCulture),
+			ResourceIn(nameof(LocalizedText.ExportCsvHeaderTime), entry.UiCulture),
+			ResourceIn(nameof(LocalizedText.ExportCsvHeaderValue), entry.UiCulture));
+
+		return CsvDialect.For(CultureInfo.CurrentCulture, header);
+	}
+
+	private static string ResourceIn(string key, CultureInfo culture)
+	{
+		return LocalizedText.ResourceManager.GetString(key, culture)
+			?? throw new InvalidOperationException($"Resource '{key}' is missing for '{culture.Name}'.");
 	}
 
 	internal static CultureInfo SemiLocaleFor(UiLanguage locale)

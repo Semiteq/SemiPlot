@@ -9,6 +9,7 @@ using FluentResults;
 
 using Semi.Avalonia;
 
+using SemiPlot.Core.Export;
 using SemiPlot.Tests.Unit.UI.Settings;
 using SemiPlot.UI;
 using SemiPlot.UI.Messages;
@@ -54,6 +55,47 @@ public sealed class AppConfigurationTests
 	public void TheTwoLocales_GiveSemiDifferentStrings()
 	{
 		SemiCopyStringOf(UiLanguage.Ru).Should().NotBe(SemiCopyStringOf(UiLanguage.En));
+	}
+
+	[Fact]
+	public void CsvDialectFor_EnglishInterfaceUnderRussianRegionalSettings_HasAnEnglishHeaderAndSemicolons()
+	{
+		using var culture = new CultureScope("ru-RU", uiCultureName: "en");
+
+		var dialect = App.CsvDialectFor(UiLanguage.En);
+
+		dialect.Header.Should().Be(new CsvHeader("Pen", "Time", "Value"));
+		dialect.Delimiter.Should().Be(';');
+		dialect.TimestampFormat.Should().EndWith(",fff");
+	}
+
+	[Fact]
+	public void CsvDialectFor_RussianInterfaceUnderEnglishRegionalSettings_HasARussianHeaderAndCommas()
+	{
+		using var culture = new CultureScope("en-US", uiCultureName: "ru");
+
+		var dialect = App.CsvDialectFor(UiLanguage.Ru);
+
+		dialect.Header.Should().Be(new CsvHeader(
+			"\u041F\u0435\u0440\u043E",
+			"\u0412\u0440\u0435\u043C\u044F",
+			"\u0417\u043D\u0430\u0447\u0435\u043D\u0438\u0435"));
+		dialect.Delimiter.Should().Be(',');
+		dialect.TimestampFormat.Should().EndWith(".fff");
+	}
+
+	[Fact]
+	public void CsvDialectFor_TheBootstrapLocale_GivesTheRussianHeader()
+	{
+		App.CsvDialectFor(StartupSequence.BootstrapLocale).Header.Pen.Should().Be("\u041F\u0435\u0440\u043E");
+	}
+
+	[Fact]
+	public void CsvDialectFor_English_KeepsItsHeaderWhileTheThreadUiCultureIsRussian()
+	{
+		using var culture = new CultureScope("ru");
+
+		App.CsvDialectFor(UiLanguage.En).Header.Should().Be(new CsvHeader("Pen", "Time", "Value"));
 	}
 
 	[AvaloniaFact]

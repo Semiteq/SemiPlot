@@ -57,6 +57,7 @@ Constraint: **$0 budget** — only free/OSS components.
 |     +-- MessagePanelView    every failure lands here        |
 |     +-- AppStatusBar        connection state, layer         |
 |     +-- PenEditorWindow     pens and groups dialog          |
+|     +-- CsvExportWindow     range to CSV file dialog        |
 |   ViewModels (ReactiveUI) ◄── TrendCoordinator (Rx hub)     |
 |                           ◄── PenCatalogueSync (5 s reads)  |
 |   StartupFailureWindow (+ view model): shown instead of     |
@@ -65,12 +66,14 @@ Constraint: **$0 budget** — only free/OSS components.
               │ IDataProvider (subscribe realtime, query history,
               │                re-read the catalogue)
               │ IPenCatalogueEditor (the pen editor's writes)
+              │ IArchiveRowReader (the export window's row reads)
               ▼
 +-------------------------------------------------------------+
 |  SemiPlot.Core                                              |
 |   - IDataProvider abstraction + records (Pen, envelope,     |
 |     ArchiveExtent, …)                                       |
 |   - IPenCatalogueEditor + records, the catalogue writes     |
+|   - IArchiveRowReader + StoredArchiveRow, the export reads  |
 |   - renderer-agnostic models (navigation, scale, cursor, …) |
 |   - ConfigurationSection, the section-folder merge          |
 +-------------------------------------------------------------+
@@ -81,11 +84,13 @@ Constraint: **$0 budget** — only free/OSS components.
 |   - PostgresDataProvider over the Simple-Scada archive      |
 |   - history, extent, catalogue and the live-edge poll       |
 |   - PostgresPenCatalogueEditor, the catalogue writes        |
+|   - PostgresArchiveRowReader, the export's row reads        |
 +-------------------------------------------------------------+
 ```
 
 The UI never talks to a data source directly. It reads through `IDataProvider`, and the pen editor
-alone writes, through `IPenCatalogueEditor` (see [data-integration.md](./data-integration.md)). The composition root resolves the PostgreSQL
+alone writes, through `IPenCatalogueEditor` (see [data-integration.md](./data-integration.md)). The export
+window reads stored rows through `IArchiveRowReader`. The composition root resolves the PostgreSQL
 provider, which is the only one the application ships; an archive that does not answer shows the
 startup failure in its own window rather than falling back to invented data. There is **no web
 bridge**: the chart is a native ScottPlot control, fed in-process by `TrendCoordinator` over
@@ -105,8 +110,9 @@ connection never changes while a process runs.
 | The log file `--log-file` names, each event carrying its writer's process id after the timestamp (`#command-line`) | |
 
 `MainWindow/TrendWindow` is the window's composition and its owner. `TrendWindow.Build` takes the start
-sequence's `StartupData`, the process's `InstanceLauncher` (which names the configuration directory) and the
-UI scheduler, and constructs in order:
+sequence's `StartupData`, the process's `InstanceLauncher` (which names the configuration directory), the
+UI scheduler, the `CsvDialect` that `App.ConfigureStarted` picks through `App.CsvDialectFor` and the
+archive's time zone (`PostgresConnectionSettings.SourceTimeZone`), and constructs in order:
 
 1. the coordinator;
 2. the chart, seeded from the start sequence's pens and extent, whose constructor opens the live edge;
@@ -115,8 +121,10 @@ UI scheduler, and constructs in order:
 5. the catalogue sync;
 6. the navigation bar and the legend;
 7. the catalogue applier;
-8. `MainWindowViewModel`, over the chart, the status bar, the minimap, the navigation bar, the legend
-   and the sync's `ReadNow`.
+8. `MainWindowViewModel`, over the chart, the status bar, the minimap, the navigation bar, the legend,
+   the sync's `ReadNow` and a factory for `CsvExportViewModel`, which `Build` closes over the container's
+   `IArchiveRowReader`, the `CsvDialect`, the UI scheduler and the archive zone, so the window view model
+   holds none of them.
 
 The coordinator republishes the provider's connection stream through `ObserveOn` on the UI scheduler.
 `AvaloniaScheduler` runs a zero-delay action at once when the caller is already on the dispatcher thread,
@@ -132,8 +140,8 @@ container service first, so a missing registration throws before any part exists
 `TrendWindow`, shows its view model, and disposes the `TrendWindow` from the main window's `Closed` event
 on the UI thread.
 
-The container keeps the process services: the data source, the provider, the editor, the message panel
-and the logger factory. It registers no window part, the status bar included. The UI scheduler is not a
+The container keeps the process services: the data source, the provider, the editor, the row reader, the
+message panel and the logger factory. It registers no window part, the status bar included. The UI scheduler is not a
 container registration; `App` passes `AvaloniaScheduler.Instance` to `TrendWindow.Build`, while the data
 scheduler comes from the container.
 
@@ -674,6 +682,59 @@ once by `TrendWindow.Build` and never replaced. The status bar takes the coordin
 stream and the chart's navigation in its constructor, the navigation controller has no way to take a
 window back, and a gesture started on a replaced chart would end on a disposed one.
 
+### The export window
+
+`File` -> `Export to CSV...` opens `Export/CsvExportWindow`, a modal dialog that writes the archive's own
+`l = 0` rows of a range and a set of pens into one CSV file. The item is disabled while the chart has no
+pen (`HasNoPens`). The file is one table of three columns, pen, time and value, with no union timeline,
+fill, interpolation, decimation, `id` or quality column. The header is operator text in the interface
+language (`Pen`, `Time`, `Value` / `Перо`, `Время`, `Значение`), while the delimiter and the decimal sign
+follow the Windows regional settings (`ui-text.md#the-export-windows-text`). The rows of all ticked pens are
+interleaved and ordered by time; rows of different pens at one time follow the checklist order. The pen
+field is `name, unit`, or the name alone for a pen without a unit, and a pen whose name or whole field another
+ticked pen shares gets ` (id)` appended (`Damper 01, % (17)`); an unticked namesake adds nothing
+(`ArchiveCsvWriter.PenFields`). Each pen also writes its seed row, the last row before the range start
+within one day, so a pen that did not change inside the range still appears. The seeds come first, older than
+every slice row, ordered by time. A pen last written earlier than that is absent from the file. Dialect and
+text are in `ui-text.md#the-export-windows-text`, the layout in
+`ui-theme.md#a-form-never-resizes-on-validation`.
+
+| Part | Holds |
+| --- | --- |
+| Snapshot | `MainWindowViewModel.ExportCommand` copies `Navigation.From`, `Navigation.To` and every pen of `ChartViewModel.Pens` with its `IsVisible` into a new `CsvExportViewModel` and emits it on `ExportRequests`. The window never writes the navigation window, so it is no second writer of it. |
+| Form | `ExportRangeForm` holds each bound as a date (`DateTime?`, a `CalendarDatePicker`) and a time typed as `HH:mm:ss` text. The picker shows the date in `Resources.ExportDateFormat`, `dd.MM.yyyy` in Russian and `yyyy-MM-dd` in English. The form prefills them from the snapshot in the archive's zone, the start floored and the end ceiled to the second. A date is present or missing, because the picker restores the previous date for text that does not parse and commits an empty text as no date; a time is readable or not. A range is valid when both dates are present, both times read, the end is after the start, the span is at most 24 hours and one pen is ticked. A missing date marks its picker, an unreadable time marks its time box, and an order or span break marks both end controls; each carries the `invalid` class. In each range row the time box comes first, then the picker, and the tab order follows. The first broken rule, in form order (start date, start time, end date, end time, order, span, no pen), fills the message line. An empty checklist marks no control. |
+| Pen checklist | Every pen of the snapshot, ticked when it was visible, in a bordered list under the header "Pens (2 of 3)", which reads the ticked and total counts through a `MultiBinding`. The list sizes to its rows up to a `MaxHeight` of 226 px, eight 28 px rows plus the border (`CsvExportWindowTests` measures the row), and never auto-hides its scroll bar. It has no horizontal scroll bar: a long label is a `TextBlock` trimmed with an ellipsis, and the full label is the row's tooltip. A pen whose name another pen of the snapshot shares shows ` (id)` after it (`ExportPenChoice.Label`). The pickers, the time boxes and the list are disabled while an export runs. |
+| Row count | `CsvExportViewModel` reads `IArchiveRowReader.CountRowsAsync` 300 ms after the last edit of the range or the ticks. A count still running when an edit lands is cancelled at once, and the next count starts 300 ms after that edit, so a result of the old range never shows. A failed count shows "Row count unavailable" and reports to the message panel through `ArchiveFailureMapper.Map`. A count above Excel's 1 048 575 data rows adds a notice to the message line and does not block the export. An edit of the range or of a tick clears the status line of an earlier export, so the notice shows again. |
+| Message line | A full-width row of its own above the buttons, two lines reserved. Its `ToolTip` is `CsvExportViewModel.MessageToolTip`: the full path while the line shows a success and no form rule is broken, null otherwise. |
+| Buttons | `Save as...` opens the system save dialog and passes the chosen local path to `ExportCommand`; it is disabled while the form is invalid or an export runs. `Cancel` is enabled only while an export runs. `Close` closes the window. Right-aligned, below the message line. |
+
+The range is wall-clock time end to end (`data-integration.md#time-boundary`). The 24 h limit bounds the
+read and the memory; it does not keep the file within Excel's row limit, which is why the count is shown
+before the file is chosen.
+
+The export runs off the UI thread. `CsvFileExporter` writes the header, reads the seeds through
+`IArchiveRowReader.ReadSeedRowsAsync`, then each 15 minute slice of `ArchiveRowSlices.Tile(from, to)`
+through `ReadSliceAsync`, one statement per slice (`data-integration.md#the-provider-surface`). It writes
+each result through `ArchiveCsvWriter` and releases its rows before the next slice, so the process holds one
+slice at a time. After the seeds and after each slice it posts the running row total to the UI scheduler,
+the only thread that writes a bound property. The outcome stays in the window's message line: progress as
+"Written x of N", where N is the counted total clamped to at least the rows written
+(`Math.Max(rowsWritten, total)` in `CsvExportViewModel`), since rows arrive during the export, then the written row count and the file name
+on success (the full path is the line's tooltip), or the failure title. A failure also reaches the message panel through the mapper; a success adds no panel entry, so
+`AppStatusBarViewModel.ConnectionRestored` stays the one message with no error behind it.
+
+`CsvFileExporter` writes `<path>.partial` and moves it over `<path>` on success. A cancel, a failure or an
+exception deletes the partial file and leaves a file already at `<path>` as it was. A file the export
+cannot write, or a move that fails, maps to `ExportFileError`; so does a partial file that cannot be
+deleted, which names the partial path and comes first so that the operator sees it. An exception that is
+no I/O failure reaches `CsvExportViewModel.ReportFailure`, which sets the status title and adds one panel
+entry. The text fields are written as stored: a name that starts with `=`, `+`, `-` or `@` is not
+escaped, because the catalogue is the operator's own and an escape would change the data. Closing the window
+during an export cancels it: `DialogOpener.ShowOwnedDialog` disposes the view model in `finally` after `ShowDialog`
+returns, and `CsvExportViewModel.Dispose` cancels the running export and the count. Dispose does not wait for
+the export: the exporter deletes the partial file on the pool shortly after the window has closed, so a process
+that exits in that gap leaves `<path>.partial` behind.
+
 ### Command line
 
 All three keys are required and none carries a default.
@@ -727,6 +788,7 @@ The application reads the real archive and nothing else: the composition root re
 the archive extent, the windowed history read and the live-edge poll. The chart draws history and
 follows the archive as it grows. The pen editor writes the catalogue through `IPenCatalogueEditor`,
 and every running chart follows what it writes within 5 s (`#the-live-catalogue`), except the start
-values, which change nothing on screen (`#what-a-read-changes`). See
+values, which change nothing on screen (`#what-a-read-changes`). The export window writes the stored rows
+of a range of at most 24 hours to a CSV file (`#the-export-window`). See
 [data-integration.md](./data-integration.md)
 for the contract and `docs/plans/` for the remaining work.

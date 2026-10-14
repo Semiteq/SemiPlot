@@ -223,4 +223,40 @@ internal static class ArchiveStatements
 	                                            ) sample
 	                                            ORDER BY id, t;
 	                                            """;
+
+	/// <summary>
+	/// Strict <c>&lt;</c> so no boundary row returns on both statements
+	/// (docs/architecture/data-integration.md#operation-to-statement).
+	/// </summary>
+	public const string ExportSeedRow = """
+	                                    SELECT t, v
+	                                    FROM trends
+	                                    WHERE id = @id AND l = 0 AND t < @from AND t >= @from - interval '1 day'
+	                                    ORDER BY t DESC
+	                                    LIMIT 1;
+	                                    """;
+
+	public const string ExportSliceRows = """
+	                                      SELECT id, t, v
+	                                      FROM trends
+	                                      WHERE id = ANY(@ids) AND l = 0 AND t >= @from AND t < @to
+	                                      ORDER BY t, array_position(@ids, id);
+	                                      """;
+
+	public const string ExportRowCount = """
+	                                     SELECT
+	                                         (SELECT count(*)
+	                                          FROM trends
+	                                          WHERE id = ANY(@ids) AND l = 0 AND t >= @from AND t < @to)
+	                                         + (SELECT count(seed.t)
+	                                            FROM (SELECT DISTINCT unnest(@ids) AS id) requested
+	                                            CROSS JOIN LATERAL (
+	                                                SELECT prior.t
+	                                                FROM trends prior
+	                                                WHERE prior.id = requested.id AND prior.l = 0
+	                                                  AND prior.t < @from AND prior.t >= @from - interval '1 day'
+	                                                ORDER BY prior.t DESC
+	                                                LIMIT 1
+	                                            ) seed) AS total;
+	                                     """;
 }

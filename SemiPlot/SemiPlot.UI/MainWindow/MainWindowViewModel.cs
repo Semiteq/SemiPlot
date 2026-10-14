@@ -11,6 +11,7 @@ using ReactiveUI;
 
 using SemiPlot.Core.Data;
 using SemiPlot.UI.Chart;
+using SemiPlot.UI.Export;
 using SemiPlot.UI.Legend;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.Messages;
@@ -29,10 +30,12 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 	private readonly Subject<Unit> _exitRequests = new();
 	private readonly Subject<SettingsViewModel> _settingsRequests = new();
 	private readonly Subject<PenEditorViewModel> _penEditorRequests = new();
+	private readonly Subject<CsvExportViewModel> _exportRequests = new();
 
 	private readonly ILoggerFactory _loggerFactory;
 	private readonly ILogger<MainWindowViewModel> _logger;
 	private readonly IPenCatalogueEditor _penCatalogueEditor;
+	private readonly Func<DateTime, DateTime, IReadOnlyList<ExportPenChoice>, CsvExportViewModel> _createExport;
 	private readonly Action _readCatalogueNow;
 	private readonly InstanceLauncher _instanceLauncher;
 	private readonly ObservableAsPropertyHelper<string> _penScaleHeader;
@@ -51,6 +54,7 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 		Action readCatalogueNow,
 		ILoggerFactory loggerFactory,
 		IPenCatalogueEditor penCatalogueEditor,
+		Func<DateTime, DateTime, IReadOnlyList<ExportPenChoice>, CsvExportViewModel> createExport,
 		InstanceLauncher instanceLauncher)
 	{
 		MessagePanel = messagePanel;
@@ -63,6 +67,7 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 		_loggerFactory = loggerFactory;
 		_logger = loggerFactory.CreateLogger<MainWindowViewModel>();
 		_penCatalogueEditor = penCatalogueEditor;
+		_createExport = createExport;
 		_instanceLauncher = instanceLauncher;
 
 		_disposables.Add(_penScaleHeader = ChartViewModel
@@ -73,6 +78,7 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 		_disposables.Add(_exitRequests);
 		_disposables.Add(_settingsRequests);
 		_disposables.Add(_penEditorRequests);
+		_disposables.Add(_exportRequests);
 
 		_disposables.Add(ToggleNavigationBarCommand = ReactiveCommand.Create(
 			() => { IsNavigationBarVisible = !IsNavigationBarVisible; }));
@@ -91,6 +97,9 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 			() => _aboutRequests.OnNext(AboutInfo.ForCurrentProcess())));
 		_disposables.Add(ShowSettingsCommand = ReactiveCommand.CreateFromTask(RequestSettingsAsync));
 		_disposables.Add(ShowPenEditorCommand = ReactiveCommand.CreateFromTask(RequestPenEditorAsync));
+		_disposables.Add(ExportCommand = ReactiveCommand.Create(
+			RequestExport,
+			ChartViewModel.WhenAnyValue(chart => chart.HasNoPens).Select(none => !none)));
 	}
 
 	/// <summary>The process-wide panel, owned by the container and shown in the window's panel row.</summary>
@@ -108,6 +117,9 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 
 	/// <summary>Each request carries a view model the listener owns and disposes when its window closes.</summary>
 	public IObservable<PenEditorViewModel> PenEditorRequests => _penEditorRequests.AsObservable();
+
+	/// <summary>Each request carries a view model the listener owns and disposes when its window closes.</summary>
+	public IObservable<CsvExportViewModel> ExportRequests => _exportRequests.AsObservable();
 
 	public bool IsNavigationBarVisible
 	{
@@ -160,6 +172,9 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 	/// <summary>Reads the catalogue and opens the editor over it.</summary>
 	public ReactiveCommand<Unit, Unit> ShowPenEditorCommand { get; }
 
+	/// <summary>Snapshots the visible window and the pens into a request on ExportRequests.</summary>
+	public ReactiveCommand<Unit, Unit> ExportCommand { get; }
+
 	/// <summary>The window's own code-behind route to the panel, for a throw it cannot let escape.</summary>
 	public void ReportFailure(Exception failure)
 	{
@@ -188,6 +203,14 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 		return drawnPenId is { } penId && ChartViewModel.FindPen(penId) is { } state
 			? Resources.FormatMenuViewPenScaleFormat(state.Pen.Name)
 			: Resources.MenuViewPenScale;
+	}
+
+	private void RequestExport()
+	{
+		var pens = ExportPenChoice.Checklist(
+			[.. ChartViewModel.Pens.Select(state => (state.Pen, state.IsVisible))]);
+
+		_exportRequests.OnNext(_createExport(ChartViewModel.Navigation.From, ChartViewModel.Navigation.To, pens));
 	}
 
 	private async Task RequestSettingsAsync()

@@ -85,6 +85,10 @@ targets instead: measured on 2026-09-09, a cold build fails with
 
 - The `h`, `m` and `s` suffixes `Chart/ChartDeltaCursorReader.FormatDeltaTime:55-67` glues to its
   numbers. A unit suffix glued to a number is part of the format, not a caption.
+- The CSV export's file format, which belongs to the file and not to the window: the non-finite spellings
+  `NaN`, `Infinity` and `-Infinity` (`ArchiveCsvWriter`), and the time boxes' format `HH:mm:ss`
+  (`ExportRangeForm.TimeFieldFormat`). The header names follow the interface language; the delimiter, the decimal separator and the
+  timestamp's millisecond separator follow the Windows regional settings (`#the-export-windows-text`).
 - Log message templates, in `Program.cs` and every `ILogger` call. The operator never reads them on
   the screen; the log is read by whoever triages the machine.
 - `AppSettingsError.Describe` and the other error messages, the two read names
@@ -267,6 +271,60 @@ The View menu's submenu header is `MenuViewPenScale` ("Pen scale" / "Шкала 
 drawn and the format `MenuViewPenScaleFormat` ("Pen scale: {0}" / "Шкала пера «{0}»") over the drawn pen's
 name otherwise. `MainWindowViewModel.PenScaleHeader` derives it; `AppMenuBarTests` covers the header with a
 pen, without one, with every pen hidden and after a rename.
+
+## The export window's text
+
+`MenuFileExport` ("Export to CSV..." / "Экспорт в CSV...") is the `File` item between `New window` and
+`Exit`. `Export/CsvExportWindow.axaml` reads `ExportWindowTitle`, `ExportStartLabel`, `ExportEndLabel`,
+`ExportDateFormat`, `ExportPensHeader`, `ExportSaveAs`, `ExportCancel` and `ExportClose`; the code-behind
+reads `ExportWindowTitle` and `ExportFileTypeName` for the save dialog's title and filter. The row count
+below the checklist is `ExportCountRows` ("{0} rows" / "Строк: {0}") or `ExportCountUnavailable`.
+`ExportPensHeader` is a format, "Pens ({0} of {1})" / "Перья ({0} из {1})", filled by a `MultiBinding` over the
+ticked and total pen counts; `CsvExportWindowTests` compares it with `Resources.FormatExportPensHeader`.
+
+`ExportDateFormat` is `dd.MM.yyyy` in Russian and `yyyy-MM-dd` in English, the date half of the file
+timestamp. Both are digits and literal separators, so the machine's culture decides neither their shape nor
+the parse of the picker's text; the shape follows the interface language. `CalendarDatePicker` runs with
+`SelectedDateFormat="Custom"` and this string as `CustomDateFormatString`. The picker's popup month names and
+first day of week still follow `CultureInfo.CurrentCulture`, the machine's, as every other date and number on
+screen does (`#two-sets-one-selector`): setting `CurrentCulture` from the interface language would move the decimal separator of every pen
+reading and of the axis panel's bound parse.
+
+The message line shows one of these, in this order: the first broken form rule, the export's status, the
+Excel notice.
+
+| Key | Shown when |
+| --- | --- |
+| `ExportMessageStartDateMissing`, `ExportMessageEndDateMissing` | A date picker holds no date. |
+| `ExportMessageStartUnreadable`, `ExportMessageEndUnreadable` | A time box does not read as `ExportRangeForm.TimeFieldFormat`; the text takes the format as `{0}`. |
+| `ExportMessageEndNotAfterStart`, `ExportMessageSpanOverLimit`, `ExportMessageNoPenTicked` | The end is not after the start, the range is over `ExportRangeForm.MaxSpan` (`{0}` hours), no pen is ticked. |
+| `ExportProgress`, `ExportProgressUnknownTotal`, `ExportSuccess`, `ExportCancelled` | An export runs ("Written {0} of {1}", or "{0} rows written" while no count has landed; the total never falls below the rows written), ends ({0} rows, `{1}` the file name; the full path is the line's tooltip), or is cancelled. |
+| `ExportExcelNotice` | The count is above `ExportMessageLine.ExcelDataRowLimit` (1 048 575), the data rows Excel opens; the text takes the limit as `{0}`, grouped in the current culture. |
+
+A failed export shows the title the mapper assigns in the same line. `ExportFileError` has its own arm in
+`ArchiveFailureMapper.Map`: `FailureExportFileTitle`, `FailureExportFileDetail` (path, reason) and
+`FailureExportFileRemedy`. Its reason is the runtime's own `IOException` or `UnauthorizedAccessException`
+message, which no resource translates, as `#what-stays-a-literal` records for the mapper's last arms; for a
+partial file that cannot be deleted `ExportFileError.IsPartialFile` is set and the mapper puts the message inside
+`ExportPartialNotRemoved`. The message
+line takes the `error` class while a form rule is broken or the last export failed.
+
+The CSV dialect has two sources. The header follows `AppSettings.Locale`: `ExportCsvHeaderPen`,
+`ExportCsvHeaderTime` and `ExportCsvHeaderValue` ("Pen", "Time", "Value" / "Перо", "Время", "Значение"),
+read by `App.CsvDialectFor` with `Resources.ResourceManager.GetString(key, entry.UiCulture)` for the
+interface language whatever the thread's UI culture is. The delimiter, the decimal sign and the timestamp's
+millisecond separator follow the Windows regional settings, because Excel opens a double-clicked CSV with the
+regional list separator and decimal sign, not with the program's language. `CsvDialect.For(CultureInfo.CurrentCulture, header)`
+reads them once at start, when `App.CsvDialectFor` builds the dialect: the delimiter is
+`TextInfo.ListSeparator`, the decimal sign is `NumberFormat.NumberDecimalSeparator`, the timestamp is
+`yyyy-MM-dd HH:mm:ss` + decimal sign + `fff`, and numbers are written in "R" format by the invariant
+culture with only the decimal separator replaced. A decimal sign other than `.` or `,` becomes `.`. A list
+separator is kept only when it is `;`, `,`, a tab or `|` and differs from the decimal sign; any other
+(a space, `-`, `:`, a digit, a letter, `"`, CR, LF, or more than one character) becomes `;` when the
+decimal sign is `,` and `,` otherwise, because the timestamp and the value are written unquoted
+(`CsvDialectTests`). A change of the language applies at the next
+start, as every other text does. The save dialog's suggested name is
+`semiplot_yyyyMMdd_HHmmss-yyyyMMdd_HHmmss.csv` with invariant digits in both languages.
 
 ## Adding a key
 

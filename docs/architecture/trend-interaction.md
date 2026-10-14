@@ -95,7 +95,8 @@ operator interaction.
   will be **PostgreSQL**, but whether it stores pre-trimmed/layered data is **unknown** — the
   data layer must support either server-side aggregation or in-process decimation.
 - **Dropped / out of scope:** horizontal cursor (dropped); alarm/event overlays (out of scope);
-  annotations. **`[LATER]`:** view persistence, export/snapshot/print.
+  annotations. **`[LATER]`:** view persistence, snapshot/print. CSV value export ships
+  as one table of pen, time and value (overview.md#the-export-window).
 
 ## Terminology
 
@@ -521,8 +522,8 @@ the next read's scheduling included, goes to `TryReportFailure` as well.
 
 - **Deferred (NICE, not in MVP):** horizontal cursor / crosshair (trend-feature-spec.md §CU-5).
 - **Out of scope:** alarm/event overlays from the `messages` log; annotations.
-- **`[LATER]`:** save pen sets + scales + layout as named views/templates; snapshot / export /
-  print (trend-feature-spec.md §MS-6); touch input (not relevant for target operator PCs).
+- **`[LATER]`:** save pen sets + scales + layout as named views/templates; snapshot / print
+  (trend-feature-spec.md §MS-6); touch input (not relevant for target operator PCs).
 
 ## Renderer & UI framework
 

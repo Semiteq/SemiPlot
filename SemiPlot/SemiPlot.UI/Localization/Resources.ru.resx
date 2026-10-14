@@ -72,6 +72,9 @@
   <data name="MenuFileNewWindow" xml:space="preserve">
     <value>Новое окно</value>
   </data>
+  <data name="MenuFileExport" xml:space="preserve">
+    <value>Экспорт в CSV...</value>
+  </data>
   <data name="MenuFileExit" xml:space="preserve">
     <value>Выход</value>
   </data>
@@ -647,5 +650,95 @@
   </data>
   <data name="PenGroupsMembersHeader" xml:space="preserve">
     <value>Перья выбранной группы</value>
+  </data>
+  <data name="ExportMessageStartDateMissing" xml:space="preserve">
+    <value>Начало: выберите дату.</value>
+  </data>
+  <data name="ExportMessageEndDateMissing" xml:space="preserve">
+    <value>Конец: выберите дату.</value>
+  </data>
+  <data name="ExportMessageStartUnreadable" xml:space="preserve">
+    <value>Время начала: запишите как {0}.</value>
+  </data>
+  <data name="ExportMessageEndUnreadable" xml:space="preserve">
+    <value>Время конца: запишите как {0}.</value>
+  </data>
+  <data name="ExportDateFormat" xml:space="preserve">
+    <value>dd.MM.yyyy</value>
+  </data>
+  <data name="ExportMessageEndNotAfterStart" xml:space="preserve">
+    <value>Конец должен быть позже начала.</value>
+  </data>
+  <data name="ExportMessageSpanOverLimit" xml:space="preserve">
+    <value>Диапазон длиннее {0} часов.</value>
+  </data>
+  <data name="ExportMessageNoPenTicked" xml:space="preserve">
+    <value>Отметьте хотя бы одно перо.</value>
+  </data>
+  <data name="ExportExcelNotice" xml:space="preserve">
+    <value>Строк больше, чем открывает Excel ({0}). Файл всё равно записывается целиком.</value>
+  </data>
+  <data name="ExportCountUnavailable" xml:space="preserve">
+    <value>Число строк недоступно</value>
+  </data>
+  <data name="ExportCountRows" xml:space="preserve">
+    <value>Строк: {0}</value>
+  </data>
+  <data name="ExportProgress" xml:space="preserve">
+    <value>Записано {0} из {1}</value>
+  </data>
+  <data name="ExportProgressUnknownTotal" xml:space="preserve">
+    <value>Записано строк: {0}</value>
+  </data>
+  <data name="ExportSuccess" xml:space="preserve">
+    <value>Записано строк: {0}, файл {1}</value>
+  </data>
+  <data name="ExportCancelled" xml:space="preserve">
+    <value>Экспорт отменён. Файл не записан.</value>
+  </data>
+  <data name="FailureExportFileTitle" xml:space="preserve">
+    <value>SemiPlot не смог записать файл CSV</value>
+  </data>
+  <data name="FailureExportFileDetail" xml:space="preserve">
+    <value>Файл «{0}» не удалось записать: {1}</value>
+  </data>
+  <data name="ExportPartialNotRemoved" xml:space="preserve">
+    <value>временный файл не удалось удалить: {0}</value>
+  </data>
+  <data name="FailureExportFileRemedy" xml:space="preserve">
+    <value>Выберите файл в существующем каталоге, доступном для записи, и повторите экспорт.</value>
+  </data>
+  <data name="ExportWindowTitle" xml:space="preserve">
+    <value>Экспорт в CSV</value>
+  </data>
+  <data name="ExportStartLabel" xml:space="preserve">
+    <value>Начало</value>
+  </data>
+  <data name="ExportEndLabel" xml:space="preserve">
+    <value>Конец</value>
+  </data>
+  <data name="ExportPensHeader" xml:space="preserve">
+    <value>Перья ({0} из {1})</value>
+  </data>
+  <data name="ExportCsvHeaderPen" xml:space="preserve">
+    <value>Перо</value>
+  </data>
+  <data name="ExportCsvHeaderTime" xml:space="preserve">
+    <value>Время</value>
+  </data>
+  <data name="ExportCsvHeaderValue" xml:space="preserve">
+    <value>Значение</value>
+  </data>
+  <data name="ExportSaveAs" xml:space="preserve">
+    <value>Сохранить как...</value>
+  </data>
+  <data name="ExportCancel" xml:space="preserve">
+    <value>Отмена</value>
+  </data>
+  <data name="ExportClose" xml:space="preserve">
+    <value>Закрыть</value>
+  </data>
+  <data name="ExportFileTypeName" xml:space="preserve">
+    <value>Файлы CSV</value>
   </data>
 </root>

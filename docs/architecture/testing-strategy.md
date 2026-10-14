@@ -112,9 +112,10 @@ container: the bucketed history window's outer `ORDER BY id, t`, its
 `GROUP BY id, segment, date_bin(@bucket, t, @from)`, its break flag, its newest non-null timestamp,
 `l = @layer` in both branches, its strict seed bound and its one-day seed floor; the realtime poll's
 `l = 0` filter and its `ORDER BY t`; the realtime baseline's `l = 0` filter and its
-`DISTINCT unnest(@ids)`. Three statements take parameters, each through a binder of its own pinned
-against the statement's parameter names: `PostgresDataProvider.BindLocalBucketedWindow`,
-`RealtimePoll.BindPoll` and `RealtimePoll.BindBaseline`. Two assertions more pin
+`DISTINCT unnest(@ids)`. Five binders are each pinned against their statement's parameter names:
+`PostgresDataProvider.BindLocalBucketedWindow`, `RealtimePoll.BindPoll`,
+`RealtimePoll.BindBaseline`, `PostgresArchiveRowReader.BindSeed` and
+`PostgresArchiveRowReader.BindPensRange`. Two assertions more pin
 `PostgresDataProvider.BucketFor`: the bucket is the window divided by the column target, and it floors
 at one millisecond. `data-integration.md` names the constants and quotes
 no SQL, so there is no second copy to drift.
@@ -149,12 +150,13 @@ There are three families — the same category with different foreign parties.
 `PostgresExtentReadTests`, `PostgresHistoryReadTests`, `RealtimePollReadTests`,
 `RealtimeSubscriptionTests`, `RealtimeEmptyArchiveTests`,
 `ArchiveWriterTransactionTests`, `CoarseFlushTests`, `ProviderSessionTests`,
-`ExplainPlanTests`, `PenCatalogueEditorTests`, `PenRegistrationTests`, `LiveCatalogueTests`. The realtime classes
+`ExplainPlanTests`, `ArchiveRowReaderTests`, `PenCatalogueEditorTests`, `PenRegistrationTests`, `LiveCatalogueTests`. The realtime classes
 share `RealtimeArchive` (rows, subscription and append path), `BatchCollector` and `ArmedGate`. Seams
 guarded: statement text, type mapping, the demo writer's coarse
 flush (`CoarseFlushTests` pins period bounds, which periods close, the NULL skip, `ON CONFLICT` and the
 opening-row statement; the thinning itself is `LayerThinner.Thin`'s, tested in Unit),
-the naive-local-to-UTC conversion, partition pruning, the session startup option (`ProviderSessionTests`:
+the naive-local-to-UTC conversion and, for the export, its absence (`ArchiveRowReaderTests` pins the
+wall-clock timestamps across an autumn hour, the tie order by `penIds` and the slice reads), partition pruning, the session startup option (`ProviderSessionTests`:
 a pooled session answers `SHOW jit` with `off`, where a plain session on the same database answers `on`),
 and the grant chain: reads and the editor's writes run as `semiplot`, so a privilege that never reached the
 role fails here instead of at commissioning. The container is the delivery mechanism for a real server,

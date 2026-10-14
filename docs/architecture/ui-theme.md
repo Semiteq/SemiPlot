@@ -181,7 +181,8 @@ colour and text, never size:
   the same rule for every part but its lists (A resizable window keeps its fixed parts, below).
 - An invalid field is marked by its border alone. The field binds `Classes.invalid` to its `Is*Valid`
   flag, and `Styles/Forms.axaml` paints that border with `AppSeverityErrorBrush`.
-- One message line sits left of the buttons. It is a `TextBlock.form-message`: two lines of 20 px
+- One message line sits left of the buttons, or on its own full-width row above them (the axis scale panel,
+  the export window). It is a `TextBlock.form-message`: two lines of 20 px
   reserved, wrapped, trimmed past the second. It shows the rule the first invalid field breaks, in form
   order, and is empty while every field is valid. A notice that is not an error, such as the settings
   dialog's restart notice with its Restart now button in the same cell, shares the same line and gives
@@ -192,7 +193,9 @@ The invalid style targets the template part, not the control. Semi paints a `Tex
 `Border#PART_ContentPresenterBorder` from its own state styles: `Transparent` at rest and
 `TextBoxFocusBorderBrush` on focus. A setter on `TextBox.BorderBrush` loses to both. A `NumericUpDown`
 draws its border on the same part of its inner `TextBox#PART_TextBox`, so its selector nests two
-`/template/` steps. `Forms.axaml` follows `SemiTheme` in `Application.Styles`, so at equal priority it
+`/template/` steps. A `CalendarDatePicker` is different: its selector is
+`CalendarDatePicker.invalid /template/ Border#Background`, the border of the picker's own template, and
+`CsvExportWindowTests` reads the rendered brush to prove it. `Forms.axaml` follows `SemiTheme` in `Application.Styles`, so at equal priority it
 wins. `SettingsViewTests.AnInvalidField_PaintsItsBorderWithTheErrorBrushFocusedOrNot` reads the
 rendered `BorderBrush` of both parts, focused and at rest, under both variants; it fails without the
 include.
@@ -229,6 +232,46 @@ same way on 2026-10-01 in the realised 640 px dialog, with the notice showing be
 line in English, in a 334 px cell, and 420 px in Russian, which wraps in its 241 x 40 px cell into
 "Сохранено. Тема применена," at 208.6 px and "остальное после перезапуска." at 210.5 px, two lines with
 nothing trimmed.
+
+The export window (`Export/CsvExportWindow`) is 390 px wide with `SizeToContent="Height"` and
+`CanResize="False"`, a 20 px margin and 12 px between its three rows: the form grid, the message line and the
+buttons. The message line is its own full-width row above a right-aligned button row, as in the axis scale
+panel. The form grid has, per bound, the label, a 110 px time `TextBox` and a `CalendarDatePicker`, in that
+order, then the pens header, a bordered pen list and the row count. The label column is `Auto`, the time box
+keeps its width and the picker takes the rest of the row (`HorizontalAlignment="Stretch"`), so the picker's right
+edge, the pen list, the message row and the button row end at one line, 20 px from the window edge. The list
+sizes to its rows up to a `MaxHeight` of 226 px (eight 28 px rows plus the border; a window-scoped
+`ListBoxItem` style zeroes Semi's vertical item padding and `MinHeight`, as in the pen editor, and keeps a 6 px
+horizontal padding, the pen editor's cell margin, so a checkbox stands 6 px off the list border), is bordered with
+`AppBorderBrush` and keeps its vertical scroll bar visible (`AllowAutoHide="False"`). Its horizontal scroll bar
+is disabled: a pen label is a `TextBlock` with `TextTrimming="CharacterEllipsis"` and the full label is the
+row's tooltip. The message line carries the form messages, the progress and success lines and the Excel notice,
+which are longer than the settings dialog's. Measured on 2026-10-14 with Skia and HarfBuzz, the real Win32
+platform, the Semi theme, Inter at 14 px, 50 pens `Damper 01` to `Damper 50`:
+
+| | English | Russian |
+| --- | --- | --- |
+| Window size, every state below | 390 x 515 px | 390 x 515 px |
+| `Save as...`, `Cancel` and `Close` buttons | 90, 73 and 64 px | 145, 82 and 88 px |
+| Message row, list, right edge of the pickers and of the `Close` button | 350 px; 370 px | 350 px; 370 px |
+| Date and time grid: label, time box, picker | 32, 110, 180 px | 52, 110, 160 px |
+| Pens header at "1 of 50" and "50 of 50" | 97 and 106 px | 112 and 121 px |
+| Excel notice on one line, lines in the row | 574 px, 2 | 612 px, 2 |
+| Success line with the 44-character suggested file name, one line, lines in the row | 454 px, 2 | 509 px, 2 |
+| Longest form message on one line (lines in the row) | 253 px, end not after start (1) | 274 px, start time unreadable (1) |
+| A 120-character pen name `W...W` in the list | trimmed to 314 px of a 348 px viewport, no horizontal extent | same |
+
+The window kept 390 x 515 px (50 pens, the list at its `MaxHeight`) with every field valid, with the Excel
+notice (a count of 2 000 000), with each of the seven problems in turn and with the success line. Every
+message fits the two lines of the 350 px row (700 px of capacity), and every form message fits one. The Russian
+Excel notice took three lines at 701 px, so its wording lost the opening "in the range" clause; the English one fit as it was.
+The floor is the Russian buttons, 145 + 82 + 88 px and two 8 px gaps, 331 px, plus the 40 px margin: 371 px.
+390 px leaves the Russian picker 160 px. The success line names the file and not the path; the full path is the
+line's tooltip. The headless tests measure with the test font, which is about twice as wide, so none asserts
+the wrapping and the button row overflows the window there;
+`CsvExportWindowTests.TheWindow_KeepsItsSizeAndItsButtonsWhenAFieldTurnsInvalid` gates the rule on the
+window's and the `Save as...` button's `Bounds`, and `TheListAndTheMessage_EndAtTheRightEdgeOfTheDatePickers`
+gates the alignment. A longer message is measured again in both languages before it ships.
 
 ### The axis scale panel
 

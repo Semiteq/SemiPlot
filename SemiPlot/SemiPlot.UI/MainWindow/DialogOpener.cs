@@ -19,11 +19,17 @@ internal static class DialogOpener
 		}
 	}
 
-	public static async void ShowSettings(Window owner, SettingsViewModel settings, Action<Exception> reportFailure)
+	public static void ShowSettings(Window owner, SettingsViewModel settings, Action<Exception> reportFailure)
+	{
+		ShowOwnedDialog(owner, () => new SettingsDialog { DataContext = settings }, settings, reportFailure);
+	}
+
+	public static async void ShowOwnedDialog(
+		Window owner, Func<Window> createDialog, IDisposable viewModel, Action<Exception> reportFailure)
 	{
 		try
 		{
-			await new SettingsDialog { DataContext = settings }.ShowDialog(owner);
+			await createDialog().ShowDialog(owner);
 		}
 		catch (Exception exception)
 		{
@@ -31,7 +37,7 @@ internal static class DialogOpener
 		}
 		finally
 		{
-			settings.Dispose();
+			viewModel.Dispose();
 		}
 	}
 }

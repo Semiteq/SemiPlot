@@ -6,8 +6,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 using SemiPlot.Core.Data;
+using SemiPlot.Core.Export;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
+using SemiPlot.UI.Export;
 using SemiPlot.UI.Legend;
 using SemiPlot.UI.Messages;
 using SemiPlot.UI.Minimap;
@@ -58,13 +60,16 @@ internal sealed class TrendWindow : IDisposable
 	public static TrendWindow Build(
 		StartupData startupData,
 		InstanceLauncher launcher,
-		IScheduler uiScheduler)
+		IScheduler uiScheduler,
+		CsvDialect csvDialect,
+		TimeZoneInfo archiveZone)
 	{
 		var serviceProvider = startupData.ServiceProvider;
 		var dataProvider = serviceProvider.GetRequiredService<IDataProvider>();
 		var dataScheduler = serviceProvider.GetRequiredService<IScheduler>();
 		var messagePanel = serviceProvider.GetRequiredService<MessagePanelViewModel>();
 		var penCatalogueEditor = serviceProvider.GetRequiredService<IPenCatalogueEditor>();
+		var archiveRowReader = serviceProvider.GetRequiredService<IArchiveRowReader>();
 		var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
 
 		var coordinator = new TrendCoordinator(dataProvider, startupData.Pens, dataScheduler, uiScheduler);
@@ -108,6 +113,16 @@ internal sealed class TrendWindow : IDisposable
 			catalogueSync.ReadNow,
 			loggerFactory,
 			penCatalogueEditor,
+			(fromUtc, toUtc, pens) => new CsvExportViewModel(
+				archiveRowReader,
+				csvDialect,
+				messagePanel,
+				loggerFactory.CreateLogger<CsvExportViewModel>(),
+				uiScheduler,
+				archiveZone,
+				fromUtc,
+				toUtc,
+				pens),
 			launcher);
 
 		catalogueSync.Start();

@@ -541,6 +541,10 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   row and membership VMs and `EditorCallQueue`) - the modal that edits the pen catalogue through
   `IPenCatalogueEditor`, opened from Edit -> Pens and groups (`overview.md#the-pen-and-group-editor`).
   Nothing under `Chart/` or `Legend/` references it.
+- `Export/CsvExportWindow` + `CsvExportViewModel` (+ `ExportRangeForm`, `ExportRangeProblemText`, `ExportMessageLine`, `ExportPenChoice`, `CsvFileExporter`)
+  is the modal that writes the archive's stored rows of a range and a set of pens into one CSV table ordered by time, opened
+  from File -> Export to CSV... (`overview.md#the-export-window`). Nothing under `Chart/` or `Legend/`
+  references it.
 - `Messages/MessagePanelView` + `MessagePanelViewModel` — the bounded, newest-first list every failure
   lands in, capped at `MessagePanelViewModel.MaximumEntries` (200) with the oldest dropped.
   `IsVisible` decides the row, an empty list included, and the empty list carries its own line;
@@ -571,6 +575,12 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   connection section (`data-integration.md`, Startup).
 - `Styles/Palette.axaml` + `Chart/ChartPalette` - the two theme variants, and the five ScottPlot
   surfaces painted from them (`ui-theme.md`).
+
+**Export (`SemiPlot.Core.Export`):** `CsvDialect` (delimiter, number culture, timestamp format and a
+`CsvHeader` of the three header strings; the one factory `CsvDialect.For(CultureInfo regional, CsvHeader header)`, which takes the delimiter and
+decimal sign from the regional culture and falls back for a list separator other than `;`, `,`, tab or `|`, or equal to the decimal sign, `ui-text.md#the-export-windows-text`) and `ArchiveCsvWriter` (`WriteHeader`, `PenFields`, which maps a pen id to its
+quoted `name, unit` field and appends ` (id)` only to pens that share a name, and `WriteRows`; RFC 4180
+quoting). `SemiPlot.Core.Export.ArchiveRowSlices` holds the 15 minute slice width and the tiling of a range.
 
 **Core models (`SemiPlot.Core.Trends`, renderer-agnostic, unit-tested):**
 

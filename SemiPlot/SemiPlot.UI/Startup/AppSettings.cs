@@ -18,7 +18,6 @@ public enum AppThemeVariant
 	Dark
 }
 
-/// <summary>What one language means to the file, to the resource sets and to Semi's own control strings.</summary>
 internal sealed record UiLanguageEntry(
 	UiLanguage Language,
 	string YamlToken,
@@ -34,8 +33,16 @@ internal static class SettingsVocabulary
 	// Semi keys its own control strings by specific culture and falls through to zh-CN for a neutral one.
 	internal static readonly UiLanguageEntry[] Languages =
 	[
-		new(UiLanguage.Ru, "ru", CultureInfo.GetCultureInfo("ru"), CultureInfo.GetCultureInfo("ru-RU")),
-		new(UiLanguage.En, "en", CultureInfo.GetCultureInfo("en"), CultureInfo.GetCultureInfo("en-US"))
+		new(
+			UiLanguage.Ru,
+			"ru",
+			CultureInfo.GetCultureInfo("ru"),
+			CultureInfo.GetCultureInfo("ru-RU")),
+		new(
+			UiLanguage.En,
+			"en",
+			CultureInfo.GetCultureInfo("en"),
+			CultureInfo.GetCultureInfo("en-US"))
 	];
 
 	internal static readonly AppThemeEntry[] Themes =

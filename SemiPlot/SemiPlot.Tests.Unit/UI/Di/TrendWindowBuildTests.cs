@@ -14,6 +14,7 @@ using SemiPlot.Core.Data.Errors;
 using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.Tests.Unit.UI.PenEditor;
 using SemiPlot.Tests.Unit.UI.Startup;
+using SemiPlot.UI;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
@@ -49,7 +50,11 @@ public sealed class TrendWindowBuildTests
 		dataProvider.FailHistory = true;
 		dataProvider.FailExtent = true;
 		using var window = TrendWindow.Build(
-			probe.Value, TestLaunch.LauncherAt(AppContext.BaseDirectory), AvaloniaScheduler.Instance);
+			probe.Value,
+			TestLaunch.LauncherAt(AppContext.BaseDirectory),
+			AvaloniaScheduler.Instance,
+			App.CsvDialectFor(UiLanguage.En),
+			TimeZoneInfo.Utc);
 		scheduler.AdvanceBy(TimeSpan.FromMilliseconds(200.0).Ticks);
 		Dispatcher.UIThread.RunJobs();
 
@@ -75,7 +80,11 @@ public sealed class TrendWindowBuildTests
 		var probe = await StartupProbe.ReadAsync(container, StartupProbe.DefaultReadBound);
 
 		using var window = TrendWindow.Build(
-			probe.Value, TestLaunch.LauncherAt(AppContext.BaseDirectory), AvaloniaScheduler.Instance);
+			probe.Value,
+			TestLaunch.LauncherAt(AppContext.BaseDirectory),
+			AvaloniaScheduler.Instance,
+			App.CsvDialectFor(UiLanguage.En),
+			TimeZoneInfo.Utc);
 		var mainWindowViewModel = window.ViewModel;
 
 		mainWindowViewModel.StatusBar.IsConnected.Should().BeTrue();

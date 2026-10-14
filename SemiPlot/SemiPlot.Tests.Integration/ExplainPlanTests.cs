@@ -4,6 +4,7 @@ using AwesomeAssertions;
 
 using Npgsql;
 
+using SemiPlot.Core.Export;
 using SemiPlot.Core.Trends;
 using SemiPlot.DataSource.Postgres;
 using SemiPlot.Tools.ArchiveSeeder;
@@ -66,7 +67,7 @@ public sealed class ExplainPlanTests(
 	// bound the planner actually pushed into the index is read rather than inferred. The condition is a
 	// named group because DayPartition carries a group of its own.
 	private static readonly Regex _seedBackwardWalk = new(
-		@"Index Scan Backward using \S+ on " + DayPartition
+		@"Index (Only )?Scan Backward using \S+ on " + DayPartition
 			+ @"[^\r\n]*\r?\n\s*Index Cond: \((?<condition>[^\r\n]*)\)");
 
 	// Narrow, so the planner is choosing between an index and a scan of a partition it would have to read
@@ -165,7 +166,7 @@ public sealed class ExplainPlanTests(
 				+ "window: its input is neither an index scan nor a bitmap over one, so counting the break "
 				+ $"markers now costs a read of rows outside the window.{Environment.NewLine}{plan}");
 
-		AssertSeedWalkStaysWithinItsBound(plan);
+		AssertSeedWalkStaysWithinItsBound(plan, "history window");
 	}
 
 	// The poll's own index plan.
@@ -214,21 +215,91 @@ public sealed class ExplainPlanTests(
 				+ $"rows the bound does not need.{Environment.NewLine}{plan}");
 	}
 
+	[Fact]
+	public async Task TheExportSeedPlanWalksBackToTheSeedWithinItsBound()
+	{
+		var database = analysedArchive.Database;
+		var from = DateTime.SpecifyKind(ArchiveTemplate.Slice.Start + _seedProbeOffset, DateTimeKind.Unspecified);
+
+		var plan = await ExplainAsync(
+			database.PlotConnectionString,
+			ArchiveStatements.ExportSeedRow,
+			command => PostgresArchiveRowReader.BindSeed(command, ExplainedPenIds()[0], from),
+			TestContext.Current.CancellationToken);
+
+		_sequentialScanOverRows.IsMatch(plan).Should().BeFalse(
+			"The export seed probe no longer narrows on the primary key: the plan reads a row-holding "
+				+ $"trends partition sequentially.{Environment.NewLine}{plan}");
+
+		AssertSeedWalkStaysWithinItsBound(plan, "export seed");
+	}
+
+	[Fact]
+	public async Task TheExportSlicePlanReachesItsRowsThroughAnIndexWithinItsDay()
+	{
+		var database = analysedArchive.Database;
+		var from = DateTime.SpecifyKind(ArchiveTemplate.Slice.Start + _seedProbeOffset, DateTimeKind.Unspecified);
+
+		var plan = await ExplainAsync(
+			database.PlotConnectionString,
+			ArchiveStatements.ExportSliceRows,
+			command => PostgresArchiveRowReader.BindPensRange(
+				command, ExplainedPenIds(), from, from + ArchiveRowSlices.Width),
+			TestContext.Current.CancellationToken);
+
+		_sequentialScanOverRows.IsMatch(plan).Should().BeFalse(
+			"The export slice statement no longer narrows on the primary key: the plan reads a "
+				+ $"row-holding trends partition sequentially.{Environment.NewLine}{plan}");
+
+		_indexReachedRows.IsMatch(plan).Should().BeTrue(
+			"The export slice plan reaches no row-holding trends partition through an index, neither "
+				+ $"directly nor through a bitmap.{Environment.NewLine}{plan}");
+
+		_dayPartitionRead.Count(plan).Should().Be(
+			WindowBranchPartitionReads,
+			$"A slice inside one day reads that day's partition only.{Environment.NewLine}{plan}");
+	}
+
+	[Fact]
+	public async Task TheExportCountPlanReachesItsRowsThroughAnIndex()
+	{
+		var database = analysedArchive.Database;
+		var from = DateTime.SpecifyKind(ArchiveTemplate.Slice.Start + _seedProbeOffset, DateTimeKind.Unspecified);
+
+		var plan = await ExplainAsync(
+			database.PlotConnectionString,
+			ArchiveStatements.ExportRowCount,
+			command => PostgresArchiveRowReader.BindPensRange(
+				command, ExplainedPenIds(), from, from + _explainedWindow),
+			TestContext.Current.CancellationToken);
+
+		_sequentialScanOverRows.IsMatch(plan).Should().BeFalse(
+			"The export count statement no longer narrows on the primary key: the plan reads a "
+				+ $"row-holding trends partition sequentially.{Environment.NewLine}{plan}");
+
+		_indexReachedRows.IsMatch(plan).Should().BeTrue(
+			"The export count plan reaches no row-holding trends partition through an index, neither "
+				+ $"directly nor through a bitmap.{Environment.NewLine}{plan}");
+
+		AssertSeedWalkStaysWithinItsBound(plan, "export count", MaximumDayPartitionsRead + WindowBranchPartitionReads);
+	}
+
 	// An unbounded seek is one probe per older day, per pen, on every window change.
-	private static void AssertSeedWalkStaysWithinItsBound(string plan)
+	private static void AssertSeedWalkStaysWithinItsBound(
+		string plan, string statement, int maximumPartitionReads = MaximumDayPartitionsRead)
 	{
 		var seedWalk = _seedBackwardWalk.Match(plan);
 
 		seedWalk.Success.Should().BeTrue(
-			"The history window statement's seed branch reaches no row-holding trends partition through a "
+			$"The {statement} statement's seed branch reaches no row-holding trends partition through a "
 				+ "backward index scan, so the row before the window is no longer found by stepping to one index "
 				+ $"edge.{Environment.NewLine}{plan}");
 
 		seedWalk.Groups["condition"].Value.Should().Contain("t >=");
 
-		(_dayPartitionRead.Count(plan) <= MaximumDayPartitionsRead).Should().BeTrue(
-			"The history window statement's seed seek has lost its lower bound: the plan reads more day "
-				+ $"partitions than a look-back of one partition width can reach.{Environment.NewLine}{plan}");
+		(_dayPartitionRead.Count(plan) <= maximumPartitionReads).Should().BeTrue(
+			$"The {statement} statement's seed seek has lost its lower bound: the plan reads more day partitions "
+				+ $"than a look-back of one partition width can reach.{Environment.NewLine}{plan}");
 	}
 
 	// Near the archive's end, which is where a live subscription's bound always sits: the poll reads the

@@ -101,7 +101,7 @@ internal sealed class FakeDataProvider(
 
 	public CancellationToken LastQueriedCancellationToken => LastHistoryQuery?.CancellationToken ?? default;
 
-	private IReadOnlyList<HistoryQuery> ChartHistoryQueries =>
+	public IReadOnlyList<HistoryQuery> ChartHistoryQueries =>
 		[.. HistoryQueries.Where(query => query.TargetColumnCount != MinimapBandFeed.MinimapColumns)];
 
 	private HistoryQuery? LastHistoryQuery => ChartHistoryQueries is [.., var last] ? last : null;

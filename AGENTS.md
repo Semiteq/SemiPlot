@@ -343,6 +343,10 @@ No abbreviations in names.
   and `MainWindow/PenCatalogueApplier` hands each read to the chart, which compares it with the pens it
   shows, then rebuilds the sidebar. The chart is never rebuilt whole
   (`docs/architecture/overview.md#the-live-catalogue`).
+- Every chart history request comes from `Chart/ChartHistoryPlanner.Next` and names the visible pens
+  only; no caller builds a `HistoryRequest` of its own
+  (`docs/architecture/data-integration.md#what-one-history-query-covers`).
+  `git grep -n "new HistoryRequest(" -- SemiPlot/SemiPlot.UI` prints only `ChartHistoryPlanner.cs` lines.
 - A pen's reading is rendered through `SemiPlot.Core.Trends.PenValueFormat` and nowhere else: it owns
   the stored mask's character-and-section rule and the `0.###` fallback, and the sidebar row, the
   chart's hover readout and the major labels of a log10 axis (`Chart/LogTickGenerator`) all go through it
@@ -376,7 +380,9 @@ No abbreviations in names.
 - Every history read of `SemiPlot.DataSource.Postgres` goes through `BucketedHistoryWindow`: the
   server reduces each layer to one row per column per pen (minimum, maximum, the newest non-null
   sample, a break flag), `BucketedRowFold` maps the rows onto `PenHistoryEnvelope`, and no decimator
-  runs on the client (`docs/architecture/data-integration.md#operation-to-statement`).
+  runs on the client. `PostgresDataProvider` splits one read into up to `HistoryReadConcurrency` (4)
+  contiguous pen groups and runs their statements concurrently, each on its own pooled connection, with
+  one fresh-tail start across every pen (`docs/architecture/data-integration.md#operation-to-statement`).
 - Every session the provider opens carries `-c jit=off` through
   `PostgresConnectionSettings.ConnectionString`, and a new `NpgsqlDataSource` must be built from that
   string. A coarse read timed by hand in psql runs under the server's `jit = on` and can take over a

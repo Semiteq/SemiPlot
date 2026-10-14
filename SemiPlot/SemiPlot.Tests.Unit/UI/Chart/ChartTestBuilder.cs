@@ -102,8 +102,9 @@ internal static class ChartTestBuilder
 		viewModel.Navigation.TrackDataExtents(firstSample, to);
 		viewModel.RequestInitialHistory();
 
-		// The admission and the delivery each land one tick after the step that schedules them.
-		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 2);
+		// The admission and the delivery each land one tick after the step that schedules them, and the margin
+		// read is requested as the visible window's read lands.
+		scheduler.AdvanceBy(2 * (HistoryDebounceWindow.Ticks + 2));
 	}
 
 	// The result lands after release() returns, so the wait is for the redraw count it leads to, counted from

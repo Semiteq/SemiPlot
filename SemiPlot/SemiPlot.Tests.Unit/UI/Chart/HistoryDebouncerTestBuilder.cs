@@ -83,7 +83,7 @@ internal static class HistoryDebouncerTestBuilder
 	{
 		return new HistoryRequest(
 			penIds,
-			new FetchRange(fromUtc, toUtc, layer, HistoryColumnTarget.MaxColumns, toUtc - fromUtc),
+			new FetchRange(fromUtc, toUtc, layer, HistoryColumnTarget.MaxColumns, toUtc - fromUtc, 0, 0),
 			HistoryColumnTarget.MaxColumns);
 	}
 }

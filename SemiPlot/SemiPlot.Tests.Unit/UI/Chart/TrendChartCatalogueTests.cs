@@ -7,6 +7,7 @@ using FluentResults;
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Bridge;
+using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
 
 using Xunit;
@@ -226,7 +227,7 @@ public sealed class TrendChartCatalogueTests
 		provider.Pens = [catalogue[0]];
 
 		viewModel.ApplyCatalogue(provider.Pens);
-		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + TrendCoordinator.BatchWindow.Ticks);
 
 		viewModel.FindPen(2).Should().BeNull();
 		provider.HistoryQueryCount.Should().Be(queriesBefore + 1);
@@ -402,17 +403,21 @@ public sealed class TrendChartCatalogueTests
 		viewModel.CursorValues.Should().NotContainKey(2, "pen 2 has read no history since it came back");
 	}
 
+	// The window is narrowed below the Raw ceiling 500 visible pens leave, so no layer change adds a window
+	// change of its own.
 	[AvaloniaFact]
 	public void ADeltaAdding500Pens_ComputesTheAxisModelOnce()
 	{
 		var (viewModel, _, _, _) = CreateViewModel();
 		IReadOnlyList<Pen> catalogue =
 			[.. Enumerable.Range(1, 500).Select(id => new Pen(id, $"Pen {id}", ["Group A"], "#ff0000"))];
+		viewModel.Navigation.ZoomAt(1.0 / 8.0, viewModel.Navigation.To);
 		var revisionBefore = viewModel.ScalesRevision;
 
 		viewModel.ApplyCatalogue(catalogue);
 
 		viewModel.Pens.Should().HaveCount(500);
+		viewModel.Navigation.ActiveLayer.Should().Be(AggregationLayer.Raw);
 		viewModel.ScalesRevision.Should().Be(revisionBefore + 1);
 	}
 
@@ -442,17 +447,18 @@ public sealed class TrendChartCatalogueTests
 	}
 
 	[AvaloniaFact]
-	public void AWidenBeforeTheAddedPensReadIsIssued_ReadsTheWindowOnceFromTheEarlierFirstSample()
+	public void AWidenBeforeTheAddedPensReadIsIssued_ReadsTheWindowAndItsMarginsOnceFromTheEarlierFirstSample()
 	{
 		var (viewModel, scheduler, _, provider) = CreateViewModel();
 		viewModel.AddPen(FakeDataProvider.FirstPen);
 		LoadInitialHistory(viewModel, scheduler, To.AddMinutes(-10.0), To);
+		var queriesBefore = provider.HistoryQueryCount;
 		viewModel.AddPen(FakeDataProvider.SecondPen);
 
 		viewModel.WidenToArchiveExtent(new ArchiveExtent(To.AddHours(-3.0), To));
 		scheduler.AdvanceBy(TimeSpan.FromSeconds(5.0).Ticks);
 
-		provider.HistoryQueryCount.Should().Be(2);
+		provider.HistoryQueryCount.Should().Be(queriesBefore + 2);
 		provider.LastQueriedFromUtc.Should().Be(From - TimeSpan.FromHours(1.0));
 		var queriesAfterWiden = provider.HistoryQueryCount;
 

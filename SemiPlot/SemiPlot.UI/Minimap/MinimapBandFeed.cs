@@ -143,7 +143,8 @@ public sealed class MinimapBandFeed : ReactiveObject, IDisposable
 			return null;
 		}
 
-		_layer = ChartNavigationController.LayerForWidth(bounds.Last - bounds.First, _layer, MinimapColumns);
+		_layer = ChartNavigationController.LayerForWidth(
+			bounds.Last - bounds.First, _layer, MinimapColumns, visiblePenCount: 1);
 
 		return new BandRequest(penId, bounds.First, bounds.Last, _layer);
 	}

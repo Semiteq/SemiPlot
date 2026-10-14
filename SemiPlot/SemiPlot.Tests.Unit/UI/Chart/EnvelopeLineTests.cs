@@ -37,7 +37,7 @@ public sealed class EnvelopeLineTests
 	private const double MissDistance = 10.0;
 	private const double PinnedFloorPixels = 2.0;
 	private const float ThickLineWidth = 5f;
-	private const int RawBandColumns = HistoryPrefetch.MarginColumnFactor * HistoryColumnTarget.MaxColumns;
+	private const int RawBandColumns = 3 * HistoryColumnTarget.MaxColumns;
 
 	// Yields between rewrites so the render task reaches its frame budget inside the run budget.
 	private static readonly TimeSpan _mutationPause = TimeSpan.FromMilliseconds(1);

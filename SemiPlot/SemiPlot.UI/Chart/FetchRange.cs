@@ -8,4 +8,10 @@ public readonly record struct FetchRange(
 	DateTime ToUtc,
 	AggregationLayer Layer,
 	int ColumnTarget,
-	TimeSpan WindowWidth);
+	TimeSpan WindowWidth,
+	int LeftMarginWindows,
+	int RightMarginWindows)
+{
+	/// <summary>Columns the range asks for per visible column.</summary>
+	public int ColumnFactor => 1 + LeftMarginWindows + RightMarginWindows;
+}

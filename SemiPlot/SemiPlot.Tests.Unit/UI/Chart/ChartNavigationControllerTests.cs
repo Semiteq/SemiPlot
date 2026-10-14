@@ -201,11 +201,11 @@ public sealed class ChartNavigationControllerTests
 	public void LayerBoundaryCeilingsAreInclusive(int columnCount)
 	{
 		ChartNavigationController.LayerForWidth(
-				Ceiling(AggregationLayer.Minute, columnCount), AggregationLayer.Raw, columnCount)
+				Ceiling(AggregationLayer.Minute, columnCount), AggregationLayer.Raw, columnCount, 1)
 			.Should().Be(AggregationLayer.Minute);
 
 		ChartNavigationController.LayerForWidth(
-				Ceiling(AggregationLayer.Raw, columnCount), AggregationLayer.Minute, columnCount)
+				Ceiling(AggregationLayer.Raw, columnCount), AggregationLayer.Minute, columnCount, 1)
 			.Should().Be(AggregationLayer.Raw);
 	}
 
@@ -334,8 +334,8 @@ public sealed class ChartNavigationControllerTests
 	{
 		var ceiling = Ceiling(layer, TestColumnCount);
 
-		ChartNavigationController.LayerForWidth(ceiling * 1.05, layer, TestColumnCount).Should().Be(layer);
-		ChartNavigationController.LayerForWidth(ceiling * 1.15, layer, TestColumnCount)
+		ChartNavigationController.LayerForWidth(ceiling * 1.05, layer, TestColumnCount, 1).Should().Be(layer);
+		ChartNavigationController.LayerForWidth(ceiling * 1.15, layer, TestColumnCount, 1)
 			.Should().Be(nextCoarser);
 	}
 
@@ -347,9 +347,9 @@ public sealed class ChartNavigationControllerTests
 	{
 		var minuteCeiling = Ceiling(AggregationLayer.Minute, columnCount);
 
-		ChartNavigationController.LayerForWidth(minuteCeiling, AggregationLayer.Hour, columnCount)
+		ChartNavigationController.LayerForWidth(minuteCeiling, AggregationLayer.Hour, columnCount, 1)
 			.Should().Be(AggregationLayer.Minute);
-		ChartNavigationController.LayerForWidth(minuteCeiling * 1.05, AggregationLayer.Hour, columnCount)
+		ChartNavigationController.LayerForWidth(minuteCeiling * 1.05, AggregationLayer.Hour, columnCount, 1)
 			.Should().Be(AggregationLayer.Hour);
 	}
 
@@ -369,7 +369,7 @@ public sealed class ChartNavigationControllerTests
 		AggregationLayer expectedLayer)
 	{
 		ChartNavigationController
-			.LayerForWidth(TimeSpan.FromHours(windowHours), AggregationLayer.Raw, columnCount)
+			.LayerForWidth(TimeSpan.FromHours(windowHours), AggregationLayer.Raw, columnCount, 1)
 			.Should().Be(expectedLayer);
 	}
 
@@ -449,6 +449,115 @@ public sealed class ChartNavigationControllerTests
 		controller.WidenToArchiveExtent(ArchiveExtent.Empty);
 
 		controller.FirstSample.Should().Be(_first);
+	}
+
+	// Each ceiling is probed from the other side of the ladder, so no hysteresis band widens it.
+	[Theory]
+	[InlineData(256, 0)]
+	[InlineData(256, 1)]
+	[InlineData(256, ChartNavigationController.ReferencePenCount)]
+	[InlineData(2048, 0)]
+	[InlineData(2048, 1)]
+	[InlineData(2048, ChartNavigationController.ReferencePenCount)]
+	public void AtTheReferencePenCountOrFewer_TheCeilingsAreUnshrunk(int columnCount, int visiblePenCount)
+	{
+		AssertCeilings(
+			columnCount,
+			visiblePenCount,
+			Ceiling(AggregationLayer.Raw, columnCount),
+			Ceiling(AggregationLayer.Minute, columnCount));
+	}
+
+	[Theory]
+	[InlineData(256)]
+	[InlineData(2048)]
+	public void AtTwiceTheReferencePenCount_EachCeilingIsHalved(int columnCount)
+	{
+		AssertCeilings(
+			columnCount,
+			2 * ChartNavigationController.ReferencePenCount,
+			Ceiling(AggregationLayer.Raw, columnCount) / 2.0,
+			Ceiling(AggregationLayer.Minute, columnCount) / 2.0);
+	}
+
+	[Theory]
+	[InlineData(AggregationLayer.Raw, AggregationLayer.Minute)]
+	[InlineData(AggregationLayer.Minute, AggregationLayer.Hour)]
+	public void AtTwiceTheReferencePenCount_HysteresisWidensOnlyTheLayerInForce(
+		AggregationLayer layer,
+		AggregationLayer nextCoarser)
+	{
+		const int VisiblePenCount = 2 * ChartNavigationController.ReferencePenCount;
+		var halvedCeiling = Ceiling(layer, TestColumnCount) / 2.0;
+
+		ChartNavigationController.LayerForWidth(halvedCeiling * 1.05, layer, TestColumnCount, VisiblePenCount)
+			.Should().Be(layer);
+		ChartNavigationController.LayerForWidth(halvedCeiling * 1.15, layer, TestColumnCount, VisiblePenCount)
+			.Should().Be(nextCoarser);
+		ChartNavigationController.LayerForWidth(halvedCeiling * 1.05, nextCoarser, TestColumnCount, VisiblePenCount)
+			.Should().Be(nextCoarser);
+	}
+
+	[Fact]
+	public void SetVisiblePenCount_RaisesAWindowChangeOnlyWhenTheLayerMoves()
+	{
+		var controller = Loaded();
+		controller.SetTargetColumnCount(TestColumnCount);
+		var pastTheHalvedRawCeiling = Ceiling(AggregationLayer.Raw, TestColumnCount) * 0.75;
+		controller.ZoomAt(pastTheHalvedRawCeiling / (controller.To - controller.From), controller.To);
+		controller.ActiveLayer.Should().Be(AggregationLayer.Raw);
+		var raised = new List<NavigationWindow>();
+		controller.WindowChanged += (_, window) => raised.Add(window);
+
+		controller.SetVisiblePenCount(ChartNavigationController.ReferencePenCount);
+		raised.Should().BeEmpty();
+
+		controller.SetVisiblePenCount(2 * ChartNavigationController.ReferencePenCount);
+
+		controller.ActiveLayer.Should().Be(AggregationLayer.Minute);
+		raised.Should().ContainSingle().Which.Should().Match<NavigationWindow>(window =>
+			window.Layer == AggregationLayer.Minute && window.RequiresHistoryRequery);
+	}
+
+	// The width sits under the unshrunk Raw ceiling, which carries no hysteresis while Minute is in force.
+	[Fact]
+	public void SetVisiblePenCount_DroppingBackToOnePen_ReturnsToTheFinerLayer()
+	{
+		var controller = Loaded();
+		controller.SetTargetColumnCount(TestColumnCount);
+		var rawCeiling = Ceiling(AggregationLayer.Raw, TestColumnCount);
+		controller.ZoomAt(rawCeiling * 0.75 / (controller.To - controller.From), controller.To);
+		controller.SetVisiblePenCount(2 * ChartNavigationController.ReferencePenCount);
+		controller.ActiveLayer.Should().Be(AggregationLayer.Minute);
+		(controller.To - controller.From).Should().BeLessThan(rawCeiling);
+		var raised = new List<NavigationWindow>();
+		controller.WindowChanged += (_, window) => raised.Add(window);
+
+		controller.SetVisiblePenCount(1);
+
+		controller.ActiveLayer.Should().Be(AggregationLayer.Raw);
+		raised.Should().ContainSingle().Which.Should().Match<NavigationWindow>(window =>
+			window.Layer == AggregationLayer.Raw && window.RequiresHistoryRequery);
+	}
+
+	private static void AssertCeilings(
+		int columnCount,
+		int visiblePenCount,
+		TimeSpan rawCeiling,
+		TimeSpan minuteCeiling)
+	{
+		var justPast = TimeSpan.FromTicks(1);
+
+		ChartNavigationController.LayerForWidth(rawCeiling, AggregationLayer.Minute, columnCount, visiblePenCount)
+			.Should().Be(AggregationLayer.Raw);
+		ChartNavigationController
+			.LayerForWidth(rawCeiling + justPast, AggregationLayer.Minute, columnCount, visiblePenCount)
+			.Should().Be(AggregationLayer.Minute);
+		ChartNavigationController.LayerForWidth(minuteCeiling, AggregationLayer.Raw, columnCount, visiblePenCount)
+			.Should().Be(AggregationLayer.Minute);
+		ChartNavigationController
+			.LayerForWidth(minuteCeiling + justPast, AggregationLayer.Raw, columnCount, visiblePenCount)
+			.Should().Be(AggregationLayer.Hour);
 	}
 
 	// ceiling(layer) = nextCoarser(layer).ToPointSpacing() * columns. The spacings are spelled out rather

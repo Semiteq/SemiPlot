@@ -333,6 +333,30 @@ public sealed class MinimapBandFeedTests
 		stand.Provider.BandHistoryQueries.Should().ContainSingle().Which.Layer.Should().Be(AggregationLayer.Hour);
 	}
 
+	// Each extent sits inside its layer's one-pen ceiling and past half of it, where the chart's pen count
+	// would move the band to the next coarser layer.
+	[AvaloniaTheory]
+	[InlineData(50.0, AggregationLayer.Raw)]
+	[InlineData(50.0 * 60.0, AggregationLayer.Minute)]
+	[InlineData(7.0 * 24.0 * 60.0, AggregationLayer.Hour)]
+	public async Task WithTwiceTheReferencePenCountShown_TheBandKeepsTheOnePenLadder(
+		double extentMinutes,
+		AggregationLayer expectedLayer)
+	{
+		using var stand = new MinimapStand();
+		stand.Provider.Pens =
+		[
+			.. Enumerable.Range(1, 2 * ChartNavigationController.ReferencePenCount)
+				.Select(penId => new Pen(penId, $"Pen {penId}", ["Group A"], "#ff0000"))
+		];
+		stand.Provider.ArchiveFirstUtc = _extentLast - TimeSpan.FromMinutes(extentMinutes);
+		stand.ShowPens();
+		await stand.LoadExtentAsync();
+		stand.LandBandRead();
+
+		stand.Provider.BandHistoryQueries.Should().ContainSingle().Which.Layer.Should().Be(expectedLayer);
+	}
+
 	[Fact]
 	public void TheBandColumnCount_IsBelowTheChartsFloor()
 	{

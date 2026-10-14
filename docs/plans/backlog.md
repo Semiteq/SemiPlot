@@ -7,8 +7,9 @@ each is a scoped future task.
 ## Functional / integration
 
 - **Real data provider (accuracy).** The viewer reads the PostgreSQL archive through
-  `PostgresDataProvider` — one read-only connection serving the catalogue, the extent, the history
-  window and the live-edge poll, specified in `docs/architecture/data-integration.md`. What is still
+  `PostgresDataProvider` — one read-only Npgsql data source (a connection pool) serving the catalogue,
+  the extent, the history window and the live-edge poll; a history read holds up to four pooled
+  connections at once, specified in `docs/architecture/data-integration.md`. What is still
   missing is a real archive: the decimation and extent paths have been exercised against the seeded
   bench and against a customer dump, not against production volumes on a running tool.
 
@@ -43,23 +44,28 @@ each is a scoped future task.
 
 - **The strip a drag exposes still lags behind the gesture.** Measured on the stand on 2026-09-07 after
   the culled `EnvelopeLine` polyline: the frame is cheap, but a pan past the prefetched band waits on the
-  history read (about 0.5 s near the Raw ceiling) plus the 150 ms trailing throttle before the strip
-  fills. The planned fix is the layer ladder as a cache: keep `Minute` and coarser for the whole extent
-  in memory (one read per layer at startup), draw the exposed strip from the coarse buffer at once and
-  swap the Raw columns in when they land, and widen the Raw margin to several windows now that the
-  frame no longer pays for buffer width. The Raw read itself stays as it is; nothing on the server
-  makes it faster than reading its rows.
+  history read plus the 150 ms trailing throttle before the strip fills. A pan past the band reads the
+  visible window first, and a read the drag issues mid-gesture keeps the columns in hand past its sides
+  when it lands, so the strip the drag moved onto stays drawn while the range in hand covered it; the
+  wait is that read. Read time is linear in width, and the visible-window read at the Raw ceiling takes
+  124 ms with 8 visible pens and 413 ms with 50, measured 2026-10-13 on the bench
+  (`data-integration.md#read-cost`). A drag that outruns the columns in hand before its read lands still
+  shows an empty strip. A cache of the coarse layers
+  is not the fix. The `date_bin` grid is anchored at each request's own `@from`, so a cached layer
+  serves only a request on an identical grid, and coarse rows arrive up to 47 minutes after their period
+  closes (`scada-archive.md#layers`), so a cached tail goes stale. Still open: a Raw margin several
+  windows wide, now that the frame no longer pays for buffer width. The server cannot read a Raw window
+  faster than its rows; pen groups only spread them over four connections.
 
-- **The Minute read the chart issues takes about 1.5 s, and the Hour read spills its sort.** Measured
-  2026-10-12 end to end on the bench (`data-integration.md#read-cost`): at 2048 columns the Minute
-  ceiling takes 1 446 ms and the Minute hysteresis edge 1 617 ms, against 1 982 ms and 2 193 ms for the
-  row-level coarse read the bucketed statement replaced. The prefetch asks for three visible widths at
-  three times the column count, so the Minute ceiling's window aggregate sorts 1 474 560 coarse rows and
-  its group sort spills 9.8 MB to disk. At the Hour window cap the server sorts the window's 420 480 rows
-  on disk (15.6 MB) ahead of the window aggregate, 657 ms against the row-level read's 562 ms (1.17x, and
-  over 1.2x in two of four rounds); the minimap's Hour read is 150 ms against 125 ms (1.20x). Candidates:
-  a narrower Minute prefetch, a pre-aggregated column per bucket, or a sort the planner can feed from the
-  `(id, l, t)` index.
+- **~~The Minute read the chart issues takes about 1.5 s, and the Hour read spills its sort.~~
+  Resolved.** The chart reads only the visible pens and the visible window first, the provider reads
+  them in four concurrent pen groups, and the Raw and Minute ceilings shrink past 16 visible pens
+  (`data-integration.md#what-one-history-query-covers`, `data-integration.md#operation-to-statement`,
+  `data-integration.md#layer-ladder`).
+  Measured 2026-10-13 end to end on the bench under the `semibase site` settings
+  (`data-integration.md#read-cost`), the first read of every case at 8, 30 and 50 visible pens has a
+  median at or under 816 ms. The 1 446 ms and 1 617 ms of 2026-10-12 timed the three-width margin read
+  of 8 pens under the server defaults. Under the site's `work_mem` of 64 MB no sort spills to disk.
 
 - **GPU render backend (engine) — consider, not now.** Smoothness is acceptable after the pixel-width
   history target + the culled `EnvelopeLine` polyline + single redraw path. The remaining ceiling is CPU
@@ -68,16 +74,11 @@ each is a scoped future task.
 
 ## Maintainability
 
-- **`ChartInteractionViewModel` extraction.** `TrendChartViewModel` is ~596 lines (over the 300 soft limit).
-  Extract the cursor + delta + drag clusters into a nested interaction sub-VM (mirror the existing
-  `Navigation` sub-VM pattern). Deferred during the fix pass as risky public-surface churn with no net saving;
-  do it as a focused refactor.
-  The layer-ladder slice (`20260810-layer-ladder-spacing`) added a fourth cluster to the same file —
-  canvas-width tracking (`ReportDataAreaWidth`, `_reportedColumnTarget`) plus the startup request gate
-  (`_isInitialHistoryInFlight`, `_hasDeferredHistoryRequery`, `ReleaseInitialHistoryGate`) — and deferred
-  its extraction as out of scope for a ladder-arithmetic change. The history-lifecycle cluster is the
-  better first cut: `ChartHistoryRequestDebouncer` already owns the latest-wins half of it, so the gate,
-  the sequence counters and `RequestHistory` belong beside it rather than in the view model.
+- **`ChartInteractionViewModel` extraction.** `TrendChartViewModel` is over the 300-line soft limit; the
+  history request decision and the reported width already live in `Chart/ChartHistoryPlanner`, and the
+  latest-wins request in `ChartHistoryRequestDebouncer`. Extract the cursor + delta + drag clusters into a
+  nested interaction sub-VM (mirror the existing `Navigation` sub-VM pattern). Deferred during the fix pass
+  as risky public-surface churn with no net saving; do it as a focused refactor.
 
 - **~~Latent: coordinator history sequence frozen at 1.~~ Resolved (20260618-post-review-fixes, Task 4).**
   The standalone coordinator history path (`RequestHistory`/`SetLayer`/`HistoryResults`) was removed.

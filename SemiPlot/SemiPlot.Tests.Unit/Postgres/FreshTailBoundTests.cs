@@ -2,7 +2,6 @@ using AwesomeAssertions;
 
 using SemiPlot.Core.Trends;
 using SemiPlot.DataSource.Postgres;
-using SemiPlot.Tools.ArchiveSeeder;
 
 using Xunit;
 
@@ -27,18 +26,6 @@ public sealed class FreshTailBoundTests
 
 	private const int HourSpacingSeconds = 15 * 60;
 
-	private const int DaySpacingSeconds = 6 * 60 * 60;
-
-	// Raw is what a tail is read from, so a raw window has nothing coarser to be short of and issues the
-	// one read it always did.
-	[Fact]
-	public void NoTailIsReadAtTheRawLayer()
-	{
-		var seams = FreshTail.Seams([], _penIds, _windowStart);
-
-		FreshTail.Start(AggregationLayer.Raw, seams, _windowEnd).Should().BeNull();
-	}
-
 	[Fact]
 	public void NoTailIsReadWhenNoPenWasRequested()
 	{
@@ -52,7 +39,6 @@ public sealed class FreshTailBoundTests
 	[Theory]
 	[InlineData(AggregationLayer.Minute, MinuteSpacingSeconds)]
 	[InlineData(AggregationLayer.Hour, HourSpacingSeconds)]
-	[InlineData(AggregationLayer.Day, DaySpacingSeconds)]
 	public void TheSkipThresholdIsTheLayersPointSpacing(AggregationLayer layer, int spacingSeconds)
 	{
 		var spacing = TimeSpan.FromSeconds(spacingSeconds);
@@ -63,11 +49,10 @@ public sealed class FreshTailBoundTests
 
 	// Guards a volume failure an EXPLAIN check cannot see: a pen with no coarse row seams at the window
 	// start and sits behind the clamp, so without this bound the read falls back to a full layer period
-	// of raw rows per pen (24 h at Day).
+	// of raw rows per pen.
 	[Theory]
 	[InlineData(AggregationLayer.Minute, MinuteSpacingSeconds)]
 	[InlineData(AggregationLayer.Hour, HourSpacingSeconds)]
-	[InlineData(AggregationLayer.Day, DaySpacingSeconds)]
 	public void APenWithNoCoarseRowDoesNotCostAFreshPenATailRead(AggregationLayer layer, int spacingSeconds)
 	{
 		var windowStart = _windowEnd - (TimeSpan.FromSeconds(spacingSeconds) * 8);
@@ -83,7 +68,6 @@ public sealed class FreshTailBoundTests
 	[Theory]
 	[InlineData(AggregationLayer.Minute, MinuteSpacingSeconds)]
 	[InlineData(AggregationLayer.Hour, HourSpacingSeconds)]
-	[InlineData(AggregationLayer.Day, DaySpacingSeconds)]
 	public void ATailForALaggingPenStartsAtItsOwnSeamAndNotAtTheClamp(
 		AggregationLayer layer,
 		int spacingSeconds)
@@ -116,7 +100,6 @@ public sealed class FreshTailBoundTests
 	[Theory]
 	[InlineData(AggregationLayer.Minute, MinuteSpacingSeconds)]
 	[InlineData(AggregationLayer.Hour, HourSpacingSeconds)]
-	[InlineData(AggregationLayer.Day, DaySpacingSeconds)]
 	public void TheClampCapsTheTailAtOnePeriod(AggregationLayer layer, int spacingSeconds)
 	{
 		var onePeriod = TimeSpan.FromSeconds(spacingSeconds) * 4;
@@ -134,7 +117,6 @@ public sealed class FreshTailBoundTests
 	[Theory]
 	[InlineData(AggregationLayer.Minute, MinuteSpacingSeconds)]
 	[InlineData(AggregationLayer.Hour, HourSpacingSeconds)]
-	[InlineData(AggregationLayer.Day, DaySpacingSeconds)]
 	public void NoTailIsReadWhenEveryPenSitsBehindTheClamp(AggregationLayer layer, int spacingSeconds)
 	{
 		var seams = SeamsAt(_windowEnd - (TimeSpan.FromSeconds(spacingSeconds) * 4) - TimeSpan.FromTicks(1));
@@ -155,8 +137,8 @@ public sealed class FreshTailBoundTests
 	}
 
 	// The failure the exclusion exists for: coarse rows, then a range no row covers, then tail rows. That
-	// range carries no null, so HistoryRowFold opens no gap and MinMaxDecimator writes no NaN column. It
-	// draws as one straight interpolated segment across the hole.
+	// range carries no break flag, so BucketedRowFold writes no gap column. It draws as one straight
+	// interpolated segment across the hole.
 	[Fact]
 	public void APenWhoseSeamPrecedesTheTailStartContributesNoTailRow()
 	{
@@ -181,7 +163,7 @@ public sealed class FreshTailBoundTests
 	}
 
 	// One consecutive run per pen on ascending identifiers, coarse rows then tail rows: the ordering
-	// HistoryRowFold.Fold requires, and the one a per-pen concatenation would lose.
+	// BucketedRowFold.Fold requires, and the one a per-pen concatenation would lose.
 	[Fact]
 	public void TheMergeKeepsOneAscendingRunPerPen()
 	{
@@ -225,8 +207,8 @@ public sealed class FreshTailBoundTests
 			_windowStart);
 	}
 
-	private static HistoryRowFold.Row Row(int penId, DateTime archiveLocal)
+	private static BucketedRowFold.Row Row(int penId, DateTime archiveLocal)
 	{
-		return new HistoryRowFold.Row(penId, archiveLocal, penId, ArchiveRow.OrdinaryQuality);
+		return new BucketedRowFold.Row(penId, archiveLocal, penId, penId, penId, EndsBreak: false);
 	}
 }

@@ -56,8 +56,8 @@ public static class CoarseFlush
 			.Select(pen => pen.PenId)
 			.ToArray();
 
-		// Minute, then hour, then day: each layer reads the one below it, so the finer layer of a closing
-		// period has to be complete before the coarser layer is thinned from it.
+		// Minute, then hour: the hour layer reads the minute layer, so the minute layer of a closing period
+		// has to be complete before the hour layer is thinned from it.
 		foreach (var layer in LayerThinner.CoarseLayers)
 		{
 			inserted += await OpenPeriodAsync(connection, layer, penIds, nowLocal, cancellationToken);

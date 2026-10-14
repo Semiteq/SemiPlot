@@ -18,10 +18,11 @@ implementation plans see `docs/plans/`.
 - [ui-theme.md](./ui-theme.md) - the colours the operator sees: the retinted `Semi.Avalonia` tokens,
   the application's own surface keys, how the `theme` key picks a variant, the five ScottPlot
   surfaces, and the rule that a colour literal in AXAML is a defect.
-- [data-integration.md](./data-integration.md) — the contract between SemiPlot and the archive
+- [data-integration.md](./data-integration.md) - the contract between SemiPlot and the archive
   database: responsibility zones, the `IDataProvider` surface, the statement each operation issues
-  and what it must keep, layer selection, the time boundary, gap mapping, error semantics, the
-  startup path and field triage.
+  and what it must keep, layer selection and the measured read cost per layer, the time boundary, gap
+  mapping, error semantics, the connection settings with the session's `jit = off`, the startup path
+  and field triage.
 - [scada-archive.md](./scada-archive.md) — the Simple-Scada 2 archive as it exists: tables and
   columns, archive layers, quality marks and gaps, write and retention behaviour, reader hazards,
   and what remains unverified.
@@ -74,7 +75,7 @@ SemiBase creates `public.trends`, as `bench.md` and `postgres-instance.md` state
 | Desktop shell   | Avalonia 12.0.5 (Win32 + Skia + HarfBuzz + `Semi.Avalonia`), ReactiveUI MVVM |
 | Chart renderer  | ScottPlot 5 (`ScottPlot.Avalonia` 5.1.59, MIT, SkiaSharp) — native control  |
 | Data source     | One read-only PostgreSQL connection to the Simple-Scada archive (`trends` / `messages`) — history, extent and realtime alike. No application server, no OPC UA client, no local TCP protocol |
-| Wide windows    | The SCADA's own archive layers (`l = 1/2/3`); no summary tables, aggregator service, scheduler or extensions of ours — see `history-read-path-evaluation.md` |
+| Wide windows    | The SCADA's own archive layers (`l = 1/2`); no summary tables, aggregator service, scheduler or extensions of ours (`history-read-path-evaluation.md`) |
 | Retention       | One depth for all archived data; coarse layers cannot outlive raw data       |
 | Tag names       | Our own `semiplot_tags` table, one row per key SCADA writes, registered by `semiplot_register_new_pens()` — the archive stores numbers only |
 | Budget          | $0 — free / OSS components only                                             |

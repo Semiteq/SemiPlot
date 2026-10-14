@@ -282,7 +282,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	// The emitted string is asserted alongside the parsed value: the builder answers its own default for
 	// a key the string never carried, so the parsed value alone proves neither absence nor presence.
 	[Fact]
-	public void TheConnectionStringSendsNoStatementTimeoutAndCarriesTheClientBackstop()
+	public void TheConnectionStringTurnsJitOffAndSendsNoStatementTimeout()
 	{
 		WriteFile(Compose(_validFields));
 
@@ -293,9 +293,9 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 		var connectionString = result.Value.ConnectionString;
 		var parsed = new NpgsqlConnectionStringBuilder(connectionString);
 
-		connectionString.Should().NotContainEquivalentOf("Options");
+		connectionString.Should().Contain("jit=off");
 		connectionString.Should().NotContainEquivalentOf("statement_timeout");
-		string.IsNullOrEmpty(parsed.Options).Should().BeTrue();
+		parsed.Options.Should().Be("-c jit=off");
 		connectionString.Should().Contain("Command Timeout=300");
 		parsed.CommandTimeout.Should().Be(PostgresConnectionSettings.CommandTimeoutSeconds);
 	}

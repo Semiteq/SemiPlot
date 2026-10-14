@@ -36,7 +36,7 @@ every thirty seconds by a Windows service.
 **C. Lazy summaries.** The same tables as A, but filled on demand: the first request for a period
 computes and stores it, later requests read it. No scheduler at all.
 
-**D. Read the vendor's own layers.** Raw for narrow windows, `l = 1/2/3` for wide ones, with
+**D. Read the vendor's own layers.** Raw for narrow windows, `l = 1/2` for wide ones, with
 PostgreSQL reducing to pixel columns by `GROUP BY` when the chosen layer is still denser than the
 canvas. **Chosen.**
 
@@ -44,9 +44,9 @@ canvas. **Chosen.**
 
 ## What decided it
 
-**The layers already do the work.** The vendor writes up to four points per minute, per hour and per
-day, and selects them by magnitude so the period's extremes are among them `[FORUM:1032]`,
-`[FORUM:1974]`. That is the same selection our own decimator would compute. Building A or C would
+**The layers already do the work.** The vendor writes two points per minute and per hour, the
+period's minimum and maximum (`scada-archive.md#layers`, `[FORUM:1974]`). That is the same selection
+a min/max fold would compute. Building A or C would
 have produced a second copy of data the SCADA already maintains.
 
 **Common retention removed the only argument for owning the summaries.** The original motivation for

@@ -373,9 +373,14 @@ No abbreviations in names.
   `RegisterNewPensAsync` has one caller, `PenEditorViewModel`:
   `git grep -l "RegisterNewPensAsync" -- SemiPlot/SemiPlot.UI` prints only
   `SemiPlot/SemiPlot.UI/PenEditor/PenEditorViewModel.cs`.
-- `MinMaxDecimator` lives in `SemiPlot.Core/Trends` beside `PenHistoryEnvelope` and is shared by the
-  coarse-layer read path of every provider; each provider translates its own rows into the
-  decimator's input vocabulary, which `docs/architecture/charting.md` states.
+- Every history read of `SemiPlot.DataSource.Postgres` goes through `BucketedHistoryWindow`: the
+  server reduces each layer to one row per column per pen (minimum, maximum, the newest non-null
+  sample, a break flag), `BucketedRowFold` maps the rows onto `PenHistoryEnvelope`, and no decimator
+  runs on the client (`docs/architecture/data-integration.md#operation-to-statement`).
+- Every session the provider opens carries `-c jit=off` through
+  `PostgresConnectionSettings.ConnectionString`, and a new `NpgsqlDataSource` must be built from that
+  string. A coarse read timed by hand in psql runs under the server's `jit = on` and can take over a
+  second longer than the viewer's (`docs/architecture/data-integration.md#configuration`).
 - The bench seeder `SemiPlot.Tools.ArchiveSeeder` owns `SyntheticValueWalk`, `SyntheticPenCatalog`
   and `SyntheticPen`. `RawLayerGeneratorTests` pins the generator by determinism and invariants —
   the absolute lattice, the break holes, the row-pair shape — not by a digest. **One lattice serves

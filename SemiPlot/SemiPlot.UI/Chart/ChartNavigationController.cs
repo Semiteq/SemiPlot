@@ -193,42 +193,27 @@ public sealed class ChartNavigationController
 
 	// The layer in force is an argument because the hysteresis band widens the ceiling of that layer only, so
 	// the same width answers differently depending on where the ladder was entered from.
+	// docs/architecture/data-integration.md#layer-ladder
 	public static AggregationLayer LayerForWidth(
 		TimeSpan width,
 		AggregationLayer currentLayer,
 		int targetColumnCount)
 	{
 		var rawCeiling = BoundaryWithHysteresis(
-			LayerCeiling(AggregationLayer.Raw, targetColumnCount), currentLayer == AggregationLayer.Raw);
+			AggregationLayer.Minute.ToPointSpacing() * targetColumnCount, currentLayer == AggregationLayer.Raw);
 		if (width <= rawCeiling)
 		{
 			return AggregationLayer.Raw;
 		}
 
 		var minuteCeiling = BoundaryWithHysteresis(
-			LayerCeiling(AggregationLayer.Minute, targetColumnCount), currentLayer == AggregationLayer.Minute);
+			AggregationLayer.Hour.ToPointSpacing() * targetColumnCount, currentLayer == AggregationLayer.Minute);
 		if (width <= minuteCeiling)
 		{
 			return AggregationLayer.Minute;
 		}
 
-		var hourCeiling = BoundaryWithHysteresis(
-			LayerCeiling(AggregationLayer.Hour, targetColumnCount), currentLayer == AggregationLayer.Hour);
-		if (width <= hourCeiling)
-		{
-			return AggregationLayer.Hour;
-		}
-
-		return AggregationLayer.Day;
-	}
-
-	// Precondition: Raw, Minute or Hour. Day tops the ladder and has no ceiling, so `layer + 1` would leave
-	// the enum.
-	private static TimeSpan LayerCeiling(AggregationLayer layer, int targetColumnCount)
-	{
-		var nextCoarser = layer + 1;
-
-		return nextCoarser.ToPointSpacing() * targetColumnCount;
+		return AggregationLayer.Hour;
 	}
 
 	private int QuantizeColumnCount(int columns)

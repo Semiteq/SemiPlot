@@ -61,25 +61,24 @@ without a restart (`overview.md#the-live-catalogue`).
 
 ## What the archive holds
 
-The vendor writes every sample once at `l = 0`, then copies a thinned selection into three coarser
-layers. Nothing derives them at read time — they already exist.
+The vendor writes every sample once at `l = 0`, then copies a thinned selection into two coarser
+layers. Nothing derives them at read time; they already exist. An archive from a build before 2.7.5.0
+also holds a day layer, `l = 3`, which SemiPlot does not read (`scada-archive.md#layers`).
 
 ```mermaid
 flowchart LR
-    subgraph t["trends — one table, four layers in the l column"]
+    subgraph t["trends: one table, three layers in the l column"]
         direction TB
-        l0["l = 0 — raw<br/>every sample as written"]
-        l1["l = 1 — minute<br/>first, last, min, max per period"]
-        l2["l = 2 — hour"]
-        l3["l = 3 — day"]
+        l0["l = 0: raw<br/>every sample as written"]
+        l1["l = 1: minute<br/>min, max per period"]
+        l2["l = 2: hour<br/>min, max per period"]
     end
 
     l0 -- "thinned by the vendor" --> l1
     l1 --> l2
-    l2 --> l3
 
-    note["l=3 ⊆ l=2 ⊆ l=1 ⊆ l=0<br/>up to four points per period,<br/>so point spacing is period ÷ 4"]
-    l3 -.-> note
+    note["l=2 ⊆ l=1 ⊆ l=0<br/>two points per period<br/>(real spacing 30 s / 30 min)"]
+    l2 -.-> note
 
     style note fill:none,stroke-dasharray:3 3
 ```

@@ -66,9 +66,6 @@
   <data name="StatusLayerHour" xml:space="preserve">
     <value>часовая</value>
   </data>
-  <data name="StatusLayerDay" xml:space="preserve">
-    <value>суточная</value>
-  </data>
   <data name="MenuFile" xml:space="preserve">
     <value>Файл</value>
   </data>

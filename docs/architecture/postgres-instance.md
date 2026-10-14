@@ -22,8 +22,8 @@ commissioning day and the copy that has drifted.
 
 - Vanilla PostgreSQL with the major version pinned. Production and the test bench both run 17;
   **14 is the declared floor**, which is the constraint on the SQL SemiPlot may write, and a shipped
-  statement now needs it: `BucketedRawWindow` groups by `date_bin`, added in 14
-  (`data-integration.md`, History, Raw). The bench's own SQL bottoms out at 13
+  statement needs it: `BucketedHistoryWindow` groups by `date_bin`, added in 14
+  (`data-integration.md`, History). The bench's own SQL bottoms out at 13
   (`DROP DATABASE ... WITH (FORCE)`); the client's floor is 14.
 - Reachable on the loopback interface plus the operator network only.
 - Provisioned by SemiBase v0.5.0 or newer. Both catalogue reads name `scale_min_on_start`,
@@ -54,7 +54,8 @@ carries is the value every SemiPlot session runs under; the client reads the eff
 only after a read has failed, from a fresh session of the same role, to report which bound that read
 hit. The number is stable while the role default is: role and database defaults bind at backend
 start and a pooled physical connection keeps its startup value, so an administrative change to the
-default mid-run can leave one report one increment stale.
+default mid-run can leave one report one increment stale. `-c jit=off` is the one startup option
+SemiPlot sends, and it overrides no role default (`data-integration.md#configuration`).
 
 The credential is what makes the plaintext password in SemiPlot's configuration file an acceptable
 risk: it grants reading process history and editing the pen catalogue, and no write to the archive.
@@ -139,9 +140,8 @@ Sizing follows from the write rate rather than from the number of variables. A r
 multipliers apply:
 
 - change-based archiving writes two rows per change `[MEAS:dump-20260805]`;
-- the coarse layers add at most about 5860 rows per variable per day — 1440 minutes, 24 hours and
-  one day at four points each — and cannot be disabled. A variable that changes rarely produces
-  fewer.
+- the coarse layers add at most about 2 928 rows per variable per day, two for each of 1 440 minutes
+  and 24 hours, markers apart, and cannot be disabled. A variable that changes rarely produces fewer.
 
 `UNDECIDED`: the retention depth in days and the resulting disk size, both of which need a measured
 write rate from a working installation. The measurement is one query:

@@ -14,9 +14,9 @@ each is a scoped future task.
 
 - **A break that opens at the live edge draws as a held line.** `Sample` carries no null channel, so
   the realtime poll emits a `q = 32` row as an ordinary sample and cannot reconstruct the gap the way
-  `HistoryRowFold` does from a null value. The line holds at the last value until the next history
-  read covers that span and redraws it as a break. Closing it means giving the realtime seam a way to
-  carry an absence — a nullable sample, or a separate break signal — which is a change to
+  `BucketedRowFold` does from a bucket's breaks flag. The line holds at the last value until the next
+  history read covers that span and redraws it as a break. Closing it means giving the realtime seam a
+  way to carry an absence — a nullable sample, or a separate break signal — which is a change to
   `IDataProvider` and to every consumer of `RealtimeBatch`, so it is its own task.
 
 - **Two settings saves can lose one of them.** `SettingsSave.Save` reads a section at stage time and
@@ -27,6 +27,14 @@ each is a scoped future task.
   bound and reported as `Unwritable` past it; the operating system drops the lock with the handle, so a
   killed process leaves none behind. Deferred from the external review of `live-theme` (2026-10-01):
   the race needs two operators saving the same file within one save's span.
+
+- **The fresh-tail clamp is narrower than the vendor's coarse-row lag.** `FreshTail.Start` clamps the
+  tail at one period back from the tail edge (`FreshTail.cs`, `spacing * 4`). The vendor writes a
+  period's coarse rows with the variable's next batch, up to 47 minutes after an hour closes for a slow
+  variable (`scada-archive.md#layers`). Until those rows arrive the pen's seam lies more than one period
+  back, the pen reads no tail, and the right edge of an Hour chart can stop up to about two hours short
+  of the raw newest (`data-integration.md#layer-ladder`, Fresh tail). The fix widens the clamp to two
+  periods plus the lag measured on a plant archive and re-checks the tail's row count at that width.
 
 - **Minimap — further work.** The strip draws the drawn pen's min/max band under the window marker. Still
   wanted: clearer window handles, and possibly a per-pen presence row. Treat as its own task.
@@ -41,6 +49,17 @@ each is a scoped future task.
   swap the Raw columns in when they land, and widen the Raw margin to several windows now that the
   frame no longer pays for buffer width. The Raw read itself stays as it is; nothing on the server
   makes it faster than reading its rows.
+
+- **The Minute read the chart issues takes about 1.5 s, and the Hour read spills its sort.** Measured
+  2026-10-12 end to end on the bench (`data-integration.md#read-cost`): at 2048 columns the Minute
+  ceiling takes 1 446 ms and the Minute hysteresis edge 1 617 ms, against 1 982 ms and 2 193 ms for the
+  row-level coarse read the bucketed statement replaced. The prefetch asks for three visible widths at
+  three times the column count, so the Minute ceiling's window aggregate sorts 1 474 560 coarse rows and
+  its group sort spills 9.8 MB to disk. At the Hour window cap the server sorts the window's 420 480 rows
+  on disk (15.6 MB) ahead of the window aggregate, 657 ms against the row-level read's 562 ms (1.17x, and
+  over 1.2x in two of four rounds); the minimap's Hour read is 150 ms against 125 ms (1.20x). Candidates:
+  a narrower Minute prefetch, a pre-aggregated column per bucket, or a sort the planner can feed from the
+  `(id, l, t)` index.
 
 - **GPU render backend (engine) — consider, not now.** Smoothness is acceptable after the pixel-width
   history target + the culled `EnvelopeLine` polyline + single redraw path. The remaining ceiling is CPU

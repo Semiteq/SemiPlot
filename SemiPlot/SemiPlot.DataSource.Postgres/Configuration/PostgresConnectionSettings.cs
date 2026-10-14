@@ -40,7 +40,9 @@ public sealed record PostgresConnectionSettings(
 				Password = Password,
 				SearchPath = Schema,
 				CommandTimeout = CommandTimeoutSeconds,
-				Timeout = ConnectTimeoutSeconds
+				Timeout = ConnectTimeoutSeconds,
+				// docs/architecture/data-integration.md#configuration
+				Options = "-c jit=off"
 			};
 
 			return builder.ConnectionString;

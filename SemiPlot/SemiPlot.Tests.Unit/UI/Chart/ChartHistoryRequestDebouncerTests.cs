@@ -72,35 +72,35 @@ public sealed class ChartHistoryRequestDebouncerTests
 			{
 				queriedLayers.Add(request.Layer);
 
-				return request.Layer == AggregationLayer.Minute
+				return request.Layer == AggregationLayer.Raw
 					? firstQueryGate.Task
 					: Task.FromResult(Ok(request));
 			},
 			(request, _) =>
 			{
 				appliedLayers.Add(request.Layer);
-				if (request.Layer == AggregationLayer.Day)
+				if (request.Layer == AggregationLayer.Hour)
 				{
 					lastApplied.TrySetResult();
 				}
 			});
 
-		debouncer.Request(RequestForLayer(AggregationLayer.Minute));
+		debouncer.Request(RequestForLayer(AggregationLayer.Raw));
 		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 
 		// Two more windows arrive while that read is held; only the newer of them is worth reading.
+		debouncer.Request(RequestForLayer(AggregationLayer.Minute));
+		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 		debouncer.Request(RequestForLayer(AggregationLayer.Hour));
 		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
-		debouncer.Request(RequestForLayer(AggregationLayer.Day));
-		scheduler.AdvanceBy(DebounceWindow.Ticks + 1);
 
-		queriedLayers.Should().Equal(AggregationLayer.Minute);
+		queriedLayers.Should().Equal(AggregationLayer.Raw);
 
-		firstQueryGate.SetResult(Ok(RequestForLayer(AggregationLayer.Minute)));
+		firstQueryGate.SetResult(Ok(RequestForLayer(AggregationLayer.Raw)));
 		await lastApplied.Task.WaitAsync(TestDeadline, TestContext.Current.CancellationToken);
 
-		queriedLayers.Should().Equal(AggregationLayer.Minute, AggregationLayer.Day);
-		appliedLayers.Should().Equal(AggregationLayer.Minute, AggregationLayer.Day);
+		queriedLayers.Should().Equal(AggregationLayer.Raw, AggregationLayer.Hour);
+		appliedLayers.Should().Equal(AggregationLayer.Raw, AggregationLayer.Hour);
 	}
 
 	[Fact]

@@ -26,7 +26,7 @@ One day, 8 pens, seed 1, change interval 5 s, 4 breaks, exclusive end `2026-01-0
 The end is fixed rather than floating, so two runs of the same seed produce the same archive. Its
 shape is pinned by `RawLayerGeneratorTests` — determinism, the absolute lattice, the break holes and
 the row-pair shape — and the waveform itself is not. The raw layer is about 272 000 rows and all
-four layers about 315 000, landing in one day partition. Pens are taken round-robin across the
+three layers about 315 000, landing in one day partition. Pens are taken round-robin across the
 catalogue's groups, so a slice spans more than one group and more than one value range.
 
 The size has a floor: `ExplainPlanTests` loses the poll statement's index plan to a sequential scan
@@ -113,15 +113,18 @@ layers and prints both counts; `Ctrl+C` stops the loop where it waits, never ins
 
 ## Thinning into the coarse layers
 
-Layers `1`, `2` and `3` hold verbatim copies of raw rows — first, last, minimum and maximum of the
-period, deduplicated when they coincide, plus every marker row. `LayerThinner.Thin` is the only
-implementation, and `l=3 ⊆ l=2 ⊆ l=1 ⊆ l=0` holds by construction.
+The seeder writes the minute and hour layers, `1` and `2`, and no day layer. Both hold verbatim copies
+of raw rows: first, last, minimum and maximum of the period, deduplicated when they coincide, plus
+every marker row. The SCADA keeps only the minimum and the maximum (`scada-archive.md#layers`); the
+bench keeps the first and the last as well, because the opening-row write of `CoarseFlush` relies on
+the closed flush selecting the first row. `LayerThinner.Thin` is the only implementation, and
+`l=2 ⊆ l=1 ⊆ l=0` holds by construction.
 
 A seeding run thins every layer from the raw rows it generated. The demo writer thins the minute
-layer from the raw rows and each coarser layer from the layer below it, which is exact: a period's
-minute rows already carry that period's first, last, minimum and maximum, and every marker. The
-invariant it rests on is the order of `CoarseFlush.FlushAsync` — minute, then hour, then day inside
-one call — so the finer layer of a closing period is complete before the coarser layer reads it.
+layer from the raw rows and the hour layer from the minute layer, which is exact: a period's minute
+rows already carry that period's first, last, minimum and maximum, and every marker. The invariant it
+rests on is the order of `CoarseFlush.FlushAsync`, minute, then hour inside one call, so the minute
+layer of a closing period is complete before the hour layer reads it.
 
 Ties on value resolve to the **earliest** row; the vendor keeps the **later** one
 (`[MEAS:dump-20260805]`). The difference moves only the abscissa of a point. Flipping it waits on the

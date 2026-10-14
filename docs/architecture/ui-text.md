@@ -123,9 +123,9 @@ The aggregation layer is named the same way. `AppStatusBarViewModel.LayerNameOf`
 `AggregationLayer` member onto a resx key and the bar reads `StatusLayerFormat` around it, so the
 Russian window reads "Слой: сырой" rather than the `ToString()` of the enum. A switch, not a table,
 and the name is read at each call so the window's language decides. Its `_ => throw` arm suppresses
-CS8509, so no compiler check stands behind it: a fifth `AggregationLayer` member turns
+CS8509, so no compiler check stands behind it: a fourth `AggregationLayer` member turns
 `Core/Trends/AggregationLayerTests.LayerCodes_KeepTheirOrdinalContract` red, which asserts
-`Enum.GetValues<AggregationLayer>()` against the four members it names.
+`Enum.GetValues<AggregationLayer>()` against the three members it names.
 `ArchiveFailureMapper.NameOf` for `StartupRead` is the same shape.
 
 ## The settings window's text

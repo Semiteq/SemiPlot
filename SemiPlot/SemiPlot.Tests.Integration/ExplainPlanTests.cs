@@ -114,42 +114,18 @@ public sealed class ExplainPlanTests(
 	}
 
 	[Fact]
-	public async Task TheSeededWindowPlanWalksBackToTheSeedWithinItsBound()
-	{
-		var database = analysedArchive.Database;
-
-		var plan = await ExplainAsync(
-			database.PlotConnectionString,
-			ArchiveStatements.SparseHistoryWindow,
-			command => BindWindowParametersAt(command, ArchiveTemplate.Slice.Start + _seedProbeOffset),
-			TestContext.Current.CancellationToken);
-
-		_sequentialScanOverRows.IsMatch(plan).Should().BeFalse(
-			"The seeded window statement no longer narrows on the primary key: the plan reads a "
-				+ "row-holding trends partition sequentially, so a two-minute window over two pens walks "
-				+ $"the whole day.{Environment.NewLine}{plan}");
-
-		_indexReachedRows.IsMatch(plan).Should().BeTrue(
-			"The seeded window plan reaches no row-holding trends partition through an index, neither "
-				+ "directly nor through a bitmap, so the read finds its rows by reading rows it does not "
-				+ $"want.{Environment.NewLine}{plan}");
-
-		AssertSeedWalkStaysWithinItsBound(plan, "seeded window");
-	}
-
-	[Fact]
 	public async Task TheSeededWindowPlanReadsNoOlderPartitionForAPenWithNoPriorRows()
 	{
 		var database = analysedArchive.Database;
 
 		var plan = await ExplainAsync(
 			database.PlotConnectionString,
-			ArchiveStatements.SparseHistoryWindow,
-			command => BindWindowParametersAt(command, ArchiveTemplate.Slice.Start),
+			ArchiveStatements.BucketedHistoryWindow,
+			command => BindBucketedParametersAt(command, ArchiveTemplate.Slice.Start),
 			TestContext.Current.CancellationToken);
 
 		_sequentialScanOverRows.IsMatch(plan).Should().BeFalse(
-			"The seeded window statement no longer narrows on the primary key at the archive's first "
+			"The history window statement no longer narrows on the primary key at the archive's first "
 				+ $"instant: the plan reads a row-holding trends partition sequentially.{Environment.NewLine}{plan}");
 
 		_indexReachedRows.IsMatch(plan).Should().BeTrue(
@@ -172,16 +148,16 @@ public sealed class ExplainPlanTests(
 
 		var plan = await ExplainAsync(
 			database.PlotConnectionString,
-			ArchiveStatements.BucketedRawWindow,
+			ArchiveStatements.BucketedHistoryWindow,
 			command => BindBucketedParametersAt(command, ArchiveTemplate.Slice.Start + _seedProbeOffset),
 			TestContext.Current.CancellationToken);
 
 		_sequentialScanOverRows.IsMatch(plan).Should().BeFalse(
-			"The bucketed statement no longer narrows on the primary key: the plan reads a row-holding "
+			"The history window statement no longer narrows on the primary key: the plan reads a row-holding "
 				+ $"trends partition sequentially.{Environment.NewLine}{plan}");
 
 		_indexReachedRows.IsMatch(plan).Should().BeTrue(
-			"The bucketed plan reaches no row-holding trends partition through an index, neither directly "
+			"The history window plan reaches no row-holding trends partition through an index, neither directly "
 				+ $"nor through a bitmap.{Environment.NewLine}{plan}");
 
 		_windowAggregateInput.IsMatch(plan).Should().BeTrue(
@@ -189,7 +165,7 @@ public sealed class ExplainPlanTests(
 				+ "window: its input is neither an index scan nor a bitmap over one, so counting the break "
 				+ $"markers now costs a read of rows outside the window.{Environment.NewLine}{plan}");
 
-		AssertSeedWalkStaysWithinItsBound(plan, "bucketed");
+		AssertSeedWalkStaysWithinItsBound(plan);
 	}
 
 	// The poll's own index plan.
@@ -239,20 +215,20 @@ public sealed class ExplainPlanTests(
 	}
 
 	// An unbounded seek is one probe per older day, per pen, on every window change.
-	private static void AssertSeedWalkStaysWithinItsBound(string plan, string statement)
+	private static void AssertSeedWalkStaysWithinItsBound(string plan)
 	{
 		var seedWalk = _seedBackwardWalk.Match(plan);
 
 		seedWalk.Success.Should().BeTrue(
-			$"The {statement} statement's seed branch reaches no row-holding trends partition through a backward "
-				+ "index scan, so the row before the window is no longer found by stepping to one index edge."
-				+ $"{Environment.NewLine}{plan}");
+			"The history window statement's seed branch reaches no row-holding trends partition through a "
+				+ "backward index scan, so the row before the window is no longer found by stepping to one index "
+				+ $"edge.{Environment.NewLine}{plan}");
 
 		seedWalk.Groups["condition"].Value.Should().Contain("t >=");
 
 		(_dayPartitionRead.Count(plan) <= MaximumDayPartitionsRead).Should().BeTrue(
-			$"The {statement} statement's seed seek has lost its lower bound: the plan reads more day partitions "
-				+ $"than a look-back of one partition width can reach.{Environment.NewLine}{plan}");
+			"The history window statement's seed seek has lost its lower bound: the plan reads more day "
+				+ $"partitions than a look-back of one partition width can reach.{Environment.NewLine}{plan}");
 	}
 
 	// Near the archive's end, which is where a live subscription's bound always sits: the poll reads the
@@ -263,18 +239,6 @@ public sealed class ExplainPlanTests(
 	}
 
 	// The seeder's timestamps are the archive's own wall clock already.
-	private static void BindWindowParametersAt(NpgsqlCommand command, DateTime windowStart)
-	{
-		var from = DateTime.SpecifyKind(windowStart, DateTimeKind.Unspecified);
-
-		PostgresDataProvider.BindLocalWindow(
-			command,
-			ExplainedPenIds(),
-			from,
-			from + _explainedWindow,
-			AggregationLayer.Raw);
-	}
-
 	private static void BindBucketedParametersAt(NpgsqlCommand command, DateTime windowStart)
 	{
 		var from = DateTime.SpecifyKind(windowStart, DateTimeKind.Unspecified);
@@ -284,7 +248,8 @@ public sealed class ExplainPlanTests(
 			ExplainedPenIds(),
 			from,
 			from + _explainedWindow,
-			ExplainedColumnTarget);
+			AggregationLayer.Raw,
+			PostgresDataProvider.BucketFor(from, from + _explainedWindow, ExplainedColumnTarget));
 	}
 
 	private static int[] ExplainedPenIds()

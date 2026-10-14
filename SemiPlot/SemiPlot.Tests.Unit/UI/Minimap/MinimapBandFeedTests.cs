@@ -321,6 +321,18 @@ public sealed class MinimapBandFeedTests
 			AggregationLayer.Minute, "64 h is above the 62.5 h ceiling but inside the band's hysteresis");
 	}
 
+	[AvaloniaFact]
+	public async Task AThreeYearExtent_ReadsTheHourLayer()
+	{
+		using var stand = new MinimapStand();
+		stand.Provider.ArchiveFirstUtc = _extentLast - TimeSpan.FromDays(3.0 * 365.0);
+		stand.ShowPens();
+		await stand.LoadExtentAsync();
+		stand.LandBandRead();
+
+		stand.Provider.BandHistoryQueries.Should().ContainSingle().Which.Layer.Should().Be(AggregationLayer.Hour);
+	}
+
 	[Fact]
 	public void TheBandColumnCount_IsBelowTheChartsFloor()
 	{

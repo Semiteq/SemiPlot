@@ -1,14 +1,12 @@
 namespace SemiPlot.Tools.ArchiveSeeder;
 
-// A coarse layer is not an aggregate: it holds verbatim copies of raw rows, up to four per period,
-// selected by magnitude (docs/architecture/scada-archive.md#layers).
+// docs/architecture/bench.md#thinning-into-the-coarse-layers
 public static class LayerThinner
 {
 	public const short MinuteLayer = 1;
 	public const short HourLayer = 2;
-	public const short DayLayer = 3;
 
-	public static readonly IReadOnlyList<short> CoarseLayers = [MinuteLayer, HourLayer, DayLayer];
+	public static readonly IReadOnlyList<short> CoarseLayers = [MinuteLayer, HourLayer];
 
 	// The one place calendar alignment lives. Whether the vendor thins on calendar periods or on flush
 	// windows is the first open question of docs/architecture/scada-archive.md#not-established.
@@ -18,11 +16,10 @@ public static class LayerThinner
 		{
 			MinuteLayer => TimeSpan.TicksPerMinute,
 			HourLayer => TimeSpan.TicksPerHour,
-			DayLayer => TimeSpan.TicksPerDay,
 			_ => throw new ArgumentOutOfRangeException(
 				nameof(layer),
 				layer,
-				"Coarse layers are 1 (minute), 2 (hour) and 3 (day).")
+				"Coarse layers are 1 (minute) and 2 (hour).")
 		};
 
 		return new DateTime(timestamp.Ticks - (timestamp.Ticks % period), timestamp.Kind);
@@ -62,7 +59,7 @@ public static class LayerThinner
 		Take(selected, period.MaxBy(row => row.Value)!);
 
 		// Marker rows are copied into every layer regardless of selection, so a gap boundary survives
-		// thinning (docs/architecture/scada-archive.md#quality-and-gaps). They are additional to the four.
+		// thinning (docs/architecture/scada-archive.md#quality-and-gaps).
 		foreach (var marker in period.Where(row => row.Quality != ArchiveRow.OrdinaryQuality))
 		{
 			Take(selected, marker);

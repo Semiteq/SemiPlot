@@ -12,7 +12,7 @@ using Xunit;
 
 namespace SemiPlot.Tests.Unit.UI.Chart;
 
-// The break guard: a NaN column from MinMaxDecimator must leave the rendered line broken, never bridged.
+// The break guard: the provider fold's NaN gap column must leave the rendered line broken, never bridged.
 // Pixels come from Plot.GetImage -> Image.GetArrayRGB() (SkiaSharp, no Avalonia in the loop), so DataRect
 // matches the same render; sampling is by band, never by byte, so antialiasing cannot flip the answer.
 [Trait("Component", "UI")]
@@ -29,7 +29,9 @@ public sealed class ChartGapRenderTests
 	private const int GapLastNullIndex = 349;
 	// Distance from the gap's edges to the columns that must still carry the line, in samples.
 	private const int ProbeOffsetSamples = 100;
-	private const int TargetColumnCount = 200;
+	// Half the band each column spans around its sample: a column whose Min equals its Max is a single point,
+	// and a run of them would leave the probe nothing stroked to find.
+	private const double ColumnSpread = 2.0;
 	private const double AxisMin = 0.0;
 	private const double AxisMax = 100.0;
 
@@ -46,6 +48,9 @@ public sealed class ChartGapRenderTests
 	// Guards the ratio itself, so a later width or window change that shrinks the break towards a single
 	// column fails here rather than quietly turning the blank-column assertion into a formality.
 	private const int MinimumBreakColumns = 12;
+	// EnvelopeLine strokes one pixel wide, so the line ending at the marker and the one starting at the
+	// resumption each reach half a pixel into the break.
+	private const double StrokeHalfWidthPixels = 0.5;
 
 
 	[AvaloniaFact]
@@ -65,20 +70,21 @@ public sealed class ChartGapRenderTests
 	}
 
 	// The only pixel assertion in the gap-reconstruction slice; envelope-column tests cover the rest. Input
-	// is built in HistoryRowFold's own output shape, a marker row, a null anchor and a resumption row,
-	// rather than by calling the fold, which HistoryRowFoldTests pins separately.
+	// is built in BucketedRowFold's own output shape, a marker column, the gap column one tick after it and
+	// a resumption column, rather than by calling the fold, which BucketedRowFoldTests pins separately.
 	[AvaloniaFact]
-	public void ArchiveShapedBreak_WithTheFoldsNullAnchor_LeavesEveryBreakColumnWithoutPenColor()
+	public void ArchiveShapedBreak_WithTheFoldsGapColumn_LeavesEveryBreakColumnWithoutPenColor()
 	{
 		var (timestamps, values) = ArchiveShapedBreak();
 		var (plot, pixels, dataRect) = RenderSeries(
 			timestamps, values, ArchiveTimeAt(0.0), ArchiveTimeAt(ArchiveWindowSeconds));
 		var markerTime = MarkerTime();
 		var resumptionTime = markerTime.AddSeconds(ArchiveBreakSeconds);
-		var markerColumn = ColumnAt(plot, markerTime);
-		var resumptionColumn = ColumnAt(plot, resumptionTime);
+		// Pixel column k covers [k, k + 1); a break column is one neither edge's stroke reaches.
+		var firstBreakColumn = (int)Math.Ceiling(PixelXAt(plot, markerTime) + StrokeHalfWidthPixels);
+		var lastBreakColumn = (int)Math.Floor(PixelXAt(plot, resumptionTime) - StrokeHalfWidthPixels) - 1;
 		var breakColumns = Enumerable
-			.Range(markerColumn + 1, resumptionColumn - markerColumn - 1)
+			.Range(firstBreakColumn, lastBreakColumn - firstBreakColumn + 1)
 			.ToList();
 		var beforeBreak = ColumnAt(plot, markerTime.AddSeconds(-ArchiveProbeOffsetSeconds));
 		var afterBreak = ColumnAt(plot, resumptionTime.AddSeconds(ArchiveProbeOffsetSeconds));
@@ -127,7 +133,7 @@ public sealed class ChartGapRenderTests
 	{
 		var viewModel = ChartTestBuilder.CreateViewModel(ChartTestBuilder.RealtimeInterval).ViewModel;
 		var state = viewModel.AddPen(new Pen(PenId, "Pen 1", ["Group A"], PenColorHex));
-		state.LoadHistory(MinMaxDecimator.Decimate(PenId, timestamps, values, TargetColumnCount), windowEnd);
+		state.LoadHistory(EnvelopeOf(timestamps, values), windowEnd);
 
 		var plot = viewModel.Plot;
 		plot.Axes.SetLimitsX(LocalTimeAxis.ToAxis(windowStart), LocalTimeAxis.ToAxis(windowEnd));
@@ -138,11 +144,23 @@ public sealed class ChartGapRenderTests
 		return (plot, image.GetArrayRGB(), plot.RenderManager.LastRender.Layout.DataRect);
 	}
 
+	private static PenHistoryEnvelope EnvelopeOf(IReadOnlyList<DateTime> timestamps, IReadOnlyList<double?> values)
+	{
+		var min = values.Select(value => value is { } sample ? sample - ColumnSpread : double.NaN).ToArray();
+		var max = values.Select(value => value is { } sample ? sample + ColumnSpread : double.NaN).ToArray();
+		var center = values.Select(value => value ?? double.NaN).ToArray();
+
+		return new PenHistoryEnvelope(PenId, timestamps, min, max, center);
+	}
+
 	private static int ColumnAt(Plot plot, DateTime timestampUtc)
 	{
-		var pixel = plot.GetPixel(new Coordinates(LocalTimeAxis.ToAxis(timestampUtc), AxisMin));
+		return (int)Math.Round(PixelXAt(plot, timestampUtc));
+	}
 
-		return (int)Math.Round(pixel.X);
+	private static double PixelXAt(Plot plot, DateTime timestampUtc)
+	{
+		return plot.GetPixel(new Coordinates(LocalTimeAxis.ToAxis(timestampUtc), AxisMin)).X;
 	}
 
 	private static bool ColumnCarriesPenColor(byte[,,] pixels, PixelRect dataRect, int column)
@@ -183,7 +201,7 @@ public sealed class ChartGapRenderTests
 		return values;
 	}
 
-	// Rows arrive at a fixed poll interval with the broken span simply absent; the fold's null anchor follows
+	// Rows arrive at a fixed poll interval with the broken span simply absent; the fold's gap column follows
 	// the q = 32 row.
 	private static (IReadOnlyList<DateTime> Timestamps, IReadOnlyList<double?> Values) ArchiveShapedBreak()
 	{
@@ -222,8 +240,6 @@ public sealed class ChartGapRenderTests
 		return ChartTestBuilder.From.AddSeconds(offsetSeconds);
 	}
 
-	// A varying signal so every decimated column keeps a Min/Max spread: a column whose Min equals its Max
-	// is a single point, and a run of them would leave the probe nothing stroked to find.
 	private static double ValueAt(int index)
 	{
 		return 50.0 + (20.0 * Math.Sin(index / 7.0));

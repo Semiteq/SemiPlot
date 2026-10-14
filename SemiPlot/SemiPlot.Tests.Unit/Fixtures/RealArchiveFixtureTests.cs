@@ -14,10 +14,17 @@ namespace SemiPlot.Tests.Unit.Fixtures;
 [Trait("Category", "Unit")]
 public sealed class RealArchiveFixtureTests(ITestOutputHelper testOutputHelper)
 {
+	// The extract comes from a build before 2.7.5.0, which still wrote the day layer
+	// (docs/architecture/scada-archive.md#layers); the bench writes none.
+	private const short EarlierBuildDayLayer = 3;
+
 	// The archived project polled at 100 ms, but a poll tick is a software timer and not a lattice:
 	// the extract holds four ticks that ran late. The invariant is that no change row is closer to its
 	// predecessor than one poll interval, and none is further than one interval plus this.
 	private static readonly TimeSpan _maxPollJitter = TimeSpan.FromMilliseconds(10);
+
+	private static readonly IReadOnlyList<short> _fixtureCoarseLayers =
+		[LayerThinner.MinuteLayer, LayerThinner.HourLayer, EarlierBuildDayLayer];
 
 	[Fact]
 	public void TheFixtureCarriesAllFourLayersForBothPens()
@@ -28,7 +35,7 @@ public sealed class RealArchiveFixtureTests(ITestOutputHelper testOutputHelper)
 
 		foreach (var pen in pens)
 		{
-			foreach (var layer in (short[])[ArchiveRow.RawLayer, .. LayerThinner.CoarseLayers])
+			foreach (var layer in (short[])[ArchiveRow.RawLayer, .. _fixtureCoarseLayers])
 			{
 				RealArchiveFixture.Rows.Should().Contain(row => row.Id == pen && row.Layer == layer);
 			}
@@ -74,7 +81,7 @@ public sealed class RealArchiveFixtureTests(ITestOutputHelper testOutputHelper)
 	[Theory]
 	[InlineData(LayerThinner.MinuteLayer)]
 	[InlineData(LayerThinner.HourLayer)]
-	[InlineData(LayerThinner.DayLayer)]
+	[InlineData(EarlierBuildDayLayer)]
 	public void EveryCoarseRowCopiesARawRowExactly(short layer)
 	{
 		var raw = RealArchiveFixture.RawRows.Select(BenchRows.Identity).ToHashSet();
@@ -116,7 +123,7 @@ public sealed class RealArchiveFixtureTests(ITestOutputHelper testOutputHelper)
 
 		markers.Should().NotBeEmpty();
 
-		foreach (var layer in LayerThinner.CoarseLayers)
+		foreach (var layer in _fixtureCoarseLayers)
 		{
 			var kept = RealArchiveFixture.Layer(layer).Select(BenchRows.Identity).ToHashSet();
 

@@ -126,7 +126,6 @@ public sealed class AppStatusBarViewModel : ReactiveObject, IDisposable
 			AggregationLayer.Raw => Resources.StatusLayerRaw,
 			AggregationLayer.Minute => Resources.StatusLayerMinute,
 			AggregationLayer.Hour => Resources.StatusLayerHour,
-			AggregationLayer.Day => Resources.StatusLayerDay,
 			_ => throw new ArgumentOutOfRangeException(nameof(layer), layer, null)
 		};
 	}

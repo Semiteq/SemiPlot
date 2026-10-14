@@ -72,7 +72,6 @@ Constraint: **$0 budget** — only free/OSS components.
 |     ArchiveExtent, …)                                       |
 |   - IPenCatalogueEditor + records, the catalogue writes     |
 |   - renderer-agnostic models (navigation, scale, cursor, …) |
-|   - MinMaxDecimator, shared by the coarse-layer reads       |
 |   - ConfigurationSection, the section-folder merge          |
 +-------------------------------------------------------------+
               │ implemented by a SemiPlot.DataSource.* project

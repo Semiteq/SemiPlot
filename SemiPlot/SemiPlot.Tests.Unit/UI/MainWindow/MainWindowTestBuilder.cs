@@ -73,8 +73,6 @@ internal static class MainWindowTestBuilder
 			NullLogger<AppStatusBarViewModel>.Instance);
 	}
 
-	// The narrowest column target puts every layer inside the model's 365-day width ceiling; at the widest
-	// one the hour ceiling alone is 512 days and the Day layer is unreachable.
 	public static ChartNavigationController NavigationAtRawLayer()
 	{
 		var navigation = new ChartNavigationController();

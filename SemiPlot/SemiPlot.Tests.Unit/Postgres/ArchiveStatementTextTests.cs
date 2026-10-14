@@ -20,14 +20,10 @@ public sealed class ArchiveStatementTextTests
 	// Npgsql strips the sigil, so the command carries "ids" where the statement carries "@ids".
 	private static readonly Regex _parameterTokenPattern = new(@"@(\w+)");
 
-	// HistoryRowFold groups by consecutive identifier and needs one ascending run per pen. Only the
-	// single outer ordering guarantees it: ExplainPlanTests asserts no ordering at all, and an index
-	// scan's order matches by accident.
 	[Theory]
-	[InlineData(ArchiveStatements.SparseHistoryWindow, "ORDER BY id, t;")]
-	// BucketedRowFold groups by consecutive identifier the same way, and its rows arrive from a GROUP BY
-	// whose output order is the planner's business.
-	[InlineData(ArchiveStatements.BucketedRawWindow, "ORDER BY id, t;")]
+	// BucketedRowFold groups by consecutive identifier and needs one ascending run per pen, and its rows
+	// arrive from a GROUP BY whose output order is the planner's business.
+	[InlineData(ArchiveStatements.BucketedHistoryWindow, "ORDER BY id, t;")]
 	// A poll returns every subscribed pen in one result. The index scan behind it happens to yield
 	// ascending time per identifier, so the loss of this ordering shows up only once the planner picks
 	// another path.
@@ -40,25 +36,28 @@ public sealed class ArchiveStatementTextTests
 	[Theory]
 	// Without the segment in the grouping key a bucket wider than a break spans it, and the fold anchors
 	// the gap after a sample the plant recorded once archiving had resumed.
-	[InlineData(ArchiveStatements.BucketedRawWindow, new[] { "GROUP BY id, segment, date_bin(@bucket, t, @from)" })]
+	[InlineData(ArchiveStatements.BucketedHistoryWindow, new[] { "GROUP BY id, segment, date_bin(@bucket, t, @from)" })]
 	// min, max and the newest-value aggregate all skip a null, so without the flag a bucket holding data
 	// and nulls comes back as an ordinary column and the line is drawn straight across the null run,
-	// which is the opposite of what MinMaxDecimator does on the coarse path.
+	// where the fold would otherwise write its gap column.
 	[InlineData(
-		ArchiveStatements.BucketedRawWindow,
+		ArchiveStatements.BucketedHistoryWindow,
 		new[] { "bool_or(q = 32 OR v IS NULL) AS breaks", "(seed.q = 32 OR seed.v IS NULL) AS breaks" })]
 	// The value is the bucket's newest non-null sample, so the timestamp beside it has to be that sample's
 	// own: max(t) alone would report a value at a moment the archive stored NULL at.
 	[InlineData(
-		ArchiveStatements.BucketedRawWindow,
+		ArchiveStatements.BucketedHistoryWindow,
 		new[] { "coalesce(max(t) FILTER (WHERE v IS NOT NULL), max(t)) AS t" })]
-	[InlineData(ArchiveStatements.BucketedRawWindow, new[] { "AND l = 0 AND t >= @from AND t < @to" })]
+	// Both branches read the requested layer, so a coarse window is not seeded from a raw row.
+	[InlineData(
+		ArchiveStatements.BucketedHistoryWindow,
+		new[] { "AND l = @layer AND t >= @from AND t < @to", "prior.l = @layer" })]
 	// The window branch takes `t >= @from`, so an inclusive seed bound returns the boundary row on both
 	// branches.
-	[InlineData(ArchiveStatements.SparseHistoryWindow, new[] { "prior.t < @from" })]
+	[InlineData(ArchiveStatements.BucketedHistoryWindow, new[] { "prior.t < @from" })]
 	// The backwards seek is bounded by the wider of the requested window and one partition width. Drop
 	// the floor and a pen quiet for days vanishes from the window instead of drawing at its last value.
-	[InlineData(ArchiveStatements.SparseHistoryWindow, new[] { "greatest(@to - @from, interval '1 day')" })]
+	[InlineData(ArchiveStatements.BucketedHistoryWindow, new[] { "greatest(@to - @from, interval '1 day')" })]
 	// A poll feeds the live edge, which draws raw samples. Without the layer filter the same tick also
 	// returns the coarse rows LayerThinner writes for the same instants, and the fold reads them as
 	// further samples of the same pen.
@@ -82,68 +81,35 @@ public sealed class ArchiveStatementTextTests
 	[Fact]
 	public void TheBucketedWindowBinderNamesExactlyTheStatementsOwnParameters()
 	{
-		using var command = new NpgsqlCommand(ArchiveStatements.BucketedRawWindow);
+		using var command = new NpgsqlCommand(ArchiveStatements.BucketedHistoryWindow);
 
 		PostgresDataProvider.BindLocalBucketedWindow(
 			command,
 			[1, 2],
 			new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Unspecified),
 			new DateTime(2026, 1, 2, 1, 0, 0, DateTimeKind.Unspecified),
-			64);
+			AggregationLayer.Minute,
+			TimeSpan.FromMinutes(1));
 
-		AssertBinderNamesTheStatementsOwnParameters(command, ArchiveStatements.BucketedRawWindow);
+		AssertBinderNamesTheStatementsOwnParameters(command, ArchiveStatements.BucketedHistoryWindow);
 	}
 
 	// A bucket is the window divided by the column target, and a window narrower than the target's own
 	// millisecond floor would otherwise bind an interval of zero, which date_bin rejects.
 	[Fact]
-	public void TheBucketedWindowBinderFloorsTheBucketAtOneMillisecond()
+	public void TheBucketFloorsAtOneMillisecond()
 	{
-		using var command = new NpgsqlCommand(ArchiveStatements.BucketedRawWindow);
-
 		var from = new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Unspecified);
 
-		PostgresDataProvider.BindLocalBucketedWindow(
-			command,
-			[1],
-			from,
-			from.AddMilliseconds(10),
-			64);
-
-		command.Parameters["bucket"].Value.Should().Be(TimeSpan.FromMilliseconds(1));
+		PostgresDataProvider.BucketFor(from, from.AddMilliseconds(10), 64).Should().Be(TimeSpan.FromMilliseconds(1));
 	}
 
 	[Fact]
-	public void TheBucketedWindowBinderDividesTheWindowByTheColumnTarget()
+	public void TheBucketIsTheWindowDividedByTheColumnTarget()
 	{
-		using var command = new NpgsqlCommand(ArchiveStatements.BucketedRawWindow);
-
 		var from = new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Unspecified);
 
-		PostgresDataProvider.BindLocalBucketedWindow(
-			command,
-			[1],
-			from,
-			from.AddHours(1),
-			60);
-
-		command.Parameters["bucket"].Value.Should().Be(TimeSpan.FromMinutes(1));
-	}
-
-	// The drift that breaks production is the binder naming a parameter the statement does not.
-	[Fact]
-	public void TheWindowBinderNamesExactlyTheStatementsOwnParameters()
-	{
-		using var command = new NpgsqlCommand(ArchiveStatements.SparseHistoryWindow);
-
-		PostgresDataProvider.BindLocalWindow(
-			command,
-			[1, 2],
-			new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Unspecified),
-			new DateTime(2026, 1, 2, 1, 0, 0, DateTimeKind.Unspecified),
-			AggregationLayer.Raw);
-
-		AssertBinderNamesTheStatementsOwnParameters(command, ArchiveStatements.SparseHistoryWindow);
+		PostgresDataProvider.BucketFor(from, from.AddHours(1), 60).Should().Be(TimeSpan.FromMinutes(1));
 	}
 
 	[Fact]

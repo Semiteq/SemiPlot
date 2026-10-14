@@ -170,13 +170,12 @@ public sealed class ChartNavigationControllerTests
 	}
 
 	// Half a layer's ceiling sits well inside it, clear of the 25% zoom quantisation step and the 10%
-	// hysteresis band. The Day row's 1.2x hour ceiling stays inside the 365-day maximum window at 1024
-	// columns, so the answer comes from the ladder, not from TrendNavigationModel truncating the width.
+	// hysteresis band. The Hour row's 1.2x minute ceiling, 12.8 days at 1024 columns, stays inside the 365-day
+	// maximum window, so the answer comes from the ladder, not from TrendNavigationModel truncating the width.
 	[Theory]
 	[InlineData(AggregationLayer.Raw, 0.5, AggregationLayer.Raw)]
 	[InlineData(AggregationLayer.Minute, 0.5, AggregationLayer.Minute)]
-	[InlineData(AggregationLayer.Hour, 0.5, AggregationLayer.Hour)]
-	[InlineData(AggregationLayer.Hour, 1.2, AggregationLayer.Day)]
+	[InlineData(AggregationLayer.Minute, 1.2, AggregationLayer.Hour)]
 	public void LayerFollowsZoomWidth(
 		AggregationLayer ceilingOwner,
 		double ceilingFraction,
@@ -204,10 +203,6 @@ public sealed class ChartNavigationControllerTests
 		ChartNavigationController.LayerForWidth(
 				Ceiling(AggregationLayer.Minute, columnCount), AggregationLayer.Raw, columnCount)
 			.Should().Be(AggregationLayer.Minute);
-
-		ChartNavigationController.LayerForWidth(
-				Ceiling(AggregationLayer.Hour, columnCount), AggregationLayer.Raw, columnCount)
-			.Should().Be(AggregationLayer.Hour);
 
 		ChartNavigationController.LayerForWidth(
 				Ceiling(AggregationLayer.Raw, columnCount), AggregationLayer.Minute, columnCount)
@@ -333,7 +328,6 @@ public sealed class ChartNavigationControllerTests
 	[Theory]
 	[InlineData(AggregationLayer.Raw, AggregationLayer.Minute)]
 	[InlineData(AggregationLayer.Minute, AggregationLayer.Hour)]
-	[InlineData(AggregationLayer.Hour, AggregationLayer.Day)]
 	public void HysteresisHoldsTheCurrentLayerJustPastItsCeiling(
 		AggregationLayer layer,
 		AggregationLayer nextCoarser)
@@ -345,6 +339,20 @@ public sealed class ChartNavigationControllerTests
 			.Should().Be(nextCoarser);
 	}
 
+	// Hour has no ceiling of its own to widen.
+	[Theory]
+	[InlineData(256)]
+	[InlineData(2048)]
+	public void FromTheHourLayerTheMinuteCeilingCarriesNoHysteresis(int columnCount)
+	{
+		var minuteCeiling = Ceiling(AggregationLayer.Minute, columnCount);
+
+		ChartNavigationController.LayerForWidth(minuteCeiling, AggregationLayer.Hour, columnCount)
+			.Should().Be(AggregationLayer.Minute);
+		ChartNavigationController.LayerForWidth(minuteCeiling * 1.05, AggregationLayer.Hour, columnCount)
+			.Should().Be(AggregationLayer.Hour);
+	}
+
 	// The acceptance table for the layer-selection ladder, pinned at its literal widths. Every width here
 	// sits clear of the 10% hysteresis band, so the answer does not depend on which layer the ladder was
 	// entered from.
@@ -354,6 +362,7 @@ public sealed class ChartNavigationControllerTests
 	[InlineData(2400.0, 1024, AggregationLayer.Hour)]
 	[InlineData(4.0, 256, AggregationLayer.Minute)]
 	[InlineData(4.0, 2048, AggregationLayer.Raw)]
+	[InlineData(8760.0, 256, AggregationLayer.Hour)]
 	public void AcceptanceWindowWidths_SelectTheRequiredLayer(
 		double windowHours,
 		int columnCount,
@@ -443,16 +452,14 @@ public sealed class ChartNavigationControllerTests
 	}
 
 	// ceiling(layer) = nextCoarser(layer).ToPointSpacing() * columns. The spacings are spelled out rather
-	// than read back from the production helper, so a wrong spacing or a wrong next-coarser rule fails these
-	// tests instead of moving with them.
+	// than read from ToPointSpacing, so a wrong spacing fails these tests instead of moving with them.
 	private static TimeSpan Ceiling(AggregationLayer layer, int columnCount)
 	{
 		var nextCoarserSpacing = layer switch
 		{
 			AggregationLayer.Raw => TimeSpan.FromSeconds(15.0),
 			AggregationLayer.Minute => TimeSpan.FromMinutes(15.0),
-			AggregationLayer.Hour => TimeSpan.FromHours(6.0),
-			_ => throw new ArgumentOutOfRangeException(nameof(layer), layer, "The day layer has no ceiling.")
+			_ => throw new ArgumentOutOfRangeException(nameof(layer), layer, "The hour layer has no ceiling.")
 		};
 
 		return nextCoarserSpacing * columnCount;

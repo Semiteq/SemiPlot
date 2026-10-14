@@ -6,8 +6,7 @@ namespace SemiPlot.DataSource.Postgres;
 internal static class BucketedRowFold
 {
 	/// <summary>
-	/// One bucket of <see cref="ArchiveStatements.BucketedRawWindow"/>. A null the statement carries arrives
-	/// as <see cref="double.NaN"/>.
+	/// A null the statement carries arrives as <see cref="double.NaN"/>.
 	/// </summary>
 	public readonly record struct Row(
 		int PenId,

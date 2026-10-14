@@ -16,9 +16,11 @@ using FluentResults;
 
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
+using SemiPlot.Tests.Unit.UI.Export;
 using SemiPlot.Tests.Unit.UI.Minimap;
 using SemiPlot.Tests.Unit.UI.PenEditor;
 using SemiPlot.Tests.Unit.UI.Settings;
+using SemiPlot.UI.Export;
 using SemiPlot.UI.Legend;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
@@ -75,6 +77,49 @@ public sealed class MainWindowViewTests
 		penEditor.Groups.NewGroupName = "Gas";
 		((ICommand)penEditor.Groups.CreateGroupCommand).CanExecute(null).Should()
 			.BeFalse("the window disposes the view model its editor showed");
+		window.Close();
+	}
+
+	[AvaloniaFact]
+	public async Task ExportToCsv_ClickedOnTheRealisedWindow_OpensTheExportOverIt_AndClosingItCancelsTheExport()
+	{
+		using var directory = new TemporaryDirectory("csv-export-window");
+		var readToken = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+		var reader = new FakeArchiveRowReader
+		{
+			OnSeeds = async call =>
+			{
+				readToken.TrySetResult(call.Token);
+				await Task.Delay(Timeout.Infinite, call.Token);
+
+				return Result.Ok<IReadOnlyList<StoredArchiveRow>>([]);
+			}
+		};
+		using var stand = NewWindowStand([new Pen(1, "Pen 1", [], "#ff0000")], rowReader: reader);
+		var window = new MainWindowView { DataContext = stand.ViewModel };
+		ViewProbe.Realise(window);
+
+		HeadlessInput.Click(window, MenuItemNamed(window, "FileMenu"));
+		var exportItem = MenuItemNamed(window, "FileExport");
+		HeadlessInput.Click(
+			TopLevel.GetTopLevel(exportItem) ?? throw new InvalidOperationException("The File menu opened no popup."),
+			exportItem);
+		await HeadlessWait.Until(() => window.OwnedWindows.OfType<CsvExportWindow>().Any());
+
+		var exportWindow = window.OwnedWindows.OfType<CsvExportWindow>().Single();
+		var export = exportWindow.DataContext.Should().BeOfType<CsvExportViewModel>().Which;
+		_ = export.ExportCommand.Execute(Path.Combine(directory.Path, "out.csv")).Subscribe(_ => { }, _ => { });
+		var token = await readToken.Task;
+		token.IsCancellationRequested.Should().BeFalse();
+
+		exportWindow.Close();
+		Dispatcher.UIThread.RunJobs();
+
+		window.OwnedWindows.Should().BeEmpty();
+		await HeadlessWait.Until(() => token.IsCancellationRequested);
+		await HeadlessWait.Until(
+			() => !File.Exists(Path.Combine(directory.Path, "out.csv.partial")),
+			"the partial file to be deleted");
 		window.Close();
 	}
 

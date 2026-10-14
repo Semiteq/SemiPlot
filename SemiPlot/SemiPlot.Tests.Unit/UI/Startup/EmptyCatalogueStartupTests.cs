@@ -4,6 +4,7 @@ using AwesomeAssertions;
 
 using ReactiveUI.Avalonia;
 
+using SemiPlot.UI;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Startup;
@@ -32,7 +33,11 @@ public sealed class EmptyCatalogueStartupTests
 
 		var probe = await StartupProbe.ReadAsync(container, StartupProbe.DefaultReadBound);
 		using var window = TrendWindow.Build(
-			probe.Value, TestLaunch.LauncherAt(AppContext.BaseDirectory), AvaloniaScheduler.Instance);
+			probe.Value,
+			TestLaunch.LauncherAt(AppContext.BaseDirectory),
+			AvaloniaScheduler.Instance,
+			App.CsvDialectFor(UiLanguage.En),
+			TimeZoneInfo.Utc);
 		var mainWindowViewModel = window.ViewModel;
 
 		mainWindowViewModel.ChartViewModel.Pens.Should().BeEmpty();

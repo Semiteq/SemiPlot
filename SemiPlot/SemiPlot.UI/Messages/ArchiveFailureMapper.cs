@@ -3,6 +3,7 @@ using FluentResults;
 using SemiPlot.Core.Configuration;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.DataSource.Postgres.Configuration;
+using SemiPlot.UI.Export;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.Startup;
 
@@ -26,6 +27,7 @@ public static class ArchiveFailureMapper
 			ArchiveError archive => MapArchive(archive),
 			StartupReadTimedOutError startupTimeout => MapStartupReadTimedOut(startupTimeout),
 			InstanceHostUnknownError => MapInstanceHostUnknown(),
+			ExportFileError exportFile => MapExportFile(exportFile),
 			IExceptionalError thrown => MapThrown(thrown),
 			_ => MapUnknown(error)
 		};
@@ -251,6 +253,20 @@ public static class ArchiveFailureMapper
 			Resources.FailureInstanceHostUnknownDetail,
 			Resources.FailureInstanceHostUnknownRemedy,
 			MessageSeverity.Error);
+	}
+
+	private static ArchiveFailureView MapExportFile(ExportFileError error)
+	{
+		return new ArchiveFailureView(
+			Resources.FailureExportFileTitle,
+			Resources.FormatFailureExportFileDetail(error.FilePath, ExportFileReason(error)),
+			Resources.FailureExportFileRemedy,
+			MessageSeverity.Error);
+	}
+
+	private static string ExportFileReason(ExportFileError error)
+	{
+		return error.IsPartialFile ? Resources.FormatExportPartialNotRemoved(error.Reason) : error.Reason;
 	}
 
 	private static string NameOf(StartupRead read)

@@ -5,6 +5,7 @@ using FluentResults;
 using SemiPlot.Core.Configuration;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.UI;
+using SemiPlot.UI.Export;
 using SemiPlot.UI.Messages;
 using SemiPlot.UI.Startup;
 
@@ -57,6 +58,9 @@ public sealed class FailureSeverityTests
 				new StartupReadTimedOutError(StartupRead.PenCatalogue, TimeSpan.FromSeconds(5)),
 				MessageSeverity.Error),
 			[typeof(InstanceHostUnknownError)] = (new InstanceHostUnknownError(), MessageSeverity.Error),
+			[typeof(ExportFileError)] = (
+				new ExportFileError(@"Q:\Out\trend.csv", "the disk is full"),
+				MessageSeverity.Error),
 			[typeof(ExceptionalError)] = (
 				new ExceptionalError(new InvalidOperationException("boom")),
 				MessageSeverity.Error),

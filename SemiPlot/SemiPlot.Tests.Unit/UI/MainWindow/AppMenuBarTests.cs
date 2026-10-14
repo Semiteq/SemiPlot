@@ -46,7 +46,7 @@ public sealed class AppMenuBarTests
 			.Should()
 			.Contain(
 				[
-					"FileNewWindow", "FileExit", "EditSettings", "EditPensAndGroups", "ViewAutoscale",
+					"FileNewWindow", "FileExport", "FileExit", "EditSettings", "EditPensAndGroups", "ViewAutoscale",
 					"ViewInitialScale", "ViewMessagePanel", "HelpAbout"
 				],
 				"the walk descends into every menu");
@@ -58,7 +58,7 @@ public sealed class AppMenuBarTests
 	}
 
 	[AvaloniaFact]
-	public void FileMenu_HoldsTheNewWindowItemThenTheExitItemEachBoundToItsCommand()
+	public void FileMenu_HoldsTheNewWindowItemThenTheExportItemThenTheExitItemEachBoundToItsCommand()
 	{
 		using var stand = NewWindowStand();
 		var viewModel = stand.ViewModel;
@@ -68,9 +68,10 @@ public sealed class AppMenuBarTests
 		fileMenu.Should().NotBeNull();
 
 		var items = fileMenu!.Items.OfType<MenuItem>().ToList();
-		items.Select(item => item.Name).Should().Equal("FileNewWindow", "FileExit");
+		items.Select(item => item.Name).Should().Equal("FileNewWindow", "FileExport", "FileExit");
 		items[0].Command.Should().BeSameAs(viewModel.NewWindowCommand);
-		items[1].Command.Should().BeSameAs(viewModel.ExitCommand);
+		items[1].Command.Should().BeSameAs(viewModel.ExportCommand);
+		items[2].Command.Should().BeSameAs(viewModel.ExitCommand);
 	}
 
 	[AvaloniaFact]

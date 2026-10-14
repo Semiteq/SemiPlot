@@ -8,6 +8,7 @@ using SemiPlot.Core.Configuration;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.DataSource.Postgres.Configuration;
 using SemiPlot.UI;
+using SemiPlot.UI.Export;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.Messages;
 using SemiPlot.UI.Startup;
@@ -359,6 +360,29 @@ public sealed class ArchiveFailureMapperTests
 		view.Title.Should().Be(Resources.FailureLogFileTitle);
 		view.Detail.Should().Contain(@"Q:\Logs\semiplot.log").And.Contain("the drive is missing");
 		view.Remedy.Should().Be(Resources.FailureLogFileRemedy);
+	}
+
+	[Fact]
+	public void ExportFile_NamesThePathAndTheReasonUnderItsOwnRemedy()
+	{
+		var view = ArchiveFailureMapper.Map(new ExportFileError(@"Q:\Out\trend.csv", "the disk is full"));
+
+		view.Title.Should().Be(Resources.FailureExportFileTitle);
+		view.Detail.Should().Be(Resources.FormatFailureExportFileDetail(@"Q:\Out\trend.csv", "the disk is full"));
+		view.Remedy.Should().Be(Resources.FailureExportFileRemedy);
+		view.Severity.Should().Be(MessageSeverity.Error);
+	}
+
+	[Fact]
+	public void ExportFile_ForAPartialFile_WrapsTheRuntimeReasonInTheNotRemovedText()
+	{
+		var error = new ExportFileError(@"Q:\Out\trend.csv.partial", "access denied", isPartialFile: true);
+
+		var view = ArchiveFailureMapper.Map(error);
+
+		error.Message.Should().NotContain(Resources.FormatExportPartialNotRemoved("access denied"));
+		view.Detail.Should().Be(Resources.FormatFailureExportFileDetail(
+			@"Q:\Out\trend.csv.partial", Resources.FormatExportPartialNotRemoved("access denied")));
 	}
 
 	[Fact]

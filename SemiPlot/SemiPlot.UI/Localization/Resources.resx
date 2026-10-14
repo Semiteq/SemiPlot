@@ -72,6 +72,9 @@
   <data name="MenuFileNewWindow" xml:space="preserve">
     <value>New window</value>
   </data>
+  <data name="MenuFileExport" xml:space="preserve">
+    <value>Export to CSV...</value>
+  </data>
   <data name="MenuFileExit" xml:space="preserve">
     <value>Exit</value>
   </data>
@@ -647,5 +650,95 @@
   </data>
   <data name="PenGroupsMembersHeader" xml:space="preserve">
     <value>Pens in the selected group</value>
+  </data>
+  <data name="ExportMessageStartDateMissing" xml:space="preserve">
+    <value>Start: pick a date.</value>
+  </data>
+  <data name="ExportMessageEndDateMissing" xml:space="preserve">
+    <value>End: pick a date.</value>
+  </data>
+  <data name="ExportMessageStartUnreadable" xml:space="preserve">
+    <value>Start time: write it as {0}.</value>
+  </data>
+  <data name="ExportMessageEndUnreadable" xml:space="preserve">
+    <value>End time: write it as {0}.</value>
+  </data>
+  <data name="ExportDateFormat" xml:space="preserve">
+    <value>yyyy-MM-dd</value>
+  </data>
+  <data name="ExportMessageEndNotAfterStart" xml:space="preserve">
+    <value>The end has to be later than the start.</value>
+  </data>
+  <data name="ExportMessageSpanOverLimit" xml:space="preserve">
+    <value>The range is longer than {0} hours.</value>
+  </data>
+  <data name="ExportMessageNoPenTicked" xml:space="preserve">
+    <value>Tick at least one pen.</value>
+  </data>
+  <data name="ExportExcelNotice" xml:space="preserve">
+    <value>The range holds more rows than Excel opens ({0}). The file is still written whole.</value>
+  </data>
+  <data name="ExportCountUnavailable" xml:space="preserve">
+    <value>Row count unavailable</value>
+  </data>
+  <data name="ExportCountRows" xml:space="preserve">
+    <value>{0} rows</value>
+  </data>
+  <data name="ExportProgress" xml:space="preserve">
+    <value>Written {0} of {1}</value>
+  </data>
+  <data name="ExportProgressUnknownTotal" xml:space="preserve">
+    <value>{0} rows written</value>
+  </data>
+  <data name="ExportSuccess" xml:space="preserve">
+    <value>{0} rows written to {1}</value>
+  </data>
+  <data name="ExportCancelled" xml:space="preserve">
+    <value>Export cancelled. No file was written.</value>
+  </data>
+  <data name="FailureExportFileTitle" xml:space="preserve">
+    <value>SemiPlot could not write the CSV file</value>
+  </data>
+  <data name="FailureExportFileDetail" xml:space="preserve">
+    <value>The file '{0}' could not be written: {1}</value>
+  </data>
+  <data name="ExportPartialNotRemoved" xml:space="preserve">
+    <value>the temporary file could not be removed: {0}</value>
+  </data>
+  <data name="FailureExportFileRemedy" xml:space="preserve">
+    <value>Choose a file in a folder that exists and is writable, then export again.</value>
+  </data>
+  <data name="ExportWindowTitle" xml:space="preserve">
+    <value>Export to CSV</value>
+  </data>
+  <data name="ExportStartLabel" xml:space="preserve">
+    <value>Start</value>
+  </data>
+  <data name="ExportEndLabel" xml:space="preserve">
+    <value>End</value>
+  </data>
+  <data name="ExportPensHeader" xml:space="preserve">
+    <value>Pens ({0} of {1})</value>
+  </data>
+  <data name="ExportCsvHeaderPen" xml:space="preserve">
+    <value>Pen</value>
+  </data>
+  <data name="ExportCsvHeaderTime" xml:space="preserve">
+    <value>Time</value>
+  </data>
+  <data name="ExportCsvHeaderValue" xml:space="preserve">
+    <value>Value</value>
+  </data>
+  <data name="ExportSaveAs" xml:space="preserve">
+    <value>Save as...</value>
+  </data>
+  <data name="ExportCancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="ExportClose" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="ExportFileTypeName" xml:space="preserve">
+    <value>CSV files</value>
   </data>
 </root>

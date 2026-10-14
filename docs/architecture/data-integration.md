@@ -84,6 +84,37 @@ Contract points every implementation keeps:
   a failed `Result`. The chart treats only that exception, while its own token is cancelled, as its
   own cancellation.
 
+The CSV export reads through a third interface, `IArchiveRowReader`
+(`SemiPlot.Core/Data/IArchiveRowReader.cs`), implemented by `PostgresArchiveRowReader` and registered by
+`AddPostgresData` beside the editor over the same `NpgsqlDataSource`. Its consumer is the export window
+alone, and its contract differs from `IDataProvider`'s: stored rows, not envelopes, in the archive's
+wall-clock time (Time boundary, below).
+
+| Member | Answers |
+| --- | --- |
+| `CountRowsAsync(penIds, from, to)` | The `l = 0` rows of the pens inside `[from, to)` plus one seed row per pen that has one, as a `long`. |
+| `ReadSeedRowsAsync(penIds, from)` | Per pen its last `l = 0` row before `from`, not older than one day, ordered by time with ties in `penIds` order, as `StoredArchiveRow(PenId, Time, Value)` structs. |
+| `ReadSliceAsync(penIds, from, to)` | Every `l = 0` row of the pens inside `[from, to)` in one statement, ordered by time with ties in `penIds` order, as the same structs. No decimation. |
+
+A row carries its pen's id because a slice mixes pens, and no quality: the file has no `q` column. `penIds`
+holds distinct catalogue ids (`semiplot_tags.id` is the primary key); the count probes seeds over
+`DISTINCT unnest(@ids)`, so a repeated id would make the count and the file differ.
+
+Both bounds are naive wall-clock values, `from` inclusive and `to` exclusive. A read answers with a `Result`;
+only `OperationCanceledException` leaves the reader as an exception, ahead of `ArchiveExceptionMapper`, as
+in `QueryHistoryAsync`. A failure maps with the relation `trends`. `ReadSeedRowsAsync` runs one `ExportSeedRow`
+probe per pen on one connection, then sorts the collected rows by time with a stable sort, so equal times keep
+the `penIds` order. `ReadSliceAsync` runs one statement, reads every row into a list and returns it after the
+reader closes, so the statement's duration depends on the server alone and never on the disk the file goes to.
+
+`ArchiveRowSlices` (`SemiPlot.Core/Export/ArchiveRowSlices.cs`) holds the slice `Width`, 15 minutes, and `Tile`,
+which cuts `[from, to)` into consecutive `[a, min(a + Width, to))` slices with no gap and no overlap. At the
+density floor (a pen writes at most 10 rows per second, `scada-archive.md`) a 15 minute slice is 144 000 rows
+for 16 pens and 450 000 for 50, which the reader holds as one list. Measured on 2026-10-14 over a day of
+50 pens at 100 ms (43.2 million rows), a 50 pen slice took 0.36 s cold and 0.63 s warm, far under the role's
+30 s `statement_timeout`, so the width stayed at 15 minutes. The export reads one such slice at a time; a 24 h
+range is 96 slice statements plus one seed probe per pen.
+
 ## The pen catalogue editor
 
 The write path is a second interface, `IPenCatalogueEditor` (`SemiPlot.Core/Data/IPenCatalogueEditor.cs`),
@@ -205,7 +236,7 @@ A read that adds or removes a pen moves the live edge onto the new pen set (Real
 
 ## Operation to statement
 
-Every statement the provider and the editor issue is a constant in
+Every statement the provider, the editor and the row reader issue is a constant in
 `SemiPlot.DataSource.Postgres/ArchiveStatements.cs`; parameters are always bound. The bench seeder
 and the test harness own SQL of their own (`bench.md`). `ArchiveStatementTextTests` pins each
 provider constant below clause by clause; `ExplainPlanTests` asserts each plan's shape against a
@@ -218,11 +249,23 @@ container. The editor's statements are in the table above.
 | History | `BucketedHistoryWindow` | Two branches at `l = @layer` under one outer `ORDER BY id, t`. The seed branch reads per pen one row strictly before `@from`, bounded to the wider of the window and one day: the bound prunes older partitions from the seed's `Merge Append`, and the seed keeps a steady variable on the chart as a horizontal line. The server reduces the window branch to one row per column: `GROUP BY id, segment, date_bin(@bucket, t, @from)`. `segment` counts the `q = 32` markers strictly before each row, so a marker closes its own bucket and no bucket straddles a break. Each bucket carries `min(v)`, `max(v)`, whether it ends in a gap, and the bucket's newest non-null sample as the column's timestamp and value, which is what the legend reads at the cursor. A `q = 32` marker and a null `v` both end the bucket in a gap. `BucketedRowFold` groups by consecutive identifier, so the single total ordering keeps each pen one run. Every layer takes this statement: a coarse row is a verbatim raw row and the markers are copied into the coarse layers (`scada-archive.md#layers`), so the buckets and the break split hold at `Minute` and `Hour` as at `Raw`. `@bucket` is `(to - from) / targetColumnCount`, never below one millisecond, the column's own resolution. |
 | Realtime poll | `RealtimePoll` | `id = ANY(@ids) AND l = 0 AND t > @lastSeen ORDER BY t`. The variable list is mandatory or the read scans the day's partition; the bound is strict so the row that set `@lastSeen` is never returned twice. |
 | Realtime baseline | `RealtimeBaseline` | The extent's lateral shape over `DISTINCT unnest(@ids)`: one index probe per variable. `NULL` means no row yet — a state, not a failure. |
+| Export, seed row | `ExportSeedRow` | One pen's last `l = 0` row strictly before `@from` and not older than one day: `t < @from AND t >= @from - interval '1 day'`, `ORDER BY t DESC LIMIT 1`. The strict bound keeps a boundary row from returning on both export statements; the one-day bound is the history statement's seed bound for a window of a day or less, which the export range always is. A pen last written earlier has no seed. |
+| Export, slice | `ExportSliceRows` | The `l = 0` rows of every requested pen with `id = ANY(@ids) AND l = 0 AND t >= @from AND t < @to`, columns `id, t, v`, `ORDER BY t, array_position(@ids, id)`: time first, equal times in the order of `@ids`, which is the checklist order. No `date_bin`, no `q` column and no `q` filter: a break marker row comes out as a row. |
+| Export, count | `ExportRowCount` | `count(*)` of `id = ANY(@ids) AND l = 0 AND t >= @from AND t < @to`, plus the number of pens that have a seed, counted through a lateral `LIMIT 1` probe per distinct id. One statement over the whole range. Measured on 2026-10-14 over a day of 50 pens at 100 ms: 5.5 s cold and 5.1 s warm for 43.2 million rows, 2.1 s and 1.6 s for 16 pens, so the count stays one statement and no per-slice count exists. |
 
-Three statements bind parameters through a binder of their own, each pinned against its statement's
-parameter names: `PostgresDataProvider.BindLocalBucketedWindow`, `RealtimePoll.BindPoll` and
-`RealtimePoll.BindBaseline`. A gap explanation over `messages` is designed but not shipped; nothing
-issues it.
+The seed and the slice are separate statements rather than a `UNION ALL`, because the seed is one index probe
+per pen and the slice is one range read over every pen. The slice reaches its rows through the index on
+`(id, l, t)` and sorts them by `(t, array_position)` above the scan, a `Sort` that spills to temporary files at
+the default `work_mem` (5.4 MB for 16 pens and 16.7 MB for 50 on the bench); that is the cost of one table
+ordered by time across pens, and the statement stays well inside its timeout. `ExplainPlanTests` asserts for
+the seed, the slice and the count that no sequential scan reads a row-holding partition, and for the slice
+that an index or bitmap reaches the rows and that one day partition is read.
+
+Six statements bind parameters through a binder of their own, each pinned against its statement's
+parameter names: `PostgresDataProvider.BindLocalBucketedWindow`, `RealtimePoll.BindPoll`,
+`RealtimePoll.BindBaseline`, and `PostgresArchiveRowReader.BindSeed` and `BindPensRange`, which binds
+`ids`, `from` and `to` for both `ExportRowCount` and `ExportSliceRows`. A gap explanation over `messages` is
+designed but not shipped; nothing issues it.
 
 One history read runs in pen groups. `PostgresDataProvider.QueryHistoryAsync` removes duplicate ids,
 sorts the rest ascending, and `Chunk` cuts them into contiguous groups of `ceil(n / HistoryReadConcurrency)`
@@ -720,6 +763,14 @@ The archive stores naive local wall-clock time; everything above the provider is
 - Query bounds: UTC window edges are converted back to naive local (`ToArchiveLocal`) before binding.
 - The conversion happens only at the provider edge. Display-local rendering is a separate, later
   conversion in `LocalTimeAxis`.
+- The export path is the one exception. `PostgresArchiveRowReader` takes no `ArchiveTimeConverter`: it
+  binds the range bounds as `Timestamp` values as typed, reads `t` with `GetDateTime`
+  (`DateTimeKind.Unspecified`) and returns it in `StoredArchiveRow.Time` unconverted. The export window
+  takes each bound as a date from a `CalendarDatePicker` plus a typed `HH:mm:ss` time and reads the pair
+  as a wall-clock value, and the CSV writes the stored `t` verbatim. Because
+  nothing converts through UTC, the repeated autumn hour loses no row. The one conversion on that path is
+  the window's prefill, UTC navigation edges to wall-clock through the archive's zone
+  (`PostgresConnectionSettings.SourceTimeZone`), which is a function and drops nothing.
 
 The database does not record the zone. The SCADA, its archive and the viewer share one machine, so
 the provider converts in that machine's zone `[DEC:machine-time-zone]`: `PostgresConnectionLoader`
@@ -1003,13 +1054,16 @@ The pen editor reports the same way. A failed write reverts its field, puts the 
 `ArchiveFailureMapper.Map` gives the error on the form's message line, and adds the full entry to the
 panel through `ResultReporting.ReportFailure`; a failed refresh reports and leaves the tables as they
 were. The window's code-behind handlers are `async void` with the whole body in `try/catch`, and the
-`catch` reaches the panel through `PenEditorViewModel.ReportFailure`, which takes the guarded form.
+`catch` reaches the panel through `PenEditorViewModel.ReportFailure`, which takes the guarded form. The
+export window follows the same shape through `CsvExportViewModel.ReportFailure`, which also puts the
+title on the window's message line, and its three detached handlers (the tick `onNext`, `ApplyCount` and
+the progress job) run through `CsvExportViewModel.Guarded`.
 
-`57014` maps unconditionally to `QueryTimedOut`. The one statement a caller cancels is a history read
-whose token the chart cancelled, and Npgsql raises `OperationCanceledException` for a cancellation it
-requested, which the mapper rethrows; a `57014` that reaches the mapper is therefore the server's own
-timeout or an administrator's cancel. No other member of `IDataProvider` or `IPenCatalogueEditor`
-takes a `CancellationToken`.
+`57014` maps unconditionally to `QueryTimedOut`. The statements a caller cancels are a history read the
+chart superseded and the export's count, seed and slice reads. Npgsql raises `OperationCanceledException` for a
+cancellation it requested, which the provider and the row reader rethrow ahead of the mapper; a `57014`
+that reaches the mapper is therefore the server's own timeout or an administrator's cancel. No other
+member of `IDataProvider`, `IArchiveRowReader` or `IPenCatalogueEditor` takes a `CancellationToken`.
 
 ## Configuration
 

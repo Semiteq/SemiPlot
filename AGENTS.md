@@ -266,7 +266,8 @@ No abbreviations in names.
 - `AddPostgresData()` registers the bare data `IScheduler` (`DefaultScheduler.Instance`). The UI
   scheduler is not a second container registration: `App` reads the static
   `AvaloniaScheduler.Instance` and passes it explicitly to `TrendWindow.Build`, which hands it to the
-  coordinator, the chart, the minimap and `PenCatalogueSync`. `RxApp` does
+  coordinator, the chart, the minimap, `PenCatalogueSync` and the `CsvExportViewModel` factory it passes
+  to `MainWindowViewModel`. `RxApp` does
   not exist in the installed ReactiveUI 23.2.28 — its schedulers moved to `RxSchedulers` and its
   exception handler to `RxState`; this repository reads neither.
 - **Nothing may construct a ReactiveUI object before `AppBuilder.Setup()`.** `RxState.DefaultExceptionHandler`
@@ -359,7 +360,7 @@ No abbreviations in names.
   (`docs/architecture/data-integration.md#no-failure-stops-at-the-log`). Code-behind reaches the
   panel through its view model (`TrendChartViewModel.ReportFailure`, `MainWindowViewModel.ReportFailure`,
   `PenEditorViewModel.ReportFailure`, `StartupFailureViewModel.ReportFailure`,
-  `AxisScalePanelViewModel.ReportFailure`).
+  `AxisScalePanelViewModel.ReportFailure`, `CsvExportViewModel.ReportFailure`).
 
 ### Data-source projects
 
@@ -372,6 +373,11 @@ No abbreviations in names.
   one `NpgsqlDataSource` (`docs/architecture/data-integration.md#the-pen-catalogue-editor`). The chart
   never writes, and this prints nothing:
   `git grep -l "IPenCatalogueEditor" -- SemiPlot/SemiPlot.UI/Chart SemiPlot/SemiPlot.UI/Legend`.
+- The export reads through `IArchiveRowReader` in `SemiPlot.Core/Data`, implemented by
+  `PostgresArchiveRowReader` and registered by `AddPostgresData()` beside the editor. It works in the
+  archive's wall-clock time and is the one read path that skips `ArchiveTimeConverter`
+  (`docs/architecture/data-integration.md#time-boundary`). Only the export window reads it, and this prints
+  nothing: `git grep -l "IArchiveRowReader" -- SemiPlot/SemiPlot.UI/Chart SemiPlot/SemiPlot.UI/Legend`.
 - No startup code calls `IPenCatalogueEditor`. The container constructs it when `TrendWindow.Build`
   resolves it, and its constructor issues no statement.
   `RegisterNewPensAsync` has one caller, `PenEditorViewModel`:

@@ -12,6 +12,7 @@ using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.PenEditor;
+using SemiPlot.UI.Export;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
 using SemiPlot.UI.PenEditor;
@@ -193,6 +194,41 @@ public sealed class MainWindowViewModelTests
 
 		started.Should().ContainSingle();
 		exits.Should().Be(0);
+	}
+
+	[AvaloniaFact]
+	public async Task Export_CarriesTheVisibleWindowAndThePensWithTheirVisibilityAtTheMomentOfTheCommand()
+	{
+		Pen[] pens = [new Pen(1, "Pen 1", [], "#ff0000"), new Pen(2, "Pen 2", [], "#00ff00")];
+		using var stand = NewWindowStand(pens);
+		var chart = stand.ViewModel.ChartViewModel;
+		chart.SetPenVisibility(2, false);
+		var requests = new List<CsvExportViewModel>();
+
+		using var subscription = stand.ViewModel.ExportRequests.Subscribe(requests.Add);
+		await stand.ViewModel.ExportCommand.Execute();
+
+		using var request = requests.Should().ContainSingle().Which;
+		request.Pens.Select(choice => (choice.Pen.PenId, choice.IsTicked))
+			.Should().Equal([(1, true), (2, false)], "the checklist follows the catalogue and the chart's visibility");
+		var windowStart = TimeZoneInfo.ConvertTimeFromUtc(chart.Navigation.From, TimeZoneInfo.Utc);
+		var windowEnd = TimeZoneInfo.ConvertTimeFromUtc(chart.Navigation.To, TimeZoneInfo.Utc);
+		request.Form.From.Should().BeOnOrBefore(windowStart).And.BeAfter(windowStart.AddSeconds(-1));
+		request.Form.To.Should().BeOnOrAfter(windowEnd).And.BeBefore(windowEnd.AddSeconds(1));
+	}
+
+	[AvaloniaFact]
+	public void Export_IsDisabledWhileTheChartHasNoPensAndEnabledAfterACatalogueWithAPen()
+	{
+		using var stand = NewWindowStand([]);
+		var canExecute = new List<bool>();
+
+		using var subscription = stand.ViewModel.ExportCommand.CanExecute.Subscribe(canExecute.Add);
+		canExecute.Should().Equal(false);
+
+		stand.ViewModel.ChartViewModel.ApplyCatalogue([new Pen(1, "Pen 1", [], "#ff0000")]);
+
+		canExecute.Should().Equal(false, true);
 	}
 
 	private static async Task<PenEditorViewModel> OpenPenEditorAsync(MainWindowViewModel viewModel)

@@ -248,8 +248,8 @@ through `TrendChartViewModel.SetActivePen`; the active line is drawn 2 px wide a
 **Acceptance.** Core/test: a processing over a source pen yields the correct result on a reference input; it renders as an ordinary pen.
 
 ### MS-6 — Export / print / snapshot (NICE)
-**Definition.** A screenshot of the canvas, export of values (CSV) and messages (HTML), printing. Marked `[LATER]` — outside the near-term scope.
-**Acceptance.** UI: a snapshot saves a raster file; value export yields a CSV with correct time/pen columns.
+**Definition.** A screenshot of the canvas, export of values (CSV) and messages (HTML), printing. The CSV value export ships as `File` -> `Export to CSV...` (overview.md#the-export-window); the snapshot, the messages export and printing are marked `[LATER]` — outside the near-term scope.
+**Acceptance.** UI: a snapshot saves a raster file; value export yields a CSV with the columns pen, time and value, ordered by time.
 
 ### MS-7 — Complexity levels / access rights (NICE)
 **Definition.** Profiles of UI-element visibility (minimal/basic/advanced) and binding of operations to operator rights.

@@ -7,8 +7,10 @@ using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.PenEditor;
 using SemiPlot.Tests.Unit.UI.Startup;
+using SemiPlot.UI;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.MainWindow;
+using SemiPlot.UI.Startup;
 
 using Xunit;
 
@@ -65,7 +67,11 @@ public sealed class TrendWindowTests
 			FakePenCatalogueEditor.Refusal(ArchiveFault.ConnectionLost, "3"));
 		archive.Provider.LiveSubscriptionChanging = () => archive.Provider.ReportConnectionState(lost);
 		using var window = TrendWindow.Build(
-			archive.Data, TestLaunch.LauncherAt(AppContext.BaseDirectory), archive.Scheduler);
+			archive.Data,
+			TestLaunch.LauncherAt(AppContext.BaseDirectory),
+			archive.Scheduler,
+			App.CsvDialectFor(UiLanguage.En),
+			TimeZoneInfo.Utc);
 		archive.Provider.LiveSubscriptionChanging = null;
 
 		archive.Scheduler.AdvanceBy(1);

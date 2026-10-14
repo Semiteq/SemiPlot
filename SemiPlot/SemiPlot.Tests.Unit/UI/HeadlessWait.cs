@@ -12,7 +12,7 @@ internal static class HeadlessWait
 {
 	private static readonly TimeSpan _timeout = TimeSpan.FromSeconds(30);
 
-	public static async Task Until(Func<bool> condition)
+	public static async Task Until(Func<bool> condition, string awaited = "the awaited condition")
 	{
 		var clock = Stopwatch.StartNew();
 
@@ -20,7 +20,7 @@ internal static class HeadlessWait
 		{
 			if (clock.Elapsed > _timeout)
 			{
-				throw new TimeoutException("The awaited condition did not hold in time.");
+				throw new TimeoutException($"Timed out waiting for {awaited}.");
 			}
 
 			await Task.Delay(10);

@@ -10,7 +10,9 @@ using Microsoft.Reactive.Testing;
 
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
+using SemiPlot.Tests.Unit.Postgres;
 using SemiPlot.Tests.Unit.UI.Bridge;
+using SemiPlot.Tests.Unit.UI.Export;
 using SemiPlot.Tests.Unit.UI.PenEditor;
 using SemiPlot.Tests.Unit.UI.Startup;
 using SemiPlot.UI;
@@ -89,7 +91,8 @@ internal static class MainWindowTestBuilder
 	public static ArchiveStand NewArchiveStand(
 		IReadOnlyList<Pen>? pens = null,
 		IPenCatalogueEditor? penCatalogueEditor = null,
-		MessagePanelViewModel? panel = null)
+		MessagePanelViewModel? panel = null,
+		IArchiveRowReader? rowReader = null)
 	{
 		var scheduler = new TestScheduler();
 		var provider = new FakeDataProvider(scheduler, TimeSpan.FromSeconds(1), pens);
@@ -97,6 +100,8 @@ internal static class MainWindowTestBuilder
 			.AddSingleton<IScheduler>(scheduler)
 			.AddSingleton<IDataProvider>(provider)
 			.AddSingleton(penCatalogueEditor ?? new FakePenCatalogueEditor())
+			.AddSingleton(rowReader ?? new FakeArchiveRowReader())
+			.AddSingleton(ConnectionSettingsFactory.Create())
 			.AddUi();
 
 		if (panel is not null)
@@ -125,11 +130,13 @@ internal static class MainWindowTestBuilder
 		IPenCatalogueEditor? penCatalogueEditor = null,
 		string? configDirectory = null,
 		MessagePanelViewModel? panel = null,
-		Action<ProcessStartInfo>? start = null)
+		Action<ProcessStartInfo>? start = null,
+		IArchiveRowReader? rowReader = null)
 	{
-		var archive = NewArchiveStand(pens, penCatalogueEditor, panel);
+		var archive = NewArchiveStand(pens, penCatalogueEditor, panel, rowReader);
 		var launcher = TestLaunch.LauncherAt(configDirectory ?? AppContext.BaseDirectory, start);
-		var window = TrendWindow.Build(archive.Data, launcher, archive.Scheduler);
+		var window = TrendWindow.Build(
+			archive.Data, launcher, archive.Scheduler, App.CsvDialectFor(UiLanguage.En), TimeZoneInfo.Utc);
 
 		archive.Scheduler.AdvanceBy(1);
 

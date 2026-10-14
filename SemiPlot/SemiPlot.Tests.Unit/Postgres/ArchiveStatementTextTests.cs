@@ -24,13 +24,52 @@ public sealed class ArchiveStatementTextTests
 	// BucketedRowFold groups by consecutive identifier and needs one ascending run per pen, and its rows
 	// arrive from a GROUP BY whose output order is the planner's business.
 	[InlineData(ArchiveStatements.BucketedHistoryWindow, "ORDER BY id, t;")]
+	[InlineData(ArchiveStatements.ExportSeedRow, "ORDER BY t DESC\nLIMIT 1;")]
 	// A poll returns every subscribed pen in one result. The index scan behind it happens to yield
 	// ascending time per identifier, so the loss of this ordering shows up only once the planner picks
 	// another path.
 	[InlineData(ArchiveStatements.RealtimePoll, "ORDER BY t;")]
+	// The export writes the slice rows in the order they arrive, so the ascending order is the statement's,
+	// with the checklist order breaking a tie.
+	[InlineData(ArchiveStatements.ExportSliceRows, "ORDER BY t, array_position(@ids, id);")]
 	public void AStatementEndsWithItsOuterOrdering(string statement, string ordering)
 	{
-		statement.Should().EndWith(ordering);
+		statement.ReplaceLineEndings("\n").Should().EndWith(ordering);
+	}
+
+	[Fact]
+	public void TheExportSeedBinderNamesExactlyTheStatementsOwnParameters()
+	{
+		using var command = new NpgsqlCommand(ArchiveStatements.ExportSeedRow);
+
+		PostgresArchiveRowReader.BindSeed(command, 1, new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Unspecified));
+
+		AssertBinderNamesTheStatementsOwnParameters(command, ArchiveStatements.ExportSeedRow);
+	}
+
+	[Theory]
+	[InlineData(ArchiveStatements.ExportSliceRows)]
+	[InlineData(ArchiveStatements.ExportRowCount)]
+	public void ThePensRangeBinderNamesExactlyTheParametersOfEachStatementItBinds(string statement)
+	{
+		using var command = new NpgsqlCommand(statement);
+
+		PostgresArchiveRowReader.BindPensRange(
+			command,
+			[1, 2],
+			new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Unspecified),
+			new DateTime(2026, 1, 2, 1, 0, 0, DateTimeKind.Unspecified));
+
+		AssertBinderNamesTheStatementsOwnParameters(command, statement);
+	}
+
+	[Theory]
+	[InlineData(ArchiveStatements.ExportSeedRow)]
+	[InlineData(ArchiveStatements.ExportSliceRows)]
+	[InlineData(ArchiveStatements.ExportRowCount)]
+	public void NoExportStatementSelectsTheQualityColumn(string statement)
+	{
+		statement.Should().NotMatchRegex(@"\bq\b");
 	}
 
 	[Theory]
@@ -52,6 +91,11 @@ public sealed class ArchiveStatementTextTests
 	[InlineData(
 		ArchiveStatements.BucketedHistoryWindow,
 		new[] { "AND l = @layer AND t >= @from AND t < @to", "prior.l = @layer" })]
+	// The export reads the main layer only: a coarse row is a derived aggregate, not a stored sample.
+	[InlineData(ArchiveStatements.ExportSeedRow, new[] { "l = 0" })]
+	[InlineData(ArchiveStatements.ExportSliceRows, new[] { "l = 0" })]
+	[InlineData(ArchiveStatements.ExportRowCount, new[] { "l = 0" })]
+	[InlineData(ArchiveStatements.ExportSliceRows, new[] { "id = ANY(@ids)" })]
 	// The window branch takes `t >= @from`, so an inclusive seed bound returns the boundary row on both
 	// branches.
 	[InlineData(ArchiveStatements.BucketedHistoryWindow, new[] { "prior.t < @from" })]
@@ -70,6 +114,14 @@ public sealed class ArchiveStatementTextTests
 	// Without DISTINCT the lateral join runs once per copy and the baseline carries one row per copy,
 	// which the fold reads as a second pen.
 	[InlineData(ArchiveStatements.RealtimeBaseline, new[] { "DISTINCT unnest(@ids)" })]
+	[InlineData(ArchiveStatements.ExportSeedRow, new[] { "t < @from" })]
+	[InlineData(ArchiveStatements.ExportRowCount, new[] { "prior.t < @from" })]
+	[InlineData(ArchiveStatements.ExportSeedRow, new[] { "t >= @from - interval '1 day'" })]
+	[InlineData(ArchiveStatements.ExportRowCount, new[] { "prior.t >= @from - interval '1 day'" })]
+	[InlineData(ArchiveStatements.ExportSliceRows, new[] { "t >= @from AND t < @to" })]
+	[InlineData(ArchiveStatements.ExportRowCount, new[] { "t >= @from AND t < @to" })]
+	[InlineData(
+		ArchiveStatements.ExportRowCount, new[] { "ORDER BY prior.t DESC", "LIMIT 1", "DISTINCT unnest(@ids)" })]
 	public void AStatementCarriesTheClauseItsReaderDependsOn(string statement, string[] fragments)
 	{
 		foreach (var fragment in fragments)

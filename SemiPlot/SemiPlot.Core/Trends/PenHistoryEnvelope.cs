@@ -43,4 +43,27 @@ public sealed record PenHistoryEnvelope
 	public IReadOnlyList<double> Max { get; init; }
 
 	public IReadOnlyList<double> Center { get; init; }
+
+	/// <summary>The first column at or after <paramref name="time"/>, or the column count when none is.</summary>
+	public int FirstIndexAtOrAfter(DateTime time)
+	{
+		var low = 0;
+		var high = Timestamps.Count;
+
+		while (low < high)
+		{
+			var middle = low + ((high - low) / 2);
+
+			if (Timestamps[middle] < time)
+			{
+				low = middle + 1;
+			}
+			else
+			{
+				high = middle;
+			}
+		}
+
+		return low;
+	}
 }

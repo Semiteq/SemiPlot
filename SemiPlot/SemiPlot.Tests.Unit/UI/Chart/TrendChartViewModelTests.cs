@@ -41,6 +41,17 @@ public sealed class TrendChartViewModelTests
 	private const double PickClearancePixels = 8.0;
 	private const double PickTieTolerancePixels = 1e-3;
 
+	// Columns the margin read asks for per visible column: the window and one margin window on each side.
+	private const int ExpandedColumnFactor = 3;
+
+	private static readonly IReadOnlyList<Pen> _fiftyPens =
+	[
+		.. Enumerable.Range(1, 50).Select(penId => new Pen(
+			penId, $"Pen {penId}", ["Group A"], "#ff0000", EnabledOnStart: penId % 6 == 0))
+	];
+
+	private static readonly int[] _switchedOnPenIds = [6, 12, 18, 24, 30, 36, 42, 48];
+
 	[AvaloniaFact]
 	public void SetPenVisibility_TogglesPenAndPlottableState()
 	{
@@ -518,18 +529,120 @@ public sealed class TrendChartViewModelTests
 	}
 
 	[AvaloniaFact]
-	public void RequestInitialHistory_FiresExactlyOneHistoryQuery_NoDoubleLoad()
+	public void RequestInitialHistory_ReadsTheWindowThenItsMargins_NoDoubleLoad()
 	{
 		var (viewModel, scheduler, _, provider) = CreateViewModel();
 		viewModel.AddPen(FakeDataProvider.FirstPen);
+		viewModel.Navigation.TrackDataExtents(From.AddDays(-30.0), To);
 		provider.HistoryQueryCount.Should().Be(0);
 
 		viewModel.RequestInitialHistory();
 		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
-		// Seed query loads once; the first-data snap must not trigger a second re-query.
 		provider.HistoryQueryCount.Should().Be(1);
 		provider.LastQueriedPenIds.Should().Contain(1);
+
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(5.0).Ticks);
+
+		provider.HistoryQueryCount.Should().Be(2, "the margins are read once, and nothing after them");
+		provider.LastQueriedTargetColumnCount.Should()
+			.Be(ExpandedColumnFactor * HistoryColumnTarget.MaxColumns);
+	}
+
+	[AvaloniaFact]
+	public void ADetachedZoomReadsTheVisibleWindowFirstAndItsMarginsAfterIt()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.AddPen(FakeDataProvider.FirstPen);
+		LoadInitialHistory(viewModel, scheduler, From.AddDays(-30.0), To);
+		viewModel.Navigation.SetSticky(false);
+		var queriesBefore = provider.HistoryQueryCount;
+
+		viewModel.Navigation.ZoomAt(0.5, From.AddMinutes(30.0));
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(5.0).Ticks);
+
+		var from = viewModel.Navigation.From;
+		var to = viewModel.Navigation.To;
+		var width = to - from;
+		to.Should().BeBefore(To, "the zoom left the live edge");
+		ReadsSince(provider, queriesBefore).Should().Equal(
+				(from, to, HistoryColumnTarget.MaxColumns),
+				(from - width, to + width, ExpandedColumnFactor * HistoryColumnTarget.MaxColumns));
+
+		viewModel.Navigation.PanBy(-width / 4);
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(5.0).Ticks);
+
+		provider.HistoryQueryCount.Should().Be(queriesBefore + 2, "the pan stays inside the band the margins filled");
+	}
+
+	[AvaloniaFact]
+	public void AStickyZoomReadsTheVisibleWindowWithItsRightMarginFirst()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.AddPen(FakeDataProvider.FirstPen);
+		LoadInitialHistory(viewModel, scheduler, From.AddDays(-30.0), To);
+		var queriesBefore = provider.HistoryQueryCount;
+
+		viewModel.Navigation.ZoomAt(0.5, To);
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(5.0).Ticks);
+
+		var from = viewModel.Navigation.From;
+		var width = To - from;
+		viewModel.Navigation.To.Should().Be(To);
+		ReadsSince(provider, queriesBefore).Should().Equal(
+				(from, To + width, 2 * HistoryColumnTarget.MaxColumns),
+				(from - width, To + width, ExpandedColumnFactor * HistoryColumnTarget.MaxColumns));
+	}
+
+	[AvaloniaFact]
+	public async Task AGestureEndingWhileTheMarginReadIsInFlightCancelsItAndReadsTheNewWindowFirst()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.AddPen(FakeDataProvider.FirstPen);
+		LoadInitialHistory(viewModel, scheduler, From.AddDays(-30.0), To);
+		viewModel.Navigation.SetSticky(false);
+		viewModel.Navigation.ZoomAt(0.5, From.AddMinutes(30.0));
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 2);
+		var queriesBefore = provider.HistoryQueryCount;
+		provider.GatedLayer = viewModel.Navigation.ActiveLayer;
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 2);
+		provider.HistoryQueryCount.Should().Be(queriesBefore + 1);
+		provider.LastQueriedTargetColumnCount.Should()
+			.Be(ExpandedColumnFactor * HistoryColumnTarget.MaxColumns, "the margin read is held");
+		var marginRead = provider.LastQueriedCancellationToken;
+		var width = viewModel.Navigation.To - viewModel.Navigation.From;
+
+		viewModel.Navigation.PanBy(-4 * width);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		await AwaitQueryCount(provider, queriesBefore + 2);
+
+		marginRead.IsCancellationRequested.Should().BeTrue();
+		provider.LastQueriedFromUtc.Should().Be(viewModel.Navigation.From);
+		provider.LastQueriedToUtc.Should().Be(viewModel.Navigation.To);
+		provider.LastQueriedTargetColumnCount.Should().Be(HistoryColumnTarget.MaxColumns);
+	}
+
+	// The first read ends one margin past the live edge, so the batches appended while it ran lie inside it.
+	[AvaloniaFact]
+	public async Task ABatchLandingWhileAStickyWindowsFirstReadIsInFlightIsDrawnAfterItLands()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel(RealtimeInterval);
+		var state = viewModel.AddPen(FakeDataProvider.FirstPen);
+		viewModel.Navigation.TrackDataExtents(
+			FakeDataProvider.RealtimeEpoch.AddDays(-30.0), FakeDataProvider.RealtimeEpoch);
+		provider.GatedLayer = AggregationLayer.Raw;
+		viewModel.RequestInitialHistory();
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		provider.HistoryQueryCount.Should().Be(1, "the first read is held");
+
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks * 3);
+		var lastLiveX = state.Line.SnapshotColumns()[^1].X;
+		lastLiveX.Should().BeGreaterThan(LocalTimeAxis.ToAxis(FakeDataProvider.RealtimeEpoch));
+
+		await ReleaseAndAwait(
+			viewModel, 1, () => provider.HistoryGate.SetResult(EnvelopeEndingAtTheRealtimeEpoch()));
+
+		state.Line.SnapshotColumns()[^1].X.Should().Be(lastLiveX);
 	}
 
 	// The archive is younger than the default window, so the window opens before the first sample.
@@ -556,6 +669,7 @@ public sealed class TrendChartViewModelTests
 		viewModel.AddPen(FakeDataProvider.FirstPen);
 		var firstSample = From.AddDays(-30.0);
 		LoadInitialHistory(viewModel, scheduler, firstSample, To);
+		var queriesBefore = provider.HistoryQueryCount;
 
 		viewModel.Navigation.ZoomAt(1000.0, viewModel.Navigation.To);
 		viewModel.Navigation.JumpToNow();
@@ -563,7 +677,7 @@ public sealed class TrendChartViewModelTests
 
 		var width = viewModel.Navigation.To - viewModel.Navigation.From;
 		viewModel.Navigation.From.Should().BeBefore(firstSample);
-		provider.HistoryQueryCount.Should().Be(2);
+		provider.HistoryQueryCount.Should().Be(queriesBefore + 1, "the margins add no time that can hold rows");
 		provider.LastQueriedFromUtc.Should().Be(firstSample);
 		provider.LastQueriedToUtc.Should().Be(viewModel.Navigation.To + width);
 	}
@@ -656,6 +770,7 @@ public sealed class TrendChartViewModelTests
 		await ZoomOutAndIssueTheCoarseRead(viewModel, scheduler, provider);
 		await ReleaseAndAwait(
 			viewModel, 1, () => provider.HistoryGate.SetResult(EnvelopeEndingAtTheRealtimeEpoch()));
+		LandTheMarginReadFromTheReleasedGate(scheduler);
 		var columnsBefore = state.Line.SnapshotColumns().Count;
 		var queriesBefore = provider.HistoryQueryCount;
 
@@ -965,8 +1080,8 @@ public sealed class TrendChartViewModelTests
 		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		await AwaitQueryCount(provider, queriesAfterFarRead + 1);
-		provider.LastQueriedFromUtc.Should().Be(windowFrom - width);
-		provider.LastQueriedToUtc.Should().Be(viewModel.Navigation.To + width);
+		provider.LastQueriedFromUtc.Should().Be(windowFrom);
+		provider.LastQueriedToUtc.Should().Be(viewModel.Navigation.To + width, "the window ends at the newest sample");
 	}
 
 	[AvaloniaFact]
@@ -1048,6 +1163,9 @@ public sealed class TrendChartViewModelTests
 
 		await ReleaseAndAwait(viewModel, 1, () => penOneRead.SetResult(StaleEnvelopes()));
 		await AwaitQueryCount(provider, queriesBefore + 1);
+		var newPensRead = provider.LastQueriedCancellationToken;
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		newPensRead.IsCancellationRequested.Should().BeFalse("the landed read asks again for the read already running");
 
 		viewModel.Navigation.PanBy(TimeSpan.FromMinutes(-30.0));
 		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
@@ -1183,7 +1301,7 @@ public sealed class TrendChartViewModelTests
 		});
 
 		provider.HistoryQueryCount.Should().BeGreaterThan(queriesBefore);
-		provider.LastQueriedFromUtc.Should().Be(windowFrom - width);
+		provider.LastQueriedFromUtc.Should().Be(windowFrom);
 		viewModel.FindPen(1)!.CurrentValue.Should().Be(FakeDataProvider.DefaultCenter);
 	}
 
@@ -1208,7 +1326,7 @@ public sealed class TrendChartViewModelTests
 	}
 
 	[AvaloniaFact]
-	public void APanPastTheBandIssuesOneQueryForTheNewRange()
+	public void APanPastTheBandReadsTheVisibleWindowFirstAndItsMarginsAfterIt()
 	{
 		var (viewModel, scheduler, _, provider) = CreateViewModel();
 		viewModel.AddPen(FakeDataProvider.FirstPen);
@@ -1216,12 +1334,230 @@ public sealed class TrendChartViewModelTests
 		var queriesBefore = provider.HistoryQueryCount;
 
 		viewModel.Navigation.PanBy(TimeSpan.FromMinutes(-60.0));
-		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(1.0).Ticks);
 
-		provider.HistoryQueryCount.Should().Be(queriesBefore + 1);
+		var from = viewModel.Navigation.From;
+		var to = viewModel.Navigation.To;
+		var width = to - from;
+		ReadsSince(provider, queriesBefore).Should().Equal(
+			(from, to, HistoryColumnTarget.MaxColumns),
+			(from - width, to + width, ExpandedColumnFactor * HistoryColumnTarget.MaxColumns));
+	}
+
+	// The read the drag's first move issued lands after the drag moved on past its window: the strip the drag
+	// moved onto lies outside that read, and the columns in hand there stay drawn.
+	[AvaloniaFact]
+	public async Task ADragPastTheBandKeepsTheColumnsInViewWhenItsReadLands()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		var state = viewModel.AddPen(FakeDataProvider.FirstPen);
+		LoadInitialHistory(viewModel, scheduler, From.AddDays(-30.0), To);
 		var width = viewModel.Navigation.To - viewModel.Navigation.From;
-		provider.LastQueriedFromUtc.Should().Be(viewModel.Navigation.From - width);
-		provider.LastQueriedToUtc.Should().Be(viewModel.Navigation.To + width);
+		provider.GatedLayer = viewModel.Navigation.ActiveLayer;
+		viewModel.BeginDrag();
+
+		viewModel.Navigation.PanBy(-0.6 * width);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		var read = provider.ChartHistoryQueries[^1];
+		viewModel.Navigation.PanBy(-0.2 * width);
+		provider.GatedLayer = null;
+		await ReleaseAndAwait(viewModel, 1, () => provider.HistoryGate.SetResult(
+			Result.Ok<IReadOnlyList<PenHistoryEnvelope>>(
+				[new PenHistoryEnvelope(1, [read.FromUtc, read.ToUtc], [7.0, 7.0], [7.0, 7.0], [7.0, 7.0])])));
+
+		var columns = state.Line.SnapshotColumns();
+		columns[0].X.Should().BeLessThanOrEqualTo(LocalTimeAxis.ToAxis(viewModel.Navigation.From));
+		columns[^1].X.Should().BeGreaterThanOrEqualTo(LocalTimeAxis.ToAxis(viewModel.Navigation.To));
+		viewModel.EndDrag();
+	}
+
+	// The read of the first wheel notch lands after the second: it spans the window of the first notch alone,
+	// and the columns in hand past both its sides still draw, and read, the wider window in view.
+	[AvaloniaFact]
+	public async Task AZoomOutReadLandingWhileTheZoomGoesOnKeepsTheColumnsInView()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		var state = viewModel.AddPen(FakeDataProvider.FirstPen);
+		LoadInitialHistory(viewModel, scheduler, From.AddDays(-30.0), To);
+		var width = viewModel.Navigation.To - viewModel.Navigation.From;
+		viewModel.Navigation.PanBy(-width);
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(5.0).Ticks);
+		var anchor = viewModel.Navigation.From + (width / 2);
+		provider.GatedLayer = viewModel.Navigation.ActiveLayer;
+
+		viewModel.Navigation.ZoomAt(1.25, anchor);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		var read = provider.ChartHistoryQueries[^1];
+		read.TargetColumnCount.Should().Be(HistoryColumnTarget.MaxColumns, "the first notch reads its window alone");
+		viewModel.Navigation.ZoomAt(1.25, anchor);
+		provider.GatedLayer = null;
+		await ReleaseAndAwait(viewModel, 1, () => provider.HistoryGate.SetResult(
+			Result.Ok<IReadOnlyList<PenHistoryEnvelope>>(
+				[new PenHistoryEnvelope(1, [read.FromUtc, read.ToUtc], [7.0, 7.0], [7.0, 7.0], [7.0, 7.0])])));
+
+		var columns = state.Line.SnapshotColumns();
+		columns[0].X.Should().BeLessThanOrEqualTo(LocalTimeAxis.ToAxis(viewModel.Navigation.From));
+		columns[^1].X.Should().BeGreaterThanOrEqualTo(LocalTimeAxis.ToAxis(viewModel.Navigation.To));
+		viewModel.MoveCursor(viewModel.Navigation.From.AddMinutes(1.0));
+		viewModel.CursorValues[1].Should().NotBeNull("the cursor reads the columns drawn past the read");
+	}
+
+	// A drag right after a zoom: the zoom's read lands while the drag holds the window a fifth of a width
+	// off the zoomed one, and the columns the range before the zoom drew still fill that strip.
+	[AvaloniaFact]
+	public async Task AZoomsReadLandingDuringTheDragThatFollowsKeepsTheColumnsInView()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		var state = viewModel.AddPen(FakeDataProvider.FirstPen);
+		LoadInitialHistory(viewModel, scheduler, From.AddDays(-30.0), To);
+		viewModel.Navigation.SetSticky(false);
+		provider.GatedLayer = viewModel.Navigation.ActiveLayer;
+		viewModel.Navigation.ZoomAt(0.5, From.AddMinutes(30.0));
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		var read = provider.ChartHistoryQueries[^1];
+		read.TargetColumnCount.Should().Be(HistoryColumnTarget.MaxColumns, "the zoom reads its window alone");
+
+		viewModel.BeginDrag();
+		viewModel.Navigation.PanBy(-0.2 * (viewModel.Navigation.To - viewModel.Navigation.From));
+		provider.GatedLayer = null;
+		await ReleaseAndAwait(viewModel, 1, () => provider.HistoryGate.SetResult(
+			Result.Ok<IReadOnlyList<PenHistoryEnvelope>>(
+				[new PenHistoryEnvelope(1, [read.FromUtc, read.ToUtc], [7.0, 7.0], [7.0, 7.0], [7.0, 7.0])])));
+
+		var columns = state.Line.SnapshotColumns();
+		columns[0].X.Should().BeLessThanOrEqualTo(LocalTimeAxis.ToAxis(viewModel.Navigation.From));
+		columns[^1].X.Should().BeGreaterThanOrEqualTo(LocalTimeAxis.ToAxis(viewModel.Navigation.To));
+		viewModel.EndDrag();
+	}
+
+	// A batch folding over the Raw columns while the read past the Raw ceiling is held shuts the gate. The next
+	// notch widens the window past that read, and the Raw columns still fill the strip it does not reach.
+	[AvaloniaFact]
+	public async Task AZoomOutAcrossTheRawCeilingKeepsTheRawColumnsPastTheCoarseReadAfterABatch()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel(RealtimeInterval);
+		var state = viewModel.AddPen(FakeDataProvider.FirstPen);
+		LoadInitialHistory(
+			viewModel, scheduler, FakeDataProvider.RealtimeEpoch.AddDays(-30.0), FakeDataProvider.RealtimeEpoch);
+		ZoomOutToOneNotchBelowTheRawCeiling(viewModel);
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(1.0).Ticks);
+		viewModel.Navigation.ActiveLayer.Should().Be(AggregationLayer.Raw);
+		provider.GatedLayer = AggregationLayer.Minute;
+
+		viewModel.Navigation.ZoomAt(1.25, viewModel.Navigation.To);
+		viewModel.Navigation.ActiveLayer.Should().Be(AggregationLayer.Minute);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		var read = provider.ChartHistoryQueries[^1];
+		read.Layer.Should().Be(AggregationLayer.Minute, "the read past the ceiling is held");
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
+		viewModel.Navigation.ZoomAt(1.25, viewModel.Navigation.To);
+		provider.GatedLayer = null;
+		await ReleaseAndAwait(viewModel, 1, () => provider.HistoryGate.SetResult(
+			Result.Ok<IReadOnlyList<PenHistoryEnvelope>>(
+				[new PenHistoryEnvelope(1, [read.FromUtc, read.ToUtc], [7.0, 7.0], [7.0, 7.0], [7.0, 7.0])])));
+
+		state.Line.SnapshotColumns()[0].X.Should().BeLessThanOrEqualTo(
+			LocalTimeAxis.ToAxis(viewModel.Navigation.From));
+	}
+
+	// The read issued before pen 2 was switched on lands without it and shuts the gate. The read of both pens
+	// that follows lands after one more notch, and pen 1's columns from before still fill the strips past it.
+	[AvaloniaFact]
+	public async Task AReadLandingWhileASwitchOnShutTheGateKeepsTheColumnsInView()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		var state = viewModel.AddPen(FakeDataProvider.FirstPen);
+		viewModel.AddPen(FakeDataProvider.SecondPen with { EnabledOnStart = false });
+		LoadInitialHistory(viewModel, scheduler, From.AddDays(-30.0), To);
+		var width = viewModel.Navigation.To - viewModel.Navigation.From;
+		viewModel.Navigation.PanBy(-width);
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(5.0).Ticks);
+		var anchor = viewModel.Navigation.From + (width / 2);
+		var firstGate = provider.HistoryGate;
+		provider.GatedLayer = viewModel.Navigation.ActiveLayer;
+
+		viewModel.Navigation.ZoomAt(1.25, anchor);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		var first = provider.ChartHistoryQueries[^1];
+		first.PenIds.Should().Equal(1);
+		viewModel.SetPenVisibility(2, true);
+		provider.HistoryGate = new();
+		await ReleaseAndAwait(viewModel, 1, () => firstGate.SetResult(
+			Result.Ok<IReadOnlyList<PenHistoryEnvelope>>(
+				[new PenHistoryEnvelope(1, [first.FromUtc, first.ToUtc], [7.0, 7.0], [7.0, 7.0], [7.0, 7.0])])));
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		var second = provider.ChartHistoryQueries[^1];
+		second.PenIds.Should().Equal(1, 2);
+		viewModel.Navigation.ZoomAt(1.25, anchor);
+		provider.GatedLayer = null;
+		await ReleaseAndAwait(viewModel, 1, () => provider.HistoryGate.SetResult(
+			Result.Ok<IReadOnlyList<PenHistoryEnvelope>>(
+			[
+				new PenHistoryEnvelope(1, [second.FromUtc, second.ToUtc], [8.0, 8.0], [8.0, 8.0], [8.0, 8.0]),
+				new PenHistoryEnvelope(2, [second.FromUtc, second.ToUtc], [8.0, 8.0], [8.0, 8.0], [8.0, 8.0])
+			])));
+
+		var columns = state.Line.SnapshotColumns();
+		columns[0].X.Should().BeLessThanOrEqualTo(LocalTimeAxis.ToAxis(viewModel.Navigation.From));
+		columns[^1].X.Should().BeGreaterThanOrEqualTo(LocalTimeAxis.ToAxis(viewModel.Navigation.To));
+	}
+
+	// Pen 2 still holds its columns of the range before the pan when it is switched on during the pan's read, so
+	// the envelopes in hand span two ranges, and the read of both pens keeps none of pen 2's columns off its own.
+	[AvaloniaFact]
+	public async Task AReadOffTheTimeAPenWasReadOverKeepsNoneOfItsColumns()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.AddPen(FakeDataProvider.FirstPen);
+		var second = viewModel.AddPen(FakeDataProvider.SecondPen);
+		LoadInitialHistory(viewModel, scheduler, From.AddDays(-30.0), To);
+		var width = viewModel.Navigation.To - viewModel.Navigation.From;
+		viewModel.SetPenVisibility(2, false);
+		var firstGate = provider.HistoryGate;
+		provider.GatedLayer = viewModel.Navigation.ActiveLayer;
+
+		viewModel.Navigation.PanBy(-4 * width);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		var far = provider.ChartHistoryQueries[^1];
+		far.PenIds.Should().Equal(1);
+		viewModel.SetPenVisibility(2, true);
+		provider.HistoryGate = new();
+		await ReleaseAndAwait(viewModel, 1, () => firstGate.SetResult(
+			Result.Ok<IReadOnlyList<PenHistoryEnvelope>>(
+				[new PenHistoryEnvelope(1, [far.FromUtc, far.ToUtc], [7.0, 7.0], [7.0, 7.0], [7.0, 7.0])])));
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		var both = provider.ChartHistoryQueries[^1];
+		both.PenIds.Should().Equal(1, 2);
+		provider.GatedLayer = null;
+		await ReleaseAndAwait(viewModel, 1, () => provider.HistoryGate.SetResult(
+			Result.Ok<IReadOnlyList<PenHistoryEnvelope>>(
+			[
+				new PenHistoryEnvelope(1, [both.FromUtc, both.ToUtc], [8.0, 8.0], [8.0, 8.0], [8.0, 8.0]),
+				new PenHistoryEnvelope(2, [both.FromUtc, both.ToUtc], [8.0, 8.0], [8.0, 8.0], [8.0, 8.0])
+			])));
+
+		second.Line.SnapshotColumns().Select(column => column.X).Should().Equal(
+			LocalTimeAxis.ToAxis(both.FromUtc),
+			LocalTimeAxis.ToAxis(both.ToUtc));
+	}
+
+	[AvaloniaFact]
+	public void TheMarginReadReplacesTheColumnsKeptAroundTheVisibleRead()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		var state = viewModel.AddPen(FakeDataProvider.FirstPen);
+		LoadInitialHistory(viewModel, scheduler, From.AddDays(-30.0), To);
+		viewModel.Navigation.SetSticky(false);
+		var queriesBefore = provider.HistoryQueryCount;
+
+		viewModel.Navigation.ZoomAt(0.5, From.AddMinutes(30.0));
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(5.0).Ticks);
+
+		var margins = provider.ChartHistoryQueries[^1];
+		provider.HistoryQueryCount.Should().Be(queriesBefore + 2);
+		state.Line.SnapshotColumns().Select(column => column.X).Should().Equal(
+			LocalTimeAxis.ToAxis(margins.FromUtc),
+			LocalTimeAxis.ToAxis(margins.ToUtc));
 	}
 
 	[AvaloniaFact]
@@ -1231,10 +1567,10 @@ public sealed class TrendChartViewModelTests
 		viewModel.AddPen(FakeDataProvider.FirstPen);
 
 		viewModel.Navigation.TargetColumnCount.Should().Be(HistoryColumnTarget.MaxColumns);
-		LoadInitialHistory(viewModel, scheduler, From, To);
+		LoadInitialHistory(viewModel, scheduler, From.AddDays(-30.0), To);
 
 		provider.LastQueriedTargetColumnCount.Should()
-			.Be(HistoryPrefetch.MarginColumnFactor * HistoryColumnTarget.MaxColumns);
+			.Be(ExpandedColumnFactor * HistoryColumnTarget.MaxColumns);
 	}
 
 	[AvaloniaTheory]
@@ -1250,8 +1586,8 @@ public sealed class TrendChartViewModelTests
 		viewModel.ReportDataAreaWidth(collapsedWidth);
 
 		viewModel.Navigation.TargetColumnCount.Should().Be(512);
-		LoadInitialHistory(viewModel, scheduler, From, To);
-		provider.LastQueriedTargetColumnCount.Should().Be(HistoryPrefetch.MarginColumnFactor * 700);
+		LoadInitialHistory(viewModel, scheduler, From.AddDays(-30.0), To);
+		provider.LastQueriedTargetColumnCount.Should().Be(ExpandedColumnFactor * 700);
 	}
 
 	[AvaloniaFact]
@@ -1277,10 +1613,10 @@ public sealed class TrendChartViewModelTests
 		viewModel.Navigation.From.Should().Be(fromBefore);
 		viewModel.Navigation.To.Should().Be(toBefore);
 
-		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(1.0).Ticks);
 
 		provider.LastQueriedLayer.Should().Be(AggregationLayer.Minute);
-		provider.LastQueriedTargetColumnCount.Should().Be(HistoryPrefetch.MarginColumnFactor * 256);
+		provider.LastQueriedTargetColumnCount.Should().Be(ExpandedColumnFactor * 256);
 	}
 
 	[AvaloniaFact]
@@ -1301,7 +1637,8 @@ public sealed class TrendChartViewModelTests
 
 		initialRead.IsCancellationRequested.Should().BeTrue();
 		provider.HistoryQueryCount.Should().Be(2);
-		provider.LastQueriedTargetColumnCount.Should().Be(HistoryPrefetch.MarginColumnFactor * 256);
+		provider.LastQueriedTargetColumnCount.Should().Be(
+			(1 + HistoryPrefetch.MarginWindows) * 256, "the live edge's first read carries its right margin");
 		state.Line.SnapshotColumns().Should().HaveCount(2);
 		state.CurrentValue.Should().Be(FakeDataProvider.DefaultCenter);
 	}
@@ -1502,6 +1839,349 @@ public sealed class TrendChartViewModelTests
 		viewModel.FindPen(1)!.CurrentValue.Should().Be(2.0);
 		lateState.Line.SnapshotColumns().Should().HaveCount(2);
 		lateState.CurrentValue.Should().Be(4.0);
+	}
+
+	[AvaloniaFact]
+	public void AFiftyPenCatalogueWithEightSwitchedOn_ReadsOnlyThoseEight()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.ApplyCatalogue(_fiftyPens);
+		LoadInitialHistory(viewModel, scheduler, From.AddDays(-30.0), To);
+		var width = viewModel.Navigation.To - viewModel.Navigation.From;
+
+		viewModel.Navigation.PanBy(-4 * width);
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(1.0).Ticks);
+
+		provider.ChartHistoryQueries.Should().HaveCount(4, "each window is read, then its margins");
+		provider.ChartHistoryQueries.Should().AllSatisfy(query => query.PenIds.Should().Equal(_switchedOnPenIds));
+	}
+
+	// Pen 6 holds the curve of the window it was hidden over, which the read of the pens shown then moved past.
+	[AvaloniaFact]
+	public async Task SwitchingAPenOn_ReadsItAloneOverTheRangeInHandAndClearsItsCurveUntilTheReadLands()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.ApplyCatalogue(_fiftyPens);
+		LoadInitialHistory(viewModel, scheduler, From.AddDays(-30.0), To);
+		var width = viewModel.Navigation.To - viewModel.Navigation.From;
+		viewModel.SetPenVisibility(6, false);
+		viewModel.Navigation.PanBy(-4 * width);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		var rangeInHand = provider.ChartHistoryQueries[^1];
+		var switchedOn = viewModel.FindPen(6)!;
+		switchedOn.Line.SnapshotColumns().Should().HaveCount(2, "the pen keeps the curve it was hidden with");
+		var queriesBefore = provider.HistoryQueryCount;
+		provider.GatedLayer = viewModel.Navigation.ActiveLayer;
+
+		viewModel.SetPenVisibility(6, true);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+
+		provider.HistoryQueryCount.Should().Be(queriesBefore + 1);
+		provider.LastQueriedPenIds.Should().Equal(6);
+		provider.LastQueriedFromUtc.Should().Be(rangeInHand.FromUtc);
+		provider.LastQueriedToUtc.Should().Be(rangeInHand.ToUtc);
+		provider.LastQueriedLayer.Should().Be(rangeInHand.Layer);
+		switchedOn.Line.SnapshotColumns().Should().BeEmpty();
+		viewModel.MoveCursor(viewModel.Navigation.From.AddMinutes(30.0));
+		viewModel.CursorValues.Should().NotContainKey(6);
+
+		provider.GatedLayer = null;
+		await ReleaseAndAwait(viewModel, 1, () => provider.HistoryGate.SetResult(
+			Result.Ok<IReadOnlyList<PenHistoryEnvelope>>(
+				[
+					new PenHistoryEnvelope(
+						6,
+						[rangeInHand.FromUtc, rangeInHand.ToUtc],
+						[7.0, 7.0],
+						[7.0, 7.0],
+						[7.0, 7.0])
+				])));
+
+		switchedOn.Line.SnapshotColumns().Should().HaveCount(2);
+		switchedOn.CurrentValue.Should().Be(7.0);
+		var stayedOn = viewModel.FindPen(12)!;
+		stayedOn.Line.SnapshotColumns().Should().HaveCount(2, "a pen the result does not name keeps its curve");
+		stayedOn.CurrentValue.Should().Be(FakeDataProvider.DefaultCenter);
+
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(1.0).Ticks);
+
+		provider.HistoryQueryCount.Should().Be(queriesBefore + 2, "the margins of the window are read once");
+		provider.LastQueriedPenIds.Should().Equal([.. _switchedOnPenIds]);
+		provider.LastQueriedTargetColumnCount.Should()
+			.Be(ExpandedColumnFactor * HistoryColumnTarget.MaxColumns);
+	}
+
+	// The read in flight names the pens shown before the switch, so the read the switch asks for over the new
+	// window supersedes it, and meanwhile the pen draws nothing from the range it was hidden over.
+	[AvaloniaFact]
+	public async Task SwitchingAPenOnWhileAGestureReadIsInFlight_ReadsEveryVisiblePenOverTheNewWindow()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.ApplyCatalogue(_fiftyPens);
+		LoadInitialHistory(viewModel, scheduler, From.AddDays(-30.0), To);
+		var width = viewModel.Navigation.To - viewModel.Navigation.From;
+		viewModel.SetPenVisibility(6, false);
+		viewModel.Navigation.PanBy(-4 * width);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		var switchedOn = viewModel.FindPen(6)!;
+		switchedOn.Line.SnapshotColumns().Should().HaveCount(2, "the pen keeps the curve it was hidden with");
+		provider.GatedLayer = viewModel.Navigation.ActiveLayer;
+		viewModel.Navigation.PanBy(-4 * width);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		var gestureRead = provider.ChartHistoryQueries[^1];
+		gestureRead.PenIds.Should().NotContain(6);
+		var queriesBefore = provider.HistoryQueryCount;
+
+		viewModel.SetPenVisibility(6, true);
+
+		switchedOn.Line.SnapshotColumns().Should().BeEmpty();
+		provider.GatedLayer = null;
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		await AwaitQueryCount(provider, queriesBefore + 1);
+		gestureRead.CancellationToken.IsCancellationRequested.Should().BeTrue();
+		provider.LastQueriedPenIds.Should().Equal(_switchedOnPenIds);
+		provider.LastQueriedFromUtc.Should().Be(viewModel.Navigation.From);
+		provider.LastQueriedToUtc.Should().Be(viewModel.Navigation.To);
+	}
+
+	// The catalogue read drops the range in hand, and the pens read for it still lack pen 6.
+	[AvaloniaFact]
+	public void SwitchingAPenOnWithNoRangeInHand_ClearsTheCurveItWasHiddenWith()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.ApplyCatalogue(_fiftyPens);
+		LoadInitialHistory(viewModel, scheduler, From.AddDays(-30.0), To);
+		var width = viewModel.Navigation.To - viewModel.Navigation.From;
+		viewModel.SetPenVisibility(6, false);
+		viewModel.Navigation.PanBy(-4 * width);
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(1.0).Ticks);
+		var switchedOn = viewModel.FindPen(6)!;
+		switchedOn.Line.SnapshotColumns().Should().HaveCount(2, "the pen keeps the curve it was hidden with");
+		provider.GatedLayer = viewModel.Navigation.ActiveLayer;
+		viewModel.ApplyCatalogue([.. _fiftyPens, new Pen(51, "Pen 51", ["Group A"], "#ff0000", EnabledOnStart: false)]);
+
+		viewModel.SetPenVisibility(6, true);
+
+		switchedOn.Line.SnapshotColumns().Should().BeEmpty();
+		switchedOn.CurrentValue.Should().BeNull();
+	}
+
+	// The failed read leaves the pen unread for the range in hand, so the next move asks for it again.
+	[AvaloniaFact]
+	public void AFailedSwitchOnReadReachesThePanelAndTheNextMoveReadsThePenAgain()
+	{
+		var panel = new MessagePanelViewModel();
+		var (viewModel, scheduler, _, provider) = CreateViewModel(messagePanel: panel);
+		viewModel.ApplyCatalogue(_fiftyPens);
+		LoadInitialHistory(viewModel, scheduler, From.AddDays(-30.0), To);
+		provider.FailHistory = true;
+
+		viewModel.SetPenVisibility(1, true);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+
+		panel.Entries.Should().ContainSingle()
+			.Which.View.Should().Be(ArchiveFailureMapper.Map(FakeDataProvider.UnreachableArchive()));
+		viewModel.FindPen(1)!.Line.SnapshotColumns().Should().BeEmpty();
+		var queriesBefore = provider.HistoryQueryCount;
+		provider.FailHistory = false;
+
+		viewModel.Navigation.PanBy(TimeSpan.FromMinutes(-30.0));
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+
+		provider.HistoryQueryCount.Should().Be(queriesBefore + 1);
+		provider.LastQueriedPenIds.Should().Equal(1);
+		viewModel.FindPen(1)!.CurrentValue.Should().Be(FakeDataProvider.DefaultCenter);
+	}
+
+	// A resize inside the deadband moves the reported width and keeps the range in hand, so the pen switched on
+	// is read at the column count of the pens it joins and bins on their grid.
+	[AvaloniaFact]
+	public void ASwitchedOnPenIsReadAtTheColumnCountOfTheRangeItJoins()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.ApplyCatalogue(_fiftyPens);
+		viewModel.ReportDataAreaWidth(700.0);
+		LoadInitialHistory(viewModel, scheduler, From.AddDays(-30.0), To);
+		viewModel.ReportDataAreaWidth(704.0);
+
+		viewModel.SetPenVisibility(1, true);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+
+		provider.LastQueriedPenIds.Should().Equal(1);
+		provider.LastQueriedTargetColumnCount.Should().Be(ExpandedColumnFactor * 700);
+	}
+
+	// The count reaches the ladder on the catalogue apply itself, so a start with many pens on reads the layer
+	// the shrunk ceilings give from its first read.
+	[AvaloniaFact]
+	public void ACatalogueShowingTwiceTheReferencePenCount_IsReadAtTheCoarserLayer()
+	{
+		const int ColumnCount = 256;
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.ReportDataAreaWidth(ColumnCount);
+		var rawCeiling = TimeSpan.FromSeconds(15.0) * ColumnCount;
+		(viewModel.Navigation.To - viewModel.Navigation.From).Should().BeLessThan(rawCeiling)
+			.And.BeGreaterThan(rawCeiling / 2.0 * 1.1);
+		viewModel.Navigation.ActiveLayer.Should().Be(AggregationLayer.Raw);
+
+		viewModel.ApplyCatalogue([
+			.. Enumerable.Range(1, 2 * ChartNavigationController.ReferencePenCount).Select(penId => new Pen(
+				penId, $"Pen {penId}", ["Group A"], "#ff0000", EnabledOnStart: true))
+		]);
+		LoadInitialHistory(viewModel, scheduler, From.AddDays(-30.0), To);
+
+		viewModel.Navigation.ActiveLayer.Should().Be(AggregationLayer.Minute);
+		provider.ChartHistoryQueries.Should().NotBeEmpty()
+			.And.AllSatisfy(query => query.Layer.Should().Be(AggregationLayer.Minute));
+	}
+
+	[AvaloniaFact]
+	public void SwitchingAPenOff_ReadsNothing()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.ApplyCatalogue(_fiftyPens);
+		LoadInitialHistory(viewModel, scheduler, From.AddDays(-30.0), To);
+		var queriesBefore = provider.HistoryQueryCount;
+
+		viewModel.SetPenVisibility(6, false);
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(1.0).Ticks);
+
+		provider.HistoryQueryCount.Should().Be(queriesBefore);
+	}
+
+	[AvaloniaFact]
+	public void AGestureAfterASwitchOn_ReadsEveryVisiblePen()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.ApplyCatalogue(_fiftyPens);
+		LoadInitialHistory(viewModel, scheduler, From.AddDays(-30.0), To);
+		viewModel.SetPenVisibility(1, true);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		provider.LastQueriedPenIds.Should().Equal(1);
+		var width = viewModel.Navigation.To - viewModel.Navigation.From;
+
+		viewModel.Navigation.PanBy(-4 * width);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+
+		provider.LastQueriedPenIds.Should().Equal([1, .. _switchedOnPenIds]);
+	}
+
+	// Zoom widths step by 1.25, so no width lands within the 2.2 % below a Minute ceiling that the first extra
+	// pen past the 10 % hysteresis needs; at 512 columns one lands 2 % below the Raw ceiling, and the same
+	// count moves the chart from Raw to Minute.
+	[AvaloniaFact]
+	public void SwitchingOnMorePensThanTheHysteresisAbsorbs_MovesToTheCoarserLayerAndReadsItOnce()
+	{
+		const int ReferencePenCount = ChartNavigationController.ReferencePenCount;
+		const int ColumnCount = 512;
+		var extraPenCount = (int)Math.Floor(0.1 * ReferencePenCount) + 1;
+		var allPenIds = Enumerable.Range(1, ReferencePenCount + extraPenCount).ToArray();
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.ApplyCatalogue([
+			.. allPenIds.Select(penId => new Pen(
+				penId, $"Pen {penId}", ["Group A"], "#ff0000", EnabledOnStart: penId <= ReferencePenCount))
+		]);
+		LoadInitialHistory(viewModel, scheduler, From.AddDays(-30.0), To);
+		viewModel.ReportDataAreaWidth(ColumnCount);
+		var rawCeiling = TimeSpan.FromSeconds(15.0) * ColumnCount;
+		var navigation = viewModel.Navigation;
+		navigation.ZoomAt(0.98 * rawCeiling / (navigation.To - navigation.From), navigation.To);
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(1.0).Ticks);
+		var width = navigation.To - navigation.From;
+		width.Should().BeLessThan(rawCeiling)
+			.And.BeGreaterThan(rawCeiling * ReferencePenCount / (ReferencePenCount + extraPenCount) * 1.1);
+		navigation.ActiveLayer.Should().Be(AggregationLayer.Raw);
+		var queriesBefore = provider.HistoryQueryCount;
+
+		foreach (var penId in allPenIds.Skip(ReferencePenCount))
+		{
+			viewModel.SetPenVisibility(penId, true);
+		}
+
+		navigation.ActiveLayer.Should().Be(AggregationLayer.Minute);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		var read = provider.ChartHistoryQueries.Skip(queriesBefore).Should().ContainSingle().Subject;
+		read.Layer.Should().Be(AggregationLayer.Minute);
+		read.PenIds.Should().Equal(allPenIds);
+
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(1.0).Ticks);
+		provider.ChartHistoryQueries.Skip(queriesBefore).Should().AllSatisfy(query =>
+		{
+			query.Layer.Should().Be(AggregationLayer.Minute);
+			query.PenIds.Should().Equal(allPenIds);
+		});
+		var queriesAtMinute = provider.HistoryQueryCount;
+
+		viewModel.SetPenVisibility(allPenIds[^1], false);
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(1.0).Ticks);
+
+		navigation.ActiveLayer.Should().Be(AggregationLayer.Minute, "the hysteresis widens the layer in force");
+		provider.HistoryQueryCount.Should().Be(queriesAtMinute);
+	}
+
+	// Reported as fetched, the pan's end would push no read and cancel the one pen 1 still waits on.
+	[AvaloniaFact]
+	public async Task AWindowIsNotFetchedWhileAVisiblePenIsMissingFromTheSetReadForItsRange()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.ApplyCatalogue(_fiftyPens);
+		LoadInitialHistory(viewModel, scheduler, From.AddDays(-30.0), To);
+		provider.GatedLayer = viewModel.Navigation.ActiveLayer;
+		viewModel.SetPenVisibility(1, true);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		var penOneRead = provider.LastQueriedCancellationToken;
+		var queriesBefore = provider.HistoryQueryCount;
+
+		viewModel.Navigation.PanBy(TimeSpan.FromMinutes(-30.0));
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+
+		penOneRead.IsCancellationRequested.Should().BeFalse();
+		provider.HistoryQueryCount.Should().Be(queriesBefore);
+
+		await ReleaseAndAwait(viewModel, 1, () => provider.HistoryGate.SetResult(
+			Result.Ok<IReadOnlyList<PenHistoryEnvelope>>(
+				[new PenHistoryEnvelope(1, [From, To], [7.0, 7.0], [7.0, 7.0], [7.0, 7.0])])));
+
+		viewModel.FindPen(1)!.CurrentValue.Should().Be(7.0);
+	}
+
+	[AvaloniaFact]
+	public void AResultForOnePenOverTheRangeInHand_KeepsTheBandFetchedForTheOthers()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.ApplyCatalogue(_fiftyPens);
+		LoadInitialHistory(viewModel, scheduler, From.AddDays(-30.0), To);
+		viewModel.SetPenVisibility(1, true);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		var queriesBefore = provider.HistoryQueryCount;
+
+		viewModel.Navigation.PanBy(TimeSpan.FromMinutes(-30.0));
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+
+		provider.HistoryQueryCount.Should().Be(queriesBefore);
+	}
+
+	// Pen 2 was read for the first range only, so the read of pen 1 alone over the next one leaves it unread there.
+	[AvaloniaFact]
+	public void AResultForOnePenOverAnotherRange_ReplacesTheSetReadForTheRange()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel();
+		viewModel.AddPen(FakeDataProvider.FirstPen);
+		viewModel.AddPen(FakeDataProvider.SecondPen);
+		LoadInitialHistory(viewModel, scheduler, From.AddDays(-30.0), To);
+		var width = viewModel.Navigation.To - viewModel.Navigation.From;
+		viewModel.SetPenVisibility(2, false);
+		viewModel.Navigation.PanBy(-4 * width);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		var nextRange = provider.ChartHistoryQueries[^1];
+		nextRange.PenIds.Should().Equal(1);
+
+		viewModel.SetPenVisibility(2, true);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+
+		provider.LastQueriedPenIds.Should().Equal(2);
+		provider.LastQueriedFromUtc.Should().Be(nextRange.FromUtc);
+		provider.LastQueriedToUtc.Should().Be(nextRange.ToUtc);
 	}
 
 	[AvaloniaFact]
@@ -1753,10 +2433,38 @@ public sealed class TrendChartViewModelTests
 		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 		await ReleaseAndAwait(
 			viewModel, 1, () => provider.HistoryGate.SetResult(EnvelopeEndingAtTheRealtimeEpoch()));
+		LandTheMarginReadFromTheReleasedGate(scheduler);
 		provider.HistoryGate = new();
 
 		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks * 3);
 		viewModel.Navigation.ActiveLayer.Should().Be(AggregationLayer.Raw);
+	}
+
+	private static IEnumerable<(DateTime FromUtc, DateTime ToUtc, int TargetColumnCount)> ReadsSince(
+		FakeDataProvider provider,
+		int queriesBefore)
+	{
+		return provider.ChartHistoryQueries
+			.Skip(queriesBefore)
+			.Select(query => (query.FromUtc, query.ToUtc, query.TargetColumnCount));
+	}
+
+	private static void ZoomOutToOneNotchBelowTheRawCeiling(TrendChartViewModel viewModel)
+	{
+		while (ChartNavigationController.LayerForWidth(
+			1.25 * (viewModel.Navigation.To - viewModel.Navigation.From),
+			AggregationLayer.Raw,
+			viewModel.Navigation.TargetColumnCount,
+			visiblePenCount: 1) == AggregationLayer.Raw)
+		{
+			viewModel.Navigation.ZoomAt(1.25, viewModel.Navigation.To);
+		}
+	}
+
+	// The released gate answers the margin read the landed result asked for as soon as it is admitted.
+	private static void LandTheMarginReadFromTheReleasedGate(TestScheduler scheduler)
+	{
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 2);
 	}
 
 	// The coarse read waits at the gate, unless FailHistory fails it before the gate.

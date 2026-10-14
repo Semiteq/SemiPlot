@@ -42,6 +42,7 @@ public sealed class HistoryPrefetchTests
 			_windowFrom, _windowFrom.AddHours(1.0), AggregationLayer.Minute, reportedColumns, _archiveStart);
 
 		range.ColumnTarget.Should().Be(3 * reportedColumns);
+		range.ColumnFactor.Should().Be(3);
 		range.Layer.Should().Be(AggregationLayer.Minute);
 	}
 
@@ -164,6 +165,67 @@ public sealed class HistoryPrefetchTests
 
 		fetched.FromUtc.Should().Be(_archiveStart);
 		covers.Should().BeTrue();
+	}
+
+	[Theory]
+	[InlineData(false, 1)]
+	[InlineData(true, 2)]
+	public void Visible_ReadsTheWindowAtOneColumnPerPixel(bool withRightMargin, int columnFactor)
+	{
+		var windowTo = _windowFrom.AddHours(1.0);
+
+		var range = HistoryPrefetch.Visible(
+			_windowFrom, windowTo, AggregationLayer.Raw, ReportedColumns, _archiveStart, withRightMargin);
+
+		range.FromUtc.Should().Be(_windowFrom);
+		range.ToUtc.Should().Be(withRightMargin ? windowTo.AddHours(1.0) : windowTo);
+		range.ColumnTarget.Should().Be(columnFactor * ReportedColumns);
+		range.ColumnFactor.Should().Be(columnFactor);
+		range.WindowWidth.Should().Be(TimeSpan.FromHours(1.0));
+	}
+
+	[Fact]
+	public void Visible_ClampsTheLeftEdgeToTheFirstStoredSample()
+	{
+		var windowFrom = _archiveStart.AddMinutes(-20.0);
+
+		var range = HistoryPrefetch.Visible(
+			windowFrom, windowFrom.AddHours(1.0), AggregationLayer.Raw, ReportedColumns, _archiveStart, false);
+
+		range.FromUtc.Should().Be(_archiveStart);
+	}
+
+	[Theory]
+	[InlineData(0, true)]
+	[InlineData(-1, false)]
+	[InlineData(1, false)]
+	public void Covers_ARangeWithNoMargins_HoldsItsOwnWindowAndNothingPannedOffIt(int panMinutes, bool isCovered)
+	{
+		var fetched = HistoryPrefetch.Visible(
+			_windowFrom, _windowFrom.AddHours(1.0), AggregationLayer.Raw, ReportedColumns, _archiveStart, false);
+		var pannedFrom = _windowFrom.AddMinutes(panMinutes);
+
+		var covers = HistoryPrefetch.Covers(
+			fetched, pannedFrom, pannedFrom.AddHours(1.0), AggregationLayer.Raw, ReportedColumns, _archiveStart);
+
+		covers.Should().Be(isCovered);
+	}
+
+	[Theory]
+	[InlineData(0, true)]
+	[InlineData(30, true)]
+	[InlineData(31, false)]
+	[InlineData(-1, false)]
+	public void Covers_ARangeWithOnlyARightMargin_HoldsAPanRightInsideHalfThatMargin(int panMinutes, bool isCovered)
+	{
+		var fetched = HistoryPrefetch.Visible(
+			_windowFrom, _windowFrom.AddHours(1.0), AggregationLayer.Raw, ReportedColumns, _archiveStart, true);
+		var pannedFrom = _windowFrom.AddMinutes(panMinutes);
+
+		var covers = HistoryPrefetch.Covers(
+			fetched, pannedFrom, pannedFrom.AddHours(1.0), AggregationLayer.Raw, ReportedColumns, _archiveStart);
+
+		covers.Should().Be(isCovered);
 	}
 
 	private static FetchRange OneHourFetch()

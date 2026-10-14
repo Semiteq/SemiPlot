@@ -74,7 +74,7 @@ SemiBase creates `public.trends`, as `bench.md` and `postgres-instance.md` state
 | Platform        | .NET 10 (`net10.0`), ships on Windows, C# 14                                |
 | Desktop shell   | Avalonia 12.0.5 (Win32 + Skia + HarfBuzz + `Semi.Avalonia`), ReactiveUI MVVM |
 | Chart renderer  | ScottPlot 5 (`ScottPlot.Avalonia` 5.1.59, MIT, SkiaSharp) — native control  |
-| Data source     | One read-only PostgreSQL connection to the Simple-Scada archive (`trends` / `messages`) — history, extent and realtime alike. No application server, no OPC UA client, no local TCP protocol |
+| Data source     | One read-only Npgsql data source (a connection pool) on the Simple-Scada archive (`trends` / `messages`) — history, extent and realtime alike; a history read holds up to four pooled connections at once (`data-integration.md#operation-to-statement`). No application server, no OPC UA client, no local TCP protocol |
 | Wide windows    | The SCADA's own archive layers (`l = 1/2`); no summary tables, aggregator service, scheduler or extensions of ours (`history-read-path-evaluation.md`) |
 | Retention       | One depth for all archived data; coarse layers cannot outlive raw data       |
 | Tag names       | Our own `semiplot_tags` table, one row per key SCADA writes, registered by `semiplot_register_new_pens()` — the archive stores numbers only |

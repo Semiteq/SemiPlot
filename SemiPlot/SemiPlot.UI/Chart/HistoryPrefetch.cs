@@ -3,21 +3,29 @@ using SemiPlot.Core.Trends;
 namespace SemiPlot.UI.Chart;
 
 /// <summary>
-/// Turns a visible window into the wider window to fetch, and decides whether a fetched range still serves
-/// the window in view.
+/// Turns a visible window into the range to fetch, and decides whether a fetched range still serves the window
+/// in view.
 /// </summary>
 public static class HistoryPrefetch
 {
 	// Visible window widths of margin fetched on each side.
 	public const int MarginWindows = 1;
 
-	// Columns a request asks for per visible column, so the whole fetched range stays at one column per pixel.
-	public const int MarginColumnFactor = (2 * MarginWindows) + 1;
-
-	/// <summary>The columns a request asks for to hold a visible target across the whole fetched range.</summary>
-	public static int ScaleColumnTarget(int columnTarget)
+	/// <summary>
+	/// The window in view alone, plus its right margin when <paramref name="withRightMargin"/> holds; the left edge is
+	/// clamped at the first sample as <see cref="Expand"/> clamps it.
+	/// </summary>
+	public static FetchRange Visible(
+		DateTime fromUtc,
+		DateTime toUtc,
+		AggregationLayer layer,
+		int columnTarget,
+		DateTime firstSampleUtc,
+		bool withRightMargin)
 	{
-		return columnTarget * MarginColumnFactor;
+		var rightMarginWindows = withRightMargin ? MarginWindows : 0;
+
+		return Build(fromUtc, toUtc, layer, columnTarget, firstSampleUtc, 0, rightMarginWindows);
 	}
 
 	public static FetchRange Expand(
@@ -27,9 +35,20 @@ public static class HistoryPrefetch
 		int columnTarget,
 		DateTime firstSampleUtc)
 	{
+		return Build(fromUtc, toUtc, layer, columnTarget, firstSampleUtc, MarginWindows, MarginWindows);
+	}
+
+	private static FetchRange Build(
+		DateTime fromUtc,
+		DateTime toUtc,
+		AggregationLayer layer,
+		int columnTarget,
+		DateTime firstSampleUtc,
+		int leftMarginWindows,
+		int rightMarginWindows)
+	{
 		var width = toUtc - fromUtc;
-		var margin = MarginWindows * width;
-		var expandedFrom = fromUtc - margin;
+		var expandedFrom = fromUtc - (leftMarginWindows * width);
 
 		if (expandedFrom < firstSampleUtc)
 		{
@@ -37,7 +56,13 @@ public static class HistoryPrefetch
 		}
 
 		return new FetchRange(
-			expandedFrom, toUtc + margin, layer, ScaleColumnTarget(columnTarget), width);
+			expandedFrom,
+			toUtc + (rightMarginWindows * width),
+			layer,
+			columnTarget * (1 + leftMarginWindows + rightMarginWindows),
+			width,
+			leftMarginWindows,
+			rightMarginWindows);
 	}
 
 	/// <summary>
@@ -51,7 +76,7 @@ public static class HistoryPrefetch
 		int columnTarget,
 		DateTime firstSampleUtc)
 	{
-		if (fetched.Layer != layer || fetched.ColumnTarget != ScaleColumnTarget(columnTarget))
+		if (fetched.Layer != layer || fetched.ColumnTarget != columnTarget * fetched.ColumnFactor)
 		{
 			return false;
 		}
@@ -61,9 +86,9 @@ public static class HistoryPrefetch
 			return false;
 		}
 
-		var rightMargin = MarginWindows * fetched.WindowWidth;
+		var rightMargin = fetched.RightMarginWindows * fetched.WindowWidth;
 
-		// Expand clamps the left edge only, so what lies left of the visible window is the whole range less
+		// The left edge alone is ever clamped, so what lies left of the visible window is the whole range less
 		// that window and the unclamped right margin.
 		var leftMargin = fetched.ToUtc - fetched.FromUtc - fetched.WindowWidth - rightMargin;
 		var reachesTheFirstSample = fetched.FromUtc <= firstSampleUtc;

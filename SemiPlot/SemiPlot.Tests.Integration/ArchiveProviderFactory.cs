@@ -21,12 +21,17 @@ public static class ArchiveProviderFactory
 
 	public static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
 
+	// The pool wait a test that caps the pool sets: one connect past the cap fails within it.
+	private const int CappedPoolWaitSeconds = 2;
+
 	// The caller disposes what comes back, which returns the pooled connections before
 	// ArchiveDatabase.DisposeAsync drops the database, and a pooled connection makes DROP DATABASE refuse.
 	public static ServiceProvider Build(
 		string connectionString,
 		ILoggerProvider? loggerProvider = null,
-		TimeProvider? timeProvider = null)
+		TimeProvider? timeProvider = null,
+		int historyReadConcurrency = PostgresDataProvider.HistoryReadConcurrency,
+		int? maxPoolSize = null)
 	{
 		var services = new ServiceCollection();
 
@@ -44,7 +49,19 @@ public static class ArchiveProviderFactory
 			services.AddSingleton(timeProvider);
 		}
 
-		services.AddPostgresData(SettingsFor(connectionString));
+		var settings = SettingsFor(connectionString);
+		services.AddPostgresData(settings, historyReadConcurrency);
+
+		if (maxPoolSize is { } poolSize)
+		{
+			// Registered after AddPostgresData's own data source, so every resolution takes this one.
+			var cappedConnectionString = new NpgsqlConnectionStringBuilder(settings.ConnectionString)
+			{
+				MaxPoolSize = poolSize,
+				Timeout = CappedPoolWaitSeconds
+			}.ConnectionString;
+			services.AddSingleton(_ => NpgsqlDataSource.Create(cappedConnectionString));
+		}
 
 		return services.BuildServiceProvider();
 	}

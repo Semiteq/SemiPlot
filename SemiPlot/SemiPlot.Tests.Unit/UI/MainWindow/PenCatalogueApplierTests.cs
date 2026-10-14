@@ -148,7 +148,7 @@ public sealed class PenCatalogueApplierTests
 
 		chart.HasNoPens.Should().BeFalse();
 		chart.Navigation.FirstSample.Should().Be(provider.ArchiveFirstUtc);
-		provider.HistoryQueryCount.Should().Be(1);
+		provider.HistoryQueryCount.Should().Be(2, "the window is read, then its margins");
 		provider.LastQueriedPenIds.Should().Equal(1);
 		provider.LastQueriedFromUtc.Should().BeBefore(provider.ArchiveLastUtc);
 	}

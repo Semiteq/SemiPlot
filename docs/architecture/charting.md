@@ -21,8 +21,8 @@ decimation is unused because the data layer pre-decimates. `DataLogger` is cited
 **Why one polyline instead of `Scatter` + `FillY`.** The pair it replaced walked every coordinate twice
 per frame: `FillY` is a `Polygon` building an `SKPath` of `2 x columns + 1` vertices, and `Scatter` walked
 all points again through `Drawing.DrawMarkers` even at `MarkerStyle.None`. Neither culled to the viewport,
-and the prefetch margin (`HistoryPrefetch.MarginColumnFactor = 3`) makes every pen's buffer three visible
-windows wide, so a frame cost three times what it drew. Measured on the bench stand on 2026-09-07 with
+and the prefetch margin (`HistoryPrefetch.Expand`, one window width on each side) makes every pen's buffer
+three visible windows wide, so a frame cost three times what it drew. Measured on the bench stand on 2026-09-07 with
 8 pens and 2048 columns, `RenderOnce` averaged 62 ms (max 386 ms) with the fill anti-aliased and 4.8 ms
 (max 34 ms) with it off. Drawing the min/max as a line rather than a fill also keeps a spike inside a
 column visible, which a centre-only line hides.
@@ -114,7 +114,9 @@ A history apply keeps the live tail past its snapshot. `EnvelopeLine.ReplaceColu
 columns and the right edge of the range the read asked for. It keeps every appended column whose X is
 after the new last column, all of them when the new list is empty, and drops those past the requested
 edge; then it trims the merge to the cap from the oldest end. An appended column is one past the last X
-the previous replace wrote, so only live appends survive and a previous band's history never does. A
+the previous replace wrote, so only live appends survive and a previous band's history never does,
+except where `EnvelopeSplice.Over` laid a margin-less read over the envelope in hand before the load
+(`data-integration.md#what-one-history-query-covers`). A
 pan into the past asks for a range that ends before the follow phase's tail, so the tail goes and the
 band just read keeps the whole buffer. `TrendPenState.ClearHistory` is a replace with no columns, so a
 requested pen absent from a result keeps its tail too. `LoadHistory` and `ClearHistory` both set
@@ -392,7 +394,10 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
 - `Chart/ChartNavigationController` — owns the `TrendNavigationModel`, the layer ladder, the live-edge
   advance; raises `WindowChanged` (`NavigationWindow` = `[From, To]` + `Layer` +
   `RequiresHistoryRequery`). A ceiling is derived, not constant:
-  `nextCoarser(layer).ToPointSpacing() × TargetColumnCount`, guarded by a 10% hysteresis band.
+  `nextCoarser(layer).ToPointSpacing() × TargetColumnCount × min(1, ReferencePenCount / max(1, visiblePens))`,
+  guarded by a 10% hysteresis band; `ReferencePenCount` is 16 (`data-integration.md#layer-ladder`).
+  `SetVisiblePenCount`, which `TrendChartViewModel` calls after every catalogue apply and every
+  visibility change, stores the count and raises `WindowChanged` when the layer moves.
   `TargetColumnCount` is the canvas width in columns, clamped to 256…2048 and quantised to a power of
   two with its own 10% deadband; it selects the layer only, never the query resolution. **Single
   writer:** `TrendChartViewModel.ReportDataAreaWidth`, called from `TrendChartView`'s
@@ -415,9 +420,9 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
 - `Chart/HistoryColumnTarget` — pixel width → column count (one per pixel, clamped to 256…2048). A
   non-positive or NaN width has no canvas behind it, so `TrendChartViewModel.ReportDataAreaWidth` drops it and
   keeps the last width. The unquantised value is what every
-  history query asks the provider to decimate to, times the three windows the prefetch below fetches;
-  `TrendChartViewModel` keeps the last reported one and stands on `MaxColumns` until the first render
-  reports.
+  history query asks the provider to decimate to, times the windows the prefetch below fetches;
+  `ChartHistoryPlanner.ReportedColumnTarget` keeps the last reported one and stands on `MaxColumns` until
+  the first render reports.
 - `Chart/ChartHistoryRequestDebouncer` — the one history path, for the initial load and every gesture:
   `Throttle` (one trailing request 150 ms after the gesture goes quiet) merged with `Sample` at a
   400 ms cap interval (one request per cap while the gesture keeps moving), a request for the window
@@ -427,14 +432,22 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   slot is what lets a read slower than the cap complete at all. The trailing request cancels a read
   still running for another window, also when the gesture ends back on the window already drawn
   (`data-integration.md#what-one-history-query-covers`). The first-snap path stays non-requerying.
-- `Chart/HistoryPrefetch` — visible window → the window to fetch: one window width of margin on each
-  side at three times the column target, so the fetched range stays at one column per pixel, with the
-  left edge clamped to the archive's first sample. `TrendChartViewModel` keeps the last `FetchRange`
-  and asks `Covers` before every request, so a pan that stays in the inner band, half a window width
-  in from each fetched edge, issues no query, while a zoom, a layer change and a column-target change
-  always issue one. A range reaching the first sample holds its whole left side, so a window starting
-  before the first sample is read once. Envelopes therefore span three windows, and the auto scale reads the visible one
+- `Chart/HistoryPrefetch` — visible window → the range to fetch. `Visible` is the window alone, with
+  its right margin at the live edge, and `Expand` adds one window width of margin on each side; each asks
+  for the column target times the windows it spans, so the fetched range stays at one column per pixel,
+  and each clamps the left edge to the archive's first sample. `ChartHistoryPlanner` keeps the last
+  `FetchRange` and asks `Covers` before every request, so a pan that stays in the inner band, half of
+  each side's margin in from that fetched edge, issues no query, and a pan past it, a zoom, a layer
+  change and a column-target change issue a `Visible` read first
+  (`data-integration.md#what-one-history-query-covers`). A range
+  reaching the first sample holds its whole left side, so a window starting before the first sample is
+  read once. Envelopes therefore span up to three windows, and the auto scale reads the visible one
   only, through `PenScaleModel`'s window bound.
+- `Chart/ChartHistoryPlanner` — the one history request decision: the range in hand, the pens read
+  for it, the column count it was read at and the last reported width. `Next` answers what the window in
+  view still needs read, `Land` takes an applied read and `Forget` drops the range in hand
+  (`data-integration.md#what-one-history-query-covers`). `TrendChartViewModel` owns one and is its only
+  caller.
 - `Chart/ChartRealtimeApplier` — the append-vs-fold rule per layer for incoming `RealtimeBatch`es.
   It walks each `PenRealtimeValues` on that pen's own timestamps, never on the batch's union, and
   hands the union's last timestamp to `ChartNavigationController.OnLiveEdge`.
@@ -622,17 +635,21 @@ whatever baseline the loop compared it with (`overview.md#what-a-read-changes`).
    removes every pen computes it over no pen, which clears the stored scales and moves
    `ScalesRevision` on like any other.
 
-After the lock, the live edge follows the pens shown: when their id set differs from
-`TrendCoordinator.PenIds`, the set the live edge follows (`data-integration.md#realtime`), the chart
-hands the new one to `SetPens`. Compared with that set rather than with the read before, an apply that
-threw before this point is caught up by the next one, and the start sequence, which applies the pens
-the coordinator was built with, opens no second live subscription. Once the first history request has
-gone out (`RequestInitialHistory`), a set change also drops the last fetch and issues one history
-query for every pen. A pen added after the first fetch otherwise gets no history from a window already
-read, and the live-edge switch leaves a hole in the pens that stay. Before the first history request,
-that request covers every pen, so the start sequence seeds the chart through the same `ApplyCatalogue`
-and queries nothing twice. `Pens` and `HasNoPens` are raised, and `RequestRedraw` follows. No production
-code adds or removes a pen but a catalogue applied.
+After the lock, the visible pen count goes to `Navigation.SetVisiblePenCount`, which may move the
+layer (`data-integration.md#layer-ladder`). Then the live edge follows the pens shown, hidden ones
+included: when their id set differs from `TrendCoordinator.PenIds`, the set the live edge follows
+(`data-integration.md#realtime`), the chart hands the new one to `SetPens`. Compared with that set
+rather than with the read before, an apply that threw before this point is caught up by the next one,
+and the start sequence, which applies the pens the coordinator was built with, opens no second live
+subscription. Once the first history request has gone out (`RequestInitialHistory`), a set change also
+drops the last fetch and issues one history query for every visible pen. A pen added after the first
+fetch otherwise gets no history from a window already read, and the live-edge switch leaves a hole in
+the pens that stay. Before the first history request, that request covers every visible pen, so the
+start sequence seeds the chart through the same `ApplyCatalogue` and reads nothing of its own. One read
+can leave before it: a visible pen count that moves the layer raises `WindowChanged`, which reads the
+window as any window change does, and the debouncer's 150 ms throttle merges that read with the first
+request, which `TrendWindow.Build` pushes in the same synchronous step. `Pens` and `HasNoPens` are
+raised, and `RequestRedraw` follows. No production code adds or removes a pen but a catalogue applied.
 
 A pen removed and named again before the removal's read applied is read again too. Its request names
 the same pens and window as the read applied before the removal, but the chart pushes it after that
@@ -643,6 +660,30 @@ again (`data-integration.md#what-one-history-query-covers`).
 A history result that lands after a delta removed a pen carries an envelope for it, because the query
 was issued before the removal. `ApplyHistory` skips every envelope whose pen the chart no longer
 holds, so a removed pen's rows never outlive it and a pen that comes back reads its history afresh.
+
+A hidden pen is never read. Every history request names the visible pens alone
+(`data-integration.md#what-one-history-query-covers`), so a pen joining hidden, and a pen switched off,
+keeps its last envelope without drawing it; the cursor and hover readouts skip it. That envelope can
+belong to a window the chart has since left.
+
+`TrendChartViewModel.SetPenVisibility` switches a pen on in this order:
+
+1. A pen missing from the pens read for the range in hand is cleared, also when no range is in hand:
+   its envelope is dropped and its columns are cleared with the right edge of the range in hand as the
+   end, or the window end when none is, so the live tail the poll appended inside the range survives and
+   no curve from another window is drawn or read by the cursor.
+2. The active pen settles on a visible pen.
+3. The new visible count goes to `Navigation.SetVisiblePenCount`. A count that moves the layer raises
+   `WindowChanged`, whose handler reads the window in view at the new layer, applies the axis model and
+   redraws, and the switch ends there.
+4. Otherwise the request decision runs. While the range in hand covers the window in view, the pen is
+   read alone over that range; otherwise the window in view is read for every visible pen. The axis model
+   is applied once and a redraw follows.
+
+A pen switched off and on again while the range in hand still holds it is not cleared and reads
+nothing. Switching a pen off reads nothing either, unless the smaller count moves the layer. A failed
+read of a pen switched on leaves it cleared and unread for the range in hand, so the next window
+change asks for it again.
 
 A chart that started empty takes its first pens through the same path. `PenCatalogueApplier` reads the
 archive extent first and seeds `Navigation.SeedFromArchiveExtent` with it before the delta applies, as a

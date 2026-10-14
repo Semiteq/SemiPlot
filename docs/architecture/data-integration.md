@@ -77,8 +77,8 @@ Contract points every implementation keeps:
   UI thread (`DA-1`).
 - The provider checks no argument of `QueryHistoryAsync`; its callers keep the invariants. The layer
   always comes from `LayerForWidth`, never from a cast. The column count is
-  `HistoryColumnTarget.FromDataAreaWidth`'s clamp to 256…2048 times the margin factor, or the
-  minimap's constant 250. The window keeps `fromUtc` before `toUtc`: `TrendNavigationModel` holds it at
+  `HistoryColumnTarget.FromDataAreaWidth`'s clamp to 256…2048 times the fetched range's
+  `FetchRange.ColumnFactor`, one per window the range spans, or the minimap's constant 250. The window keeps `fromUtc` before `toUtc`: `TrendNavigationModel` holds it at
   least one second wide, and the minimap's bounds are `min(t)` and `max(t)` of the archive.
 - A history read whose `cancellationToken` is cancelled ends in `OperationCanceledException`, never in
   a failed `Result`. The chart treats only that exception, while its own token is cancelled, as its
@@ -224,6 +224,44 @@ parameter names: `PostgresDataProvider.BindLocalBucketedWindow`, `RealtimePoll.B
 `RealtimePoll.BindBaseline`. A gap explanation over `messages` is designed but not shipped; nothing
 issues it.
 
+One history read runs in pen groups. `PostgresDataProvider.QueryHistoryAsync` removes duplicate ids,
+sorts the rest ascending, and `Chunk` cuts them into contiguous groups of `ceil(n / HistoryReadConcurrency)`
+pens, so the largest group holds as many pens as an even split into `HistoryReadConcurrency` groups would,
+and a small read runs fewer groups: five pens run as 2, 2 and 1. `HistoryReadConcurrency` is 4, and
+`AddPostgresData` hands it to the provider's constructor. The read runs three phases, and each statement
+phase runs under a `CancellationTokenSource` of its own, linked to the caller's token:
+
+1. The `BucketedHistoryWindow` statement of every group, concurrently, each on its own pooled
+   connection.
+2. At a coarse layer, the seams over the rows of all groups and one `FreshTail.Start` across every
+   pen ("Layer ladder", Fresh tail).
+3. The fresh-tail statements of every group, concurrently, at that one start.
+
+Each phase awaits every group with `Task.WhenAll`, so the read returns only once each connection is
+back in the pool. A failing group cancels the others of its phase, and its exception reaches the mapper. The groups'
+rows concatenate in ascending pen id, the `ORDER BY id, t` run that `FreshTail.Merge` and
+`BucketedRowFold` take, so the envelopes come back in ascending pen id. One tail start across every pen
+keeps a pen's envelope the same whatever group it sits in:
+`PostgresHistoryReadTests.AReadSplitIntoPenGroupsReturnsWhatOneStatementReturns` reads fresh, lagging,
+reaching and late pens as one group and, named descending with one id repeated, in pen groups, and
+compares the envelopes pen by pen at `Raw` and at `Minute`. The ids must be sorted: `FreshTail.Merge`
+takes the smaller head pen id of the coarse and the tail rows as the next run, and `BucketedRowFold.Fold`
+makes one envelope per run of one pen id, so groups concatenated out of order split a pen into two runs.
+`AGroupedReadCancelledMidStatementReturnsEveryConnectionBeforeItThrows` holds four
+statements on a lock of `trends`, cancels the read and finds no busy connection after the throw.
+`AGroupFailingWhileTheOthersWaitFailsTheReadAfterEveryConnectionReturns` caps the pool one connection
+short of the groups: three statements wait on the lock while the fourth group fails at the pool wait, and
+the read comes back a failed `Result` with an `ArchiveError`, not an `OperationCanceledException` of a
+sibling group, with no busy connection.
+
+Four groups is the measured knee on the bench's 10 CPUs. The server plans `BucketedHistoryWindow` with
+no `Gather` at any setting ("Read cost"), so one statement uses one core, and pen groups are the only
+way a read uses more. Split into concurrent statements over pen groups, the visible-width Minute read
+takes, as wall time of one pgbench round: over 30 pens 1 045 ms in one statement, 806 ms in two, 683 ms
+in four and 530 ms in eight; over 50 pens 2 083 ms, 1 238 ms, 988 ms and 844 ms, 2.1x at four and 2.5x
+at eight. Four leaves the remaining cores to the SCADA on the same machine. The data source sets no
+`MaxPoolSize`, so Npgsql's default pool of 100 connections serves four per read.
+
 At `Raw`, `BucketedHistoryWindow` reaches the window rows through the index on `(id, l, t)`, and on
 the bench the planner sorts them by `(id, t)` before the window aggregate rather than reading them in
 index order, at every width from two minutes to eight hours.
@@ -236,15 +274,71 @@ way and none is gated.
 
 ### What one history query covers
 
-The window a query reads is wider than the window in view. `HistoryPrefetch.Expand`
-(`SemiPlot.UI/Chart/HistoryPrefetch.cs`) adds one visible window width of margin on each side and
-asks for three times the column target, so the fetched range stays at one column per pixel. The left
-edge is clamped to the archive's first sample; the right edge is not, because a range reaching past
-the live edge is a successful empty read. The provider's fresh tail therefore clamps at the present
-rather than at that edge ("Layer ladder"). A new window is drawn from the last fetch while it stays
-inside the inner band, half a window width in from each fetched edge, so a pan issues no query until
-the margin is half spent. A range that reaches the first sample has no left edge to approach, because
-no row lies before it: `HistoryPrefetch.Covers` takes `Navigation.FirstSample` and holds the left side
+The chart reads only the pens it draws. `ChartHistoryPlanner.Next` (`SemiPlot.UI/Chart/ChartHistoryPlanner.cs`)
+makes the one request decision, over the range in hand and the pens read for it, which the planner keeps.
+`TrendChartViewModel` asks it from `OnNavigationWindowChanged`, `RequestWindowInForce`, `SetPenVisibility`
+and `ApplyHistory`. A request names the visible pens in catalogue order. A hidden pen is never
+read and keeps its last envelope (`charting.md#applying-a-catalogue-read`); the realtime poll still
+covers every pen of the catalogue, because a poll costs one indexed read per pen whatever is drawn. The
+decision answers, in this order:
+
+1. Nothing, when no pen is visible.
+2. The visible window, when the range in hand does not cover the window in view.
+3. The visible pens missing from the pens read for the range in hand, read alone over that range at the
+   column count that range was read at. A pen switched on takes this read.
+4. Nothing, when the range in hand carries its margins.
+5. The window with its margins, unless they add no time that can hold rows.
+
+Every window the range in hand does not cover, after a pan, a zoom, a layer change, a column-target
+change or a jump, reads the visible window first. `HistoryPrefetch.Visible`
+(`SemiPlot.UI/Chart/HistoryPrefetch.cs`) reads the window in view at the column target. A sticky window, a window whose end reaches the newest
+sample, and a chart that has seen no sample yet keep the right margin in that first read, at twice the
+column target (`ChartHistoryPlanner.ReachesTheNewestSample`): nothing lies past the live edge, so the
+margin costs no rows, and the live samples the poll appends during the read survive its apply (below).
+When that result lands, the decision asks for `HistoryPrefetch.Expand`. Every read therefore bins at one
+column per pixel. The decision asks nothing instead when `Expand` spans the same times as the first read,
+which happens when its left edge clamps at the first sample and the first read carried the right margin.
+The cost: the server reads the visible window twice, for a detached window 1.33x the rows of one
+`Expand` read; a pan made after the first paint and before the margins land reads again; startup reads
+twice.
+
+A read without a margin on a side keeps the columns in hand past that side. A read a gesture issues
+lands after the gesture moved on: a zoom out has widened the window past it, a drag has moved the
+window off it, and a drag right after a zoom moves off the zoom's own read. Replacing every column with
+that read would blank the strips the range in hand still drew, for one read cycle, up to the 400 ms
+`Sample` cap plus the read. `EnvelopeSplice.Over` (`SemiPlot.UI/Chart/EnvelopeSplice.cs`) therefore lays
+each pen's read over that pen's envelope in hand when the read's range overlaps the time that envelope
+was read over: the columns in hand before the read's first column and its range start stay when the
+range carries no left margin, and those at or past the range end and after the read's last column stay
+when it carries no right margin. `TrendChartViewModel.ApplyHistory` stores the spliced envelope, loads it
+into the line, and then records its time: the read's range, widened to the time in hand on each side
+that kept columns. The cursor, the delta readout and the auto scale therefore read what is drawn. The
+columns kept were read at the range before, possibly at another layer or bucket width, so for that cycle
+the line can change resolution at the read's edges. The `Expand` read that follows carries both margins
+and replaces every column, so nothing kept outlives it. A read that does not overlap a pen's time keeps
+none of its columns, and neither does a pen with no envelope in hand or one whose load threw, which has
+no time recorded: a column kept across time no read covered would draw a straight segment over it.
+
+Each pen's time is kept apart from the range in hand. The range in hand is the gate, and the gate shuts
+while a read is applied, on a fold over Raw columns (below), when a read lands without every visible pen,
+and on a catalogue change. None of these changes what an envelope in hand was read over, so a read that
+lands with the gate shut still keeps the columns past it. That is the state of a zoom out across the
+Raw ceiling: the poll folds into the Raw columns while the first coarse read runs, and the Raw columns
+still fill the strips the next notch widens past that read. The pens of one apply can hold envelopes of
+two ranges: a pen switched on while the range in hand still held it keeps the envelope of that range,
+while the read in flight brings the other pens a new one. Each pen's read is therefore matched against
+that pen's own time.
+
+`FetchRange` carries the margin windows it was built with on each side, and its `ColumnFactor` is one
+plus their sum. `HistoryPrefetch.Covers` reads the range's own margins and compares the column target
+against the visible target times that factor. The left edge is clamped to the archive's first sample,
+in `Visible` as in `Expand`; the right edge is not, because a range reaching past the live edge is a
+successful empty read. The provider's fresh tail therefore clamps at the present rather than at that
+edge ("Layer ladder"). A new window is drawn from the last fetch while it stays inside the inner band,
+half of each side's own margin in from that fetched edge, so a pan issues no query until the margin is
+half spent. A side read without a margin has no band to spend: a range read without margins covers
+exactly its window, and any pan off it reads again. A range that reaches the first sample has no left
+edge to approach, because no row lies before it: `HistoryPrefetch.Covers` takes `Navigation.FirstSample` and holds the left side
 of such a range whatever margin the clamp left. A window that starts before the first sample is
 therefore read once and drawn from that read; an archive younger than the window opens on one, and a
 zoom out past the archive followed by a jump to now leaves one. A first sample that moves back, after
@@ -258,11 +352,21 @@ Two column counts travel on one request, and the gate reads only one of them. `H
 carries the quantized count `ChartNavigationController.TargetColumnCount` holds, which a deadband
 keeps still while the Y tick labels widen and narrow the data rect by a pixel mid-gesture;
 `HistoryRequest.TargetColumnCount` carries the unquantized pixel width the provider decimates to.
+A pen read alone over the range in hand takes the unquantized count that range was read at, not the
+width reported since, so it bins on the `date_bin` grid of the pens it joins.
 The range travels on the request so the result alone says which band the envelopes in hand describe:
-`TrendChartViewModel` opens the gate on the range that came back, never on the one last asked for, and
-only when that read carried every pen the chart shows. A read issued before the catalogue added a pen
-holds no row of it, so its result leaves the gate shut and the window in view is asked for again with
-the pens shown.
+`ChartHistoryPlanner` opens the gate on the range that came back, never on the one last asked for, and
+only when the pens read for that range include every visible pen. A read issued before the catalogue
+added a pen holds no row of it, so its result leaves the gate shut and the window in view is asked for
+again with every visible pen. That request is the one the catalogue read already pushed, so it leaves
+that read running: the live-edge switch of a catalogue change leaves a hole in the pens that stay, which
+only a read of every visible pen fills (`charting.md#applying-a-catalogue-read`).
+
+The pen set travels beside the range. `ChartHistoryPlanner` keeps the pens read for the range in hand
+beside it: `ChartHistoryPlanner.Land` adds a result's pens to the set when the result is for the same
+range, and replaces the set when it is for another. The window counts as fetched only while every visible
+pen is in the set. The set is never pruned when a catalogue read removes a pen, because it is only
+compared against the visible pens.
 
 A gesture that never goes quiet still fetches. `ChartHistoryRequestDebouncer` merges the trailing
 `Throttle` of 150 ms with a `Sample` of 400 ms over the same requests, so a continuous drag issues one
@@ -284,11 +388,11 @@ read, issue one query. A request pushed after that read was delivered is the cha
 reaches the archive.
 
 A read that is still in flight, that came back failed, or whose apply threw covers nothing, so the
-chart asks for the same window again. `TrendChartViewModel.ApplyHistory` clears its fetched range
-before it loads the envelopes and sets it only after, so an apply that throws part way leaves the gate
+chart asks for the same window again. `TrendChartViewModel.ApplyHistory` has the planner forget its
+range in hand before it loads the envelopes and land the read only after, so an apply that throws part way leaves the gate
 shut and the window in view is asked for again at the next move. A catalogue read that adds or removes
 a pen drops envelopes outside that apply, so it clears the fetched range and asks for the window in
-view with every pen shown. A pen removed and named again takes back its old place in the pen order, so
+view with every visible pen. A pen removed and named again takes back its old place in the pen order, so
 that request can name the same pens and window as the read applied before the removal; it is pushed
 after that read was delivered, so it is read.
 
@@ -296,7 +400,8 @@ A fold over Raw columns opens the gate too. At a coarse layer a realtime sample 
 column, and while the coarse read is in flight, failed or never applied, the columns in memory are still
 Raw: every sample of that phase folds into one Raw column. `TrendChartViewModel.ApplyRealtimeBatch`
 therefore clears the fetched range when it folds and that range is Raw, so a zoom back to the same Raw
-width reads the window again instead of drawing one straight segment across the folded span. A fold
+width reads the window again instead of drawing one straight segment across the folded span. It clears
+the gate only, so the columns kept past a margin-less read stay (above). A fold
 over a coarse range clears nothing: it widens a coarse column and leaves nothing to re-read, so a pan
 inside a coarse band still reads nothing.
 
@@ -313,7 +418,11 @@ next coarse read's snapshot leaves with the column it widened, and an extreme it
 when a later read covers that span. A pan into the past asks for a range that ends before the follow
 phase's tail, so the apply drops that tail and the band just read keeps the whole column buffer; a tail
 kept there would hold up to 100 000 columns and push the band out of the buffer within a few appends.
-Samples arriving after such a pan still append far right of the band, as they did before.
+The history columns a margin-less side keeps (above) are not live appends, and the tail past them goes
+the same way.
+Samples arriving after such a pan still append far right of the band, as they did before. A first read
+at the live edge keeps its right margin for this rule: its range ends one window width past the
+window, so the columns the poll appends while it runs lie inside that range and survive the replace.
 
 One query runs at a time, and the newest request that arrived while it ran runs when it lands. No
 request waits when the newest push needs no read, and the window waiting behind a query is dropped
@@ -330,8 +439,8 @@ when that query's read answers it. The two heads treat the query in flight diffe
 A gesture can end back inside the band the envelopes in hand cover, after a read for another band
 started. A pan inside the fetched band then pushes `RequestNothing`: it reads nothing, drops the
 request waiting behind the running query, and as the gesture's end it cancels the read for the band
-the drag left. The gate is open only on a read of the pens shown, so that push never cancels a read
-issued for a pen the catalogue added since. A read that failed changes nothing on screen and leaves the
+the drag left. The gate is open only while the range in hand holds every visible pen, so that push
+never cancels a read issued for a pen the catalogue added or the operator switched on since. A read that failed changes nothing on screen and leaves the
 gate as it was, so a gesture whose read failed still ends on the window drawn before it; an apply that
 throws after the envelopes load leaves the gate open on them, with the same effect. A read that lands
 while the drag is still moving is applied, and the window in view is re-requested from the range that
@@ -340,9 +449,12 @@ arrived.
 "Trailing" means 150 ms without a request, not the release of a mouse button. Input that arrives in
 steps more than 150 ms apart, such as wheel notches, key presses or a window resize, ends a gesture
 at every step, so each step cancels the read the previous one started, and no step's read lands until
-the input pauses for one whole read. On the bench a chart read at 2048 columns takes 0.6 to 1.6 s
-("Read cost", under Layer ladder), several times that gap; the trade-off is that a slow read shows the
-final window sooner and the intermediate ones not at all.
+the input pauses for one whole read. On the bench a detached window's first read at 2048 columns takes
+124 to 816 ms by median at 8 to 50 visible pens ("Read cost", under Layer ladder), up to several times
+that gap; a pan past the band takes that same read first. A sticky window's first read at a coarse
+layer also runs the fresh tail, and the margin read spans three visible widths; neither is timed there.
+The trade-off is that a slow read shows
+the final window sooner and the intermediate ones not at all.
 
 `Dispose` cancels the running query as well. A cancelled query reports nothing and starts the request
 waiting behind it; the last window a gesture asked for is the last one applied. Each query runs under its own `CancellationTokenSource`, which the debouncer
@@ -356,17 +468,22 @@ asked for is silent: an `OperationCanceledException` while its token is still li
 like any other.
 
 The token is the trailing `cancellationToken` of `IDataProvider.QueryHistoryAsync`, threaded through
-`TrendCoordinator.QueryHistoryAsync`. `PostgresDataProvider` passes it to the connection open, to
-every `ExecuteReaderAsync` and to every row read of the bucketed window and the fresh tail, and
+`TrendCoordinator.QueryHistoryAsync`. `PostgresDataProvider` links it into the
+`CancellationTokenSource` of each statement phase, which a failing pen group also cancels, and passes that
+phase's token to every
+connection open, every `ExecuteReaderAsync` and every row read of the bucketed window and the fresh
+tail, and
 `QueryHistoryAsync` rethrows the `OperationCanceledException` it ends in from a catch of its
 own, ahead of the mapper, so a cancelled read never becomes a failed `Result`. `PostgresHistoryReadTests.AReadCancelledMidStatementThrowsInsteadOfFailing`
 cancels a Raw and a Minute read held on a lock of `trends`; both run `BucketedHistoryWindow`. A cancelled command costs one extra
 connection for the cancel request, and its own connection for at most two seconds more: Npgsql first
 sends PostgreSQL the cancel request, and if no answer arrives within `CancellationTimeout` (2000 ms by
 default, which the connection string keeps) it breaks the socket. A broken connection leaves the pool,
-and the pool opens a new one. The backend behind a broken socket can keep running the abandoned
-statement until it notices the dead connection, so for that stretch the server runs two history
-queries for one chart.
+and the pool opens a new one. A grouped read has up to four commands in flight, one per pen group
+(Operation to statement), so its cancel opens up to four cancel connections instead of one, and each
+group's connection follows the same rule. The backend behind a broken socket can keep running the
+abandoned statement until it notices the dead connection, so for that stretch the server runs two
+history reads for one chart.
 
 A failed read reaches the chart. `ChartHistoryRequestDebouncer` delivers the `Result`'s errors on the
 UI scheduler, a thrown query joining the same channel as an `ExceptionalError`;
@@ -377,14 +494,15 @@ reach the same channel: without that the subscription issuing every history quer
 and the chart would stop reading the archive for the rest of the session.
 
 The buckets make a read smaller in rows returned, not cheaper on the server: at every layer the window
-function still reads and sorts every row of the range, and the range is three visible windows wide.
+function still reads and sorts every row of the range. The first read of a gesture spans the visible
+window, and the margin read three visible windows.
 `PostgresHistoryReadTests.TheWidestRawWindowThePrefetchMarginAsksForComesBackBucketed` records
 `EXPLAIN (ANALYZE, TIMING OFF)` for the widest Raw read the margin can ask for, and the plan's row
 counts and timing are what say what it costs; "Read cost", under Layer ladder, measures every layer.
 
 Every history read writes one `Debug` entry when it ends, at the same
 level as the realtime poll's entry per tick, so a run at `--logging-level Debug` interleaves both. The
-entry carries the layer, the UTC range, the column target, the pen count, the outcome (`Read`,
+entry carries the layer, the UTC range, the column target, the count of distinct pens read, the pen group count, the outcome (`Read`,
 `Failed` or `Cancelled`), the envelope count of a `Read` and the milliseconds since the read started.
 `PostgresDataProvider.QueryHistoryAsync` writes the entry from one `finally`: the outcome starts as
 `Failed`, the success path sets `Read`, and the catch of `OperationCanceledException` ahead of the mapper
@@ -410,16 +528,19 @@ once it fills at least every other column (`AggregationLayerExtensions.ToPointSp
 The hour layer is the coarsest one SemiPlot reads, and every build writes it. An archive from a build
 before 2.7.5.0 also holds `l = 3` rows (`scada-archive.md#layers`); nothing reads them.
 
-`ChartNavigationController` expresses the rule as an upper bound for `Raw` and `Minute`,
-`ceiling(layer) = nextCoarser(layer).ToPointSpacing() × TargetColumnCount`, so the raw layer's own
-spacing, the SCADA's per-variable archiving interval that the client cannot know, never enters the
-comparison. `Hour` tops the ladder and has no ceiling: every window wider than the minute ceiling reads
-it, up to the 365-day window cap (`TrendNavigationModel`).
+`ChartNavigationController` expresses the rule as an upper bound for `Raw` and `Minute`, shrunk when
+more pens are visible than the ladder is sized for:
+`ceiling(layer) = nextCoarser(layer).ToPointSpacing() × TargetColumnCount × min(1, ReferencePenCount / max(1, visiblePens))`.
+The raw layer's own spacing, the SCADA's per-variable archiving interval that the client cannot know,
+never enters the comparison. `Hour` tops the ladder and has no ceiling: every window wider than the
+minute ceiling reads it, up to the 365-day window cap (`TrendNavigationModel`).
 
-| Columns | `Raw` up to | `Minute` up to | `Hour` |
-| --- | --- | --- | --- |
-| 256 | 64 min | 64 h | above, to the 365-day cap |
-| 2048 | 8 h 32 min | 512 h (21 d 8 h) | above, to the 365-day cap |
+| Columns | Visible pens | `Raw` up to | `Minute` up to | `Hour` |
+| --- | --- | --- | --- | --- |
+| 256 | 16 or fewer | 64 min | 64 h | above, to the 365-day cap |
+| 2048 | 16 or fewer | 8 h 32 min | 512 h (21 d 8 h) | above, to the 365-day cap |
+| 2048 | 30 | 4 h 33 min 4 s | 11 d 9 h 4 min | above, to the 365-day cap |
+| 2048 | 50 | 2 h 43 min 50.4 s | 6 d 19 h 50 min 24 s | above, to the 365-day cap |
 
 The column count is live. `HistoryColumnTarget.FromDataAreaWidth` maps the view's data-area width
 to 256…2048 columns; `ChartNavigationController.SetTargetColumnCount` quantises that to the nearest
@@ -438,11 +559,13 @@ Two adjustments the ladder needs are implemented:
   the open period, and of every closed period whose rows have not arrived yet, at its right edge. The
   provider reads that edge from `l = 0` and merges it per pen. The seam is per pen: the newest coarse
   timestamp returned, or the window start when none was. A layer fresh within one of its own points reads no
-  tail; otherwise the tail starts at the earliest seam, clamped to four point spacings back from the
+  tail; otherwise the tail starts at the earliest seam of every pen the read names, whatever pen group
+  it sits in, clamped to four point spacings back from the
   tail edge, and reads raw rows up to the window end. The tail edge is the window end or the present,
   whichever is earlier: `PostgresDataProvider` reads the present from its injected `TimeProvider`
   and converts it with `ToArchiveLocal`. The window end alone cannot serve, because the chart asks
-  for one visible window width past the visible end (`HistoryPrefetch.Expand`); in follow mode that
+  for one visible window width past the visible end (`HistoryPrefetch.Expand`, and
+  `HistoryPrefetch.Visible` at the live edge); in follow mode that
   edge lies a whole window in the future, the clamp passes every seam, and a Minute read stops up to
   one period short of the raw newest. A window wholly in the past clamps at its own end. A pen
   whose seam precedes the tail's start contributes no tail row, because a range no
@@ -453,28 +576,118 @@ Two adjustments the ladder needs are implemented:
   `BucketedHistoryWindow` at `l = 0` with the coarse read's own `@bucket`: a tail narrower than one
   column folds into one column, and a tail at a fine bucket keeps every raw row.
 
+The pen factor holds the first read of a zoom under one second on the bench. A read's server time
+grows with the pens it names and with its width ("Read cost"), so past the reference count the factor
+narrows the finer layers in proportion. `ReferencePenCount` is 16: the largest visible pen count at
+which both the `Raw` and the `Minute` hysteresis-edge reads, at the unshrunk ceilings and with pen
+groups, have a median at or under 1 000 ms end to end. Measured 2026-10-13 under the conditions of
+"Read cost", the median of 88 timed calls in eight rounds per case:
+
+| Visible pens | 8 | 16 | 24 | 30 | 40 | 50 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `Raw` hysteresis edge, 9 h 23 min 12 s | 157 ms | 397 ms | 565 ms | 564 ms | 808 ms | 1 012 ms |
+| `Minute` hysteresis edge, 23 d 11 h 12 min | 406 ms | 837 ms | 1 141 ms | 1 290 ms | 2 053 ms | 2 208 ms |
+
+The `Minute` hysteresis edge is the first case past 1 000 ms, at 24 pens. Four more rounds of 16 and 24
+pens alone, on a quieter host, gave 647 ms and 963 ms; pooled over all twelve rounds the 24-pen case is
+1 053 ms, still over. The count is a constant measured on the bench, and changing it takes a rebuild.
+
+`TrendChartViewModel` hands the visible pen count to `ChartNavigationController.SetVisiblePenCount`
+after every catalogue apply and every visibility change, ahead of the request decision. A count that
+moves the layer raises `WindowChanged`, and the window in view is read at the new layer. The minimap
+passes one pen to `LayerForWidth` and keeps the unshrunk ladder (`MinimapBandFeed`).
+
+The cost: past 16 visible pens the chart reads the coarser layer over windows the plain rule gives to
+the finer one. The hysteresis widens only the layer in force, so a pen toggle ratchets: switching pens
+on can move the chart to the coarser layer, and switching one of them off again keeps it there. The
+chart returns to the finer layer once enough pens go off, or the window narrows enough, that the finer
+layer's ceiling without the hysteresis margin holds the window.
+
 The envelope is correct at every layer because the vendor's selection keeps each period's minimum and
 maximum, checked over 10 340 variable-minutes and 193 variable-hours (`scada-archive.md#layers`).
 
 ### Read cost
 
-Measured 2026-10-12 on the `SemiPlot/bench` image on `postgres:17.11-alpine`: default `work_mem` 4 MB,
-`shared_buffers` 128 MB, `jit_above_cost` 100 000 and the server default `jit = on`; Docker Desktop
-with 10 CPUs and 16 GB; .NET SDK 10.0.401 on runtime 10.0.12, Npgsql 10.0.3, Release build, provider
-time zone `Russian Standard Time` (UTC+3, no DST). The archive holds 8 pens with random values and
-`q = 0`, all ending 2026-10-12 00:00: raw rows at 1 per second over 30 h, minute rows at :10 and :40 s
-over 72 days, hour rows at :10 and :40 min over 1 096 days, in 1 096 day partitions from
+Measured 2026-10-13 on the `SemiPlot/bench` image on PostgreSQL 17.11 with the `semibase site` settings
+passed as `-c` flags: `shared_buffers=2GB`, `effective_cache_size=4GB`, `work_mem=64MB`,
+`maintenance_work_mem=512MB`, `max_wal_size=8GB`, `checkpoint_timeout=30min`, `wal_compression=on`,
+`random_page_cost=1.1`. Docker Desktop 29.8.1 with 10 CPUs and 16 GB; .NET SDK 10.0.401 on runtime
+10.0.12, Npgsql 10.0.3, Release build; provider time zone `Russian Standard Time` (UTC+3, no DST);
+`SHOW jit` over the provider's data source reads `off`; four pen groups. The archive holds 50 pens with
+random values and `q = 0`, all ending 2026-10-12 00:00: raw rows at 1 per second over 30 h, minute rows
+at :10 and :40 s over 72 days, hour rows at :10 and :40 min over 1 096 days. That is 5 400 000 raw,
+10 368 000 minute and 2 630 400 hour rows in 1 096 day partitions from
 `PartitionScript.CreateStatements`, `VACUUM ANALYZE` after the load.
 
-The table times the reads the chart and the minimap issue, end to end through
-`IDataProvider.QueryHistoryAsync` of a provider composed by `AddPostgresData`, as the viewer composes it:
-the pool checkout, the window statement, the fresh-tail statement, Npgsql's binary decode and the fold.
-`E` is the archive end. A chart case is a visible window of width `w` ending at `E - w`;
-`HistoryPrefetch.Expand` turns it into the fetched range `[E - 3w, E]` at three times the column count,
-so the fresh tail runs. A hysteresis edge is 1.1x the ceiling, the widest window the layer in force
-holds. The minimap reads the whole archive span of one pen at `MinimapColumns`, with no `Expand`. A time
-is the median of 44 timed calls in four rounds of 2 warm-up and 11 timed calls, min to max in brackets.
-Rows per pen are the window statement's, then `+` the fresh-tail statement's, each with its seed row.
+The tables time the first read a zoom or a pan past the band issues, end to end through
+`IDataProvider.QueryHistoryAsync` of a provider composed by `AddPostgresData`, as the viewer composes
+it: the pool checkout, the window
+statements, Npgsql's binary decode and the fold. They are not the first paint: the debouncer issues the
+read 150 ms after the gesture goes quiet, and the apply and the frame follow the read, so the 50-pen Hour
+window cap's 816 ms puts the first paint past 966 ms. `E` is the archive end. A case is a detached window of
+width `w` over `[E - 2w, E - w]`, pens 1 to n. It ends before the newest sample and is not sticky, so
+`HistoryPrefetch.Visible` reads it with no margin at 2048 columns, and its left edge lies after the first
+sample. Each width is the widest that `ChartNavigationController.LayerForWidth` still answers with the
+case's layer at that pen count, entered from the coarser layer for a ceiling and from the layer itself
+for a hysteresis edge, so each ceiling carries the pen factor ("Layer ladder"). Every envelope holds
+2 049 columns: 2 048 buckets and the seed row.
+
+| Case | 8 pens (factor 1) | 30 pens (factor 0.533) | 50 pens (factor 0.32) |
+| --- | --- | --- | --- |
+| Raw ceiling | 8 h 32 min | 4 h 33 min 4 s | 2 h 43 min 50.4 s |
+| Raw hysteresis edge | 9 h 23 min 12 s | 5 h 0 min 22.4 s | 3 h 0 min 13.44 s |
+| Minute ceiling | 21 d 8 h | 11 d 9 h 4 min | 6 d 19 h 50 min 24 s |
+| Minute hysteresis edge | 23 d 11 h 12 min | 12 d 12 h 22 min 24 s | 7 d 12 h 13 min 26.4 s |
+| Hour window cap | 365 d | 365 d | 365 d |
+
+Other sessions' container tests ran on the host, and single calls spiked up to 3.6 s, so every case ran
+in eight rounds of 2 warm-up and 11 timed calls, the order of pen counts and cases reversed every round.
+A time is the median of the 88 timed calls in ms, min to max in brackets.
+
+| Case | 8 pens | 30 pens | 50 pens |
+| --- | --- | --- | --- |
+| Raw ceiling | 124 (74-257) | 280 (241-772) | 413 (278-1 923) |
+| Raw hysteresis edge | 141 (81-222) | 296 (257-519) | 405 (301-1 642) |
+| Minute ceiling | 305 (255-436) | 624 (526-3 507) | 685 (554-2 060) |
+| Minute hysteresis edge | 318 (274-395) | 712 (552-3 515) | 747 (631-3 627) |
+| Hour window cap | 206 (179-349) | 535 (421-2 804) | 816 (665-2 076) |
+
+Every median is at most 1 000 ms. The highest is the 50-pen Hour window cap at 816 ms, whose round
+medians run from 705 ms to 979 ms.
+
+Under the same server settings, the server execution time of one `BucketedHistoryWindow` statement at
+the Minute layer, 15 min bucket, every pen changing every second:
+
+| Read | 8 pens | 24 pens | 30 pens | 50 pens |
+| --- | --- | --- | --- | --- |
+| Minute ceiling, `Expand` range (64 d at 6 144 columns) | 1 421 ms | 4 243 ms | - | - |
+| Minute ceiling, visible window (21.3 d at 2 048 columns) | 462 ms | 1 396 ms | 1 893 ms | 3 159 ms |
+
+- Read time is linear in the pens named and in the width: at 8 pens the `Expand` read executes in 70 ms
+  at 1 d visible, 469 ms at 7 d and 998 ms at 14 d. The margin read costs about three times the first
+  read, so the first read carries a margin only where it holds no rows.
+- Pen groups spread one read over four cores ("Operation to statement").
+- `work_mem` above the site's 64 MB changes nothing: every sort of these reads already runs in memory.
+
+Rejected ways to make a read cheaper:
+
+- Server-side parallel query. With `max_parallel_workers_per_gather` 0, 2 or 4, and with
+  `parallel_setup_cost = 0` and `parallel_tuple_cost = 0`, no plan of `BucketedHistoryWindow` holds a
+  `Gather`, and the time does not change.
+- A client cache of the coarse layers. The `date_bin` grid is anchored at each request's own `@from`, so
+  a cached layer serves only a request on an identical grid. Coarse rows arrive up to 47 minutes after
+  their period closes (`scada-archive.md#layers`), so a cached tail goes stale.
+- A session `work_mem`. The server's `semibase site` value already holds every sort in memory.
+
+Measured 2026-10-12 under the server defaults, the margin read at 8 pens in one pen group: default
+`work_mem` 4 MB, `shared_buffers` 128 MB, `jit_above_cost` 100 000 and the server default `jit = on`,
+on `postgres:17.11-alpine`, with the host and toolchain above. The archive holds 8 pens loaded as above.
+A chart case is a visible window of width `w` ending at `E - w`; `HistoryPrefetch.Expand` turns it into
+the fetched range `[E - 3w, E]` at three times the column count, so the fresh tail runs. A hysteresis
+edge is 1.1x the unshrunk ceiling. The minimap reads the whole archive span of one pen at
+`MinimapColumns`, with no `Expand`. A time is the median of 44 timed calls in four rounds of 2 warm-up
+and 11 timed calls, min to max in brackets. Rows per pen are the window statement's, then `+` the
+fresh-tail statement's, each with its seed row.
 
 | Case | Visible width | Columns | Layer | Fetched range | Column target | Pens | Rows per pen | Columns per pen | Time |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -486,19 +699,17 @@ Rows per pen are the window statement's, then `+` the fresh-tail statement's, ea
 | Hour, narrow canvas | 365 d | 256 | Hour | 1 095 d | 768 | 8 | 769 + 2 | 770 | 604 ms (570-772) |
 | Minimap | 1 096 d (the archive span) | - | Hour | 1 096 d | 250 | 1 | 250 + 2 | 251 | 150 ms (142-170) |
 
-- The Minute read the chart issues at 2048 columns takes 1.4 to 1.6 s, the cost the server pays to
-  reduce the coarse rows. At the Minute ceiling its window aggregate reads 1 474 560 coarse rows and the
-  group sort spills 9.8 MB to disk; `EXPLAIN (ANALYZE, BUFFERS)` under `jit = off` executes in 1 440 ms.
-  The row-level coarse read, which sends per pen a seed row and every coarse row of the window and
-  folds them on the client, takes 1 982 ms and 2 193 ms for the two Minute cases.
-- The Hour window cap sorts the window's 420 480 rows on disk (15.6 MB) ahead of the window aggregate.
-  The row-level coarse read takes 562 ms there, and 125 ms for the minimap.
+- At the Minute ceiling the window aggregate reads 1 474 560 coarse rows, and under 4 MB the group sort
+  spills 9.8 MB to disk; `EXPLAIN (ANALYZE, BUFFERS)` under `jit = off` executes in 1 440 ms. The
+  row-level coarse read, which sends per pen a seed row and every coarse row of the window and folds
+  them on the client, takes 1 982 ms and 2 193 ms for the two Minute cases.
+- Under 4 MB the Hour window cap sorts the window's 420 480 rows on disk (15.6 MB) ahead of the window
+  aggregate. The row-level coarse read takes 562 ms there, and 125 ms for the minimap.
 - JIT: the Hour window cap executes in 542 ms with 50 ms of planning under `jit = off`, and in 2 054 ms
   with 270 ms of planning under `jit = on`, of which JIT takes 1 506 ms. SemiPlot's sessions therefore
   run with `jit = off` ("Configuration").
-- `docs/plans/backlog.md` tracks the Minute read cost and the Hour sort spill. The plan
-  `20261012-drop-day-layer.md` holds the per-round medians, the row-level coarse read's full table and
-  the single-statement measurements.
+- The plan `20261012-drop-day-layer.md` holds the per-round medians, the row-level coarse read's full
+  table and the single-statement measurements.
 
 ## Time boundary
 

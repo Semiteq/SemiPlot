@@ -307,12 +307,13 @@ and the render budget (§RT-4). The as-built rationale and mechanics:
 - **Never feed raw millions of points to the chart.** A 1080p-wide plot shows ~one point per
   pixel; a month of 10-second data is ~135 raw samples per pixel (MasterSCADA). The data layer
   returns roughly viewport-width points (§DA-5).
-- **Window width and canvas width together select the archive layer** (raw / minute / hour):
-  deeper ranges use coarser layers — the layer design in data-integration.md, validated by industry
-  (MasterSCADA layered archive; AVEVA "Cyclic" retrieval). No ceiling is a constant: it is
-  `nextCoarser(layer).ToPointSpacing() × TargetColumnCount`, so it moves with the canvas. At 256
-  columns Raw reaches 64 min and Minute 64 h; at 2048 columns Raw reaches 8 h 32 min and Minute
-  512 h. Hour has no ceiling and reads every wider window, to the 365-day cap.
+- **Window width, canvas width and visible pen count together select the archive layer** (raw /
+  minute / hour): deeper ranges use coarser layers — the layer design in data-integration.md, validated
+  by industry (MasterSCADA layered archive; AVEVA "Cyclic" retrieval). No ceiling is a constant: it is
+  `nextCoarser(layer).ToPointSpacing() × TargetColumnCount × min(1, ReferencePenCount / max(1, visiblePens))`,
+  so it moves with the canvas and shrinks past 16 visible pens (`data-integration.md#layer-ladder`). At
+  256 columns and 16 visible pens or fewer Raw reaches 64 min and Minute 64 h; at 2048 columns Raw
+  reaches 8 h 32 min and Minute 512 h. Hour has no ceiling and reads every wider window, to the 365-day cap.
   `ChartNavigationController.LayerForWidth` applies a **10% hysteresis band** at each ceiling so a
   notch-by-notch zoom hovering on a boundary does not flip-flop the layer every notch (§DA-3) —
   which, at the Raw side, appended a far-right raw point that straight-lined across the wide span.
@@ -457,7 +458,8 @@ or no extent the request is empty: `Band` turns null and no read runs or stays s
 that draws no pen issues no band reads until one is drawn again.
 
 **The overview layer** is `ChartNavigationController.LayerForWidth(span, the band's previous layer,
-250)`: the chart's own ladder at the strip's column count, so no second ladder exists. 250 columns
+250, 1 visible pen)`: the chart's own ladder at the strip's column count, so no second ladder exists, and
+the chart's pen count never shrinks the strip's ladder. 250 columns
 read `Raw` up to about 62 min, `Minute` up to about 62 h and `Hour` beyond, and the hysteresis keeps
 a span at a boundary on the layer it already has. Every coarse read, `Minute` or `Hour`, includes the provider's raw fresh tail, up to four point spacings of one pen
 (`data-integration.md#layer-ladder`). 250 columns are about 6 px each on a 1500 px strip. 250 is below

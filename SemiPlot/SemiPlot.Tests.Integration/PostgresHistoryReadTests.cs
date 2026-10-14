@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Reflection;
 
 using AwesomeAssertions;
 
@@ -133,6 +134,12 @@ public sealed class PostgresHistoryReadTests(
 	private static readonly DateTime[] _laggingCoarse = [_tailWindowFrom, _laggingSeam];
 
 	private static readonly DateTime[] _reachingCoarse = [.. _freshCoarse, _newestRawTimestamp];
+
+	// Its coarse rows end thirty seconds past the fresh seam: inside the clamp, yet more than one Minute point
+	// before the window end, so a tail start taken from its own seam alone would differ from the fresh pen's.
+	private const int LatePenId = 6;
+
+	private static readonly DateTime[] _lateCoarse = [.. _freshCoarse, _freshSeam.AddSeconds(30)];
 
 	// Its hour-layer rows end twenty minutes before the raw rows start.
 	private const int HourTailPenId = 4;
@@ -442,7 +449,7 @@ public sealed class PostgresHistoryReadTests(
 	public async Task TheWidestRawWindowThePrefetchMarginAsksForComesBackBucketed()
 	{
 		var window = new LocalWindow(ArchiveTemplate.Slice.Start, ArchiveTemplate.Slice.End);
-		var target = HistoryColumnTarget.MaxColumns * HistoryPrefetch.MarginColumnFactor;
+		var target = 3 * HistoryColumnTarget.MaxColumns;
 		var expected = SeededRowsIn(window);
 
 		var result = await ReadHistoryAsync(
@@ -821,22 +828,206 @@ public sealed class PostgresHistoryReadTests(
 				ColumnTargetFor(window).ToString(CultureInfo.InvariantCulture));
 			entry.GetStructuredStateValue("Outcome").Should().Be("Read");
 			entry.GetStructuredStateValue("PenCount").Should().Be("3");
+			entry.GetStructuredStateValue("GroupCount").Should().Be("3");
 			entry.GetStructuredStateValue("EnvelopeCount").Should().Be("3");
 			long.TryParse(entry.GetStructuredStateValue("ElapsedMilliseconds"), CultureInfo.InvariantCulture, out _)
 				.Should().BeTrue();
 		});
 	}
 
+	// Five pens split 2, 2, 1, the late pen alone in the last group. The wide target bins the tail from its
+	// start, so a tail start taken per group would move the late pen's last column off the one-statement read.
+	// The grouped read names the pens descending with one repeated, as no group split may depend on order.
+	[Theory]
+	[InlineData(AggregationLayer.Raw, false)]
+	[InlineData(AggregationLayer.Raw, true)]
+	[InlineData(AggregationLayer.Minute, false)]
+	[InlineData(AggregationLayer.Minute, true)]
+	public async Task AReadSplitIntoPenGroupsReturnsWhatOneStatementReturns(AggregationLayer layer, bool wideBucket)
+	{
+		await using var database = await WriteTailArchiveAsync(TestContext.Current.CancellationToken);
+		var window = new LocalWindow(_tailWindowFrom, _tailWindowTo);
+		var target = wideBucket ? WideTailColumnTarget : ColumnTargetFor(window);
+		int[] penIds = [FreshPenId, LaggingPenId, ReachingPenId, HourTailPenId, LatePenId];
+		int[] descendingWithARepeat =
+			[LatePenId, HourTailPenId, ReachingPenId, ReachingPenId, LaggingPenId, FreshPenId];
+
+		var (oneGroup, oneGroupEntry) = await ReadInPenGroupsAsync(database, window, penIds, layer, target, 1);
+		var (grouped, groupedEntry) = await ReadInPenGroupsAsync(
+			database,
+			window,
+			descendingWithARepeat,
+			layer,
+			target,
+			PostgresDataProvider.HistoryReadConcurrency);
+
+		oneGroupEntry.GetStructuredStateValue("GroupCount").Should().Be("1");
+		groupedEntry.GetStructuredStateValue("GroupCount").Should().Be("3");
+		groupedEntry.GetStructuredStateValue("PenCount").Should().Be(
+			penIds.Length.ToString(CultureInfo.InvariantCulture), "the repeated pen is read once");
+		oneGroup.Should().NotBeEmpty();
+		oneGroup.Select(envelope => envelope.PenId).Should().BeInAscendingOrder();
+		grouped.Select(envelope => envelope.PenId).Should().Equal(oneGroup.Select(envelope => envelope.PenId));
+
+		foreach (var (groupedEnvelope, single) in grouped.Zip(oneGroup))
+		{
+			groupedEnvelope.Timestamps.Should().Equal(single.Timestamps, $"pen {single.PenId}'s columns at {layer}");
+			groupedEnvelope.Min.Should().Equal(single.Min, $"pen {single.PenId}'s minima at {layer}");
+			groupedEnvelope.Max.Should().Equal(single.Max, $"pen {single.PenId}'s maxima at {layer}");
+			groupedEnvelope.Center.Should().Equal(single.Center, $"pen {single.PenId}'s centres at {layer}");
+		}
+	}
+
+	// Every group's statement waits on the lock, so the cancel lands on each of them mid-statement.
+	[Fact]
+	public async Task AGroupedReadCancelledMidStatementReturnsEveryConnectionBeforeItThrows()
+	{
+		var testCancellation = TestContext.Current.CancellationToken;
+		await using var database = await postgresContainerFixture.CloneAsync(
+			CloneSource.Provisioned, cancellationToken: testCancellation);
+		await using var locker = new NpgsqlConnection(database.AdminConnectionString);
+		await locker.OpenAsync(testCancellation);
+		await using var transaction = await locker.BeginTransactionAsync(testCancellation);
+		await using var lockTrends = new NpgsqlCommand(LockTrendsCommand, locker, transaction);
+		await lockTrends.ExecuteNonQueryAsync(testCancellation);
+
+		var window = QuietWindow();
+		using var cancellation = new CancellationTokenSource();
+		await using var services = ArchiveProviderFactory.Build(database.PlotConnectionString);
+
+		_seededPenIds.Value.Count.Should().BeGreaterThanOrEqualTo(PostgresDataProvider.HistoryReadConcurrency);
+
+		var read = services.GetRequiredService<IDataProvider>().QueryHistoryAsync(
+			_seededPenIds.Value,
+			ArchiveProviderFactory.TimeConverter.ToUtc(window.From),
+			ArchiveProviderFactory.TimeConverter.ToUtc(window.To),
+			AggregationLayer.Raw,
+			ColumnTargetFor(window),
+			cancellation.Token);
+
+		try
+		{
+			(await AwaitALockWaitOnTrendsAsync(locker, transaction, PostgresDataProvider.HistoryReadConcurrency))
+				.Should().BeTrue("every group's statement has to be waiting on the server when the token is cancelled");
+
+			BusyConnections(services.GetRequiredService<NpgsqlDataSource>())
+				.Should().Be(PostgresDataProvider.HistoryReadConcurrency);
+
+			await cancellation.CancelAsync();
+
+			var settled = () => read.WaitAsync(_cancelledReadDeadline, testCancellation);
+
+			await settled.Should().ThrowAsync<OperationCanceledException>();
+
+			BusyConnections(services.GetRequiredService<NpgsqlDataSource>()).Should().Be(0);
+		}
+		finally
+		{
+			await transaction.RollbackAsync(testCancellation);
+		}
+	}
+
+	// The pool holds one connection fewer than the groups: three statements wait on the lock while the fourth
+	// group fails at the pool wait, so one group faults while the others are mid-statement.
+	[Fact]
+	public async Task AGroupFailingWhileTheOthersWaitFailsTheReadAfterEveryConnectionReturns()
+	{
+		const int PooledConnections = PostgresDataProvider.HistoryReadConcurrency - 1;
+		var testCancellation = TestContext.Current.CancellationToken;
+		await using var database = await postgresContainerFixture.CloneAsync(
+			CloneSource.Provisioned, cancellationToken: testCancellation);
+		await using var locker = new NpgsqlConnection(database.AdminConnectionString);
+		await locker.OpenAsync(testCancellation);
+		await using var transaction = await locker.BeginTransactionAsync(testCancellation);
+		await using var lockTrends = new NpgsqlCommand(LockTrendsCommand, locker, transaction);
+		await lockTrends.ExecuteNonQueryAsync(testCancellation);
+
+		var window = QuietWindow();
+		using var logs = new FakeLoggerProvider();
+		await using var services = ArchiveProviderFactory.Build(
+			database.PlotConnectionString, logs, maxPoolSize: PooledConnections);
+
+		var read = services.GetRequiredService<IDataProvider>().QueryHistoryAsync(
+			_seededPenIds.Value,
+			ArchiveProviderFactory.TimeConverter.ToUtc(window.From),
+			ArchiveProviderFactory.TimeConverter.ToUtc(window.To),
+			AggregationLayer.Raw,
+			ColumnTargetFor(window),
+			testCancellation);
+
+		try
+		{
+			(await AwaitALockWaitOnTrendsAsync(locker, transaction, PooledConnections))
+				.Should().BeTrue("every pooled group's statement has to be waiting when the last group fails");
+
+			var result = await read.WaitAsync(_cancelledReadDeadline, testCancellation);
+
+			BusyConnections(services.GetRequiredService<NpgsqlDataSource>()).Should().Be(0);
+			result.IsFailed.Should().BeTrue();
+			result.Errors.OfType<ArchiveError>().Should().ContainSingle()
+				.Which.Kind.Should().Be(ArchiveFault.Unreachable);
+			HistoryReadEntries(logs).Should().ContainSingle()
+				.Which.GetStructuredStateValue("GroupCount").Should().Be(
+					PostgresDataProvider.HistoryReadConcurrency.ToString(CultureInfo.InvariantCulture));
+		}
+		finally
+		{
+			await transaction.RollbackAsync(testCancellation);
+		}
+	}
+
+	// Npgsql keeps its pool counters internal: NpgsqlDataSource.Statistics is a (Total, Idle, Busy) tuple.
+	private static int BusyConnections(NpgsqlDataSource dataSource)
+	{
+		var statistics = typeof(NpgsqlDataSource)
+			.GetProperty("Statistics", BindingFlags.Instance | BindingFlags.NonPublic)
+			?.GetValue(dataSource);
+
+		return statistics is ValueTuple<int, int, int> counters
+			? counters.Item3
+			: throw new InvalidOperationException("NpgsqlDataSource no longer carries its internal Statistics tuple.");
+	}
+
+	private static async Task<(IReadOnlyList<PenHistoryEnvelope> Envelopes, FakeLogRecord Entry)> ReadInPenGroupsAsync(
+		ArchiveDatabase database,
+		LocalWindow window,
+		int[] penIds,
+		AggregationLayer layer,
+		int targetColumnCount,
+		int historyReadConcurrency)
+	{
+		using var logs = new FakeLoggerProvider();
+		await using var services = ArchiveProviderFactory.Build(
+			database.PlotConnectionString,
+			logs,
+			ClockAt(_tailWindowTo.AddDays(1)),
+			historyReadConcurrency);
+
+		var result = await services.GetRequiredService<IDataProvider>().QueryHistoryAsync(
+			penIds,
+			ArchiveProviderFactory.TimeConverter.ToUtc(window.From),
+			ArchiveProviderFactory.TimeConverter.ToUtc(window.To),
+			layer,
+			targetColumnCount,
+			TestContext.Current.CancellationToken);
+
+		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
+
+		return (result.Value, HistoryReadEntries(logs).Should().ContainSingle().Subject);
+	}
+
 	private static async Task<bool> AwaitALockWaitOnTrendsAsync(
 		NpgsqlConnection locker,
-		NpgsqlTransaction transaction)
+		NpgsqlTransaction transaction,
+		long waitingStatementCount = 1)
 	{
 		await using var command = new NpgsqlCommand(LockWaitOnTrendsQuery, locker, transaction);
 		var deadline = DateTime.UtcNow + _cancelledReadDeadline;
 
 		while (DateTime.UtcNow < deadline)
 		{
-			if (await command.ExecuteScalarAsync(TestContext.Current.CancellationToken) is > 0L)
+			if (await command.ExecuteScalarAsync(TestContext.Current.CancellationToken) is long waiting
+				&& waiting >= waitingStatementCount)
 			{
 				return true;
 			}
@@ -1251,7 +1442,7 @@ public sealed class PostgresHistoryReadTests(
 	{
 		var rows = new List<ArchiveRow>();
 
-		foreach (var penId in new[] { FreshPenId, LaggingPenId, ReachingPenId })
+		foreach (var penId in new[] { FreshPenId, LaggingPenId, ReachingPenId, LatePenId })
 		{
 			rows.AddRange(RawTimestamps().Select(timestamp => RawRow(penId, timestamp)));
 		}
@@ -1264,6 +1455,7 @@ public sealed class PostgresHistoryReadTests(
 		rows.AddRange(CoarseRows(ReachingPenId, MinuteLayer, _reachingCoarse));
 		rows.AddRange(CoarseRows(HourTailPenId, HourLayer, _hourCoarse));
 		rows.AddRange(CoarseRows(BreakTailPenId, MinuteLayer, _freshCoarse));
+		rows.AddRange(CoarseRows(LatePenId, MinuteLayer, _lateCoarse));
 
 		return rows;
 	}

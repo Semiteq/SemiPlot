@@ -31,7 +31,7 @@ public sealed class CursorReadoutModel
 			return null;
 		}
 
-		var upperIndex = FindUpperBound(timestamps, cursorTime);
+		var upperIndex = envelope.FirstIndexAtOrAfter(cursorTime);
 
 		if (timestamps[upperIndex] == cursorTime)
 		{
@@ -44,29 +44,6 @@ public sealed class CursorReadoutModel
 			timestamps[lowerIndex], centers[lowerIndex],
 			timestamps[upperIndex], centers[upperIndex],
 			cursorTime);
-	}
-
-	// The prior range check guarantees a column at or after the cursor exists.
-	private static int FindUpperBound(IReadOnlyList<DateTime> timestamps, DateTime cursorTime)
-	{
-		var low = 0;
-		var high = timestamps.Count - 1;
-
-		while (low < high)
-		{
-			var middle = low + ((high - low) / 2);
-
-			if (timestamps[middle] < cursorTime)
-			{
-				low = middle + 1;
-			}
-			else
-			{
-				high = middle;
-			}
-		}
-
-		return low;
 	}
 
 	private static double? Interpolate(

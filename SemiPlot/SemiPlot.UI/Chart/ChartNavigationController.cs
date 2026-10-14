@@ -5,6 +5,12 @@ namespace SemiPlot.UI.Chart;
 
 public sealed class ChartNavigationController
 {
+	/// <summary>
+	/// The most visible pens the layer ceilings serve unshrunk, measured on the bench
+	/// (docs/architecture/data-integration.md#layer-ladder).
+	/// </summary>
+	public const int ReferencePenCount = 16;
+
 	// Margin past a layer ceiling the width must clear before the layer changes.
 	private const double LayerHysteresisFraction = 0.1;
 
@@ -14,6 +20,7 @@ public sealed class ChartNavigationController
 	private static readonly TimeSpan _defaultWindowWidth = TimeSpan.FromHours(1.0);
 	private bool _hasData;
 	private DateTime _liveEdge;
+	private int _visiblePenCount;
 
 	private TrendNavigationModel _navigation;
 
@@ -60,8 +67,19 @@ public sealed class ChartNavigationController
 		}
 
 		TargetColumnCount = quantized;
-		ActiveLayer = LayerForCurrentWidth();
-		WindowChanged?.Invoke(this, new NavigationWindow(_navigation.From, _navigation.To, ActiveLayer));
+		ApplyWindowChange();
+	}
+
+	/// <summary>Scales the layer ceilings to the visible pen count; a moved layer raises a window change.</summary>
+	public void SetVisiblePenCount(int count)
+	{
+		_visiblePenCount = count;
+		if (LayerForCurrentWidth() == ActiveLayer)
+		{
+			return;
+		}
+
+		ApplyWindowChange();
 	}
 
 	/// <summary>
@@ -188,7 +206,7 @@ public sealed class ChartNavigationController
 
 	private AggregationLayer LayerForCurrentWidth()
 	{
-		return LayerForWidth(_navigation.Width, ActiveLayer, TargetColumnCount);
+		return LayerForWidth(_navigation.Width, ActiveLayer, TargetColumnCount, _visiblePenCount);
 	}
 
 	// The layer in force is an argument because the hysteresis band widens the ceiling of that layer only, so
@@ -197,17 +215,22 @@ public sealed class ChartNavigationController
 	public static AggregationLayer LayerForWidth(
 		TimeSpan width,
 		AggregationLayer currentLayer,
-		int targetColumnCount)
+		int targetColumnCount,
+		int visiblePenCount)
 	{
+		var penFactor = Math.Min(1.0, (double)ReferencePenCount / Math.Max(1, visiblePenCount));
+
 		var rawCeiling = BoundaryWithHysteresis(
-			AggregationLayer.Minute.ToPointSpacing() * targetColumnCount, currentLayer == AggregationLayer.Raw);
+			AggregationLayer.Minute.ToPointSpacing() * targetColumnCount * penFactor,
+			currentLayer == AggregationLayer.Raw);
 		if (width <= rawCeiling)
 		{
 			return AggregationLayer.Raw;
 		}
 
 		var minuteCeiling = BoundaryWithHysteresis(
-			AggregationLayer.Hour.ToPointSpacing() * targetColumnCount, currentLayer == AggregationLayer.Minute);
+			AggregationLayer.Hour.ToPointSpacing() * targetColumnCount * penFactor,
+			currentLayer == AggregationLayer.Minute);
 		if (width <= minuteCeiling)
 		{
 			return AggregationLayer.Minute;

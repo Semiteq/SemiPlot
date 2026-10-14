@@ -17,6 +17,15 @@ public static class PostgresDataServiceCollectionExtensions
 		this IServiceCollection services,
 		PostgresConnectionSettings settings)
 	{
+		return services.AddPostgresData(settings, PostgresDataProvider.HistoryReadConcurrency);
+	}
+
+	/// <summary>The same composition with the pen group count of one history read given.</summary>
+	internal static IServiceCollection AddPostgresData(
+		this IServiceCollection services,
+		PostgresConnectionSettings settings,
+		int historyReadConcurrency)
+	{
 		services.AddSingleton<IScheduler>(DefaultScheduler.Instance);
 		services.TryAddSingleton(TimeProvider.System);
 		services.AddSingleton(settings);
@@ -32,7 +41,8 @@ public static class PostgresDataServiceCollectionExtensions
 			provider.GetRequiredService<PostgresConnectionSettings>(),
 			provider.GetRequiredService<IScheduler>(),
 			provider.GetRequiredService<TimeProvider>(),
-			provider.GetRequiredService<ILogger<PostgresDataProvider>>()));
+			provider.GetRequiredService<ILogger<PostgresDataProvider>>(),
+			historyReadConcurrency));
 		services.AddSingleton<IPenCatalogueEditor>(provider => new PostgresPenCatalogueEditor(
 			provider.GetRequiredService<NpgsqlDataSource>(),
 			provider.GetRequiredService<ArchiveExceptionMapper>(),

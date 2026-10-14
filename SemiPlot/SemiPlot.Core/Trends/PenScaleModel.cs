@@ -105,7 +105,7 @@ public sealed class PenScaleModel
 		var timestamps = envelope.Timestamps;
 		var hasValue = false;
 
-		for (var index = FirstAtOrAfter(timestamps, windowStart); index < timestamps.Count; index++)
+		for (var index = envelope.FirstIndexAtOrAfter(windowStart); index < timestamps.Count; index++)
 		{
 			if (timestamps[index] > windowEnd)
 			{
@@ -117,28 +117,6 @@ public sealed class PenScaleModel
 		}
 
 		return hasValue;
-	}
-
-	// PenHistoryEnvelope enforces strictly ascending timestamps.
-	private static int FirstAtOrAfter(IReadOnlyList<DateTime> timestamps, DateTime windowStart)
-	{
-		var low = 0;
-		var high = timestamps.Count;
-
-		while (low < high)
-		{
-			var middle = low + ((high - low) / 2);
-			if (timestamps[middle] < windowStart)
-			{
-				low = middle + 1;
-			}
-			else
-			{
-				high = middle;
-			}
-		}
-
-		return low;
 	}
 
 	private static (double Min, double Max) PadRange(double min, double max, bool isLogarithmic)

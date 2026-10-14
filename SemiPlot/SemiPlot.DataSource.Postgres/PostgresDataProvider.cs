@@ -26,9 +26,16 @@ namespace SemiPlot.DataSource.Postgres;
 /// </summary>
 public sealed class PostgresDataProvider : IDataProvider, IDisposable
 {
+	/// <summary>
+	/// The most pen groups one history read runs concurrently
+	/// (docs/architecture/data-integration.md#operation-to-statement).
+	/// </summary>
+	internal const int HistoryReadConcurrency = 4;
+
 	private const string UncommissionedPenColor = "#808080";
 	private const string HistoryReadRequestTemplate =
-		"History read at {Layer} from {FromUtc:O} to {ToUtc:O}, {TargetColumnCount} columns for {PenCount} pens: ";
+		"History read at {Layer} from {FromUtc:O} to {ToUtc:O}, {TargetColumnCount} columns for {PenCount} pens "
+			+ "in {GroupCount} groups: ";
 
 	private readonly NpgsqlDataSource _dataSource;
 	private readonly ArchiveTimeConverter _timeConverter;
@@ -37,6 +44,7 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 	private readonly IScheduler _scheduler;
 	private readonly TimeProvider _timeProvider;
 	private readonly ILogger<PostgresDataProvider> _logger;
+	private readonly int _historyReadConcurrency;
 
 	private readonly Subject<ArchiveConnectionState> _connectionFaultsSource = new();
 
@@ -58,7 +66,8 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		PostgresConnectionSettings settings,
 		IScheduler scheduler,
 		TimeProvider timeProvider,
-		ILogger<PostgresDataProvider> logger)
+		ILogger<PostgresDataProvider> logger,
+		int historyReadConcurrency)
 	{
 		_dataSource = dataSource;
 		_timeConverter = timeConverter;
@@ -67,6 +76,7 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		_scheduler = scheduler;
 		_timeProvider = timeProvider;
 		_logger = logger;
+		_historyReadConcurrency = historyReadConcurrency;
 		_connectionFaults = Subject.Synchronize(_connectionFaultsSource);
 	}
 
@@ -116,9 +126,9 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 	}
 
 	/// <summary>
-	/// A window of one layer for the pens the caller asks for, folded into one envelope per pen that has
-	/// rows. A window holding no rows at all is a successful empty list rather than a failure. Every layer
-	/// reduces to the column target server-side; a coarse layer also patches its fresh tail from the raw layer.
+	/// One envelope per requested pen that has rows in a window of one layer, in ascending pen identifier; no
+	/// rows at all is a successful empty list. Every layer reduces to the column target server-side, and a
+	/// coarse layer also patches its fresh tail from the raw layer.
 	/// </summary>
 	public async Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(
 		IReadOnlyList<int> penIds,
@@ -128,14 +138,24 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		int targetColumnCount,
 		CancellationToken cancellationToken = default)
 	{
-		var ids = penIds.ToArray();
+		// docs/architecture/data-integration.md#operation-to-statement
+		int[] readPenIds = [.. penIds.Distinct().Order()];
+		var groupSize = Math.Max(1, (readPenIds.Length + _historyReadConcurrency - 1) / _historyReadConcurrency);
+		int[][] penGroups = [.. readPenIds.Chunk(groupSize)];
 		var stopwatch = Stopwatch.StartNew();
 		var outcome = HistoryReadOutcome.Failed;
 		int? envelopeCount = null;
 
 		try
 		{
-			var envelopes = await ReadHistoryAsync(ids, fromUtc, toUtc, layer, targetColumnCount, cancellationToken)
+			var envelopes = await ReadHistoryAsync(
+					readPenIds,
+					penGroups,
+					fromUtc,
+					toUtc,
+					layer,
+					targetColumnCount,
+					cancellationToken)
 				.ConfigureAwait(false);
 
 			outcome = HistoryReadOutcome.Read;
@@ -155,7 +175,16 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		}
 		finally
 		{
-			LogHistoryRead(layer, fromUtc, toUtc, targetColumnCount, ids.Length, outcome, envelopeCount, stopwatch);
+			LogHistoryRead(
+				layer,
+				fromUtc,
+				toUtc,
+				targetColumnCount,
+				readPenIds.Length,
+				penGroups.Length,
+				outcome,
+				envelopeCount,
+				stopwatch);
 		}
 	}
 
@@ -196,27 +225,23 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		_connectionFaults.OnCompleted();
 	}
 
+	// docs/architecture/data-integration.md#operation-to-statement
 	private async Task<IReadOnlyList<PenHistoryEnvelope>> ReadHistoryAsync(
 		int[] penIds,
+		int[][] penGroups,
 		DateTime fromUtc,
 		DateTime toUtc,
 		AggregationLayer layer,
 		int targetColumnCount,
 		CancellationToken cancellationToken)
 	{
-		await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-
 		var fromLocal = _timeConverter.ToArchiveLocal(fromUtc);
 		var toLocal = _timeConverter.ToArchiveLocal(toUtc);
 		var bucket = BucketFor(fromLocal, toLocal, targetColumnCount);
 
-		var rows = await ReadBucketedWindowAsync(
-				connection,
-				penIds,
-				fromLocal,
-				toLocal,
-				layer,
-				bucket,
+		var rows = await ReadPenGroupsAsync(
+				penGroups,
+				(group, token) => ReadBucketedWindowAsync(group, fromLocal, toLocal, layer, bucket, token),
 				cancellationToken)
 			.ConfigureAwait(false);
 
@@ -226,8 +251,8 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 			var tailEdgeLocal = presentLocal < toLocal ? presentLocal : toLocal;
 
 			rows = await FillFreshTailAsync(
-					connection,
 					penIds,
+					penGroups,
 					fromLocal,
 					toLocal,
 					tailEdgeLocal,
@@ -241,12 +266,39 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		return BucketedRowFold.Fold(rows, _timeConverter);
 	}
 
+	private static async Task<IReadOnlyList<BucketedRowFold.Row>> ReadPenGroupsAsync(
+		int[][] penGroups,
+		Func<int[], CancellationToken, Task<IReadOnlyList<BucketedRowFold.Row>>> readGroup,
+		CancellationToken cancellationToken)
+	{
+		using var groupCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+		var groupRows = await Task.WhenAll(penGroups.Select(ReadGroupAsync)).ConfigureAwait(false);
+
+		return [.. groupRows.SelectMany(rows => rows)];
+
+		async Task<IReadOnlyList<BucketedRowFold.Row>> ReadGroupAsync(int[] group)
+		{
+			try
+			{
+				return await readGroup(group, groupCancellation.Token).ConfigureAwait(false);
+			}
+			catch
+			{
+				await groupCancellation.CancelAsync().ConfigureAwait(false);
+
+				throw;
+			}
+		}
+	}
+
 	private void LogHistoryRead(
 		AggregationLayer layer,
 		DateTime fromUtc,
 		DateTime toUtc,
 		int targetColumnCount,
 		int penCount,
+		int groupCount,
 		HistoryReadOutcome outcome,
 		int? envelopeCount,
 		Stopwatch stopwatch)
@@ -260,6 +312,7 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 				toUtc,
 				targetColumnCount,
 				penCount,
+				groupCount,
 				outcome,
 				count,
 				stopwatch.ElapsedMilliseconds);
@@ -274,6 +327,7 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 			toUtc,
 			targetColumnCount,
 			penCount,
+			groupCount,
 			outcome,
 			stopwatch.ElapsedMilliseconds);
 	}
@@ -357,8 +411,7 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		return TimeSpan.FromTicks(bucket.Ticks - (bucket.Ticks % TimeSpan.TicksPerMicrosecond));
 	}
 
-	private static async Task<IReadOnlyList<BucketedRowFold.Row>> ReadBucketedWindowAsync(
-		NpgsqlConnection connection,
+	private async Task<IReadOnlyList<BucketedRowFold.Row>> ReadBucketedWindowAsync(
 		int[] penIds,
 		DateTime fromLocal,
 		DateTime toLocal,
@@ -366,6 +419,7 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		TimeSpan bucket,
 		CancellationToken cancellationToken)
 	{
+		await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 		await using var command = new NpgsqlCommand(ArchiveStatements.BucketedHistoryWindow, connection);
 
 		BindLocalBucketedWindow(command, penIds, fromLocal, toLocal, layer, bucket);
@@ -383,9 +437,9 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 	}
 
 	// docs/architecture/data-integration.md#layer-ladder
-	private static async Task<IReadOnlyList<BucketedRowFold.Row>> FillFreshTailAsync(
-		NpgsqlConnection connection,
+	private async Task<IReadOnlyList<BucketedRowFold.Row>> FillFreshTailAsync(
 		int[] penIds,
+		int[][] penGroups,
 		DateTime fromLocal,
 		DateTime toLocal,
 		DateTime tailEdgeLocal,
@@ -401,13 +455,15 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 			return coarseRows;
 		}
 
-		var tailRows = await ReadBucketedWindowAsync(
-				connection,
-				penIds,
-				tailStart,
-				toLocal,
-				AggregationLayer.Raw,
-				bucket,
+		var tailRows = await ReadPenGroupsAsync(
+				penGroups,
+				(group, token) => ReadBucketedWindowAsync(
+					group,
+					tailStart,
+					toLocal,
+					AggregationLayer.Raw,
+					bucket,
+					token),
 				cancellationToken)
 			.ConfigureAwait(false);
 

@@ -32,17 +32,15 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	private readonly ChartDeltaCursorReader _deltaCursorReader;
 	private readonly ChartRealtimeApplier _realtimeApplier;
 	private readonly ChartHistoryRequestDebouncer _historyDebouncer;
+	private readonly ChartHistoryPlanner _historyPlanner;
 	private readonly CompositeDisposable _disposables = [];
 	private readonly Dictionary<int, PenHistoryEnvelope> _envelopesById = [];
+	private readonly Dictionary<int, ReadSpan> _readSpansById = [];
 	private readonly PenScaleModel _scaleModel = new();
 	private readonly Dictionary<int, PenScale> _scalesByPenId = [];
 	private readonly Subject<Unit> _redrawRequests = new();
 	private bool _isDisposed;
 	private bool _isHistoryStarted;
-	// Decimation width of every history query, in columns: the last width the render seam reported. The
-	// maximum stands until the first report so the initial query is not starved of resolution.
-	private int _reportedColumnTarget = HistoryColumnTarget.MaxColumns;
-	private FetchRange? _lastFetch;
 	private DateTime _windowEnd;
 	private DateTime _windowStart;
 
@@ -69,6 +67,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			_historyCapInterval,
 			dataScheduler,
 			uiScheduler);
+		_historyPlanner = new ChartHistoryPlanner(Navigation);
 		_windowStart = Navigation.From;
 		_windowEnd = Navigation.To;
 		Navigation.WindowChanged += OnNavigationWindowChanged;
@@ -199,13 +198,14 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			return;
 		}
 
-		_reportedColumnTarget = HistoryColumnTarget.FromDataAreaWidth(dataAreaWidthPixels);
-		Navigation.SetTargetColumnCount(_reportedColumnTarget);
+		var columnTarget = HistoryColumnTarget.FromDataAreaWidth(dataAreaWidthPixels);
+		_historyPlanner.ReportedColumnTarget = columnTarget;
+		Navigation.SetTargetColumnCount(columnTarget);
 	}
 
 	/// <summary>
 	/// The first history request, for whatever window is in force; a gesture or a resize report arriving while
-	/// it is in flight supersedes it. Until it, a catalogue applied queries nothing: this request covers every pen.
+	/// it is in flight supersedes it. Before it, a catalogue applied reads only when its pen count moves the layer.
 	/// </summary>
 	public void RequestInitialHistory()
 	{
@@ -230,7 +230,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			{
 				foreach (var penId in _penSet.Apply(catalogue).RemovedPenIds)
 				{
-					_envelopesById.Remove(penId);
+					DropEnvelope(penId);
 				}
 
 				SettleActivePen();
@@ -239,6 +239,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			}
 		}
 
+		Navigation.SetVisiblePenCount(VisiblePenIds().Count);
 		MoveTheLiveEdgeOntoThePensShown();
 		this.RaisePropertyChanged(nameof(Pens));
 		this.RaisePropertyChanged(nameof(DrawnPenId));
@@ -271,11 +272,52 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		}
 
 		state.SetVisibility(isVisible);
+		var readsTheSwitchedOnPen = isVisible && _isHistoryStarted;
+
+		if (readsTheSwitchedOnPen)
+		{
+			ClearAnUnreadCurve(state);
+		}
+
 		ActivateAVisiblePen();
 		EmphasizeActivePen();
 		this.RaisePropertyChanged(nameof(DrawnPenId));
+
+		// docs/architecture/charting.md#applying-a-catalogue-read
+		var layerBefore = Navigation.ActiveLayer;
+		Navigation.SetVisiblePenCount(VisiblePenIds().Count);
+		var windowChangeReadAndDrew = Navigation.ActiveLayer != layerBefore;
+
+		if (windowChangeReadAndDrew)
+		{
+			return;
+		}
+
+		if (readsTheSwitchedOnPen)
+		{
+			RequestWindowInForce();
+		}
+
 		ApplyAxisModel();
 		RequestRedraw();
+	}
+
+	// docs/architecture/charting.md#applying-a-catalogue-read
+	private void ClearAnUnreadCurve(TrendPenState state)
+	{
+		if (_historyPlanner.HasRead(state.Pen.PenId))
+		{
+			return;
+		}
+
+		DropEnvelope(state.Pen.PenId);
+		state.ClearHistory(_historyPlanner.RangeInHand?.ToUtc ?? _windowEnd);
+	}
+
+	private void DropEnvelope(int penId)
+	{
+		_envelopesById.Remove(penId);
+		_readSpansById.Remove(penId);
 	}
 
 	// Only a visible pen's axis may be drawn, so a switched-off pen is refused rather than activated:
@@ -430,7 +472,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	private void RequeryAllPens()
 	{
-		_lastFetch = null;
+		_historyPlanner.Forget();
 		RequestWindowInForce();
 	}
 
@@ -441,9 +483,9 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	private void RequestWindowInForce()
 	{
-		if (Pens.Count > 0 && !IsWindowFetched(Navigation.From, Navigation.To, Navigation.ActiveLayer))
+		if (NextHistoryRequest() is { } request)
 		{
-			RequestHistory(Navigation.From, Navigation.To, Navigation.ActiveLayer);
+			_historyDebouncer.Request(request);
 		}
 	}
 
@@ -502,13 +544,9 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_windowStart = window.From;
 		_windowEnd = window.To;
 
-		if (window.RequiresHistoryRequery && IsWindowFetched(window.From, window.To, window.Layer))
+		if (window.RequiresHistoryRequery && NextHistoryRequest() is { } request)
 		{
-			_historyDebouncer.RequestNothing();
-		}
-		else if (window.RequiresHistoryRequery)
-		{
-			RequestHistory(window.From, window.To, window.Layer);
+			_historyDebouncer.Request(request);
 
 			if (!MayApplyAxisModel(window.From, window.To))
 			{
@@ -518,32 +556,28 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 				return;
 			}
 		}
+		else if (window.RequiresHistoryRequery)
+		{
+			_historyDebouncer.RequestNothing();
+		}
 
 		ApplyAxisModel();
 		RequestRedraw();
 	}
 
-	private bool IsWindowFetched(DateTime fromUtc, DateTime toUtc, AggregationLayer layer)
+	private HistoryRequest? NextHistoryRequest()
 	{
-		return _lastFetch is { } fetched
-			&& HistoryPrefetch.Covers(
-				fetched, fromUtc, toUtc, layer, Navigation.TargetColumnCount, Navigation.FirstSample);
+		return _historyPlanner.Next(VisiblePenIds(), _windowStart, _windowEnd);
+	}
+
+	private List<int> VisiblePenIds()
+	{
+		return [.. Pens.Where(state => state.IsVisible).Select(state => state.Pen.PenId)];
 	}
 
 	private bool MayApplyAxisModel(DateTime fromUtc, DateTime toUtc)
 	{
-		return _lastFetch is not { } fetched || (fromUtc < fetched.ToUtc && toUtc > fetched.FromUtc);
-	}
-
-	private void RequestHistory(DateTime fromUtc, DateTime toUtc, AggregationLayer layer)
-	{
-		var range = HistoryPrefetch.Expand(
-			fromUtc, toUtc, layer, Navigation.TargetColumnCount, Navigation.FirstSample);
-
-		_historyDebouncer.Request(new HistoryRequest(
-			[.. _penSet.ById.Keys],
-			range,
-			HistoryPrefetch.ScaleColumnTarget(_reportedColumnTarget)));
+		return _historyPlanner.RangeInHand is not { } fetched || (fromUtc < fetched.ToUtc && toUtc > fetched.FromUtc);
 	}
 
 	private Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(
@@ -562,7 +596,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	// docs/architecture/data-integration.md#what-one-history-query-covers
 	private void ApplyHistory(HistoryRequest request, IReadOnlyList<PenHistoryEnvelope> envelopes)
 	{
-		_lastFetch = null;
+		var rangeInHand = _historyPlanner.Forget();
 
 		foreach (var envelope in envelopes)
 		{
@@ -572,28 +606,34 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 				continue;
 			}
 
-			_envelopesById[envelope.PenId] = envelope;
+			var (drawn, span) = EnvelopeSplice.Over(
+				envelope,
+				_envelopesById.GetValueOrDefault(envelope.PenId),
+				request.Range,
+				_readSpansById.TryGetValue(envelope.PenId, out var spanInHand) ? spanInHand : null);
+
+			// A load that throws leaves the envelope with no span, so the next read keeps none of its columns.
+			_readSpansById.Remove(envelope.PenId);
+			_envelopesById[envelope.PenId] = drawn;
 
 			if (envelope.Timestamps.Count > 0)
 			{
 				Navigation.TrackDataExtents(envelope.Timestamps[0], envelope.Timestamps[^1]);
 			}
 
-			state.LoadHistory(envelope, request.ToUtc);
+			state.LoadHistory(drawn, request.ToUtc);
+			_readSpansById[envelope.PenId] = span;
 		}
 
 		DropPensMissingFromHistory(envelopes, request);
+		var visiblePenIds = VisiblePenIds();
+		_historyPlanner.Land(request, rangeInHand, visiblePenIds);
 
-		_lastFetch = ShowsExactly(request.PenIds) ? request.Range : null;
+		var drawsTheWindowInView = _historyPlanner.IsWindowFetched(visiblePenIds, _windowStart, _windowEnd);
 
-		var drawsTheWindowInView = IsWindowFetched(_windowStart, _windowEnd, Navigation.ActiveLayer);
-
-		if (!drawsTheWindowInView)
+		if (_historyPlanner.Next(visiblePenIds, _windowStart, _windowEnd) is { } next)
 		{
-			// A drag can leave the band a query was issued for and re-enter the band the envelopes in hand
-			// covered, which the gate then reads as fetched and asks nothing more. The result landing here
-			// replaces those envelopes, so the window in view is re-requested from the range that arrived.
-			RequestHistory(_windowStart, _windowEnd, Navigation.ActiveLayer);
+			_historyDebouncer.Request(next);
 		}
 
 		if (drawsTheWindowInView || MayApplyAxisModel(_windowStart, _windowEnd))
@@ -636,7 +676,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 				continue;
 			}
 
-			_envelopesById.Remove(penId);
+			DropEnvelope(penId);
 			FindPen(penId)?.ClearHistory(request.ToUtc);
 		}
 	}
@@ -686,9 +726,9 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			var foldIntoColumn = Navigation.ActiveLayer != AggregationLayer.Raw;
 
 			// docs/architecture/data-integration.md#what-one-history-query-covers
-			if (foldIntoColumn && _lastFetch is { Layer: AggregationLayer.Raw })
+			if (foldIntoColumn && _historyPlanner.RangeInHand is { Layer: AggregationLayer.Raw })
 			{
-				_lastFetch = null;
+				_historyPlanner.Forget();
 			}
 
 			_realtimeApplier.Apply(batch, foldIntoColumn);

@@ -117,8 +117,8 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 
 	/// <summary>
 	/// A window of one layer for the pens the caller asks for, folded into one envelope per pen that has
-	/// rows. A window holding no rows at all is a successful empty list rather than a failure. Raw reduces to
-	/// the column target server-side; the coarse layers read the sparse window and patch their fresh tail.
+	/// rows. A window holding no rows at all is a successful empty list rather than a failure. Every layer
+	/// reduces to the column target server-side; a coarse layer also patches its fresh tail from the raw layer.
 	/// </summary>
 	public async Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(
 		IReadOnlyList<int> penIds,
@@ -208,39 +208,37 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 
 		var fromLocal = _timeConverter.ToArchiveLocal(fromUtc);
 		var toLocal = _timeConverter.ToArchiveLocal(toUtc);
+		var bucket = BucketFor(fromLocal, toLocal, targetColumnCount);
 
-		if (layer == AggregationLayer.Raw)
-		{
-			var buckets = await ReadBucketedWindowAsync(
-					connection,
-					penIds,
-					fromLocal,
-					toLocal,
-					targetColumnCount,
-					cancellationToken)
-				.ConfigureAwait(false);
-
-			return BucketedRowFold.Fold(buckets, _timeConverter);
-		}
-
-		var rows = await ReadWindowAsync(connection, penIds, fromLocal, toLocal, layer, cancellationToken)
-			.ConfigureAwait(false);
-
-		var presentLocal = _timeConverter.ToArchiveLocal(_timeProvider.GetUtcNow().UtcDateTime);
-		var tailEdgeLocal = presentLocal < toLocal ? presentLocal : toLocal;
-
-		rows = await FillFreshTailAsync(
+		var rows = await ReadBucketedWindowAsync(
 				connection,
 				penIds,
 				fromLocal,
 				toLocal,
-				tailEdgeLocal,
 				layer,
-				rows,
+				bucket,
 				cancellationToken)
 			.ConfigureAwait(false);
 
-		return HistoryRowFold.Fold(rows, _timeConverter, targetColumnCount);
+		if (layer != AggregationLayer.Raw)
+		{
+			var presentLocal = _timeConverter.ToArchiveLocal(_timeProvider.GetUtcNow().UtcDateTime);
+			var tailEdgeLocal = presentLocal < toLocal ? presentLocal : toLocal;
+
+			rows = await FillFreshTailAsync(
+					connection,
+					penIds,
+					fromLocal,
+					toLocal,
+					tailEdgeLocal,
+					layer,
+					bucket,
+					rows,
+					cancellationToken)
+				.ConfigureAwait(false);
+		}
+
+		return BucketedRowFold.Fold(rows, _timeConverter);
 	}
 
 	private void LogHistoryRead(
@@ -326,12 +324,13 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 	}
 
 	// Bound on the archive's own wall clock: a UTC round trip is not injective across DST.
-	internal static void BindLocalWindow(
+	internal static void BindLocalBucketedWindow(
 		NpgsqlCommand command,
 		int[] penIds,
 		DateTime fromLocal,
 		DateTime toLocal,
-		AggregationLayer layer)
+		AggregationLayer layer,
+		TimeSpan bucket)
 	{
 		command.Parameters.Add(new NpgsqlParameter("ids", NpgsqlDbType.Array | NpgsqlDbType.Integer)
 		{
@@ -340,25 +339,7 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		command.Parameters.Add(new NpgsqlParameter("layer", NpgsqlDbType.Smallint) { Value = (short)layer });
 		command.Parameters.Add(new NpgsqlParameter("from", NpgsqlDbType.Timestamp) { Value = fromLocal });
 		command.Parameters.Add(new NpgsqlParameter("to", NpgsqlDbType.Timestamp) { Value = toLocal });
-	}
-
-	internal static void BindLocalBucketedWindow(
-		NpgsqlCommand command,
-		int[] penIds,
-		DateTime fromLocal,
-		DateTime toLocal,
-		int targetColumnCount)
-	{
-		command.Parameters.Add(new NpgsqlParameter("ids", NpgsqlDbType.Array | NpgsqlDbType.Integer)
-		{
-			Value = penIds
-		});
-		command.Parameters.Add(new NpgsqlParameter("from", NpgsqlDbType.Timestamp) { Value = fromLocal });
-		command.Parameters.Add(new NpgsqlParameter("to", NpgsqlDbType.Timestamp) { Value = toLocal });
-		command.Parameters.Add(new NpgsqlParameter("bucket", NpgsqlDbType.Interval)
-		{
-			Value = BucketFor(fromLocal, toLocal, targetColumnCount)
-		});
+		command.Parameters.Add(new NpgsqlParameter("bucket", NpgsqlDbType.Interval) { Value = bucket });
 	}
 
 	// One millisecond is the column's own resolution, so a narrower bucket buys no reduction and a zero one
@@ -376,41 +357,18 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		return TimeSpan.FromTicks(bucket.Ticks - (bucket.Ticks % TimeSpan.TicksPerMicrosecond));
 	}
 
-	private static async Task<IReadOnlyList<HistoryRowFold.Row>> ReadWindowAsync(
-		NpgsqlConnection connection,
-		int[] penIds,
-		DateTime fromLocal,
-		DateTime toLocal,
-		AggregationLayer layer,
-		CancellationToken cancellationToken)
-	{
-		await using var command = new NpgsqlCommand(ArchiveStatements.SparseHistoryWindow, connection);
-
-		BindLocalWindow(command, penIds, fromLocal, toLocal, layer);
-
-		await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-
-		var rows = new List<HistoryRowFold.Row>();
-
-		while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-		{
-			rows.Add(ReadHistoryRow(reader));
-		}
-
-		return rows;
-	}
-
 	private static async Task<IReadOnlyList<BucketedRowFold.Row>> ReadBucketedWindowAsync(
 		NpgsqlConnection connection,
 		int[] penIds,
 		DateTime fromLocal,
 		DateTime toLocal,
-		int targetColumnCount,
+		AggregationLayer layer,
+		TimeSpan bucket,
 		CancellationToken cancellationToken)
 	{
-		await using var command = new NpgsqlCommand(ArchiveStatements.BucketedRawWindow, connection);
+		await using var command = new NpgsqlCommand(ArchiveStatements.BucketedHistoryWindow, connection);
 
-		BindLocalBucketedWindow(command, penIds, fromLocal, toLocal, targetColumnCount);
+		BindLocalBucketedWindow(command, penIds, fromLocal, toLocal, layer, bucket);
 
 		await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
@@ -425,14 +383,15 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 	}
 
 	// docs/architecture/data-integration.md#layer-ladder
-	private static async Task<IReadOnlyList<HistoryRowFold.Row>> FillFreshTailAsync(
+	private static async Task<IReadOnlyList<BucketedRowFold.Row>> FillFreshTailAsync(
 		NpgsqlConnection connection,
 		int[] penIds,
 		DateTime fromLocal,
 		DateTime toLocal,
 		DateTime tailEdgeLocal,
 		AggregationLayer layer,
-		IReadOnlyList<HistoryRowFold.Row> coarseRows,
+		TimeSpan bucket,
+		IReadOnlyList<BucketedRowFold.Row> coarseRows,
 		CancellationToken cancellationToken)
 	{
 		var seams = FreshTail.Seams(coarseRows, penIds, fromLocal);
@@ -442,25 +401,17 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 			return coarseRows;
 		}
 
-		var tailRows = await ReadWindowAsync(
+		var tailRows = await ReadBucketedWindowAsync(
 				connection,
 				penIds,
 				tailStart,
 				toLocal,
 				AggregationLayer.Raw,
+				bucket,
 				cancellationToken)
 			.ConfigureAwait(false);
 
 		return FreshTail.Merge(coarseRows, tailRows, seams, tailStart);
-	}
-
-	private static HistoryRowFold.Row ReadHistoryRow(NpgsqlDataReader reader)
-	{
-		return new HistoryRowFold.Row(
-			reader.GetInt32(0),
-			reader.GetDateTime(1),
-			reader.IsDBNull(2) ? null : reader.GetDouble(2),
-			reader.GetInt32(3));
 	}
 
 	private static BucketedRowFold.Row ReadBucketedRow(NpgsqlDataReader reader)

@@ -99,7 +99,7 @@ meets the edit throws "Collection was modified" on the render thread, the crash 
 **Realtime append / live-edge join.** `TrendPenState` holds one pen's `EnvelopeLine` and appends into the
 plottable's column list, which every render re-reads, so appends are live and nothing is re-set. The realtime
 tail appends one degenerate column (`Min == Max == Center == value`) at the live edge. At coarse layers
-(minute/hour/day) a realtime sample does **not** append — it folds into the current decimation column
+(minute/hour) a realtime sample does **not** append; it folds into the current decimation column
 (`FoldRealtime` widens that column's `Min`/`Max` and moves its `Center`). A gap column takes no fold:
 when the last column is a `NaN` gap, as after a history envelope that ends on nulls, the sample opens a
 column at its own timestamp past the gap, and the samples after it fold into that one. The gap still draws
@@ -318,8 +318,10 @@ Elements to reproduce and improve:
 - **Mini-legend** with columns: checkbox / color / name / current value
   (trend-feature-spec.md §PN-8). Pens are logically grouped (ICP, RIE, pressures, gases,
   temperatures).
-- **Aggregation layer** ("Слой": raw / minute / hour / day) — the resolution the history read
-  asks for; maps to the archive `l` column (see data-integration.md). The legacy window lets the
+- **Aggregation layer** ("Слой": raw / minute / hour): the resolution the history read
+  asks for; maps to the archive `l` column (see data-integration.md). At 256 columns Raw reaches
+  64 min and Minute 64 h; at 2048 columns Raw reaches 8 h 32 min and Minute 512 h; Hour reads every
+  wider window, to the 365-day cap. The legacy window lets the
   operator pick it. SemiPlot does not: the zoom width picks the layer and the status bar shows the
   name read-only, named from resx rather than from `AggregationLayer.ToString()`. The manual pin is
   trend-feature-spec.md §DA-4 and is not built; the automatic selection is §DA-2.
@@ -586,10 +588,6 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   multiplies the reading by 100.
 - `TrendNavigationModel` — `[from, to]` window, sticky flag, zoom width; pan / zoom / jump-to-now /
   live-edge advance, clamped 1 s … 1 year, zoom width quantized onto a 1.25 ladder, `From ≥ FirstSample`.
-- `MinMaxDecimator` — samples + target column count → min AND max per column (+ center); NaN-gap anchor
-  at empty leading/trailing edge sub-spans. Shared by the coarse-layer read path of every provider:
-  each translates its own rows into the parallel `(timestamp, value?)` vocabulary where a null marks
-  a gap. The Postgres Raw path runs no decimator; the server reduces the rows instead.
 - `MinimapGeometry` — extent + window → strip start/width fractions, and fraction → timestamp;
   `MarkerSpan` → the marker's left edge and width, clamped inside the strip; `RightBound` → the later
   of the extent's last sample and the newest sample; `BandFigures` → one outline and centre line per

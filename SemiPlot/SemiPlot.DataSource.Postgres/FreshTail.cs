@@ -14,7 +14,7 @@ internal static class FreshTail
 	/// newest and the running assignment below ends on it.
 	/// </summary>
 	public static Dictionary<int, DateTime> Seams(
-		IReadOnlyList<HistoryRowFold.Row> coarseRows,
+		IReadOnlyList<BucketedRowFold.Row> coarseRows,
 		IReadOnlyList<int> penIds,
 		DateTime windowStartLocal)
 	{
@@ -34,15 +34,14 @@ internal static class FreshTail
 	}
 
 	/// <summary>
-	/// The instant a tail read starts at, or <c>null</c> when no tail is read at all. Seams at the window
-	/// start drop out here: left in, they pull the bound down to the clamp for rows <see cref="Merge"/> discards.
+	/// The instant a coarse layer's tail read starts at, or <c>null</c> when no tail is read at all.
 	/// </summary>
 	public static DateTime? Start(
 		AggregationLayer layer,
 		IReadOnlyDictionary<int, DateTime> seams,
 		DateTime tailEdgeLocal)
 	{
-		if (layer == AggregationLayer.Raw || seams.Count == 0)
+		if (seams.Count == 0)
 		{
 			return null;
 		}
@@ -69,6 +68,7 @@ internal static class FreshTail
 
 		foreach (var seam in seams.Values)
 		{
+			// A seam at the window start drops out here: left in, it pulls the bound down for rows Merge discards.
 			if (seam >= clampedLocal && (earliest is null || seam < earliest))
 			{
 				earliest = seam;
@@ -80,16 +80,16 @@ internal static class FreshTail
 
 	/// <summary>
 	/// The coarse rows with each pen's tail rows appended after its own, in ascending pen identifier with one
-	/// consecutive run per pen, the ordering <see cref="HistoryRowFold.Fold"/> requires. A pen whose seam
+	/// consecutive run per pen, the ordering <see cref="BucketedRowFold.Fold"/> requires. A pen whose seam
 	/// predates <paramref name="tailStartLocal"/> gets no tail row: a range with no row is not a gap.
 	/// </summary>
-	public static IReadOnlyList<HistoryRowFold.Row> Merge(
-		IReadOnlyList<HistoryRowFold.Row> coarseRows,
-		IReadOnlyList<HistoryRowFold.Row> tailRows,
+	public static IReadOnlyList<BucketedRowFold.Row> Merge(
+		IReadOnlyList<BucketedRowFold.Row> coarseRows,
+		IReadOnlyList<BucketedRowFold.Row> tailRows,
 		IReadOnlyDictionary<int, DateTime> seams,
 		DateTime tailStartLocal)
 	{
-		var merged = new List<HistoryRowFold.Row>(coarseRows.Count + tailRows.Count);
+		var merged = new List<BucketedRowFold.Row>(coarseRows.Count + tailRows.Count);
 		var coarseIndex = 0;
 		var tailIndex = 0;
 
@@ -121,9 +121,9 @@ internal static class FreshTail
 
 	// Both lists arrive on ascending identifiers, so the smaller head is the next whole run.
 	private static int NextPenId(
-		IReadOnlyList<HistoryRowFold.Row> coarseRows,
+		IReadOnlyList<BucketedRowFold.Row> coarseRows,
 		int coarseIndex,
-		IReadOnlyList<HistoryRowFold.Row> tailRows,
+		IReadOnlyList<BucketedRowFold.Row> tailRows,
 		int tailIndex)
 	{
 		if (coarseIndex >= coarseRows.Count)

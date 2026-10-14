@@ -33,11 +33,12 @@ and built from the commit under test. Its value is diagnosis.
 
 | Area | Files |
 | --- | --- |
-| Decimation, navigation, scale, cursor geometry | `SemiPlot.Tests.Unit/Core/Data/MinMaxDecimatorTests.cs`, `Core/Trends/TrendNavigationModelTests.cs`, `PenScaleModelTests.cs`, `MinimapGeometryTests.cs`, `Chart/CursorReadoutModelTests.cs`, `DeltaCursorModelTests.cs` |
+| Navigation, scale, cursor geometry | `SemiPlot.Tests.Unit/Core/Trends/TrendNavigationModelTests.cs`, `PenScaleModelTests.cs`, `MinimapGeometryTests.cs`, `Chart/CursorReadoutModelTests.cs`, `DeltaCursorModelTests.cs` |
 | The seeder's generation rules | `SemiPlot.Tests.Unit/LayerThinnerTests.cs`, `RawLayerGeneratorTests.cs`, `BreakGenerationTests.cs`, `PartitionScriptTests.cs` |
 | The demo writer's own rules and the command line | `SemiPlot.Tests.Unit/LiveTailGeneratorTests.cs`, `SharedLatticeTests.cs`, `SeederCommandTests.cs`. Its coarse flush is not here: it reads the finer layer back from the server and thins it with `LayerThinner.Thin`, so `Integration/CoarseFlushTests.cs` carries it, gated |
 | The error types' shape and extent arithmetic | `SemiPlot.Tests.Unit/Errors/DataErrorTests.cs`, `Data/ArchiveExtentTests.cs` |
 | The provider's statement text and its binder | `SemiPlot.Tests.Unit/Postgres/ArchiveStatementTextTests.cs` |
+| The bucketed fold: one column per bucket, the gap column, the DST drop | `SemiPlot.Tests.Unit/Postgres/BucketedRowFoldTests.cs`, `Postgres/RealArchiveGapTests.cs` |
 | The fresh tail's bound, and a tick's own command timeout | `SemiPlot.Tests.Unit/Postgres/FreshTailBoundTests.cs`, `Postgres/ArchiveStatementTextTests.cs` |
 | The vendor's observed row shape | `SemiPlot.Tests.Unit/Fixtures/RealArchiveFixtureTests.cs` over `Fixtures/real-archive-rows.csv` |
 | The shipped configuration set | `SemiPlot.Tests.Unit/DeliveredConfigurationTests.cs` over `ConfigFiles/**`, linked into the output directory by `SemiPlot.Tests.Unit.csproj` |
@@ -107,15 +108,15 @@ with no reproduction.
 
 Statement text is pinned clause by clause, in `ArchiveStatementTextTests.cs` against the constants in
 `ArchiveStatements.cs`: one assertion per guarantee whose loss nothing else catches without a
-container — the sparse history window's outer `ORDER BY id, t`, its strict seam bound and its one-day
-seed floor; the bucketed raw window's own outer `ORDER BY id, t`, its
-`GROUP BY id, segment, date_bin(@bucket, t, @from)` and its `l = 0` window bound; the realtime poll's
+container: the bucketed history window's outer `ORDER BY id, t`, its
+`GROUP BY id, segment, date_bin(@bucket, t, @from)`, its break flag, its newest non-null timestamp,
+`l = @layer` in both branches, its strict seed bound and its one-day seed floor; the realtime poll's
 `l = 0` filter and its `ORDER BY t`; the realtime baseline's `l = 0` filter and its
-`DISTINCT unnest(@ids)`. Four statements take parameters, each through a binder of its own pinned
-against the statement's parameter names: `PostgresDataProvider.BindLocalWindow`,
-`PostgresDataProvider.BindLocalBucketedWindow`, `RealtimePoll.BindPoll` and `RealtimePoll.BindBaseline`.
-`BindLocalBucketedWindow` carries two assertions more, on the bucket it derives from the window and the
-column target and on its one-millisecond floor. `data-integration.md` names the constants and quotes
+`DISTINCT unnest(@ids)`. Three statements take parameters, each through a binder of its own pinned
+against the statement's parameter names: `PostgresDataProvider.BindLocalBucketedWindow`,
+`RealtimePoll.BindPoll` and `RealtimePoll.BindBaseline`. Two assertions more pin
+`PostgresDataProvider.BucketFor`: the bucket is the window divided by the column target, and it floors
+at one millisecond. `data-integration.md` names the constants and quotes
 no SQL, so there is no second copy to drift.
 
 `TrendCoordinator.BatchWindow` is `internal` so `TrendCoordinatorTests` advance a `TestScheduler` by the
@@ -144,18 +145,26 @@ would encode our own assumption on both sides. The value is contract verificatio
 
 There are three families — the same category with different foreign parties.
 
-**Against a real PostgreSQL** — `SemiPlot.Tests.Integration/`: `PostgresCatalogReadTests`,
+**Against a real PostgreSQL**, in `SemiPlot.Tests.Integration/`: `PostgresCatalogReadTests`,
 `PostgresExtentReadTests`, `PostgresHistoryReadTests`, `RealtimePollReadTests`,
 `RealtimeSubscriptionTests`, `RealtimeEmptyArchiveTests`,
-`ArchiveWriterTransactionTests`, `CoarseFlushTests`,
+`ArchiveWriterTransactionTests`, `CoarseFlushTests`, `ProviderSessionTests`,
 `ExplainPlanTests`, `PenCatalogueEditorTests`, `PenRegistrationTests`, `LiveCatalogueTests`. The realtime classes
 share `RealtimeArchive` (rows, subscription and append path), `BatchCollector` and `ArmedGate`. Seams
 guarded: statement text, type mapping, the demo writer's coarse
 flush (`CoarseFlushTests` pins period bounds, which periods close, the NULL skip, `ON CONFLICT` and the
 opening-row statement; the thinning itself is `LayerThinner.Thin`'s, tested in Unit),
-the naive-local-to-UTC conversion, partition pruning, and the grant chain — reads and the editor's
-writes run as `semiplot`, so a privilege that never reached the role fails here instead of at
-commissioning. The container is the delivery mechanism for a real server, nothing more.
+the naive-local-to-UTC conversion, partition pruning, the session startup option (`ProviderSessionTests`:
+a pooled session answers `SHOW jit` with `off`, where a plain session on the same database answers `on`),
+and the grant chain: reads and the editor's writes run as `semiplot`, so a privilege that never reached the
+role fails here instead of at commissioning. The container is the delivery mechanism for a real server,
+nothing more.
+
+`ExplainPlanTests` explains the history window at `Raw` only. A coarse read over a long window takes
+most day partitions through a bitmap or a sequential scan (`data-integration.md#operation-to-statement`),
+so no plan shape at `Minute` or `Hour` holds either way. The seed look-back clause is one text at every
+layer: `ArchiveStatementTextTests` pins it, and
+`PostgresHistoryReadTests.AWindowWiderThanTheLookBackFloorSeeksBackAsFarAsItAsks` runs it.
 
 **Against a socket, with no server** — `RealtimePollTests` (the live edge's failure ladder, every tick
 connecting to `127.0.0.1:1`), `RealtimeSubscriptionDisposalTests` and `ConvergeReadinessTests` (a loopback

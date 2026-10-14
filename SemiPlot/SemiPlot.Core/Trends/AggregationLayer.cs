@@ -6,22 +6,22 @@ public enum AggregationLayer
 {
 	Raw = 0,
 	Minute = 1,
-	Hour = 2,
-	Day = 3
+	Hour = 2
 }
 
 public static class AggregationLayerExtensions
 {
-	// Distance between two consecutive points of a layer. The archive writes up to four points into
-	// every period, so a layer's spacing is a quarter of its period, not the period itself.
+	// docs/architecture/data-integration.md#layer-ladder
 	public static TimeSpan ToPointSpacing(this AggregationLayer layer)
 	{
 		return layer switch
 		{
-			AggregationLayer.Raw => TimeSpan.FromSeconds(1),
+			AggregationLayer.Raw => throw new ArgumentOutOfRangeException(
+				nameof(layer),
+				layer,
+				"The raw layer's spacing is the archiving interval, which the archive does not record."),
 			AggregationLayer.Minute => TimeSpan.FromSeconds(15),
 			AggregationLayer.Hour => TimeSpan.FromMinutes(15),
-			AggregationLayer.Day => TimeSpan.FromHours(6),
 			_ => throw new ArgumentOutOfRangeException(nameof(layer), layer, "Unknown aggregation layer.")
 		};
 	}

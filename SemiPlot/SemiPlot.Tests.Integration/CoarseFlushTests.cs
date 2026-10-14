@@ -42,25 +42,22 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 	private static readonly IReadOnlyList<int> _penIds =
 		[.. RawLayerGenerator.SelectPens(PenCount).Select(pen => pen.PenId)];
 
-	// One row per pen at each coarse layer: what the first call inside a period writes and what no later
+	// One row per pen at every coarse layer: what the first call inside a period writes and what no later
 	// call inside that period repeats.
-	private static readonly long _openingRowsPerPeriod = _penIds.Count * LayerThinner.CoarseLayers.Count;
+	private static readonly long _openingRowsPerPeriod = (long)_penIds.Count * LayerThinner.CoarseLayers.Count;
 
 	private static readonly DateTime _day = new(2026, 1, 2, 0, 0, 0, DateTimeKind.Unspecified);
-
-	private static readonly DateTime _previousDay = _day.AddDays(-1);
 
 	// One sample every ten seconds gives a minute six rows per pen, enough for a first, a last, an
 	// interior minimum and an interior maximum to be four distinct rows.
 	private static readonly TimeSpan _sampleInterval = TimeSpan.FromSeconds(10);
 
-	// Inside the last minute of the day, so one marker row sits in a closing minute, hour and day at once.
+	// Inside the last minute of the hour, so one marker row sits in a closing minute and hour at once.
 	private static readonly DateTime _markerInstant = _day.AddHours(23).AddMinutes(59).AddSeconds(30);
 
-	// The archive spans the last minute of the previous day and the last hour and a minute of this one:
-	// the first gives the day a period before the flushed one that carries rows, and the second gives an
-	// hour boundary that is not also a day boundary.
-	private static readonly DateTime _rawStart = _previousDay.AddHours(23).AddMinutes(59);
+	// The archive spans the last hour and a minute of the day, so the hour before the last one carries
+	// rows and an hour boundary falls inside it.
+	private static readonly DateTime _rawStart = _day.AddHours(22).AddMinutes(59);
 
 	private static readonly DateTime _rawEndExclusive = _day.AddDays(1);
 
@@ -91,7 +88,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 	}
 
 	// The preceding period of every layer carries raw rows, so a gate that fired where no period closed
-	// would be visible in all three.
+	// would be visible in both.
 	[Fact]
 	public async Task APairInsideOneMinuteClosesNoPeriodAtAnyLayer()
 	{
@@ -107,13 +104,11 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 
 		(await ReadPeriodAsync(LayerThinner.HourLayer, _day.AddHours(22), cancellationToken)).Should().BeEmpty();
 
-		(await ReadPeriodAsync(LayerThinner.DayLayer, _previousDay, cancellationToken)).Should().BeEmpty();
-
 		await AssertOnlyTheOpeningRowsAsync(now, cancellationToken);
 	}
 
 	[Fact]
-	public async Task APairCrossingAnHourClosesTheMinuteAndTheHourAndNotTheDay()
+	public async Task APairCrossingAnHourClosesTheMinuteAndTheHour()
 	{
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var hour = _day.AddHours(22);
@@ -128,8 +123,6 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 
 		(await ReadPeriodAsync(LayerThinner.HourLayer, hour, cancellationToken))
 			.Should().Equal(ExpectedThin(LayerThinner.HourLayer, hour));
-
-		(await ReadPeriodAsync(LayerThinner.DayLayer, _previousDay, cancellationToken)).Should().BeEmpty();
 
 		await AssertOnlyTheOpeningRowsAsync(now, cancellationToken);
 	}
@@ -292,7 +285,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 		{
 			LayerThinner.MinuteLayer => periodStart.AddMinutes(1),
 			LayerThinner.HourLayer => periodStart.AddHours(1),
-			_ => periodStart.AddDays(1)
+			_ => throw new ArgumentOutOfRangeException(nameof(layer), layer, "The bench writes no other coarse layer.")
 		};
 	}
 
@@ -360,8 +353,7 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 	{
 		var rows = new List<ArchiveRow>();
 
-		AppendSlice(rows, _rawStart, _day);
-		AppendSlice(rows, _day.AddHours(22).AddMinutes(59), _rawEndExclusive);
+		AppendSlice(rows, _rawStart, _rawEndExclusive);
 
 		return rows;
 	}

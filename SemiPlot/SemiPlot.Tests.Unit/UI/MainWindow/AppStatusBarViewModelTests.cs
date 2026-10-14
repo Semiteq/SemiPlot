@@ -165,7 +165,6 @@ public sealed class AppStatusBarViewModelTests
 	[InlineData(AggregationLayer.Raw, "StatusLayerRaw")]
 	[InlineData(AggregationLayer.Minute, "StatusLayerMinute")]
 	[InlineData(AggregationLayer.Hour, "StatusLayerHour")]
-	[InlineData(AggregationLayer.Day, "StatusLayerDay")]
 	public void LayerText_ForEachMember_IsTheRussianResourceValue(AggregationLayer layer, string key)
 	{
 		using var culture = new CultureScope("ru");
@@ -190,7 +189,7 @@ public sealed class AppStatusBarViewModelTests
 		var statusBar = NewStatusBar(panel, navigation: navigation);
 		statusBar.Dispose();
 
-		DriveToLayer(navigation, AggregationLayer.Day);
+		DriveToLayer(navigation, AggregationLayer.Hour);
 
 		statusBar.ActiveLayer.Should().Be(AggregationLayer.Raw);
 	}

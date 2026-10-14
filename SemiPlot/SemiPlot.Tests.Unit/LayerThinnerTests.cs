@@ -15,9 +15,10 @@ namespace SemiPlot.Tests.Unit;
 [Trait("Category", "Unit")]
 public sealed class LayerThinnerTests
 {
-	// The measured volume of the standard slice across all four layers, raw plus the coarse rows the
-	// thinner selects from them. A floor, not a pin: a waveform change that keeps the volume moves nothing.
-	private const int StandardSliceLayeredRowCount = 314845;
+	// The measured volume of the standard slice across the raw, minute and hour layers, raw plus the
+	// coarse rows the thinner selects from them. A floor, not a pin: a waveform change that keeps the
+	// volume moves nothing.
+	private const int StandardSliceLayeredRowCount = 314846;
 
 	private const int Budget = 4;
 
@@ -28,7 +29,6 @@ public sealed class LayerThinnerTests
 	[Theory]
 	[InlineData(LayerThinner.MinuteLayer)]
 	[InlineData(LayerThinner.HourLayer)]
-	[InlineData(LayerThinner.DayLayer)]
 	public void NoPeriodHoldsMoreThanFourNonMarkerRows(short layer)
 	{
 		foreach (var period in ByPeriod(LayerThinner.Thin(_rawRows, layer), layer))
@@ -45,7 +45,6 @@ public sealed class LayerThinnerTests
 	[Theory]
 	[InlineData(LayerThinner.MinuteLayer)]
 	[InlineData(LayerThinner.HourLayer)]
-	[InlineData(LayerThinner.DayLayer)]
 	public void EveryPeriodKeepsItsMinimumAndMaximum(short layer)
 	{
 		var thinned = ByPeriod(LayerThinner.Thin(_rawRows, layer), layer)
@@ -63,7 +62,6 @@ public sealed class LayerThinnerTests
 	[Theory]
 	[InlineData(LayerThinner.MinuteLayer)]
 	[InlineData(LayerThinner.HourLayer)]
-	[InlineData(LayerThinner.DayLayer)]
 	public void EveryPeriodKeepsItsFirstAndLastRow(short layer)
 	{
 		var thinned = ByPeriod(LayerThinner.Thin(_rawRows, layer), layer)
@@ -78,33 +76,32 @@ public sealed class LayerThinnerTests
 		}
 	}
 
-	// Computing each layer against the raw rows is what makes this hold on its own: a day's extremum is
-	// also the extremum of the hour and the minute that contain it.
+	// Computing each layer against the raw rows is what makes this hold on its own: an hour's extremum is
+	// also the extremum of the minute that contains it.
 	[Fact]
-	public void LayersNestFromTheDayDownToTheRawRows()
+	public void LayersNestFromTheHourDownToTheRawRows()
 	{
 		var raw = _rawRows.Select(BenchRows.Identity).ToHashSet();
 		var minute = LayerThinner.Thin(_rawRows, LayerThinner.MinuteLayer).Select(BenchRows.Identity).ToHashSet();
 		var hour = LayerThinner.Thin(_rawRows, LayerThinner.HourLayer).Select(BenchRows.Identity).ToHashSet();
-		var day = LayerThinner.Thin(_rawRows, LayerThinner.DayLayer).Select(BenchRows.Identity).ToHashSet();
 
 		minute.Should().BeSubsetOf(raw).And.NotBeEquivalentTo(raw);
 		hour.Should().BeSubsetOf(minute).And.NotBeEquivalentTo(minute);
-		day.Should().BeSubsetOf(hour).And.NotBeEquivalentTo(hour);
 	}
 
 	// A slice falling under this number would move the gated expectations, the index plans, the
 	// statement-timeout bound and the minute-layer density test, with nothing here failing first.
 	[Fact]
-	public void TheStandardSliceFillsFourLayersAtOrAboveTheMeasuredVolume()
+	public void TheStandardSliceFillsItsLayersAtOrAboveTheMeasuredVolume()
 	{
 		var raw = RawLayerGenerator.Generate(BenchOptions.For());
 		var coarse = LayerThinner.ThinAll(raw);
 		var total = raw.Count + coarse.Count;
 
-		coarse.Select(row => row.Layer).Distinct().Order().Should().Equal(LayerThinner.CoarseLayers.Order());
+		coarse.Select(row => row.Layer).Distinct().Order().Should().Equal(
+			LayerThinner.MinuteLayer, LayerThinner.HourLayer);
 		(total >= StandardSliceLayeredRowCount).Should().BeTrue(
-			$"the standard slice holds {total} rows across its four layers");
+			$"the standard slice holds {total} rows across its raw, minute and hour layers");
 	}
 
 	// A gap boundary has to survive thinning, or a broken line renders as a straight one at any zoom
@@ -253,7 +250,6 @@ public sealed class LayerThinnerTests
 	[Theory]
 	[InlineData(LayerThinner.MinuteLayer, "2026-01-02T10:37:00.0000000")]
 	[InlineData(LayerThinner.HourLayer, "2026-01-02T10:00:00.0000000")]
-	[InlineData(LayerThinner.DayLayer, "2026-01-02T00:00:00.0000000")]
 	public void PeriodStartAlignsToTheCalendar(short layer, string expected)
 	{
 		var timestamp = new DateTime(2026, 1, 2, 10, 37, 42, 913, DateTimeKind.Unspecified);
@@ -264,6 +260,7 @@ public sealed class LayerThinnerTests
 
 	[Theory]
 	[InlineData(ArchiveRow.RawLayer)]
+	[InlineData((short)3)]
 	[InlineData((short)4)]
 	public void PeriodStartRejectsALayerThatIsNotCoarse(short layer)
 	{

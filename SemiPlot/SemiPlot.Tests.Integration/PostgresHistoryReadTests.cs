@@ -33,11 +33,9 @@ public sealed class PostgresHistoryReadTests(
 	SeededArchive seededArchive)
 	: IClassFixture<SeededArchive>
 {
-	// The floor under every column target here: above the row count of every window this class reads, so a
-	// coarse read passes each row through one column of its own.
-	private const int TargetColumnCount = 4096;
+	private const int ColumnTargetFloor = 4096;
 
-	// A Raw read reduces by time, so a row keeps a column of its own only while the bucket is no wider than
+	// Every read reduces by time, so a row keeps a column of its own only while the bucket is no wider than
 	// this: RawLayerGenerator writes an anchor one PollInterval before every change, and the row-for-row
 	// comparisons below would otherwise compare buckets. ColumnTargetFor sizes the target to hold it.
 	private static readonly TimeSpan _tightestRowSpacing = RawLayerGenerator.PollInterval;
@@ -45,6 +43,10 @@ public sealed class PostgresHistoryReadTests(
 	// Denser than the canvas: over the window below the archive holds some 360 changes per pen, so the
 	// server reduces rather than passes through.
 	private const int BucketedColumnTarget = 64;
+
+	private const int MinuteColumnTarget = 64;
+
+	private const int HourColumnTarget = 8;
 
 	// Wide enough that the target above reduces, narrow enough to sit inside one archiving run.
 	private static readonly TimeSpan _denseWindowLength = TimeSpan.FromMinutes(30);
@@ -66,7 +68,7 @@ public sealed class PostgresHistoryReadTests(
 	// seed-only window opens. Both are well inside the statement's look-back floor of one partition width.
 	private static readonly TimeSpan _windowOffset = TimeSpan.FromMinutes(1);
 
-	// The floor of the bound ArchiveStatements.SparseHistoryWindow puts on its backwards seek: one
+	// The floor of the bound ArchiveStatements.BucketedHistoryWindow puts on its backwards seek: one
 	// partition width, widened to the requested window when that is wider.
 	private static readonly TimeSpan _seedLookBackFloor = TimeSpan.FromDays(1);
 
@@ -78,6 +80,13 @@ public sealed class PostgresHistoryReadTests(
 	private static readonly Lazy<BreakPlan> _breakPlan = new(() => BreakPlan.Create(ArchiveTemplate.Slice));
 
 	private static readonly Lazy<IReadOnlyList<ArchiveRow>> _seededRawRows = new(GenerateSeededRawRows);
+
+	// The coarse layers ArchiveTemplate writes beside the raw rows, thinned once per run.
+	private static readonly Lazy<IReadOnlyList<ArchiveRow>> _seededMinuteRows =
+		new(() => LayerThinner.Thin(_seededRawRows.Value, LayerThinner.MinuteLayer));
+
+	private static readonly Lazy<IReadOnlyList<ArchiveRow>> _seededHourRows =
+		new(() => LayerThinner.Thin(_seededRawRows.Value, LayerThinner.HourLayer));
 
 	private static readonly Lazy<IReadOnlyList<int>> _seededPenIds = new(SelectSeededPenIds);
 
@@ -125,8 +134,32 @@ public sealed class PostgresHistoryReadTests(
 
 	private static readonly DateTime[] _reachingCoarse = [.. _freshCoarse, _newestRawTimestamp];
 
-	// The archive's own code for the layer the coarse rows below belong to.
+	// Its hour-layer rows end twenty minutes before the raw rows start.
+	private const int HourTailPenId = 4;
+
+	// Its minute layer matches the fresh pen's, and its raw tail carries a q = 32 marker and the q = 16 row
+	// that resumes after it.
+	private const int BreakTailPenId = 5;
+
+	private static readonly DateTime _hourWindowFrom = _tailWindowFrom.AddHours(-2);
+
+	private static readonly DateTime _hourSeam = _tailWindowFrom.AddMinutes(-20);
+
+	private static readonly DateTime[] _hourCoarse = [_tailWindowFrom.AddMinutes(-100), _hourSeam];
+
+	private static readonly DateTime _tailBreakMarker = _freshSeam.AddSeconds(20);
+
+	// One raw step is missing between the two: the archive wrote nothing while the project stood.
+	private static readonly DateTime _tailBreakResumption = _tailBreakMarker.AddSeconds(20);
+
+	// Two columns over the five-minute tail window: a bucket of two and a half minutes, wider than the
+	// one-minute tail the clamp allows, so the whole tail folds into one column.
+	private const int WideTailColumnTarget = 2;
+
+	// The archive's own codes for the layers the coarse rows below belong to.
 	private const short MinuteLayer = (short)AggregationLayer.Minute;
+
+	private const short HourLayer = (short)AggregationLayer.Hour;
 
 	private const string LockTrendsCommand = "LOCK TABLE public.trends IN ACCESS EXCLUSIVE MODE;";
 
@@ -147,7 +180,7 @@ public sealed class PostgresHistoryReadTests(
 		(window.To < run.End).Should().BeTrue(
 			$"The window has to close before the run's q = 32 marker at {run.End:O}, not at {window.To:O}.");
 
-		ColumnTargetFor(window).Should().Be(TargetColumnCount);
+		ColumnTargetFor(window).Should().Be(ColumnTargetFloor);
 
 		(BucketFor(window) <= _tightestRowSpacing).Should().BeTrue(
 			$"A bucket of {BucketFor(window)} merges the anchor and change rows the seeder writes "
@@ -230,7 +263,7 @@ public sealed class PostgresHistoryReadTests(
 	}
 
 	// The lock holds the statement on the server, so the cancel lands mid-statement and the server answers
-	// 57014. Raw reaches the bucketed window, Minute the sparse one.
+	// 57014. Both layers reach the bucketed statement.
 	[Theory]
 	[InlineData(AggregationLayer.Raw)]
 	[InlineData(AggregationLayer.Minute)]
@@ -347,6 +380,62 @@ public sealed class PostgresHistoryReadTests(
 		}
 	}
 
+	// The coarse layers fold in the same statement: per bucket the newest sample and the extremes of the
+	// layer's rows, and one gap column per q = 32 row the thinning copied into the layer.
+	[Theory]
+	[InlineData(AggregationLayer.Minute, MinuteColumnTarget)]
+	[InlineData(AggregationLayer.Hour, HourColumnTarget)]
+	public async Task ACoarseWindowDenserThanTheCanvasComesBackBucketed(AggregationLayer layer, int target)
+	{
+		var window = new LocalWindow(ArchiveTemplate.Slice.Start, ArchiveTemplate.Slice.End);
+		var expected = SeededRowsIn(window, layer);
+
+		expected.Should().AllSatisfy(pen => (pen.Value.Count > target).Should().BeTrue(
+			$"Pen {pen.Key} holds {pen.Value.Count} rows at {layer} in the window, which a target of "
+				+ $"{target} columns would pass through instead of reducing."));
+
+		// The clock runs a day past the window, so the window end is the tail edge, and every pen's newest
+		// layer row sits within one point of it: no fresh tail runs, and the buckets are the whole answer.
+		expected.Should().AllSatisfy(pen => (window.To - pen.Value[^1].Timestamp <= layer.ToPointSpacing())
+			.Should().BeTrue(
+				$"Pen {pen.Key}'s newest {layer} row, {pen.Value[^1].Timestamp:O}, is more than one point "
+					+ $"before the window end {window.To:O}, so a fresh tail would add columns."));
+
+		var result = await ReadHistoryAsync(
+			seededArchive.Database.PlotConnectionString,
+			window,
+			_seededPenIds.Value,
+			layer,
+			target,
+			ClockAt(window.To.AddDays(1)));
+
+		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
+		result.Value.Select(envelope => envelope.PenId).Should().Equal(expected.Keys);
+
+		foreach (var envelope in result.Value)
+		{
+			var rows = expected[envelope.PenId];
+			var markers = rows.Count(row => row.Quality == ArchiveRow.LastBeforeBreakQuality);
+
+			// Without a marker the gap column count and the bound below would hold as zero against zero.
+			markers.Should().BePositive();
+
+			// One column per bucket, one more where a marker splits its bucket, one gap column per marker, and
+			// the seed's own column.
+			(envelope.Timestamps.Count <= target + (2 * markers) + 1).Should().BeTrue(
+				$"Pen {envelope.PenId} comes back with {envelope.Timestamps.Count} columns over "
+					+ $"{rows.Count} rows at {layer}, so the window was not reduced to the {target}-column "
+					+ "target the request carried.");
+
+			envelope.Timestamps.Should().BeInAscendingOrder().And.OnlyHaveUniqueItems();
+
+			AssertEachColumnBracketsItsCenter(envelope);
+			AssertMatchesExpectedBuckets(envelope, rows, window, target);
+
+			GapColumnIndices(envelope).Count.Should().Be(markers);
+		}
+	}
+
 	// The widest Raw read the prefetch margin can ask for: a query covers three visible windows, so the
 	// ceiling is the whole seeded archive at three times the canvas maximum.
 	[Fact]
@@ -371,7 +460,7 @@ public sealed class PostgresHistoryReadTests(
 			var rows = expected[envelope.PenId];
 			var markers = rows.Count(row => row.Quality == ArchiveRow.LastBeforeBreakQuality);
 
-			(envelope.Timestamps.Count <= target + markers + 1).Should().BeTrue(
+			(envelope.Timestamps.Count <= target + (2 * markers) + 1).Should().BeTrue(
 				$"Pen {envelope.PenId} comes back with {envelope.Timestamps.Count} columns over "
 					+ $"{rows.Count} rows, so the archive's widest window was not reduced to the "
 					+ $"{target}-column target the request carried.");
@@ -382,12 +471,19 @@ public sealed class PostgresHistoryReadTests(
 
 	// The anti-straddle rule, at a target whose bucket spans the whole break: without the segment in the
 	// GROUP BY the marker and the rows after the break fold into one column and the marker's own sample is
-	// lost, which no row-for-row fact in this class would notice.
-	[Fact]
-	public async Task ABucketWideEnoughToSpanABreakStillSplitsAtTheMarker()
+	// lost, which no row-for-row fact in this class would notice. The coarse layers carry the markers too.
+	[Theory]
+	[InlineData(AggregationLayer.Raw)]
+	[InlineData(AggregationLayer.Minute)]
+	public async Task ABucketWideEnoughToSpanABreakStillSplitsAtTheMarker(AggregationLayer layer)
 	{
 		var stopped = _breakPlan.Value.Breaks[0];
-		var window = new LocalWindow(stopped.Start - _breakMargin, stopped.End + _breakMargin);
+
+		// Closed on a minute boundary, so the minute layer holds the newest raw row before it and no fresh
+		// tail adds a column the expectation below does not model.
+		var window = new LocalWindow(
+			stopped.Start - _breakMargin,
+			LayerThinner.PeriodStart(stopped.End + _breakMargin, LayerThinner.MinuteLayer));
 		var target = StraddlingColumnTargetFor(window, stopped.End - stopped.Start);
 
 		(BucketFor(window, target) > stopped.End - stopped.Start).Should().BeTrue(
@@ -398,19 +494,26 @@ public sealed class PostgresHistoryReadTests(
 			seededArchive.Database.PlotConnectionString,
 			window,
 			_seededPenIds.Value,
-			AggregationLayer.Raw,
+			layer,
 			target);
 
 		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
 
-		var expected = SeededRowsIn(window);
+		var expected = SeededRowsIn(window, layer);
 
 		result.Value.Select(envelope => envelope.PenId).Should().Equal(expected.Keys);
 
 		foreach (var envelope in result.Value)
 		{
 			var rows = expected[envelope.PenId];
-			rows.Should().ContainSingle(row => row.Quality == ArchiveRow.LastBeforeBreakQuality);
+			var marker = rows.Should().ContainSingle(row => row.Quality == ArchiveRow.LastBeforeBreakQuality).Which;
+			var resumption = rows.First(row => row.Timestamp > marker.Timestamp);
+
+			// A shared date_bin slot leaves the segment as the one key that keeps the two apart.
+			SlotOf(resumption.Timestamp, window, target).Should().Be(
+				SlotOf(marker.Timestamp, window, target),
+				$"pen {envelope.PenId}'s marker and its resumption must share a bucket at {layer}");
+
 			GapColumnIndices(envelope).Should().ContainSingle();
 
 			AssertMatchesExpectedBuckets(envelope, rows, window, target);
@@ -591,6 +694,99 @@ public sealed class PostgresHistoryReadTests(
 	}
 
 	[Fact]
+	public async Task ATailUnderAWideBucketFoldsIntoOneColumnAtTheRawLayersNewest()
+	{
+		await using var database = await WriteTailArchiveAsync(TestContext.Current.CancellationToken);
+
+		var result = await ReadHistoryAsync(
+			database.PlotConnectionString,
+			new LocalWindow(_tailWindowFrom, _tailWindowTo),
+			[FreshPenId, LaggingPenId, ReachingPenId],
+			AggregationLayer.Minute,
+			WideTailColumnTarget,
+			ClockAt(_tailWindowTo.AddDays(1)));
+
+		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
+		result.Value.Select(envelope => envelope.PenId).Should().Equal(FreshPenId, LaggingPenId, ReachingPenId);
+
+		var secondBucketStart = _tailWindowFrom.AddMinutes(3);
+		var (fresh, lagging, reaching) = (result.Value[0], result.Value[1], result.Value[2]);
+
+		fresh.Timestamps.Should().Equal(ExpectedUtc([_tailWindowFrom.AddMinutes(2), _freshSeam, _newestRawTimestamp]));
+		lagging.Timestamps.Should().Equal(ExpectedUtc([_laggingSeam]));
+		reaching.Timestamps.Should().Equal(ExpectedUtc([_tailWindowFrom.AddMinutes(2), _newestRawTimestamp]));
+
+		fresh.Min.Should().Equal(TailValues(FreshPenId, [_tailWindowFrom, secondBucketStart, _freshSeam]));
+		fresh.Max.Should().Equal(
+			TailValues(FreshPenId, [_tailWindowFrom.AddMinutes(2), _freshSeam, _newestRawTimestamp]));
+		fresh.Center.Should().Equal(fresh.Max);
+
+		lagging.Min.Should().Equal(TailValues(LaggingPenId, [_tailWindowFrom]));
+		lagging.Max.Should().Equal(TailValues(LaggingPenId, [_laggingSeam]));
+		lagging.Center.Should().Equal(lagging.Max);
+
+		reaching.Min.Should().Equal(TailValues(ReachingPenId, [_tailWindowFrom, secondBucketStart]));
+		reaching.Max.Should().Equal(
+			TailValues(ReachingPenId, [_tailWindowFrom.AddMinutes(2), _newestRawTimestamp]));
+		reaching.Center.Should().Equal(reaching.Max);
+	}
+
+	// Hour's clamp is one hour and its skip threshold fifteen minutes, so a seam twenty-five minutes before
+	// the window end reads the raw rows past it.
+	[Fact]
+	public async Task AnHourWindowPastTheCoarseLayersNewestRowReachesTheRawLayersNewest()
+	{
+		await using var database = await WriteTailArchiveAsync(TestContext.Current.CancellationToken);
+		var window = new LocalWindow(_hourWindowFrom, _tailWindowTo);
+
+		var result = await ReadHistoryAsync(
+			database.PlotConnectionString,
+			window,
+			[HourTailPenId],
+			AggregationLayer.Hour,
+			ColumnTargetFor(window),
+			ClockAt(_tailWindowTo.AddDays(1)));
+
+		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
+
+		var envelope = result.Value.Should().ContainSingle().Which;
+
+		envelope.Timestamps.Should().Equal(ExpectedUtc(_hourCoarse.Concat(RawTimestamps())));
+		GapColumnIndices(envelope).Should().BeEmpty();
+	}
+
+	// The tail goes through the bucketed statement, so a break inside it gets the gap column a break inside
+	// the coarse window gets.
+	[Fact]
+	public async Task AFreshTailCarryingABreakDrawsItsGapColumn()
+	{
+		await using var database = await WriteTailArchiveAsync(TestContext.Current.CancellationToken);
+		var window = new LocalWindow(_tailWindowFrom, _tailWindowTo);
+
+		var result = await ReadHistoryAsync(
+			database.PlotConnectionString,
+			window,
+			[BreakTailPenId],
+			AggregationLayer.Minute,
+			ColumnTargetFor(window),
+			ClockAt(_tailWindowTo.AddDays(1)));
+
+		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
+
+		var envelope = result.Value.Should().ContainSingle().Which;
+		var markerColumn = ArchiveProviderFactory.TimeConverter.ToUtc(_tailBreakMarker);
+		DateTime[] expected =
+		[
+			.. ExpectedUtc([.. _freshCoarse, _freshSeam + _rawStep, _tailBreakMarker]),
+			markerColumn.AddTicks(1),
+			.. ExpectedUtc([_tailBreakResumption, _newestRawTimestamp])
+		];
+
+		envelope.Timestamps.Should().Equal(expected);
+		GapColumnIndices(envelope).Should().Equal(_freshCoarse.Length + 2);
+	}
+
+	[Fact]
 	public async Task AHistoryReadLogsItsRequestOutcomeAndDuration()
 	{
 		await using var database = await WriteTailArchiveAsync(TestContext.Current.CancellationToken);
@@ -689,10 +885,18 @@ public sealed class PostgresHistoryReadTests(
 		return window;
 	}
 
+	// A gap column draws no line, so it has no centre to bracket.
 	private static void AssertEachColumnBracketsItsCenter(PenHistoryEnvelope envelope)
 	{
+		var gapColumns = GapColumnIndices(envelope);
+
 		for (var column = 0; column < envelope.Timestamps.Count; column++)
 		{
+			if (gapColumns.Contains(column))
+			{
+				continue;
+			}
+
 			(envelope.Min[column] <= envelope.Center[column] && envelope.Center[column] <= envelope.Max[column])
 				.Should().BeTrue(
 					$"Pen {envelope.PenId} column {column} carries a center of {envelope.Center[column]} "
@@ -711,7 +915,7 @@ public sealed class PostgresHistoryReadTests(
 		await connection.OpenAsync(TestContext.Current.CancellationToken);
 
 		await using var command = new NpgsqlCommand(
-			"EXPLAIN (ANALYZE, TIMING OFF) " + ArchiveStatements.BucketedRawWindow,
+			"EXPLAIN (ANALYZE, TIMING OFF) " + ArchiveStatements.BucketedHistoryWindow,
 			connection);
 
 		PostgresDataProvider.BindLocalBucketedWindow(
@@ -719,7 +923,8 @@ public sealed class PostgresHistoryReadTests(
 			[.. _seededPenIds.Value],
 			window.From,
 			window.To,
-			columnTarget);
+			AggregationLayer.Raw,
+			BucketFor(window, columnTarget));
 
 		await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
 
@@ -771,7 +976,7 @@ public sealed class PostgresHistoryReadTests(
 	// floor a coarse read needs.
 	private static int ColumnTargetFor(LocalWindow window)
 	{
-		return Math.Max(TargetColumnCount, (int)Math.Ceiling((window.To - window.From) / _tightestRowSpacing));
+		return Math.Max(ColumnTargetFloor, (int)Math.Ceiling((window.To - window.From) / _tightestRowSpacing));
 	}
 
 	private static TimeSpan BucketFor(LocalWindow window)
@@ -784,11 +989,16 @@ public sealed class PostgresHistoryReadTests(
 		return PostgresDataProvider.BucketFor(window.From, window.To, targetColumnCount);
 	}
 
-	// The coarsest target whose bucket still spans twice the break, so the marker and the rows after it
-	// share a date_bin slot and only the segment separates them.
+	// The coarsest target whose bucket still spans twice the break.
 	private static int StraddlingColumnTargetFor(LocalWindow window, TimeSpan breakLength)
 	{
 		return Math.Max(1, (int)((window.To - window.From) / (breakLength + breakLength)));
+	}
+
+	// The date_bin slot the statement puts a row in, counted from the window start.
+	private static long SlotOf(DateTime archiveLocal, LocalWindow window, int targetColumnCount)
+	{
+		return (archiveLocal - window.From).Ticks / BucketFor(window, targetColumnCount).Ticks;
 	}
 
 	private static void AssertMatchesExpectedBuckets(
@@ -914,23 +1124,26 @@ public sealed class PostgresHistoryReadTests(
 		return columns;
 	}
 
-	// Every column the fold's break anchor produces. MinMaxDecimator writes NaN into all three series of a
+	// Every column the fold's break anchor produces. BucketedRowFold writes NaN into all three series of a
 	// gap column, so one series carries the count.
 	private static IReadOnlyList<int> GapColumnIndices(PenHistoryEnvelope envelope)
 	{
 		return [.. Enumerable.Range(0, envelope.Timestamps.Count).Where(index => double.IsNaN(envelope.Center[index]))];
 	}
 
-	// Each pen's rows inside the window, led by the row the statement's seed branch finds before it. A pen
-	// carrying a seed and no window row is present here with the seed alone.
-	private static SortedDictionary<int, IReadOnlyList<ArchiveRow>> SeededRowsIn(LocalWindow window)
+	// Each pen's rows of one layer inside the window, led by the row the statement's seed branch finds before
+	// it. A pen carrying a seed and no window row is present here with the seed alone.
+	private static SortedDictionary<int, IReadOnlyList<ArchiveRow>> SeededRowsIn(
+		LocalWindow window,
+		AggregationLayer layer = AggregationLayer.Raw)
 	{
+		var layerRows = SeededRowsAt(layer);
 		var rowsByPen = new SortedDictionary<int, IReadOnlyList<ArchiveRow>>();
 
 		foreach (var penId in _seededPenIds.Value)
 		{
-			var rows = SeedBefore(penId, window)
-				.Concat(_seededRawRows.Value
+			var rows = SeedBefore(layerRows, penId, window)
+				.Concat(layerRows
 					.Where(row => row.Id == penId
 						&& row.Timestamp >= window.From
 						&& row.Timestamp < window.To)
@@ -955,11 +1168,25 @@ public sealed class PostgresHistoryReadTests(
 		return windowLength > _seedLookBackFloor ? windowLength : _seedLookBackFloor;
 	}
 
-	// The row the statement's seed branch returns: this pen's last row strictly before the window, no
-	// further back than the look-back the statement carries.
-	private static IEnumerable<ArchiveRow> SeedBefore(int penId, LocalWindow window)
+	private static IReadOnlyList<ArchiveRow> SeededRowsAt(AggregationLayer layer)
 	{
-		var seed = _seededRawRows.Value
+		return layer switch
+		{
+			AggregationLayer.Raw => _seededRawRows.Value,
+			AggregationLayer.Minute => _seededMinuteRows.Value,
+			AggregationLayer.Hour => _seededHourRows.Value,
+			_ => throw new ArgumentOutOfRangeException(nameof(layer), layer, "The template holds no rows read at it.")
+		};
+	}
+
+	// The row the statement's seed branch returns: this pen's last row of the layer strictly before the
+	// window, no further back than the look-back the statement carries.
+	private static IEnumerable<ArchiveRow> SeedBefore(
+		IReadOnlyList<ArchiveRow> layerRows,
+		int penId,
+		LocalWindow window)
+	{
+		var seed = layerRows
 			.Where(row => row.Id == penId
 				&& row.Timestamp < window.From
 				&& row.Timestamp >= window.From - SeedLookBackFor(window))
@@ -1019,36 +1246,69 @@ public sealed class PostgresHistoryReadTests(
 		return new FixedClock(new DateTimeOffset(ArchiveProviderFactory.TimeConverter.ToUtc(archiveLocal)));
 	}
 
-	// The raw layer for all three pens plus a coarse layer that ends at a different instant for each.
+	// A coarse row carries the value of the raw row at its instant, as a vendor copy does.
 	private static IReadOnlyList<ArchiveRow> TailArchiveRows()
 	{
 		var rows = new List<ArchiveRow>();
 
 		foreach (var penId in new[] { FreshPenId, LaggingPenId, ReachingPenId })
 		{
-			rows.AddRange(RawTimestamps().Select(timestamp => new ArchiveRow(
-				penId,
-				ArchiveRow.RawLayer,
-				timestamp,
-				penId,
-				ArchiveRow.OrdinaryQuality)));
+			rows.AddRange(RawTimestamps().Select(timestamp => RawRow(penId, timestamp)));
 		}
 
-		rows.AddRange(CoarseRows(FreshPenId, _freshCoarse));
-		rows.AddRange(CoarseRows(LaggingPenId, _laggingCoarse));
-		rows.AddRange(CoarseRows(ReachingPenId, _reachingCoarse));
+		rows.AddRange(_hourCoarse.Concat(RawTimestamps()).Select(timestamp => RawRow(HourTailPenId, timestamp)));
+		rows.AddRange(BreakTailRawRows());
+
+		rows.AddRange(CoarseRows(FreshPenId, MinuteLayer, _freshCoarse));
+		rows.AddRange(CoarseRows(LaggingPenId, MinuteLayer, _laggingCoarse));
+		rows.AddRange(CoarseRows(ReachingPenId, MinuteLayer, _reachingCoarse));
+		rows.AddRange(CoarseRows(HourTailPenId, HourLayer, _hourCoarse));
+		rows.AddRange(CoarseRows(BreakTailPenId, MinuteLayer, _freshCoarse));
 
 		return rows;
 	}
 
-	private static IEnumerable<ArchiveRow> CoarseRows(int penId, IEnumerable<DateTime> timestamps)
+	private static IEnumerable<ArchiveRow> BreakTailRawRows()
 	{
-		return timestamps.Select(timestamp => new ArchiveRow(
+		foreach (var timestamp in RawTimestamps())
+		{
+			if (timestamp > _tailBreakMarker && timestamp < _tailBreakResumption)
+			{
+				continue;
+			}
+
+			var quality = timestamp == _tailBreakMarker ? ArchiveRow.LastBeforeBreakQuality
+				: timestamp == _tailBreakResumption ? ArchiveRow.FirstAfterBreakQuality
+				: ArchiveRow.OrdinaryQuality;
+
+			yield return RawRow(BreakTailPenId, timestamp) with { Quality = quality };
+		}
+	}
+
+	private static ArchiveRow RawRow(int penId, DateTime timestamp)
+	{
+		return new ArchiveRow(
 			penId,
-			MinuteLayer,
+			ArchiveRow.RawLayer,
 			timestamp,
-			penId,
-			ArchiveRow.OrdinaryQuality));
+			TailValue(penId, timestamp),
+			ArchiveRow.OrdinaryQuality);
+	}
+
+	private static IEnumerable<ArchiveRow> CoarseRows(int penId, short layer, IEnumerable<DateTime> timestamps)
+	{
+		return timestamps.Select(timestamp => RawRow(penId, timestamp) with { Layer = layer });
+	}
+
+	// Rises with time and differs per pen, so a column's extremes say which rows its bucket held.
+	private static double TailValue(int penId, DateTime timestamp)
+	{
+		return (penId * 1000) + (timestamp - _tailWindowFrom).TotalSeconds;
+	}
+
+	private static IReadOnlyList<double> TailValues(int penId, IEnumerable<DateTime> timestamps)
+	{
+		return [.. timestamps.Select(timestamp => TailValue(penId, timestamp))];
 	}
 
 	// Every raw timestamp inside the tail window. The first sits on the window's own start, so the

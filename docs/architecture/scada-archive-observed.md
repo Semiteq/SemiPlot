@@ -587,10 +587,10 @@ For SemiPlot:
    minutes, by hours for a rarely changing pen. A live edge needs a channel that bypasses the
    archive buffer: the server's built-in OPC UA server (manual, section 6.13.6) or a project script
    that writes current values to a table of ours (scripts manual, section 2.10.6).
-2. **Layer 3 can be empty.** A window wide enough to select the day layer draws nothing on such a
-   build; the hour layer has to stand in.
-3. **The layer spacings are half the density assumed.** `AggregationLayer.ToPointSpacing` assumes
-   four points per period.
+2. **Layer 3 can be empty.** Addressed: SemiPlot reads no layer above the hour layer, which every
+   build writes (`data-integration.md#layer-ladder`).
+3. **The layer spacings are half the density assumed.** Addressed: `AggregationLayer.ToPointSpacing`
+   takes two rows per period, half the real spacing (`data-integration.md#layer-ladder`).
 4. **Unbounded reads of layers 1 and 2 meet 1899-12-30.** Every read is bounded by time today; it
    has to stay so.
 5. **A pen that does not change has one point per day, and its newest point can be a day old.**

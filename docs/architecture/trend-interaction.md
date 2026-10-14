@@ -102,7 +102,7 @@ operator interaction.
 | Term            | Meaning                                                                 |
 | --------------- | ----------------------------------------------------------------------- |
 | Pen             | One plotted series (one tag): color, name, scale, current value.        |
-| Archive layer   | Archive resolution / decimation level: raw / minute / hour / day (data-integration.md, `l` column). NOT a plotted curve. |
+| Archive layer   | Archive resolution / decimation level: raw / minute / hour (data-integration.md, `l` column). NOT a plotted curve. |
 | View window     | Visible time range `[from, to]`; width = zoom level.                    |
 | Now-marker      | Marker at the latest measured sample = current moment / live edge.      |
 | Sticky          | View auto-scrolls to keep the live edge at the right edge (real-time follow). |
@@ -307,33 +307,30 @@ and the render budget (§RT-4). The as-built rationale and mechanics:
 - **Never feed raw millions of points to the chart.** A 1080p-wide plot shows ~one point per
   pixel; a month of 10-second data is ~135 raw samples per pixel (MasterSCADA). The data layer
   returns roughly viewport-width points (§DA-5).
-- **Window width and canvas width together select the archive layer** (raw / minute / hour / day):
+- **Window width and canvas width together select the archive layer** (raw / minute / hour):
   deeper ranges use coarser layers — the layer design in data-integration.md, validated by industry
   (MasterSCADA layered archive; AVEVA "Cyclic" retrieval). No ceiling is a constant: it is
-  `nextCoarser(layer).ToPointSpacing() × TargetColumnCount`, so it moves with the canvas.
+  `nextCoarser(layer).ToPointSpacing() × TargetColumnCount`, so it moves with the canvas. At 256
+  columns Raw reaches 64 min and Minute 64 h; at 2048 columns Raw reaches 8 h 32 min and Minute
+  512 h. Hour has no ceiling and reads every wider window, to the 365-day cap.
   `ChartNavigationController.LayerForWidth` applies a **10% hysteresis band** at each ceiling so a
   notch-by-notch zoom hovering on a boundary does not flip-flop the layer every notch (§DA-3) —
   which, at the Raw side, appended a far-right raw point that straight-lined across the wide span.
   The column count carries **its own deadband** on the same grounds: one quantisation step doubles or
   halves every ceiling, so a pixel of jitter across a boundary must not move it.
-- **Empty edge sub-spans render as gaps, not straight lines** (§DA-5). When the leading or trailing
-  sub-span of the samples it is given has no data, `MinMaxDecimator` (`SemiPlot.Core.Trends`, on the
-  coarse-layer read path) anchors a `NaN` column there, so the line segments instead of the chart
-  bridging the empty span with a straight line to the live-edge point (the right-side straight-line
-  collapse fix). The edge it anchors at is the first and last **row**, not the window bound — the
-  decimator never sees the window. The archive provider does not reach the window edge, because the
-  archive writes a row only when a value changes; it reaches the same anchors from the break markers
-  instead, by a different route per layer. On the coarse layers `HistoryRowFold` appends a null one
-  tick after a `q = 32` row and the decimator splits on it. On Raw no decimator runs: the server
-  closes a bucket at the marker, and `BucketedRowFold` writes the `NaN` column itself one tick after
-  that bucket (see `data-integration.md`, Quality and gaps).
+- **Gaps come from the break markers, not from empty spans** (§DA-5). The archive writes a row only
+  when a value changes, so a span with no row is no gap by itself. The provider anchors a `NaN` column
+  by one route at every layer: the server closes a bucket at a `q = 32` marker, and `BucketedRowFold`
+  writes the `NaN` column one tick after that bucket, so the line breaks there instead of bridging the
+  missing span with a straight line (see `data-integration.md`, Quality and gaps). No decimator runs
+  on the client.
 - **Use a min/max-per-pixel envelope, not plain sampling.** Plain decimation aliases away spikes
   (AVEVA warns of exactly this). Retain min AND max per pixel column so spikes survive (M4:
   min/max/first/last per column → visually lossless; MinMaxLTTB for speed; Power Chart "MinMax").
-- **Aggregation is placed per layer** (§DA-2): Raw aggregates in the query
-  (`BucketedRawWindow`, `GROUP BY date_bin`), one row per column, so no raw stream reaches the
-  client. The coarse layers fold in-process through `MinMaxDecimator`, over rows the SCADA already
-  thinned. Both sit behind `IDataProvider` and reach the chart in one envelope vocabulary.
+- **Every layer aggregates in the query** (§DA-2): `BucketedHistoryWindow` (`GROUP BY date_bin`)
+  returns one row per column per pen at `Raw`, `Minute` and `Hour`, so neither the raw stream nor a
+  whole coarse layer reaches the client, and no decimator runs there. `BucketedRowFold` maps the rows
+  onto the one envelope vocabulary the chart reads, behind `IDataProvider`.
 - **Performance budget (§RT-4):** at most one redraw per display frame on pan/zoom; input data ≤ 10 Hz;
   ≤ 50 simultaneous pens;
   points per pen handed to the chart ≈ viewport width × 2–4.
@@ -461,9 +458,8 @@ that draws no pen issues no band reads until one is drawn again.
 
 **The overview layer** is `ChartNavigationController.LayerForWidth(span, the band's previous layer,
 250)`: the chart's own ladder at the strip's column count, so no second ladder exists. 250 columns
-read `Raw` up to about 62 min, `Minute` up to about 62 h, `Hour` up to about 62 days and `Day`
-beyond, and the hysteresis keeps a span at a boundary on the layer it already has. Every coarse read,
-`Minute`, `Hour` or `Day`, includes the provider's raw fresh tail, up to four point spacings of one pen
+read `Raw` up to about 62 min, `Minute` up to about 62 h and `Hour` beyond, and the hysteresis keeps
+a span at a boundary on the layer it already has. Every coarse read, `Minute` or `Hour`, includes the provider's raw fresh tail, up to four point spacings of one pen
 (`data-integration.md#layer-ladder`). 250 columns are about 6 px each on a 1500 px strip. 250 is below
 the chart's 256-column floor (`Chart/HistoryColumnTarget.MinColumns`), so no chart read asks for it,
 and the test fake tells the band's reads from the chart's by that count

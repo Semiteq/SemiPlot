@@ -9,16 +9,13 @@ using Xunit;
 
 namespace SemiPlot.Tests.Unit.Postgres;
 
-// The same fold as HistoryRowFoldTests, driven by RealArchiveFixture's extract of the vendor's own
-// archive dump, so these tests measure the archive rather than this repository's model of it. No
-// database is involved; the target column count stays far above the row count, so no bucket forms.
+// The same fold as BucketedRowFoldTests over the vendor's own marker layout and absences. No database is
+// involved, so FoldOf restates the statement's break flag: each row is a bucket flagged by its q = 32.
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
 [Trait("Category", "Unit")]
 public sealed class RealArchiveGapTests
 {
-	private const int NoDecimation = 1000;
-
 	// The pen the plan names for the markerless absence. Its twin 9001 carries the same absence at the
 	// same instants, which is why the counting tests below run over both.
 	private const int MarkerlessAbsencePen = 9002;
@@ -145,11 +142,17 @@ public sealed class RealArchiveGapTests
 
 	private static PenHistoryEnvelope FoldOf(IReadOnlyList<ArchiveRow> rows)
 	{
-		var folded = rows
-			.Select(row => new HistoryRowFold.Row(row.Id, row.Timestamp, row.Value, row.Quality))
+		var buckets = rows
+			.Select(row => new BucketedRowFold.Row(
+				row.Id,
+				row.Timestamp,
+				row.Value,
+				row.Value,
+				row.Value,
+				EndsBreak: row.Quality == ArchiveRow.LastBeforeBreakQuality))
 			.ToArray();
 
-		return HistoryRowFold.Fold(folded, FoldTestData.UtcConverter, NoDecimation).Should().ContainSingle().Which;
+		return BucketedRowFold.Fold(buckets, FoldTestData.UtcConverter).Should().ContainSingle().Which;
 	}
 
 	private static int IndexOf(PenHistoryEnvelope envelope, DateTime archiveLocal)

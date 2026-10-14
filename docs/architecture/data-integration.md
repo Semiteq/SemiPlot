@@ -63,7 +63,7 @@ public interface IDataProvider
 | `Sample` | `PenId`, `TimestampUtc`, `Value` | Realtime element. Timestamps are UTC by the time they leave the provider. |
 | `PenHistoryEnvelope` | parallel `Timestamps` / `Min` / `Max` / `Center`, strictly ascending, `NaN` marks a gap | One per pen per history query. |
 | `ArchiveExtent` | `FirstUtc`, `LastUtc`, `IsEmpty` | The span of the configured variables, consumed by the minimap (`TM-4`). `ArchiveExtent.Empty` is the no-span form. |
-| `AggregationLayer` | `Raw`, `Minute`, `Hour`, `Day` | Maps one-to-one onto the archive's `l` column. |
+| `AggregationLayer` | `Raw`, `Minute`, `Hour` | Maps one-to-one onto the archive's `l` column. |
 | `ArchiveConnectionState` | `Fault`, `IsConnected` | `Fault` is null while the archive answers and carries the typed error while it does not. |
 
 Contract points every implementation keeps:
@@ -215,22 +215,24 @@ container. The editor's statements are in the table above.
 | --- | --- | --- |
 | Pen catalogue | `PenCatalog` | `semiplot_tags` left-joined through `semiplot_pen_groups` to `semiplot_groups`, the names aggregated with `array_agg` under `GROUP BY tag.id`: a pen in two groups stays one row and a pen in none survives the outer join. `ORDER BY tag.name, tag.id`, because a pen has no single group to sort by, and the id keeps two pens that share a name in one order across reads. An empty table is an empty list; a missing one is `ArchiveFault.TableMissing` naming all three relations. |
 | Archive extent | `ArchiveExtent` | Rooted at `semiplot_tags`, one `min(t)`/`max(t)` subquery pair per configured `id` at `l = 0`. A bare `min(t)` over `trends` cannot use `PRIMARY KEY (id, l, t)` and scans the archive. Nulls map to `ArchiveExtent.Empty`; an empty catalogue over a full archive is also `Empty`, since no pen could draw it. |
-| History, coarse layers | `SparseHistoryWindow` | Two branches under one outer `ORDER BY id, t`: the window rows, and per pen one seed row strictly before `@from`, bounded to the wider of the window and one day. `HistoryRowFold` groups by consecutive identifier, so the single total ordering is what keeps each pen one run; the bound is what prunes older partitions from the seed's `Merge Append`; the seed is what keeps a steady variable on the chart as a horizontal line. |
-| History, Raw | `BucketedRawWindow` | The same seed branch, and a window branch the server reduces to one row per column: `GROUP BY id, segment, date_bin(@bucket, t, @from)`. `segment` counts the `q = 32` markers strictly before each row, so a marker closes its own bucket and no bucket straddles a break. Each bucket carries `min(v)`, `max(v)`, whether it ends in a gap, and the bucket's newest non-null sample as the column's timestamp and value, which is what the legend reads at the cursor. A `q = 32` marker and a null `v` both end the bucket in a gap. Raw by construction: `l = 0`, no `@layer`. `@bucket` is `(to - from) / targetColumnCount`, never below one millisecond, the column's own resolution. |
+| History | `BucketedHistoryWindow` | Two branches at `l = @layer` under one outer `ORDER BY id, t`. The seed branch reads per pen one row strictly before `@from`, bounded to the wider of the window and one day: the bound prunes older partitions from the seed's `Merge Append`, and the seed keeps a steady variable on the chart as a horizontal line. The server reduces the window branch to one row per column: `GROUP BY id, segment, date_bin(@bucket, t, @from)`. `segment` counts the `q = 32` markers strictly before each row, so a marker closes its own bucket and no bucket straddles a break. Each bucket carries `min(v)`, `max(v)`, whether it ends in a gap, and the bucket's newest non-null sample as the column's timestamp and value, which is what the legend reads at the cursor. A `q = 32` marker and a null `v` both end the bucket in a gap. `BucketedRowFold` groups by consecutive identifier, so the single total ordering keeps each pen one run. Every layer takes this statement: a coarse row is a verbatim raw row and the markers are copied into the coarse layers (`scada-archive.md#layers`), so the buckets and the break split hold at `Minute` and `Hour` as at `Raw`. `@bucket` is `(to - from) / targetColumnCount`, never below one millisecond, the column's own resolution. |
 | Realtime poll | `RealtimePoll` | `id = ANY(@ids) AND l = 0 AND t > @lastSeen ORDER BY t`. The variable list is mandatory or the read scans the day's partition; the bound is strict so the row that set `@lastSeen` is never returned twice. |
 | Realtime baseline | `RealtimeBaseline` | The extent's lateral shape over `DISTINCT unnest(@ids)`: one index probe per variable. `NULL` means no row yet — a state, not a failure. |
 
-Four statements bind parameters through a binder of their own, each pinned against its statement's
-parameter names: `PostgresDataProvider.BindLocalWindow`, `PostgresDataProvider.BindLocalBucketedWindow`,
-`RealtimePoll.BindPoll` and `RealtimePoll.BindBaseline`. A gap explanation over `messages` is
-designed but not shipped; nothing issues it.
+Three statements bind parameters through a binder of their own, each pinned against its statement's
+parameter names: `PostgresDataProvider.BindLocalBucketedWindow`, `RealtimePoll.BindPoll` and
+`RealtimePoll.BindBaseline`. A gap explanation over `messages` is designed but not shipped; nothing
+issues it.
 
-`BucketedRawWindow` reaches the window rows through the index on `(id, l, t)`, and on the bench the
-planner sorts them by `(id, t)` before the window aggregate rather than reading them in index order,
-at every width from two minutes to eight hours.
-`ExplainPlanTests.TheBucketedRawPlanFeedsItsWindowAggregateThroughAnIndex` therefore pins what holds
-either way: no sequential scan over a row-holding partition, the aggregate's input an index scan or
-a bitmap over one, and the seed walk bounded as in the sparse statement's fact.
+At `Raw`, `BucketedHistoryWindow` reaches the window rows through the index on `(id, l, t)`, and on
+the bench the planner sorts them by `(id, t)` before the window aggregate rather than reading them in
+index order, at every width from two minutes to eight hours.
+`ExplainPlanTests.TheBucketedRawPlanFeedsItsWindowAggregateThroughAnIndex` therefore pins, at `Raw`,
+what holds either way: no sequential scan over a row-holding partition, the aggregate's input an index
+scan or a bitmap over one, and the seed walk bounded to the wider of the window and one day. On the
+archive "Read cost" (under Layer ladder) describes, a coarse read over a long window takes most day
+partitions through a bitmap or a sequential scan, so no plan shape at `Minute` or `Hour` holds either
+way and none is gated.
 
 ### What one history query covers
 
@@ -338,8 +340,9 @@ arrived.
 "Trailing" means 150 ms without a request, not the release of a mouse button. Input that arrives in
 steps more than 150 ms apart, such as wheel notches, key presses or a window resize, ends a gesture
 at every step, so each step cancels the read the previous one started, and no step's read lands until
-the input pauses for one whole read. A read on a local archive completes well inside that gap; the
-trade-off is that a slow read shows the final window sooner and the intermediate ones not at all.
+the input pauses for one whole read. On the bench a chart read at 2048 columns takes 0.6 to 1.6 s
+("Read cost", under Layer ladder), several times that gap; the trade-off is that a slow read shows the
+final window sooner and the intermediate ones not at all.
 
 `Dispose` cancels the running query as well. A cancelled query reports nothing and starts the request
 waiting behind it; the last window a gesture asked for is the last one applied. Each query runs under its own `CancellationTokenSource`, which the debouncer
@@ -354,10 +357,10 @@ like any other.
 
 The token is the trailing `cancellationToken` of `IDataProvider.QueryHistoryAsync`, threaded through
 `TrendCoordinator.QueryHistoryAsync`. `PostgresDataProvider` passes it to the connection open, to
-every `ExecuteReaderAsync` and to every row read of the window, the bucketed Raw window and the fresh
-tail, and `QueryHistoryAsync` rethrows the `OperationCanceledException` it ends in from a catch of its
+every `ExecuteReaderAsync` and to every row read of the bucketed window and the fresh tail, and
+`QueryHistoryAsync` rethrows the `OperationCanceledException` it ends in from a catch of its
 own, ahead of the mapper, so a cancelled read never becomes a failed `Result`. `PostgresHistoryReadTests.AReadCancelledMidStatementThrowsInsteadOfFailing`
-cancels a Raw and a Minute read held on a lock of `trends`. A cancelled command costs one extra
+cancels a Raw and a Minute read held on a lock of `trends`; both run `BucketedHistoryWindow`. A cancelled command costs one extra
 connection for the cancel request, and its own connection for at most two seconds more: Npgsql first
 sends PostgreSQL the cancel request, and if no answer arrives within `CancellationTimeout` (2000 ms by
 default, which the connection string keeps) it breaks the socket. A broken connection leaves the pool,
@@ -373,11 +376,11 @@ again opens only on a result. A throw out of the apply, and any fault the pipeli
 reach the same channel: without that the subscription issuing every history query would tear down,
 and the chart would stop reading the archive for the rest of the session.
 
-The margin makes the Raw read smaller in rows returned, not cheaper on the server: the window
+The buckets make a read smaller in rows returned, not cheaper on the server: at every layer the window
 function still reads and sorts every row of the range, and the range is three visible windows wide.
 `PostgresHistoryReadTests.TheWidestRawWindowThePrefetchMarginAsksForComesBackBucketed` records
-`EXPLAIN (ANALYZE, TIMING OFF)` for the widest read the margin can ask for, and the plan's row counts
-and timing are what say what it costs.
+`EXPLAIN (ANALYZE, TIMING OFF)` for the widest Raw read the margin can ask for, and the plan's row
+counts and timing are what say what it costs; "Read cost", under Layer ladder, measures every layer.
 
 Every history read writes one `Debug` entry when it ends, at the same
 level as the realtime poll's entry per tick, so a run at `--logging-level Debug` interleaves both. The
@@ -392,40 +395,49 @@ Minute read, `ADroppedTrendsTableFailsNamingTrends` the `Failed` one and
 
 ## Layer ladder
 
-The archive offers four resolutions; the renderer needs about one point per pixel column. The rule:
-**choose the coarsest layer whose point spacing still fits inside one pixel column.** Point spacing
-is one quarter of the period, following the vendor's budget of four points per period `[FORUM:1032]`
-(`AggregationLayerExtensions.ToPointSpacing`):
+The archive offers three resolutions; the renderer needs about one point per pixel column. The rule:
+**choose the coarsest layer whose point spacing still fits inside one pixel column.** A coarse layer
+holds the minimum and the maximum of each calendar period, two rows per period
+(`scada-archive.md#layers`). The point spacing is half that real spacing, so a coarse layer takes over
+once it fills at least every other column (`AggregationLayerExtensions.ToPointSpacing`):
 
 | Layer | `l` | Period | Point spacing |
 | --- | --- | --- | --- |
 | `Raw` | 0 | — | the archiving interval |
 | `Minute` | 1 | minute | 15 s |
 | `Hour` | 2 | hour | 15 min |
-| `Day` | 3 | day | 6 h |
 
-`ChartNavigationController` expresses that as an upper bound per layer,
+The hour layer is the coarsest one SemiPlot reads, and every build writes it. An archive from a build
+before 2.7.5.0 also holds `l = 3` rows (`scada-archive.md#layers`); nothing reads them.
+
+`ChartNavigationController` expresses the rule as an upper bound for `Raw` and `Minute`,
 `ceiling(layer) = nextCoarser(layer).ToPointSpacing() × TargetColumnCount`, so the raw layer's own
-spacing — the SCADA's per-variable archiving interval, which the client cannot know — never enters
-the comparison.
+spacing, the SCADA's per-variable archiving interval that the client cannot know, never enters the
+comparison. `Hour` tops the ladder and has no ceiling: every window wider than the minute ceiling reads
+it, up to the 365-day window cap (`TrendNavigationModel`).
+
+| Columns | `Raw` up to | `Minute` up to | `Hour` |
+| --- | --- | --- | --- |
+| 256 | 64 min | 64 h | above, to the 365-day cap |
+| 2048 | 8 h 32 min | 512 h (21 d 8 h) | above, to the 365-day cap |
 
 The column count is live. `HistoryColumnTarget.FromDataAreaWidth` maps the view's data-area width
 to 256…2048 columns; `ChartNavigationController.SetTargetColumnCount` quantises that to the nearest
 power of two with a 10 % deadband, and only the quantised count moves the ceilings or triggers a
 re-query. The history query keeps the unquantised count, because that decides resolution rather than
 layer. Inside the deadband the drawn resolution can lag the canvas by up to `2 × 1.1² ≈ 2.42`; the
-next navigation gesture closes the gap. At 2048 columns the `Day` layer is unreachable under the
-365-day window cap (`TrendNavigationModel`): its ceiling would start at 512 days, and the hour layer
-is the correct read there.
+next navigation gesture closes the gap.
 
 Two adjustments the ladder needs are implemented:
 
 - **Hysteresis.** Layers switch on thresholds separated by a margin, so a window hovering on a
-  boundary does not flip layer on every wheel notch.
-- **Fresh tail** (`FreshTail`, in the provider). Coarse layers are flushed on their own cadence, so a
-  window reaching "now" is short of up to one period (four point spacings) at its right edge. The provider reads
-  that edge from `l = 0` and merges it per pen. The seam is per pen — the newest coarse timestamp
-  returned, or the window start when none was. A layer fresh within one of its own points reads no
+  boundary does not flip layer on every wheel notch. The layer in force holds to 1.1x its ceiling.
+- **Fresh tail** (`FreshTail`, in the provider). A period's coarse rows arrive with the variable's next
+  batch after the period closes: at the hour layer within 3 minutes for fast variables and up to 47
+  minutes later for slow ones (`scada-archive.md#layers`). A window reaching "now" is therefore short of
+  the open period, and of every closed period whose rows have not arrived yet, at its right edge. The
+  provider reads that edge from `l = 0` and merges it per pen. The seam is per pen: the newest coarse
+  timestamp returned, or the window start when none was. A layer fresh within one of its own points reads no
   tail; otherwise the tail starts at the earliest seam, clamped to four point spacings back from the
   tail edge, and reads raw rows up to the window end. The tail edge is the window end or the present,
   whichever is earlier: `PostgresDataProvider` reads the present from its injected `TimeProvider`
@@ -434,12 +446,59 @@ Two adjustments the ladder needs are implemented:
   edge lies a whole window in the future, the clamp passes every seam, and a Minute read stops up to
   one period short of the raw newest. A window wholly in the past clamps at its own end. A pen
   whose seam precedes the tail's start contributes no tail row, because a range no
-  row covers is not a gap and would draw as one straight segment. The tail's own raw read stays
-  row-level: it issues `SparseHistoryWindow` at `l = 0`, not the bucketed statement, because the tail
-  spans at most four coarse point spacings and no canvas is denser than that.
+  row covers is not a gap and would draw as one straight segment. The clamp is one period, so a pen
+  whose newest closed period has not arrived yet seams more than one period back, reads no tail, and
+  its line stops more than one period short of the raw newest; `docs/plans/backlog.md` tracks the
+  wider clamp. The tail is read through
+  `BucketedHistoryWindow` at `l = 0` with the coarse read's own `@bucket`: a tail narrower than one
+  column folds into one column, and a tail at a fine bucket keeps every raw row.
 
-Correctness of the envelope at every layer rests on the vendor's selection preserving each period's
-extremes `[FORUM:1974]` — well supported, not yet measured (`scada-archive.md`, open questions).
+The envelope is correct at every layer because the vendor's selection keeps each period's minimum and
+maximum, checked over 10 340 variable-minutes and 193 variable-hours (`scada-archive.md#layers`).
+
+### Read cost
+
+Measured 2026-10-12 on the `SemiPlot/bench` image on `postgres:17.11-alpine`: default `work_mem` 4 MB,
+`shared_buffers` 128 MB, `jit_above_cost` 100 000 and the server default `jit = on`; Docker Desktop
+with 10 CPUs and 16 GB; .NET SDK 10.0.401 on runtime 10.0.12, Npgsql 10.0.3, Release build, provider
+time zone `Russian Standard Time` (UTC+3, no DST). The archive holds 8 pens with random values and
+`q = 0`, all ending 2026-10-12 00:00: raw rows at 1 per second over 30 h, minute rows at :10 and :40 s
+over 72 days, hour rows at :10 and :40 min over 1 096 days, in 1 096 day partitions from
+`PartitionScript.CreateStatements`, `VACUUM ANALYZE` after the load.
+
+The table times the reads the chart and the minimap issue, end to end through
+`IDataProvider.QueryHistoryAsync` of a provider composed by `AddPostgresData`, as the viewer composes it:
+the pool checkout, the window statement, the fresh-tail statement, Npgsql's binary decode and the fold.
+`E` is the archive end. A chart case is a visible window of width `w` ending at `E - w`;
+`HistoryPrefetch.Expand` turns it into the fetched range `[E - 3w, E]` at three times the column count,
+so the fresh tail runs. A hysteresis edge is 1.1x the ceiling, the widest window the layer in force
+holds. The minimap reads the whole archive span of one pen at `MinimapColumns`, with no `Expand`. A time
+is the median of 44 timed calls in four rounds of 2 warm-up and 11 timed calls, min to max in brackets.
+Rows per pen are the window statement's, then `+` the fresh-tail statement's, each with its seed row.
+
+| Case | Visible width | Columns | Layer | Fetched range | Column target | Pens | Rows per pen | Columns per pen | Time |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Raw ceiling | 8 h 32 min | 2048 | Raw | 25 h 36 min | 6 144 | 8 | 6 145 | 6 145 | 699 ms (546-820) |
+| Raw hysteresis edge | 9 h 23 min 12 s | 2048 | Raw | 28 h 9 min 36 s | 6 144 | 8 | 6 145 | 6 145 | 768 ms (695-1 022) |
+| Minute ceiling | 512 h | 2048 | Minute | 64 d | 6 144 | 8 | 6 145 + 2 | 6 146 | 1 446 ms (1 381-1 693) |
+| Minute hysteresis edge | 563.2 h | 2048 | Minute | 70.4 d | 6 144 | 8 | 6 145 + 2 | 6 146 | 1 617 ms (1 508-2 253) |
+| Hour, window cap | 365 d | 2048 | Hour | 1 095 d | 6 144 | 8 | 6 145 + 2 | 6 146 | 657 ms (614-992) |
+| Hour, narrow canvas | 365 d | 256 | Hour | 1 095 d | 768 | 8 | 769 + 2 | 770 | 604 ms (570-772) |
+| Minimap | 1 096 d (the archive span) | - | Hour | 1 096 d | 250 | 1 | 250 + 2 | 251 | 150 ms (142-170) |
+
+- The Minute read the chart issues at 2048 columns takes 1.4 to 1.6 s, the cost the server pays to
+  reduce the coarse rows. At the Minute ceiling its window aggregate reads 1 474 560 coarse rows and the
+  group sort spills 9.8 MB to disk; `EXPLAIN (ANALYZE, BUFFERS)` under `jit = off` executes in 1 440 ms.
+  The row-level coarse read, which sends per pen a seed row and every coarse row of the window and
+  folds them on the client, takes 1 982 ms and 2 193 ms for the two Minute cases.
+- The Hour window cap sorts the window's 420 480 rows on disk (15.6 MB) ahead of the window aggregate.
+  The row-level coarse read takes 562 ms there, and 125 ms for the minimap.
+- JIT: the Hour window cap executes in 542 ms with 50 ms of planning under `jit = off`, and in 2 054 ms
+  with 270 ms of planning under `jit = on`, of which JIT takes 1 506 ms. SemiPlot's sessions therefore
+  run with `jit = off` ("Configuration").
+- `docs/plans/backlog.md` tracks the Minute read cost and the Hour sort spill. The plan
+  `20261012-drop-day-layer.md` holds the per-round medians, the row-level coarse read's full table and
+  the single-statement measurements.
 
 ## Time boundary
 
@@ -456,12 +515,12 @@ the provider converts in that machine's zone `[DEC:machine-time-zone]`: `Postgre
 fills `PostgresConnectionSettings.SourceTimeZone` with `TimeZoneInfo.Local`, and no file names a zone.
 Tests that build the settings directly pass a fixed zone through the same property. Daylight-saving
 transitions are accepted as cosmetic, and the archive stores no offset to make them anything else.
-`HistoryRowFold` keeps a row only when its converted timestamp exceeds the previous kept one for
+`BucketedRowFold` keeps a bucket only when its converted timestamp exceeds the previous kept one for
 that pen, which is what keeps the envelope strictly ascending: at the spring gap that drops the one
-or two rows the conversion put out of order; at the autumn fall-back it drops the whole repeated
+or two buckets the conversion put out of order; at the autumn fall-back it drops the whole repeated
 hour, for every pen, once a year, and stamps the surviving hour an hour late. Pinned by
-`HistoryRowFoldTests.TheSecondPassOverTheRepeatedHourIsDropped`. `BucketedRowFold` drops a
-non-advancing bucket by the same rule.
+`BucketedRowFoldTests.ABucketWhoseConvertedTimestampDoesNotAdvanceIsDropped` and
+`BucketedRowFoldTests.ASkippedLocalHourDropsTheBucketTheConversionPutsOutOfOrder`.
 
 ## Quality and gaps
 
@@ -477,25 +536,23 @@ The provider maps the archive's quality marks onto the envelope's gap representa
 The last row is the whole reason the marks exist: treating every row gap as a break would shred a
 steady signal, and ignoring the marks would draw a straight line across hours of missing data.
 
-`HistoryRowFold` appends, after a kept `q = 32` row, one entry at the row's converted timestamp plus
-one tick with a null value; `MinMaxDecimator` splits its series on that null and emits the `NaN`
-column. One tick is below `timestamp(3)` resolution, so no real row lands inside it, and it is added
-on the UTC side, clear of daylight-saving boundaries. `q = 16` takes no branch: a resumption is what
-the decimator already produces past a null segment. A seed row carries its own `q`, so a seed marked
-`32` opens the window inside a gap. `RealArchiveGapTests` drives the fold with rows lifted from the
-customer dump, including a 4 min 18 s absence carrying no marker.
+Every layer takes one route. `BucketedHistoryWindow` keys its buckets on `segment`, the count of
+`q = 32` markers strictly before each row, so a marker closes its own bucket, and the bucket's `breaks`
+flag carries it. `BucketedRowFold` writes, after a kept bucket whose flag is set, one `NaN` column at
+the bucket's converted timestamp plus one tick. One tick is below `timestamp(3)` resolution, so no real
+row lands inside it, and it is added on the UTC side, clear of daylight-saving boundaries. `q = 16`
+takes no branch: the next bucket resumes the line. A seed row carries its own `q`, so a seed marked
+`32` opens the window inside a gap. The coarse layers hold the markers too (`scada-archive.md#layers`),
+so a break splits a `Minute` or `Hour` bucket as it splits a `Raw` one. No decimator runs on the
+client. `RealArchiveGapTests` drives the fold with rows lifted from the customer dump, one row per
+bucket, including a 4 min 18 s absence carrying no marker.
 
-On the Raw path the marker travels as the bucket's `breaks` flag and `BucketedRowFold` writes the
-`NaN` column itself: the server already reduced the window, so no decimator pass follows to split a
-series on a null.
-
-A null `v` sets the same flag, because a bucket is the finest resolution this path has: `min(v)`,
+A null `v` sets the same flag, because a bucket is the finest resolution a read has: `min(v)`,
 `max(v)` and the newest-value aggregate all skip a null, so without the flag a bucket holding data
 and nulls together would come back as an ordinary column and the line would run straight across the
 null run. The column's timestamp is the newest **non-null** sample's, coupled to the value beside
-it; a bucket of nothing but nulls keeps `max(t)` and reads back `NaN` in all three series. The
-coarse path splits at the null itself rather than at the bucket, so the two paths agree that a null
-is a hole and differ only in where the hole starts. `scada-archive.md` records that `v` was never
+it; a bucket of nothing but nulls keeps `max(t)` and reads back `NaN` in all three series.
+`scada-archive.md` records that `v` was never
 null in the measured archive, so no integration fact can reach this: the seeded archive writes no
 nulls either, and `ArchiveStatementTextTests` plus `BucketedRowFoldTests` pin the rule instead.
 
@@ -781,6 +838,14 @@ string carries `Command Timeout=300` as a client backstop; the live-edge poll us
 its own on every tick. Loading returns a `Result`; a malformed file is reported at startup, not at
 first query. The password is stored in plain text; the mitigation is a role that cannot write the
 archive.
+
+The connection string carries `Options=-c jit=off`, so every session of the one `NpgsqlDataSource`
+(poll, extent, history, catalogue and the pen catalogue editor) runs without JIT, because JIT
+compilation takes 1 506 ms of the 2 054 ms the chart's Hour read at the window cap executes in under
+`jit = on`, against 542 ms under `jit = off`, measured 2026-10-12 ("Read cost", under Layer ladder);
+`jit` is a session setting, and no vendor object or role default changes `[DEC:read-only-consumer]`. A
+psql session against the same server runs under the server default, so a coarse read timed by hand
+there can take over a second longer than the viewer's.
 
 ## Startup
 

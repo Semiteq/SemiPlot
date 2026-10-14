@@ -185,69 +185,42 @@ internal static class ArchiveStatements
 	                                       """;
 
 	/// <summary>
-	/// A window of one layer, left-edge seeded so a pen whose last sample predates the window still draws;
-	/// one statement, not two, folded under one outer <c>ORDER BY id, t</c> with a strict <c>&lt;</c> seed
-	/// bound so no boundary row returns on both branches (docs/architecture/scada-archive.md#reader-hazards).
+	/// A window of one layer, one row per bucket, seeded before the window.
 	/// </summary>
-	public const string SparseHistoryWindow = """
-	                                          SELECT id, t, v, q
-	                                          FROM (
-	                                              SELECT seed.id, seed.t, seed.v, seed.q
-	                                              FROM (SELECT DISTINCT unnest(@ids) AS id) requested
-	                                              CROSS JOIN LATERAL (
-	                                                  SELECT prior.id, prior.t, prior.v, prior.q
-	                                                  FROM trends prior
-	                                                  WHERE prior.id = requested.id AND prior.l = @layer
-	                                                    AND prior.t < @from AND prior.t >= @from - greatest(@to - @from, interval '1 day')
-	                                                  ORDER BY prior.t DESC
-	                                                  LIMIT 1
-	                                              ) seed
-	                                              UNION ALL
-	                                              SELECT id, t, v, q
-	                                              FROM trends
-	                                              WHERE id = ANY(@ids) AND l = @layer AND t >= @from AND t < @to
-	                                          ) sample
-	                                          ORDER BY id, t;
-	                                          """;
-
-	/// <summary>
-	/// Raw by construction with no layer bound: the seed branch of <see cref="SparseHistoryWindow"/>
-	/// unchanged, and a window branch whose buckets end in a gap at a <c>q = 32</c> marker or a null
-	/// (docs/architecture/data-integration.md#quality-and-gaps).
-	/// </summary>
-	public const string BucketedRawWindow = """
-	                                        SELECT id, t, v, lo, hi, breaks
-	                                        FROM (
-	                                            SELECT seed.id, seed.t, seed.v, seed.v AS lo, seed.v AS hi,
-	                                                   (seed.q = 32 OR seed.v IS NULL) AS breaks
-	                                            FROM (SELECT DISTINCT unnest(@ids) AS id) requested
-	                                            CROSS JOIN LATERAL (
-	                                                SELECT prior.id, prior.t, prior.v, prior.q
-	                                                FROM trends prior
-	                                                WHERE prior.id = requested.id AND prior.l = 0
-	                                                  AND prior.t < @from
-	                                                  AND prior.t >= @from - greatest(@to - @from, interval '1 day')
-	                                                ORDER BY prior.t DESC
-	                                                LIMIT 1
-	                                            ) seed
-	                                            UNION ALL
-	                                            SELECT id,
-	                                                   coalesce(max(t) FILTER (WHERE v IS NOT NULL), max(t)) AS t,
-	                                                   (array_agg(v ORDER BY t DESC) FILTER (WHERE v IS NOT NULL))[1] AS v,
-	                                                   min(v) AS lo,
-	                                                   max(v) AS hi,
-	                                                   bool_or(q = 32 OR v IS NULL) AS breaks
+	public const string BucketedHistoryWindow = """
+	                                            SELECT id, t, v, lo, hi, breaks
 	                                            FROM (
-	                                                SELECT id, t, v, q,
-	                                                       count(*) FILTER (WHERE q = 32) OVER (
-	                                                           PARTITION BY id ORDER BY t
-	                                                           ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
-	                                                       ) AS segment
-	                                                FROM trends
-	                                                WHERE id = ANY(@ids) AND l = 0 AND t >= @from AND t < @to
-	                                            ) windowed
-	                                            GROUP BY id, segment, date_bin(@bucket, t, @from)
-	                                        ) sample
-	                                        ORDER BY id, t;
-	                                        """;
+	                                                SELECT seed.id, seed.t, seed.v, seed.v AS lo, seed.v AS hi,
+	                                                       (seed.q = 32 OR seed.v IS NULL) AS breaks
+	                                                FROM (SELECT DISTINCT unnest(@ids) AS id) requested
+	                                                CROSS JOIN LATERAL (
+	                                                    SELECT prior.id, prior.t, prior.v, prior.q
+	                                                    FROM trends prior
+	                                                    WHERE prior.id = requested.id AND prior.l = @layer
+	                                                      AND prior.t < @from
+	                                                      AND prior.t >= @from - greatest(@to - @from, interval '1 day')
+	                                                    ORDER BY prior.t DESC
+	                                                    LIMIT 1
+	                                                ) seed
+	                                                UNION ALL
+	                                                SELECT id,
+	                                                       coalesce(max(t) FILTER (WHERE v IS NOT NULL), max(t)) AS t,
+	                                                       (array_agg(v ORDER BY t DESC)
+	                                                           FILTER (WHERE v IS NOT NULL))[1] AS v,
+	                                                       min(v) AS lo,
+	                                                       max(v) AS hi,
+	                                                       bool_or(q = 32 OR v IS NULL) AS breaks
+	                                                FROM (
+	                                                    SELECT id, t, v, q,
+	                                                           count(*) FILTER (WHERE q = 32) OVER (
+	                                                               PARTITION BY id ORDER BY t
+	                                                               ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+	                                                           ) AS segment
+	                                                    FROM trends
+	                                                    WHERE id = ANY(@ids) AND l = @layer AND t >= @from AND t < @to
+	                                                ) windowed
+	                                                GROUP BY id, segment, date_bin(@bucket, t, @from)
+	                                            ) sample
+	                                            ORDER BY id, t;
+	                                            """;
 }

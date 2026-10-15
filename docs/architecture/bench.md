@@ -342,7 +342,7 @@ where a realised control sits in the strip, at what size and with which figures.
 | --- | --- | --- |
 | `UI/Chart/ChartGapRenderTests` | ScottPlot's rasteriser, no Avalonia | a `NaN` column leaves the rendered line broken, and a continuous series leaves no such break |
 | `UI/Chart/LogAxisRenderTests` | ScottPlot's rasteriser, no Avalonia, through `ChartAxisBinder.Apply` | the 1e-4 plateau of a 1e-6..1e-2 log axis draws within 2 px of the data area's middle, and a plateau at `0` or under the minimum draws 2 px above its bottom row; it pins two ScottPlot behaviours, the bottom axis frame drawn over the data area's bottom row and a linear `YAxisBase.GetPixel` |
-| `UI/Chart/ChartPointerInputTests` | headless pointer events into `TrendChartView` | a drag pans the navigation window, a wheel zooms it, a capture loss ends the drag, a click within the slop picks the nearest pen and never pans; Shift + wheel pans by a tenth of the window, Ctrl + wheel and Ctrl + drag shift only the active pen, the wheel over the active axis scales it about the cursor, a horizontal wheel leaves the window, a Ctrl + click changes nothing, and the press fixes the drag's action and its cursor |
+| `UI/Chart/ChartPointerInputTests` | headless pointer events into `TrendChartView` | a drag pans the navigation window, a wheel zooms it, a capture loss ends the drag, a click within the slop picks the nearest pen and never pans, a click on empty space or below the data area keeps the active pen and drops its emphasis, a drag through empty space keeps it; Shift + wheel pans by a tenth of the window, Ctrl + wheel and Ctrl + drag shift only the active pen, the wheel over the active axis scales it about the cursor, a horizontal wheel leaves the window, a Ctrl + click changes nothing, and the press fixes the drag's action and its cursor |
 | `UI/Minimap/MinimapPointerInputTests` | headless pointer events into `MinimapView` | a drag on the strip moves the chart's window to each pointer fraction, a move after release reaches the strip and moves nothing, a window past the extent keeps its marker inside the strip |
 | `UI/Minimap/MinimapHoverTests` | headless pointer events into `MinimapView` | a hover shows a line at the pointer and its time centred under it in the label row, inside the row at either end, where the time hides only the end label it covers, also after a new extent relabels that label; the line stays inside the strip at its right edge and keeps its fraction through a resize; a newer sample relabels the time; a drag keeps the line under the pointer, and a move off the strip or an exit hides the line and the time |
 | `UI/Minimap/MinimapViewTests` | a realised `MinimapView` with a published band | the strip holds the band, the marker and the hover line in that order and no baseline; the band is sized to the strip, with figures in the pen's colour that a pan leaves as they are; the end labels sit in a row under the strip, and the view keeps its height when the extent fills them |
@@ -361,7 +361,9 @@ control's space with `TranslatePoint`. Before any coordinate means anything the 
 and laid out, and the plot must have rendered once through `Plot.RenderInMemory` at the control's
 own size — the headless platform draws nothing. Capture loss is driven through
 `IPointer.Capture(null)`, the path `Pointer.PlatformCaptureLost` routes into; a version that reroutes
-`PlatformCaptureLost` leaves the guard green.
+`PlatformCaptureLost` leaves the guard green. A pointer test that measures a line's width calls
+`ChartTestBuilder.InkRatio`, which renders the plot again at the size of `LastRender` and asserts that the
+data area did not move, so the pointer maths after the measurement reads the same `DataRect` as before it.
 
 **A test that builds `TrendChartView` passes `AvaloniaScheduler.Instance` or a `TestScheduler` as the
 UI scheduler.** Over `ImmediateScheduler.Instance` a history result can land off the UI thread, and the

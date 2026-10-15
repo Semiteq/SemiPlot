@@ -228,12 +228,18 @@ so there is one left-button gesture, not overlapping hidden branches. Ctrl is a 
   `TrendChartViewModel.PickPenAt` measures the press point against every visible pen's line
   (`ChartPenSet.PenNearest`) and `ChartPenPick.Choose` takes the nearest line within 6 px, which then goes
   through `SetActivePen`, the same path the sidebar uses. At an equal distance the active pen keeps the
-  choice, otherwise the first pen in catalogue order wins; a click farther than 6 px from every line
-  changes nothing. Delta mode and the axis-region press never pick. The view registers
-  `OnPointerReleased` on the tunnel route: `AvaPlot`'s own class handler calls `Capture(null)` on release,
-  which ends the drag through `PointerCaptureLost` before a bubbling handler would run. Release ends the
-  drag and restores the hand cursor. The hover readout and crosshair (an Avalonia overlay) are suppressed
-  for the duration of the drag.
+  choice, otherwise the first pen in catalogue order wins. A click farther than 6 px from every line, a
+  click outside the data area included, is a miss: the pen stays active and loses its emphasis
+  (`TrendChartViewModel.DropEmphasis`), so its line draws 1 px wide like the others while its sidebar
+  row, its axis, Δy and the shift and scale gestures stay on it. A click on any line, the active pen's
+  own included, or on any sidebar row goes through `SetActivePen` and emphasizes that pen again. The
+  window opens with the first visible pen active and not emphasized: its row is marked and its axis
+  drawn, and its line is 1 px wide until the first pick. A drag past the
+  slop, a Ctrl + click, delta mode and the axis-region press never reach `PickPenAt`, so they pick no pen
+  and leave the emphasis as it is. The view registers `OnPointerReleased` on the tunnel route: `AvaPlot`'s
+  own class handler calls `Capture(null)` on release, which ends the drag through `PointerCaptureLost`
+  before a bubbling handler would run. Release ends the drag and restores the hand cursor. The hover
+  readout and crosshair (an Avalonia overlay) are suppressed for the duration of the drag.
 - **Ctrl + left button shifts the active pen.** `ChartPressRouter` routes a press with Ctrl held to
   `ChartPressAction.ShiftActivePen` after the axis-region check and ahead of delta mode, so the held key
   wins over the navigation bar's toggle. The press starts a drag the way a pan does: it captures the

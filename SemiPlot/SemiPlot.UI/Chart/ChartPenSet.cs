@@ -72,13 +72,13 @@ public sealed class ChartPenSet(Plot plot, ChartAxisBinder axisBinder)
 	}
 
 	/// <summary>Raises nothing; the caller holds the plot's lock.</summary>
-	public void Emphasize(int activePenId)
+	public void RestyleActiveLine(int activePenId, bool isEmphasized)
 	{
 		foreach (var (penId, state) in _pensById)
 		{
-			var isActive = penId == activePenId;
+			var isThick = isEmphasized && penId == activePenId;
 
-			state.Line.SetLineWidth(isActive ? EnvelopeLine.ActiveLineWidth : EnvelopeLine.DefaultLineWidth);
+			state.Line.SetLineWidth(isThick ? EnvelopeLine.ActiveLineWidth : EnvelopeLine.DefaultLineWidth);
 		}
 
 		if (_pensById.TryGetValue(activePenId, out var active))

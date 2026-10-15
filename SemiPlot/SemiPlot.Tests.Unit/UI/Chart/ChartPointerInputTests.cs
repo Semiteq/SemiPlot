@@ -266,19 +266,89 @@ public sealed class ChartPointerInputTests
 	}
 
 	[AvaloniaFact]
-	public void AClickOnEmptySpace_KeepsTheActivePen()
+	public void TheShownChart_LeavesTheActivePenThin()
+	{
+		using var viewModel = CreateViewModelWithFixedScales();
+		using var shown = ShowChart(viewModel);
+
+		viewModel.ActivePenId.Should().Be(1);
+		ChartTestBuilder.InkRatio(viewModel, StrokeProbe.Red, StrokeProbe.Green).Should()
+			.BeLessThan(StrokeProbe.ThinInkRatio);
+	}
+
+	[AvaloniaFact]
+	public void AClickOnEmptySpace_KeepsTheActivePenAndDropsItsEmphasis()
 	{
 		using var viewModel = CreateViewModelWithFixedScales();
 		using var shown = ShowChart(viewModel);
 		var (window, plotControl) = shown;
-		var onSecondLine = PixelOnSecondPensLine(viewModel);
-		var inEmptySpace = new Point(onSecondLine.X, onSecondLine.Y - (3.0 * PickToleranceClearancePixels));
-		DistanceToLine(viewModel, 1, inEmptySpace).Should().BeGreaterThan(PickToleranceClearancePixels);
-		DistanceToLine(viewModel, 2, inEmptySpace).Should().BeGreaterThan(PickToleranceClearancePixels);
+		EmphasizeTheFirstPen(viewModel);
 
-		HeadlessInput.Click(window, plotControl, inEmptySpace);
+		HeadlessInput.Click(window, plotControl, PointInEmptySpace(viewModel));
 
 		viewModel.ActivePenId.Should().Be(1);
+		ChartTestBuilder.InkRatio(viewModel, StrokeProbe.Red, StrokeProbe.Green).Should()
+			.BeLessThan(StrokeProbe.ThinInkRatio);
+	}
+
+	[AvaloniaFact]
+	public void AClickBelowTheDataArea_DropsTheEmphasis()
+	{
+		using var viewModel = CreateViewModelWithFixedScales();
+		using var shown = ShowChart(viewModel);
+		var (window, plotControl) = shown;
+		EmphasizeTheFirstPen(viewModel);
+		var dataRect = viewModel.Plot.RenderManager.LastRender.Layout.DataRect;
+		var onTheTimeAxis = new Point(dataRect.HorizontalCenter, dataRect.Bottom + PickToleranceClearancePixels);
+		plotControl.Bounds.Height.Should().BeGreaterThan(onTheTimeAxis.Y, "the click must land on the plot control");
+
+		HeadlessInput.Click(window, plotControl, onTheTimeAxis);
+
+		viewModel.ActivePenId.Should().Be(1);
+		ChartTestBuilder.InkRatio(viewModel, StrokeProbe.Red, StrokeProbe.Green).Should()
+			.BeLessThan(StrokeProbe.ThinInkRatio);
+	}
+
+	[AvaloniaFact]
+	public void AClickOnALineAfterAnEmptyClick_EmphasizesThatPen()
+	{
+		using var viewModel = CreateViewModelWithFixedScales();
+		using var shown = ShowChart(viewModel);
+		var (window, plotControl) = shown;
+		EmphasizeTheFirstPen(viewModel);
+		var onSecondLine = PixelOnSecondPensLine(viewModel);
+		HeadlessInput.Click(window, plotControl, PointInEmptySpace(viewModel));
+		ChartTestBuilder.InkRatio(viewModel, StrokeProbe.Red, StrokeProbe.Green).Should()
+			.BeLessThan(StrokeProbe.ThinInkRatio);
+
+		HeadlessInput.Click(window, plotControl, onSecondLine);
+
+		viewModel.ActivePenId.Should().Be(2);
+		ChartTestBuilder.InkRatio(viewModel, StrokeProbe.Green, StrokeProbe.Red).Should()
+			.BeGreaterThan(StrokeProbe.ThickInkRatio);
+	}
+
+	[AvaloniaFact]
+	public void ADragThroughEmptySpace_KeepsTheEmphasis()
+	{
+		using var viewModel = CreateViewModelWithFixedScales();
+		using var shown = ShowChart(viewModel);
+		var (window, plotControl) = shown;
+		EmphasizeTheFirstPen(viewModel);
+		var pressAt = PointInEmptySpace(viewModel);
+		var moveTo = new Point(pressAt.X - DragDistancePixels, pressAt.Y);
+		DistanceToLine(viewModel, 1, moveTo).Should().BeGreaterThan(PickToleranceClearancePixels);
+		DistanceToLine(viewModel, 2, moveTo).Should().BeGreaterThan(PickToleranceClearancePixels);
+		var fromBefore = viewModel.Navigation.From;
+		var expectedShift = ExpectedDragShift(viewModel);
+
+		window.MouseDown(ToWindow(plotControl, window, pressAt), MouseButton.Left);
+		window.MouseMove(ToWindow(plotControl, window, moveTo));
+		window.MouseUp(ToWindow(plotControl, window, moveTo), MouseButton.Left);
+
+		viewModel.Navigation.From.Should().BeCloseTo(fromBefore + expectedShift, _dragTolerance);
+		ChartTestBuilder.InkRatio(viewModel, StrokeProbe.Red, StrokeProbe.Green).Should()
+			.BeGreaterThan(StrokeProbe.ThickInkRatio);
 	}
 
 	[AvaloniaFact]
@@ -373,17 +443,41 @@ public sealed class ChartPointerInputTests
 	}
 
 	[AvaloniaFact]
+	public void AnEmptyClickInDeltaMode_PlacesACursorAndKeepsTheEmphasis()
+	{
+		using var viewModel = CreateViewModelWithFixedScales();
+		using var shown = ShowChart(viewModel);
+		var (window, plotControl) = shown;
+		EmphasizeTheFirstPen(viewModel);
+		var dataRect = viewModel.Plot.RenderManager.LastRender.Layout.DataRect;
+		// The cursor line draws in the clicked column, so the click stays off the middle column the ratio reads.
+		var offTheMiddleColumn = new Point(dataRect.Left + (dataRect.Width / 4.0), PointInEmptySpace(viewModel).Y);
+		DistanceToLine(viewModel, 1, offTheMiddleColumn).Should().BeGreaterThan(PickToleranceClearancePixels);
+		DistanceToLine(viewModel, 2, offTheMiddleColumn).Should().BeGreaterThan(PickToleranceClearancePixels);
+		viewModel.SetDeltaModeEnabled(true);
+
+		HeadlessInput.Click(window, plotControl, offTheMiddleColumn);
+
+		viewModel.DeltaFirstCursor.Should().NotBeNull("the press must have been routed as a delta placement");
+		ChartTestBuilder.InkRatio(viewModel, StrokeProbe.Red, StrokeProbe.Green).Should()
+			.BeGreaterThan(StrokeProbe.ThickInkRatio);
+	}
+
+	[AvaloniaFact]
 	public void AClickOnTheActiveAxisRegion_PicksNothing()
 	{
 		using var viewModel = CreateViewModelWithFixedScales();
 		using var shown = ShowChart(viewModel);
 		var (window, plotControl) = shown;
+		EmphasizeTheFirstPen(viewModel);
 		var dataRect = viewModel.Plot.RenderManager.LastRender.Layout.DataRect;
 		var onSecondLinesRow = new Point(dataRect.Left - AxisRegionInsetPixels, PixelOnSecondPensLine(viewModel).Y);
 
 		HeadlessInput.Click(window, plotControl, onSecondLinesRow);
 
 		viewModel.ActivePenId.Should().Be(1);
+		ChartTestBuilder.InkRatio(viewModel, StrokeProbe.Red, StrokeProbe.Green).Should()
+			.BeGreaterThan(StrokeProbe.ThickInkRatio);
 	}
 
 	[AvaloniaFact]
@@ -426,6 +520,28 @@ public sealed class ChartPointerInputTests
 		viewModel.Navigation.From.Should().Be(fromBefore, "the horizontal part of a Ctrl drag is ignored");
 		viewModel.Navigation.IsSticky.Should().Be(stickyBefore);
 		viewModel.IsDragging.Should().BeFalse("the release must end the drag");
+	}
+
+	[AvaloniaFact]
+	public void ACtrlDragAfterAnEmptyClick_ShiftsTheActivePenAndKeepsItThin()
+	{
+		using var viewModel = CreateViewModelWithFixedScales();
+		using var shown = ShowChart(viewModel);
+		var (window, plotControl) = shown;
+		EmphasizeTheFirstPen(viewModel);
+		var inEmptySpace = PointInEmptySpace(viewModel);
+		HeadlessInput.Click(window, plotControl, inEmptySpace);
+		var (minBefore, _) = viewModel.ScaleRangeForPen(1)!.Value;
+		var moveTo = new Point(inEmptySpace.X, inEmptySpace.Y - DragDistancePixels);
+
+		window.MouseDown(ToWindow(plotControl, window, inEmptySpace), MouseButton.Left, RawInputModifiers.Control);
+		window.MouseMove(ToWindow(plotControl, window, moveTo), RawInputModifiers.Control);
+		window.MouseUp(ToWindow(plotControl, window, moveTo), MouseButton.Left, RawInputModifiers.Control);
+
+		viewModel.ScaleRangeForPen(1)!.Value.Min.Should().BeLessThan(minBefore, "the drag must have shifted the pen");
+		viewModel.ActivePenId.Should().Be(1);
+		ChartTestBuilder.InkRatio(viewModel, StrokeProbe.Red, StrokeProbe.Green).Should()
+			.BeLessThan(StrokeProbe.ThinInkRatio);
 	}
 
 	[AvaloniaTheory]
@@ -619,6 +735,11 @@ public sealed class ChartPointerInputTests
 		return viewModel;
 	}
 
+	private static void EmphasizeTheFirstPen(TrendChartViewModel viewModel)
+	{
+		viewModel.SetActivePen(1).Should().BeTrue("the chart opens with no pen emphasized, as a sidebar click picks one");
+	}
+
 	// Midway between the two columns, where pen 2's flat line is farthest from pen 1's vertical strokes.
 	private static Point PixelOnSecondPensLine(TrendChartViewModel viewModel)
 	{
@@ -632,6 +753,16 @@ public sealed class ChartPointerInputTests
 			PickToleranceClearancePixels, "the fixture must keep the two lines apart at the click");
 
 		return point;
+	}
+
+	private static Point PointInEmptySpace(TrendChartViewModel viewModel)
+	{
+		var onSecondLine = PixelOnSecondPensLine(viewModel);
+		var inEmptySpace = new Point(onSecondLine.X, onSecondLine.Y - (3.0 * PickToleranceClearancePixels));
+		DistanceToLine(viewModel, 1, inEmptySpace).Should().BeGreaterThan(PickToleranceClearancePixels);
+		DistanceToLine(viewModel, 2, inEmptySpace).Should().BeGreaterThan(PickToleranceClearancePixels);
+
+		return inEmptySpace;
 	}
 
 	private static double DistanceToLine(TrendChartViewModel viewModel, int penId, Point point)

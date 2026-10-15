@@ -194,8 +194,12 @@ rewrites the same pen's columns, and the pin is that the render task throws noth
 budget, the run bounded by that budget and a cancellation token. And for its pixels in
 `Render_ProjectsThroughLog10OnlyUnderALogTickGenerator`: one flat line lands inside a -6..-2 axis only
 while the axis carries a `LogTickGenerator`. `StrokeProbe` (`UI/Chart/StrokeProbe.cs`) is the only
-pixel probe: the channel-dominance band that `ChartGapRenderTests`, `LogAxisRenderTests`, `EnvelopeLineTests`,
-`TrendChartCatalogueTests`, `TrendChartViewModelTests` and `RenderedRise` all read, so no test class carries a threshold of its own.
+pixel probe. It holds the channel-dominance band, the ink measure `InkOf` (a channel's lead over the other
+two, summed down one column, which grows with the line's width) and the two ink-ratio bounds, `ThinInkRatio`
+for two 1 px lines and `ThickInkRatio` for a 2 px line over a 1 px one. `ChartGapRenderTests`,
+`LogAxisRenderTests`, `EnvelopeLineTests`, `TrendChartCatalogueTests`, `TrendChartViewModelTests`,
+`ChartActivePenRenderTests`, `ChartPointerInputTests`, `ChartTestBuilder` and `RenderedRise` all read it, so
+no test class carries a threshold of its own.
 
 An integration test must not cross a second foreign boundary in the same assertion, and must not
 exercise the production composition root. The moment it does either, a failure stops naming a seam.

@@ -46,11 +46,20 @@ under the click is never picked. A `StartsSegment` vertex opens a new segment, s
 across a gap. `Chart/ChartPenPick.Choose` applies the 6 px tolerance and the tie rule to the distances of
 all visible pens (`trend-interaction.md`, "Navigation & cursors").
 
-**Active stroke.** The active pen's line is 2 px wide and drawn above the others, which stay 1 px.
-`ChartPenSet.Emphasize` sets the widths through `EnvelopeLine.SetLineWidth` (written under the column lock,
-read by `Render` with the colour) and calls `Plot.MoveToTop` on the active line. `TrendChartViewModel`
-calls it under `lock (Plot.Sync)` on every change of the active pen: `SetActivePen`, a visibility change
-and a catalogue apply (inside its own `Plot.Sync` block). The call raises no notification inside the lock.
+**Active stroke.** The active pen's line is drawn above the others. It is 2 px wide while the view model's
+emphasis flag is set and 1 px like the others while it is clear; the width follows the flag and the order
+does not, so the active pen wins the shared pixels either way.
+`ChartPenSet.RestyleActiveLine(activePenId, isEmphasized)` sets the widths through `EnvelopeLine.SetLineWidth`
+(written under the column lock, read by `Render` with the colour) and calls `Plot.MoveToTop` on the active
+line. `TrendChartViewModel.RestyleActivePen` passes the flag to it under `lock (Plot.Sync)` on every change of
+the active pen or the flag: `SetActivePen`, a miss in `PickPenAt`, a visibility change and a catalogue apply
+(inside its own `Plot.Sync` block). The call raises no notification inside the lock. The flag starts clear, so
+a new window draws the active pen 1 px wide until the operator picks a pen. `SetActivePen` sets the flag for
+every pen it accepts, and `DropEmphasis` clears it on a miss in `PickPenAt` (`trend-interaction.md`,
+"Navigation & cursors"). `SettleActivePen` and `ActivateAVisiblePen` move the active slot without an operator
+choice and keep the flag, so a thin line stays thin on the pen that takes the slot and a thick one stays thick,
+except after a catalogue read that leaves no pen: `ApplyCatalogue` then clears the flag, so the first pen a
+later read seats starts thin, as in a new window.
 
 **Gaps via NaN.** A column carrying `NaN` in `Min`/`Max` is the envelope's gap marker (and what
 `TrendPenState` encodes a null append as): `Build` breaks the path there and the next real column opens a
@@ -367,7 +376,7 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
 - `Chart/ChartPenSet` — the pens the chart shows: one `TrendPenState`, one plottable and one
   `PenScaleSettings` per pen id, and `Ordered`, the same states in catalogue order, rebuilt from the
   dictionary on every catalogue applied, so the two never hold different pens. It finds the pen nearest
-  a click (`PenNearest`) and emphasizes the active pen's line (`Emphasize`).
+  a click (`PenNearest`) and sets the active pen's width and draw order (`RestyleActiveLine`).
 - `Chart/ChartPenPick` — the pure pen choice rule: nearest distance within the 6 px tolerance, the active
   pen on a tie, otherwise the first listed.
 - `Chart/EnvelopeLine` + `EnvelopePath` — the per-pen `IPlottable`, the private column buffer with the

@@ -48,6 +48,7 @@ internal static class ChartTestBuilder
 			coordinator,
 			scheduler,
 			scheduler,
+			TimeZoneInfo.Utc,
 			messagePanel,
 			NullLogger<TrendChartViewModel>.Instance);
 	}
@@ -67,7 +68,8 @@ internal static class ChartTestBuilder
 		FakeDataProvider? provider = null,
 		IScheduler? uiScheduler = null,
 		MessagePanelViewModel? messagePanel = null,
-		ILogger<TrendChartViewModel>? logger = null)
+		ILogger<TrendChartViewModel>? logger = null,
+		TimeZoneInfo? timeZone = null)
 	{
 		scheduler ??= new TestScheduler();
 		provider ??= new FakeDataProvider(scheduler, realtimeInterval ?? TimeSpan.FromHours(1));
@@ -76,6 +78,7 @@ internal static class ChartTestBuilder
 			coordinator,
 			scheduler,
 			uiScheduler ?? ImmediateScheduler.Instance,
+			timeZone ?? TimeZoneInfo.Utc,
 			messagePanel ?? new MessagePanelViewModel(),
 			logger ?? NullLogger<TrendChartViewModel>.Instance);
 
@@ -86,12 +89,18 @@ internal static class ChartTestBuilder
 		FakeDataProvider Provider) CreateViewModelOnOneScheduler(
 		TimeSpan? realtimeInterval = null,
 		MessagePanelViewModel? messagePanel = null,
-		ILogger<TrendChartViewModel>? logger = null)
+		ILogger<TrendChartViewModel>? logger = null,
+		TimeZoneInfo? timeZone = null)
 	{
 		var scheduler = new TestScheduler();
 
 		return CreateViewModel(
-			realtimeInterval, scheduler, uiScheduler: scheduler, messagePanel: messagePanel, logger: logger);
+			realtimeInterval,
+			scheduler,
+			uiScheduler: scheduler,
+			messagePanel: messagePanel,
+			logger: logger,
+			timeZone: timeZone);
 	}
 
 	// firstSample is the pan-backward floor; pass a value before the window start when a test pans into the past.
@@ -193,5 +202,14 @@ internal static class ChartTestBuilder
 		}
 
 		return state;
+	}
+
+	/// <summary>Counts the window changes the chart raises from now on; the result reads the count so far.</summary>
+	public static Func<int> CountWindowChanges(this TrendChartViewModel chart)
+	{
+		var changes = 0;
+		chart.Navigation.WindowChanged += (_, _) => changes++;
+
+		return () => changes;
 	}
 }

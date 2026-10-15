@@ -64,6 +64,23 @@ internal sealed class FakeDataProvider(
 
 	public bool GateExtent { get; set; }
 
+	// The days holding a row; a read answers the ones inside its range, ascending, as the real statement does.
+	public IReadOnlyList<DateOnly> ArchiveDays { get; set; } = [];
+
+	public bool FailDays { get; set; }
+
+	// A day read that throws instead of answering, the shape of a defect rather than of an outage.
+	public Exception? DaysReadException { get; set; }
+
+	// A gated day read never answers; it ends only when the caller cancels its token.
+	public bool GateDays { get; set; }
+
+	public int DaysQueryCount { get; private set; }
+
+	public (DateOnly FirstDay, DateOnly LastDay)? LastDaysRange { get; private set; }
+
+	public CancellationToken LastDaysCancellationToken { get; private set; }
+
 	// When set, a query for this layer returns the gate's task, holding it in flight so a newer query can
 	// complete first (cross-path race).
 	public AggregationLayer? GatedLayer { get; set; }
@@ -288,6 +305,36 @@ internal sealed class FakeDataProvider(
 		}
 
 		return Task.FromResult(Result.Ok(CatalogueExtent()));
+	}
+
+	public Task<Result<IReadOnlyList<DateOnly>>> QueryArchiveDaysAsync(
+		DateOnly firstDay,
+		DateOnly lastDay,
+		CancellationToken cancellationToken = default)
+	{
+		DaysQueryCount++;
+		LastDaysRange = (firstDay, lastDay);
+		LastDaysCancellationToken = cancellationToken;
+
+		if (DaysReadException is { } readException)
+		{
+			return Task.FromException<Result<IReadOnlyList<DateOnly>>>(readException);
+		}
+
+		if (FailDays)
+		{
+			return Task.FromResult(
+				Result.Fail<IReadOnlyList<DateOnly>>(BenchArchiveError(ArchiveFault.ReadFailed, "42601")));
+		}
+
+		if (GateDays)
+		{
+			return new TaskCompletionSource<Result<IReadOnlyList<DateOnly>>>().Task.WaitAsync(cancellationToken);
+		}
+
+		IReadOnlyList<DateOnly> days = [.. ArchiveDays.Where(day => day >= firstDay && day <= lastDay).Order()];
+
+		return Task.FromResult(Result.Ok(days));
 	}
 
 	/// <summary>An archive failure against the bench address, which every fake answers with.</summary>

@@ -1,9 +1,12 @@
+using System.Globalization;
+
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 
 using AwesomeAssertions;
 
@@ -12,6 +15,7 @@ using ScottPlot.Avalonia;
 
 using SemiPlot.Core.Trends;
 using SemiPlot.UI.Chart;
+using SemiPlot.UI.Navigation;
 
 using Xunit;
 
@@ -263,6 +267,142 @@ public sealed class ChartPointerInputTests
 		viewModel.ActivePenId.Should().Be(2);
 		viewModel.Navigation.From.Should().Be(fromBefore);
 		viewModel.Navigation.IsSticky.Should().Be(stickyBefore);
+		shown.TimeWindowFlyout.IsOpen.Should().BeFalse("a click in the data area is no time axis click");
+	}
+
+	[AvaloniaFact]
+	public void AClickOnTheTimeAxis_OpensTheTimeWindowPanel()
+	{
+		using var viewModel = CreateViewModelWithFixedScales();
+		using var shown = ShowChart(viewModel);
+		var (window, plotControl) = shown;
+		var fromBefore = viewModel.Navigation.From;
+		var toBefore = viewModel.Navigation.To;
+
+		HeadlessInput.Click(window, plotControl, TimeAxisPoint(viewModel));
+
+		shown.TimeWindowFlyout.IsOpen.Should().BeTrue("a release inside the slop opens the panel");
+		var panel = (TimeWindowPanel)shown.TimeWindowFlyout.Content!;
+		panel.DataContext.Should().BeSameAs(viewModel.TimeWindow);
+		panel.FindControl<TextBox>("TimeWindowStartTime")!.Text.Should().Be(
+			fromBefore.ToString(WallClockRangeForm.TimeFieldFormat, CultureInfo.InvariantCulture),
+			"the panel opens seeded with the window in force");
+		viewModel.Navigation.From.Should().Be(fromBefore, "the click writes nothing");
+		viewModel.Navigation.To.Should().Be(toBefore);
+		viewModel.ActivePenId.Should().Be(1, "a time axis click picks no pen");
+		viewModel.IsDragging.Should().BeFalse();
+	}
+
+	[AvaloniaFact]
+	public void EscapeInTheTimeWindowPanel_ClosesTheChartsFlyoutAndWritesNothing()
+	{
+		using var viewModel = CreateViewModelWithFixedScales();
+		using var shown = ShowChart(viewModel);
+		var (window, plotControl) = shown;
+		var fromBefore = viewModel.Navigation.From;
+		HeadlessInput.Click(window, plotControl, TimeAxisPoint(viewModel));
+		var panel = (TimeWindowPanel)shown.TimeWindowFlyout.Content!;
+		var startTime = panel.FindControl<TextBox>("TimeWindowStartTime")!;
+		HeadlessInput.Clear(window, startTime);
+		HeadlessInput.Type(
+			window,
+			startTime,
+			fromBefore.AddMinutes(10).ToString(WallClockRangeForm.TimeFieldFormat, CultureInfo.InvariantCulture));
+
+		HeadlessInput.Press(window, PhysicalKey.Escape);
+		Dispatcher.UIThread.RunJobs();
+
+		shown.TimeWindowFlyout.IsOpen.Should().BeFalse("the chart hides its flyout on the panel's close request");
+		viewModel.Navigation.From.Should().Be(fromBefore);
+	}
+
+	[AvaloniaFact]
+	public void AClickOnTheTimeAxisInDeltaMode_OpensThePanelAndPlacesNoCursor()
+	{
+		using var viewModel = CreateViewModelWithFixedScales();
+		using var shown = ShowChart(viewModel);
+		var (window, plotControl) = shown;
+		viewModel.SetDeltaModeEnabled(true);
+
+		HeadlessInput.Click(window, plotControl, TimeAxisPoint(viewModel));
+
+		shown.TimeWindowFlyout.IsOpen.Should().BeTrue("delta mode does not change a time axis click");
+		viewModel.DeltaFirstCursor.Should().BeNull();
+	}
+
+	[AvaloniaFact]
+	public void ADragOnTheTimeAxis_PansAndOpensNothing()
+	{
+		using var viewModel = CreateViewModelWithFixedScales();
+		using var shown = ShowChart(viewModel);
+		var (window, plotControl) = shown;
+		var pressAt = TimeAxisPoint(viewModel);
+		var moveTo = new Point(pressAt.X - DragDistancePixels, pressAt.Y);
+		var fromBefore = viewModel.Navigation.From;
+		var expectedShift = ExpectedDragShift(viewModel);
+
+		window.MouseDown(ToWindow(plotControl, window, pressAt), MouseButton.Left);
+		window.MouseMove(ToWindow(plotControl, window, moveTo));
+		window.MouseUp(ToWindow(plotControl, window, moveTo), MouseButton.Left);
+		Dispatcher.UIThread.RunJobs();
+
+		viewModel.Navigation.From.Should().BeCloseTo(fromBefore + expectedShift, _dragTolerance);
+		shown.TimeWindowFlyout.IsOpen.Should().BeFalse("a drag pans and opens nothing");
+		viewModel.ActivePenId.Should().Be(1);
+	}
+
+	[AvaloniaFact]
+	public void ACtrlDragFromTheTimeAxis_ShiftsTheActivePen()
+	{
+		using var viewModel = CreateViewModelWithFixedScales();
+		using var shown = ShowChart(viewModel);
+		var (window, plotControl) = shown;
+		var pressAt = TimeAxisPoint(viewModel);
+		var moveTo = new Point(pressAt.X, pressAt.Y - DragDistancePixels);
+		var (minBefore, maxBefore) = viewModel.ScaleRangeForPen(1)!.Value;
+		var step = ExpectedPenShift(viewModel, DragDistancePixels);
+		var fromBefore = viewModel.Navigation.From;
+
+		window.MouseDown(ToWindow(plotControl, window, pressAt), MouseButton.Left, RawInputModifiers.Control);
+		window.MouseMove(ToWindow(plotControl, window, moveTo), RawInputModifiers.Control);
+		window.MouseUp(ToWindow(plotControl, window, moveTo), MouseButton.Left, RawInputModifiers.Control);
+		Dispatcher.UIThread.RunJobs();
+
+		var settings = viewModel.ScaleSettings[1];
+		settings.ManualMin.Should().BeApproximately(minBefore - step, LimitTolerance, "Ctrl comes before the time axis");
+		settings.ManualMax.Should().BeApproximately(maxBefore - step, LimitTolerance);
+		viewModel.Navigation.From.Should().Be(fromBefore);
+		shown.TimeWindowFlyout.IsOpen.Should().BeFalse();
+	}
+
+	[AvaloniaFact]
+	public void ClosingTheWindowWithAPickersCalendarOpen_ThrowsNothingAndWritesThePendingPair()
+	{
+		using var viewModel = CreateViewModelWithFixedScales();
+		using var shown = ShowChart(viewModel);
+		var (window, plotControl) = shown;
+		HeadlessInput.Click(window, plotControl, TimeAxisPoint(viewModel));
+		var panel = (TimeWindowPanel)shown.TimeWindowFlyout.Content!;
+		var startTime = panel.FindControl<TextBox>("TimeWindowStartTime")!;
+		var typedFrom = viewModel.Navigation.From.AddMinutes(10);
+		HeadlessInput.Clear(window, startTime);
+		HeadlessInput.Type(
+			window,
+			startTime,
+			typedFrom.ToString(WallClockRangeForm.TimeFieldFormat, CultureInfo.InvariantCulture));
+		var picker = panel.FindControl<CalendarDatePicker>("TimeWindowStartDate")!;
+		picker.IsDropDownOpen = true;
+		Dispatcher.UIThread.RunJobs();
+		picker.IsDropDownOpen.Should().BeTrue();
+
+		var close = () =>
+		{
+			window.Close();
+			Dispatcher.UIThread.RunJobs();
+		};
+
+		close.Should().NotThrow();
+		viewModel.Navigation.From.Should().Be(typedFrom, "a close that is not Escape applies what was typed");
 	}
 
 	[AvaloniaFact]
@@ -292,21 +432,43 @@ public sealed class ChartPointerInputTests
 	}
 
 	[AvaloniaFact]
-	public void AClickBelowTheDataArea_DropsTheEmphasis()
+	public void AClickBelowTheDataAreaOutsideTheTimeAxis_DropsTheEmphasis()
 	{
 		using var viewModel = CreateViewModelWithFixedScales();
 		using var shown = ShowChart(viewModel);
 		var (window, plotControl) = shown;
 		EmphasizeTheFirstPen(viewModel);
 		var dataRect = viewModel.Plot.RenderManager.LastRender.Layout.DataRect;
-		var onTheTimeAxis = new Point(dataRect.HorizontalCenter, dataRect.Bottom + PickToleranceClearancePixels);
-		plotControl.Bounds.Height.Should().BeGreaterThan(onTheTimeAxis.Y, "the click must land on the plot control");
+		var belowTheLeftAxis = new Point(
+			dataRect.Left - PickToleranceClearancePixels,
+			dataRect.Bottom + PickToleranceClearancePixels);
+		plotControl.Bounds.Height.Should().BeGreaterThan(belowTheLeftAxis.Y, "the click must land on the plot control");
+		ChartAxisRegion.TryCreateTimeAxis(viewModel.Plot)!
+			.Contains((float)belowTheLeftAxis.X, (float)belowTheLeftAxis.Y)
+			.Should().BeFalse();
 
-		HeadlessInput.Click(window, plotControl, onTheTimeAxis);
+		HeadlessInput.Click(window, plotControl, belowTheLeftAxis);
 
 		viewModel.ActivePenId.Should().Be(1);
 		ChartTestBuilder.InkRatio(viewModel, StrokeProbe.Red, StrokeProbe.Green).Should()
 			.BeLessThan(StrokeProbe.ThinInkRatio);
+		shown.TimeWindowFlyout.IsOpen.Should().BeFalse();
+	}
+
+	[AvaloniaFact]
+	public void AClickOnTheTimeAxis_KeepsTheEmphasis()
+	{
+		using var viewModel = CreateViewModelWithFixedScales();
+		using var shown = ShowChart(viewModel);
+		var (window, plotControl) = shown;
+		EmphasizeTheFirstPen(viewModel);
+
+		HeadlessInput.Click(window, plotControl, TimeAxisPoint(viewModel));
+
+		shown.TimeWindowFlyout.IsOpen.Should().BeTrue();
+		viewModel.ActivePenId.Should().Be(1);
+		ChartTestBuilder.InkRatio(viewModel, StrokeProbe.Red, StrokeProbe.Green).Should()
+			.BeGreaterThan(StrokeProbe.ThickInkRatio);
 	}
 
 	[AvaloniaFact]

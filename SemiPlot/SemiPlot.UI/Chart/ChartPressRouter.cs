@@ -6,18 +6,26 @@ namespace SemiPlot.UI.Chart;
 public enum ChartPressAction
 {
 	PanOrPickPen,
+	PanOrEditTimeWindow,
 	PlaceDeltaCursor,
 	EditAxisScale,
 	ShiftActivePen
+}
+
+public enum ChartPressRegion
+{
+	DataArea,
+	ActivePenAxis,
+	TimeAxis
 }
 
 public static class ChartPressRouter
 {
 	private const double ClickSlopPixels = 4.0;
 
-	public static ChartPressAction Route(bool isAxisRegionHit, KeyModifiers modifiers, LeftButtonTool activeTool)
+	public static ChartPressAction Route(ChartPressRegion region, KeyModifiers modifiers, LeftButtonTool activeTool)
 	{
-		if (isAxisRegionHit)
+		if (region == ChartPressRegion.ActivePenAxis)
 		{
 			return ChartPressAction.EditAxisScale;
 		}
@@ -25,6 +33,11 @@ public static class ChartPressRouter
 		if ((modifiers & KeyModifiers.Control) != 0)
 		{
 			return ChartPressAction.ShiftActivePen;
+		}
+
+		if (region == ChartPressRegion.TimeAxis)
+		{
+			return ChartPressAction.PanOrEditTimeWindow;
 		}
 
 		return activeTool == LeftButtonTool.DeltaPlacement

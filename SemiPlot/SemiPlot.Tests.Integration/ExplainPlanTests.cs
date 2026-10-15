@@ -52,6 +52,8 @@ public sealed class ExplainPlanTests(
 	private static readonly Regex _indexReachedRows = new(
 		"(" + IndexScan + @"|Bitmap Heap Scan on )" + DayPartition);
 
+	private static readonly Regex _bitmapReadRows = new(@"Bitmap Heap Scan on " + DayPartition);
+
 	// Every scan node naming a day partition, whatever its kind. The partition's own index is
 	// tpYYYYmMMdDD_pkey and the underscore keeps the word boundary from closing after the day, so
 	// "Bitmap Index Scan on tp2026m01d01_pkey" is not counted as a partition read.
@@ -282,6 +284,34 @@ public sealed class ExplainPlanTests(
 				+ $"directly nor through a bitmap.{Environment.NewLine}{plan}");
 
 		AssertSeedWalkStaysWithinItsBound(plan, "export count", MaximumDayPartitionsRead + WindowBranchPartitionReads);
+	}
+
+	// The range covers the seeded day and one empty day on each side, so the plan holds both a row-holding
+	// partition and a day with none.
+	[Fact]
+	public async Task ArchiveDays_ReadsThroughTheIndex()
+	{
+		var database = analysedArchive.Database;
+		var seededDay = DateOnly.FromDateTime(ArchiveTemplate.Slice.Start);
+
+		var plan = await ExplainAsync(
+			database.PlotConnectionString,
+			ArchiveStatements.ArchiveDays,
+			command => PostgresDataProvider.BindArchiveDays(command, seededDay.AddDays(-1), seededDay.AddDays(1)),
+			TestContext.Current.CancellationToken);
+
+		_sequentialScanOverRows.IsMatch(plan).Should().BeFalse(
+			"The archive days statement no longer narrows on the primary key: the plan reads a row-holding "
+				+ $"trends partition sequentially.{Environment.NewLine}{plan}");
+
+		_indexEdgeReachedRows.IsMatch(plan).Should().BeTrue(
+			"The archive days plan reaches no row-holding trends partition through an index scan. The per-pen "
+				+ "probe must step to one index edge per day; a bitmap collects every row of the day before the "
+				+ $"limit takes one.{Environment.NewLine}{plan}");
+
+		_bitmapReadRows.IsMatch(plan).Should().BeFalse(
+			"The archive days probe reads a row-holding trends partition as a bitmap, so one probe collects "
+				+ $"every row of its pen and day.{Environment.NewLine}{plan}");
 	}
 
 	// An unbounded seek is one probe per older day, per pen, on every window change.

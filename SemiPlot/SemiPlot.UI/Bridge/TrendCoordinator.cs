@@ -102,6 +102,14 @@ public sealed class TrendCoordinator : IDisposable
 		return _dataProvider.QueryArchiveExtentAsync();
 	}
 
+	public Task<Result<IReadOnlyList<DateOnly>>> QueryArchiveDaysAsync(
+		DateOnly firstDay,
+		DateOnly lastDay,
+		CancellationToken cancellationToken = default)
+	{
+		return _dataProvider.QueryArchiveDaysAsync(firstDay, lastDay, cancellationToken);
+	}
+
 	private IObservable<RealtimeBatch> BuildRealtimeBatches()
 	{
 		return _penIds

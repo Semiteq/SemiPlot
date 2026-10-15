@@ -56,6 +56,42 @@ public sealed class ChartNavigationControllerTests
 		controller.IsSticky.Should().BeFalse();
 	}
 
+	// Two days sit between the Raw and Minute ceilings at 1024 columns (4.3 hours and 10.7 days).
+	[Fact]
+	public void SetWindow_RaisesAReQueryOnTheLayerForTheNewWidth()
+	{
+		var controller = Loaded();
+		controller.SetTargetColumnCount(TestColumnCount);
+		var raised = new List<NavigationWindow>();
+		controller.WindowChanged += (_, window) => raised.Add(window);
+		var to = _first.AddDays(2.0);
+
+		controller.SetWindow(_first, to);
+
+		controller.IsSticky.Should().BeFalse();
+		controller.ActiveLayer.Should().Be(AggregationLayer.Minute);
+		raised.Should().ContainSingle().Which.Should().Be(
+			new NavigationWindow(_first, to, AggregationLayer.Minute, RequiresHistoryRequery: true));
+	}
+
+	[Fact]
+	public void SetWidth_RaisesAReQueryOnTheLayerForTheNewWidth()
+	{
+		var controller = Loaded();
+		controller.SetTargetColumnCount(TestColumnCount);
+		var raised = new List<NavigationWindow>();
+		controller.WindowChanged += (_, window) => raised.Add(window);
+		var width = TimeSpan.FromDays(2.0);
+
+		controller.SetWidth(width);
+
+		controller.IsSticky.Should().BeTrue();
+		(controller.To - controller.From).Should().Be(width);
+		controller.ActiveLayer.Should().Be(AggregationLayer.Minute);
+		raised.Should().ContainSingle().Which.Should().Be(
+			new NavigationWindow(controller.From, controller.To, AggregationLayer.Minute, RequiresHistoryRequery: true));
+	}
+
 	[Fact]
 	public void SetStickyAndJumpToNow_ReattachToTheLiveEdge()
 	{

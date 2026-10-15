@@ -52,9 +52,9 @@ internal static class ArchiveStatements
 	public const string PenCatalogRelations = $"{TagCatalogRelation}, {GroupsRelation}, {PenGroupsRelation}";
 
 	/// <summary>
-	/// Every relation <see cref="ArchiveExtent"/> touches, for the detail line of a failed read.
+	/// Every relation a catalogue-rooted probe of trends touches, for the detail line of a failed read.
 	/// </summary>
-	public const string ArchiveExtentRelations = $"{TagCatalogRelation}, {TrendsRelation}";
+	public const string TagCatalogAndTrendsRelations = $"{TagCatalogRelation}, {TrendsRelation}";
 
 	/// <summary>
 	/// SemiBase's registration function, for the detail line of a failed registration.
@@ -159,6 +159,27 @@ internal static class ArchiveStatements
 	                                               (SELECT max(t) FROM trends WHERE id = tag.id AND l = 0) AS hi
 	                                    ) bounds;
 	                                    """;
+
+	/// <summary>
+	/// The archive-local days of a range that hold a raw row of a configured variable, one index probe per pen
+	/// and day; the probe's <c>ORDER BY t</c> is load-bearing, a bare <c>LIMIT 1</c> reads the day as a bitmap.
+	/// </summary>
+	public const string ArchiveDays = """
+	                                  SELECT day.start::date
+	                                  FROM generate_series(@firstDay, @lastDay, interval '1 day') AS day(start)
+	                                  WHERE EXISTS (
+	                                      SELECT 1
+	                                      FROM semiplot_tags tag
+	                                      CROSS JOIN LATERAL (
+	                                          SELECT 1
+	                                          FROM trends
+	                                          WHERE id = tag.id AND l = 0
+	                                            AND t >= day.start AND t < day.start + interval '1 day'
+	                                          ORDER BY t
+	                                          LIMIT 1
+	                                      ) hit)
+	                                  ORDER BY 1;
+	                                  """;
 
 	/// <summary>
 	/// Every raw sample newer than the last one a subscription saw, issued once per poll tick with a strict

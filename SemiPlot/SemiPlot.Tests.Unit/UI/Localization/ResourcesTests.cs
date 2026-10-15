@@ -81,6 +81,11 @@ public sealed class ResourcesTests
 		Resources.ExportMessageStartUnreadable.Should().Contain("{0}");
 		Resources.ExportMessageEndUnreadable.Should().Contain("{0}");
 		Resources.ExportPensHeader.Should().Contain("{0}").And.Contain("{1}");
+		Resources.TimeWindowMessageStartUnreadable.Should().Contain("{0}");
+		Resources.TimeWindowMessageEndUnreadable.Should().Contain("{0}");
+		Resources.TimeWindowMessageSpanOverLimit.Should().Contain("{0}");
+		Resources.TimeWindowMessageWidthUnreadable.Should().Contain("{0}");
+		Resources.TimeWindowMessageWidthOutOfRange.Should().Contain("{0}").And.Contain("{1}");
 	}
 
 	[Fact]

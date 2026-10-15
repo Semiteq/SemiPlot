@@ -471,20 +471,31 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   readout `Border`), suppressed during drag / delta mode.
 - `Chart/LeftButtonTool` (enum `Pan | DeltaPlacement`) — the single left-button gesture state, sourced
   from the navigation bar's delta toggle.
-- `Chart/ChartAxisRegion` — Y-axis region hit-test for the press (`EditAxisScale`) and the wheel
-  (`ScaleActivePen`): the axis panel band beside the data area.
+- `Chart/ChartAxisRegion` — axis band hit-tests from the last render layout: `TryCreate`, the active pen's
+  Y-axis panel band beside the data area, for the press (`EditAxisScale`) and the wheel
+  (`ScaleActivePen`); `TryCreateTimeAxis`, the bottom axis band under the data area, for the press
+  (`PanOrEditTimeWindow`).
 - `Chart/ChartPressRouter` — the pure routing of a left press (`EditAxisScale`, `ShiftActivePen`,
-  `PlaceDeltaCursor`, `PanOrPickPen`) and the 4 px click slop that separates a pick from a pan.
+  `PanOrEditTimeWindow`, `PlaceDeltaCursor`, `PanOrPickPen`) and the 4 px click slop that separates a
+  click from a pan.
 - `Chart/ChartWheelRouter` — the pure routing of a wheel event (`ScaleActivePen`, `ShiftActivePen`,
   `PanTime`, `ZoomTime`, `None`) and its notch sign (`trend-interaction.md`, "The wheel map").
 - `Chart/AxisScalePanel` + `AxisScalePanelViewModel` — the flyout that edits the drawn pen's two bounds
   and its axis type (`trend-interaction.md#the-axis-scale-panel`); `TrendChartViewModel.AxisScale` owns
+  the view model.
+- `Chart/TimeWindowPanel` + `TimeWindowPanelViewModel` — the flyout a time-axis click opens: the window's
+  local start and end, its width and the width presets, and the calendars' blackout days from one archive
+  days read per open (`trend-interaction.md#the-time-window-panel`); `TrendChartViewModel.TimeWindow` owns
   the view model.
 - `Chart/LocalTimeAxis` — UTC↔local-OADate conversion at every render boundary.
 - `Navigation/NavigationBarView` + `NavigationBarViewModel` — time navigation only: jump-to-now,
   sticky toggle, delta-mode toggle + inline Δt/Δy readout (ReactiveUI commands). Autoscale, the two
   limit boxes and set-limits left with the axis scale panel taking them over; the layer label left
   for the status bar.
+- `Navigation/WallClockRangeForm` — the date-plus-`HH:mm:ss` range fields and the five range rules that
+  `Export/ExportRangeForm` and `Navigation/TimeWindowForm` derive from; `TimeWindowForm` adds the width
+  field, the skipped-time and span rules and the per-edge comparison with its seed.
+  `Navigation/WindowWidthText` formats and parses the width as `h:mm:ss` with unbounded hours.
 - `Legend/TrendLegendView` + `TrendLegendViewModel` (+ group / row VMs and the converters) — the grouped
   sidebar. A row carries the on/off box, a round colour dot, the name, the current value in the pen's own
   mask and the unit; nothing in it is editable but the box, which an allowlist test over the built row
@@ -745,6 +756,10 @@ view model:
 - **Archive extent:** `QueryArchiveExtentAsync()` returns an `ArchiveExtent(FirstUtc, LastUtc)` —
   the full stored time span. `TrendCoordinator.QueryArchiveExtentAsync()` is a pass-through to the
   provider (mirroring `QueryHistoryAsync`); the minimap consumes it (see trend-interaction.md).
+- **Archive days:** `QueryArchiveDaysAsync(firstDay, lastDay, ct)` returns the local days of the range
+  that hold a layer-0 row of a catalogue pen. `TrendCoordinator.QueryArchiveDaysAsync` is a pass-through
+  to the provider; the time window panel reads it once per open for its calendars' blackout days
+  (`trend-interaction.md#the-time-window-panel`).
 - **Connection state:** `TrendCoordinator.ConnectionFaults` republishes the provider's own
   `IObservable<ArchiveConnectionState>` on the UI scheduler. `MainWindow/AppStatusBarViewModel` binds
   it and shows it in the status bar, over a chart that keeps its history; every fault it carries

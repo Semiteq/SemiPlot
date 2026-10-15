@@ -124,7 +124,11 @@ as-built mechanics that realize them:
   reciprocal wheel factors (in 0.8 = 1/1.25, out 1.25) share grid points so an in→out cycle
   round-trips to the origin width instead of drifting through accumulated float error (§TM-2
   acceptance). No-lag from 1 s to 1 year is guaranteed by decimation, not the chart control (see
-  "Decimation & performance").
+  "Decimation & performance"). A width typed or picked in the time window panel is set exactly, off
+  the ladder: `TrendNavigationModel.SetWidth` and `SetWindow` bypass the quantization, so a 5-minute
+  preset shows 0:05:00 and not the nearest rung. The next wheel notch snaps the width back onto the
+  ladder (after `SetWidth(5 min)` one notch in gives `1.25^25 s`, 264.7 s), and the round trip holds
+  from a width on the ladder.
 - **`From` is clamped to `≥ FirstSample`** so a wide window never reaches back past the first
   stored sample and renders the missing left span as data (§TM-3).
 - **Zoom history is debounced off the UI thread** (§DA-9). Gesture-driven re-queries flow through a
@@ -195,8 +199,11 @@ never sees it. `TrendChartView.InitializeComponent` therefore also sets
 handler is then the only writer of `Handled` for the wheel. Each event kind has one pure decision
 point, and the handlers carry no modifier test of their own: the wheel goes through
 `Chart/ChartWheelRouter.Route(isAxisRegionHit, modifiers, delta)`, the left press through
-`Chart/ChartPressRouter.Route(isAxisRegionHit, modifiers, activeTool)`. The left button is a
-single tool with an explicit state (`Chart/LeftButtonTool` = `Pan` | `DeltaPlacement`); the active
+`Chart/ChartPressRouter.Route(region, modifiers, activeTool)`. The view names the one
+`ChartPressRegion` the press lands on (`ActivePenAxis`, `TimeAxis` or `DataArea`; the two bands do not
+overlap), and the press router checks the active pen's axis first, then Ctrl, then the time axis band,
+then the tool. The left
+button is a single tool with an explicit state (`Chart/LeftButtonTool` = `Pan` | `DeltaPlacement`); the active
 tool is sourced from the navigation bar's delta-mode toggle (`TrendChartViewModel.ActiveLeftButtonTool`),
 so there is one left-button gesture, not overlapping hidden branches. Ctrl is a held key, not a tool.
 
@@ -219,7 +226,8 @@ so there is one left-button gesture, not overlapping hidden branches. Ctrl is a 
   2026-10-15), so a pinch shifts the active pen and pins it `Manual` instead of zooming time. This is a
   known trade-off of the agreed map, which keeps Ctrl + wheel for the shift.
 - **Scroll = zoom about the cursor anchor; left-drag = hand pan; left-click = pick a pen.** In `Pan`
-  tool a press outside the axis region with Ctrl not held routes to `ChartPressAction.PanOrPickPen`.
+  tool a press outside the axis region and the time axis band with Ctrl not held routes to
+  `ChartPressAction.PanOrPickPen`.
   The press captures the pointer and switches the cursor to a grab icon (`StandardCursorType.SizeAll`).
   A move pans the X window via `TrendNavigationModel.Pan` only once the pointer is more than the 4 px
   click slop (`ChartPressRouter.IsPastClickSlop`) from the press point; from then on every move pans and
@@ -229,27 +237,36 @@ so there is one left-button gesture, not overlapping hidden branches. Ctrl is a 
   (`ChartPenSet.PenNearest`) and `ChartPenPick.Choose` takes the nearest line within 6 px, which then goes
   through `SetActivePen`, the same path the sidebar uses. At an equal distance the active pen keeps the
   choice, otherwise the first pen in catalogue order wins. A click farther than 6 px from every line, a
-  click outside the data area included, is a miss: the pen stays active and loses its emphasis
+  click outside the data area and outside both axis bands included, is a miss: the pen stays active and loses its emphasis
   (`TrendChartViewModel.DropEmphasis`), so its line draws 1 px wide like the others while its sidebar
   row, its axis, Δy and the shift and scale gestures stay on it. A click on any line, the active pen's
   own included, or on any sidebar row goes through `SetActivePen` and emphasizes that pen again. The
   window opens with the first visible pen active and not emphasized: its row is marked and its axis
   drawn, and its line is 1 px wide until the first pick. A drag past the
-  slop, a Ctrl + click, delta mode and the axis-region press never reach `PickPenAt`, so they pick no pen
+  slop, a Ctrl + click, delta mode, the axis-region press and the time-axis press never reach `PickPenAt`,
+  so they pick no pen
   and leave the emphasis as it is. The view registers `OnPointerReleased` on the tunnel route: `AvaPlot`'s
   own class handler calls `Capture(null)` on release, which ends the drag through `PointerCaptureLost`
   before a bubbling handler would run. Release ends the drag and restores the hand cursor. The hover
   readout and crosshair (an Avalonia overlay) are suppressed for the duration of the drag.
 - **Ctrl + left button shifts the active pen.** `ChartPressRouter` routes a press with Ctrl held to
-  `ChartPressAction.ShiftActivePen` after the axis-region check and ahead of delta mode, so the held key
-  wins over the navigation bar's toggle. The press starts a drag the way a pan does: it captures the
-  pointer and suppresses the hover readout and crosshair, and the cursor is
+  `ChartPressAction.ShiftActivePen` after the axis-region check and ahead of the time axis and delta
+  mode, so the held key wins over the navigation bar's toggle and over the time axis band. The press
+  starts a drag the way a pan does: it captures the pointer and suppresses the hover readout and crosshair, and the cursor is
   `StandardCursorType.SizeNorthSouth`. Past the 4 px slop every move calls
   `TrendChartViewModel.ShiftActivePen` with the vertical part of the move; the horizontal part is ignored
   and the time window and sticky stay as they are. A release inside the slop is a Ctrl + click and does
   nothing: it picks no pen and places no delta cursor. The press fixes the drag's action in the view's
   `ChartDrag` record, so a Ctrl released mid-drag keeps shifting and a Ctrl pressed mid-pan keeps
   panning. Release and a capture loss end this drag as they end a pan.
+- **Left button on the time axis: drag pans, click opens the time window panel.** A press in the band of
+  the bottom axis (`ChartAxisRegion.TryCreateTimeAxis`: under the data rect, from the bottom axis panel's
+  offset and size, bounded horizontally by the data rect) with Ctrl not held routes to
+  `ChartPressAction.PanOrEditTimeWindow`. The press starts a drag the way a pan does, and a move past the
+  4 px slop pans. A release inside the slop opens the time window panel (below) at the pointer and picks
+  no pen: like the axis-region press, it never reaches `TrendChartViewModel.PickPenAt`, so the active pen
+  stays as it is and keeps its emphasis. The branch sits ahead of the tool, so delta mode does not change a time-axis click and
+  places no cursor there. A Ctrl press on the band shifts the active pen, as anywhere else.
 - **Sticky to real-time by default.** A button detaches sticky (pan into the past); clicking it
   again re-attaches and returns to real-time. `WindowChanged` is the single writer of the navigation
   bar's `IsSticky` (refreshed from `Navigation.IsSticky`), so auto-detach and `JumpToNow` re-attach stay
@@ -273,8 +290,8 @@ so there is one left-button gesture, not overlapping hidden branches. Ctrl is a 
   an inline readout next to the toggle. (The legacy `DeltaCursorsEnabled` flag and the hidden
   left-click hijack branch were deleted.)
 - **Y-axis click-region scale edit.** A press on the active pen's Y-axis panel band
-  (`Chart/ChartAxisRegion`, computed from the last render layout) is handled before Ctrl, pan and delta
-  routing and opens the axis scale panel (below). The same region routes the wheel to `ScaleActivePen`.
+  (`Chart/ChartAxisRegion`, computed from the last render layout) is handled before Ctrl, the time axis,
+  pan and delta routing and opens the axis scale panel (below). The same region routes the wheel to `ScaleActivePen`.
   The router reads no click count and no half of the axis. The press never starts a pan or places a
   delta cursor.
 - **Horizontal cursor / crosshair** — not in the MVP; deferred as a NICE item
@@ -356,6 +373,99 @@ control in `TrendChartView.axaml` and shown at the pointer) over `Chart/AxisScal
   scale sets the stored one. The View -> Pen scale submenu items call `AutoscaleActivePen` and
   `RestoreInitialScale()`. The submenu header names the drawn pen and follows `DrawnPenId` and the
   catalogue's pen names; while no pen's axis is drawn it reads "Pen scale".
+
+### The time window panel
+
+A click on the time axis opens an Avalonia `Flyout` (`Chart/TimeWindowPanel`, `Placement="Pointer"`) over
+`Chart/TimeWindowPanelViewModel`, which `TrendChartViewModel.TimeWindow` owns and builds from the chart's
+own coordinator, UI scheduler and time zone. The flyout lives in `TrendChartView`'s `UserControl.Resources`
+under the key `TimeWindowFlyout`. A flyout in resources inherits no
+`DataContext`, so `TrendChartView.OnDataContextChanged` hands the panel its view model, as it does for the
+axis scale panel. The view calls `Seed()` and then `ShowAt(PlotControl)`; the panel's `CloseRequests` hide
+the flyout. It covers §TM-6 except the quick interval "ending at now": a width keeps the right edge, which
+under sticky is now.
+
+- Three rows: Start and End, each a 110 px `HH:mm:ss` `TextBox` and a `CalendarDatePicker`, and Width, a
+  `TextBox` in `h:mm:ss` with unbounded hours (`Navigation/WindowWidthText`: `0:05:00`, `168:00:00`) and a
+  presets `DropDownButton`. The fields show local time in the zone handed to `TrendChartViewModel`,
+  production's `archiveZone`, the machine zone the axis draws in. `Navigation/TimeWindowForm` holds the
+  fields; `Seed()` fills them from `Navigation.From` and `To`, each floored to the second.
+- Three writes, each through a navigation call that raises `WindowChanged`, so the re-query, the axis, the
+  minimap and the navigation bar follow as for any gesture. The edges go through
+  `ChartNavigationController.SetWindow`: both edges exactly, sticky dropped. The width and the presets go
+  through `SetWidth`: the right edge stays, the left edge moves, sticky stays as it was. Both clamp the width
+  to 1 s .. 365 days, and a left edge before `FirstSample` moves the window right to start there with its
+  width kept, the rule `Pan` and `Zoom` use. The presets are 1, 2, 3, 5, 10 and 30 min and 1 h; each item
+  of the `MenuFlyout` runs `SetWidthCommand` with its width at once. The menu keeps no selection, so the
+  Width field is the width's only display.
+- A write happens only for a real change. "Differs from the seed" compares the fields' text and dates with
+  what `Seed()` wrote, never the parsed pair with the navigation's ticks, so Enter on untouched fields over a
+  window whose `From` carries a fraction of a second writes nothing and keeps sticky. The form compares
+  each edge with its own seed (`StartDiffersFromSeed`, `EndDiffersFromSeed`), and an edge left as seeded
+  is written as the navigation holds it at the commit, not as it was seeded: under sticky the live edge
+  moves both edges while the panel is open, so a typed start keeps the newest data in view and a typed end
+  keeps the left edge where the live edge moved it. When the edge in force and the typed one are out of
+  order, or more than 365 days apart, the pair as typed is written instead. After a write the panel
+  re-seeds every field from the navigation and stays open, so it always shows the window in force. Invalid
+  edges write no edge and a valid changed width still lands; an invalid field keeps its typed text until a
+  write re-seeds the form, so a form with nothing valid to write keeps all of it.
+- The edges and the width validate apart, so a bad width never blocks the edges. The edge rules, in the
+  order the message line names them: a date missing, a time unreadable (start, then end), the end not after
+  the start, a time the spring-forward change skips (`zone.IsInvalidTime`), and a span over 365 days
+  measured between the UTC edges. The skipped time comes before the span because a skipped time has no UTC
+  value; an ambiguous autumn hour takes the standard offset (`data-integration.md#time-boundary`). The width
+  rules: unreadable, or outside `0:00:01` .. `8760:00:00`.
+- The panel commits on Enter, on a preset and on close, never on focus loss. The axis scale panel commits when
+  focus leaves its field group, and that rule fails here: a `CalendarDatePicker` moves focus into its own
+  popup root when its calendar opens, which clears the group's `IsKeyboardFocusWithin` and would write a
+  half-edited pair. Opening a calendar and picking a day in it write nothing and keep the panel open.
+- Enter and a close write the same thing: `Commit()` writes valid pending edges, then a valid pending
+  width, and re-seeds once after a write. A width typed beside a typed start therefore applies on Enter in
+  any field, not only on Enter in the Width box, and the width written last keeps the right edge.
+- Enter is a `KeyBinding` to `CommitCommand` on the two time boxes and on the width box, never on a picker
+  or the panel root. A `KeyBinding` walks the visual parents ahead of `KeyDown` and marks the key handled
+  before the picker's own Return parse runs, so Enter bound above a picker would commit the date it held
+  before the typed one. Each picker instead has a `KeyUp` handler for Return that calls `Commit` after its
+  own parse. Escape is a `KeyBinding` on the panel root to `CancelCommand`, which marks the open cancelled
+  and raises `CloseRequests`.
+- `OnUnloaded` calls `Close()`, and every close reaches it: Escape, a light dismiss and the host's `Hide`.
+  Unless the open was cancelled, `Close()` runs `Commit()`. Children detach before the panel, so a focused
+  picker has parsed its text and every
+  `TextBox` has written its text when `Close()` runs. The host handles no flyout `Closed`. `OnLoaded` calls
+  `Opened()`, so a day read starts only for a panel that `Close()` will also reach; a hide before the
+  posted `Loaded` skips both, and every view test runs `Dispatcher.UIThread.RunJobs()` after `ShowAt`.
+- The calendars offer `[FirstDay, LastDay]` (`DisplayDateStart`, `DisplayDateEnd`). `FirstDay` is the
+  earlier of the first sample's local day and the selected start day, because `TrackDataExtents` can open
+  a window that starts before `FirstSample` and the calendar would clamp a selected date outside its range.
+  `LastDay` is the later of the newest sample's local day and the selected end day. The newest sample's
+  day is the local day of `Navigation.NewestSample`, never a clock read; with no newest sample yet, the
+  panel reads no days.
+- `Opened()` reads which days of `[FirstDay, newest sample day]` hold a row, once per open, through
+  `TrendCoordinator.QueryArchiveDaysAsync` (`data-integration.md#operation-to-statement`), observed on the
+  UI scheduler. `Close()` cancels a read in flight and forgets the result, and the next open reads again. A
+  failed read hands its errors to `TrendChartViewModel.ReportFailure(IReadOnlyList<IError>)`, which reaches
+  the message panel, and the calendars then show no blackout day. `BlackoutDays` is each read day without a row, inside
+  `[FirstDay, LastDay]`, minus the two selected dates: a picker draws it struck through and does not let
+  it be picked.
+- The blackout order. `CalendarBlackoutDatesCollection` throws when a range covers a selected date of its
+  calendar, and the calendar throws when a selected date is set to a blackout date. `Seed()` therefore
+  empties `BlackoutDays`, writes the dates, then refills it. The sync into each picker's `BlackoutDates`
+  and the `SelectedDate` binding chain (form, picker, the template's calendar) run synchronously on the
+  property change, so no write meets a conflicting set. `BlackoutDates` is not bindable and is `null`
+  until the picker applies its template, so the code-behind syncs it by hand: the subscription is made on
+  `DataContextChanged` and lives as long as the view model, not one open, because `Seed()` runs before
+  `ShowAt` while the panel is unloaded and its empty set has to reach the pickers then. Each picker's
+  `TemplateApplied`, subscribed in the constructor because the first `ShowAt` applies the templates before
+  `Loaded`, replays the current set. `TimeWindowPanelViewTests.AReopenOntoABlackoutDay_SeedsWithoutThrowing`
+  fails under a sync scoped to one open.
+- The chart hides the flyout on its window's `Closing`. Avalonia 12.0.5 throws `ArgumentOutOfRangeException`
+  in `StyledElement.OnDetachedFromLogicalTreeCore`, from `TopLevel.HandleClosed`, when a window closes while
+  a picker's calendar popup is open inside the flyout. `Closing` runs ahead of that detach, so
+  `TrendChartView` subscribes to it in `OnLoaded`, removes it in `OnUnloaded`, and hides
+  the time window flyout there; the panel's `Close()` then writes what was typed, as on any close but Escape.
+  `ChartPointerInputTests.ClosingTheWindowWithAPickersCalendarOpen_ThrowsNothingAndWritesThePendingPair`
+  gates it.
+- The panel keeps its size under validation (`ui-theme.md#the-time-window-panel`).
 
 ## Decimation & performance (architectural core)
 

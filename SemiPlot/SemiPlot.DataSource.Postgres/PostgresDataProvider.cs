@@ -205,7 +205,41 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		}
 		catch (Exception exception)
 		{
-			return Result.Fail<ArchiveExtent>(Map(exception, ArchiveStatements.ArchiveExtentRelations));
+			return Result.Fail<ArchiveExtent>(Map(exception, ArchiveStatements.TagCatalogAndTrendsRelations));
+		}
+	}
+
+	// docs/architecture/data-integration.md#time-boundary
+	public async Task<Result<IReadOnlyList<DateOnly>>> QueryArchiveDaysAsync(
+		DateOnly firstDay,
+		DateOnly lastDay,
+		CancellationToken cancellationToken = default)
+	{
+		try
+		{
+			await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+			await using var command = new NpgsqlCommand(ArchiveStatements.ArchiveDays, connection);
+
+			BindArchiveDays(command, firstDay, lastDay);
+
+			await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+			var days = new List<DateOnly>();
+
+			while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+			{
+				days.Add(reader.GetFieldValue<DateOnly>(0));
+			}
+
+			return Result.Ok<IReadOnlyList<DateOnly>>(days);
+		}
+		catch (OperationCanceledException)
+		{
+			throw;
+		}
+		catch (Exception exception)
+		{
+			return Result.Fail<IReadOnlyList<DateOnly>>(Map(exception, ArchiveStatements.TagCatalogAndTrendsRelations));
 		}
 	}
 
@@ -394,6 +428,18 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		command.Parameters.Add(new NpgsqlParameter("from", NpgsqlDbType.Timestamp) { Value = fromLocal });
 		command.Parameters.Add(new NpgsqlParameter("to", NpgsqlDbType.Timestamp) { Value = toLocal });
 		command.Parameters.Add(new NpgsqlParameter("bucket", NpgsqlDbType.Interval) { Value = bucket });
+	}
+
+	internal static void BindArchiveDays(NpgsqlCommand command, DateOnly firstDay, DateOnly lastDay)
+	{
+		command.Parameters.Add(new NpgsqlParameter("firstDay", NpgsqlDbType.Timestamp)
+		{
+			Value = firstDay.ToDateTime(TimeOnly.MinValue)
+		});
+		command.Parameters.Add(new NpgsqlParameter("lastDay", NpgsqlDbType.Timestamp)
+		{
+			Value = lastDay.ToDateTime(TimeOnly.MinValue)
+		});
 	}
 
 	// One millisecond is the column's own resolution, so a narrower bucket buys no reduction and a zero one

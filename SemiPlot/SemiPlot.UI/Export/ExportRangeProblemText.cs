@@ -1,4 +1,5 @@
 using SemiPlot.UI.Localization;
+using SemiPlot.UI.Navigation;
 
 namespace SemiPlot.UI.Export;
 
@@ -10,10 +11,10 @@ internal static class ExportRangeProblemText
 		{
 			ExportRangeProblem.StartDateMissing => Resources.ExportMessageStartDateMissing,
 			ExportRangeProblem.StartUnreadable =>
-				Resources.FormatExportMessageStartUnreadable(ExportRangeForm.TimeFieldFormat),
+				Resources.FormatExportMessageStartUnreadable(WallClockRangeForm.TimeFieldFormat),
 			ExportRangeProblem.EndDateMissing => Resources.ExportMessageEndDateMissing,
 			ExportRangeProblem.EndUnreadable =>
-				Resources.FormatExportMessageEndUnreadable(ExportRangeForm.TimeFieldFormat),
+				Resources.FormatExportMessageEndUnreadable(WallClockRangeForm.TimeFieldFormat),
 			ExportRangeProblem.EndNotAfterStart => Resources.ExportMessageEndNotAfterStart,
 			ExportRangeProblem.SpanOverLimit =>
 				Resources.FormatExportMessageSpanOverLimit(ExportRangeForm.MaxSpan.TotalHours),

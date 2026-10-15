@@ -4,12 +4,13 @@ namespace SemiPlot.Core.Trends;
 // Sticky semantics are specified in trend-interaction.md.
 public sealed class TrendNavigationModel
 {
-	// Zoom widths snap onto the geometric ladder _minimumWidth * ZoomQuantizationRatio^n. The wheel uses
+	public static readonly TimeSpan MinimumWidth = TimeSpan.FromSeconds(1.0);
+	public static readonly TimeSpan MaximumWidth = TimeSpan.FromDays(365.0);
+
+	// Zoom widths snap onto the geometric ladder MinimumWidth * ZoomQuantizationRatio^n. The wheel uses
 	// reciprocal factors (zoom-in 0.8 = 1/1.25, zoom-out 1.25), so snapping onto this grid makes an
 	// in-then-out cycle return to the exact origin width instead of drifting via floating-point error.
 	private const double ZoomQuantizationRatio = 1.25;
-	private static readonly TimeSpan _minimumWidth = TimeSpan.FromSeconds(1.0);
-	private static readonly TimeSpan _maximumWidth = TimeSpan.FromDays(365.0);
 
 	public TrendNavigationModel(DateTime from, DateTime to, DateTime firstSample, bool isSticky)
 	{
@@ -35,15 +36,7 @@ public sealed class TrendNavigationModel
 
 	public void Pan(TimeSpan delta, DateTime now)
 	{
-		var width = Width;
-		var from = From + delta;
-		if (from < FirstSample)
-		{
-			from = FirstSample;
-		}
-
-		From = from;
-		To = from + width;
+		PlaceFrom(From + delta, Width);
 
 		if (now > To || now < From)
 		{
@@ -62,28 +55,46 @@ public sealed class TrendNavigationModel
 		var targetWidth = ClampWidthSpan(QuantizeWidth(currentWidth * factor));
 
 		var anchorFraction = (anchor - From) / currentWidth;
-		var from = anchor - (targetWidth * anchorFraction);
 		// Clamped rather than anchor-pinned: pinning would render the empty left span as data.
-		if (from < FirstSample)
-		{
-			from = FirstSample;
-		}
-
-		From = from;
-		To = from + targetWidth;
+		PlaceFrom(anchor - (targetWidth * anchorFraction), targetWidth);
 	}
 
 	private static TimeSpan QuantizeWidth(TimeSpan width)
 	{
-		if (width <= _minimumWidth)
+		if (width <= MinimumWidth)
 		{
-			return _minimumWidth;
+			return MinimumWidth;
 		}
 
-		var steps = Math.Round(Math.Log(width / _minimumWidth) / Math.Log(ZoomQuantizationRatio));
-		var quantizedSeconds = _minimumWidth.TotalSeconds * Math.Pow(ZoomQuantizationRatio, steps);
+		var steps = Math.Round(Math.Log(width / MinimumWidth) / Math.Log(ZoomQuantizationRatio));
+		var quantizedSeconds = MinimumWidth.TotalSeconds * Math.Pow(ZoomQuantizationRatio, steps);
 
 		return TimeSpan.FromSeconds(quantizedSeconds);
+	}
+
+	/// <summary>Sets both edges exactly, off the zoom ladder, and drops sticky.</summary>
+	public void SetWindow(DateTime from, DateTime to)
+	{
+		if (to <= from)
+		{
+			throw new ArgumentException("View window end must be after its start.", nameof(to));
+		}
+
+		PlaceFrom(from, ClampWidthSpan(to - from));
+		IsSticky = false;
+	}
+
+	/// <summary>Sets the width exactly, off the zoom ladder, keeping the right edge and sticky.</summary>
+	public void SetWidth(TimeSpan width)
+	{
+		var clampedWidth = ClampWidthSpan(width);
+		PlaceFrom(To - clampedWidth, clampedWidth);
+	}
+
+	private void PlaceFrom(DateTime from, TimeSpan width)
+	{
+		From = from < FirstSample ? FirstSample : from;
+		To = From + width;
 	}
 
 	public void JumpToNow(DateTime now)
@@ -120,14 +131,14 @@ public sealed class TrendNavigationModel
 
 	private static TimeSpan ClampWidthSpan(TimeSpan width)
 	{
-		if (width < _minimumWidth)
+		if (width < MinimumWidth)
 		{
-			return _minimumWidth;
+			return MinimumWidth;
 		}
 
-		if (width > _maximumWidth)
+		if (width > MaximumWidth)
 		{
-			return _maximumWidth;
+			return MaximumWidth;
 		}
 
 		return width;

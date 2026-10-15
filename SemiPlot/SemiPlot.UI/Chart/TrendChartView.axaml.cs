@@ -35,10 +35,13 @@ public partial class TrendChartView : UserControl
 	private static readonly EventHandler<RenderDetails> _noRenderFinishedHandler = (_, _) => { };
 
 	private readonly PopupFlyoutBase _axisScaleFlyout;
+	private readonly Flyout _timeWindowFlyout;
+	private readonly TimeWindowPanel _timeWindowPanel;
 	private readonly CompositeDisposable _disposables = [];
 	private VerticalLine? _deltaFirstLine;
 	private VerticalLine? _deltaSecondLine;
 	private ChartDrag? _drag;
+	private Window? _hostWindow;
 	private int _frameSequence;
 	private int? _pendingFrame;
 
@@ -52,6 +55,10 @@ public partial class TrendChartView : UserControl
 		InitializeComponent();
 		_axisScaleFlyout = FlyoutBase.GetAttachedFlyout(PlotControl) as PopupFlyoutBase
 			?? throw new InvalidOperationException("The chart view declares its axis scale flyout in XAML.");
+		_timeWindowFlyout = Resources["TimeWindowFlyout"] as Flyout
+			?? throw new InvalidOperationException("The chart view declares its time window flyout in XAML.");
+		_timeWindowPanel = _timeWindowFlyout.Content as TimeWindowPanel
+			?? throw new InvalidOperationException("The time window flyout holds the time window panel.");
 		DataContextChanged += OnDataContextChanged;
 
 		PlotControl.UserInputProcessor.Disable();
@@ -81,6 +88,9 @@ public partial class TrendChartView : UserControl
 			application.ActualThemeVariantChanged += OnActualThemeVariantChanged;
 		}
 
+		_hostWindow = TopLevel.GetTopLevel(this) as Window;
+		_hostWindow?.Closing += OnHostWindowClosing;
+
 		RepaintChart();
 	}
 
@@ -93,7 +103,17 @@ public partial class TrendChartView : UserControl
 			application.ActualThemeVariantChanged -= OnActualThemeVariantChanged;
 		}
 
+		_hostWindow?.Closing -= OnHostWindowClosing;
+		_hostWindow = null;
+
 		base.OnUnloaded(e);
+	}
+
+	// Avalonia 12.0.5 throws while a closing window detaches an open calendar popup nested in this flyout, so the
+	// flyout closes first.
+	private void OnHostWindowClosing(object? sender, WindowClosingEventArgs eventArgs)
+	{
+		_timeWindowFlyout.Hide();
 	}
 
 	private void OnActualThemeVariantChanged(object? sender, EventArgs eventArgs)
@@ -154,6 +174,7 @@ public partial class TrendChartView : UserControl
 		_paintedAxisCount = -1;
 		_viewModel = DataContext as TrendChartViewModel;
 		AxisScale.DataContext = _viewModel?.AxisScale;
+		_timeWindowPanel.DataContext = _viewModel?.TimeWindow;
 
 		if (_viewModel is null)
 		{
@@ -165,6 +186,10 @@ public partial class TrendChartView : UserControl
 			.Subscribe(
 				_ => _axisScaleFlyout.Hide(),
 				ReportFailureOf(nameof(AxisScalePanelViewModel.CloseRequests))));
+		_disposables.Add(_viewModel.TimeWindow.CloseRequests
+			.Subscribe(
+				_ => _timeWindowFlyout.Hide(),
+				ReportFailureOf(nameof(TimeWindowPanelViewModel.CloseRequests))));
 
 		var renderManager = _viewModel.Plot.RenderManager;
 		var reportDataAreaWidth = ReportDataAreaWidthTo(_viewModel);
@@ -336,7 +361,7 @@ public partial class TrendChartView : UserControl
 
 		var position = eventArgs.GetPosition(PlotControl);
 		var action = ChartPressRouter.Route(
-			IsOverActiveAxis(position),
+			PressRegionAt(position),
 			eventArgs.KeyModifiers,
 			_viewModel.ActiveLeftButtonTool);
 
@@ -369,12 +394,31 @@ public partial class TrendChartView : UserControl
 			&& region.Contains((float)position.X, (float)position.Y);
 	}
 
+	private ChartPressRegion PressRegionAt(Point position)
+	{
+		if (IsOverActiveAxis(position))
+		{
+			return ChartPressRegion.ActivePenAxis;
+		}
+
+		return ChartAxisRegion.TryCreateTimeAxis(PlotControl.Plot) is { } timeAxis
+			&& timeAxis.Contains((float)position.X, (float)position.Y)
+				? ChartPressRegion.TimeAxis
+				: ChartPressRegion.DataArea;
+	}
+
 	private void OpenAxisScalePanel()
 	{
 		if (_viewModel!.AxisScale.Seed())
 		{
 			_axisScaleFlyout.ShowAt(PlotControl, true);
 		}
+	}
+
+	private void OpenTimeWindowPanel()
+	{
+		_viewModel!.TimeWindow.Seed();
+		_timeWindowFlyout.ShowAt(PlotControl, true);
 	}
 
 	private void BeginDrag(PointerPressedEventArgs eventArgs, ChartPressAction action)
@@ -437,9 +481,18 @@ public partial class TrendChartView : UserControl
 		// The view holds the capture here, so releasing it raises PointerCaptureLost, which ends the drag.
 		eventArgs.Pointer.Capture(null);
 
-		if (!drag.IsStarted && drag.Action == ChartPressAction.PanOrPickPen)
+		if (drag.IsStarted || _viewModel is null)
 		{
-			_viewModel?.PickPenAt(ToPixel(drag.Origin));
+			return;
+		}
+
+		if (drag.Action == ChartPressAction.PanOrPickPen)
+		{
+			_viewModel.PickPenAt(ToPixel(drag.Origin));
+		}
+		else if (drag.Action == ChartPressAction.PanOrEditTimeWindow)
+		{
+			OpenTimeWindowPanel();
 		}
 	}
 

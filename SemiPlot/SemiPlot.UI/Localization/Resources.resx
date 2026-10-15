@@ -741,4 +741,64 @@
   <data name="ExportFileTypeName" xml:space="preserve">
     <value>CSV files</value>
   </data>
+  <data name="TimeWindowStartLabel" xml:space="preserve">
+    <value>Start</value>
+  </data>
+  <data name="TimeWindowEndLabel" xml:space="preserve">
+    <value>End</value>
+  </data>
+  <data name="TimeWindowWidthLabel" xml:space="preserve">
+    <value>Width</value>
+  </data>
+  <data name="TimeWindowPresets" xml:space="preserve">
+    <value>Presets</value>
+  </data>
+  <data name="TimeWindowPresetOneMinute" xml:space="preserve">
+    <value>1 min</value>
+  </data>
+  <data name="TimeWindowPresetTwoMinutes" xml:space="preserve">
+    <value>2 min</value>
+  </data>
+  <data name="TimeWindowPresetThreeMinutes" xml:space="preserve">
+    <value>3 min</value>
+  </data>
+  <data name="TimeWindowPresetFiveMinutes" xml:space="preserve">
+    <value>5 min</value>
+  </data>
+  <data name="TimeWindowPresetTenMinutes" xml:space="preserve">
+    <value>10 min</value>
+  </data>
+  <data name="TimeWindowPresetThirtyMinutes" xml:space="preserve">
+    <value>30 min</value>
+  </data>
+  <data name="TimeWindowPresetOneHour" xml:space="preserve">
+    <value>1 h</value>
+  </data>
+  <data name="TimeWindowMessageStartDateMissing" xml:space="preserve">
+    <value>Start: pick a date.</value>
+  </data>
+  <data name="TimeWindowMessageStartUnreadable" xml:space="preserve">
+    <value>Start time: write it as {0}.</value>
+  </data>
+  <data name="TimeWindowMessageEndDateMissing" xml:space="preserve">
+    <value>End: pick a date.</value>
+  </data>
+  <data name="TimeWindowMessageEndUnreadable" xml:space="preserve">
+    <value>End time: write it as {0}.</value>
+  </data>
+  <data name="TimeWindowMessageEndNotAfterStart" xml:space="preserve">
+    <value>The end has to be later than the start.</value>
+  </data>
+  <data name="TimeWindowMessageTimeSkipped" xml:space="preserve">
+    <value>That time does not exist on that day: the clocks moved forward.</value>
+  </data>
+  <data name="TimeWindowMessageSpanOverLimit" xml:space="preserve">
+    <value>The window is longer than {0} days.</value>
+  </data>
+  <data name="TimeWindowMessageWidthUnreadable" xml:space="preserve">
+    <value>Width: write it as {0}.</value>
+  </data>
+  <data name="TimeWindowMessageWidthOutOfRange" xml:space="preserve">
+    <value>The width has to be from {0} to {1}.</value>
+  </data>
 </root>

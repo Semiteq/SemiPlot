@@ -40,6 +40,21 @@ internal static class ChartViewTestBuilder
 		throw new InvalidOperationException("No pixel left of the data area lies in the axis region.");
 	}
 
+	/// <summary>The pixel halfway down the time axis band, under the data area's horizontal center.</summary>
+	internal static Point TimeAxisPoint(TrendChartViewModel viewModel)
+	{
+		var region = ChartAxisRegion.TryCreateTimeAxis(viewModel.Plot);
+		region.Should().NotBeNull();
+		var layout = viewModel.Plot.RenderManager.LastRender.Layout;
+		var x = layout.DataRect.HorizontalCenter;
+		var bandRows = Enumerable.Range((int)layout.DataRect.Bottom + 1, (int)layout.FigureRect.Height)
+			.Where(y => region.Contains(x, y))
+			.ToList();
+		bandRows.Should().NotBeEmpty("the time axis band lies under the data area");
+
+		return new Point(x, (bandRows[0] + bandRows[^1]) / 2.0);
+	}
+
 	internal static ShownChart ShowChart(TrendChartViewModel viewModel)
 	{
 		var view = new TrendChartView
@@ -110,6 +125,8 @@ internal static class ChartViewTestBuilder
 	internal sealed record ShownChart(Window Window, AvaPlot PlotControl) : IDisposable
 	{
 		public required TrendChartView View { get; init; }
+
+		public Flyout TimeWindowFlyout => (Flyout)View.Resources["TimeWindowFlyout"]!;
 
 		public void Dispose()
 		{

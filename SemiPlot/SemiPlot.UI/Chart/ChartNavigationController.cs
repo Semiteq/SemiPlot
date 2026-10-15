@@ -144,6 +144,18 @@ public sealed class ChartNavigationController
 		ApplyWindowChange();
 	}
 
+	public void SetWindow(DateTime from, DateTime to)
+	{
+		_navigation.SetWindow(from, to);
+		ApplyWindowChange();
+	}
+
+	public void SetWidth(TimeSpan width)
+	{
+		_navigation.SetWidth(width);
+		ApplyWindowChange();
+	}
+
 	public void JumpToNow()
 	{
 		_navigation.JumpToNow(_liveEdge);

@@ -373,4 +373,4 @@ the running application, which is the application bench's to catch. `ChartGapRen
 ScottPlot half of a bump alone and the pointer guards the Avalonia half: the ScottPlot 5.1.59 bump
 marked every wheel event handled, killed wheel zoom, moved no pixel, and `ChartPointerInputTests` is
 what failed. The headless platform also does not reproduce how Win32 reports a Shift-modified wheel or a
-touchpad pinch; the manual checklist of issue #74 covers both.
+touchpad pinch; both are checked by hand (`trend-interaction.md#navigation--cursors`, the wheel map).

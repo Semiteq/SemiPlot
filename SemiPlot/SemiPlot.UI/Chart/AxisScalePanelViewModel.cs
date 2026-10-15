@@ -170,6 +170,15 @@ public sealed class AxisScalePanelViewModel : ReactiveObject, IDisposable
 		}
 	}
 
+	/// <summary>Closes the panel without writing.</summary>
+	public void CloseWhenOpenFor(int penId)
+	{
+		if (_penId == penId)
+		{
+			RequestClose();
+		}
+	}
+
 	public void ReportFailure(Exception failure)
 	{
 		_chart.ReportFailure(failure);

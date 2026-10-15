@@ -322,9 +322,11 @@ No abbreviations in names.
 - The left-button gesture is one state, never overlapping branches: a `Chart/LeftButtonTool`
   (`Pan | DeltaPlacement`) enum sourced from the navigation bar's delta toggle decides pan-or-pick (a
   release inside the 4 px slop picks a pen, `docs/architecture/trend-interaction.md`) vs delta
-  placement, and the axis-region edit is a pre-branch ahead of it. The bar's `IsSticky` has a single
-  writer (the `WindowChanged` handler refreshing from `Navigation.IsSticky`) — do not reintroduce
-  imperative `IsSticky =` assignments.
+  placement, and the axis-region edit is a pre-branch ahead of it. A press with Ctrl held is the next
+  pre-branch, after the axis-region edit and ahead of the tool: it shifts the active pen
+  (`ChartPressAction.ShiftActivePen`), and Ctrl is a held key, not a `LeftButtonTool` value. The bar's
+  `IsSticky` has a single writer (the `WindowChanged` handler refreshing from `Navigation.IsSticky`) — do
+  not reintroduce imperative `IsSticky =` assignments.
 - A checkable menu item reads its flag `Mode=OneWay` and writes it only through the command it
   invokes, so the command is the flag's single writer. A two-way `IsChecked` would make the control a
   second writer and the two halves would drift. The sidebar's visibility box follows the same rule: it

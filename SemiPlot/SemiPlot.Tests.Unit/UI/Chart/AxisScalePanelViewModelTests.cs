@@ -144,6 +144,26 @@ public sealed class AxisScalePanelViewModelTests
 	}
 
 	[AvaloniaFact]
+	public void AMouseGestureOnThePanelsPen_ClosesThePanel_SoNoSeededBoundUndoesIt()
+	{
+		using var culture = new CultureScope("en-US");
+		var (chart, _, _, provider) = CreateViewModel();
+		chart.ApplyCatalogue(provider.Pens);
+		chart.SetAxisLimits(1, 10.0, 90.0);
+		chart.AxisScale.Seed();
+		var closes = 0;
+		using var subscription = chart.AxisScale.CloseRequests.Subscribe(_ => closes++);
+
+		chart.ScaleActivePen(0.8, 0.5);
+		var settingsAfterGesture = chart.ScaleSettings[1];
+		chart.AxisScale.MaximumText = "200";
+		chart.AxisScale.CommitBounds();
+
+		closes.Should().Be(1);
+		chart.ScaleSettings[1].Should().Be(settingsAfterGesture, "a closed panel writes nothing");
+	}
+
+	[AvaloniaFact]
 	public void CommitBounds_WritesAChangedPairOnThePenThePanelWasOpenedFor_AndReseedsWithThePanelOpen()
 	{
 		using var culture = new CultureScope("en-US");

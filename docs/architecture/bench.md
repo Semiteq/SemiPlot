@@ -342,7 +342,7 @@ where a realised control sits in the strip, at what size and with which figures.
 | --- | --- | --- |
 | `UI/Chart/ChartGapRenderTests` | ScottPlot's rasteriser, no Avalonia | a `NaN` column leaves the rendered line broken, and a continuous series leaves no such break |
 | `UI/Chart/LogAxisRenderTests` | ScottPlot's rasteriser, no Avalonia, through `ChartAxisBinder.Apply` | the 1e-4 plateau of a 1e-6..1e-2 log axis draws within 2 px of the data area's middle, and a plateau at `0` or under the minimum draws 2 px above its bottom row; it pins two ScottPlot behaviours, the bottom axis frame drawn over the data area's bottom row and a linear `YAxisBase.GetPixel` |
-| `UI/Chart/ChartPointerInputTests` | headless pointer events into `TrendChartView` | a drag pans the navigation window, a wheel zooms it, a capture loss ends the drag, a click within the slop picks the nearest pen and never pans |
+| `UI/Chart/ChartPointerInputTests` | headless pointer events into `TrendChartView` | a drag pans the navigation window, a wheel zooms it, a capture loss ends the drag, a click within the slop picks the nearest pen and never pans; Shift + wheel pans by a tenth of the window, Ctrl + wheel and Ctrl + drag shift only the active pen, the wheel over the active axis scales it about the cursor, a horizontal wheel leaves the window, a Ctrl + click changes nothing, and the press fixes the drag's action and its cursor |
 | `UI/Minimap/MinimapPointerInputTests` | headless pointer events into `MinimapView` | a drag on the strip moves the chart's window to each pointer fraction, a move after release reaches the strip and moves nothing, a window past the extent keeps its marker inside the strip |
 | `UI/Minimap/MinimapHoverTests` | headless pointer events into `MinimapView` | a hover shows a line at the pointer and its time centred under it in the label row, inside the row at either end, where the time hides only the end label it covers, also after a new extent relabels that label; the line stays inside the strip at its right edge and keeps its fraction through a resize; a newer sample relabels the time; a drag keeps the line under the pointer, and a move off the strip or an exit hides the line and the time |
 | `UI/Minimap/MinimapViewTests` | a realised `MinimapView` with a published band | the strip holds the band, the marker and the hover line in that order and no baseline; the band is sized to the strip, with figures in the pen's colour that a pan leaves as they are; the end labels sit in a row under the strip, and the view keeps its height when the extent fills them |
@@ -372,4 +372,5 @@ by nothing headless; a desktop-only registration the chain is missing fails at `
 the running application, which is the application bench's to catch. `ChartGapRenderTests` guards the
 ScottPlot half of a bump alone and the pointer guards the Avalonia half: the ScottPlot 5.1.59 bump
 marked every wheel event handled, killed wheel zoom, moved no pixel, and `ChartPointerInputTests` is
-what failed.
+what failed. The headless platform also does not reproduce how Win32 reports a Shift-modified wheel or a
+touchpad pinch; the manual checklist of issue #74 covers both.

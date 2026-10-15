@@ -147,6 +147,22 @@ as-built mechanics that realize them:
   needs a minimum above zero: the auto range skips values ≤ 0, the panel refuses the type over a manual
   minimum ≤ 0, and a sample ≤ 0 draws 2 px above the bottom of the data area while every readout
   shows its true value (`charting.md#log10-y-axis`).
+- **Mouse gestures on the active pen's scale (as-built):** Ctrl + wheel and Ctrl + drag over the data
+  area shift the active pen (`TrendChartViewModel.ShiftActivePen`), and the wheel over its axis scales it
+  about the cursor (`TrendChartViewModel.ScaleActivePen`, §PN-2). A shift moves both limits by one amount.
+  A Ctrl + wheel notch moves them by 10% of the span; wheel up lowers both limits, so the line rises. A
+  Ctrl + drag moves them by the pointer's vertical move as a share of the data area's height, so the line
+  follows the pointer. The axis wheel multiplies the span by 0.8 per notch up and by 1.25 per notch down
+  and keeps the value under the cursor at its pixel. The pen scale has no quantized ladder, so an in and
+  out pair restores the span only up to floating-point error. Both methods take the limits the pen shows
+  now, apply `Core/Trends/PenRangeGesture` and write the result through `SetAxisLimits`, the write the
+  axis scale panel uses. An `Auto` pen therefore takes the limits it shows, turns `Manual` and then moves;
+  View -> Pen scale -> Autoscale brings tracking back. The limits live in the window's session like typed
+  ones, and nothing reaches the database or the configuration. On a log10 axis the shift and the scale
+  run in decades, so the minimum stays above zero. `PenRangeGesture` returns null, and the pen keeps its
+  limits, for a result that is not finite, a span not above zero, or a log minimum that
+  `LogAxis.AdmitsMinimum` refuses. A hidden active pen draws no axis, and no gesture changes its limits.
+  No other pen's limits change.
 
 ## Multi-pen / multi-axis behavior
 
@@ -176,18 +192,40 @@ delta guard and unconditioned on the input processor, and Avalonia runs that cla
 view's instance handler on the same element — so a wheel event arrives already handled and the view
 never sees it. `TrendChartView.InitializeComponent` therefore also sets
 `_plotControl.HandleMouseWheelEvent = false`, which is what keeps wheel zoom working; the view's own
-handler is then the only writer of `Handled` for the wheel. The left button is a
+handler is then the only writer of `Handled` for the wheel. Each event kind has one pure decision
+point, and the handlers carry no modifier test of their own: the wheel goes through
+`Chart/ChartWheelRouter.Route(isAxisRegionHit, modifiers, delta)`, the left press through
+`Chart/ChartPressRouter.Route(isAxisRegionHit, modifiers, activeTool)`. The left button is a
 single tool with an explicit state (`Chart/LeftButtonTool` = `Pan` | `DeltaPlacement`); the active
 tool is sourced from the navigation bar's delta-mode toggle (`TrendChartViewModel.ActiveLeftButtonTool`),
-so there is one left-button gesture, not overlapping hidden branches.
+so there is one left-button gesture, not overlapping hidden branches. Ctrl is a held key, not a tool.
 
+- **The wheel map.** `ChartWheelRouter` returns a `ChartWheelAction` and a notch sign, and checks the
+  axis region first, then Ctrl, then Shift:
+  - over the active pen's axis region (`Chart/ChartAxisRegion`), with any modifiers: `ScaleActivePen`;
+  - Ctrl over the data area: `ShiftActivePen`, Ctrl + Shift included;
+  - Shift over the data area: `PanTime`, 10% of the window width per notch; wheel down pans toward
+    newer data through `ChartNavigationController.PanBy`;
+  - no modifier: `ZoomTime`, the zoom about the cursor anchor.
+
+  The notch is the sign of `Delta.Y`. With Shift held and `Delta.Y` zero it is the sign of `Delta.X`,
+  so a Shift + wheel that arrives on the horizontal component still pans. A notch of 0 routes to
+  `None`: nothing moves and the view leaves the event unhandled, so a horizontal wheel without Shift
+  changes nothing. The view sets `Handled` for every other action.
+
+  The notch is a sign, not a magnitude: a fractional delta from a precision touchpad or a smooth-scroll
+  wheel counts as a whole notch, as it did for the zoom before the map, so one swipe takes many 10% steps.
+  Windows is expected to report a precision touchpad pinch as a wheel event with Ctrl held, so a pinch
+  shifts the active pen and pins it `Manual` instead of zooming time. This is a known trade-off of the
+  agreed map, which keeps Ctrl + wheel for the shift; the manual checklist of issue #74 checks it on
+  hardware.
 - **Scroll = zoom about the cursor anchor; left-drag = hand pan; left-click = pick a pen.** In `Pan`
-  tool a press outside the axis region routes to `ChartPressAction.PanOrPickPen`. The press captures the
-  pointer and switches the cursor to a grab icon (`StandardCursorType.SizeAll`). A move pans the X window
-  via `TrendNavigationModel.Pan` only once the pointer is more than the 4 px click slop
-  (`ChartPressRouter.IsPastClickSlop`) from the press point; from then on every move pans and the release
-  picks nothing. The slop exists because a pan of one pixel into the past detaches sticky, so the jitter
-  of a hand on a click would drop follow mode. A release inside the slop is a click:
+  tool a press outside the axis region with Ctrl not held routes to `ChartPressAction.PanOrPickPen`.
+  The press captures the pointer and switches the cursor to a grab icon (`StandardCursorType.SizeAll`).
+  A move pans the X window via `TrendNavigationModel.Pan` only once the pointer is more than the 4 px
+  click slop (`ChartPressRouter.IsPastClickSlop`) from the press point; from then on every move pans and
+  the release picks nothing. The slop exists because a pan of one pixel into the past detaches sticky,
+  so the jitter of a hand on a click would drop follow mode. A release inside the slop is a click:
   `TrendChartViewModel.PickPenAt` measures the press point against every visible pen's line
   (`ChartPenSet.PenNearest`) and `ChartPenPick.Choose` takes the nearest line within 6 px, which then goes
   through `SetActivePen`, the same path the sidebar uses. At an equal distance the active pen keeps the
@@ -197,6 +235,16 @@ so there is one left-button gesture, not overlapping hidden branches.
   which ends the drag through `PointerCaptureLost` before a bubbling handler would run. Release ends the
   drag and restores the hand cursor. The hover readout and crosshair (an Avalonia overlay) are suppressed
   for the duration of the drag.
+- **Ctrl + left button shifts the active pen.** `ChartPressRouter` routes a press with Ctrl held to
+  `ChartPressAction.ShiftActivePen` after the axis-region check and ahead of delta mode, so the held key
+  wins over the navigation bar's toggle. The press starts a drag the way a pan does: it captures the
+  pointer and suppresses the hover readout and crosshair, and the cursor is
+  `StandardCursorType.SizeNorthSouth`. Past the 4 px slop every move calls
+  `TrendChartViewModel.ShiftActivePen` with the vertical part of the move; the horizontal part is ignored
+  and the time window and sticky stay as they are. A release inside the slop is a Ctrl + click and does
+  nothing: it picks no pen and places no delta cursor. The press fixes the drag's action in the view's
+  `ChartDrag` record, so a Ctrl released mid-drag keeps shifting and a Ctrl pressed mid-pan keeps
+  panning. Release and a capture loss end this drag as they end a pan.
 - **Sticky to real-time by default.** A button detaches sticky (pan into the past); clicking it
   again re-attaches and returns to real-time. `WindowChanged` is the single writer of the navigation
   bar's `IsSticky` (refreshed from `Navigation.IsSticky`), so auto-detach and `JumpToNow` re-attach stay
@@ -220,9 +268,10 @@ so there is one left-button gesture, not overlapping hidden branches.
   an inline readout next to the toggle. (The legacy `DeltaCursorsEnabled` flag and the hidden
   left-click hijack branch were deleted.)
 - **Y-axis click-region scale edit.** A press on the active pen's Y-axis panel band
-  (`Chart/ChartAxisRegion`, computed from the last render layout) is handled before pan/delta routing and
-  opens the axis scale panel (below). The router reads no click count and no half of the axis. The press
-  never starts a pan or places a delta cursor.
+  (`Chart/ChartAxisRegion`, computed from the last render layout) is handled before Ctrl, pan and delta
+  routing and opens the axis scale panel (below). The same region routes the wheel to `ScaleActivePen`.
+  The router reads no click count and no half of the axis. The press never starts a pan or places a
+  delta cursor.
 - **Horizontal cursor / crosshair** — not in the MVP; deferred as a NICE item
   (trend-feature-spec.md §CU-5), not permanently dropped.
 
@@ -259,6 +308,11 @@ control in `TrendChartView.axaml` and shown at the pointer) over `Chart/AxisScal
   Focus passing through untouched fields, or a value retyped in another notation, writes nothing, so
   Enter on an untouched autoscaled pen keeps it `Auto` rather than freezing the shown range into a manual
   one.
+- A mouse gesture that rescales the panel's pen (the wheel over its axis, Ctrl + wheel) closes the panel
+  through `AxisScalePanelViewModel.CloseWhenOpenFor`, which clears the pen before the flyout hides, so
+  nothing is written. A light dismiss reacts to a press, not to a wheel, so the panel would otherwise stay
+  open on the old seed, and a commit of one typed bound would write the other seeded bound back over the
+  gesture.
 - A dismiss from outside (a press outside the panel, a click on the window frame, the window losing focus
   or activation) writes a pending valid pair once and closes the panel. Avalonia raises the flyout's
   `Closing`, then detaches the panel, which takes focus off the field and so ends the edit through the

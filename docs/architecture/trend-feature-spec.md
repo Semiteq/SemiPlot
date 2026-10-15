@@ -41,6 +41,7 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 ### TM-7 — Navigation hotkeys (NICE)
 **Definition.** Ctrl+Left/Right — shift in time; Ctrl+Up/Down — shift vertically.
 **Acceptance.** UI: the keys perform the corresponding shift when the canvas has focus.
+**Note.** The mouse form of the vertical shift exists: Ctrl + wheel and Ctrl + drag over the data area shift the active pen (trend-interaction.md, "Mouse gestures on the active pen's scale"); the keyboard hotkeys are not built.
 
 ### TM-8 — Linking several trends by time (NICE)
 **Definition.** Several canvases synchronize on the time scale: changing the window in one changes the windows of the linked ones.
@@ -91,6 +92,7 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 ### PN-2 — Resize a pen's Y layer (MUST)
 **Definition.** The user can compress/stretch a pen vertically (change the visible Y range of a specific pen/axis) independently of the others — with the mouse and/or bound controls.
 **Acceptance.** UI: the resize operation changes the Y bounds of the target pen without affecting the others; the result matches the given range. Core/test: recomputing `PenScale` for one axis does not change the others.
+**Note.** The mouse resize is the wheel over the active pen's axis, which scales that pen about the cursor (trend-interaction.md, "Mouse gestures on the active pen's scale").
 
 ### PN-3 — Set a pen's min/max (MUST)
 **Definition.** Direct entry of the upper/lower Y bound for a pen (via the pen's axis/layer). See AY-3.

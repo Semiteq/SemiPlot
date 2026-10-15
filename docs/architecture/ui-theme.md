@@ -182,7 +182,8 @@ colour and text, never size:
 - An invalid field is marked by its border alone. The field binds `Classes.invalid` to its `Is*Valid`
   flag, and `Styles/Forms.axaml` paints that border with `AppSeverityErrorBrush`.
 - One message line sits left of the buttons, or on its own full-width row above them (the axis scale panel,
-  the export window). It is a `TextBlock.form-message`: two lines of 20 px
+  the export window), or as the last row of a form with no buttons (the time window panel). It is a
+  `TextBlock.form-message`: two lines of 20 px
   reserved, wrapped, trimmed past the second. It shows the rule the first invalid field breaks, in form
   order, and is empty while every field is valid. A notice that is not an error, such as the settings
   dialog's restart notice with its Restart now button in the same cell, shares the same line and gives
@@ -314,6 +315,24 @@ longer label or message is measured the same way before it ships.
 `AxisScalePanelViewTests.TheMessageLine_KeepsThePanelsSize_EmptyWithAOneLineRuleAndWithTheLogRule` gates the
 size under the test font, in both cultures. It does not check the trimming: the test font is about twice as wide, and under it the Russian log
 rule needs three lines, so the measurement above is the only evidence that nothing is trimmed.
+
+### The time window panel
+
+`Chart/TimeWindowPanel` is a `Flyout` form under the same rule, 360 px wide, with four rows that exist in every
+state: Start, End, Width and the reserved message line (`form-message error`, 40 px) across all three columns.
+Its grid follows the export window's date rows: the label column is `Auto`, each time box is a 110 px
+`TextBox`, and the third column, `*`, holds a `CalendarDatePicker` on the Start and End rows and the presets
+`DropDownButton` on the Width row, each stretched to the row's end. The panel has no buttons: Enter, a preset
+and the close commit (`trend-interaction.md#the-time-window-panel`). All five fields bind `Classes.invalid`:
+the two dates, the two times and the width. An end that is not after the start, or a span over 365 days,
+marks both end fields.
+
+`TimeWindowPanelViewTests.TheMessageLine_KeepsThePanelsSize_EmptyAndWithTheLongestRule` gates the size under
+the test font in `en-US` and `ru-RU`: the sizes of the panel, the message line and the flyout presenter are
+equal with the line empty, with the start time unreadable and with the start time skipped by the
+spring-forward change, the longest rule in both languages. The panel has not been measured with Skia, HarfBuzz and the real theme as
+the axis scale panel was, so nothing yet shows that the Russian skipped-time rule fits the two reserved lines
+untrimmed; it is measured that way before a longer label or message ships.
 
 ### A resizable window keeps its fixed parts
 

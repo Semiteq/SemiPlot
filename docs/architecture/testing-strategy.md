@@ -147,7 +147,7 @@ would encode our own assumption on both sides. The value is contract verificatio
 There are three families — the same category with different foreign parties.
 
 **Against a real PostgreSQL**, in `SemiPlot.Tests.Integration/`: `PostgresCatalogReadTests`,
-`PostgresExtentReadTests`, `PostgresHistoryReadTests`, `RealtimePollReadTests`,
+`PostgresExtentReadTests`, `PostgresArchiveDaysReadTests`, `PostgresHistoryReadTests`, `RealtimePollReadTests`,
 `RealtimeSubscriptionTests`, `RealtimeEmptyArchiveTests`,
 `ArchiveWriterTransactionTests`, `CoarseFlushTests`, `ProviderSessionTests`,
 `ExplainPlanTests`, `ArchiveRowReaderTests`, `PenCatalogueEditorTests`, `PenRegistrationTests`, `LiveCatalogueTests`. The realtime classes

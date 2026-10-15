@@ -20,7 +20,7 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 
 ### TM-2 — Time zoom with the mouse wheel (MUST)
 **Definition.** Scrolling the wheel over the plot window scales the time window relative to the cursor position. Zoom is quantized onto a 1.25 ladder so that an in/out round-trip produces no drift of the bounds.
-**Acceptance.** Core/test: `TrendNavigationModel` — a zoom-in→zoom-out sequence returns the original `From/To` without accumulated error. UI: the wheel changes the scale, the center anchored to the cursor.
+**Acceptance.** Core/test: `TrendNavigationModel` — from a width on the ladder, a zoom-in→zoom-out sequence returns the original `From/To` without accumulated error; a width typed or picked in the time window panel (TM-6) is exact and off the ladder, and the next notch snaps it back onto the ladder. UI: the wheel changes the scale, the center anchored to the cursor.
 
 ### TM-3 — Pan (shift the time window) (MUST)
 **Definition.** Dragging the plot window with the mouse and/or horizontal navigation shifts the visible interval in time without changing the scale. Window clamps: width 1 s … 1 year; `From ≥ FirstSample`.
@@ -36,7 +36,8 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 
 ### TM-6 — Quick interval selection and exact bound entry (SHOULD)
 **Definition.** A date-time panel: calendar/time for the left and right bounds, a quick-interval picker (last hour/day/week, etc.), a "go to data now" button.
-**Acceptance.** UI: entering explicit dates sets the window exactly; a quick interval sets the corresponding width ending at "now".
+**Acceptance.** UI: entering explicit dates sets the window exactly; a quick interval sets the corresponding width exactly and keeps the right edge, which under sticky is "now".
+**Note.** Built as the time window panel, opened by a click on the time axis (trend-interaction.md, "The time window panel"): the start and end as a date and an `HH:mm:ss` time, a typed width, and presets of 1, 2, 3, 5, 10 and 30 min and 1 h. Typed edges drop sticky; a width keeps it. A day of the archive's range with no raw row is a blackout date of the calendars. "Go to data now" stays the navigation bar's button.
 
 ### TM-7 — Navigation hotkeys (NICE)
 **Definition.** Ctrl+Left/Right — shift in time; Ctrl+Up/Down — shift vertically.
@@ -112,7 +113,7 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 **Acceptance.** UI: selecting the active pen is reflected in the legend; Δy is measured against the active pen.
 **As built.** A left click in pan mode within 6 px of a visible pen's line and a click on its sidebar row both select the pen
 through `TrendChartViewModel.SetActivePen`; the picked line is drawn 2 px wide above the others
-(`trend-interaction.md`, "Navigation & cursors"). The window opens with the first visible pen active and drawn 1 px wide. A click farther than 6 px from every line keeps the pen active and draws its line 1 px wide until a click on a line or a sidebar row emphasizes a pen again.
+(`trend-interaction.md`, "Navigation & cursors"). The window opens with the first visible pen active and drawn 1 px wide. A click farther than 6 px from every line and outside the axis bands keeps the pen active and draws its line 1 px wide until a click on a line or a sidebar row emphasizes a pen again.
 
 ### PN-7 — Line construction methods: Bézier and bad values (SHOULD)
 **Definition.** Additional segments (Bézier2/Bézier3) and a render mode for untrustworthy values (None/Dashed/Line).
@@ -166,7 +167,7 @@ through `TrendChartViewModel.SetActivePen`; the picked line is drawn 2 px wide a
 ## 5. Data and archive (PostgreSQL)
 
 ### DA-1 — The data source is always PostgreSQL (MUST)
-**Definition.** The production provider for history and extent is PostgreSQL. The provider contract: `QueryHistoryAsync` (window + target column count), `QueryArchiveExtentAsync` (full range). It returns a `PenHistoryEnvelope` (Min/Max/Center, NaN gaps). Errors flow via `FluentResults`, with no exceptions on the UI thread.
+**Definition.** The production provider for history and extent is PostgreSQL. The provider contract: `QueryHistoryAsync` (window + target column count), `QueryArchiveExtentAsync` (full range), `QueryArchiveDaysAsync` (the local days of a date range that hold a layer-0 row, for the time window panel's calendars). The history read returns a `PenHistoryEnvelope` (Min/Max/Center, NaN gaps). Errors flow via `FluentResults`, with no exceptions on the UI thread.
 **Acceptance.** DB: against a real PostgreSQL, history load fills the canvas; the extent is pulled from the DB; a dropped connection yields a failed `Result` rather than a UI crash. A stub provider is acceptable only in tests/demos, not in production.
 
 ### DA-2 — Archive aggregation layers (MUST)

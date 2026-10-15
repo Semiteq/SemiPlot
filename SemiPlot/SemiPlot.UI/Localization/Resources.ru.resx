@@ -741,4 +741,64 @@
   <data name="ExportFileTypeName" xml:space="preserve">
     <value>Файлы CSV</value>
   </data>
+  <data name="TimeWindowStartLabel" xml:space="preserve">
+    <value>Начало</value>
+  </data>
+  <data name="TimeWindowEndLabel" xml:space="preserve">
+    <value>Конец</value>
+  </data>
+  <data name="TimeWindowWidthLabel" xml:space="preserve">
+    <value>Ширина</value>
+  </data>
+  <data name="TimeWindowPresets" xml:space="preserve">
+    <value>Быстрый выбор</value>
+  </data>
+  <data name="TimeWindowPresetOneMinute" xml:space="preserve">
+    <value>1 мин</value>
+  </data>
+  <data name="TimeWindowPresetTwoMinutes" xml:space="preserve">
+    <value>2 мин</value>
+  </data>
+  <data name="TimeWindowPresetThreeMinutes" xml:space="preserve">
+    <value>3 мин</value>
+  </data>
+  <data name="TimeWindowPresetFiveMinutes" xml:space="preserve">
+    <value>5 мин</value>
+  </data>
+  <data name="TimeWindowPresetTenMinutes" xml:space="preserve">
+    <value>10 мин</value>
+  </data>
+  <data name="TimeWindowPresetThirtyMinutes" xml:space="preserve">
+    <value>30 мин</value>
+  </data>
+  <data name="TimeWindowPresetOneHour" xml:space="preserve">
+    <value>1 ч</value>
+  </data>
+  <data name="TimeWindowMessageStartDateMissing" xml:space="preserve">
+    <value>Начало: выберите дату.</value>
+  </data>
+  <data name="TimeWindowMessageStartUnreadable" xml:space="preserve">
+    <value>Время начала: запишите как {0}.</value>
+  </data>
+  <data name="TimeWindowMessageEndDateMissing" xml:space="preserve">
+    <value>Конец: выберите дату.</value>
+  </data>
+  <data name="TimeWindowMessageEndUnreadable" xml:space="preserve">
+    <value>Время конца: запишите как {0}.</value>
+  </data>
+  <data name="TimeWindowMessageEndNotAfterStart" xml:space="preserve">
+    <value>Конец должен быть позже начала.</value>
+  </data>
+  <data name="TimeWindowMessageTimeSkipped" xml:space="preserve">
+    <value>Такого времени в этот день нет: часы переводились вперёд.</value>
+  </data>
+  <data name="TimeWindowMessageSpanOverLimit" xml:space="preserve">
+    <value>Окно длиннее {0} дней.</value>
+  </data>
+  <data name="TimeWindowMessageWidthUnreadable" xml:space="preserve">
+    <value>Ширина: запишите как {0}.</value>
+  </data>
+  <data name="TimeWindowMessageWidthOutOfRange" xml:space="preserve">
+    <value>Ширина должна быть от {0} до {1}.</value>
+  </data>
 </root>

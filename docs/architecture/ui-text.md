@@ -87,8 +87,11 @@ targets instead: measured on 2026-09-09, a cold build fails with
   numbers. A unit suffix glued to a number is part of the format, not a caption.
 - The CSV export's file format, which belongs to the file and not to the window: the non-finite spellings
   `NaN`, `Infinity` and `-Infinity` (`ArchiveCsvWriter`), and the time boxes' format `HH:mm:ss`
-  (`ExportRangeForm.TimeFieldFormat`). The header names follow the interface language; the delimiter, the decimal separator and the
+  (`WallClockRangeForm.TimeFieldFormat`). The header names follow the interface language; the delimiter, the decimal separator and the
   timestamp's millisecond separator follow the Windows regional settings (`#the-export-windows-text`).
+- The time window panel's field formats: the time boxes' `HH:mm:ss` (`WallClockRangeForm.TimeFieldFormat`,
+  the export's constant) and the width box's `h:mm:ss` (`WindowWidthText.FieldFormat`). Both are typed and
+  read with the invariant culture, and the messages take them as `{0}` (`#the-time-window-panels-text`).
 - Log message templates, in `Program.cs` and every `ILogger` call. The operator never reads them on
   the screen; the log is read by whoever triages the machine.
 - `AppSettingsError.Describe` and the other error messages, the two read names
@@ -296,7 +299,7 @@ Excel notice.
 | Key | Shown when |
 | --- | --- |
 | `ExportMessageStartDateMissing`, `ExportMessageEndDateMissing` | A date picker holds no date. |
-| `ExportMessageStartUnreadable`, `ExportMessageEndUnreadable` | A time box does not read as `ExportRangeForm.TimeFieldFormat`; the text takes the format as `{0}`. |
+| `ExportMessageStartUnreadable`, `ExportMessageEndUnreadable` | A time box does not read as `WallClockRangeForm.TimeFieldFormat`; the text takes the format as `{0}`. |
 | `ExportMessageEndNotAfterStart`, `ExportMessageSpanOverLimit`, `ExportMessageNoPenTicked` | The end is not after the start, the range is over `ExportRangeForm.MaxSpan` (`{0}` hours), no pen is ticked. |
 | `ExportProgress`, `ExportProgressUnknownTotal`, `ExportSuccess`, `ExportCancelled` | An export runs ("Written {0} of {1}", or "{0} rows written" while no count has landed; the total never falls below the rows written), ends ({0} rows, `{1}` the file name; the full path is the line's tooltip), or is cancelled. |
 | `ExportExcelNotice` | The count is above `ExportMessageLine.ExcelDataRowLimit` (1 048 575), the data rows Excel opens; the text takes the limit as `{0}`, grouped in the current culture. |
@@ -325,6 +328,34 @@ decimal sign is `,` and `,` otherwise, because the timestamp and the value are w
 (`CsvDialectTests`). A change of the language applies at the next
 start, as every other text does. The save dialog's suggested name is
 `semiplot_yyyyMMdd_HHmmss-yyyyMMdd_HHmmss.csv` with invariant digits in both languages.
+
+## The time window panel's text
+
+`Chart/TimeWindowPanel` reads `TimeWindowStartLabel`, `TimeWindowEndLabel` and `TimeWindowWidthLabel`
+("Start" / "Начало", "End" / "Конец", "Width" / "Ширина") for its three rows and `TimeWindowPresets`
+("Presets" / "Быстрый выбор") for the presets button. The menu items read `TimeWindowPresetOneMinute`,
+`TimeWindowPresetTwoMinutes`, `TimeWindowPresetThreeMinutes`, `TimeWindowPresetFiveMinutes`,
+`TimeWindowPresetTenMinutes`, `TimeWindowPresetThirtyMinutes` and `TimeWindowPresetOneHour` ("1 min" /
+"1 мин" .. "1 h" / "1 ч"), through `TimeWindowPanelViewModel.Presets`. The two date pickers reuse
+`ExportDateFormat` (`#the-export-windows-text`), so a date has one shape per language in both windows.
+
+The message line shows the first rule the form breaks, the edges' rules ahead of the width's
+(`trend-interaction.md#the-time-window-panel`), from `TimeWindowForm.Message`:
+
+| Key | Shown when |
+| --- | --- |
+| `TimeWindowMessageStartDateMissing` | The start picker holds no date. |
+| `TimeWindowMessageStartUnreadable` | The start time box does not read as `WallClockRangeForm.TimeFieldFormat`; the text takes the format as `{0}`. |
+| `TimeWindowMessageEndDateMissing` | The end picker holds no date. |
+| `TimeWindowMessageEndUnreadable` | The end time box does not read as `WallClockRangeForm.TimeFieldFormat`; the text takes the format as `{0}`. |
+| `TimeWindowMessageEndNotAfterStart` | The end is not after the start. |
+| `TimeWindowMessageTimeSkipped` | An edge is a local time the spring-forward change skips. |
+| `TimeWindowMessageSpanOverLimit` | The edges are more than `TrendNavigationModel.MaximumWidth` apart; the text takes its days as `{0}`. |
+| `TimeWindowMessageWidthUnreadable` | The width box does not read as `WindowWidthText.FieldFormat`; the text takes the format as `{0}`. |
+| `TimeWindowMessageWidthOutOfRange` | The width is outside `TrendNavigationModel.MinimumWidth` .. `MaximumWidth`; the text takes both, formatted by `WindowWidthText.Format`, as `{0}` and `{1}`. |
+
+The line always carries the `error` class, because it shows nothing but a broken rule. A failed day read
+reaches the message panel, not this line.
 
 ## Adding a key
 

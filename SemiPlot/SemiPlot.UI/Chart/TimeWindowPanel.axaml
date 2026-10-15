@@ -1,0 +1,130 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:chart="clr-namespace:SemiPlot.UI.Chart"
+             xmlns:text="clr-namespace:SemiPlot.UI.Localization"
+             mc:Ignorable="d"
+             d:DesignWidth="360"
+             x:Class="SemiPlot.UI.Chart.TimeWindowPanel"
+             x:DataType="chart:TimeWindowPanelViewModel"
+             Width="360"
+             Background="Transparent"
+             Focusable="True"
+             IsTabStop="False">
+
+    <UserControl.KeyBindings>
+        <KeyBinding Gesture="Escape"
+                    Command="{Binding CancelCommand}" />
+    </UserControl.KeyBindings>
+
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto"
+          ColumnDefinitions="Auto,Auto,*"
+          ColumnSpacing="14"
+          RowSpacing="10">
+
+        <TextBlock Grid.Row="0"
+                   Grid.Column="0"
+                   VerticalAlignment="Center"
+                   Text="{x:Static text:Resources.TimeWindowStartLabel}" />
+
+        <TextBox Grid.Row="0"
+                 Grid.Column="1"
+                 Name="TimeWindowStartTime"
+                 Width="110"
+                 Classes.invalid="{Binding Form.IsStartTimeInvalid}"
+                 Text="{Binding Form.StartTimeText}">
+            <TextBox.KeyBindings>
+                <KeyBinding Gesture="Enter"
+                            Command="{Binding CommitCommand}" />
+            </TextBox.KeyBindings>
+        </TextBox>
+
+        <CalendarDatePicker Grid.Row="0"
+                            Grid.Column="2"
+                            Name="TimeWindowStartDate"
+                            HorizontalAlignment="Stretch"
+                            SelectedDateFormat="Custom"
+                            CustomDateFormatString="{x:Static text:Resources.ExportDateFormat}"
+                            DisplayDateStart="{Binding FirstDay}"
+                            DisplayDateEnd="{Binding LastDay}"
+                            Classes.invalid="{Binding Form.IsStartDateInvalid}"
+                            SelectedDate="{Binding Form.StartDate}"
+                            KeyUp="OnPickerKeyUp" />
+
+        <TextBlock Grid.Row="1"
+                   Grid.Column="0"
+                   VerticalAlignment="Center"
+                   Text="{x:Static text:Resources.TimeWindowEndLabel}" />
+
+        <TextBox Grid.Row="1"
+                 Grid.Column="1"
+                 Name="TimeWindowEndTime"
+                 Width="110"
+                 Classes.invalid="{Binding Form.IsEndTimeInvalid}"
+                 Text="{Binding Form.EndTimeText}">
+            <TextBox.KeyBindings>
+                <KeyBinding Gesture="Enter"
+                            Command="{Binding CommitCommand}" />
+            </TextBox.KeyBindings>
+        </TextBox>
+
+        <CalendarDatePicker Grid.Row="1"
+                            Grid.Column="2"
+                            Name="TimeWindowEndDate"
+                            HorizontalAlignment="Stretch"
+                            SelectedDateFormat="Custom"
+                            CustomDateFormatString="{x:Static text:Resources.ExportDateFormat}"
+                            DisplayDateStart="{Binding FirstDay}"
+                            DisplayDateEnd="{Binding LastDay}"
+                            Classes.invalid="{Binding Form.IsEndDateInvalid}"
+                            SelectedDate="{Binding Form.EndDate}"
+                            KeyUp="OnPickerKeyUp" />
+
+        <TextBlock Grid.Row="2"
+                   Grid.Column="0"
+                   VerticalAlignment="Center"
+                   Text="{x:Static text:Resources.TimeWindowWidthLabel}" />
+
+        <TextBox Grid.Row="2"
+                 Grid.Column="1"
+                 Name="TimeWindowWidth"
+                 Width="110"
+                 Classes.invalid="{Binding Form.IsWidthInvalid}"
+                 Text="{Binding Form.WidthText}">
+            <TextBox.KeyBindings>
+                <KeyBinding Gesture="Enter"
+                            Command="{Binding CommitCommand}" />
+            </TextBox.KeyBindings>
+        </TextBox>
+
+        <DropDownButton Grid.Row="2"
+                        Grid.Column="2"
+                        Name="TimeWindowPresets"
+                        HorizontalAlignment="Stretch"
+                        Content="{x:Static text:Resources.TimeWindowPresets}">
+            <DropDownButton.Flyout>
+                <MenuFlyout ItemsSource="{Binding Presets}">
+                    <MenuFlyout.ItemContainerTheme>
+                        <ControlTheme TargetType="MenuItem"
+                                      BasedOn="{StaticResource {x:Type MenuItem}}"
+                                      x:DataType="chart:TimeWindowPreset">
+                            <Setter Property="Header" Value="{Binding Label}" />
+                            <Setter Property="Command"
+                                    Value="{Binding $parent[chart:TimeWindowPanel].((chart:TimeWindowPanelViewModel)DataContext).SetWidthCommand}" />
+                            <Setter Property="CommandParameter" Value="{Binding Width}" />
+                        </ControlTheme>
+                    </MenuFlyout.ItemContainerTheme>
+                </MenuFlyout>
+            </DropDownButton.Flyout>
+        </DropDownButton>
+
+        <TextBlock Grid.Row="3"
+                   Grid.ColumnSpan="3"
+                   Name="TimeWindowMessage"
+                   Classes="form-message error"
+                   Text="{Binding Form.Message}" />
+
+    </Grid>
+
+</UserControl>

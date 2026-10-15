@@ -44,6 +44,35 @@ public sealed class ChartAxisRegionTests
 		ChartAxisRegion.TryCreate(plot, axis).Should().BeNull();
 	}
 
+	[Fact]
+	public void TryCreateTimeAxis_AfterRender_ContainsTheBandUnderTheDataAreaOnly()
+	{
+		var (plot, _) = RenderedPlot();
+		var region = ChartAxisRegion.TryCreateTimeAxis(plot);
+
+		region.Should().NotBeNull();
+
+		var layout = plot.RenderManager.LastRender.Layout;
+		var dataRect = layout.DataRect;
+		var bandTop = dataRect.Bottom + layout.PanelOffsets[plot.Axes.Bottom];
+		var bandMiddle = bandTop + (layout.PanelSizes[plot.Axes.Bottom] / 2f);
+
+		region.Contains(dataRect.HorizontalCenter, bandMiddle).Should().BeTrue();
+		region.Contains(dataRect.HorizontalCenter, dataRect.VerticalCenter).Should().BeFalse("the data area is no axis");
+		region.Contains(dataRect.Left - 2f, bandMiddle).Should().BeFalse("the corner under the Y axis is no time axis");
+		region.Contains(dataRect.Right + 2f, bandMiddle).Should().BeFalse();
+	}
+
+	[Fact]
+	public void TryCreateTimeAxis_ForAHiddenAxis_ReturnsNoRegion()
+	{
+		var (plot, _) = RenderedPlot();
+		plot.Axes.Bottom.IsVisible = false;
+		plot.RenderInMemory(PlotWidth, PlotHeight);
+
+		ChartAxisRegion.TryCreateTimeAxis(plot).Should().BeNull();
+	}
+
 	private static (Plot Plot, IYAxis Axis) RenderedPlot()
 	{
 		var plot = new Plot();

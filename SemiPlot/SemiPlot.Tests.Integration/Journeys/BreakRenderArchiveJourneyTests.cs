@@ -73,6 +73,7 @@ public sealed class BreakRenderArchiveJourneyTests(
 			coordinator,
 			dataScheduler,
 			ImmediateScheduler.Instance,
+			TimeZoneInfo.Utc,
 			new MessagePanelViewModel(),
 			NullLogger<TrendChartViewModel>.Instance);
 

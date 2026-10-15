@@ -32,6 +32,8 @@ public sealed class ArchiveStatementTextTests
 	// The export writes the slice rows in the order they arrive, so the ascending order is the statement's,
 	// with the checklist order breaking a tie.
 	[InlineData(ArchiveStatements.ExportSliceRows, "ORDER BY t, array_position(@ids, id);")]
+	// The calendar takes the days as an ascending list.
+	[InlineData(ArchiveStatements.ArchiveDays, "ORDER BY 1;")]
 	public void AStatementEndsWithItsOuterOrdering(string statement, string ordering)
 	{
 		statement.ReplaceLineEndings("\n").Should().EndWith(ordering);
@@ -122,6 +124,13 @@ public sealed class ArchiveStatementTextTests
 	[InlineData(ArchiveStatements.ExportRowCount, new[] { "t >= @from AND t < @to" })]
 	[InlineData(
 		ArchiveStatements.ExportRowCount, new[] { "ORDER BY prior.t DESC", "LIMIT 1", "DISTINCT unnest(@ids)" })]
+	// A blackout day is a day without a raw row of a configured variable: a coarse row is not a sample, and
+	// rows of a pen outside the catalogue draw nothing.
+	[InlineData(ArchiveStatements.ArchiveDays, new[] { "AND l = 0", "FROM semiplot_tags tag" })]
+	// Without the ordering the probe reads the whole day as a bitmap before its limit takes one row.
+	[InlineData(ArchiveStatements.ArchiveDays, new[] { "ORDER BY t", "LIMIT 1" })]
+	[InlineData(
+		ArchiveStatements.ArchiveDays, new[] { "t >= day.start AND t < day.start + interval '1 day'" })]
 	public void AStatementCarriesTheClauseItsReaderDependsOn(string statement, string[] fragments)
 	{
 		foreach (var fragment in fragments)
@@ -144,6 +153,29 @@ public sealed class ArchiveStatementTextTests
 			TimeSpan.FromMinutes(1));
 
 		AssertBinderNamesTheStatementsOwnParameters(command, ArchiveStatements.BucketedHistoryWindow);
+	}
+
+	[Fact]
+	public void TheArchiveDaysBinderNamesExactlyTheStatementsOwnParameters()
+	{
+		using var command = new NpgsqlCommand(ArchiveStatements.ArchiveDays);
+
+		PostgresDataProvider.BindArchiveDays(command, new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31));
+
+		AssertBinderNamesTheStatementsOwnParameters(command, ArchiveStatements.ArchiveDays);
+	}
+
+	[Fact]
+	public void TheArchiveDaysBinderBindsEachDayAsAZonelessMidnight()
+	{
+		using var command = new NpgsqlCommand(ArchiveStatements.ArchiveDays);
+
+		PostgresDataProvider.BindArchiveDays(command, new DateOnly(2026, 3, 29), new DateOnly(2026, 10, 25));
+
+		command.Parameters["firstDay"].Value.Should().Be(new DateTime(2026, 3, 29, 0, 0, 0, DateTimeKind.Unspecified));
+		command.Parameters["lastDay"].Value.Should().Be(new DateTime(2026, 10, 25, 0, 0, 0, DateTimeKind.Unspecified));
+		command.Parameters.Select(parameter => ((DateTime)parameter.Value!).Kind)
+			.Should().AllBeEquivalentTo(DateTimeKind.Unspecified);
 	}
 
 	// A bucket is the window divided by the column target, and a window narrower than the target's own

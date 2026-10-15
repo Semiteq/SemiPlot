@@ -149,6 +149,7 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 				coordinator,
 				dataScheduler,
 				ImmediateScheduler.Instance,
+				TimeZoneInfo.Utc,
 				messagePanel,
 				NullLogger<TrendChartViewModel>.Instance);
 			var batches = new BatchCollector<RealtimeBatch>(coordinator.RealtimeBatches);

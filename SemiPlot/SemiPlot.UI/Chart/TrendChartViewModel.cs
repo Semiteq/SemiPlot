@@ -49,6 +49,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		TrendCoordinator coordinator,
 		IScheduler dataScheduler,
 		IScheduler uiScheduler,
+		TimeZoneInfo timeZone,
 		MessagePanelViewModel messagePanel,
 		ILogger<TrendChartViewModel> logger)
 	{
@@ -73,6 +74,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_windowEnd = Navigation.To;
 		Navigation.WindowChanged += OnNavigationWindowChanged;
 		AxisScale = new AxisScalePanelViewModel(this);
+		TimeWindow = new TimeWindowPanelViewModel(this, coordinator, uiScheduler, timeZone);
 
 		_disposables.Add(_coordinator.RealtimeBatches
 			.Subscribe(ApplyRealtimeBatch));
@@ -85,6 +87,8 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	public Plot Plot { get; } = new();
 
 	public AxisScalePanelViewModel AxisScale { get; }
+
+	public TimeWindowPanelViewModel TimeWindow { get; }
 
 	public int ActivePenId
 	{
@@ -176,6 +180,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		Navigation.WindowChanged -= OnNavigationWindowChanged;
 		_historyDebouncer.Dispose();
 		AxisScale.Dispose();
+		TimeWindow.Dispose();
 		_disposables.Dispose();
 		_redrawRequests.OnCompleted();
 		Plot.Dispose();
@@ -798,6 +803,11 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	public void ReportFailure(Exception failure)
 	{
 		_messagePanel.TryReportFailure(new ExceptionalError(failure), _logger);
+	}
+
+	public void ReportFailure(IReadOnlyList<IError> errors)
+	{
+		_messagePanel.TryReportFailure(errors, _logger);
 	}
 
 	private void RequestRedraw()

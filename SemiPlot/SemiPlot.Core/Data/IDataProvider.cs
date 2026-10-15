@@ -25,4 +25,10 @@ public interface IDataProvider
 		CancellationToken cancellationToken = default);
 
 	Task<Result<ArchiveExtent>> QueryArchiveExtentAsync();
+
+	// Archive wall-clock days, ascending: the days in [firstDay, lastDay] that hold a raw row of a catalogue pen.
+	Task<Result<IReadOnlyList<DateOnly>>> QueryArchiveDaysAsync(
+		DateOnly firstDay,
+		DateOnly lastDay,
+		CancellationToken cancellationToken = default);
 }

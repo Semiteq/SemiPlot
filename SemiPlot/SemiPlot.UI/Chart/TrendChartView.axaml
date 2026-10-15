@@ -11,6 +11,12 @@
              x:Class="SemiPlot.UI.Chart.TrendChartView"
              x:DataType="chart:TrendChartViewModel">
 
+    <UserControl.Resources>
+        <Flyout x:Key="TimeWindowFlyout" Placement="Pointer">
+            <chart:TimeWindowPanel />
+        </Flyout>
+    </UserControl.Resources>
+
     <Panel>
         <Decorator Name="PlotLayer">
             <Decorator.CacheMode>

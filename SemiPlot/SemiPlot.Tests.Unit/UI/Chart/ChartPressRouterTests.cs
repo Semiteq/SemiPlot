@@ -15,22 +15,56 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 public sealed class ChartPressRouterTests
 {
 	[Theory]
-	[InlineData(false, KeyModifiers.None, LeftButtonTool.Pan, ChartPressAction.PanOrPickPen)]
-	[InlineData(false, KeyModifiers.None, LeftButtonTool.DeltaPlacement, ChartPressAction.PlaceDeltaCursor)]
-	[InlineData(true, KeyModifiers.None, LeftButtonTool.Pan, ChartPressAction.EditAxisScale)]
-	[InlineData(true, KeyModifiers.None, LeftButtonTool.DeltaPlacement, ChartPressAction.EditAxisScale)]
-	[InlineData(false, KeyModifiers.Control, LeftButtonTool.Pan, ChartPressAction.ShiftActivePen)]
-	[InlineData(false, KeyModifiers.Control, LeftButtonTool.DeltaPlacement, ChartPressAction.ShiftActivePen)]
-	[InlineData(true, KeyModifiers.Control, LeftButtonTool.Pan, ChartPressAction.EditAxisScale)]
-	[InlineData(true, KeyModifiers.Control, LeftButtonTool.DeltaPlacement, ChartPressAction.EditAxisScale)]
-	[InlineData(false, KeyModifiers.Shift, LeftButtonTool.Pan, ChartPressAction.PanOrPickPen)]
+	[InlineData(ChartPressRegion.DataArea, KeyModifiers.None, LeftButtonTool.Pan, ChartPressAction.PanOrPickPen)]
+	[InlineData(
+		ChartPressRegion.DataArea,
+		KeyModifiers.None,
+		LeftButtonTool.DeltaPlacement,
+		ChartPressAction.PlaceDeltaCursor)]
+	[InlineData(ChartPressRegion.ActivePenAxis, KeyModifiers.None, LeftButtonTool.Pan, ChartPressAction.EditAxisScale)]
+	[InlineData(
+		ChartPressRegion.ActivePenAxis,
+		KeyModifiers.None,
+		LeftButtonTool.DeltaPlacement,
+		ChartPressAction.EditAxisScale)]
+	[InlineData(ChartPressRegion.DataArea, KeyModifiers.Control, LeftButtonTool.Pan, ChartPressAction.ShiftActivePen)]
+	[InlineData(
+		ChartPressRegion.DataArea,
+		KeyModifiers.Control,
+		LeftButtonTool.DeltaPlacement,
+		ChartPressAction.ShiftActivePen)]
+	[InlineData(
+		ChartPressRegion.ActivePenAxis,
+		KeyModifiers.Control,
+		LeftButtonTool.Pan,
+		ChartPressAction.EditAxisScale)]
+	[InlineData(
+		ChartPressRegion.ActivePenAxis,
+		KeyModifiers.Control,
+		LeftButtonTool.DeltaPlacement,
+		ChartPressAction.EditAxisScale)]
+	[InlineData(ChartPressRegion.DataArea, KeyModifiers.Shift, LeftButtonTool.Pan, ChartPressAction.PanOrPickPen)]
 	public void Route_SendsALeftPressToTheAxisEditThenCtrlThenTheTool(
-		bool isAxisRegionHit,
+		ChartPressRegion region,
 		KeyModifiers modifiers,
 		LeftButtonTool tool,
 		ChartPressAction expected)
 	{
-		ChartPressRouter.Route(isAxisRegionHit, modifiers, tool).Should().Be(expected);
+		ChartPressRouter.Route(region, modifiers, tool).Should().Be(expected);
+	}
+
+	[Theory]
+	[InlineData(KeyModifiers.None, LeftButtonTool.Pan, ChartPressAction.PanOrEditTimeWindow)]
+	[InlineData(KeyModifiers.None, LeftButtonTool.DeltaPlacement, ChartPressAction.PanOrEditTimeWindow)]
+	[InlineData(KeyModifiers.Shift, LeftButtonTool.Pan, ChartPressAction.PanOrEditTimeWindow)]
+	[InlineData(KeyModifiers.Control, LeftButtonTool.Pan, ChartPressAction.ShiftActivePen)]
+	[InlineData(KeyModifiers.Control, LeftButtonTool.DeltaPlacement, ChartPressAction.ShiftActivePen)]
+	public void Route_SendsATimeAxisPressAfterCtrlAndAheadOfTheTool(
+		KeyModifiers modifiers,
+		LeftButtonTool tool,
+		ChartPressAction expected)
+	{
+		ChartPressRouter.Route(ChartPressRegion.TimeAxis, modifiers, tool).Should().Be(expected);
 	}
 
 	[Theory]

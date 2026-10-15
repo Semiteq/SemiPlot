@@ -324,7 +324,10 @@ No abbreviations in names.
   release inside the 4 px slop picks a pen, `docs/architecture/trend-interaction.md`) vs delta
   placement, and the axis-region edit is a pre-branch ahead of it. A press with Ctrl held is the next
   pre-branch, after the axis-region edit and ahead of the tool: it shifts the active pen
-  (`ChartPressAction.ShiftActivePen`), and Ctrl is a held key, not a `LeftButtonTool` value. The bar's
+  (`ChartPressAction.ShiftActivePen`), and Ctrl is a held key, not a `LeftButtonTool` value. A press on
+  the time axis band is the last pre-branch, after Ctrl and ahead of the tool
+  (`ChartPressAction.PanOrEditTimeWindow`): a drag pans, and a release inside the slop opens the time
+  window panel (`docs/architecture/trend-interaction.md#the-time-window-panel`). The bar's
   `IsSticky` has a single writer (the `WindowChanged` handler refreshing from `Navigation.IsSticky`) — do
   not reintroduce imperative `IsSticky =` assignments.
 - A checkable menu item reads its flag `Mode=OneWay` and writes it only through the command it
@@ -362,7 +365,8 @@ No abbreviations in names.
   (`docs/architecture/data-integration.md#no-failure-stops-at-the-log`). Code-behind reaches the
   panel through its view model (`TrendChartViewModel.ReportFailure`, `MainWindowViewModel.ReportFailure`,
   `PenEditorViewModel.ReportFailure`, `StartupFailureViewModel.ReportFailure`,
-  `AxisScalePanelViewModel.ReportFailure`, `CsvExportViewModel.ReportFailure`).
+  `AxisScalePanelViewModel.ReportFailure`, `TimeWindowPanelViewModel.ReportFailure`,
+  `CsvExportViewModel.ReportFailure`).
 
 ### Data-source projects
 
@@ -377,9 +381,9 @@ No abbreviations in names.
   `git grep -l "IPenCatalogueEditor" -- SemiPlot/SemiPlot.UI/Chart SemiPlot/SemiPlot.UI/Legend`.
 - The export reads through `IArchiveRowReader` in `SemiPlot.Core/Data`, implemented by
   `PostgresArchiveRowReader` and registered by `AddPostgresData()` beside the editor. It works in the
-  archive's wall-clock time and is the one read path that skips `ArchiveTimeConverter`
-  (`docs/architecture/data-integration.md#time-boundary`). Only the export window reads it, and this prints
-  nothing: `git grep -l "IArchiveRowReader" -- SemiPlot/SemiPlot.UI/Chart SemiPlot/SemiPlot.UI/Legend`.
+  archive's wall-clock time and, with `IDataProvider.QueryArchiveDaysAsync`, is one of the two reads that
+  skip `ArchiveTimeConverter` (`docs/architecture/data-integration.md#time-boundary`). Only the export
+  window reads it, and this prints nothing: `git grep -l "IArchiveRowReader" -- SemiPlot/SemiPlot.UI/Chart SemiPlot/SemiPlot.UI/Legend`.
 - No startup code calls `IPenCatalogueEditor`. The container constructs it when `TrendWindow.Build`
   resolves it, and its constructor issues no statement.
   `RegisterNewPensAsync` has one caller, `PenEditorViewModel`:
@@ -407,7 +411,8 @@ No abbreviations in names.
 - The provider runs no cold-path reader: a failed read is mapped by `ArchiveExceptionMapper`, which
   stays synchronous, pure and unit-testable, and nothing opens a second connection to enrich the
   error. Each read supplies every relation its statement touches, which the detail line names: one
-  relation for the history and realtime reads, `semiplot_tags, trends` for the archive extent, and all
+  relation for the history and realtime reads, `semiplot_tags, trends` for the archive extent and the
+  archive days, and all
   three of `semiplot_tags`, `semiplot_groups` and `semiplot_pen_groups` for the pen catalogue.
 
 ---

@@ -785,7 +785,7 @@ the startup failure and the fatal catch alike — so a launcher can tell one fro
 
 The application reads the real archive and nothing else: the composition root registers
 `AddPostgresData`, and every member of `IDataProvider` is implemented over it — the pen catalogue,
-the archive extent, the windowed history read and the live-edge poll. The chart draws history and
+the archive extent, the archive days read, the windowed history read and the live-edge poll. The chart draws history and
 follows the archive as it grows. The pen editor writes the catalogue through `IPenCatalogueEditor`,
 and every running chart follows what it writes within 5 s (`#the-live-catalogue`), except the start
 values, which change nothing on screen (`#what-a-read-changes`). The export window writes the stored rows

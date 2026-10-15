@@ -78,6 +78,7 @@ internal sealed class TrendWindow : IDisposable
 			coordinator,
 			dataScheduler,
 			uiScheduler,
+			archiveZone,
 			messagePanel,
 			loggerFactory.CreateLogger<TrendChartViewModel>());
 

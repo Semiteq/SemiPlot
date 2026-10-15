@@ -175,16 +175,155 @@ public sealed class TrendChartViewModelTests
 	}
 
 	[AvaloniaFact]
-	public void PickPenAt_EmptySpace_LeavesTheActivePen()
+	public void PickPenAt_EmptySpace_KeepsTheActivePenAndDropsItsEmphasis()
 	{
 		var (viewModel, dataRect) = RenderTwoFlatPens(PickFirstValue, PickSecondValue);
-		var between = PixelOnLine(viewModel, 1, (PickFirstValue + PickSecondValue) / 2.0, dataRect);
-		DistanceTo(viewModel, 1, between, dataRect).Should().BeGreaterThan(PickClearancePixels);
-		DistanceTo(viewModel, 2, between, dataRect).Should().BeGreaterThan(PickClearancePixels);
+		var between = PixelBetweenTheLines(viewModel, dataRect);
+		var redraws = 0;
+		using var counter = viewModel.RedrawRequested.Subscribe(_ => redraws++);
 
 		viewModel.PickPenAt(between);
 
+		redraws.Should().Be(1);
 		viewModel.ActivePenId.Should().Be(1);
+		viewModel.Plot.PlottableList.Last().Should().BeSameAs(viewModel.FindPen(1)!.Line);
+		InkRatio(viewModel, StrokeProbe.Red, StrokeProbe.Green).Should().BeLessThan(StrokeProbe.ThinInkRatio);
+
+		viewModel.PickPenAt(between);
+
+		redraws.Should().Be(1, "a second miss has nothing left to thin");
+	}
+
+	[AvaloniaFact]
+	public void PickPenAt_BelowTheDataArea_DropsTheEmphasis()
+	{
+		var (viewModel, dataRect) = RenderTwoFlatPens(PickFirstValue, PickSecondValue);
+
+		viewModel.PickPenAt(new Pixel(dataRect.HorizontalCenter, dataRect.Bottom + PickClearancePixels));
+
+		viewModel.ActivePenId.Should().Be(1);
+		InkRatio(viewModel, StrokeProbe.Red, StrokeProbe.Green).Should().BeLessThan(StrokeProbe.ThinInkRatio);
+	}
+
+	[AvaloniaFact]
+	public void SetActivePen_OfTheActivePenAfterAMiss_EmphasizesItAgain()
+	{
+		var (viewModel, dataRect) = RenderTwoFlatPens(PickFirstValue, PickSecondValue);
+		viewModel.PickPenAt(PixelBetweenTheLines(viewModel, dataRect));
+
+		viewModel.SetActivePen(1);
+
+		InkRatio(viewModel, StrokeProbe.Red, StrokeProbe.Green).Should().BeGreaterThan(StrokeProbe.ThickInkRatio);
+	}
+
+	[AvaloniaFact]
+	public void PickPenAt_TheActivePensLineAfterAMiss_EmphasizesItAgain()
+	{
+		var (viewModel, dataRect) = RenderTwoFlatPens(PickFirstValue, PickSecondValue);
+		viewModel.PickPenAt(PixelBetweenTheLines(viewModel, dataRect));
+
+		viewModel.PickPenAt(PixelOnLine(viewModel, 1, PickFirstValue, dataRect));
+
+		InkRatio(viewModel, StrokeProbe.Red, StrokeProbe.Green).Should().BeGreaterThan(StrokeProbe.ThickInkRatio);
+	}
+
+	[AvaloniaFact]
+	public void SwitchingTheActivePenOffAfterAMiss_LeavesThePenTakingTheSlotThin()
+	{
+		var (viewModel, dataRect) = RenderTwoFlatPens(PickFirstValue, PickSecondValue);
+		viewModel.PickPenAt(PixelBetweenTheLines(viewModel, dataRect));
+
+		viewModel.SetPenVisibility(1, false);
+		viewModel.ActivePenId.Should().Be(2);
+		viewModel.SetPenVisibility(1, true);
+
+		viewModel.ActivePenId.Should().Be(2);
+		InkRatio(viewModel, StrokeProbe.Green, StrokeProbe.Red).Should().BeLessThan(StrokeProbe.ThinInkRatio);
+	}
+
+	[AvaloniaFact]
+	public void ACatalogueThatAddsAPenAfterAMiss_LeavesTheActivePenThin()
+	{
+		var (viewModel, dataRect) = RenderTwoFlatPens(PickFirstValue, PickSecondValue);
+		viewModel.PickPenAt(PixelBetweenTheLines(viewModel, dataRect));
+
+		viewModel.AddPen(new Pen(3, "Pen 3", ["Group B"], "#0000ff"));
+
+		viewModel.ActivePenId.Should().Be(1);
+		InkRatio(viewModel, StrokeProbe.Red, StrokeProbe.Green).Should().BeLessThan(StrokeProbe.ThinInkRatio);
+	}
+
+	[AvaloniaFact]
+	public void ACatalogueThatRemovesTheActivePenAfterAMiss_LeavesThePenTakingTheSlotThin()
+	{
+		const double ThirdValue = 50.0;
+		var (viewModel, dataRect) = RenderTwoFlatPens(PickFirstValue, PickSecondValue);
+		viewModel.PickPenAt(PixelBetweenTheLines(viewModel, dataRect));
+		var thirdPen = new Pen(3, "Pen 3", ["Group B"], "#0000ff");
+		AddFlatPen(viewModel, thirdPen, From.AddSeconds(PickWindowSeconds), ThirdValue);
+
+		viewModel.ApplyCatalogue([FakeDataProvider.SecondPen, thirdPen]);
+
+		viewModel.ActivePenId.Should().Be(2);
+		InkRatio(viewModel, StrokeProbe.Green, StrokeProbe.Blue).Should().BeLessThan(StrokeProbe.ThinInkRatio);
+	}
+
+	[AvaloniaFact]
+	public void ACatalogueThatLeavesNoPen_LeavesTheFirstPenSeatedNextThin()
+	{
+		var (viewModel, _) = RenderTwoFlatPens(PickFirstValue, PickSecondValue);
+
+		viewModel.ApplyCatalogue([]);
+		AddTwoFlatPens(
+			viewModel,
+			(FakeDataProvider.FirstPen, PickFirstValue),
+			(FakeDataProvider.SecondPen, PickSecondValue),
+			PickWindowSeconds);
+
+		viewModel.ActivePenId.Should().Be(1);
+		InkRatio(viewModel, StrokeProbe.Red, StrokeProbe.Green).Should().BeLessThan(StrokeProbe.ThinInkRatio);
+	}
+
+	[AvaloniaFact]
+	public void PickPenAt_WithEveryPenSwitchedOff_DropsTheEmphasis()
+	{
+		var (viewModel, _) = RenderTwoFlatPens(PickFirstValue, PickSecondValue);
+		viewModel.SetPenVisibility(1, false);
+		viewModel.SetPenVisibility(2, false);
+
+		viewModel.PickPenAt(new Pixel(FlatPlotWidth / 2.0, FlatPlotHeight / 2.0));
+		viewModel.SetPenVisibility(1, true);
+		viewModel.SetPenVisibility(2, true);
+
+		viewModel.ActivePenId.Should().Be(1);
+		InkRatio(viewModel, StrokeProbe.Red, StrokeProbe.Green).Should().BeLessThan(StrokeProbe.ThinInkRatio);
+	}
+
+	[AvaloniaFact]
+	public void PickPenAt_AfterDispose_Throws()
+	{
+		var (viewModel, dataRect) = RenderTwoFlatPens(PickFirstValue, PickSecondValue);
+		var between = PixelBetweenTheLines(viewModel, dataRect);
+
+		viewModel.Dispose();
+
+		viewModel.Invoking(chart => chart.PickPenAt(between)).Should().Throw<ObjectDisposedException>();
+	}
+
+	[AvaloniaFact]
+	public void TheFirstPensSeated_LeaveTheActivePenThin()
+	{
+		var (viewModel, _, _, _) = CreateViewModel(RealtimeInterval);
+
+		AddTwoFlatPens(
+			viewModel,
+			(FakeDataProvider.FirstPen, PickFirstValue),
+			(FakeDataProvider.SecondPen, PickSecondValue),
+			PickWindowSeconds);
+		viewModel.Plot.RenderInMemory(FlatPlotWidth, FlatPlotHeight);
+
+		viewModel.ActivePenId.Should().Be(1);
+		InkRatio(viewModel, StrokeProbe.Red, StrokeProbe.Green).Should().BeLessThan(StrokeProbe.ThinInkRatio);
 	}
 
 	[AvaloniaFact]
@@ -2444,6 +2583,15 @@ public sealed class TrendChartViewModelTests
 			activePenId);
 
 		return (viewModel, dataRect);
+	}
+
+	private static Pixel PixelBetweenTheLines(TrendChartViewModel viewModel, PixelRect dataRect)
+	{
+		var between = PixelOnLine(viewModel, 1, (PickFirstValue + PickSecondValue) / 2.0, dataRect);
+		DistanceTo(viewModel, 1, between, dataRect).Should().BeGreaterThan(PickClearancePixels);
+		DistanceTo(viewModel, 2, between, dataRect).Should().BeGreaterThan(PickClearancePixels);
+
+		return between;
 	}
 
 	private static double DistanceTo(TrendChartViewModel viewModel, int penId, Pixel click, PixelRect dataRect)

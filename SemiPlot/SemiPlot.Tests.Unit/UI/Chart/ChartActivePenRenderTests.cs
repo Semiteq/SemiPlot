@@ -26,7 +26,6 @@ public sealed class ChartActivePenRenderTests
 	private const int SecondPenId = 2;
 	private const double LowerLineValue = 30.0;
 	private const double UpperLineValue = 70.0;
-	private const double ActiveInkRatio = 1.5;
 
 	[AvaloniaTheory]
 	[InlineData(1, StrokeProbe.Red, StrokeProbe.Blue)]
@@ -35,8 +34,8 @@ public sealed class ChartActivePenRenderTests
 	{
 		var (_, pixels, column, dataRect) = RenderWithActivePen(activePenId, LowerLineValue, UpperLineValue);
 
-		InkOf(pixels, dataRect, column, activeChannel).Should().BeGreaterThan(
-			InkOf(pixels, dataRect, column, otherChannel) * ActiveInkRatio);
+		StrokeProbe.InkOf(pixels, dataRect, column, activeChannel).Should().BeGreaterThan(
+			StrokeProbe.InkOf(pixels, dataRect, column, otherChannel) * StrokeProbe.ThickInkRatio);
 	}
 
 	[AvaloniaFact]
@@ -71,19 +70,6 @@ public sealed class ChartActivePenRenderTests
 			viewModel.Plot.GetPixel(new Coordinates(probeX, ChartTestBuilder.FlatPlotAxisMin)).X);
 
 		return (viewModel, pixels, column, dataRect);
-	}
-
-	// A channel's lead over the other two sums to 255 per pixel of line width, whatever the antialiasing does.
-	private static double InkOf(byte[,,] pixels, PixelRect dataRect, int column, int channel)
-	{
-		var ink = 0.0;
-		for (var row = (int)Math.Ceiling(dataRect.Top); row <= (int)Math.Floor(dataRect.Bottom); row++)
-		{
-			var others = Math.Max(pixels[row, column, (channel + 1) % 3], pixels[row, column, (channel + 2) % 3]);
-			ink += Math.Max(0, pixels[row, column, channel] - others);
-		}
-
-		return ink;
 	}
 
 	private static List<int> RowsOf(byte[,,] pixels, PixelRect dataRect, int column, int channel)

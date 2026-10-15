@@ -618,7 +618,7 @@ element, so two reads of one stored pen are equal. A read that changes nothing e
 | A changed `enabled_on_start` | Nothing changes on screen: the flag is the visibility a pen starts with. |
 | A changed `log_scale_on_start` | Nothing changes on screen: the flag is the axis type a pen starts with, applied when the pen enters the chart and by `RestoreInitialScale`, which reads the flag the latest read stored. |
 | A new pen | It joins with the visibility its `enabled_on_start` gives it, with its history and its live edge. |
-| A pen gone from the catalogue | It leaves the chart. When it was the active pen, the first visible pen in catalogue order takes the slot. |
+| A pen gone from the catalogue | It leaves the chart. When it was the active pen, the first visible pen in catalogue order takes the slot and keeps the current emphasis: after an empty click it draws 1 px wide. A read that leaves no pen clears the emphasis, so the next pen seated draws 1 px wide, as in a new window (`charting.md`, Active stroke). |
 
 A delta also puts the chart's pens in the order of the read, and any change rebuilds the sidebar from
 the chart's pens. The sidebar keeps its width and its expanded state, and every pen keeps its

@@ -41,6 +41,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	private readonly Subject<Unit> _redrawRequests = new();
 	private bool _isDisposed;
 	private bool _isHistoryStarted;
+	private bool _isActivePenEmphasized;
 	private DateTime _windowEnd;
 	private DateTime _windowStart;
 
@@ -234,7 +235,12 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 				}
 
 				SettleActivePen();
-				_penSet.Emphasize(ActivePenId);
+				if (HasNoPens)
+				{
+					_isActivePenEmphasized = false;
+				}
+
+				RestyleActivePen();
 				ApplyAxisModel();
 			}
 		}
@@ -280,7 +286,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		}
 
 		ActivateAVisiblePen();
-		EmphasizeActivePen();
+		RestyleActivePen();
 		this.RaisePropertyChanged(nameof(DrawnPenId));
 
 		// docs/architecture/charting.md#applying-a-catalogue-read
@@ -332,7 +338,8 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		}
 
 		ActivePenId = penId;
-		EmphasizeActivePen();
+		_isActivePenEmphasized = true;
+		RestyleActivePen();
 		ApplyAxisModel();
 		RequestRedraw();
 
@@ -341,10 +348,28 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	public void PickPenAt(Pixel click)
 	{
+		ObjectDisposedException.ThrowIf(_isDisposed, this);
+
 		if (_penSet.PenNearest(click, Plot.LastRender.DataRect, ActivePenId) is { } penId)
 		{
 			SetActivePen(penId);
 		}
+		else
+		{
+			DropEmphasis();
+		}
+	}
+
+	private void DropEmphasis()
+	{
+		if (!_isActivePenEmphasized)
+		{
+			return;
+		}
+
+		_isActivePenEmphasized = false;
+		RestyleActivePen();
+		RequestRedraw();
 	}
 
 	public void BeginDrag()
@@ -550,11 +575,11 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	// Only the plot edit runs under the lock: a notification raised there deadlocks against the render thread
 	// (docs/architecture/charting.md#per-pen-plottable-envelopeline).
-	private void EmphasizeActivePen()
+	private void RestyleActivePen()
 	{
 		lock (Plot.Sync)
 		{
-			_penSet.Emphasize(ActivePenId);
+			_penSet.RestyleActiveLine(ActivePenId, _isActivePenEmphasized);
 		}
 	}
 

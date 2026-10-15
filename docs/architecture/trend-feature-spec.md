@@ -111,8 +111,8 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 **Definition.** One pen can be "active"; delta measurements (CU-3) and context operations apply to the active pen. The active pen is chosen from the legend / by click.
 **Acceptance.** UI: selecting the active pen is reflected in the legend; Δy is measured against the active pen.
 **As built.** A left click in pan mode within 6 px of a visible pen's line and a click on its sidebar row both select the pen
-through `TrendChartViewModel.SetActivePen`; the active line is drawn 2 px wide above the others
-(`trend-interaction.md`, "Navigation & cursors").
+through `TrendChartViewModel.SetActivePen`; the picked line is drawn 2 px wide above the others
+(`trend-interaction.md`, "Navigation & cursors"). The window opens with the first visible pen active and drawn 1 px wide. A click farther than 6 px from every line keeps the pen active and draws its line 1 px wide until a click on a line or a sidebar row emphasizes a pen again.
 
 ### PN-7 — Line construction methods: Bézier and bad values (SHOULD)
 **Definition.** Additional segments (Bézier2/Bézier3) and a render mode for untrustworthy values (None/Dashed/Line).

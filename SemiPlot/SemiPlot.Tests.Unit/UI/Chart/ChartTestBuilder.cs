@@ -1,5 +1,7 @@
 using System.Reactive.Concurrency;
 
+using AwesomeAssertions;
+
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Reactive.Testing;
@@ -14,7 +16,7 @@ using SemiPlot.UI.Messages;
 
 namespace SemiPlot.Tests.Unit.UI.Chart;
 
-/// <summary>The charts the chart, sidebar and main window tests build, and the one way they add a pen.</summary>
+/// <summary>The charts the chart, sidebar and main window tests build, their pens and their ink ratio.</summary>
 internal static class ChartTestBuilder
 {
 	/// <summary>The chart's own debounce window: one advance past it releases a queued history request.</summary>
@@ -127,28 +129,58 @@ internal static class ChartTestBuilder
 		int activePenId)
 	{
 		var viewModel = CreateViewModel(RealtimeInterval).ViewModel;
-		var windowEnd = From.AddSeconds(windowSeconds);
-		AddFlatPen(viewModel, first.Pen, windowEnd, first.Value);
-		AddFlatPen(viewModel, second.Pen, windowEnd, second.Value);
+		AddTwoFlatPens(viewModel, first, second, windowSeconds);
+		viewModel.SetActivePen(activePenId);
 
 		var plot = viewModel.Plot;
-		plot.Axes.SetLimitsX(LocalTimeAxis.ToAxis(From), LocalTimeAxis.ToAxis(windowEnd));
-		viewModel.SetActivePen(activePenId);
-		foreach (var penId in new[] { first.Pen.PenId, second.Pen.PenId })
-		{
-			plot.Axes.SetLimitsY(FlatPlotAxisMin, FlatPlotAxisMax, viewModel.FindPen(penId)!.Line.Axes.YAxis);
-		}
-
 		using var image = plot.GetImage(FlatPlotWidth, FlatPlotHeight);
 
 		return (viewModel, image.GetArrayRGB(), plot.RenderManager.LastRender.Layout.DataRect);
 	}
 
-	private static void AddFlatPen(TrendChartViewModel viewModel, Pen pen, DateTime windowEnd, double value)
+	/// <summary>Adds two pens, each one flat line over the window that starts at <see cref="From"/>.</summary>
+	public static void AddTwoFlatPens(
+		TrendChartViewModel viewModel,
+		(Pen Pen, double Value) first,
+		(Pen Pen, double Value) second,
+		int windowSeconds)
+	{
+		var windowEnd = From.AddSeconds(windowSeconds);
+		AddFlatPen(viewModel, first.Pen, windowEnd, first.Value);
+		AddFlatPen(viewModel, second.Pen, windowEnd, second.Value);
+		viewModel.Plot.Axes.SetLimitsX(LocalTimeAxis.ToAxis(From), LocalTimeAxis.ToAxis(windowEnd));
+	}
+
+	/// <summary>Adds one pen drawn flat from <see cref="From"/>, its scale pinned to the flat plot's span.</summary>
+	public static void AddFlatPen(TrendChartViewModel viewModel, Pen pen, DateTime windowEnd, double value)
 	{
 		viewModel.AddPen(pen).LoadHistory(
 			new PenHistoryEnvelope(pen.PenId, [From, windowEnd], [value, value], [value, value], [value, value]),
 			windowEnd);
+
+		// An Auto pen with no envelope scales to (0, 1), which takes a flat line out of the data area.
+		viewModel.SetAxisLimits(pen.PenId, FlatPlotAxisMin, FlatPlotAxisMax);
+	}
+
+	/// <summary>One channel's ink over another's in the data area's middle column, the last render repeated.</summary>
+	public static double InkRatio(TrendChartViewModel viewModel, int numeratorChannel, int denominatorChannel)
+	{
+		var plot = viewModel.Plot;
+		var figureRect = plot.RenderManager.LastRender.FigureRect;
+		var dataRectBefore = plot.RenderManager.LastRender.Layout.DataRect;
+
+		using var image = plot.GetImage((int)figureRect.Width, (int)figureRect.Height);
+
+		var dataRect = plot.RenderManager.LastRender.Layout.DataRect;
+		dataRect.Should().Be(dataRectBefore, "a measurement must leave the pointer maths where it was");
+		var pixels = image.GetArrayRGB();
+		var column = (int)Math.Round(dataRect.HorizontalCenter);
+		var numeratorInk = StrokeProbe.InkOf(pixels, dataRect, column, numeratorChannel);
+		var denominatorInk = StrokeProbe.InkOf(pixels, dataRect, column, denominatorChannel);
+		numeratorInk.Should().BeGreaterThan(0.0, "the measured line must cross the middle of the data area");
+		denominatorInk.Should().BeGreaterThan(0.0, "the reference line must cross the middle of the data area");
+
+		return numeratorInk / denominatorInk;
 	}
 
 	/// <summary>Adds one pen after the ones the chart shows, as a catalogue read naming it does.</summary>

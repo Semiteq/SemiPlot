@@ -21,11 +21,17 @@ internal static class HeadlessInput
 	/// <summary>Clicks <paramref name="controlPoint"/>, a point in <paramref name="control"/>'s own coordinates.</summary>
 	internal static void Click(TopLevel topLevel, Control control, Point controlPoint)
 	{
+		Click(topLevel, control, controlPoint, RawInputModifiers.None);
+	}
+
+	/// <summary>Clicks <paramref name="controlPoint"/> with <paramref name="modifiers"/> held through the click.</summary>
+	internal static void Click(TopLevel topLevel, Control control, Point controlPoint, RawInputModifiers modifiers)
+	{
 		var target = control.TranslatePoint(controlPoint, topLevel)
 			?? throw new InvalidOperationException("The control is not in the top level's visual tree.");
 
-		topLevel.MouseDown(target, MouseButton.Left);
-		topLevel.MouseUp(target, MouseButton.Left);
+		topLevel.MouseDown(target, MouseButton.Left, modifiers);
+		topLevel.MouseUp(target, MouseButton.Left, modifiers);
 		Dispatcher.UIThread.RunJobs();
 	}
 

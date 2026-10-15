@@ -462,9 +462,12 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   readout `Border`), suppressed during drag / delta mode.
 - `Chart/LeftButtonTool` (enum `Pan | DeltaPlacement`) — the single left-button gesture state, sourced
   from the navigation bar's delta toggle.
-- `Chart/ChartAxisRegion` — Y-axis click-region hit-test (the axis panel band beside the data area).
-- `Chart/ChartPressRouter` — the pure routing of a left press (`EditAxisScale`, `PlaceDeltaCursor`,
-  `PanOrPickPen`) and the 4 px click slop that separates a pick from a pan.
+- `Chart/ChartAxisRegion` — Y-axis region hit-test for the press (`EditAxisScale`) and the wheel
+  (`ScaleActivePen`): the axis panel band beside the data area.
+- `Chart/ChartPressRouter` — the pure routing of a left press (`EditAxisScale`, `ShiftActivePen`,
+  `PlaceDeltaCursor`, `PanOrPickPen`) and the 4 px click slop that separates a pick from a pan.
+- `Chart/ChartWheelRouter` — the pure routing of a wheel event (`ScaleActivePen`, `ShiftActivePen`,
+  `PanTime`, `ZoomTime`, `None`) and its notch sign (`trend-interaction.md`, "The wheel map").
 - `Chart/AxisScalePanel` + `AxisScalePanelViewModel` — the flyout that edits the drawn pen's two bounds
   and its axis type (`trend-interaction.md#the-axis-scale-panel`); `TrendChartViewModel.AxisScale` owns
   the view model.
@@ -602,6 +605,9 @@ quoting). `SemiPlot.Core.Export.ArchiveRowSlices` holds the 15 minute slice widt
   axis it holds (Applying a catalogue read, below).
 - `LogAxis` - the log10 projection with the pinned floor, the tick choice and the log minimum rule
   (`#log10-y-axis`).
+- `PenRangeGesture` — `Shift` and `Scale` of a pen's `(min, max)` in axis space (decades on a log10 axis);
+  null keeps the range for a non-finite result, a span not above zero or a log minimum
+  `LogAxis.AdmitsMinimum` refuses (`trend-interaction.md`, "Mouse gestures on the active pen's scale").
 - `PenValueFormat` — the `0.###` fallback mask, the character rule that accepts a stored mask, and the
   render under `CultureInfo.CurrentCulture`, for the sidebar row, the hover readout and the major labels
   of a log axis. The rule runs once, in `PostgresDataProvider.ReadPen`,

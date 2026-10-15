@@ -21,11 +21,14 @@ namespace SemiPlot.UI.Chart;
 
 public partial class TrendChartView : UserControl
 {
-	private const double ZoomInFactor = 0.8;
-	private const double ZoomOutFactor = 1.25;
+	private const double WheelNarrowFactor = 0.8;
+	private const double WheelWidenFactor = 1.25;
+	private const double WheelPanFraction = 0.1;
+	private const double WheelShiftFraction = 0.1;
 
 	private static readonly Cursor _handCursor = new(StandardCursorType.Hand);
 	private static readonly Cursor _grabbingCursor = new(StandardCursorType.SizeAll);
+	private static readonly Cursor _penShiftCursor = new(StandardCursorType.SizeNorthSouth);
 
 	// ScottPlot's own constructor seeds the render events with an empty delegate; this restores that state
 	// when the view drops the last handler.
@@ -35,8 +38,7 @@ public partial class TrendChartView : UserControl
 	private readonly CompositeDisposable _disposables = [];
 	private VerticalLine? _deltaFirstLine;
 	private VerticalLine? _deltaSecondLine;
-	private Point? _dragOrigin;
-	private bool _panStarted;
+	private ChartDrag? _drag;
 	private int _frameSequence;
 	private int? _pendingFrame;
 
@@ -272,10 +274,57 @@ public partial class TrendChartView : UserControl
 			return;
 		}
 
-		var anchor = AnchorAt(eventArgs.GetPosition(PlotControl));
-		var factor = eventArgs.Delta.Y > 0 ? ZoomInFactor : ZoomOutFactor;
-		_viewModel.Navigation.ZoomAt(factor, anchor);
+		var position = eventArgs.GetPosition(PlotControl);
+		var gesture = ChartWheelRouter.Route(IsOverActiveAxis(position), eventArgs.KeyModifiers, eventArgs.Delta);
+
+		switch (gesture.Action)
+		{
+			case ChartWheelAction.ZoomTime:
+				_viewModel.Navigation.ZoomAt(SpanFactorFor(gesture.Notch), AnchorAt(position));
+
+				break;
+
+			case ChartWheelAction.PanTime:
+				PanTimeByNotch(gesture.Notch);
+
+				break;
+
+			case ChartWheelAction.ShiftActivePen:
+				_viewModel.ShiftActivePen(WheelShiftFraction * gesture.Notch);
+
+				break;
+
+			case ChartWheelAction.ScaleActivePen:
+				_viewModel.ScaleActivePen(SpanFactorFor(gesture.Notch), AnchorFractionAt(position));
+
+				break;
+
+			default:
+				return;
+		}
+
 		eventArgs.Handled = true;
+	}
+
+	private static double SpanFactorFor(int notch)
+	{
+		return notch > 0 ? WheelNarrowFactor : WheelWidenFactor;
+	}
+
+	// Wheel down pans toward newer data.
+	private void PanTimeByNotch(int notch)
+	{
+		var navigation = _viewModel!.Navigation;
+		var width = navigation.To - navigation.From;
+		navigation.PanBy(width * (WheelPanFraction * -notch));
+	}
+
+	// The axis region already bounds y to the data rect.
+	private double AnchorFractionAt(Point position)
+	{
+		var dataRect = PlotControl.Plot.LastRender.DataRect;
+
+		return (dataRect.Bottom - position.Y) / dataRect.Height;
 	}
 
 	private void OnPointerPressed(object? sender, PointerPressedEventArgs eventArgs)
@@ -286,7 +335,10 @@ public partial class TrendChartView : UserControl
 		}
 
 		var position = eventArgs.GetPosition(PlotControl);
-		var action = ChartPressRouter.Route(IsOverActiveAxis(position), _viewModel.ActiveLeftButtonTool);
+		var action = ChartPressRouter.Route(
+			IsOverActiveAxis(position),
+			eventArgs.KeyModifiers,
+			_viewModel.ActiveLeftButtonTool);
 
 		switch (action)
 		{
@@ -304,7 +356,7 @@ public partial class TrendChartView : UserControl
 				break;
 
 			default:
-				BeginPan(eventArgs);
+				BeginDrag(eventArgs, action);
 
 				break;
 		}
@@ -325,11 +377,11 @@ public partial class TrendChartView : UserControl
 		}
 	}
 
-	private void BeginPan(PointerPressedEventArgs eventArgs)
+	private void BeginDrag(PointerPressedEventArgs eventArgs, ChartPressAction action)
 	{
-		_dragOrigin = eventArgs.GetPosition(PlotControl);
+		_drag = new ChartDrag(eventArgs.GetPosition(PlotControl), action, IsStarted: false);
 		_viewModel!.BeginDrag();
-		PlotControl.Cursor = _grabbingCursor;
+		PlotControl.Cursor = action == ChartPressAction.ShiftActivePen ? _penShiftCursor : _grabbingCursor;
 		eventArgs.Pointer.Capture(PlotControl);
 
 		HideCursorOverlay();
@@ -345,17 +397,15 @@ public partial class TrendChartView : UserControl
 
 		var current = eventArgs.GetPosition(PlotControl);
 
-		if (_dragOrigin is { } origin)
+		if (_drag is { } drag)
 		{
-			if (!_panStarted && !ChartPressRouter.IsPastClickSlop(origin, current))
+			if (!drag.IsStarted && !ChartPressRouter.IsPastClickSlop(drag.Origin, current))
 			{
 				return;
 			}
 
-			_panStarted = true;
-			var delta = AnchorAt(origin) - AnchorAt(current);
-			_dragOrigin = current;
-			_viewModel.Navigation.PanBy(delta);
+			_drag = drag with { Origin = current, IsStarted = true };
+			ContinueDrag(drag, current);
 
 			return;
 		}
@@ -364,20 +414,32 @@ public partial class TrendChartView : UserControl
 		RepositionCursorOverlay();
 	}
 
+	private void ContinueDrag(ChartDrag drag, Point current)
+	{
+		if (drag.Action == ChartPressAction.ShiftActivePen)
+		{
+			var dataAreaHeight = PlotControl.Plot.LastRender.DataRect.Height;
+			_viewModel!.ShiftActivePen((drag.Origin.Y - current.Y) / dataAreaHeight);
+
+			return;
+		}
+
+		_viewModel!.Navigation.PanBy(AnchorAt(drag.Origin) - AnchorAt(current));
+	}
+
 	private void OnPointerReleased(object? sender, PointerReleasedEventArgs eventArgs)
 	{
-		if (_dragOrigin is not { } pressPoint || eventArgs.InitialPressMouseButton != MouseButton.Left)
+		if (_drag is not { } drag || eventArgs.InitialPressMouseButton != MouseButton.Left)
 		{
 			return;
 		}
 
-		var panned = _panStarted;
 		// The view holds the capture here, so releasing it raises PointerCaptureLost, which ends the drag.
 		eventArgs.Pointer.Capture(null);
 
-		if (!panned)
+		if (!drag.IsStarted && drag.Action == ChartPressAction.PanOrPickPen)
 		{
-			_viewModel?.PickPenAt(ToPixel(pressPoint));
+			_viewModel?.PickPenAt(ToPixel(drag.Origin));
 		}
 	}
 
@@ -385,7 +447,7 @@ public partial class TrendChartView : UserControl
 	// release path's cleanup so drag state, grab cursor and hover suppression do not stay stuck.
 	private void OnPointerCaptureLost(object? sender, PointerCaptureLostEventArgs eventArgs)
 	{
-		if (_dragOrigin is null)
+		if (_drag is null)
 		{
 			return;
 		}
@@ -395,8 +457,7 @@ public partial class TrendChartView : UserControl
 
 	private void EndDrag()
 	{
-		_dragOrigin = null;
-		_panStarted = false;
+		_drag = null;
 		_viewModel?.EndDrag();
 		PlotControl.Cursor = _handCursor;
 	}
@@ -505,4 +566,7 @@ public partial class TrendChartView : UserControl
 
 		return LocalTimeAxis.FromAxis(x);
 	}
+
+	/// <summary>docs/architecture/trend-interaction.md#navigation--cursors</summary>
+	private readonly record struct ChartDrag(Point Origin, ChartPressAction Action, bool IsStarted);
 }

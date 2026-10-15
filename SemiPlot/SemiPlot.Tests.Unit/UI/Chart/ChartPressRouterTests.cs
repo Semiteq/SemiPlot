@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Input;
 
 using AwesomeAssertions;
 
@@ -14,16 +15,22 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 public sealed class ChartPressRouterTests
 {
 	[Theory]
-	[InlineData(false, LeftButtonTool.Pan, ChartPressAction.PanOrPickPen)]
-	[InlineData(false, LeftButtonTool.DeltaPlacement, ChartPressAction.PlaceDeltaCursor)]
-	[InlineData(true, LeftButtonTool.Pan, ChartPressAction.EditAxisScale)]
-	[InlineData(true, LeftButtonTool.DeltaPlacement, ChartPressAction.EditAxisScale)]
-	public void Route_SendsALeftPressToTheAxisEditBeforeTheToolAndOtherwiseToTheTool(
+	[InlineData(false, KeyModifiers.None, LeftButtonTool.Pan, ChartPressAction.PanOrPickPen)]
+	[InlineData(false, KeyModifiers.None, LeftButtonTool.DeltaPlacement, ChartPressAction.PlaceDeltaCursor)]
+	[InlineData(true, KeyModifiers.None, LeftButtonTool.Pan, ChartPressAction.EditAxisScale)]
+	[InlineData(true, KeyModifiers.None, LeftButtonTool.DeltaPlacement, ChartPressAction.EditAxisScale)]
+	[InlineData(false, KeyModifiers.Control, LeftButtonTool.Pan, ChartPressAction.ShiftActivePen)]
+	[InlineData(false, KeyModifiers.Control, LeftButtonTool.DeltaPlacement, ChartPressAction.ShiftActivePen)]
+	[InlineData(true, KeyModifiers.Control, LeftButtonTool.Pan, ChartPressAction.EditAxisScale)]
+	[InlineData(true, KeyModifiers.Control, LeftButtonTool.DeltaPlacement, ChartPressAction.EditAxisScale)]
+	[InlineData(false, KeyModifiers.Shift, LeftButtonTool.Pan, ChartPressAction.PanOrPickPen)]
+	public void Route_SendsALeftPressToTheAxisEditThenCtrlThenTheTool(
 		bool isAxisRegionHit,
+		KeyModifiers modifiers,
 		LeftButtonTool tool,
 		ChartPressAction expected)
 	{
-		ChartPressRouter.Route(isAxisRegionHit, tool).Should().Be(expected);
+		ChartPressRouter.Route(isAxisRegionHit, modifiers, tool).Should().Be(expected);
 	}
 
 	[Theory]

@@ -440,6 +440,35 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			settings => settings with { Mode = ScaleMode.Manual, ManualMin = min, ManualMax = max });
 	}
 
+	/// <summary>Moves both active-pen limits by a fraction of its span; a positive fraction raises the line.</summary>
+	public void ShiftActivePen(double fraction)
+	{
+		ApplyActivePenGesture(scale => PenRangeGesture.Shift(scale.Min, scale.Max, scale.IsLogarithmic, fraction));
+	}
+
+	/// <summary>Scales the active pen's span about the value at the anchor fraction (0 bottom, 1 top).</summary>
+	public void ScaleActivePen(double factor, double anchorFraction)
+	{
+		ApplyActivePenGesture(
+			scale => PenRangeGesture.Scale(scale.Min, scale.Max, scale.IsLogarithmic, factor, anchorFraction));
+	}
+
+	// docs/architecture/trend-interaction.md#single-chart--time-behavior
+	private void ApplyActivePenGesture(Func<PenScale, (double Min, double Max)?> gesture)
+	{
+		if (!MayDrawAxisFor(ActivePenId)
+			|| !_scalesByPenId.TryGetValue(ActivePenId, out var scale)
+			|| gesture(scale) is not { } range)
+		{
+			return;
+		}
+
+		if (SetAxisLimits(ActivePenId, range.Min, range.Max))
+		{
+			AxisScale.CloseWhenOpenFor(ActivePenId);
+		}
+	}
+
 	/// <summary>
 	/// False for a pen the chart does not hold, or for the flag going on over a manual minimum at or below zero.
 	/// </summary>

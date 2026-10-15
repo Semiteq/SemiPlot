@@ -35,11 +35,18 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 [Trait("Category", "Unit")]
 public sealed class TrendChartViewModelTests
 {
+	public enum RangeGesture
+	{
+		Shift,
+		Scale
+	}
+
 	private const int PickWindowSeconds = 60;
 	private const double PickFirstValue = 20.0;
 	private const double PickSecondValue = 80.0;
 	private const double PickClearancePixels = 8.0;
 	private const double PickTieTolerancePixels = 1e-3;
+	private const double GestureTolerance = 1e-9;
 
 	// Columns the margin read asks for per visible column: the window and one margin window on each side.
 	private const int ExpandedColumnFactor = 3;
@@ -240,6 +247,110 @@ public sealed class TrendChartViewModelTests
 		viewModel.ScalesRevision.Should().Be(revision);
 		viewModel.SetLogarithmic(1, false).Should().BeTrue("switching the flag off is never refused");
 		viewModel.SetLogarithmic(99, true).Should().BeFalse();
+	}
+
+	[AvaloniaFact]
+	public void ShiftActivePen_OnAnAutoPen_PinsItToManualAtTheShownLimitsShifted()
+	{
+		var (viewModel, scheduler, _, _) = CreateViewModel();
+		viewModel.AddPen(FakeDataProvider.FirstPen);
+		LoadInitialHistory(viewModel, scheduler, From, To);
+		viewModel.ScaleRangeForPen(1)!.Value.Should().Be((0.5, 1.5));
+
+		viewModel.ShiftActivePen(0.1);
+
+		var settings = viewModel.ScaleSettings[1];
+		settings.Mode.Should().Be(ScaleMode.Manual);
+		settings.ManualMin.Should().BeApproximately(0.4, GestureTolerance);
+		settings.ManualMax.Should().BeApproximately(1.4, GestureTolerance);
+	}
+
+	[AvaloniaFact]
+	public void ShiftActivePen_OnALogPen_MovesBothLimitsByATenthOfTheDecadeSpan()
+	{
+		var (viewModel, _, _, _) = CreateViewModel();
+		viewModel.AddPen(FakeDataProvider.FirstPen with
+		{
+			ScaleMinOnStart = 1.0,
+			ScaleMaxOnStart = 1000.0,
+			LogScaleOnStart = true
+		});
+
+		viewModel.ShiftActivePen(-0.1);
+
+		var settings = viewModel.ScaleSettings[1];
+		settings.IsLogarithmic.Should().BeTrue();
+		Math.Log10(settings.ManualMin).Should().BeApproximately(0.3, GestureTolerance);
+		Math.Log10(settings.ManualMax).Should().BeApproximately(3.3, GestureTolerance);
+	}
+
+	[AvaloniaFact]
+	public void ScaleActivePen_KeepsTheValueAtTheAnchorFraction()
+	{
+		const double AnchorFraction = 0.25;
+		const double Factor = 0.8;
+		var viewModel = CreateViewModelWithManualScales();
+		var (minBefore, maxBefore) = viewModel.ScaleRangeForPen(1)!.Value;
+		var anchorValue = minBefore + (AnchorFraction * (maxBefore - minBefore));
+
+		viewModel.ScaleActivePen(Factor, AnchorFraction);
+
+		var (min, max) = viewModel.ScaleRangeForPen(1)!.Value;
+		(max - min).Should().BeApproximately(Factor * (maxBefore - minBefore), GestureTolerance);
+		(min + (AnchorFraction * (max - min))).Should().BeApproximately(anchorValue, GestureTolerance);
+	}
+
+	[AvaloniaTheory]
+	[InlineData(RangeGesture.Shift, 0.1)]
+	[InlineData(RangeGesture.Scale, 0.8)]
+	public void ARangeGesture_ChangesOnlyTheActivePensScaleSettings(RangeGesture gesture, double fractionOrFactor)
+	{
+		var (viewModel, _, _, provider) = CreateViewModel();
+		viewModel.ApplyCatalogue(provider.Pens);
+		viewModel.SetActivePen(2);
+		var firstPenSettings = viewModel.ScaleSettings[1];
+		var (minBefore, maxBefore) = viewModel.ScaleRangeForPen(2)!.Value;
+
+		ApplyRangeGesture(viewModel, gesture, fractionOrFactor);
+
+		viewModel.ScaleSettings[1].Should().Be(firstPenSettings);
+		var activePenSettings = viewModel.ScaleSettings[2];
+		activePenSettings.Mode.Should().Be(ScaleMode.Manual);
+		activePenSettings.ManualMin.Should().NotBe(minBefore, "the gesture moves the limits it pins");
+		activePenSettings.ManualMax.Should().NotBe(maxBefore);
+	}
+
+	[AvaloniaTheory]
+	[InlineData(RangeGesture.Shift, double.MaxValue)]
+	[InlineData(RangeGesture.Scale, 0.0)]
+	public void ARangeGestureTheCoreRefuses_ChangesNothing(RangeGesture gesture, double fractionOrFactor)
+	{
+		var viewModel = CreateViewModelWithManualScales();
+		var settingsBefore = viewModel.ScaleSettings.ToDictionary();
+		var revision = viewModel.ScalesRevision;
+
+		ApplyRangeGesture(viewModel, gesture, fractionOrFactor);
+
+		viewModel.ScaleSettings.Should().BeEquivalentTo(settingsBefore);
+		viewModel.ScalesRevision.Should().Be(revision);
+	}
+
+	[AvaloniaTheory]
+	[InlineData(RangeGesture.Shift, 0.1)]
+	[InlineData(RangeGesture.Scale, 0.8)]
+	public void ARangeGestureOnAHiddenActivePen_ChangesNothing(RangeGesture gesture, double fractionOrFactor)
+	{
+		var viewModel = CreateViewModelWithManualScales();
+		viewModel.SetPenVisibility(2, false);
+		viewModel.SetPenVisibility(1, false);
+		viewModel.ActivePenId.Should().Be(1);
+		var settingsBefore = viewModel.ScaleSettings.ToDictionary();
+		var revision = viewModel.ScalesRevision;
+
+		ApplyRangeGesture(viewModel, gesture, fractionOrFactor);
+
+		viewModel.ScaleSettings.Should().BeEquivalentTo(settingsBefore);
+		viewModel.ScalesRevision.Should().Be(revision);
 	}
 
 	[AvaloniaFact]
@@ -2392,6 +2503,22 @@ public sealed class TrendChartViewModelTests
 		viewModel.SetAxisLimits(2, 20.0, 80.0);
 
 		return viewModel;
+	}
+
+	private static void ApplyRangeGesture(TrendChartViewModel viewModel, RangeGesture gesture, double fractionOrFactor)
+	{
+		switch (gesture)
+		{
+			case RangeGesture.Shift:
+				viewModel.ShiftActivePen(fractionOrFactor);
+
+				break;
+
+			default:
+				viewModel.ScaleActivePen(fractionOrFactor, 0.5);
+
+				break;
+		}
 	}
 
 	private static async Task AssertRawIsReadAfterAReturnFromACoarseRead(

@@ -215,10 +215,9 @@ so there is one left-button gesture, not overlapping hidden branches. Ctrl is a 
 
   The notch is a sign, not a magnitude: a fractional delta from a precision touchpad or a smooth-scroll
   wheel counts as a whole notch, as it did for the zoom before the map, so one swipe takes many 10% steps.
-  Windows is expected to report a precision touchpad pinch as a wheel event with Ctrl held, so a pinch
-  shifts the active pen and pins it `Manual` instead of zooming time. This is a known trade-off of the
-  agreed map, which keeps Ctrl + wheel for the shift; the manual checklist of issue #74 checks it on
-  hardware.
+  Windows reports a precision touchpad pinch as a wheel event with Ctrl held (checked on hardware
+  2026-10-15), so a pinch shifts the active pen and pins it `Manual` instead of zooming time. This is a
+  known trade-off of the agreed map, which keeps Ctrl + wheel for the shift.
 - **Scroll = zoom about the cursor anchor; left-drag = hand pan; left-click = pick a pen.** In `Pan`
   tool a press outside the axis region with Ctrl not held routes to `ChartPressAction.PanOrPickPen`.
   The press captures the pointer and switches the cursor to a grab icon (`StandardCursorType.SizeAll`).

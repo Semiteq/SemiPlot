@@ -1,8 +1,13 @@
 using System.Reactive.Threading.Tasks;
 
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+
+using ReactiveUI;
+
+using SemiPlot.UI.Navigation;
 
 using LocalizedText = SemiPlot.UI.Localization.Resources;
 
@@ -10,9 +15,56 @@ namespace SemiPlot.UI.Export;
 
 public partial class CsvExportWindow : Window
 {
+	private IDisposable? _blackoutSync;
+
 	public CsvExportWindow()
 	{
 		InitializeComponent();
+		ExportStartDate.TemplateApplied += OnPickerTemplateApplied;
+		ExportEndDate.TemplateApplied += OnPickerTemplateApplied;
+		DataContextChanged += OnDataContextChanged;
+	}
+
+	protected override void OnClosed(EventArgs e)
+	{
+		_blackoutSync?.Dispose();
+		_blackoutSync = null;
+
+		base.OnClosed(e);
+	}
+
+	private void OnDataContextChanged(object? sender, EventArgs e)
+	{
+		_blackoutSync?.Dispose();
+		_blackoutSync = null;
+
+		if (DataContext is not CsvExportViewModel viewModel)
+		{
+			return;
+		}
+
+		_blackoutSync = viewModel.WhenAnyValue(model => model.Days.BlackoutDays)
+			.Subscribe(ApplyBlackoutDays, viewModel.ReportFailure);
+	}
+
+	private void OnPickerTemplateApplied(object? sender, TemplateAppliedEventArgs e)
+	{
+		if (DataContext is CsvExportViewModel viewModel)
+		{
+			ApplyBlackoutDays(viewModel.Days.BlackoutDays);
+		}
+	}
+
+	private void ApplyBlackoutDays(IReadOnlyList<DateTime> days)
+	{
+		try
+		{
+			CalendarBlackout.Apply(days, ExportStartDate, ExportEndDate);
+		}
+		catch (Exception failure)
+		{
+			(DataContext as CsvExportViewModel)?.ReportFailure(failure);
+		}
 	}
 
 	private async void OnSaveAsClick(object? sender, RoutedEventArgs e)

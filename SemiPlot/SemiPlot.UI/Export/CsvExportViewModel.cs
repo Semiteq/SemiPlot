@@ -14,6 +14,7 @@ using SemiPlot.Core.Export;
 using SemiPlot.Core.Trends;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.Messages;
+using SemiPlot.UI.Navigation;
 
 namespace SemiPlot.UI.Export;
 
@@ -22,6 +23,7 @@ public sealed class CsvExportViewModel : ReactiveObject, IDisposable
 	internal static readonly TimeSpan CountThrottle = TimeSpan.FromMilliseconds(300);
 
 	private readonly IArchiveRowReader _archiveRowReader;
+	private readonly Func<DateOnly, DateOnly, CancellationToken, Task<Result<IReadOnlyList<DateOnly>>>> _readArchiveDays;
 	private readonly MessagePanelViewModel _messagePanel;
 	private readonly ILogger<CsvExportViewModel> _logger;
 	private readonly IScheduler _uiScheduler;
@@ -34,6 +36,7 @@ public sealed class CsvExportViewModel : ReactiveObject, IDisposable
 
 	public CsvExportViewModel(
 		IArchiveRowReader archiveRowReader,
+		Func<DateOnly, DateOnly, CancellationToken, Task<Result<IReadOnlyList<DateOnly>>>> readArchiveDays,
 		CsvDialect dialect,
 		MessagePanelViewModel messagePanel,
 		ILogger<CsvExportViewModel> logger,
@@ -41,9 +44,12 @@ public sealed class CsvExportViewModel : ReactiveObject, IDisposable
 		TimeZoneInfo timeZone,
 		DateTime fromUtc,
 		DateTime toUtc,
+		DateTime firstSampleUtc,
+		DateTime? newestSampleUtc,
 		IReadOnlyList<ExportPenChoice> pens)
 	{
 		_archiveRowReader = archiveRowReader;
+		_readArchiveDays = readArchiveDays;
 		_messagePanel = messagePanel;
 		_logger = logger;
 		_uiScheduler = uiScheduler;
@@ -51,9 +57,16 @@ public sealed class CsvExportViewModel : ReactiveObject, IDisposable
 
 		Pens = pens;
 		Form = new ExportRangeForm(fromUtc, toUtc, timeZone) { TickedPenCount = TickedPens().Count };
+		Days = new ArchiveDayCalendar(timeZone);
+
+		if (Form is { StartDate: { } startDate, EndDate: { } endDate })
+		{
+			Days.Seed(firstSampleUtc, newestSampleUtc, startDate, endDate);
+		}
 
 		_disposables.Add(WatchTicks());
 		_disposables.Add(WatchCount());
+		_disposables.Add(ReadArchiveDays());
 
 		_disposables.Add(_message = this
 			.WhenAnyValue(
@@ -78,6 +91,8 @@ public sealed class CsvExportViewModel : ReactiveObject, IDisposable
 	}
 
 	public ExportRangeForm Form { get; }
+
+	public ArchiveDayCalendar Days { get; }
 
 	/// <summary>Every pen of the snapshot in catalogue order; the export follows this order.</summary>
 	public IReadOnlyList<ExportPenChoice> Pens { get; }
@@ -175,6 +190,31 @@ public sealed class CsvExportViewModel : ReactiveObject, IDisposable
 				.ObserveOn(_uiScheduler))
 			.Switch()
 			.Subscribe(count => Guarded(() => ApplyCount(count)), ReportFailure);
+	}
+
+	private IDisposable ReadArchiveDays()
+	{
+		if (Days.ReadRange is not { } range)
+		{
+			return Disposable.Empty;
+		}
+
+		return Observable
+			.FromAsync(cancellationToken => _readArchiveDays(range.First, range.Last, cancellationToken))
+			.ObserveOn(_uiScheduler)
+			.Subscribe(result => Guarded(() => ApplyArchiveDays(result, range)), ReportFailure);
+	}
+
+	private void ApplyArchiveDays(Result<IReadOnlyList<DateOnly>> result, (DateOnly First, DateOnly Last) range)
+	{
+		if (result.IsFailed)
+		{
+			_messagePanel.TryReportFailure(result.Errors, _logger);
+
+			return;
+		}
+
+		Days.ApplyCoverage(range, result.Value, Form.StartDate, Form.EndDate);
 	}
 
 	private async Task<Result<long>?> CountAsync(DateTime? from, DateTime? to, CancellationToken cancellationToken)

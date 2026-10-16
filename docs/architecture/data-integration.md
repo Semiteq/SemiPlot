@@ -1195,8 +1195,9 @@ panel through `ResultReporting.ReportFailure`; a failed refresh reports and leav
 were. The window's code-behind handlers are `async void` with the whole body in `try/catch`, and the
 `catch` reaches the panel through `PenEditorViewModel.ReportFailure`, which takes the guarded form. The
 export window follows the same shape through `CsvExportViewModel.ReportFailure`, which also puts the
-title on the window's message line, and its three detached handlers (the tick `onNext`, `ApplyCount` and
-the progress job) run through `CsvExportViewModel.Guarded`. The time window panel's code-behind wraps
+title on the window's message line, and its four detached handlers (the tick `onNext`, `ApplyCount`, the
+progress job and the day read's apply) run through `CsvExportViewModel.Guarded`; the code-behind's
+blackout sync catches into the same `ReportFailure`. The time window panel's code-behind wraps
 `Opened`, `Close`, the pickers' Return commit and the blackout sync in one `Run` guard whose `catch`
 reaches the panel through `TimeWindowPanelViewModel.ReportFailure`, and the day read's `onError` reports
 through `TrendChartViewModel.ReportFailure`.

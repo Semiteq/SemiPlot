@@ -5,6 +5,8 @@ using Avalonia.Interactivity;
 
 using ReactiveUI;
 
+using SemiPlot.UI.Navigation;
+
 namespace SemiPlot.UI.Chart;
 
 public partial class TimeWindowPanel : UserControl
@@ -44,7 +46,7 @@ public partial class TimeWindowPanel : UserControl
 			return;
 		}
 
-		_blackoutSync = viewModel.WhenAnyValue(panel => panel.BlackoutDays)
+		_blackoutSync = viewModel.WhenAnyValue(panel => panel.Days.BlackoutDays)
 			.Subscribe(ApplyBlackoutDays, viewModel.ReportFailure);
 	}
 
@@ -52,7 +54,7 @@ public partial class TimeWindowPanel : UserControl
 	{
 		if (DataContext is TimeWindowPanelViewModel viewModel)
 		{
-			ApplyBlackoutDays(viewModel.BlackoutDays);
+			ApplyBlackoutDays(viewModel.Days.BlackoutDays);
 		}
 	}
 
@@ -66,22 +68,7 @@ public partial class TimeWindowPanel : UserControl
 
 	private void ApplyBlackoutDays(IReadOnlyList<DateTime> days)
 	{
-		Run(_ =>
-		{
-			foreach (var blackoutDates in new[] { TimeWindowStartDate.BlackoutDates, TimeWindowEndDate.BlackoutDates })
-			{
-				if (blackoutDates is null)
-				{
-					continue;
-				}
-
-				blackoutDates.Clear();
-				foreach (var day in days)
-				{
-					blackoutDates.Add(new CalendarDateRange(day));
-				}
-			}
-		});
+		Run(_ => CalendarBlackout.Apply(days, TimeWindowStartDate, TimeWindowEndDate));
 	}
 
 	private void Run(Action<TimeWindowPanelViewModel> step)

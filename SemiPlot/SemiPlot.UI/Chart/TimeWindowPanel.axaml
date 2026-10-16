@@ -54,8 +54,8 @@
                             HorizontalAlignment="Stretch"
                             SelectedDateFormat="Custom"
                             CustomDateFormatString="{x:Static text:Resources.ExportDateFormat}"
-                            DisplayDateStart="{Binding FirstDay}"
-                            DisplayDateEnd="{Binding LastDay}"
+                            DisplayDateStart="{Binding Days.FirstDay}"
+                            DisplayDateEnd="{Binding Days.LastDay}"
                             Classes.invalid="{Binding Form.IsStartDateInvalid}"
                             SelectedDate="{Binding Form.StartDate}"
                             KeyUp="OnPickerKeyUp" />
@@ -84,8 +84,8 @@
                             HorizontalAlignment="Stretch"
                             SelectedDateFormat="Custom"
                             CustomDateFormatString="{x:Static text:Resources.ExportDateFormat}"
-                            DisplayDateStart="{Binding FirstDay}"
-                            DisplayDateEnd="{Binding LastDay}"
+                            DisplayDateStart="{Binding Days.FirstDay}"
+                            DisplayDateEnd="{Binding Days.LastDay}"
                             Classes.invalid="{Binding Form.IsEndDateInvalid}"
                             SelectedDate="{Binding Form.EndDate}"
                             KeyUp="OnPickerKeyUp" />

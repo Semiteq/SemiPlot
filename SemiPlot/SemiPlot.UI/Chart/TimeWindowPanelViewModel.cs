@@ -26,8 +26,6 @@ public sealed class TimeWindowPanelViewModel : ReactiveObject, IDisposable
 	private readonly TrendChartViewModel _chart;
 	private readonly TrendCoordinator _coordinator;
 	private readonly IScheduler _uiScheduler;
-	private DayCoverage? _dayCoverage;
-	private DateTime? _newestDay;
 	private bool _isCancelled;
 
 	public TimeWindowPanelViewModel(
@@ -40,6 +38,7 @@ public sealed class TimeWindowPanelViewModel : ReactiveObject, IDisposable
 		_coordinator = coordinator;
 		_uiScheduler = uiScheduler;
 		Form = new TimeWindowForm(timeZone);
+		Days = new ArchiveDayCalendar(timeZone);
 
 		_disposables.Add(_closeRequests);
 		_disposables.Add(_dayRead);
@@ -70,62 +69,35 @@ public sealed class TimeWindowPanelViewModel : ReactiveObject, IDisposable
 		new(Resources.TimeWindowPresetOneHour, TimeSpan.FromHours(1))
 	];
 
-	/// <summary>The earliest local day the calendars offer: the first sample's day or an earlier selected one.</summary>
-	public DateTime FirstDay
-	{
-		get;
-		private set => this.RaiseAndSetIfChanged(ref field, value);
-	}
-
-	/// <summary>The latest local day the calendars offer: the newest sample's day or a later selected one.</summary>
-	public DateTime LastDay
-	{
-		get;
-		private set => this.RaiseAndSetIfChanged(ref field, value);
-	}
-
-	/// <summary>The read days that hold no archive row, never a selected date; raised on every write.</summary>
-	public IReadOnlyList<DateTime> BlackoutDays
-	{
-		get;
-		private set
-		{
-			field = value;
-			this.RaisePropertyChanged(nameof(BlackoutDays));
-		}
-	} = [];
+	public ArchiveDayCalendar Days { get; }
 
 	/// <summary>Fills the form from the window in force; empties the blackout days before it writes the dates.</summary>
 	public void Seed()
 	{
 		_isCancelled = false;
-		BlackoutDays = [];
+		Days.ClearBlackoutDays();
 
 		var navigation = _chart.Navigation;
 		Form.Seed(navigation.From, navigation.To);
 
-		var startDay = Form.LocalDay(navigation.From);
-		var endDay = Form.LocalDay(navigation.To);
-		_newestDay = navigation.NewestSample is { } newestSample ? Form.LocalDay(newestSample) : null;
-		FirstDay = Earlier(Form.LocalDay(navigation.FirstSample), startDay);
-		LastDay = Later(_newestDay ?? endDay, endDay);
-		BlackoutDays = UnselectedDaysWithoutRows();
+		if (Form is { StartDate: { } startDate, EndDate: { } endDate })
+		{
+			Days.Seed(navigation.FirstSample, navigation.NewestSample, startDate, endDate);
+		}
 	}
 
 	/// <summary>Reads which days of [FirstDay, the newest sample's day] hold a row.</summary>
 	public void Opened()
 	{
-		if (_newestDay is not { } newestDay || newestDay < FirstDay)
+		if (Days.ReadRange is not { } range)
 		{
 			return;
 		}
 
-		var firstDay = DateOnly.FromDateTime(FirstDay);
-		var lastDay = DateOnly.FromDateTime(newestDay);
 		_dayRead.Disposable = Observable
-			.FromAsync(cancellationToken => _coordinator.QueryArchiveDaysAsync(firstDay, lastDay, cancellationToken))
+			.FromAsync(cancellationToken => _coordinator.QueryArchiveDaysAsync(range.First, range.Last, cancellationToken))
 			.ObserveOn(_uiScheduler)
-			.Subscribe(result => TryApplyDays(result, firstDay, lastDay), _chart.ReportFailure);
+			.Subscribe(result => TryApplyDays(result, range), _chart.ReportFailure);
 	}
 
 	public void Commit()
@@ -147,7 +119,7 @@ public sealed class TimeWindowPanelViewModel : ReactiveObject, IDisposable
 		}
 
 		_dayRead.Disposable = null;
-		_dayCoverage = null;
+		Days.ForgetCoverage();
 	}
 
 	public void ReportFailure(Exception failure)
@@ -201,7 +173,7 @@ public sealed class TimeWindowPanelViewModel : ReactiveObject, IDisposable
 		return true;
 	}
 
-	private void TryApplyDays(Result<IReadOnlyList<DateOnly>> result, DateOnly firstDay, DateOnly lastDay)
+	private void TryApplyDays(Result<IReadOnlyList<DateOnly>> result, (DateOnly First, DateOnly Last) range)
 	{
 		try
 		{
@@ -212,52 +184,11 @@ public sealed class TimeWindowPanelViewModel : ReactiveObject, IDisposable
 				return;
 			}
 
-			_dayCoverage = new DayCoverage(firstDay, lastDay, [.. result.Value]);
-			BlackoutDays = UnselectedDaysWithoutRows();
+			Days.ApplyCoverage(range, result.Value, Form.StartDate, Form.EndDate);
 		}
 		catch (Exception applyFailure)
 		{
 			_chart.ReportFailure(applyFailure);
 		}
 	}
-
-	private List<DateTime> UnselectedDaysWithoutRows()
-	{
-		var days = new List<DateTime>();
-
-		if (_dayCoverage is not { } coverage)
-		{
-			return days;
-		}
-
-		var first = Later(coverage.FirstDay.ToDateTime(TimeOnly.MinValue), FirstDay);
-		var last = Earlier(coverage.LastDay.ToDateTime(TimeOnly.MinValue), LastDay);
-
-		for (var day = first; day <= last; day = day.AddDays(1))
-		{
-			if (!coverage.DaysWithRows.Contains(DateOnly.FromDateTime(day)) && !IsSelected(day))
-			{
-				days.Add(day);
-			}
-		}
-
-		return days;
-	}
-
-	private bool IsSelected(DateTime day)
-	{
-		return day == Form.StartDate?.Date || day == Form.EndDate?.Date;
-	}
-
-	private static DateTime Earlier(DateTime first, DateTime second)
-	{
-		return first < second ? first : second;
-	}
-
-	private static DateTime Later(DateTime first, DateTime second)
-	{
-		return first > second ? first : second;
-	}
-
-	private sealed record DayCoverage(DateOnly FirstDay, DateOnly LastDay, HashSet<DateOnly> DaysWithRows);
 }

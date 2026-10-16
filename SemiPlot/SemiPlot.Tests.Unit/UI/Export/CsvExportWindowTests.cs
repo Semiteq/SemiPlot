@@ -17,6 +17,7 @@ using FluentResults;
 using Microsoft.Reactive.Testing;
 
 using SemiPlot.Core.Data;
+using SemiPlot.Core.Data.Errors;
 using SemiPlot.UI;
 using SemiPlot.UI.Export;
 using SemiPlot.UI.Localization;
@@ -39,6 +40,11 @@ public sealed class CsvExportWindowTests : IDisposable
 	private const string ErrorClass = "error";
 
 	private static readonly DateTime _startDay = new(2026, 10, 13);
+	private static readonly DateTime _newestSampleUtc = new(2026, 10, 15, 5, 0, 0, DateTimeKind.Utc);
+
+	// The sample days run from the 8th to the 15th; the 10th, the 12th, the 13th and the 14th hold no row.
+	private static readonly DateOnly[] _daysWithRows = [new(2026, 10, 8), new(2026, 10, 9), new(2026, 10, 11), new(2026, 10, 15)];
+	private static readonly DateTime[] _emptyDays = [new(2026, 10, 10), new(2026, 10, 12), new(2026, 10, 14)];
 
 	private readonly TestScheduler _scheduler = new();
 	private readonly MessagePanelViewModel _messagePanel = new();
@@ -252,6 +258,76 @@ public sealed class CsvExportWindowTests : IDisposable
 			startDate.SelectedDate.Should().Be(_startDay);
 			viewModel.Form.IsValid.Should().BeTrue();
 			startDate.Classes.Should().NotContain(InvalidClass);
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void ADayWithoutRows_IsABlackoutDateOfBothPickers_WithinTheSampleDays()
+	{
+		using var viewModel = BuildOverArchiveDays([.. _daysWithRows, DateOnly.FromDateTime(_startDay)]);
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			_scheduler.AdvanceBy(1);
+
+			foreach (var name in new[] { "ExportStartDate", "ExportEndDate" })
+			{
+				var picker = Named<CalendarDatePicker>(window, name);
+				picker.BlackoutDates!.Select(range => range.Start).Should().Equal(_emptyDays);
+				picker.DisplayDateStart.Should().Be(new DateTime(2026, 10, 8));
+				picker.DisplayDateEnd.Should().Be(new DateTime(2026, 10, 15));
+			}
+
+			_messagePanel.Entries.Should().BeEmpty();
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void AVisibleRangeOnADayWithoutRows_KeepsThatDaySelectable()
+	{
+		using var viewModel = BuildOverArchiveDays(_daysWithRows);
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			_scheduler.AdvanceBy(1);
+
+			var startDate = Named<CalendarDatePicker>(window, "ExportStartDate");
+			startDate.SelectedDate.Should().Be(_startDay);
+			startDate.BlackoutDates!.Contains(_startDay).Should().BeFalse("the selected date is never a blackout date");
+			startDate.BlackoutDates.Select(range => range.Start).Should().Equal(_emptyDays);
+			_messagePanel.Entries.Should().BeEmpty();
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void AFailedDayRead_ReachesTheMessagePanelAndLeavesNoBlackoutDates()
+	{
+		using var viewModel = CsvExportStand.Build(
+			new FakeArchiveRowReader(),
+			_messagePanel,
+			_scheduler,
+			[new ExportPenChoice(CsvExportStand.Pressure, true)],
+			_newestSampleUtc,
+			(_, _, _) => Task.FromResult(Result.Fail<IReadOnlyList<DateOnly>>(new ArchiveError(ArchiveFault.Unreachable, "scada-host", 5432, "semiplot"))));
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			_scheduler.AdvanceBy(1);
+
+			Named<CalendarDatePicker>(window, "ExportStartDate").BlackoutDates.Should().BeEmpty();
+			_messagePanel.Entries.Should().ContainSingle();
 		}
 		finally
 		{
@@ -733,6 +809,17 @@ public sealed class CsvExportWindowTests : IDisposable
 		]);
 
 		return CsvExportStand.Build(new FakeArchiveRowReader(), _messagePanel, _scheduler, pens);
+	}
+
+	private CsvExportViewModel BuildOverArchiveDays(IReadOnlyList<DateOnly> daysWithRows)
+	{
+		return CsvExportStand.Build(
+			new FakeArchiveRowReader(),
+			_messagePanel,
+			_scheduler,
+			[new ExportPenChoice(CsvExportStand.Pressure, true)],
+			_newestSampleUtc,
+			(_, _, _) => Task.FromResult(Result.Ok(daysWithRows)));
 	}
 
 	private CsvExportViewModel Build(FakeArchiveRowReader? reader = null)

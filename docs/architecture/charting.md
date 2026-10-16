@@ -508,6 +508,9 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   the hours unbounded. Selection, Backspace and paste stay the `TextBox`'s own. The time window panel and the
   export window set it on their time and width boxes, and a style sets `Date` on each
   `CalendarDatePicker`'s `PART_TextBox`.
+- `Navigation/ArchiveDayCalendar` — the days a pair of range calendars offers and the read days without a
+  row among them, for the time window panel and the export window; `Navigation/CalendarBlackout` writes the
+  set into the pickers' `BlackoutDates`.
 - `Legend/TrendLegendView` + `TrendLegendViewModel` (+ group / row VMs and the converters) — the grouped
   sidebar. A row carries the on/off box, a round colour dot, the name, the current value in the pen's own
   mask and the unit; nothing in it is editable but the box, which an allowlist test over the built row
@@ -770,8 +773,8 @@ view model:
   provider (mirroring `QueryHistoryAsync`); the minimap consumes it (see trend-interaction.md).
 - **Archive days:** `QueryArchiveDaysAsync(firstDay, lastDay, ct)` returns the local days of the range
   that hold a layer-0 row of a catalogue pen. `TrendCoordinator.QueryArchiveDaysAsync` is a pass-through
-  to the provider; the time window panel reads it once per open for its calendars' blackout days
-  (`trend-interaction.md#the-time-window-panel`).
+  to the provider; the time window panel reads it once per open and the export window once per window for
+  their calendars' blackout days (`trend-interaction.md#the-time-window-panel`).
 - **Connection state:** `TrendCoordinator.ConnectionFaults` republishes the provider's own
   `IObservable<ArchiveConnectionState>` on the UI scheduler. `MainWindow/AppStatusBarViewModel` binds
   it and shows it in the status bar, over a chart that keeps its history; every fault it carries

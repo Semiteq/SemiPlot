@@ -476,8 +476,8 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   (`ScaleActivePen`); `TryCreateTimeAxis`, the bottom axis band under the data area, for the press
   (`PanOrEditTimeWindow`).
 - `Chart/ChartPressRouter` — the pure routing of a left press (`EditAxisScale`, `ShiftActivePen`,
-  `PanOrEditTimeWindow`, `PlaceDeltaCursor`, `PanOrPickPen`) and the 4 px click slop that separates a
-  click from a pan.
+  `PanOrEditTimeWindow`, `PlaceDeltaCursor`, `DragMarker`, `PanOrPickPen`) and the 4 px click slop that
+  separates a click from a pan.
 - `Chart/ChartWheelRouter` — the pure routing of a wheel event (`ScaleActivePen`, `ShiftActivePen`,
   `PanTime`, `ZoomTime`, `None`) and its notch sign (`trend-interaction.md`, "The wheel map").
 - `Chart/AxisScalePanel` + `AxisScalePanelViewModel` — the flyout that edits the drawn pen's two bounds
@@ -487,6 +487,12 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   local start and end, its width and the width presets, and the calendars' blackout days from one archive
   days read per open (`trend-interaction.md#the-time-window-panel`); `TrendChartViewModel.TimeWindow` owns
   the view model.
+- `Chart/IMarkerChannel`, `Chart/ChartMarkers` and `Chart/ChartMarkerLines` — the time markers.
+  The channel is the chart's port to the stored markers, which `TrendChartViewModel` takes in its
+  constructor and `Markers/MarkerSync` implements; `TrendChartViewModel.Markers` owns `ChartMarkers`, and
+  the view owns one line layer per bound plot (`trend-interaction.md#the-time-markers`,
+  `overview.md#the-live-markers`). The view's right-click menus and label editor are the partial
+  `Chart/TrendChartView.Markers.cs`.
 - `Chart/LocalTimeAxis` — UTC↔local-OADate conversion at every render boundary.
 - `Navigation/NavigationBarView` + `NavigationBarViewModel` — time navigation only: jump-to-now,
   sticky toggle, delta-mode toggle + inline Δt/Δy readout (ReactiveUI commands). Autoscale, the two
@@ -561,7 +567,7 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
 - `Settings/SettingsDialog` + `SettingsViewModel` — the modal that edits the `app/` and `connection/`
   section folders, opened from Edit -> Settings (`overview.md#the-settings-window`).
 - `PenEditor/PenEditorWindow` + `PenEditorViewModel` (+ `PenFormViewModel`, `PenGroupsViewModel`, the
-  row and membership VMs and `EditorCallQueue`) - the modal that edits the pen catalogue through
+  row and membership VMs, over `Bridge/ArchiveCallQueue`) - the modal that edits the pen catalogue through
   `IPenCatalogueEditor`, opened from Edit -> Pens and groups (`overview.md#the-pen-and-group-editor`).
   Nothing under `Chart/` or `Legend/` references it.
 - `Export/CsvExportWindow` + `CsvExportViewModel` (+ `ExportRangeForm`, `ExportRangeProblemText`, `ExportMessageLine`, `ExportPenChoice`, `CsvFileExporter`)

@@ -71,6 +71,18 @@ public static class MinimapGeometry
 		return newestSample > extentLast ? newestSample.Value : extentLast;
 	}
 
+	/// <summary>Where <paramref name="time"/> sits along the extent, or null outside it or over an empty one.</summary>
+	public static double? FractionAt(DateTime extentFirst, DateTime extentLast, DateTime time)
+	{
+		var span = (extentLast - extentFirst).TotalSeconds;
+		if (span <= 0.0 || time < extentFirst || time > extentLast)
+		{
+			return null;
+		}
+
+		return (time - extentFirst).TotalSeconds / span;
+	}
+
 	public static DateTime TimeAtFraction(DateTime extentFirst, DateTime extentLast, double fraction)
 	{
 		var span = extentLast - extentFirst;

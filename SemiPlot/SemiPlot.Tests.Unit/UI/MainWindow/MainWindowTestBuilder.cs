@@ -13,6 +13,7 @@ using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.Postgres;
 using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.Tests.Unit.UI.Export;
+using SemiPlot.Tests.Unit.UI.Markers;
 using SemiPlot.Tests.Unit.UI.PenEditor;
 using SemiPlot.Tests.Unit.UI.Startup;
 using SemiPlot.UI;
@@ -33,6 +34,8 @@ internal sealed class WindowStand(TrendWindow window, ArchiveStand archive) : ID
 
 	public FakeDataProvider Provider => archive.Provider;
 
+	public FakeMarkerStore MarkerStore => archive.MarkerStore;
+
 	public TestScheduler Scheduler => archive.Scheduler;
 
 	public void Dispose()
@@ -45,10 +48,13 @@ internal sealed class WindowStand(TrendWindow window, ArchiveStand archive) : ID
 internal sealed class ArchiveStand(
 	ServiceProvider container,
 	FakeDataProvider provider,
+	FakeMarkerStore markerStore,
 	TestScheduler scheduler,
 	StartupData data) : IDisposable
 {
 	public FakeDataProvider Provider { get; } = provider;
+
+	public FakeMarkerStore MarkerStore { get; } = markerStore;
 
 	public TestScheduler Scheduler { get; } = scheduler;
 
@@ -96,11 +102,13 @@ internal static class MainWindowTestBuilder
 	{
 		var scheduler = new TestScheduler();
 		var provider = new FakeDataProvider(scheduler, TimeSpan.FromSeconds(1), pens);
+		var markerStore = new FakeMarkerStore();
 		var services = new ServiceCollection()
 			.AddSingleton<IScheduler>(scheduler)
 			.AddSingleton<IDataProvider>(provider)
 			.AddSingleton(penCatalogueEditor ?? new FakePenCatalogueEditor())
 			.AddSingleton(rowReader ?? new FakeArchiveRowReader())
+			.AddSingleton<IMarkerStore>(markerStore)
 			.AddSingleton(ConnectionSettingsFactory.Create())
 			.AddUi();
 
@@ -118,7 +126,7 @@ internal static class MainWindowTestBuilder
 
 		var startupData = new StartupData(container, provider.Pens, startupExtent);
 
-		return new ArchiveStand(container, provider, scheduler, startupData);
+		return new ArchiveStand(container, provider, markerStore, scheduler, startupData);
 	}
 
 	/// <summary>

@@ -333,4 +333,24 @@ public sealed class MinimapViewModelTests
 	{
 		return utc.ToLocalTime().ToString("MMM d HH:mm", CultureInfo.CurrentCulture);
 	}
+
+	[AvaloniaFact]
+	public async Task TimeMarkerFractions_PlaceEveryMarkerInsideTheExtentAlongTheStrip()
+	{
+		using var stand = new MinimapStand();
+		var span = _extentLast - _extentFirst;
+		stand.MarkerChannel.Push(
+			new StoredMarker(1, _extentFirst + (span / 4.0), "1"),
+			new StoredMarker(2, _extentFirst + (span / 2.0), "2"),
+			new StoredMarker(3, _extentFirst.AddDays(-1.0), "3"));
+		stand.ViewModel.TimeMarkerFractions.Should().BeEmpty("without an extent the strip has no scale");
+
+		await stand.LoadExtentAsync();
+
+		stand.ViewModel.TimeMarkerFractions.Should().Equal(0.25, 0.5);
+
+		stand.MarkerChannel.Push(new StoredMarker(2, _extentFirst + (span / 2.0), "2"));
+
+		stand.ViewModel.TimeMarkerFractions.Should().Equal([0.5], "a marker read gone leaves the strip");
+	}
 }

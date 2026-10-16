@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using ReactiveUI;
 
 using SemiPlot.Core.Data;
+using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Messages;
 
 namespace SemiPlot.UI.PenEditor;
@@ -14,13 +15,13 @@ namespace SemiPlot.UI.PenEditor;
 /// </summary>
 internal sealed class PenGroupWriter(
 	IPenCatalogueEditor penCatalogueEditor,
-	EditorCallQueue editorCallQueue,
+	ArchiveCallQueue archiveCallQueue,
 	MessagePanelViewModel messagePanel,
 	ILogger logger,
 	Action<IReadOnlyCollection<int>> showGroupsOn) : ReactiveObject
 {
 	private readonly IPenCatalogueEditor _penCatalogueEditor = penCatalogueEditor;
-	private readonly EditorCallQueue _editorCallQueue = editorCallQueue;
+	private readonly ArchiveCallQueue _archiveCallQueue = archiveCallQueue;
 	private readonly MessagePanelViewModel _messagePanel = messagePanel;
 	private readonly ILogger _logger = logger;
 	private readonly Action<IReadOnlyCollection<int>> _showGroupsOn = showGroupsOn;
@@ -36,7 +37,7 @@ internal sealed class PenGroupWriter(
 	public async Task<TResult> RunAsync<TResult>(Func<IPenCatalogueEditor, Task<TResult>> call)
 		where TResult : IResultBase
 	{
-		var result = await _editorCallQueue.RunAsync(() => call(_penCatalogueEditor));
+		var result = await _archiveCallQueue.RunAsync(() => call(_penCatalogueEditor));
 
 		if (result.IsSuccess)
 		{

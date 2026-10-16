@@ -314,4 +314,27 @@ public sealed class MinimapGeometryTests
 			[.. columns.Select(column => column.Max)],
 			[.. columns.Select(column => column.Center)]);
 	}
+
+	[Theory]
+	[InlineData(0.0, 0.0)]
+	[InlineData(2.5, 0.25)]
+	[InlineData(10.0, 1.0)]
+	public void FractionAt_PlacesATimeInsideTheExtentAlongIt(double daysAfterFirst, double expected)
+	{
+		MinimapGeometry.FractionAt(_first, _last, _first.AddDays(daysAfterFirst)).Should().Be(expected);
+	}
+
+	[Theory]
+	[InlineData(-0.5)]
+	[InlineData(10.5)]
+	public void FractionAt_OutsideTheExtent_IsNull(double daysAfterFirst)
+	{
+		MinimapGeometry.FractionAt(_first, _last, _first.AddDays(daysAfterFirst)).Should().BeNull();
+	}
+
+	[Fact]
+	public void FractionAt_OverAnEmptyExtent_IsNull()
+	{
+		MinimapGeometry.FractionAt(_first, _first, _first).Should().BeNull();
+	}
 }

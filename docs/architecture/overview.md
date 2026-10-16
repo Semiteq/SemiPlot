@@ -21,7 +21,7 @@ It must handle two classes of data:
 | Chart renderer   | ScottPlot 5 (`ScottPlot.Avalonia` 5.1.59, MIT, SkiaSharp) — native control |
 | MVVM             | ReactiveUI (`ReactiveUI.Avalonia` 12.0.3)                             |
 | Backend (in-proc)| .NET data provider abstraction over the data sources                   |
-| Data source      | One PostgreSQL role on the Simple-Scada archive: history, extent and realtime read it, and the pen editor alone writes the catalogue tables (`data-integration.md`) |
+| Data source      | One PostgreSQL role on the Simple-Scada archive: history, extent and realtime read it, the pen editor writes the catalogue tables, and the chart reads and writes its time markers in `semiplot_markers` (`data-integration.md`) |
 | Coarse resolutions | The SCADA's own archive layers; nothing of ours runs in or beside the database (`history-read-path-evaluation.md`) |
 | Logging          | Serilog, path and level from the launch keys, rolling 5 MB / 5 files (`data-integration.md`) |
 | Configuration    | YAML (YamlDotNet 18.1.0), one folder per section merged by `SemiPlot.Core/Configuration/ConfigurationSection` |
@@ -60,6 +60,7 @@ Constraint: **$0 budget** — only free/OSS components.
 |     +-- CsvExportWindow     range to CSV file dialog        |
 |   ViewModels (ReactiveUI) ◄── TrendCoordinator (Rx hub)     |
 |                           ◄── PenCatalogueSync (5 s reads)  |
+|                           ◄── MarkerSync (5 s reads)        |
 |   StartupFailureWindow (+ view model): shown instead of     |
 |     MainWindow when the start fails                         |
 +----------------------────────────────────────--------------+
@@ -67,6 +68,7 @@ Constraint: **$0 budget** — only free/OSS components.
               │                re-read the catalogue)
               │ IPenCatalogueEditor (the pen editor's writes)
               │ IArchiveRowReader (the export window's row reads)
+              │ IMarkerStore (the chart's time markers, via MarkerSync)
               ▼
 +-------------------------------------------------------------+
 |  SemiPlot.Core                                              |
@@ -74,6 +76,7 @@ Constraint: **$0 budget** — only free/OSS components.
 |     ArchiveExtent, …)                                       |
 |   - IPenCatalogueEditor + records, the catalogue writes     |
 |   - IArchiveRowReader + StoredArchiveRow, the export reads  |
+|   - IMarkerStore + StoredMarker, the time markers           |
 |   - renderer-agnostic models (navigation, scale, cursor, …) |
 |   - ConfigurationSection, the section-folder merge          |
 +-------------------------------------------------------------+
@@ -85,12 +88,14 @@ Constraint: **$0 budget** — only free/OSS components.
 |   - history, extent, catalogue and the live-edge poll       |
 |   - PostgresPenCatalogueEditor, the catalogue writes        |
 |   - PostgresArchiveRowReader, the export's row reads        |
+|   - PostgresMarkerStore, the time markers                   |
 +-------------------------------------------------------------+
 ```
 
-The UI never talks to a data source directly. It reads through `IDataProvider`, and the pen editor
-alone writes, through `IPenCatalogueEditor` (see [data-integration.md](./data-integration.md)). The export
-window reads stored rows through `IArchiveRowReader`. The composition root resolves the PostgreSQL
+The UI never talks to a data source directly. It reads through `IDataProvider`; the pen editor writes
+through `IPenCatalogueEditor`, and `Markers/MarkerSync` reads and writes the chart's time markers through
+`IMarkerStore` (see [data-integration.md](./data-integration.md)). The export window reads stored rows
+through `IArchiveRowReader`. The composition root resolves the PostgreSQL
 provider, which is the only one the application ships; an archive that does not answer shows the
 startup failure in its own window rather than falling back to invented data. There is **no web
 bridge**: the chart is a native ScottPlot control, fed in-process by `TrendCoordinator` over
@@ -105,6 +110,7 @@ connection never changes while a process runs.
 | Shared by every window | Kept by one window |
 | --- | --- |
 | The pen catalogue: name, colour, style, unit, mask, groups, initial scale (the 5 s catalogue loop) | The group shown, the time window, the live-edge mode |
+| The time markers: moment and label (the 5 s marker loop, `#the-live-markers`) | |
 | The theme, applied live in every open window (`#the-live-theme`) | The current scale of each pen, and its visibility |
 | The language, read at each window's start | The message panel and its entries |
 | The log file `--log-file` names, each event carrying its writer's process id after the timestamp (`#command-line`) | |
@@ -115,14 +121,16 @@ UI scheduler, the `CsvDialect` that `App.ConfigureStarted` picks through `App.Cs
 archive's time zone (`PostgresConnectionSettings.SourceTimeZone`), and constructs in order:
 
 1. the coordinator;
-2. the chart, seeded from the start sequence's pens and extent, whose constructor opens the live edge;
-3. the status bar, over the coordinator's connection stream and the chart's navigation;
-4. the minimap;
-5. the catalogue sync;
-6. the navigation bar and the legend;
-7. the catalogue applier;
-8. `MainWindowViewModel`, over the chart, the status bar, the minimap, the navigation bar, the legend,
-   the sync's `ReadNow` and a factory for `CsvExportViewModel`, which `Build` closes over the container's
+2. the marker sync, over the container's `IMarkerStore` (`#the-live-markers`);
+3. the chart, whose constructor opens the live edge, seeded from the start sequence's pens and extent,
+   with the marker sync as its marker channel;
+4. the status bar, over the coordinator's connection stream and the chart's navigation;
+5. the minimap;
+6. the catalogue sync;
+7. the navigation bar and the legend;
+8. the catalogue applier;
+9. `MainWindowViewModel`, over the chart, the status bar, the minimap, the navigation bar, the legend,
+   the catalogue sync's `ReadNow` and a factory for `CsvExportViewModel`, which `Build` closes over the container's
    `IArchiveRowReader`, the `CsvDialect`, the UI scheduler and the archive zone, so the window view model
    holds none of them.
 
@@ -131,7 +139,8 @@ The coordinator republishes the provider's connection stream through `ObserveOn`
 so `ObserveOn` alone defers nothing for a state emitted on the UI thread. The bar is bound in time for the
 first state because the provider emits off the UI thread; the tests' `TestScheduler` defers it.
 
-`Build` then starts the sync, requests the initial history and starts the minimap's extent load. A part
+`Build` then starts the catalogue sync, starts the marker sync and asks it for its first read, requests
+the initial history and starts the minimap's extent load. A part
 is built once and never replaced, so every part of the window view model is non-null.
 `TrendWindow.Dispose` disposes the same objects in reverse order, the coordinator last, and
 `MainWindowViewModel` disposes only its own commands and request subjects. A throw out of `Build` ends
@@ -141,7 +150,7 @@ container service first, so a missing registration throws before any part exists
 on the UI thread.
 
 The container keeps the process services: the data source, the provider, the editor, the row reader, the
-message panel and the logger factory. It registers no window part, the status bar included. The UI scheduler is not a
+marker store, the message panel and the logger factory. It registers no window part, the status bar included. The UI scheduler is not a
 container registration; `App` passes `AvaloniaScheduler.Instance` to `TrendWindow.Build`, while the data
 scheduler comes from the container.
 
@@ -325,6 +334,10 @@ one method: nothing else may resolve a service through a static.
   model applies the result into the plot; the debouncer runs one query at a time and lets the newest
   window asked for run last. The minimap band is a second reader outside the debouncer: one pen at 250
   columns every 2-60 s (`trend-interaction.md#archive-overview-minimap`).
+- **Time markers:** `MarkerSync` reads every stored marker every 5 s and after each marker write →
+  `ChartMarkers` reconciles the read into its `MarkerSet` → the view's `ChartMarkerLines` draws a
+  line per marker inside the time window. A gesture writes through `IMarkerChannel` and updates the set
+  at once (`#the-live-markers`).
 
 ## Deployment
 
@@ -504,14 +517,15 @@ in `finally`, as it does for the settings dialog. No startup code calls the edit
 
 #### One queue for every call
 
-`PenEditorViewModel` owns one `EditorCallQueue`, and every call to `IPenCatalogueEditor` runs through
+`PenEditorViewModel` owns one `Bridge/ArchiveCallQueue`, and every call to `IPenCatalogueEditor` runs through
 it: pen commits, the scale pair, membership toggles, group create, rename and delete, and refresh. The
 queue is a task chain, first in, first out. Each call starts after the one before it has finished, a
 commit issued while another is in flight waits instead of being dropped, and a refresh reads only after
 every commit issued before it. A refresh reads again while a call waits behind its read, because a write
 queued there would land on a row the rebuild replaces. A call that throws reaches only its own awaiter
 and never stops the next. `WhenIdleAsync` also waits for a call queued while it waits. Every caller runs
-on the UI thread, so the queue takes no lock.
+on the UI thread, so the queue takes no lock. `MarkerSync` owns a queue of its own for the chart's marker
+writes (`#the-live-markers`).
 
 While a refresh runs, the pen form and the whole groups tab are disabled, because the rebuild replaces
 the view models they edit: text typed then would end its edit on a form or group nobody shows any more.
@@ -587,13 +601,16 @@ reads, so the read carries the provider's normalisation and nothing repeats it. 
 - `ReadNow()` during the wait starts a read at once; during a read it makes exactly one more read
   follow it; the wait after any read is a full interval.
 
+The loop is `Bridge/ArchiveReadLoop`, which `PenCatalogueSync` delegates to with the read name "pen
+catalogue" and `MarkerSync` runs as well (`#the-live-markers`). It holds the wait, `ReadNow`, the failure
+count and its warning; each sync keeps its read and what it does with a result.
 The loop runs on the UI scheduler through `ScheduleAsync`. The read is asynchronous I/O and holds no
 thread, and the loop, `ReadNow`, the snapshot and `Dispose` all run on the UI thread, so nothing is
 locked. `TrendWindow.Build` builds the sync from the pens the start sequence read, after the
 minimap, hands its `ReadNow` to `MainWindowViewModel`, and starts it once the window view model exists.
 `Dispose` cancels the wait, and a read that lands after it emits nothing.
 
-The editor asks for a read after every write it lands. `EditorCallQueue` invokes its success callback
+The editor asks for a read after every write it lands. `ArchiveCallQueue` invokes its success callback
 on the UI thread after a call whose result succeeded, and a failed or thrown call invokes nothing.
 `MainWindowViewModel` builds the editor's view model with a callback that calls the sync's `ReadNow()`,
 so the read that follows an edit reaches the instance that made it within a second, while the editor
@@ -681,6 +698,70 @@ The chart applies the delta to the pens it has and is never rebuilt whole. A win
 once by `TrendWindow.Build` and never replaced. The status bar takes the coordinator's connection
 stream and the chart's navigation in its constructor, the navigation controller has no way to take a
 window back, and a gesture started on a replaced chart would end on a disposed one.
+
+### The live markers
+
+A time marker is a vertical line at a stored moment with an optional label
+(`trend-interaction.md#the-time-markers`, `data-integration.md#the-marker-store`). Every window shows every
+stored marker inside its time window and follows what any window stores, through `Markers/MarkerSync` and
+no other route. Nothing is pushed between windows, for the reasons
+`#why-nothing-is-pushed-and-nothing-is-rebuilt-whole` gives.
+
+| Part | Holds |
+| --- | --- |
+| `Markers/MarkerSync` | The read loop and the write queue over `IMarkerStore`. It implements `Chart/IMarkerChannel` and reports every failure to the message panel. `TrendWindow` builds and disposes it. |
+| `Chart/IMarkerChannel` | The chart's port: `Reads`, every read no write overtook, on the UI thread, and the four writes, each returning a `Result`. |
+| `Chart/ChartMarkers` | `TrendChartViewModel.Markers`, created and disposed by the chart view model. It reconciles each read into a `MarkerSet`, runs the gestures' writes and raises `Changed` once per change. |
+| `Core/Trends/MarkerSet` | The markers sorted by moment, then id, the hold counts and the hit test `NearestWithin`, a binary search. |
+| `Chart/ChartMarkerLines` | One line per marker on the view's plot (`trend-interaction.md#the-time-markers`). |
+
+`Markers/` uses `Chart/` and `Bridge/`, and neither uses `Markers/`. `MarkerSync` implements
+`Chart/IMarkerChannel` and `Chart/` already uses `Bridge/`, so in `Bridge/` beside `PenCatalogueSync` it
+would make the two folders use each other.
+
+#### The marker read
+
+`MarkerSync` runs `Bridge/ArchiveReadLoop` with the read name "marker": every 5 s or at once on
+`ReadNow()`, never two reads at a time, as `#the-read` states for the catalogue. Unlike the catalogue it
+reads at once when the window opens, because the start sequence reads no marker: `TrendWindow.Build`
+calls `Start()` and then `ReadNow()`. Every read that lands emits on `Reads`, changed or not;
+`MarkerSet.Apply` is the one comparison, and the chart raises `Changed` only when the set differs. A
+failed read emits nothing and the chart keeps the markers it shows. The first two failures in a row log
+a warning, and the third and every one after it go to the panel (`#a-failed-read`). Against a database
+provisioned before SemiBase v0.6.0, which has no `semiplot_markers`, that is a `TableMissing` Error about
+10 s after the window opens, and the chart works without markers.
+
+#### The marker writes
+
+The four writes, add, move, rename and delete, run through one `Bridge/ArchiveCallQueue` per window, one
+at a time in the order issued, so two quick drags of one marker cannot commit out of order. A failed write
+goes to the panel through `ResultReporting.ReportFailure` and returns to its caller. Every write ends with
+`ReadNow()`, whatever its outcome, so the window that wrote reads again at once and every other window
+within 5 s.
+
+A read can overtake a write. The queue's success callback raises a write generation inside the queued
+call, before the caller resumes. Each read captures the generation before its statement starts, and a
+read that lands under a newer generation is discarded; the `ReadNow()` after that write brings the stored
+state. A discarded read counts as a success for the failure count. A write that fails on the client after
+the server committed raises no generation, so a read already in flight shows the old state once, and the
+`ReadNow()` after the failed write brings the committed one.
+
+#### Local state first
+
+A write's own result updates the window at once, and the read after it confirms:
+
+| Gesture | The window shows | After a failure |
+| --- | --- | --- |
+| Add | Nothing until the id lands, then the marker; a read that brought the id first leaves one marker | Nothing is placed |
+| Move | The marker follows the pointer from the first move past the slop; the one write goes at the drop | The moment the drag began at |
+| Rename | The new label at once | The label the marker had |
+| Delete | The marker leaves once the delete lands | The marker stays |
+
+A marker with a write in flight, or under a drag, is held: a read does not move, relabel or remove it,
+and it stays when a read omits it. `MarkerSet` counts holds, so two overlapping writes on one marker keep
+it held until both land. A failed move or rename restores the stored value only when its release brings
+the count to zero, and a marker still held keeps the newer local state. `MarkerGone` removes the marker
+whatever the count.
 
 ### The export window
 
@@ -788,7 +869,9 @@ The application reads the real archive and nothing else: the composition root re
 the archive extent, the archive days read, the windowed history read and the live-edge poll. The chart draws history and
 follows the archive as it grows. The pen editor writes the catalogue through `IPenCatalogueEditor`,
 and every running chart follows what it writes within 5 s (`#the-live-catalogue`), except the start
-values, which change nothing on screen (`#what-a-read-changes`). The export window writes the stored rows
+values, which change nothing on screen (`#what-a-read-changes`). The chart places, drags, renames and
+deletes time markers stored in `semiplot_markers`, and every window follows them within 5 s
+(`#the-live-markers`). The export window writes the stored rows
 of a range of at most 24 hours to a CSV file (`#the-export-window`). See
 [data-integration.md](./data-integration.md)
 for the contract and `docs/plans/` for the remaining work.

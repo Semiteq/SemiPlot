@@ -50,6 +50,7 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 		BandFeed = new MinimapBandFeed(coordinator, chart, ReadBounds, uiScheduler, messagePanel, logger);
 
 		_disposables.Add(FollowNavigation());
+		_disposables.Add(chart.Markers.Changed.Subscribe(_ => RefreshTimeMarkerFractions(), ReportFailure));
 		_disposables.Add(_missingExtentRead);
 		_disposables.Add(BandFeed);
 	}
@@ -119,6 +120,13 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 		: string.Empty;
 
 	public MinimapBandFeed BandFeed { get; }
+
+	/// <summary>Where each time marker inside the extent sits along the strip; empty without an extent.</summary>
+	public IReadOnlyList<double> TimeMarkerFractions
+	{
+		get;
+		private set => this.RaiseAndSetIfChanged(ref field, value);
+	} = [];
 
 	public void Dispose()
 	{
@@ -220,6 +228,7 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 		ExtentLast = MinimapGeometry.RightBound(result.Value.LastUtc, navigation.NewestSample);
 		HasExtent = true;
 		RefreshWindowFraction(navigation.From, navigation.To);
+		RefreshTimeMarkerFractions();
 		BandFeed.RequestRead();
 	}
 
@@ -281,6 +290,7 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 
 		ExtentLast = rightBound;
 		RefreshWindowFraction(_chart.Navigation.From, _chart.Navigation.To);
+		RefreshTimeMarkerFractions();
 	}
 
 	private void RefreshWindowFraction(DateTime from, DateTime to)
@@ -293,5 +303,24 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 		var (start, width) = MinimapGeometry.WindowFraction(ExtentFirst, ExtentLast, from, to);
 		WindowStartFraction = start;
 		WindowWidthFraction = width;
+	}
+
+	private void RefreshTimeMarkerFractions()
+	{
+		if (!HasExtent)
+		{
+			return;
+		}
+
+		var fractions = new List<double>();
+		foreach (var marker in _chart.Markers.Markers)
+		{
+			if (MinimapGeometry.FractionAt(ExtentFirst, ExtentLast, marker.TimeUtc) is { } fraction)
+			{
+				fractions.Add(fraction);
+			}
+		}
+
+		TimeMarkerFractions = fractions;
 	}
 }

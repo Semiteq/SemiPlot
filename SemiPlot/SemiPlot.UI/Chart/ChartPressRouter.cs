@@ -9,21 +9,29 @@ public enum ChartPressAction
 	PanOrEditTimeWindow,
 	PlaceDeltaCursor,
 	EditAxisScale,
-	ShiftActivePen
+	ShiftActivePen,
+	DragMarker,
+	AddMarker,
+	DeleteMarker
 }
 
 public enum ChartPressRegion
 {
 	DataArea,
 	ActivePenAxis,
-	TimeAxis
+	TimeAxis,
+	Marker
 }
 
 public static class ChartPressRouter
 {
 	private const double ClickSlopPixels = 4.0;
 
-	public static ChartPressAction Route(ChartPressRegion region, KeyModifiers modifiers, LeftButtonTool activeTool)
+	public static ChartPressAction Route(
+		ChartPressRegion region,
+		KeyModifiers modifiers,
+		LeftButtonTool activeTool,
+		int clickCount)
 	{
 		if (region == ChartPressRegion.ActivePenAxis)
 		{
@@ -40,9 +48,18 @@ public static class ChartPressRouter
 			return ChartPressAction.PanOrEditTimeWindow;
 		}
 
-		return activeTool == LeftButtonTool.DeltaPlacement
-			? ChartPressAction.PlaceDeltaCursor
-			: ChartPressAction.PanOrPickPen;
+		if (activeTool == LeftButtonTool.DeltaPlacement)
+		{
+			return ChartPressAction.PlaceDeltaCursor;
+		}
+
+		var isDoubleClick = clickCount == 2;
+		if (region == ChartPressRegion.Marker)
+		{
+			return isDoubleClick ? ChartPressAction.DeleteMarker : ChartPressAction.DragMarker;
+		}
+
+		return isDoubleClick ? ChartPressAction.AddMarker : ChartPressAction.PanOrPickPen;
 	}
 
 	public static bool IsPastClickSlop(Point origin, Point current)

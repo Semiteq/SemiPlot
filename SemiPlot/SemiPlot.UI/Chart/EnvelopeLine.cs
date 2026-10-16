@@ -158,9 +158,20 @@ public sealed class EnvelopeLine : IPlottable
 
 	private Pixel ProjectVertex(EnvelopePoint vertex, PixelRect dataRect, double? logFloor)
 	{
-		var y = logFloor is { } floor ? LogAxis.Project(vertex.Y, floor) : vertex.Y;
+		return Project(vertex.X, vertex.Y, dataRect, logFloor);
+	}
 
-		return new Pixel(Axes.XAxis.GetPixel(vertex.X, dataRect), Axes.YAxis.GetPixel(y, dataRect));
+	/// <summary>The pixel a value of this pen at <paramref name="x"/> draws at, on a log10 axis too.</summary>
+	internal Pixel PixelOf(double x, double value, PixelRect dataRect)
+	{
+		return Project(x, value, dataRect, LogFloorOf(dataRect));
+	}
+
+	private Pixel Project(double x, double value, PixelRect dataRect, double? logFloor)
+	{
+		var y = logFloor is { } floor ? LogAxis.Project(value, floor) : value;
+
+		return new Pixel(Axes.XAxis.GetPixel(x, dataRect), Axes.YAxis.GetPixel(y, dataRect));
 	}
 
 	public void Restyle(Color color, PenLineStyle lineStyle)

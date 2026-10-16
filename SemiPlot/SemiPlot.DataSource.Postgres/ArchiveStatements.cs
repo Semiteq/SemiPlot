@@ -28,8 +28,16 @@ internal static class StoredGroupColumn
 }
 
 /// <summary>
-/// Every statement the provider and the catalogue editor issue; parameters are bound, never interpolated.
+/// The column order of <see cref="ArchiveStatements.StoredMarkers"/>, named so a transposition shows.
 /// </summary>
+internal static class StoredMarkerColumn
+{
+	public const int Id = 0;
+	public const int Time = 1;
+	public const int Label = 2;
+}
+
+/// <summary>Every statement this project issues; parameters are bound, never interpolated.</summary>
 internal static class ArchiveStatements
 {
 	/// <summary>
@@ -40,6 +48,11 @@ internal static class ArchiveStatements
 	public const string GroupsRelation = "semiplot_groups";
 
 	public const string PenGroupsRelation = "semiplot_pen_groups";
+
+	/// <summary>
+	/// SemiBase's time markers, for the detail line of every failed marker read or write.
+	/// </summary>
+	public const string MarkersRelation = "semiplot_markers";
 
 	/// <summary>
 	/// The sample table the SCADA writes rows into.
@@ -126,6 +139,16 @@ internal static class ArchiveStatements
 	                                       DELETE FROM semiplot_pen_groups
 	                                       WHERE pen_id = @pen_id AND group_id = @group_id;
 	                                       """;
+
+	public const string StoredMarkers = "SELECT id, t, label FROM semiplot_markers ORDER BY t, id;";
+
+	public const string AddMarker = "INSERT INTO semiplot_markers (t, label) VALUES (@t, @label) RETURNING id;";
+
+	public const string MoveMarker = "UPDATE semiplot_markers SET t = @t WHERE id = @id;";
+
+	public const string RenameMarker = "UPDATE semiplot_markers SET label = @label WHERE id = @id;";
+
+	public const string DeleteMarker = "DELETE FROM semiplot_markers WHERE id = @id;";
 
 	/// <summary>The name PostgreSQL gives the membership's foreign key to the pen SemiBase declares unnamed.</summary>
 	public const string MembershipPenKey = "semiplot_pen_groups_pen_id_fkey";

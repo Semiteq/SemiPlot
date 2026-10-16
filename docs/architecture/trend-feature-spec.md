@@ -152,6 +152,7 @@ through `TrendChartViewModel.SetActivePen`; the picked line is drawn 2 px wide a
 ### CU-4 — Multiple named bookmarks (SHOULD)
 **Definition.** Beyond T1/T2 — an arbitrary number of time bookmarks with "previous/next" navigation and centering. A bookmark is placed with a double-click in vertical-cursor mode.
 **Acceptance.** UI: ≥3 bookmarks are placed; the navigation buttons move the window to them with centering.
+**Note.** Stored time markers cover the placement: a marker is placed from the chart's right-click menu rather than a double-click, carries an optional label, has no cap on the count and is shared by every window (`trend-interaction.md#the-time-markers`). The previous/next navigation with centering and a marker list are not built, so a marker is found on the chart only.
 
 ### CU-5 — Horizontal cursor and crosshair (NICE)
 **Definition.** A horizontal line (a value slice for the active pen) and a crosshair mode (vertical+horizontal at once) showing X and Y in the center.

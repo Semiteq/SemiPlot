@@ -327,7 +327,8 @@ public sealed class PenCatalogueEditorTests(PostgresContainerFixture postgresCon
 			() => command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken));
 
 		var refused = thrown.Should().BeOfType<PostgresException>().Which;
-		var error = services.GetRequiredService<ArchiveExceptionMapper>().MapWrite(refused, "Chamber pressure");
+		var error = services.GetRequiredService<ArchiveExceptionMapper>()
+			.MapWrite(refused, "Chamber pressure", ArchiveStatements.PenCatalogRelations);
 
 		error.Should().BeOfType<ArchiveError>().Which.Kind.Should().Be(ArchiveFault.AccessDenied);
 		(await ReadAsync(Editor(services))).Pens.Select(pen => pen.Id).Should().Equal(101, 102, 103, 104, 105);
@@ -353,6 +354,18 @@ public sealed class PenCatalogueEditorTests(PostgresContainerFixture postgresCon
 		pens.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(pens));
 		pens.Value.Where(pen => _heaterIds.Contains(pen.PenId)).Should().HaveCount(_heaterIds.Length)
 			.And.OnlyContain(pen => pen.Groups.Count == 0);
+	}
+
+	[Fact]
+	public async Task AWriteToADroppedCatalogueTableNamesEveryCatalogueRelation()
+	{
+		await AdminAsync(ArchiveReadSupport.DropGroupsCommand);
+
+		using var services = Build();
+
+		var result = await Editor(services).CreateGroupAsync("Etch gases");
+
+		FailureOf(result).Should().Be((ArchiveFault.TableMissing, ArchiveStatements.PenCatalogRelations));
 	}
 
 	protected override async ValueTask SeedAsync()

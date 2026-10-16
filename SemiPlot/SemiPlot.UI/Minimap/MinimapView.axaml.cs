@@ -3,6 +3,7 @@ using System.Reactive.Disposables;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Media;
 
 using ReactiveUI;
 
@@ -56,12 +57,16 @@ public partial class MinimapView : UserControl
 		_disposables.Add(viewModel
 			.WhenAnyValue(model => model.HoverFraction, model => model.HoverLabel)
 			.Subscribe(_ => PlaceHover()));
+		_disposables.Add(viewModel
+			.WhenAnyValue(model => model.TimeMarkerFractions)
+			.Subscribe(_ => PlaceTimeMarkerTicks()));
 	}
 
 	private void UpdateStrip()
 	{
 		LayoutBand();
 		PlaceMarker();
+		PlaceTimeMarkerTicks();
 		PlaceHover();
 	}
 
@@ -101,6 +106,24 @@ public partial class MinimapView : UserControl
 		Canvas.SetLeft(WindowHighlight, left);
 		WindowHighlight.Width = width;
 		WindowHighlight.Height = StripCanvas.Bounds.Height;
+	}
+
+	private void PlaceTimeMarkerTicks()
+	{
+		if (DataContext is not MinimapViewModel viewModel)
+		{
+			return;
+		}
+
+		var (width, height) = (StripCanvas.Bounds.Width, StripCanvas.Bounds.Height);
+		var ticks = new GeometryGroup();
+		foreach (var fraction in viewModel.TimeMarkerFractions)
+		{
+			var x = fraction * width;
+			ticks.Children.Add(new LineGeometry(new Point(x, 0.0), new Point(x, height)));
+		}
+
+		TimeMarkerTicks.Data = ticks;
 	}
 
 	private void PlaceHover()

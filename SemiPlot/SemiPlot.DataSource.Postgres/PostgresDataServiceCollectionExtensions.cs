@@ -47,6 +47,10 @@ public static class PostgresDataServiceCollectionExtensions
 			provider.GetRequiredService<NpgsqlDataSource>(),
 			provider.GetRequiredService<ArchiveExceptionMapper>(),
 			provider.GetRequiredService<ILogger<PostgresPenCatalogueEditor>>()));
+		services.AddSingleton<IMarkerStore>(provider => new PostgresMarkerStore(
+			provider.GetRequiredService<NpgsqlDataSource>(),
+			provider.GetRequiredService<ArchiveExceptionMapper>(),
+			provider.GetRequiredService<ILogger<PostgresMarkerStore>>()));
 		services.AddSingleton<IArchiveRowReader>(provider => new PostgresArchiveRowReader(
 			provider.GetRequiredService<NpgsqlDataSource>(),
 			provider.GetRequiredService<ArchiveExceptionMapper>(),

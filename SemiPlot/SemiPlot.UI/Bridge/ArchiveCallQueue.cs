@@ -1,12 +1,12 @@
 using FluentResults;
 
-namespace SemiPlot.UI.PenEditor;
+namespace SemiPlot.UI.Bridge;
 
 /// <summary>
-/// Runs every pen editor call one after another, in the order issued. Used from the UI thread only, so the
-/// tail needs no lock.
+/// Runs every archive call queued on it one after another, in the order issued. Used from the UI thread only, so
+/// the tail needs no lock.
 /// </summary>
-public sealed class EditorCallQueue(Action callSucceeded)
+public sealed class ArchiveCallQueue(Action callSucceeded)
 {
 	private const ConfigureAwaitOptions AfterAnyOutcome =
 		ConfigureAwaitOptions.ContinueOnCapturedContext | ConfigureAwaitOptions.SuppressThrowing;

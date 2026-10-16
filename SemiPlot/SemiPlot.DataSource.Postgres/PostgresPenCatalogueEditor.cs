@@ -281,6 +281,7 @@ public sealed class PostgresPenCatalogueEditor : IPenCatalogueEditor
 
 	private Error MapWrite(Exception exception, string subject)
 	{
-		return ArchiveFailureLog.LogIfUnexpected(_exceptionMapper.MapWrite(exception, subject), exception, _logger);
+		return ArchiveFailureLog.LogIfUnexpected(
+			_exceptionMapper.MapWrite(exception, subject, ArchiveStatements.PenCatalogRelations), exception, _logger);
 	}
 }

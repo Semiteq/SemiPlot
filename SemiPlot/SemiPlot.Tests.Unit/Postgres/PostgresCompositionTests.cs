@@ -83,6 +83,7 @@ public sealed class PostgresCompositionTests
 	[Theory]
 	[InlineData(typeof(IDataProvider))]
 	[InlineData(typeof(IPenCatalogueEditor))]
+	[InlineData(typeof(IMarkerStore))]
 	[InlineData(typeof(IScheduler))]
 	[InlineData(typeof(TimeProvider))]
 	[InlineData(typeof(NpgsqlDataSource))]

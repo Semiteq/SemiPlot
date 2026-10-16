@@ -13,6 +13,8 @@ using ScottPlot;
 using ScottPlot.Plottables;
 using ScottPlot.TickGenerators;
 
+using SemiPlot.Core.Data;
+
 using Serilog;
 
 using Cursor = Avalonia.Input.Cursor;
@@ -25,10 +27,12 @@ public partial class TrendChartView : UserControl
 	private const double WheelWidenFactor = 1.25;
 	private const double WheelPanFraction = 0.1;
 	private const double WheelShiftFraction = 0.1;
+	private const double MarkerHitPixels = 4.0;
 
 	private static readonly Cursor _handCursor = new(StandardCursorType.Hand);
 	private static readonly Cursor _grabbingCursor = new(StandardCursorType.SizeAll);
 	private static readonly Cursor _penShiftCursor = new(StandardCursorType.SizeNorthSouth);
+	private static readonly Cursor _markerCursor = new(StandardCursorType.SizeWestEast);
 
 	// ScottPlot's own constructor seeds the render events with an empty delegate; this restores that state
 	// when the view drops the last handler.
@@ -37,6 +41,9 @@ public partial class TrendChartView : UserControl
 	private readonly PopupFlyoutBase _axisScaleFlyout;
 	private readonly Flyout _timeWindowFlyout;
 	private readonly TimeWindowPanel _timeWindowPanel;
+	private readonly MenuFlyout _chartMenuFlyout;
+	private readonly MenuFlyout _markerMenuFlyout;
+	private readonly Flyout _markerLabelFlyout;
 	private readonly CompositeDisposable _disposables = [];
 	private VerticalLine? _deltaFirstLine;
 	private VerticalLine? _deltaSecondLine;
@@ -59,6 +66,13 @@ public partial class TrendChartView : UserControl
 			?? throw new InvalidOperationException("The chart view declares its time window flyout in XAML.");
 		_timeWindowPanel = _timeWindowFlyout.Content as TimeWindowPanel
 			?? throw new InvalidOperationException("The time window flyout holds the time window panel.");
+		_chartMenuFlyout = Resources["ChartMenuFlyout"] as MenuFlyout
+			?? throw new InvalidOperationException("The chart view declares its chart menu in XAML.");
+		_markerMenuFlyout = Resources["MarkerMenuFlyout"] as MenuFlyout
+			?? throw new InvalidOperationException("The chart view declares its marker menu in XAML.");
+		_markerLabelFlyout = Resources["MarkerLabelFlyout"] as Flyout
+			?? throw new InvalidOperationException("The chart view declares its marker label editor in XAML.");
+		_markerLabelFlyout.Opened += OnMarkerLabelFlyoutOpened;
 		DataContextChanged += OnDataContextChanged;
 
 		PlotControl.UserInputProcessor.Disable();
@@ -73,11 +87,17 @@ public partial class TrendChartView : UserControl
 		PlotControl.AddHandler(PointerReleasedEvent, OnPointerReleased, RoutingStrategies.Tunnel);
 		PlotControl.PointerCaptureLost += OnPointerCaptureLost;
 		PlotControl.PointerExited += OnPointerExited;
-		PlotControl.SizeChanged += (_, _) => RepositionCursorOverlay();
+		PlotControl.SizeChanged += OnPlotSizeChanged;
 	}
 
 	/// <summary>Animation-frame callbacks that served a redraw request since the view was built.</summary>
 	internal int ServedFrameCount { get; private set; }
+
+	/// <summary>The marker layer on the bound plot; null while no view model is bound.</summary>
+	internal ChartMarkerLines? MarkerLines { get; private set; }
+
+	/// <summary>The active pen's readings at the markers on the bound plot; null while no view model is bound.</summary>
+	internal ChartMarkerReadings? MarkerReadings { get; private set; }
 
 	protected override void OnLoaded(RoutedEventArgs e)
 	{
@@ -147,10 +167,23 @@ public partial class TrendChartView : UserControl
 
 		ChartPalette.Apply(PlotControl.Plot, application, application.ActualThemeVariant);
 		_paintedAxisCount = _viewModel?.AxisCount ?? -1;
+		PaintMarkerLines();
+	}
+
+	private void PaintMarkerLines()
+	{
+		if (MarkerLines is null || MarkerReadings is null || Application.Current is not { } application)
+		{
+			return;
+		}
+
+		var palette = ChartPalette.MarkerColors(application, application.ActualThemeVariant);
+		MarkerLines.ApplyPalette(palette);
+		MarkerReadings.ApplyPalette(palette);
 	}
 
 	// docs/architecture/charting.md#module-layout-avalonia-views--view-models--core-models
-	private static EventHandler<RenderDetails> ReportDataAreaWidthTo(TrendChartViewModel renderedViewModel)
+	private EventHandler<RenderDetails> ReportDataAreaWidthTo(TrendChartViewModel renderedViewModel)
 	{
 		float? lastPostedWidth = null;
 
@@ -163,13 +196,31 @@ public partial class TrendChartView : UserControl
 			}
 
 			lastPostedWidth = dataAreaWidth;
-			Dispatcher.UIThread.Post(() => renderedViewModel.ReportDataAreaWidth(dataAreaWidth));
+			Dispatcher.UIThread.Post(() =>
+			{
+				renderedViewModel.ReportDataAreaWidth(dataAreaWidth);
+				ProjectMarkerLinesAtRenderedWidth(renderedViewModel, dataAreaWidth);
+			});
 		};
+	}
+
+	// docs/architecture/trend-interaction.md#the-time-markers
+	private void ProjectMarkerLinesAtRenderedWidth(TrendChartViewModel renderedViewModel, double dataAreaWidth)
+	{
+		if (MarkerLines is not { Lines.Count: > 0 } markerLines || _viewModel != renderedViewModel)
+		{
+			return;
+		}
+
+		markerLines.Project(renderedViewModel.Navigation.From, renderedViewModel.Navigation.To, dataAreaWidth);
+		RequestFrame();
 	}
 
 	private void OnDataContextChanged(object? sender, EventArgs eventArgs)
 	{
 		_disposables.Clear();
+		MarkerLines = null;
+		MarkerReadings = null;
 		ClearPendingFrame();
 		_paintedAxisCount = -1;
 		_viewModel = DataContext as TrendChartViewModel;
@@ -205,6 +256,7 @@ public partial class TrendChartView : UserControl
 		_viewModel.Plot.Axes.Bottom.TickGenerator = new DateTimeAutomatic();
 		CreateDeltaCursorLines(_viewModel.Plot);
 		ApplyWindow(_viewModel.Navigation.From, _viewModel.Navigation.To);
+		CreateMarkerLines(_viewModel);
 
 		_viewModel.Navigation.WindowChanged += OnNavigationWindowChanged;
 		_disposables.Add(Disposable.Create(() =>
@@ -260,6 +312,7 @@ public partial class TrendChartView : UserControl
 			return;
 		}
 
+		UpdateMarkerReadings(_viewModel);
 		PlotControl.InvalidateVisual();
 		RepositionCursorOverlay();
 		ServedFrameCount++;
@@ -285,6 +338,80 @@ public partial class TrendChartView : UserControl
 	private void OnNavigationWindowChanged(object? sender, NavigationWindow window)
 	{
 		ApplyWindow(window.From, window.To);
+		ProjectMarkerLines(PlotControl.Bounds.Width);
+	}
+
+	private void OnPlotSizeChanged(object? sender, SizeChangedEventArgs eventArgs)
+	{
+		RepositionCursorOverlay();
+		ProjectMarkerLines(eventArgs.NewSize.Width);
+	}
+
+	private void CreateMarkerLines(TrendChartViewModel viewModel)
+	{
+		MarkerLines = new ChartMarkerLines(viewModel.Plot);
+		_disposables.Add(Disposable.Create(MarkerLines.RemoveLines));
+		var markerReadings = new ChartMarkerReadings();
+		MarkerReadings = markerReadings;
+		lock (viewModel.Plot.Sync)
+		{
+			viewModel.Plot.Add.Plottable(markerReadings);
+		}
+
+		_disposables.Add(Disposable.Create(() =>
+		{
+			lock (viewModel.Plot.Sync)
+			{
+				viewModel.Plot.Remove(markerReadings);
+			}
+		}));
+		PaintMarkerLines();
+		SyncMarkerLines(viewModel);
+
+		_disposables.Add(viewModel.Markers.Changed
+			.Subscribe(
+				_ =>
+				{
+					SyncMarkerLines(viewModel);
+					RequestFrame();
+				},
+				ReportFailureOf(nameof(ChartMarkers.Changed))));
+	}
+
+	private void SyncMarkerLines(TrendChartViewModel viewModel)
+	{
+		MarkerLines?.Sync(viewModel.Markers.Markers);
+		ProjectMarkerLines(PlotControl.Bounds.Width);
+	}
+
+	// docs/architecture/trend-interaction.md#the-time-markers
+	private void UpdateMarkerReadings(TrendChartViewModel viewModel)
+	{
+		var navigation = viewModel.Navigation;
+		MarkerReadings?.Update(
+			viewModel.Markers.Markers,
+			viewModel.FindPen(viewModel.ActivePenId),
+			viewModel.ActivePenReadingAt,
+			navigation.From,
+			navigation.To);
+	}
+
+	private void ProjectMarkerLines(double plotWidth)
+	{
+		if (MarkerLines is null || _viewModel is null)
+		{
+			return;
+		}
+
+		var navigation = _viewModel.Navigation;
+		MarkerLines.Project(navigation.From, navigation.To, EstimatedDataAreaWidth(plotWidth));
+	}
+
+	private double EstimatedDataAreaWidth(double plotWidth)
+	{
+		var lastRender = PlotControl.Plot.LastRender;
+
+		return plotWidth - (lastRender.FigureRect.Width - lastRender.DataRect.Width);
 	}
 
 	private void ApplyWindow(DateTime from, DateTime to)
@@ -352,38 +479,62 @@ public partial class TrendChartView : UserControl
 		return (dataRect.Bottom - position.Y) / dataRect.Height;
 	}
 
-	private void OnPointerPressed(object? sender, PointerPressedEventArgs eventArgs)
+	private async void OnPointerPressed(object? sender, PointerPressedEventArgs eventArgs)
 	{
-		if (_viewModel is null || !eventArgs.GetCurrentPoint(PlotControl).Properties.IsLeftButtonPressed)
+		if (_viewModel is not { } viewModel
+			|| _drag is not null
+			|| !eventArgs.GetCurrentPoint(PlotControl).Properties.IsLeftButtonPressed)
 		{
 			return;
 		}
 
-		var position = eventArgs.GetPosition(PlotControl);
-		var action = ChartPressRouter.Route(
-			PressRegionAt(position),
-			eventArgs.KeyModifiers,
-			_viewModel.ActiveLeftButtonTool);
-
-		switch (action)
+		try
 		{
-			case ChartPressAction.EditAxisScale:
-				OpenAxisScalePanel();
-				eventArgs.Handled = true;
+			var position = eventArgs.GetPosition(PlotControl);
+			var marker = MarkerAt(position);
+			var action = ChartPressRouter.Route(
+				PressRegionAt(position, marker),
+				eventArgs.KeyModifiers,
+				viewModel.ActiveLeftButtonTool,
+				eventArgs.ClickCount);
 
-				break;
+			switch (action)
+			{
+				case ChartPressAction.EditAxisScale:
+					OpenAxisScalePanel();
+					eventArgs.Handled = true;
 
-			case ChartPressAction.PlaceDeltaCursor:
-				_viewModel.PlaceDeltaCursor(AnchorAt(position));
-				UpdateDeltaCursorLines();
-				RequestFrame();
+					break;
 
-				break;
+				case ChartPressAction.PlaceDeltaCursor:
+					viewModel.PlaceDeltaCursor(AnchorAt(position));
+					UpdateDeltaCursorLines();
+					RequestFrame();
 
-			default:
-				BeginDrag(eventArgs, action);
+					break;
 
-				break;
+				case ChartPressAction.AddMarker:
+					eventArgs.Handled = true;
+					await viewModel.Markers.AddAtAsync(AnchorAt(position));
+
+					break;
+
+				case ChartPressAction.DeleteMarker when marker is not null:
+					eventArgs.Handled = true;
+					await viewModel.Markers.DeleteAsync(marker);
+
+					break;
+
+				default:
+					BeginDrag(eventArgs, action, action == ChartPressAction.DragMarker ? marker : null);
+
+					break;
+			}
+		}
+		catch (Exception failure)
+		{
+			Log.Error(failure, "The chart view failed to handle a press");
+			viewModel.ReportFailure(failure);
 		}
 	}
 
@@ -394,17 +545,34 @@ public partial class TrendChartView : UserControl
 			&& region.Contains((float)position.X, (float)position.Y);
 	}
 
-	private ChartPressRegion PressRegionAt(Point position)
+	private ChartPressRegion PressRegionAt(Point position, StoredMarker? marker)
 	{
 		if (IsOverActiveAxis(position))
 		{
 			return ChartPressRegion.ActivePenAxis;
 		}
 
-		return ChartAxisRegion.TryCreateTimeAxis(PlotControl.Plot) is { } timeAxis
-			&& timeAxis.Contains((float)position.X, (float)position.Y)
-				? ChartPressRegion.TimeAxis
-				: ChartPressRegion.DataArea;
+		if (ChartAxisRegion.TryCreateTimeAxis(PlotControl.Plot) is { } timeAxis
+			&& timeAxis.Contains((float)position.X, (float)position.Y))
+		{
+			return ChartPressRegion.TimeAxis;
+		}
+
+		return marker is null ? ChartPressRegion.DataArea : ChartPressRegion.Marker;
+	}
+
+	private StoredMarker? MarkerAt(Point position)
+	{
+		var dataRect = PlotControl.Plot.LastRender.DataRect;
+		if (dataRect.Width <= 0f || !dataRect.Contains((float)position.X, (float)position.Y))
+		{
+			return null;
+		}
+
+		var time = AnchorAt(position);
+		var tolerance = AnchorAt(new Point(position.X + MarkerHitPixels, position.Y)) - time;
+
+		return _viewModel!.Markers.NearestWithin(time, tolerance);
 	}
 
 	private void OpenAxisScalePanel()
@@ -415,17 +583,28 @@ public partial class TrendChartView : UserControl
 		}
 	}
 
-	private void OpenTimeWindowPanel()
+	private void OpenTimeWindowPanel(TrendChartViewModel viewModel)
 	{
-		_viewModel!.TimeWindow.Seed();
+		viewModel.TimeWindow.Seed();
 		_timeWindowFlyout.ShowAt(PlotControl, true);
 	}
 
-	private void BeginDrag(PointerPressedEventArgs eventArgs, ChartPressAction action)
+	private void BeginDrag(PointerPressedEventArgs eventArgs, ChartPressAction action, StoredMarker? marker)
 	{
-		_drag = new ChartDrag(eventArgs.GetPosition(PlotControl), action, IsStarted: false);
+		_drag = new ChartDrag(
+			_viewModel!,
+			eventArgs.Pointer,
+			eventArgs.GetPosition(PlotControl),
+			action,
+			IsStarted: false,
+			marker);
 		_viewModel!.BeginDrag();
-		PlotControl.Cursor = action == ChartPressAction.ShiftActivePen ? _penShiftCursor : _grabbingCursor;
+		PlotControl.Cursor = action switch
+		{
+			ChartPressAction.ShiftActivePen => _penShiftCursor,
+			ChartPressAction.DragMarker => _markerCursor,
+			_ => _grabbingCursor
+		};
 		eventArgs.Pointer.Capture(PlotControl);
 
 		HideCursorOverlay();
@@ -443,7 +622,8 @@ public partial class TrendChartView : UserControl
 
 		if (_drag is { } drag)
 		{
-			if (!drag.IsStarted && !ChartPressRouter.IsPastClickSlop(drag.Origin, current))
+			if (eventArgs.Pointer != drag.Pointer
+				|| (!drag.IsStarted && !ChartPressRouter.IsPastClickSlop(drag.Origin, current)))
 			{
 				return;
 			}
@@ -454,26 +634,67 @@ public partial class TrendChartView : UserControl
 			return;
 		}
 
-		_viewModel.MoveCursor(AnchorAt(current));
+		Hover(current, eventArgs.KeyModifiers);
+	}
+
+	private void Hover(Point current, KeyModifiers modifiers)
+	{
+		if (PlotControl.Plot.LastRender.DataRect.Width <= 0f)
+		{
+			return;
+		}
+
+		var marker = MarkerAt(current);
+		var wouldDragMarker = marker is not null
+			&& ChartPressRouter.Route(
+				ChartPressRegion.Marker,
+				modifiers,
+				_viewModel!.ActiveLeftButtonTool,
+				clickCount: 1) == ChartPressAction.DragMarker;
+		PlotControl.Cursor = wouldDragMarker ? _markerCursor : _handCursor;
+
+		_viewModel!.MoveCursor(marker?.TimeUtc ?? AnchorAt(current));
 		RepositionCursorOverlay();
 	}
 
+	// The drag passed in is the one before this move, so IsStarted is false exactly on the first move past the slop.
 	private void ContinueDrag(ChartDrag drag, Point current)
 	{
 		if (drag.Action == ChartPressAction.ShiftActivePen)
 		{
 			var dataAreaHeight = PlotControl.Plot.LastRender.DataRect.Height;
-			_viewModel!.ShiftActivePen((drag.Origin.Y - current.Y) / dataAreaHeight);
+			drag.ViewModel.ShiftActivePen((drag.Origin.Y - current.Y) / dataAreaHeight);
 
 			return;
 		}
 
-		_viewModel!.Navigation.PanBy(AnchorAt(drag.Origin) - AnchorAt(current));
+		if (drag is { Action: ChartPressAction.DragMarker, Marker: { } marker })
+		{
+			if (!drag.IsStarted)
+			{
+				drag.ViewModel.Markers.BeginMove(marker);
+			}
+
+			drag.ViewModel.Markers.Move(AnchorAt(current));
+
+			return;
+		}
+
+		drag.ViewModel.Navigation.PanBy(AnchorAt(drag.Origin) - AnchorAt(current));
 	}
 
 	private void OnPointerReleased(object? sender, PointerReleasedEventArgs eventArgs)
 	{
-		if (_drag is not { } drag || eventArgs.InitialPressMouseButton != MouseButton.Left)
+		if (eventArgs.InitialPressMouseButton == MouseButton.Right && _drag is null)
+		{
+			OpenChartMenu(eventArgs.GetPosition(PlotControl));
+
+			return;
+		}
+
+		if (_drag is not { } drag
+			|| eventArgs.Pointer != drag.Pointer
+			|| eventArgs.InitialPressMouseButton != MouseButton.Left)
 		{
 			return;
 		}
@@ -481,38 +702,51 @@ public partial class TrendChartView : UserControl
 		// The view holds the capture here, so releasing it raises PointerCaptureLost, which ends the drag.
 		eventArgs.Pointer.Capture(null);
 
-		if (drag.IsStarted || _viewModel is null)
+		if (drag.IsStarted || drag.ViewModel != _viewModel)
 		{
 			return;
 		}
 
-		if (drag.Action == ChartPressAction.PanOrPickPen)
+		if (drag.Action is ChartPressAction.PanOrPickPen or ChartPressAction.DragMarker)
 		{
-			_viewModel.PickPenAt(ToPixel(drag.Origin));
+			drag.ViewModel.PickPenAt(ToPixel(drag.Origin));
 		}
 		else if (drag.Action == ChartPressAction.PanOrEditTimeWindow)
 		{
-			OpenTimeWindowPanel();
+			OpenTimeWindowPanel(drag.ViewModel);
 		}
 	}
 
 	// Capture can be lost mid-drag without a PointerReleased (window deactivation, focus steal); mirror the
 	// release path's cleanup so drag state, grab cursor and hover suppression do not stay stuck.
-	private void OnPointerCaptureLost(object? sender, PointerCaptureLostEventArgs eventArgs)
+	private async void OnPointerCaptureLost(object? sender, PointerCaptureLostEventArgs eventArgs)
 	{
-		if (_drag is null)
+		if (_drag is not { } drag || eventArgs.Pointer != drag.Pointer)
 		{
 			return;
 		}
 
-		EndDrag();
+		try
+		{
+			await EndDragAsync(drag);
+		}
+		catch (Exception failure)
+		{
+			Log.Error(failure, "The chart view failed to end a drag");
+			drag.ViewModel.ReportFailure(failure);
+		}
 	}
 
-	private void EndDrag()
+	// docs/architecture/trend-interaction.md#the-time-markers
+	private Task EndDragAsync(ChartDrag drag)
 	{
 		_drag = null;
-		_viewModel?.EndDrag();
 		PlotControl.Cursor = _handCursor;
+		drag.ViewModel.EndDrag();
+
+		return drag is { Action: ChartPressAction.DragMarker, IsStarted: true }
+			? drag.ViewModel.Markers.EndMoveAsync()
+			: Task.CompletedTask;
 	}
 
 	private void OnPointerExited(object? sender, PointerEventArgs eventArgs)
@@ -621,5 +855,11 @@ public partial class TrendChartView : UserControl
 	}
 
 	/// <summary>docs/architecture/trend-interaction.md#navigation--cursors</summary>
-	private readonly record struct ChartDrag(Point Origin, ChartPressAction Action, bool IsStarted);
+	private readonly record struct ChartDrag(
+		TrendChartViewModel ViewModel,
+		IPointer Pointer,
+		Point Origin,
+		ChartPressAction Action,
+		bool IsStarted,
+		StoredMarker? Marker);
 }

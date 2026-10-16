@@ -42,10 +42,12 @@ internal static class ChartTestBuilder
 	public static TrendChartViewModel CreateChart(
 		TestScheduler scheduler,
 		TrendCoordinator coordinator,
-		MessagePanelViewModel messagePanel)
+		MessagePanelViewModel messagePanel,
+		IMarkerChannel? markerChannel = null)
 	{
 		return new TrendChartViewModel(
 			coordinator,
+			markerChannel ?? new FakeMarkerChannel(),
 			scheduler,
 			scheduler,
 			TimeZoneInfo.Utc,
@@ -69,13 +71,15 @@ internal static class ChartTestBuilder
 		IScheduler? uiScheduler = null,
 		MessagePanelViewModel? messagePanel = null,
 		ILogger<TrendChartViewModel>? logger = null,
-		TimeZoneInfo? timeZone = null)
+		TimeZoneInfo? timeZone = null,
+		IMarkerChannel? markerChannel = null)
 	{
 		scheduler ??= new TestScheduler();
 		provider ??= new FakeDataProvider(scheduler, realtimeInterval ?? TimeSpan.FromHours(1));
 		var coordinator = CreateCoordinator(scheduler, provider);
 		var viewModel = new TrendChartViewModel(
 			coordinator,
+			markerChannel ?? new FakeMarkerChannel(),
 			scheduler,
 			uiScheduler ?? ImmediateScheduler.Instance,
 			timeZone ?? TimeZoneInfo.Utc,

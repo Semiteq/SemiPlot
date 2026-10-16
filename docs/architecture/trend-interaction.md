@@ -94,8 +94,9 @@ operator interaction.
 - **Decimation backend:** kept behind the data-provider **stub** for now; production backend
   will be **PostgreSQL**, but whether it stores pre-trimmed/layered data is **unknown** — the
   data layer must support either server-side aggregation or in-process decimation.
-- **Dropped / out of scope:** horizontal cursor (dropped); alarm/event overlays (out of scope);
-  annotations. **`[LATER]`:** view persistence, snapshot/print. CSV value export ships
+- **Dropped / out of scope:** horizontal cursor (dropped); alarm/event overlays (out of scope).
+  Time markers on the chart are in scope and built (`#the-time-markers`).
+  **`[LATER]`:** view persistence, snapshot/print. CSV value export ships
   as one table of pen, time and value (overview.md#the-export-window).
 
 ## Terminology
@@ -109,6 +110,7 @@ operator interaction.
 | Sticky          | View auto-scrolls to keep the live edge at the right edge (real-time follow). |
 | Active pen      | The pen whose scale is shown on the primary axis; selected by click.    |
 | Cursor / X-trace | On-hover Avalonia overlay vertical line reading each pen's value at the cursor X. |
+| Time marker     | A stored vertical line at a moment, with an optional label, that every window shows (`#the-time-markers`). Not the now-marker, the T1/T2 delta cursors or the archive's `q = 32` break marker. |
 
 > Terminology fix: the user's draft used "слой графика" for a plotted curve. To avoid clashing
 > with the archive-resolution "layer", a plotted curve is always a **pen**.
@@ -200,12 +202,20 @@ handler is then the only writer of `Handled` for the wheel. Each event kind has 
 point, and the handlers carry no modifier test of their own: the wheel goes through
 `Chart/ChartWheelRouter.Route(isAxisRegionHit, modifiers, delta)`, the left press through
 `Chart/ChartPressRouter.Route(region, modifiers, activeTool)`. The view names the one
-`ChartPressRegion` the press lands on (`ActivePenAxis`, `TimeAxis` or `DataArea`; the two bands do not
-overlap), and the press router checks the active pen's axis first, then Ctrl, then the time axis band,
-then the tool. The left
+`ChartPressRegion` the press lands on (`ActivePenAxis`, `TimeAxis`, `Marker` or `DataArea`; the two bands
+do not overlap, and `Marker` is a press inside the data rect within 4 px of a time marker), and the press
+router checks the active pen's axis first, then Ctrl, then the time axis band, then the tool, then the
+marker. The left
 button is a single tool with an explicit state (`Chart/LeftButtonTool` = `Pan` | `DeltaPlacement`); the active
 tool is sourced from the navigation bar's delta-mode toggle (`TrendChartViewModel.ActiveLeftButtonTool`),
 so there is one left-button gesture, not overlapping hidden branches. Ctrl is a held key, not a tool.
+A drag belongs to the pointer that pressed it (`ChartDrag.Pointer`). A second mouse button pressed during
+a drag never reaches the press router: Avalonia's `MouseDevice` raises a press or a release with another
+button still held as `PointerMoved` of the one mouse pointer, so the drag under way keeps going and ends
+on the release of the last button held. Touch is the other case: Avalonia's `TouchDevice` gives every
+finger its own pointer and raises its `PointerPressed` with the left button down. The view routes no
+press while a drag is under way, and it ignores the moves, the release and the capture loss of every other
+pointer, so a second finger neither moves, pans nor ends the first finger's drag.
 
 - **The wheel map.** `ChartWheelRouter` returns a `ChartWheelAction` and a notch sign, and checks the
   axis region first, then Ctrl, then Shift:
@@ -226,8 +236,8 @@ so there is one left-button gesture, not overlapping hidden branches. Ctrl is a 
   2026-10-15), so a pinch shifts the active pen and pins it `Manual` instead of zooming time. This is a
   known trade-off of the agreed map, which keeps Ctrl + wheel for the shift.
 - **Scroll = zoom about the cursor anchor; left-drag = hand pan; left-click = pick a pen.** In `Pan`
-  tool a press outside the axis region and the time axis band with Ctrl not held routes to
-  `ChartPressAction.PanOrPickPen`.
+  tool a press outside the axis region and the time axis band, off every time marker, with Ctrl not
+  held routes to `ChartPressAction.PanOrPickPen`; on a marker it drags the marker (`#the-time-markers`).
   The press captures the pointer and switches the cursor to a grab icon (`StandardCursorType.SizeAll`).
   A move pans the X window via `TrendNavigationModel.Pan` only once the pointer is more than the 4 px
   click slop (`ChartPressRouter.IsPastClickSlop`) from the press point; from then on every move pans and
@@ -279,7 +289,9 @@ so there is one left-button gesture, not overlapping hidden branches. Ctrl is a 
   through `Plot.GetPixel` and `Chart/ChartCursorOverlay` (cursor pixel X + `DataRect` + render scale →
   crosshair endpoints + readout anchor in DIP space, clamped). The readout text is the pure
   `Chart/ChartHoverReadout.BuildContent` string: the local timestamp plus every *visible* pen's value
-  at the cursor X (one line per pen; gap or missing pen → dash). The overlay is suppressed while a drag
+  at the cursor X (one line per pen; gap or missing pen → dash). With the pointer on a time marker the
+  cursor X is the marker's moment, so the readout lists every visible pen's value there
+  (`#the-time-markers`). The overlay is suppressed while a drag
   is in progress or delta mode is active (`IsDragging || IsDeltaModeEnabled`) and is repositioned from
   the chart's frame callback (after the plot's invalidation) and on `SizeChanged` so it tracks
   pan/zoom/resize/live-edge without per-event re-renders.
@@ -467,6 +479,98 @@ under sticky is now.
   gates it.
 - The panel keeps its size under validation (`ui-theme.md#the-time-window-panel`).
 
+### The time markers
+
+A time marker is a stored vertical line at a moment, with an optional label of at most 80 characters: the
+operator marks an event worth returning to, the start of a process for one, and finds it again after a
+restart and in every other window (`overview.md#the-live-markers`, `data-integration.md#the-marker-store`).
+The count has no cap: every window reads every marker and draws every one inside its time window. A marker
+list and bookmark navigation are not built (`trend-feature-spec.md` §CU-4); the minimap strip marks every
+marker of the archive with a tick (`#archive-overview-minimap`), and a press there brings it into the
+window.
+
+- **Drawing.** `Chart/ChartMarkerLines` owns one ScottPlot `VerticalLine` per marker, pinned to
+  `plot.Axes.Bottom` with `EnableAutoscale = false`: dashed, 1.5 px wide, in one theme colour for every
+  marker (`ui-theme.md#the-plot`). The label is the line's own label with `LabelOppositeAxis`,
+  `ManualLabelAlignment = UpperLeft`, offsets of 4 px and 12 px and a transparent background, so it hangs
+  inside the data area under its top edge, right of the line, and draws no box. The default label covers
+  the time axis ticks, and the strip above the data area is too narrow for it. The label text is the
+  marker's label, a middle dot and the marker's local time as `HH:mm:ss`, or the time alone for an
+  unlabelled marker. The time carries no date, which the hover readout shows.
+  `Sync(markers)` is the one diff on the view side: it adds the line of a new id, removes the line of a
+  gone one, and sets the moment and the label text of every other line. The view calls it when it binds a view
+  model and on every `Changed`, then requests a frame. `RemoveLines()` takes every line off the plot when
+  the view binds again, so a rebind leaves one line per marker.
+- **Labels that do not fit.** `Project(from, to, dataAreaWidth)` hides a line outside the window, and a
+  label whose estimated width, 4 px plus its length times 0.6 of the font size, does not fit before the
+  next visible marker. The estimate needs no render and runs wider than the drawn text: "Etch start"
+  draws at about 62 px against an estimate of 88 px, so a label hides before it would touch the next one.
+  The view projects on `WindowChanged`, on `SizeChanged`, where the width is the new plot width minus the
+  last render's margins, after every `Sync`, and after a render whose data area width changed, the one
+  case a pen axis that appears or goes narrows or widens the data area without a resize. `Sync` builds
+  its id set only when a marker went.
+- **The active pen's readings.** At every marker inside the window, `Chart/ChartMarkerReadings` draws a
+  dot on the active pen's line, in the pen's colour, and the pen's value there beside it, formatted by
+  `PenValueFormat` with no unit, as the hover readout shows it. The other pens show no value at a marker,
+  so many pens do not crowd it; picking another pen moves every reading to that pen, and the hover readout
+  still lists every visible pen. The value is the one the cursor reads (`ChartCursorReader.ReadPenAt`), so
+  a hidden active pen, a gap or a marker outside the pen's data draws no reading. The layer is one
+  plottable with no axis limits; the view refreshes it in `ServeFrame` before every redraw, because a
+  history result, a live sample, a pick, a visibility change, a marker change and a pan all reach the
+  chart as a frame request. It projects through the pen's own `EnvelopeLine.PixelOf`, so a log10 axis
+  places the dot on the drawn line.
+- **The hit test.** A pointer inside the data rect is on a marker when `MarkerSet.NearestWithin` finds one
+  within `AnchorAt(x + 4) - AnchorAt(x)`, 4 px at the pointer in the time scale of the window shown. The
+  bound is inclusive, and the lower id wins a tie. Before the first render the data rect has no width:
+  no hit test runs, and the hover is skipped whole. The pointer's moment comes through
+  `LocalTimeAxis.FromAxis`, which gives one instant for a pixel of the repeated autumn hour, so a marker
+  another client stored in the other half of that hour draws at its X but is never hit, and an add or a
+  drop there lands in the one half (`data-integration.md#time-boundary`).
+- **Hover.** On a marker the cursor snaps to the marker's moment: `MoveCursor` receives that moment, and
+  the hover readout lists every visible pen's value there. The pointer shows `SizeWestEast` only when a
+  press would drag the marker, so not with Ctrl held or in delta mode, and the hand elsewhere. While a
+  marker drags no readout follows it, and in delta mode the overlay stays hidden, as for every drag.
+- **Drag.** A press on a marker routes to `ChartPressAction.DragMarker` after the axis region, Ctrl, the
+  time axis band and the tool. Ctrl therefore shifts the active pen over a marker, the time axis band
+  opens its panel under one and never moves it, and delta mode places its cursor on top of one. The press
+  captures the pointer and shows `SizeWestEast`. Past the 4 px slop the first move calls
+  `ChartMarkers.BeginMove`, which holds the marker against reads, and every move calls `Move`
+  with the pointer's moment: the marker jumps to the pointer rather than keeping an offset, a jump of at
+  most 4 px. The drag commits in `TrendChartView.EndDragAsync`, the one place every drag ends, on the view
+  model the press began on, so a `DataContext` change mid-drag still ends the first one's move: a release
+  reaches it through the capture loss it raises, and a capture lost for another reason ends there too,
+  as a pan keeps the window it reached. `EndMoveAsync` writes the moment of the last move, once. A release
+  inside the slop is a click: it picks a pen, as a pan press does, and writes nothing.
+- **Add and delete.** A double click adds a marker at the pointer's moment, and a double click on a marker
+  deletes it. A new marker is labelled `#N`, N one past the highest number among the shown labels of the
+  form `#` and decimal digits, or `#1` when there is none; the label is stored and `Rename` changes it
+  like any other. Two windows that add at once, or two quick double clicks in one window before the first
+  add's id lands, can store the same number. The router reads the press's `ClickCount`: a second click routes to
+  `ChartPressAction.AddMarker` where a single one would be `PanOrPickPen`, and to `DeleteMarker` where a
+  single one would be `DragMarker`, so only in the pan tool and without Ctrl. In delta mode a double click
+  places the delta cursors, and on an axis it opens that axis's panel. A third click is a single one again,
+  so a quick second double click on a new marker drags it rather than deleting it. The first click of the
+  pair is an ordinary click and picks a pen. The marker shows once the add's id lands, and a failed add
+  places nothing. The delete asks for no confirmation: a double click puts a lost marker back, and
+  `Rename` its label.
+- **The right-click menu.** The tunnel release handler checks for the right button ahead of its
+  left-button guard. A right release inside the data rect with no drag under way opens a `MenuFlyout` at
+  the pointer through `ShowAt(PlotControl, true)`, as the two panels open: `MarkerMenuFlyout` (`Rename`,
+  `Delete`) on a marker, `ChartMenuFlyout` (`Add marker here`) elsewhere. The view keeps the clicked moment
+  and the marker hit. `Add marker here` adds a numbered marker at once, as a double click does. No `ContextFlyout` is declared, because `ContextRequested` may never fire on
+  `AvaPlot`. With no pens `EmptyCatalogueMessage` covers the centre of the plot and takes the click there;
+  a marker without pens has no use.
+- **The label editor.** One keyed flyout, `MarkerLabelFlyout`, opened by `Rename` only: a focused
+  `TextBox` with `MaxLength = 80`, a message line, and OK and Cancel, at a fixed 360 px
+  (`ui-theme.md#the-marker-label-editor`). It opens on the current label. Enter or OK trims the text,
+  closes the editor and writes, and an empty result is no label. Esc, Cancel or a click outside closes it
+  and writes nothing. A renamed label shows at once; a failed write reverts it to the label the menu
+  opened on (`overview.md#local-state-first`) and the editor stays closed. If another window renamed the
+  marker in between, the read every write ends with brings that label back at once. The read after an add
+  or a move carries the moment rounded to the microseconds `timestamptz` keeps, so the marker set changes
+  once more by under a microsecond, which redraws nothing visible.
+- **Delete.** `Delete` removes the marker once the store answers, and a failed delete keeps it.
+
 ## Decimation & performance (architectural core)
 
 Underwrites "no lag from 1 s to 1 year." A data-layer requirement, not a chart-control feature.
@@ -587,6 +691,14 @@ fraction → `NavigateToFraction`, which recenters the window via the **same**
 `ChartNavigationController` the chart navigates with. The highlight tracks every `WindowChanged` (pan /
 zoom and the sticky live-edge advance) and every move of the right bound.
 
+**The time markers.** The strip draws one full-height 1 px tick per time marker inside the extent, in
+`AppMarkerLineBrush`, over the highlight and under the hover line (`#the-time-markers`). The ticks show
+where the markers outside the window are; a press on one navigates as a press anywhere on the strip does,
+so the ticks take no pointer. `MinimapViewModel.TimeMarkerFractions` comes from
+`MinimapGeometry.FractionAt` over the chart's `Markers`, which drops a marker outside the extent, and is
+recomputed on every `ChartMarkers.Changed`, on the extent read and on every move of the right bound.
+The view draws the fractions as one `Path` of `LineGeometry` children, `TimeMarkerTicks`.
+
 **The label row.** `MinimapView` is a two-row grid: the 36 px strip (`StripCanvas`) on top and
 `LabelRow`, one line of 10 px text with a 4 px side margin, under it. The strip draws the band, the
 marker and the hover line and nothing else; no baseline runs through it, because a line through the
@@ -690,9 +802,10 @@ the next read's scheduling included, goes to `TryReportFailure` as well.
 ## Out of scope / later
 
 - **Deferred (NICE, not in MVP):** horizontal cursor / crosshair (trend-feature-spec.md §CU-5).
-- **Out of scope:** alarm/event overlays from the `messages` log; annotations.
+- **Out of scope:** alarm/event overlays from the `messages` log.
 - **`[LATER]`:** save pen sets + scales + layout as named views/templates; snapshot / print
-  (trend-feature-spec.md §MS-6); touch input (not relevant for target operator PCs).
+  (trend-feature-spec.md §MS-6); touch gestures such as pinch and multi-finger pan (not relevant for
+  target operator PCs). A second finger already never breaks a drag (`#navigation--cursors`).
 
 ## Renderer & UI framework
 

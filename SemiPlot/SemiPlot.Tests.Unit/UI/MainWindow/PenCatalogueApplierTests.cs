@@ -320,7 +320,7 @@ public sealed class PenCatalogueApplierTests
 
 	private static void AdvanceOneRead(WindowStand stand)
 	{
-		Advance(stand, PenCatalogueSync.ReadInterval);
+		Advance(stand, ArchiveReadLoop.ReadInterval);
 	}
 
 	// One tick past the span: a virtual scheduler runs an action scheduled for now on the next tick, and the

@@ -22,13 +22,14 @@ flowchart TB
         direction TB
         trends[("trends<br/>PARTITION BY RANGE (t)<br/>PK tpk (id, l, t)")]
         msgs[("messages")]
-        config[("semiplot_tags<br/>semiplot_groups<br/>semiplot_pen_groups<br/>semiplot_meta")]
+        config[("semiplot_tags<br/>semiplot_groups<br/>semiplot_pen_groups<br/>semiplot_markers<br/>semiplot_meta")]
         roles["roles · grants<br/>default-privileges chain<br/>config deltas"]
     end
 
     subgraph semiplot["SemiPlot — C#, private"]
         prov2["PostgresDataProvider"]
         editor["PostgresPenCatalogueEditor"]
+        markers["PostgresMarkerStore"]
     end
 
     scada -- "writes rows" --> trends
@@ -39,9 +40,10 @@ flowchart TB
     prov2 -- "SELECT only" --> trends
     prov2 -- "SELECT only" --> config
     editor -- "UPDATE of pen settings · group DML<br/>EXECUTE semiplot_register_new_pens()" --> config
+    markers -- "semiplot_markers DML" --> config
 
     classDef write stroke-width:3px
-    class scada,prov,editor write
+    class scada,prov,editor,markers write
 ```
 
 `messages` is created by the SCADA and is not read by any shipped query. SemiPlot creates no object
@@ -49,10 +51,11 @@ inside the database and runs nothing there: no summary table, trigger, function,
 extension. Any write outside the configuration tables, and any `ALTER` or `CREATE` it issues, is a
 defect, and the server answers `42501`.
 
-The configuration tables are the one place SemiPlot writes, and only from the pen editor
-(`Edit` -> `Pens and groups`). SemiBase gives the `semiplot` role a column-level `UPDATE` of the eight
-pen settings on `semiplot_tags`, full DML on `semiplot_groups` and `semiplot_pen_groups`, and `EXECUTE`
-on `semiplot_register_new_pens()`. A pen's `id` is the SCADA variable number, so the role never
+The configuration tables are the one place SemiPlot writes, from two places: the pen editor
+(`Edit` -> `Pens and groups`) and the chart's time markers. SemiBase gives the `semiplot` role a
+column-level `UPDATE` of the eight pen settings on `semiplot_tags`, full DML on `semiplot_groups` and
+`semiplot_pen_groups`, `EXECUTE` on `semiplot_register_new_pens()`, and full DML on `semiplot_markers`,
+which only `PostgresMarkerStore` uses (`data-integration.md#the-marker-store`). A pen's `id` is the SCADA variable number, so the role never
 inserts, deletes or re-keys a pen; the function registers new keys, and the editor calls it only from
 its `Refresh pen list` button, never at start (`data-integration.md#the-pen-catalogue-editor`).
 `PostgresDataProvider` stays `SELECT only`: every running viewer reads the catalogue at start, again
@@ -121,7 +124,8 @@ flowchart TB
 ```
 
 The composition root resolves `PostgresDataProvider`, and the pen editor's
-`PostgresPenCatalogueEditor` over the same `NpgsqlDataSource`; there is no fallback to resolve: an
+`PostgresPenCatalogueEditor` and the chart's `PostgresMarkerStore` over the same `NpgsqlDataSource`;
+there is no fallback to resolve: an
 archive that does not answer opens the startup-failure window rather than
 falling back to invented data, which `data-integration.md` states under **Startup**.
 `ArchiveFailureMapper` turns each public error type into a title, a detail and a remedy — Core's ten
@@ -165,7 +169,7 @@ stateDiagram-v2
     end note
 ```
 
-`semibase site` creates `public.trends` and the four configuration tables in one run, so `NoTables` is
+`semibase site` creates `public.trends` and the five configuration tables in one run, so `NoTables` is
 not a stage a site passes through — it is a provisioning that stopped part-way, or a table removed
 after one. Every table is absent for the same reason and every one comes back from the same command,
 so the client reports the relations the failing statement touches and sends the operator to

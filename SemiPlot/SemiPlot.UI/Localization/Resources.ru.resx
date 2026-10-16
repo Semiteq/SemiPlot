@@ -390,6 +390,15 @@
   <data name="FailureArchiveRowGoneRemedy" xml:space="preserve">
     <value>Перечитайте каталог, чтобы увидеть его текущее содержимое. Повторите изменение, если оно ещё нужно.</value>
   </data>
+  <data name="FailureArchiveMarkerGoneTitle" xml:space="preserve">
+    <value>Метка больше не существует</value>
+  </data>
+  <data name="FailureArchiveMarkerGoneDetail" xml:space="preserve">
+    <value>В базе данных {0} больше нет метки «{1}».</value>
+  </data>
+  <data name="FailureArchiveMarkerGoneRemedy" xml:space="preserve">
+    <value>Метку удалило другое окно SemiPlot или администратор, и график её больше не показывает. Добавьте её снова, если она ещё нужна.</value>
+  </data>
   <data name="FailureStartupReadTimedOutTitle" xml:space="preserve">
     <value>База данных не ответила вовремя</value>
   </data>
@@ -800,5 +809,23 @@
   </data>
   <data name="TimeWindowMessageWidthOutOfRange" xml:space="preserve">
     <value>Ширина должна быть от {0} до {1}.</value>
+  </data>
+  <data name="MarkerMenuAdd" xml:space="preserve">
+    <value>Добавить метку здесь</value>
+  </data>
+  <data name="MarkerMenuRename" xml:space="preserve">
+    <value>Переименовать</value>
+  </data>
+  <data name="MarkerMenuDelete" xml:space="preserve">
+    <value>Удалить</value>
+  </data>
+  <data name="MarkerLabelPlaceholder" xml:space="preserve">
+    <value>Подпись (необязательно)</value>
+  </data>
+  <data name="MarkerLabelOk" xml:space="preserve">
+    <value>ОК</value>
+  </data>
+  <data name="MarkerLabelCancel" xml:space="preserve">
+    <value>Отмена</value>
   </data>
 </root>

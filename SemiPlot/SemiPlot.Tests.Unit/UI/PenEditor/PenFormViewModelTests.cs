@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
+using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.Messages;
 using SemiPlot.UI.PenEditor;
@@ -32,7 +33,7 @@ public sealed class PenFormViewModelTests : IDisposable
 {
 	private readonly FakePenCatalogueEditor _editor = new();
 
-	private readonly EditorCallQueue _queue = new(() => { });
+	private readonly ArchiveCallQueue _queue = new(() => { });
 
 	private readonly MessagePanelViewModel _messagePanel = new();
 

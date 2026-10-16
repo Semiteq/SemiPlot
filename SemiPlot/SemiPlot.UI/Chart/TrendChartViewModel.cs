@@ -47,6 +47,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	public TrendChartViewModel(
 		TrendCoordinator coordinator,
+		IMarkerChannel markerChannel,
 		IScheduler dataScheduler,
 		IScheduler uiScheduler,
 		TimeZoneInfo timeZone,
@@ -74,6 +75,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_windowEnd = Navigation.To;
 		Navigation.WindowChanged += OnNavigationWindowChanged;
 		AxisScale = new AxisScalePanelViewModel(this);
+		Markers = new ChartMarkers(markerChannel, this);
 		TimeWindow = new TimeWindowPanelViewModel(this, coordinator, uiScheduler, timeZone);
 
 		_disposables.Add(_coordinator.RealtimeBatches
@@ -87,6 +89,8 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	public Plot Plot { get; } = new();
 
 	public AxisScalePanelViewModel AxisScale { get; }
+
+	public ChartMarkers Markers { get; }
 
 	public TimeWindowPanelViewModel TimeWindow { get; }
 
@@ -180,6 +184,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		Navigation.WindowChanged -= OnNavigationWindowChanged;
 		_historyDebouncer.Dispose();
 		AxisScale.Dispose();
+		Markers.Dispose();
 		TimeWindow.Dispose();
 		_disposables.Dispose();
 		_redrawRequests.OnCompleted();
@@ -403,6 +408,12 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 		CursorTime = cursorTime;
 		CursorValues = _cursorReader.ReadAt(cursorTime);
+	}
+
+	/// <summary>The active pen's value at <paramref name="timeUtc"/>; null while it is hidden or has a gap there.</summary>
+	public double? ActivePenReadingAt(DateTime timeUtc)
+	{
+		return _cursorReader.ReadPenAt(ActivePenId, timeUtc);
 	}
 
 	public void ClearCursor()

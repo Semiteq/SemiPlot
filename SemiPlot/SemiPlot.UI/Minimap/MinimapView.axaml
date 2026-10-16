@@ -30,6 +30,12 @@
                         Background="{DynamicResource AppAccentFillBrush}"
                         BorderThickness="2"
                         BorderBrush="{DynamicResource AppAccentBrush}" />
+                <Path Name="TimeMarkerTicks"
+                      Canvas.Left="0"
+                      Canvas.Top="0"
+                      IsHitTestVisible="False"
+                      Stroke="{DynamicResource AppMarkerLineBrush}"
+                      StrokeThickness="1" />
                 <Border Name="HoverLine"
                         Canvas.Top="0"
                         Width="1"

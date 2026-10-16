@@ -10,13 +10,13 @@ public sealed class CursorReadoutModel
 
 		foreach (var envelope in envelopes)
 		{
-			readouts[envelope.PenId] = ReadPenValue(cursorTime, envelope);
+			readouts[envelope.PenId] = ReadPenAt(cursorTime, envelope);
 		}
 
 		return readouts;
 	}
 
-	private static double? ReadPenValue(DateTime cursorTime, PenHistoryEnvelope envelope)
+	public static double? ReadPenAt(DateTime cursorTime, PenHistoryEnvelope envelope)
 	{
 		var timestamps = envelope.Timestamps;
 		var centers = envelope.Center;

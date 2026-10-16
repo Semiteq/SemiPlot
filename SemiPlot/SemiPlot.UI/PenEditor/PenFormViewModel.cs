@@ -9,6 +9,7 @@ using ReactiveUI;
 
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
+using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Messages;
 
 namespace SemiPlot.UI.PenEditor;
@@ -22,7 +23,7 @@ public sealed class PenFormViewModel : ReactiveObject, IDisposable
 	public const double MaskPreviewSample = 1234.5678;
 
 	private readonly IPenCatalogueEditor _penCatalogueEditor;
-	private readonly EditorCallQueue _editorCallQueue;
+	private readonly ArchiveCallQueue _archiveCallQueue;
 	private readonly MessagePanelViewModel _messagePanel;
 	private readonly ILogger _logger;
 	private readonly IDisposable _rowFollowing;
@@ -31,13 +32,13 @@ public sealed class PenFormViewModel : ReactiveObject, IDisposable
 	public PenFormViewModel(
 		PenRowViewModel row,
 		IPenCatalogueEditor penCatalogueEditor,
-		EditorCallQueue editorCallQueue,
+		ArchiveCallQueue archiveCallQueue,
 		MessagePanelViewModel messagePanel,
 		ILogger logger)
 	{
 		Row = row;
 		_penCatalogueEditor = penCatalogueEditor;
-		_editorCallQueue = editorCallQueue;
+		_archiveCallQueue = archiveCallQueue;
 		_messagePanel = messagePanel;
 		_logger = logger;
 
@@ -155,7 +156,7 @@ public sealed class PenFormViewModel : ReactiveObject, IDisposable
 
 		var written = await Row.WriteAsync(
 			change,
-			() => _editorCallQueue.RunAsync(() => _penCatalogueEditor.ChangeAsync(Row.Pen, change)));
+			() => _archiveCallQueue.RunAsync(() => _penCatalogueEditor.ChangeAsync(Row.Pen, change)));
 
 		if (written.IsFailed)
 		{

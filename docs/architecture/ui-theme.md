@@ -148,7 +148,7 @@ and the picker's flyout keep Semi's 6 px, as the menu flyout does.
 
 ## The application's own surfaces
 
-Semi owns the controls; these thirteen keys are ours, and each exists in both variants.
+Semi owns the controls; these fifteen keys are ours, and each exists in both variants.
 
 | Key | Consumers | Light | Dark |
 | --- | --- | --- | --- |
@@ -165,6 +165,8 @@ Semi owns the controls; these thirteen keys are ours, and each exists in both va
 | `AppSeverityInfoBrush` | The same dot on an `Info` entry | `#3574F0` | `#3574F0` |
 | `AppConnectionOkBrush` | The status bar's connection indicator, `connection-ok` | `#208A3C` | `#5FAD65` |
 | `AppConnectionFaultBrush` | The same indicator, `connection-fault` | `#DB3B4B` | `#E55765` |
+| `AppMarkerLineBrush` | Every time marker line on the plot (`#the-plot`) and its tick on the minimap strip | `#6F737A` | `#A8ADBD` |
+| `AppMarkerLabelBrush` | Every time marker label on the plot | `#000000` | `#DFE1E5` |
 
 Pen colours are not theme keys. They come from the archive with the pen and stay per pen under both
 variants. The pen editor's colour swatch is the pen's own colour through `LegendConverters.HexToBrush`,
@@ -334,6 +336,18 @@ spring-forward change, the longest rule in both languages. The panel has not bee
 the axis scale panel was, so nothing yet shows that the Russian skipped-time rule fits the two reserved lines
 untrimmed; it is measured that way before a longer label or message ships.
 
+### The marker label editor
+
+The chart's label editor (`MarkerLabelFlyout` in `Chart/TrendChartView.axaml`) is a `Flyout` form under the
+same rule, 360 px wide, with two rows and 10 px between them: the label `TextBox` (`MaxLength = 80`) and a
+right-aligned row of OK and Cancel. No field can be invalid: the text is trimmed, an empty one means no
+label, and the box takes no 81st character. The editor therefore reserves no message line, no field binds
+`Classes.invalid`, and the watermark `MarkerLabelPlaceholder` says the label is optional. The width is the
+axis scale panel's and the time window panel's: a 640 px form overflowed the flyout presenter, which
+clipped the box's right edge and the Cancel button. A label longer than the box
+scrolls inside it. No headless test sees the clipping, so the width is checked by eye on the demo stand
+(`trend-interaction.md#the-time-markers`).
+
 ### A resizable window keeps its fixed parts
 
 The pen editor is the one form the operator may resize, because its table grows with the catalogue.
@@ -447,6 +461,19 @@ runs once per pointer move during a pan, so it compares `TrendChartViewModel.Axi
 of the last paint and does nothing when the axis set did not grow, and it never requests a frame itself
 because every site that bumps `ScalesRevision` already follows with
 `RequestRedraw()`, which the view joins into the next display frame.
+
+The time markers take two keys of their own, outside the five surfaces. `ChartPalette.MarkerColors`
+resolves `AppMarkerLineBrush` and `AppMarkerLabelBrush` under the variant into a `MarkerPalette`, and
+`ApplyChartPalette` hands it to the marker layer after every `Apply`, so a variant switch repaints every
+marker line. `ChartMarkerLines.ApplyPalette` keeps the palette, and a line the layer adds later takes the
+same colours. The line is a neutral grey, so it does not compete with the pens' colours, and the label is
+the variant's default text colour; all four values are tones the palette already carries. Every marker
+draws in these two colours, and a marker carries no colour of its own. The palette also carries
+`AppContentBackgroundBrush` as the background of the active pen's reading at each marker, drawn at 85 %
+opacity so the number stays legible over the pen lines; the reading's dot takes the active pen's colour.
+`ChartPaletteTests.MarkerColors_ResolveBothMarkerKeysUnderTheVariant` resolves both keys under both
+variants, and `ChartMarkerViewTests.AfterAThemeVariantSwitch_EveryMarkerDrawsInTheNewVariant` reads an
+existing line and a later one after a switch.
 
 The minor gridlines take their colour on every axis but draw only on a log10 axis: `ChartAxisBinder` sets
 their width to 1 px when the drawn axis is logarithmic and to 0 otherwise (`charting.md#log10-y-axis`).

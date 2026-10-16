@@ -36,6 +36,9 @@ public enum ArchiveFault
 	/// <summary>The pen or group a write names is gone (23503, or no row touched). Detail is its name.</summary>
 	RowGone,
 
+	/// <summary>The marker a move or rename names is gone (no row touched). Detail is its label or moment.</summary>
+	MarkerGone,
+
 	/// <summary>Any other failure. Detail is the SQLSTATE, or empty when the failure carried none.</summary>
 	ReadFailed
 }

@@ -3,26 +3,27 @@ using AwesomeAssertions;
 using FluentResults;
 
 using SemiPlot.Core.Data.Errors;
-using SemiPlot.UI.PenEditor;
+using SemiPlot.Tests.Unit.UI.PenEditor;
+using SemiPlot.UI.Bridge;
 
 using Xunit;
 
-namespace SemiPlot.Tests.Unit.UI.PenEditor;
+namespace SemiPlot.Tests.Unit.UI.Bridge;
 
 // Each gate is awaited by a call the queue runs and completed by the test, so it takes no
 // RunContinuationsAsynchronously.
 [Trait("Component", "UI")]
-[Trait("Area", "Chart")]
+[Trait("Area", "Bridge")]
 [Trait("Category", "Unit")]
-public sealed class EditorCallQueueTests
+public sealed class ArchiveCallQueueTests
 {
-	private readonly EditorCallQueue _queue;
+	private readonly ArchiveCallQueue _queue;
 
 	private int _succeededCalls;
 
-	public EditorCallQueueTests()
+	public ArchiveCallQueueTests()
 	{
-		_queue = new EditorCallQueue(() => _succeededCalls++);
+		_queue = new ArchiveCallQueue(() => _succeededCalls++);
 	}
 
 	[Fact]

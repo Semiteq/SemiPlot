@@ -15,6 +15,40 @@
         <Flyout x:Key="TimeWindowFlyout" Placement="Pointer">
             <chart:TimeWindowPanel />
         </Flyout>
+        <MenuFlyout x:Key="ChartMenuFlyout" Placement="Pointer">
+            <MenuItem Header="{x:Static text:Resources.MarkerMenuAdd}"
+                      Click="OnAddMarkerClick" />
+        </MenuFlyout>
+        <MenuFlyout x:Key="MarkerMenuFlyout" Placement="Pointer">
+            <MenuItem Header="{x:Static text:Resources.MarkerMenuRename}"
+                      Click="OnRenameMarkerClick" />
+            <MenuItem Header="{x:Static text:Resources.MarkerMenuDelete}"
+                      Click="OnDeleteMarkerClick" />
+        </MenuFlyout>
+        <Flyout x:Key="MarkerLabelFlyout" Placement="Pointer">
+            <Grid Width="360"
+                  RowDefinitions="Auto,Auto"
+                  RowSpacing="10"
+                  KeyDown="OnMarkerLabelKeyDown">
+                <TextBox Grid.Row="0"
+                         Name="MarkerLabelBox"
+                         MaxLength="80"
+                         PlaceholderText="{x:Static text:Resources.MarkerLabelPlaceholder}" />
+                <StackPanel Grid.Row="1"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            Spacing="8">
+                    <Button Name="MarkerLabelOk"
+                            Content="{x:Static text:Resources.MarkerLabelOk}"
+                            Click="OnMarkerLabelOkClick"
+                            Padding="12,2" />
+                    <Button Name="MarkerLabelCancel"
+                            Content="{x:Static text:Resources.MarkerLabelCancel}"
+                            Click="OnMarkerLabelCancelClick"
+                            Padding="12,2" />
+                </StackPanel>
+            </Grid>
+        </Flyout>
     </UserControl.Resources>
 
     <Panel>

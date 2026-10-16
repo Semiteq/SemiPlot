@@ -35,7 +35,7 @@ internal sealed class MinimapStand : IDisposable
 			ArchiveLastUtc = ExtentLast
 		};
 		_coordinator = new TrendCoordinator(Provider, Provider.Pens, Scheduler, Scheduler);
-		Chart = ChartTestBuilder.CreateChart(Scheduler, _coordinator, Panel);
+		Chart = ChartTestBuilder.CreateChart(Scheduler, _coordinator, Panel, MarkerChannel);
 		ViewModel = new MinimapViewModel(
 			_coordinator, Chart, Scheduler, Panel, logger ?? NullLogger<MinimapViewModel>.Instance);
 	}
@@ -45,6 +45,8 @@ internal sealed class MinimapStand : IDisposable
 	public FakeDataProvider Provider { get; }
 
 	public MessagePanelViewModel Panel { get; } = new();
+
+	public FakeMarkerChannel MarkerChannel { get; } = new();
 
 	public TrendChartViewModel Chart { get; }
 

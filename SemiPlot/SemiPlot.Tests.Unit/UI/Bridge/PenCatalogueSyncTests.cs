@@ -48,13 +48,13 @@ public sealed class PenCatalogueSyncTests : IDisposable
 		StartAndEnterTheWait();
 		_provider.PensQueryCount.Should().Be(0, "the start sequence has just read the same catalogue");
 
-		Advance(PenCatalogueSync.ReadInterval - _tick);
+		Advance(ArchiveReadLoop.ReadInterval - _tick);
 		_provider.PensQueryCount.Should().Be(0);
 
 		Advance(_tick);
 		_provider.PensQueryCount.Should().Be(1);
 
-		Advance(PenCatalogueSync.ReadInterval);
+		Advance(ArchiveReadLoop.ReadInterval);
 		_provider.PensQueryCount.Should().Be(2);
 	}
 
@@ -63,13 +63,13 @@ public sealed class PenCatalogueSyncTests : IDisposable
 	{
 		_provider.GatePens = true;
 		StartAndEnterTheWait();
-		Advance(PenCatalogueSync.ReadInterval);
+		Advance(ArchiveReadLoop.ReadInterval);
 
-		Advance(PenCatalogueSync.ReadInterval * 4);
+		Advance(ArchiveReadLoop.ReadInterval * 4);
 		_provider.PensQueryCount.Should().Be(1);
 
 		_provider.PensGate.SetResult(Result.Ok(_provider.Pens));
-		Advance(PenCatalogueSync.ReadInterval - _tick);
+		Advance(ArchiveReadLoop.ReadInterval - _tick);
 		_provider.PensQueryCount.Should().Be(1, "the wait after a read is a full interval");
 
 		Advance(_tick);
@@ -81,7 +81,7 @@ public sealed class PenCatalogueSyncTests : IDisposable
 	{
 		_provider.GatePens = true;
 		StartAndEnterTheWait();
-		Advance(PenCatalogueSync.ReadInterval);
+		Advance(ArchiveReadLoop.ReadInterval);
 
 		_sync.ReadNow();
 		_sync.ReadNow();
@@ -90,7 +90,7 @@ public sealed class PenCatalogueSyncTests : IDisposable
 		_provider.PensGate.SetResult(Result.Ok(_provider.Pens));
 		_provider.PensQueryCount.Should().Be(2);
 
-		Advance(PenCatalogueSync.ReadInterval - _tick);
+		Advance(ArchiveReadLoop.ReadInterval - _tick);
 		_provider.PensQueryCount.Should().Be(2, "the wait after the asked read is a full interval");
 
 		Advance(_tick);
@@ -106,7 +106,7 @@ public sealed class PenCatalogueSyncTests : IDisposable
 		_sync.ReadNow();
 		_provider.PensQueryCount.Should().Be(1);
 
-		Advance(PenCatalogueSync.ReadInterval - _tick);
+		Advance(ArchiveReadLoop.ReadInterval - _tick);
 		_provider.PensQueryCount.Should().Be(1);
 
 		Advance(_tick);
@@ -118,7 +118,7 @@ public sealed class PenCatalogueSyncTests : IDisposable
 	{
 		StartAndEnterTheWait();
 
-		Advance(PenCatalogueSync.ReadInterval * 2);
+		Advance(ArchiveReadLoop.ReadInterval * 2);
 
 		_provider.PensQueryCount.Should().BeGreaterThan(0, "the catalogue was read");
 		_deltas.Should().BeEmpty();
@@ -130,7 +130,7 @@ public sealed class PenCatalogueSyncTests : IDisposable
 		StartAndEnterTheWait();
 		_provider.Pens = [Renamed(_provider.Pens[0]), _provider.Pens[1]];
 
-		Advance(PenCatalogueSync.ReadInterval * 2);
+		Advance(ArchiveReadLoop.ReadInterval * 2);
 
 		_deltas.Should().ContainSingle()
 			.Which.Revised.Should().ContainSingle()
@@ -144,15 +144,15 @@ public sealed class PenCatalogueSyncTests : IDisposable
 		_provider.FailPens = true;
 		StartAndEnterTheWait();
 
-		Advance(PenCatalogueSync.ReadInterval * 2);
+		Advance(ArchiveReadLoop.ReadInterval * 2);
 		_messagePanel.Entries.Should().BeEmpty("one reconnect after a server restart must not open the panel");
 
-		Advance(PenCatalogueSync.ReadInterval);
+		Advance(ArchiveReadLoop.ReadInterval);
 		_messagePanel.Entries.Should().ContainSingle();
 
 		_provider.FailPens = false;
 		_provider.Pens = [Renamed(stored[0]), stored[1] with { Color = "#0000ff" }];
-		Advance(PenCatalogueSync.ReadInterval);
+		Advance(ArchiveReadLoop.ReadInterval);
 
 		_deltas.Should().ContainSingle()
 			.Which.Revised.Select(pen => pen.PenId).Should().Equal(1, 2);
@@ -163,12 +163,12 @@ public sealed class PenCatalogueSyncTests : IDisposable
 	{
 		_provider.FailPens = true;
 		StartAndEnterTheWait();
-		Advance(PenCatalogueSync.ReadInterval * 2);
+		Advance(ArchiveReadLoop.ReadInterval * 2);
 
 		_provider.FailPens = false;
-		Advance(PenCatalogueSync.ReadInterval);
+		Advance(ArchiveReadLoop.ReadInterval);
 		_provider.FailPens = true;
-		Advance(PenCatalogueSync.ReadInterval * 2);
+		Advance(ArchiveReadLoop.ReadInterval * 2);
 
 		_messagePanel.Entries.Should().BeEmpty("no third failure in a row has happened");
 	}
@@ -180,11 +180,11 @@ public sealed class PenCatalogueSyncTests : IDisposable
 		StartAndEnterTheWait();
 		_provider.Pens = [Renamed(_provider.Pens[0]), _provider.Pens[1]];
 
-		Advance(PenCatalogueSync.ReadInterval);
+		Advance(ArchiveReadLoop.ReadInterval);
 		_messagePanel.Entries.Should().ContainSingle();
 
 		_provider.Pens = [_provider.Pens[0], Renamed(_provider.Pens[1])];
-		Advance(PenCatalogueSync.ReadInterval);
+		Advance(ArchiveReadLoop.ReadInterval);
 
 		_deltas.Should().HaveCount(2, "the loop survived the throw and emitted the next change");
 		_deltas[1].Revised.Select(pen => pen.PenId).Should().Equal(
@@ -196,18 +196,18 @@ public sealed class PenCatalogueSyncTests : IDisposable
 	{
 		_provider.FailPens = true;
 		StartAndEnterTheWait();
-		Advance(PenCatalogueSync.ReadInterval * 2);
+		Advance(ArchiveReadLoop.ReadInterval * 2);
 		_provider.FailPens = false;
 		var thrown = new InvalidOperationException("the read threw");
 		_provider.PensReadException = thrown;
 
-		Advance(PenCatalogueSync.ReadInterval);
+		Advance(ArchiveReadLoop.ReadInterval);
 		_messagePanel.Entries.Should().ContainSingle()
 			.Which.View.Should().Be(ArchiveFailureMapper.Map(new ExceptionalError(thrown)));
 
 		_provider.PensReadException = null;
 		_provider.FailPens = true;
-		Advance(PenCatalogueSync.ReadInterval - _tick);
+		Advance(ArchiveReadLoop.ReadInterval - _tick);
 		_provider.PensQueryCount.Should().Be(3);
 
 		Advance(_tick);
@@ -221,10 +221,10 @@ public sealed class PenCatalogueSyncTests : IDisposable
 	{
 		_provider.FailPens = true;
 		StartAndEnterTheWait();
-		Advance(PenCatalogueSync.ReadInterval * 2);
+		Advance(ArchiveReadLoop.ReadInterval * 2);
 		_provider.FailPens = false;
 		_provider.GatePens = true;
-		Advance(PenCatalogueSync.ReadInterval);
+		Advance(ArchiveReadLoop.ReadInterval);
 
 		_sync.Dispose();
 		_provider.PensGate.SetResult(Result.Fail<IReadOnlyList<Pen>>("the held read failed"));
@@ -237,7 +237,7 @@ public sealed class PenCatalogueSyncTests : IDisposable
 	public void Dispose_StopsTheReads()
 	{
 		StartAndEnterTheWait();
-		Advance(PenCatalogueSync.ReadInterval);
+		Advance(ArchiveReadLoop.ReadInterval);
 		var queriesBefore = _provider.PensQueryCount;
 
 		_sync.Dispose();

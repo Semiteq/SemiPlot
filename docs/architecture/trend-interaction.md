@@ -452,7 +452,9 @@ under sticky is now.
   `TextBox` has written its text when `Close()` runs. The host handles no flyout `Closed`. `OnLoaded` calls
   `Opened()`, so a day read starts only for a panel that `Close()` will also reach; a hide before the
   posted `Loaded` skips both, and every view test runs `Dispatcher.UIThread.RunJobs()` after `ShowAt`.
-- The calendars offer `[FirstDay, LastDay]` (`DisplayDateStart`, `DisplayDateEnd`). `FirstDay` is the
+- The days live in `Navigation/ArchiveDayCalendar`, the panel's `Days`; the export window holds its own
+  instance with the same rules (`overview.md#the-export-window`). The calendars offer `[FirstDay, LastDay]`
+  (`DisplayDateStart`, `DisplayDateEnd`). `FirstDay` is the
   earlier of the first sample's local day and the selected start day, because `TrackDataExtents` can open
   a window that starts before `FirstSample` and the calendar would clamp a selected date outside its range.
   `LastDay` is the later of the newest sample's local day and the selected end day. The newest sample's

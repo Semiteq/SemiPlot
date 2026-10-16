@@ -108,6 +108,11 @@ public abstract class WallClockRangeForm : ReactiveObject
 		return wallClock.ToString(TimeFieldFormat, CultureInfo.InvariantCulture);
 	}
 
+	internal static DateTime WallClockDay(DateTime utc, TimeZoneInfo timeZone)
+	{
+		return DateTime.SpecifyKind(ToWallClock(utc, timeZone).Date, DateTimeKind.Unspecified);
+	}
+
 	protected static DateTime ToWallClock(DateTime utc, TimeZoneInfo timeZone)
 	{
 		return TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), timeZone);

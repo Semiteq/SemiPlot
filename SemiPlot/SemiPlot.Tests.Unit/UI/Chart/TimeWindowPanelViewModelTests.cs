@@ -9,6 +9,7 @@ using Microsoft.Reactive.Testing;
 using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.Messages;
+using SemiPlot.UI.Navigation;
 
 using Xunit;
 
@@ -36,8 +37,8 @@ public sealed class TimeWindowPanelViewModelTests
 		panel.Form.EndDate.Should().Be(_windowDay);
 		panel.Form.EndTimeText.Should().Be("09:00:00");
 		panel.Form.WidthText.Should().Be("1:00:00");
-		panel.FirstDay.Should().Be(_firstDay);
-		panel.LastDay.Should().Be(_windowDay);
+		panel.Days.FirstDay.Should().Be(_firstDay);
+		panel.Days.LastDay.Should().Be(_windowDay);
 	}
 
 	[AvaloniaFact]
@@ -50,7 +51,7 @@ public sealed class TimeWindowPanelViewModelTests
 		chart.TimeWindow.Seed();
 
 		chart.TimeWindow.Form.StartDate.Should().Be(new DateTime(2026, 6, 14));
-		chart.TimeWindow.FirstDay.Should().Be(new DateTime(2026, 6, 14));
+		chart.TimeWindow.Days.FirstDay.Should().Be(new DateTime(2026, 6, 14));
 	}
 
 	[AvaloniaFact]
@@ -65,7 +66,7 @@ public sealed class TimeWindowPanelViewModelTests
 		chart.TimeWindow.Opened();
 		scheduler.AdvanceBy(1);
 
-		chart.TimeWindow.LastDay.Should().Be(new DateTime(2026, 6, 16));
+		chart.TimeWindow.Days.LastDay.Should().Be(new DateTime(2026, 6, 16));
 		provider.LastDaysRange.Should().Be((DateOnly.FromDateTime(_firstDay), new DateOnly(2026, 6, 16)));
 	}
 
@@ -320,7 +321,7 @@ public sealed class TimeWindowPanelViewModelTests
 		var (chart, _, _, _) = OpenedStand(
 			daysWithRows: [new DateOnly(2026, 6, 9), new DateOnly(2026, 6, 10), new DateOnly(2026, 6, 12)]);
 
-		chart.TimeWindow.BlackoutDays.Should().Equal(
+		chart.TimeWindow.Days.BlackoutDays.Should().Equal(
 			new DateTime(2026, 6, 11),
 			new DateTime(2026, 6, 13),
 			new DateTime(2026, 6, 14));
@@ -335,8 +336,8 @@ public sealed class TimeWindowPanelViewModelTests
 		chart.TimeWindow.Form.EndDate = new DateTime(2026, 6, 17);
 		chart.TimeWindow.CommitCommand.Execute().Subscribe();
 
-		chart.TimeWindow.LastDay.Should().Be(new DateTime(2026, 6, 17));
-		chart.TimeWindow.BlackoutDays.Should().Equal(
+		chart.TimeWindow.Days.LastDay.Should().Be(new DateTime(2026, 6, 17));
+		chart.TimeWindow.Days.BlackoutDays.Should().Equal(
 			new DateTime(2026, 6, 12),
 			new DateTime(2026, 6, 13),
 			new DateTime(2026, 6, 14),
@@ -362,7 +363,7 @@ public sealed class TimeWindowPanelViewModelTests
 		var (chart, _, _, _) = OpenedStand(messagePanel: messagePanel, failDays: true);
 
 		messagePanel.Entries.Should().ContainSingle();
-		chart.TimeWindow.BlackoutDays.Should().BeEmpty();
+		chart.TimeWindow.Days.BlackoutDays.Should().BeEmpty();
 	}
 
 	[AvaloniaFact]
@@ -374,7 +375,7 @@ public sealed class TimeWindowPanelViewModelTests
 			daysReadException: new InvalidOperationException("day read defect"));
 
 		messagePanel.Entries.Should().ContainSingle();
-		chart.TimeWindow.BlackoutDays.Should().BeEmpty();
+		chart.TimeWindow.Days.BlackoutDays.Should().BeEmpty();
 	}
 
 	[AvaloniaFact]
@@ -388,15 +389,15 @@ public sealed class TimeWindowPanelViewModelTests
 
 		static void ThrowOnBlackoutDays(object? sender, PropertyChangedEventArgs args)
 		{
-			if (args.PropertyName == nameof(TimeWindowPanelViewModel.BlackoutDays))
+			if (args.PropertyName == nameof(ArchiveDayCalendar.BlackoutDays))
 			{
 				throw new InvalidOperationException("blackout sync defect");
 			}
 		}
 
-		chart.TimeWindow.PropertyChanged += ThrowOnBlackoutDays;
+		chart.TimeWindow.Days.PropertyChanged += ThrowOnBlackoutDays;
 		scheduler.AdvanceBy(1);
-		chart.TimeWindow.PropertyChanged -= ThrowOnBlackoutDays;
+		chart.TimeWindow.Days.PropertyChanged -= ThrowOnBlackoutDays;
 
 		provider.DaysQueryCount.Should().Be(1);
 		messagePanel.Entries.Should().ContainSingle();
@@ -413,8 +414,8 @@ public sealed class TimeWindowPanelViewModelTests
 		scheduler.AdvanceBy(1);
 
 		provider.DaysQueryCount.Should().Be(0);
-		chart.TimeWindow.LastDay.Should().Be(chart.Navigation.To.Date);
-		chart.TimeWindow.BlackoutDays.Should().BeEmpty();
+		chart.TimeWindow.Days.LastDay.Should().Be(chart.Navigation.To.Date);
+		chart.TimeWindow.Days.BlackoutDays.Should().BeEmpty();
 	}
 
 	[AvaloniaFact]
@@ -431,7 +432,7 @@ public sealed class TimeWindowPanelViewModelTests
 		scheduler.AdvanceBy(1);
 		chart.TimeWindow.Seed();
 
-		chart.TimeWindow.BlackoutDays.Should().BeEmpty("the closed open's read never lands");
+		chart.TimeWindow.Days.BlackoutDays.Should().BeEmpty("the closed open's read never lands");
 	}
 
 	[AvaloniaFact]
@@ -454,7 +455,7 @@ public sealed class TimeWindowPanelViewModelTests
 		scheduler.AdvanceBy(1);
 
 		provider.DaysQueryCount.Should().Be(2);
-		chart.TimeWindow.BlackoutDays.Should().NotBeEmpty();
+		chart.TimeWindow.Days.BlackoutDays.Should().NotBeEmpty();
 	}
 
 	[AvaloniaFact]
@@ -465,7 +466,7 @@ public sealed class TimeWindowPanelViewModelTests
 		chart.TimeWindow.Close();
 		chart.TimeWindow.Seed();
 
-		chart.TimeWindow.BlackoutDays.Should().BeEmpty();
+		chart.TimeWindow.Days.BlackoutDays.Should().BeEmpty();
 	}
 
 	[AvaloniaFact]
@@ -473,15 +474,15 @@ public sealed class TimeWindowPanelViewModelTests
 	{
 		var (chart, _, _, _) = OpenedStand(daysWithRows: [DateOnly.FromDateTime(_firstDay)]);
 		var panel = chart.TimeWindow;
-		panel.BlackoutDays.Should().Contain(new DateTime(2026, 6, 12));
+		panel.Days.BlackoutDays.Should().Contain(new DateTime(2026, 6, 12));
 		chart.Navigation.SetWindow(new DateTime(2026, 6, 12, 8, 0, 0, DateTimeKind.Utc), To);
 		var raised = new List<string>();
 
 		void OnPanelChanged(object? sender, PropertyChangedEventArgs args)
 		{
-			if (args.PropertyName == nameof(panel.BlackoutDays))
+			if (args.PropertyName == nameof(panel.Days.BlackoutDays))
 			{
-				raised.Add($"{nameof(panel.BlackoutDays)}:{panel.BlackoutDays.Count}");
+				raised.Add($"{nameof(panel.Days.BlackoutDays)}:{panel.Days.BlackoutDays.Count}");
 			}
 		}
 
@@ -493,15 +494,15 @@ public sealed class TimeWindowPanelViewModelTests
 			}
 		}
 
-		panel.PropertyChanged += OnPanelChanged;
+		panel.Days.PropertyChanged += OnPanelChanged;
 		panel.Form.PropertyChanged += OnFormChanged;
 
 		panel.Seed();
 
-		raised[0].Should().Be($"{nameof(panel.BlackoutDays)}:0");
+		raised[0].Should().Be($"{nameof(panel.Days.BlackoutDays)}:0");
 		raised.Should().Contain(nameof(panel.Form.StartDate));
-		panel.BlackoutDays.Should().NotContain(new DateTime(2026, 6, 12));
-		panel.BlackoutDays.Should().NotBeEmpty();
+		panel.Days.BlackoutDays.Should().NotContain(new DateTime(2026, 6, 12));
+		panel.Days.BlackoutDays.Should().NotBeEmpty();
 	}
 
 	// The window [08:00, 09:00] UTC of 2026-06-15, sticky, first sample five days earlier; seeded, opened, and

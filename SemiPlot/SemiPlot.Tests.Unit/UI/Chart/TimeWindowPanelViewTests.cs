@@ -113,7 +113,7 @@ public sealed class TimeWindowPanelViewTests
 	{
 		using var stand = PanelStand.Create(_daysWithRows);
 		stand.Open();
-		stand.Chart.TimeWindow.LastDay.Should().Be(_windowDay);
+		stand.Chart.TimeWindow.Days.LastDay.Should().Be(_windowDay);
 		var laterDay = _windowDay.AddDays(2);
 
 		stand.TypeDate("TimeWindowEndDate", laterDay);
@@ -121,7 +121,7 @@ public sealed class TimeWindowPanelViewTests
 
 		stand.Chart.Navigation.From.Should().Be(From);
 		stand.Chart.Navigation.To.Should().Be(DateTime.SpecifyKind(laterDay.AddHours(9), DateTimeKind.Utc));
-		stand.Chart.TimeWindow.LastDay.Should().Be(laterDay, "the re-seed offers the selected end day");
+		stand.Chart.TimeWindow.Days.LastDay.Should().Be(laterDay, "the re-seed offers the selected end day");
 		stand.Picker("TimeWindowEndDate").SelectedDate.Should().Be(laterDay);
 		stand.MessagePanel.Entries.Should().BeEmpty();
 	}

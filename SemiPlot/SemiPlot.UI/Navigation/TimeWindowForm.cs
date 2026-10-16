@@ -137,11 +137,6 @@ public sealed class TimeWindowForm(TimeZoneInfo timeZone) : WallClockRangeForm
 		_seededWidthText = WidthText;
 	}
 
-	public DateTime LocalDay(DateTime utc)
-	{
-		return DateTime.SpecifyKind(ToWallClock(utc, timeZone).Date, DateTimeKind.Unspecified);
-	}
-
 	protected override void RaiseDerived()
 	{
 		this.RaisePropertyChanged(nameof(Problem));

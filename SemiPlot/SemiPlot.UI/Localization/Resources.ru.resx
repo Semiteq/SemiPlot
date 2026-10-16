@@ -828,4 +828,7 @@
   <data name="MarkerLabelCancel" xml:space="preserve">
     <value>Отмена</value>
   </data>
+  <data name="MarkerLineLabelFormat" xml:space="preserve">
+    <value>{0} · {1}</value>
+  </data>
 </root>

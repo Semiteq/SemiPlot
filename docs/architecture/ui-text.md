@@ -5,7 +5,8 @@ Russian counterpart `Resources.ru.resx`, the startup failure window included. Th
 ASCII: `.editorconfig:25` gives `[*.cs]` `charset = utf-8`, CI's `format check` step gates the byte
 order mark, and the pre-commit hook and CI's `comment gate` step run `terse` over the characters. So
 a glyph with no ASCII form is a resource value: the delta labels (`U+0394` plus `t` and `y`), the
-no-value placeholder (`U+2014`) and the window title all sit in the resx. The Russian set is
+no-value placeholder (`U+2014`), the marker line's label separator (`U+00B7`) and the window title
+all sit in the resx. The Russian set is
 Cyrillic throughout, and the same rule is what keeps it out of the code.
 
 The Russian set calls a pen «перо» (plural «перья») everywhere: the sidebar, the editor, the menu
@@ -400,8 +401,8 @@ reaches the message panel, not this line.
 
 ## The marker menu and label editor's text
 
-`Chart/TrendChartView.axaml` reads every string of the time markers
-(`trend-interaction.md#the-time-markers`):
+`Chart/TrendChartView.axaml` reads every string of the time markers but the line label, which
+`Chart/ChartMarkerLines` formats (`trend-interaction.md#the-time-markers`):
 
 | Key | English / Russian | Where |
 | --- | --- | --- |
@@ -409,6 +410,7 @@ reaches the message panel, not this line.
 | `MarkerMenuRename`, `MarkerMenuDelete` | "Rename" / "Переименовать", "Delete" / "Удалить" | The marker menu |
 | `MarkerLabelPlaceholder` | "Label (optional)" / "Подпись (необязательно)" | The label box's watermark |
 | `MarkerLabelOk`, `MarkerLabelCancel` | "OK" / "ОК", "Cancel" / "Отмена" | The editor's buttons |
+| `MarkerLineLabelFormat` | "{0} · {1}" in both sets | A labelled marker's line: the label, then its local time |
 
 The editor has no message line: nothing in it can be invalid, and the watermark says that an empty box
 is allowed (`ui-theme.md#the-marker-label-editor`). A failed marker write reaches the message panel,

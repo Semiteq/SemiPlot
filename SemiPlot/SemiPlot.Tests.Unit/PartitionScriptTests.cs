@@ -6,9 +6,8 @@ using Xunit;
 
 namespace SemiPlot.Tests.Unit;
 
-// docs/architecture/scada-archive.md#database-objects for the tpYYYYmMMdDD name, #reader-hazards for
-// why a missing partition matters: rows land in tpdefault, which the later slices read as a fault
-// signal.
+// docs/architecture/scada-archive.md#database-objects for the tpYYYYmMMdDD name; a missing partition
+// sends the seeder's rows to tpdefault instead of failing the write.
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
 [Trait("Category", "Unit")]

@@ -62,11 +62,11 @@ Acceptance-criterion labels: "UI" — verified in the running application; "Core
 **Note.** Closed: `PenScaleSettings` carries no axis key at all — the axis is the pen. The stored `scale_min_on_start`/`scale_max_on_start` pair is what forced it: seeded into a group-keyed axis, one pen's range would have been applied to the whole group and the rest silently discarded.
 
 ### AY-3 — Manual min/max for an axis (MUST)
-**Definition.** `Manual` mode: fixed `ManualMin/ManualMax` for an axis; on swapped bounds — auto-swap. Bound editing is available from the UI: a click on the active pen's axis opens a panel with Maximum and Minimum fields, and the pair is written when focus leaves both fields or on Enter.
+**Definition.** `Manual` mode: fixed `ManualMin/ManualMax` for an axis; on swapped bounds — auto-swap. Bound editing is available from the UI: a click on the active pen's axis opens a panel with Maximum and Minimum fields, and the pair is written when focus leaves both fields or on Enter. Switching the panel's Autoscale toggle off also writes a manual pair, the range `Auto` shows (AY-4).
 **Acceptance.** Core/test: `ScaleMode.Manual` returns exactly the given bounds; swapped input is swapped back. UI: a click on the axis opens the panel seeded with the current bounds; a changed pair is set as a manual scale when focus leaves both fields, on Enter or when the panel is dismissed from outside, and Escape closes the panel without writing; an empty or inverted pair is refused on the panel's message line and not written.
 
 ### AY-4 — Autoscale to the visible window (MUST)
-**Definition.** `Auto` mode: min/max over the columns inside the current `[windowStart, windowEnd]` with 5% padding; a flat range → ±0.5; a window holding no column → the whole fetched envelope, and the default range only when no envelope carries a usable value at all. View -> Pen scale -> Autoscale and the panel's Autoscale button switch the active pen to `Auto`, which refits on every window change, and View -> Pen scale -> Restore initial scale and the panel's Initial scale button set the active pen to its stored pair, or to `Auto` when the pen has none; the navigation bar carries no autoscale button.
+**Definition.** `Auto` mode: min/max over the columns inside the current `[windowStart, windowEnd]` with 5% padding; a flat range → ±0.5; a window holding no column → the whole fetched envelope, and the default range only when no envelope carries a usable value at all. View -> Pen scale -> Autoscale switches the active pen to `Auto`, which refits on every window change. The panel's Autoscale toggle shows whether the pen is in `Auto`: switching it on does the same, switching it off keeps the range `Auto` shows as the manual pair, and the panel stays open either way (trend-interaction.md). View -> Pen scale -> Restore initial scale and the panel's Initial scale button set the active pen to its stored pair, or to `Auto` when the pen has none; the navigation bar carries no autoscale button.
 **Acceptance.** Core/test: `ScaleMode.Auto` — the bounds span min..max of the columns in the window with padding; a flat range gives ±0.5; columns outside the window do not widen the range. UI: Autoscale fits the active pen over the window it shows; Restore initial scale sets the active pen to its stored pair, or to `Auto` when the pen has none.
 **Note.** The fetched envelope carries a margin on each side of the window, so the bound is what keeps a pan from re-scaling on data the operator cannot see. A window that leaves the fetched band outright shows none of those columns, and the chart view model then skips the axis recompute entirely: the axis holds its last range until the query the pan issued lands. The whole-envelope fallback inside `PenScaleModel` is left for the sticky live edge, where the window runs ahead of the newest fetched column with no query behind it.
 
@@ -122,7 +122,7 @@ through `TrendChartViewModel.SetActivePen`; the picked line is drawn 2 px wide a
 ### PN-8 — Pen label/legend (SHOULD)
 **Definition.** A legend (detailed view): pen name, current value, value at cursor, scale range. A label at the right edge (Name/Value/Name+Value).
 **Acceptance.** UI: the legend shows the current value, value-at-cursor, and range; changing the label mode changes the text at the edge.
-**Note.** As-built the sidebar row carries the on/off box, a colour dot, the name, the current value in the pen's own mask and the unit. The value at the cursor is the chart's own hover readout (§CU-2) rather than a second copy in the row, and the range cell is gone: it showed the padded axis bound over the visible window, not a measurement (trend-interaction.md).
+**Note.** As-built the sidebar row carries the on/off box, a colour dot, the name, the current value in the pen's own mask and the unit. The value at the cursor is the chart's own hover readout (§CU-2) rather than a second copy in the row, and the row has no range cell: it would show the padded axis bound over the visible window, not a measurement (trend-interaction.md).
 
 ### PN-9 — kx+b scaling and formatters (NICE)
 **Definition.** A multiplier (k) and offset (b) per pen; value formatters for X and Y (number of digits, exponential / floating-point).
@@ -168,7 +168,7 @@ through `TrendChartViewModel.SetActivePen`; the picked line is drawn 2 px wide a
 ## 5. Data and archive (PostgreSQL)
 
 ### DA-1 — The data source is always PostgreSQL (MUST)
-**Definition.** The production provider for history and extent is PostgreSQL. The provider contract: `QueryHistoryAsync` (window + target column count), `QueryArchiveExtentAsync` (full range), `QueryArchiveDaysAsync` (the local days of a date range that hold a layer-0 row, for the time window panel's calendars). The history read returns a `PenHistoryEnvelope` (Min/Max/Center, NaN gaps). Errors flow via `FluentResults`, with no exceptions on the UI thread.
+**Definition.** The production provider for history and extent is PostgreSQL. The provider contract: `QueryHistoryAsync` (window + target column count), `QueryArchiveExtentAsync` (full range), `QueryArchiveDaysAsync` (the local days of a date range that hold a layer-0 row, for the calendars of the time window panel and the export window). The history read returns a `PenHistoryEnvelope` (Min/Max/Center, NaN gaps). Errors flow via `FluentResults`, with no exceptions on the UI thread.
 **Acceptance.** DB: against a real PostgreSQL, history load fills the canvas; the extent is pulled from the DB; a dropped connection yields a failed `Result` rather than a UI crash. A stub provider is acceptable only in tests/demos, not in production.
 
 ### DA-2 — Archive aggregation layers (MUST)
@@ -180,7 +180,7 @@ through `TrendChartViewModel.SetActivePen`; the picked line is drawn 2 px wide a
 **Acceptance.** Core/test: `LayerForWidth` — layer transitions at the computed thresholds for a given column count, with hysteresis preventing flicker when the width oscillates around a boundary.
 
 ### DA-4 — Manual layer selection (SHOULD)
-**Definition.** The operator can pin a layer manually (a combo box + a lock button), overriding the automatic selection. Currently the layer is read-only text in the status bar; an interactive selector is needed.
+**Definition.** The operator can pin a layer manually (a combo box + a lock button), overriding the automatic selection. The status bar shows the layer as read-only text (`AppStatusBarViewModel.LayerText`); an interactive selector is needed.
 **Acceptance.** UI: a manual layer selection applies to queries and is held until the lock is released; on release the automatic selection returns.
 **Note.** Closes gap (b)1: there is no manual selector, the layer is only auto-by-zoom.
 
@@ -199,7 +199,7 @@ through `TrendChartViewModel.SetActivePen`; the picked line is drawn 2 px wide a
 **Note.** Closes the most real correctness risk (b)7.
 
 ### DA-8 — Quality and gaps (SHOULD)
-**Definition.** The archive marks a break with `q = 32` on the last sample before it and `q = 16` on the first sample after it; absence of rows without a preceding `q = 32` means the value did not change and the line continues horizontally (`scada-archive.md`). The provider maps a break to a NaN anchor in the envelope along the whole path from PostgreSQL — from the archive's own `q` column, never from a synthesised marker. Quality codes outside the good set mark an untrustworthy sample, which is also dropped.
+**Definition.** The archive marks a break with `q = 32` on the last sample before it and `q = 16` on the first sample after it; absence of rows without a preceding `q = 32` means the value did not change and the line continues horizontally (`scada-archive.md`). The provider maps a break to a NaN anchor in the envelope along the whole path from PostgreSQL — from the archive's own `q` column, never from a synthesised marker. Any other quality code is drawn as an ordinary point; no such code appeared in either measured archive (`scada-archive.md#quality-and-gaps`).
 **Acceptance.** DB: a marked break produces a line break, while a long run without rows produces a continuous horizontal line; the readout inside a break is "no data".
 **Note.** Closes gap (b)10.
 
@@ -271,4 +271,4 @@ through `TrendChartViewModel.SetActivePen`; the picked line is drawn 2 px wide a
 
 **Direct user requirements (all MUST):** continuous time canvas → TM-1; multiple Y axes → AY-1/AY-2; resize a pen's Y layer, min/max, disable → PN-2/PN-3/PN-4; T1/T2 markers → CU-3; pen value at a point → CU-2; source always PostgreSQL → DA-1.
 
-**Known "model exists — UI missing" discrepancies promoted to requirements:** AY-6 (log axis, closed), DA-4 (manual layer), AY-2 (axis ≠ group), DA-7 (X monotonicity), CU-6 (readout at the live edge), DA-6 (column-count stability).
+**Known "model exists — UI missing" discrepancies promoted to requirements:** AY-6 (log axis, closed), DA-4 (manual layer), AY-2 (axis ≠ group, closed), DA-7 (X monotonicity, closed), CU-6 (readout at the live edge), DA-6 (column-count stability, closed).

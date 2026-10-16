@@ -139,7 +139,10 @@ carried shows again only when a later read covers that span.
 share one, whatever their unit or group. Every axis is a left axis — `Axes.Left` for the first pen,
 `AddLeftAxis()` for the rest — because only the active pen's axis is drawn and alternating sides
 would move it across the plot as the active pen changes. Non-active axes are
-`IsVisible = false`, and the active-pen switch toggles visibility without rebuilding. Scaling is
+`IsVisible = false`, and the active-pen switch toggles visibility without rebuilding. `ChartAxisBinder`
+fixes the drawn axis's panel at 56 px (`AxisPanelWidth`, as both `MinimumSize` and `MaximumSize`) and a
+hidden axis's at 0, so the data area keeps its place when the active pen changes; a wider tick label
+overflows the panel. Scaling is
 driven per-axis via `SetLimitsY(min, max, axis)` from the Core `PenScaleModel` output (no global
 `AutoScale`). Every plottable is pinned to `plot.Axes.Bottom` explicitly at creation, so all pens
 share one X axis and per-pen axes are Y-only.
@@ -466,9 +469,10 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   every visible pen's value at the cursor X; gap or missing pen → dash) that feeds the Avalonia overlay
   `TextBlock`. No plottable; unit-tested as plain `[Fact]`.
 - `Chart/ChartCursorOverlay` — pure projection (no Avalonia/`AvaPlot` deps): cursor pixel X + `DataRect`
-  + render scale → crosshair endpoints + readout anchor in DIP space, clamped to the data rect; unit-tested.
+  + render scale → crosshair endpoints in DIP space, or hidden when the cursor X falls outside the data
+  rect's X range; unit-tested.
   The view (`TrendChartView`) renders the result onto a transparent overlay `Canvas` (crosshair `Line` +
-  readout `Border`), suppressed during drag / delta mode.
+  readout `Border` at the line's top end), suppressed during drag / delta mode.
 - `Chart/LeftButtonTool` (enum `Pan | DeltaPlacement`) — the single left-button gesture state, sourced
   from the navigation bar's delta toggle.
 - `Chart/ChartAxisRegion` — axis band hit-tests from the last render layout: `TryCreate`, the active pen's
@@ -476,7 +480,8 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   (`ScaleActivePen`); `TryCreateTimeAxis`, the bottom axis band under the data area, for the press
   (`PanOrEditTimeWindow`).
 - `Chart/ChartPressRouter` — the pure routing of a left press (`EditAxisScale`, `ShiftActivePen`,
-  `PanOrEditTimeWindow`, `PlaceDeltaCursor`, `DragMarker`, `PanOrPickPen`) and the 4 px click slop that
+  `PanOrEditTimeWindow`, `PlaceDeltaCursor`, `DragMarker`, `DeleteMarker`, `PanOrPickPen`, `AddMarker`)
+  and the 4 px click slop that
   separates a click from a pan.
 - `Chart/ChartWheelRouter` — the pure routing of a wheel event (`ScaleActivePen`, `ShiftActivePen`,
   `PanTime`, `ZoomTime`, `None`) and its notch sign (`trend-interaction.md`, "The wheel map").
@@ -495,9 +500,8 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   `Chart/TrendChartView.Markers.cs`.
 - `Chart/LocalTimeAxis` — UTC↔local-OADate conversion at every render boundary.
 - `Navigation/NavigationBarView` + `NavigationBarViewModel` — time navigation only: jump-to-now,
-  sticky toggle, delta-mode toggle + inline Δt/Δy readout (ReactiveUI commands). Autoscale, the two
-  limit boxes and set-limits left with the axis scale panel taking them over; the layer label left
-  for the status bar.
+  sticky toggle, delta-mode toggle + inline Δt/Δy readout (ReactiveUI commands). The axis scale panel
+  holds autoscale, the two limit boxes and set-limits, and the status bar shows the layer.
 - `Navigation/WallClockRangeForm` — the date-plus-`HH:mm:ss` range fields and the five range rules that
   `Export/ExportRangeForm` and `Navigation/TimeWindowForm` derive from; `TimeWindowForm` adds the width
   field, the skipped-time and span rules and the per-edge comparison with its seed.
@@ -565,7 +569,8 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
 - `MainWindow/MainWindow` + `MainWindowViewModel` — the six-row window grid, the flags its View
   menu writes and the menu's two axis commands under View -> Pen scale, which call `AutoscaleActivePen`
   and `RestoreInitialScale` on the chart, and the submenu header that names the drawn pen; the window's
-  code-behind owns the three view-side requests (close, About dialog, settings dialog).
+  code-behind owns the five view-side requests (close, About dialog, settings dialog, pen editor, export
+  window).
 - `MainWindow/AppMenuBar` — the File / Edit / View / Help menu. Each checkable item reads its flag
   `Mode=OneWay` and writes it only through the command it invokes (`AGENTS.md`, UI).
 - `MainWindow/AppStatusBar` + `AppStatusBarViewModel` — current connection state and the active

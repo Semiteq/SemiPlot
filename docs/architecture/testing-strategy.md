@@ -84,8 +84,8 @@ polls through `HistoryDebouncerTestBuilder.AwaitCondition`, which references no 
 reaches no further: the clock bounds the wait and no test asserts on elapsed time, and a pipeline that takes
 an `IScheduler` runs on a `TestScheduler` instead. Its users besides the theme tests are
 `UI/MainWindow/MainWindowViewTests.cs`, `UI/Startup/StartupFailureWindowTests.cs`,
-`UI/Settings/SettingsViewModelTests.cs`, `SettingsViewTests.cs`, `UI/Chart/TrendChartViewModelTests.cs` and
-`ChartTestBuilder`.
+`UI/Settings/SettingsViewModelTests.cs`, `SettingsViewTests.cs`, `UI/Chart/TrendChartViewModelTests.cs`,
+`ChartTestBuilder`, `UI/Export/CsvExportViewModelTests.cs` and `CsvExportWindowTests.cs`.
 
 `Journeys/JourneyWait.cs` is its copy for the journeys, with the same contract (10 ms poll, dispatcher pump,
 30 s bound), except that it pumps unconditionally, which is safe only because every journey is an
@@ -144,13 +144,13 @@ An integration test crosses exactly one boundary to a real implementation of som
 repository does not build, to verify the translation across that seam. A fake cannot do this job: it
 would encode our own assumption on both sides. The value is contract verification.
 
-There are three families — the same category with different foreign parties.
+There are four families — the same category with different foreign parties.
 
-**Against a real PostgreSQL**, in `SemiPlot.Tests.Integration/`: `PostgresCatalogReadTests`,
-`PostgresExtentReadTests`, `PostgresArchiveDaysReadTests`, `PostgresHistoryReadTests`, `RealtimePollReadTests`,
-`RealtimeSubscriptionTests`, `RealtimeEmptyArchiveTests`,
-`ArchiveWriterTransactionTests`, `CoarseFlushTests`, `ProviderSessionTests`,
-`ExplainPlanTests`, `ArchiveRowReaderTests`, `PenCatalogueEditorTests`, `PenRegistrationTests`, `LiveCatalogueTests`. The realtime classes
+**Against a real PostgreSQL**, in `SemiPlot.Tests.Integration/`: every class carrying
+`[Collection(ArchiveDatabaseCollection.Name)]` outside `Journeys/`, for example `PostgresHistoryReadTests`,
+`PostgresCatalogReadTests`, `RealtimePollReadTests`, `RealtimeSubscriptionTests`, `RealtimeEmptyArchiveTests`,
+`CoarseFlushTests`, `ProviderSessionTests`, `ExplainPlanTests`, `ArchiveRowReaderTests`,
+`PenCatalogueEditorTests`, `MarkerStoreTests`, and the seeder's `ConvergeTests` and `TagCatalogWriterTests`. The realtime classes
 share `RealtimeArchive` (rows, subscription and append path), `BatchCollector` and `ArmedGate`. Seams
 guarded: statement text, type mapping, the demo writer's coarse
 flush (`CoarseFlushTests` pins period bounds, which periods close, the NULL skip, `ON CONFLICT` and the
@@ -174,24 +174,28 @@ listener). They cross the machine boundary and need no container, so they carry 
 `PostgresContainerFixture`; a missing container runtime does not fail them. `UnreachableArchive.Settings`
 gives them the unreachable address and an adjustable poll interval.
 
-**Against a real Avalonia** — `SemiPlot.Tests.Unit/UI/`, under `[AvaloniaFact]`:
-`ChartPointerInputTests`, `MinimapPointerInputTests`, `MinimapHoverTests`, `MinimapViewTests`, `TrendChartViewTests`,
-`NavigationBarViewTests`, `AppMenuBarTests`, `AppStatusBarViewTests`, `MainWindowViewTests`, `MessagePanelViewTests`,
-`TrendLegendViewTests`, `PenEditorViewTests`, `PenGroupsViewTests`, `ThemeTests`,
-`StartupFailureWindowTests`, `TrendWindowTests`, `AppMainWindowTests`,
-`TrendCoordinatorTests` with `FakeDataProvider`. Seams guarded: the dispatcher, layout, hit-testing,
+**Against a real Avalonia** — `SemiPlot.Tests.Unit/UI/`, under `[AvaloniaFact]` and `[AvaloniaTheory]`,
+for example the classes that realise a view: `ChartPointerInputTests`, `MinimapPointerInputTests`,
+`MinimapViewTests`, `TrendChartViewTests`, `ChartMarkerViewTests`, `AxisScalePanelViewTests`,
+`TimeWindowPanelViewTests`, `CsvExportWindowTests`, `MainWindowViewTests`, `TrendLegendViewTests`,
+`PenEditorViewTests`, `ThemeTests` and `StartupFailureWindowTests`. Seams guarded: the dispatcher, layout, hit-testing,
 pointer capture and event routing. Real framework, synthetic data. These are what catch a rendering-stack version bump.
 The headless platform draws no pixels, so `Minimap/MinimapBand.Render` has no test: `MinimapViewTests`
 pins the figures it receives, and the minimap's smoke walk on the demo stand covers what it paints.
 
 **Against a real rasterizer** — `SemiPlot.Tests.Unit/UI/Chart/ChartGapRenderTests.cs`, under `[AvaloniaFact]`:
 it renders through SkiaSharp and asserts on pixels that a `NaN` column breaks the
-line. `LogAxisRenderTests.cs` renders a log axis the same way and asserts on pixels that the 1e-4 plateau
+line. `LogAxisRenderTests.cs`, under plain `[Fact]` and `[Theory]` over a bare `Plot`, renders a log axis
+through the same rasterizer and asserts on pixels that the 1e-4 plateau
 of a 1e-6..1e-2 axis draws at the data area's vertical middle and that a plateau at `0`, or under the
-axis minimum, draws 2 px above the data area's bottom row. `EnvelopeLineTests.cs` uses the same rasterizer
-twice. As a render thread, not for its pixels: a background task renders frames while the test thread
+axis minimum, draws 2 px above the data area's bottom row. `EnvelopeLineTests.cs`, under plain `[Fact]`,
+uses the same rasterizer twice. As a render thread, not for its pixels: in
+`Render_WhileTheUiThreadRewritesTheColumns_DoesNotThrow` a background task renders frames while the test thread
 rewrites the same pen's columns, and the pin is that the render task throws nothing and reaches its frame
-budget, the run bounded by that budget and a cancellation token. And for its pixels in
+budget, the run bounded by that budget and a cancellation token. `RenderWhileMutating.RunAsync`
+(`UI/Chart/RenderWhileMutating.cs`) holds that loop, and `TrendChartRenderThreadTests` runs it under
+`[AvaloniaFact]` while the chart applies a catalogue and switches an axis between linear and log10.
+`EnvelopeLineTests` reads pixels in
 `Render_ProjectsThroughLog10OnlyUnderALogTickGenerator`: one flat line lands inside a -6..-2 axis only
 while the axis carries a `LogTickGenerator`. `StrokeProbe` (`UI/Chart/StrokeProbe.cs`) is the only
 pixel probe. It holds the channel-dominance band, the ink measure `InkOf` (a channel's lead over the other

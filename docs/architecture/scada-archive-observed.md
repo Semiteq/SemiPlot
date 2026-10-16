@@ -564,7 +564,7 @@ plant sensor with a well-chosen deadband writes far less often than this random 
 
 | Topic | Manual, forum or `scada-archive.md` | Observed in this run |
 | --- | --- | --- |
-| Coarse selection | up to 4 points per period: first, last, min, max (`[FORUM:1032]`, partly inferred) | min and max of the calendar period; first and last only when extreme |
+| Coarse selection | up to 4 points per period (`[FORUM:1454]`): first, last, min, max (`[FORUM:1032]`, partly inferred) | min and max of the calendar period; first and last only when extreme |
 | Tie-break | the later row for a repeated extreme | the later row for a repeated maximum, the earlier row for a repeated minimum |
 | Layer spacing | 15 s, 15 min, 6 h | 30 s, 30 min; layer 3 empty |
 | Period alignment | open question | calendar minute and hour |
@@ -591,8 +591,9 @@ For SemiPlot:
    build writes (`data-integration.md#layer-ladder`).
 3. **The layer spacings are half the density assumed.** Addressed: `AggregationLayer.ToPointSpacing`
    takes two rows per period, half the real spacing (`data-integration.md#layer-ladder`).
-4. **Unbounded reads of layers 1 and 2 meet 1899-12-30.** Every read is bounded by time today; it
-   has to stay so.
+4. **Unbounded reads of layers 1 and 2 meet 1899-12-30.** Every read of layers 1 and 2 is bounded by
+   time, and it has to stay so. The two reads with no time bound, `ArchiveExtent` and
+   `RealtimeBaseline`, read `l = 0` only, where these rows do not land.
 5. **A pen that does not change has one point per day, and its newest point can be a day old.**
    Holding the last value as a step is what draws it correctly.
 6. **A silent hole looks like a straight line.** Nothing in the archive distinguishes it from a

@@ -15,10 +15,11 @@ is remains in `scada-archive.md`; what SemiPlot reads from it remains in `data-i
 | Template build, the clones, teardown | `SemiPlot.Tests.Integration` |
 
 The archive table is the provisioner's, not this repository's: nothing here transcribes the vendor's
-DDL. The seeder creates the day partitions its rows land in and nothing else, and never destroys.
-An absent `public.trends` is a failure naming the provisioning that did not run; a table already
-carrying rows or day partitions is refused. Only the test fixture drops databases, and only ones it
-created itself.
+DDL. The seeding run creates the day partitions its rows land in and nothing else, and issues no
+`DROP`. An absent `public.trends` is a failure naming the provisioning that did not run; a table already
+carrying rows or day partitions is refused. Two things drop databases: the test fixture, only ones it
+created itself, and `converge`, which recreates the `semiplot_` database `--connection` names with
+`DROP DATABASE IF EXISTS ... WITH (FORCE)` (`#the-converge-verb`).
 
 ## The standard slice
 
@@ -78,6 +79,8 @@ run.
 `--follow <seconds>` runs the seeder as a demo writer: it appends to an archive somebody else seeded,
 so it plants no break and fills no tag catalogue. `--end`, `--days` and `--admin-connection` are
 rejected in this mode. `--pens`, `--seed` and `--change-seconds` mean what they mean in a seeding run.
+`--follow` and `--change-seconds` each take a finite number of seconds above 0 and at most one day,
+`FollowOptions.MaximumSeconds` (86 400), in every run.
 
 ```powershell
 dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.ArchiveSeeder.csproj -- `
@@ -165,10 +168,10 @@ reason.
 The fixture builds that image in-process from the `bench/` directory copied to the output
 directory, under the fixed tag `semiplot-bench:test`. Readiness is the wait strategy's `psql`
 against `public.trends` over TCP — the entrypoint's temporary server listens on the unix socket only
-— so a container whose provisioning did not complete never becomes ready. The pull, the build, the
-start and the readiness wait share one two-minute bound,
-`PostgresContainerFixture._startupBound`, so a bench that never comes up fails rather than hanging
-`SemiPlot.Tests.Integration.exe`.
+— so a container whose provisioning did not complete never becomes ready. The build, the start and
+the readiness wait share one two-minute bound, `PostgresContainerFixture._startupBound`, so a bench that
+never comes up fails rather than hanging `SemiPlot.Tests.Integration.exe`. The pull ahead of them runs
+under a two-minute bound of its own, and a pull that runs out of it is reported like any failed pull.
 
 `PostgresContainerFixture` maps the runtime's `localhost` host to `127.0.0.1` and passes any other host
 through, so a remote `DOCKER_HOST` that reports a hostname is not a supported setup: the connection
@@ -236,14 +239,15 @@ dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder -- converge `
   --config-dir SemiPlot\Artifacts\dev-config
 ```
 
-It waits for the admin connection up to 60 s, then unconditionally `DROP DATABASE IF EXISTS ...
-WITH (FORCE)` and `CREATE DATABASE ... TEMPLATE semiplot_provisioned` against the database
-`--connection` names, seeds it with `SeederOptions` at the defaults (`--change-seconds` may override
+It first refuses a database `--connection` names unless the name starts with `semiplot_` and is not
+`semiplot_provisioned` itself (`Converge.RequireBenchDatabase`), before it opens any connection. It then
+waits for the admin connection up to 60 s, runs `DROP DATABASE IF EXISTS ... WITH (FORCE)` and
+`CREATE DATABASE ... TEMPLATE semiplot_provisioned` against that database, seeds it with `SeederOptions` at the defaults (`--change-seconds` may override
 the change interval; the AppHost passes the writer's 0.5 s so the seeded day and the live tail share
 one density) up to `--end` or this machine's
 clock, fills the catalogue through `--admin-connection` re-pointed at the stand database, and
 writes `connection/connection.yaml` under `--config-dir` with the bench `semiplot` role's fixed
-password.
+password and a `poll_interval_ms` of 1000.
 
 The catalogue is written once, here. `TagCatalogWriter` upserts `semiplot_tags`, inserts the group
 names into `semiplot_groups` and replaces each pen's rows in `semiplot_pen_groups`, all three in one
@@ -286,8 +290,8 @@ construction, on a fixed host port with `isProxied: false` and one database name
 | `%TEMP%\SemiPlot\ConfigFiles` | A copy of the repository's `ConfigFiles/`, `converge`'s rewritten `connection/connection.yaml` included | Swept and recreated at start, removed on `ApplicationStopping` |
 | `%TEMP%\SemiPlot\Logs` | `semiplot.log`, and the `semiplot_NNN.log` files it rolls into at 5 MB | Swept and recreated at start, kept after the stand stops |
 
-`DemoDirectories.Prepare` resolves the tracked set two levels above `builder.AppHostDirectory` and
-throws `DirectoryNotFoundException` when it is absent, so a missing source fails the AppHost at once
+`AppHost.cs` resolves the tracked set two levels above `builder.AppHostDirectory`, and
+`DemoDirectories.Prepare` throws `DirectoryNotFoundException` when it is absent, so a missing source fails the AppHost at once
 rather than producing an empty copy the viewer reports later. The AppHost passes
 `%TEMP%\SemiPlot\ConfigFiles` as `--config-dir` to both `converge` and the viewer, and the log path
 plus `--logging-level information` to the viewer, which needs all three keys.
@@ -300,7 +304,9 @@ removes the configuration copy when it stops (`DemoDirectories.cs`).
 Serilog file sink declared `shared: true`, so deleting the directory during shutdown would race that
 handle, and the log of a run that failed is the one thing worth keeping after the stand is gone. The
 sweep deletes file by file and tolerates a file still held open, so a viewer that outlived its stand
-cannot stop the next one from starting. `ApplicationStopping` does not fire when the AppHost is
+cannot stop the next one from starting. The configuration sweep tolerates no survivor:
+`DemoDirectories.RequireSwept` fails the AppHost start with an `IOException` naming every file the sweep
+left, because such a file would merge with the fresh copy. `ApplicationStopping` does not fire when the AppHost is
 killed rather than stopped; the sweep at the next start is the backstop for that path. A window started
 from the viewer's `File` menu holds `semiplot.log` open the same way and can outlive the stand.
 
@@ -322,8 +328,8 @@ file for a refused login, delete the catalogue rows for an empty catalogue.
 Nothing machine-dependent lives in `AppHost.cs`: the role passwords are `BenchRoles`' public
 constants, the port is 55432, the configuration and log paths come from `DemoDirectories`, and the
 seeder and the viewer both take the machine's own time zone. The
-`Live demo` run configuration at the repository root's `.run/` is a `DotNetProject` configuration
-over `SemiPlot.AppHost`, in the shape of `Debug.run.xml`.
+`Live demo` run configuration at the repository root's `.run/` is an `AspireHostConfiguration` over
+`SemiPlot.AppHost`'s `http` launch profile.
 
 The launchers that start the viewer alone - `.run/Debug.run.xml` and the `.zed/` run and debug
 entries - point `--config-dir` at `SemiPlot/Artifacts/dev-config` through `$PROJECT_DIR$` and
@@ -347,8 +353,10 @@ where a realised control sits in the strip, at what size and with which figures.
 | `UI/Minimap/MinimapHoverTests` | headless pointer events into `MinimapView` | a hover shows a line at the pointer and its time centred under it in the label row, inside the row at either end, where the time hides only the end label it covers, also after a new extent relabels that label; the line stays inside the strip at its right edge and keeps its fraction through a resize; a newer sample relabels the time; a drag keeps the line under the pointer, and a move off the strip or an exit hides the line and the time |
 | `UI/Minimap/MinimapViewTests` | a realised `MinimapView` with a published band | the strip holds the band, the marker and the hover line in that order and no baseline; the band is sized to the strip, with figures in the pen's colour that a pan leaves as they are; the end labels sit in a row under the strip, and the view keeps its height when the extent fills them |
 
-**The render guard.** `Plot.RenderInMemory(width, height)` rasterises through SkiaSharp with no
-Avalonia in the loop, so it is a plain `[Fact]`; `Plot.RenderManager.LastRender.Layout.DataRect`
+**The render guard.** `Plot.GetImage(width, height)` rasterises through SkiaSharp with no Avalonia in
+the loop. `LogAxisRenderTests` builds a bare `Plot` and is a plain `[Fact]`; `ChartGapRenderTests` builds
+its plot through `TrendChartViewModel`, a ReactiveUI object, and runs under `[AvaloniaFact]`.
+`Plot.RenderManager.LastRender.Layout.DataRect`
 describes that same render and `Plot.GetPixel(Coordinates)` maps a time to its pixel column.
 Detection is by colour band — a dominance test across the channels — never by exact byte, so
 antialiasing and theme changes move bytes without moving the answer. A golden image would fail for

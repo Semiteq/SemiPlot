@@ -58,6 +58,8 @@ Constraint: **$0 budget** — only free/OSS components.
 |     +-- AppStatusBar        connection state, layer         |
 |     +-- PenEditorWindow     pens and groups dialog          |
 |     +-- CsvExportWindow     range to CSV file dialog        |
+|     +-- SettingsDialog      app and connection settings     |
+|     +-- AboutDialog         version and config folder       |
 |   ViewModels (ReactiveUI) ◄── TrendCoordinator (Rx hub)     |
 |                           ◄── PenCatalogueSync (5 s reads)  |
 |                           ◄── MarkerSync (5 s reads)        |
@@ -129,10 +131,12 @@ archive's time zone (`PostgresConnectionSettings.SourceTimeZone`), and construct
 6. the catalogue sync;
 7. the navigation bar and the legend;
 8. the catalogue applier;
-9. `MainWindowViewModel`, over the chart, the status bar, the minimap, the navigation bar, the legend,
-   the catalogue sync's `ReadNow` and a factory for `CsvExportViewModel`, which `Build` closes over the container's
-   `IArchiveRowReader`, the `CsvDialect`, the UI scheduler and the archive zone, so the window view model
-   holds none of them.
+9. `MainWindowViewModel`, over the message panel, the status bar, the chart, the minimap, the navigation
+   bar, the legend, the catalogue sync's `ReadNow`, the logger factory, the container's `IPenCatalogueEditor`,
+   the `InstanceLauncher` and a factory for `CsvExportViewModel`. `Build` closes the factory over the
+   container's `IArchiveRowReader`, the coordinator's `QueryArchiveDaysAsync`, the `CsvDialect`, the message
+   panel, a logger, the UI scheduler, the archive zone and the chart navigation's `FirstSample` and
+   `NewestSample`, so the window view model holds none of the export's own inputs.
 
 The coordinator republishes the provider's connection stream through `ObserveOn` on the UI scheduler.
 `AvaloniaScheduler` runs a zero-delay action at once when the caller is already on the dispatcher thread,
@@ -149,8 +153,11 @@ container service first, so a missing registration throws before any part exists
 `TrendWindow`, shows its view model, and disposes the `TrendWindow` from the main window's `Closed` event
 on the UI thread.
 
-The container keeps the process services: the data source, the provider, the editor, the row reader, the
-marker store, the message panel and the logger factory. It registers no window part, the status bar included. The UI scheduler is not a
+The container keeps the process services. `AddPostgresData()` registers the data scheduler,
+`TimeProvider.System`, the `PostgresConnectionSettings`, the `NpgsqlDataSource`, the `ArchiveTimeConverter`,
+the `ArchiveExceptionMapper`, the provider, the editor, the marker store and the row reader; `AddUi()`
+registers the message panel, and `StartupProbe.BuildArchiveServiceProvider` adds the logger factory. The
+container holds no window part, the status bar included. The UI scheduler is not a
 container registration; `App` passes `AvaloniaScheduler.Instance` to `TrendWindow.Build`, while the data
 scheduler comes from the container.
 
@@ -275,8 +282,9 @@ Row 4 is the one whose flag the operator is not the only source of. `MessagePane
 closed, so a session that never fails is never given the row, and `MessagePanelViewModel.Report`
 opens it for a failure the list does not already carry — an entry that landed off screen would be a
 failure nobody is shown. A repeat of the entry on top does not reopen a panel the operator closed.
-The row, the `View` item's check state and the status bar's connection indicator all read the same
-flag, so one click always moves the row and the check state always describes it.
+The row and the `View` item's check state read the same flag, and the `View` item and the status bar's
+connection indicator both invoke `MessagePanel.ToggleCommand`, so one click always moves the row and the
+check state always describes it.
 
 The status bar carries current state only: whether the archive answers, and the layer the chart
 reads, named from resx rather than from `AggregationLayer.ToString()`. It holds no pen count and no
@@ -311,7 +319,7 @@ is why `StartupSequence.Run` touches no ReactiveUI type and why `MessagePanelVie
 two `ReactiveCommand`s, is resolved from the container inside `.AfterSetup(...)` and never before it. On
 a failed start no container exists, and `StartupFailureViewModel` builds its panel when
 `App.CreateMainWindow` runs, after `Setup()`.
-`RxApp` itself is gone from the installed ReactiveUI 23.2.28; the schedulers live on `RxSchedulers`
+`RxApp` does not exist in the installed ReactiveUI 23.2.28; the schedulers live on `RxSchedulers`
 and the handler on `RxState`.
 
 The same ordering forces the one static read this tree allows. The handler is taken before any
@@ -330,7 +338,7 @@ one method: nothing else may resolve a service through a static.
   message panel records.
 - **History:** the chart requests a window → `TrendCoordinator.QueryHistoryAsync` (the single history
   query, reached through the debouncer by the initial load and every gesture alike) → provider
-  returns one decimated `PenHistoryEnvelope` per pen (ascending `X` + `Min`/`Max`/`Center`) → the view
+  returns one server-reduced `PenHistoryEnvelope` per pen (ascending `Timestamps` + `Min`/`Max`/`Center`) → the view
   model applies the result into the plot; the debouncer runs one query at a time and lets the newest
   window asked for run last. The minimap band is a second reader outside the debouncer: one pen at 250
   columns every 2-60 s (`trend-interaction.md#archive-overview-minimap`).
@@ -346,7 +354,6 @@ one method: nothing else may resolve a service through a static.
   `OutputType=WinExe` and the Avalonia Win32 backend are what make that machine the deliberate
   Windows-only target. The plain TFM exists so the test projects build on the Linux CI
   runners, and changes nothing about where the application ships.
-- Auto-update of the app itself via Velopack if/when needed.
 - Site paths follow the `C:\DISTR\` convention of the sibling SemiStep installation: configuration
   in `C:\DISTR\Config\SemiPlot`, logs in `C:\DISTR\Logs\SemiPlot\`. Neither sits beside the
   executable and neither is per-user. Nothing in the application knows those paths: the three launch
@@ -787,7 +794,7 @@ text are in `ui-text.md#the-export-windows-text`, the layout in
 | Pen checklist | Every pen of the snapshot, ticked when it was visible, in a bordered list under the header "Pens (2 of 3)", which reads the ticked and total counts through a `MultiBinding`. The list sizes to its rows up to a `MaxHeight` of 226 px, eight 28 px rows plus the border (`CsvExportWindowTests` measures the row), and never auto-hides its scroll bar. It has no horizontal scroll bar: a long label is a `TextBlock` trimmed with an ellipsis, and the full label is the row's tooltip. A pen whose name another pen of the snapshot shares shows ` (id)` after it (`ExportPenChoice.Label`). The pickers, the time boxes and the list are disabled while an export runs. |
 | Row count | `CsvExportViewModel` reads `IArchiveRowReader.CountRowsAsync` 300 ms after the last edit of the range or the ticks. A count still running when an edit lands is cancelled at once, and the next count starts 300 ms after that edit, so a result of the old range never shows. A failed count shows "Row count unavailable" and reports to the message panel through `ArchiveFailureMapper.Map`. A count above Excel's 1 048 575 data rows adds a notice to the message line and does not block the export. An edit of the range or of a tick clears the status line of an earlier export, so the notice shows again. |
 | Message line | A full-width row of its own above the buttons, two lines reserved. Its `ToolTip` is `CsvExportViewModel.MessageToolTip`: the full path while the line shows a success and no form rule is broken, null otherwise. |
-| Calendars | Both pickers offer the days from the first sample's to the newest sample's, widened to the prefilled dates, and mark the days without a row as blackout dates: `CsvExportViewModel.Days` is an `ArchiveDayCalendar` with the time window panel's rules (`trend-interaction.md#the-time-window-panel`). `TrendWindow.Build` hands the view model `Navigation.FirstSample`, `Navigation.NewestSample` and `TrendCoordinator.QueryArchiveDaysAsync`; the view model reads the days once on construction, and a failed read reaches the message panel and leaves no blackout date. The code-behind syncs the set into both pickers' `BlackoutDates` as the panel's does and drops the subscription on `Closed`. |
+| Calendars | Both pickers offer the days from the first sample's to the newest sample's, widened to the prefilled dates, and mark the days without a row as blackout dates: `CsvExportViewModel.Days` is an `ArchiveDayCalendar` with the time window panel's rules (`trend-interaction.md#the-time-window-panel`). `TrendWindow.Build` hands the view model `Navigation.FirstSample`, `Navigation.NewestSample` and `TrendCoordinator.QueryArchiveDaysAsync`; the view model reads the days once, on construction and only when a newest sample exists, and a failed read reaches the message panel and leaves no blackout date. A date edit recomputes neither the offered days nor the blackout dates. The code-behind syncs the set into both pickers' `BlackoutDates` as the panel's does and drops the subscription on `Closed`. |
 | Buttons | `Save as...` opens the system save dialog and passes the chosen local path to `ExportCommand`; it is disabled while the form is invalid or an export runs. `Cancel` is enabled only while an export runs. `Close` closes the window. Right-aligned, below the message line. |
 
 The range is wall-clock time end to end (`data-integration.md#time-boundary`). The 24 h limit bounds the
@@ -827,8 +834,9 @@ All three keys are required and none carries a default.
 | `--log-file <path>` | Log file, rolling 5 MB / 5 files |
 | `--logging-level <level>` | `verbose` \| `debug` \| `info` (or `information`) \| `warning` \| `error` \| `fatal`, case-insensitive |
 
-`File` -> `New window`, `Restart` and `Restart now` start a copy with the same three keys verbatim
-(`#another-instance`).
+`File` -> `New window`, `Restart` and `Restart now` start a copy with the same three keys
+(`#another-instance`). The two paths go as given; the logging level goes as the `LogEventLevel` member
+name the parse produced (`Information` for `info`), which the copy's parse reads back to the same level.
 
 `StartupOptions.Parse` returns `Result<StartupOptions>`. A missing key, a key the parser does not
 know, a valued key given last with nothing after it, and an unusable logging level are each a

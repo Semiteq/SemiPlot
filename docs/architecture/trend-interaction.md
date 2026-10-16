@@ -67,10 +67,16 @@ operator interaction.
 - **Decimation envelope contract:** history record per pen = ascending `X[]` + `Min[]` + `Max[]` + center
   `Y[]`; realtime stays single-value `double?[]` (null = gap); rendered as one `EnvelopeLine` polyline
   (see Renderer).
+  *As-built note:* realtime is `double`, not `double?`: `PenRealtimeValues` carries each pen's own
+  timestamps and values, and the live edge has no null, so every gap the chart draws comes from the
+  history path (charting.md, "Gaps via NaN").
 - **Δ cursors:** Δy is reported only for the **active/selected pen** (pens share X but have independent Y
   scales, so a global Δy is meaningless).
 - **Bad quality → gap:** OPC bad-quality is mapped to `null` at the `IDataProvider` boundary, reusing the
   null = gap path; a distinct value-present-but-bad-quality flag is deferred.
+  *As-built note:* nothing maps to `null`. The archive marks the last sample before a break with
+  `q = 32`, the server closes the bucket there, and `BucketedRowFold` writes a `NaN` column one tick after
+  it. `q = 16` takes no branch: the next bucket resumes the line (data-integration.md#quality-and-gaps).
 - **Real-time return:** "jump to real-time" re-attaches sticky immediately; now-marker at the
   **right edge** (centering is at most a transient transition animation).
 - **Many-axes management:** **single active Y axis + per-pen autoscale** (legacy SCADA model);
@@ -90,10 +96,14 @@ operator interaction.
 - **Performance:** **FPS locked at 30**; data updates no faster than **10 Hz (100 ms)**; up to
   **50 displayed pens**.
   *As-built note:* the chart redraws at most once per display frame (§RT-4,
-  charting.md#the-frame-paced-redraw).
+  charting.md#the-frame-paced-redraw). The 50 pens are a sizing budget: no code caps the pen count.
 - **Decimation backend:** kept behind the data-provider **stub** for now; production backend
   will be **PostgreSQL**, but whether it stores pre-trimmed/layered data is **unknown** — the
   data layer must support either server-side aggregation or in-process decimation.
+  *As-built note:* the backend is PostgreSQL, and the archive stores the layers in its `l` column
+  (`AggregationLayer`: `Raw`, `Minute`, `Hour`; `scada-archive.md#layers`). The server buckets every
+  layer in the query (`BucketedHistoryWindow`), and no decimator runs on the client (see "Decimation &
+  performance").
 - **Dropped / out of scope:** horizontal cursor (dropped); alarm/event overlays (out of scope).
   Time markers on the chart are in scope and built (`#the-time-markers`).
   **`[LATER]`:** view persistence, snapshot/print. CSV value export ships
@@ -175,7 +185,7 @@ as-built mechanics that realize them:
 Requirements: multiple independent Y axes (trend-feature-spec.md §AY-1), the per-pen "each on its
 own axis" case (§AY-2), and the shared-X / independent-Y invariant (§TM-1). As-built mechanics:
 
-- Plot up to **50 pens**, each with a scale of its own.
+- The chart is sized for **50 pens**, each with a scale of its own; no code caps the count.
 - **Axis management = single active axis + per-pen autoscale:** the active pen's scale is surfaced
   on the primary axis; non-active pens scale individually with their axes hidden, so many pens do
   not spill many visible axes. The literal "N lines, each on its own axis" case (§AY-2) is the
@@ -196,16 +206,16 @@ are routed through `Chart/TrendChartView` onto the navigation controller. `Disab
 the wheel: `AvaPlot.OnPointerWheelChanged` ends with `e.Handled = HandleMouseWheelEvent`, outside the
 delta guard and unconditioned on the input processor, and Avalonia runs that class handler before the
 view's instance handler on the same element — so a wheel event arrives already handled and the view
-never sees it. `TrendChartView.InitializeComponent` therefore also sets
-`_plotControl.HandleMouseWheelEvent = false`, which is what keeps wheel zoom working; the view's own
+never sees it. The `TrendChartView` constructor therefore also sets
+`PlotControl.HandleMouseWheelEvent = false`, which is what keeps wheel zoom working; the view's own
 handler is then the only writer of `Handled` for the wheel. Each event kind has one pure decision
 point, and the handlers carry no modifier test of their own: the wheel goes through
 `Chart/ChartWheelRouter.Route(isAxisRegionHit, modifiers, delta)`, the left press through
-`Chart/ChartPressRouter.Route(region, modifiers, activeTool)`. The view names the one
+`Chart/ChartPressRouter.Route(region, modifiers, activeTool, clickCount)`. The view names the one
 `ChartPressRegion` the press lands on (`ActivePenAxis`, `TimeAxis`, `Marker` or `DataArea`; the two bands
 do not overlap, and `Marker` is a press inside the data rect within 4 px of a time marker), and the press
 router checks the active pen's axis first, then Ctrl, then the time axis band, then the tool, then the
-marker. The left
+marker, then the click count (`#the-time-markers`, Add and delete). The left
 button is a single tool with an explicit state (`Chart/LeftButtonTool` = `Pan` | `DeltaPlacement`); the active
 tool is sourced from the navigation bar's delta-mode toggle (`TrendChartViewModel.ActiveLeftButtonTool`),
 so there is one left-button gesture, not overlapping hidden branches. Ctrl is a held key, not a tool.
@@ -278,16 +288,17 @@ pointer, so a second finger neither moves, pans nor ends the first finger's drag
   stays as it is and keeps its emphasis. The branch sits ahead of the tool, so delta mode does not change a time-axis click and
   places no cursor there. A Ctrl press on the band shifts the active pen, as anywhere else.
 - **Sticky to real-time by default.** A button detaches sticky (pan into the past); clicking it
-  again re-attaches and returns to real-time. `WindowChanged` is the single writer of the navigation
-  bar's `IsSticky` (refreshed from `Navigation.IsSticky`), so auto-detach and `JumpToNow` re-attach stay
-  in sync with the button — no double write path.
+  again re-attaches and returns to real-time. The constructor seeds the navigation bar's `IsSticky` from
+  `Navigation.IsSticky`, and after that the `WindowChanged` handler is its only writer, refreshing it from
+  the same flag, so auto-detach and `JumpToNow` re-attach stay in sync with the button.
 - **Panning so the live edge scrolls out of the view** auto-detaches sticky.
 - **Hover readout + crosshair (X-trace) live in an Avalonia overlay, not on the plot.** Moving the
   pointer does NOT trigger a ScottPlot re-render. The crosshair is an Avalonia `Line` and the readout
   an Avalonia `Border`/`TextBlock` laid out on a transparent `Canvas` over the `AvaPlot`
   (`Chart/TrendChartView`). On hover the view positions them by projecting the view model's cursor X
   through `Plot.GetPixel` and `Chart/ChartCursorOverlay` (cursor pixel X + `DataRect` + render scale →
-  crosshair endpoints + readout anchor in DIP space, clamped). The readout text is the pure
+  crosshair endpoints in DIP space; the readout hangs from the line's top end). A cursor X outside the
+  data rect's X range hides the crosshair and the readout. The readout text is the pure
   `Chart/ChartHoverReadout.BuildContent` string: the local timestamp plus every *visible* pen's value
   at the cursor X (one line per pen; gap or missing pen → dash). With the pointer on a time marker the
   cursor X is the marker's moment, so the readout lists every visible pen's value there
@@ -299,8 +310,7 @@ pointer, so a second finger neither moves, pans nor ends the first finger's drag
   (`NavigationBarViewModel.IsDeltaModeEnabled`) sets the chart into `DeltaPlacement`: two left clicks
   place the cursors and drag does NOT pan; toggling off clears the placed cursors and hides the
   lines. Δt and the **active-pen** Δy (`Core/Trends/DeltaCursorModel` → `DeltaReadout`) are shown in
-  an inline readout next to the toggle. (The legacy `DeltaCursorsEnabled` flag and the hidden
-  left-click hijack branch were deleted.)
+  an inline readout next to the toggle.
 - **Y-axis click-region scale edit.** A press on the active pen's Y-axis panel band
   (`Chart/ChartAxisRegion`, computed from the last render layout) is handled before Ctrl, the time axis,
   pan and delta routing and opens the axis scale panel (below). The same region routes the wheel to `ScaleActivePen`.
@@ -428,9 +438,9 @@ under sticky is now.
   edges write no edge and a valid changed width still lands; an invalid field keeps its typed text until a
   write re-seeds the form, so a form with nothing valid to write keeps all of it.
 - The edges and the width validate apart, so a bad width never blocks the edges. The edge rules, in the
-  order the message line names them: a date missing, a time unreadable (start, then end), the end not after
-  the start, a time the spring-forward change skips (`zone.IsInvalidTime`), and a span over 365 days
-  measured between the UTC edges. The skipped time comes before the span because a skipped time has no UTC
+  order the message line names them: the start date missing, the start time unreadable, the end date
+  missing, the end time unreadable, the end not after the start, a time the spring-forward change skips
+  (`zone.IsInvalidTime`), and a span over 365 days measured between the UTC edges. The skipped time comes before the span because a skipped time has no UTC
   value; an ambiguous autumn hour takes the standard offset (`data-integration.md#time-boundary`). The width
   rules: unreadable, or outside `0:00:01` .. `8760:00:00`.
 - The panel commits on Enter, on a preset and on close, never on focus loss. The axis scale panel commits when
@@ -615,7 +625,7 @@ and the render budget (§RT-4). The as-built rationale and mechanics:
   whole coarse layer reaches the client, and no decimator runs there. `BucketedRowFold` maps the rows
   onto the one envelope vocabulary the chart reads, behind `IDataProvider`.
 - **Performance budget (§RT-4):** at most one redraw per display frame on pan/zoom; input data ≤ 10 Hz;
-  ≤ 50 simultaneous pens;
+  sized for 50 simultaneous pens, with no cap in code;
   points per pen handed to the chart ≈ viewport width × 2–4.
 
 ## Data quality & line rendering
@@ -631,8 +641,10 @@ Local-time display is required by trend-feature-spec.md §TM-1 (the single `Loca
 As-built: samples are UTC over the wire (data-integration.md). All UTC↔OADate conversion is
 funneled through `Chart/LocalTimeAxis` at every render boundary (plotted X, axis limits,
 cursor/delta X), with a `DateTimeAutomatic` tick generator on the shared bottom axis so labels
-read local time. DST boundary behavior follows the machine's local-time conversion (cosmetic; no
-special-casing).
+read local time. Across a daylight-saving change the axis follows the machine's local-time conversion,
+and `LocalTimeAxis.FromAxis` gives one instant for a pixel of the repeated autumn hour. The time window
+panel refuses a time the spring change skips and gives an ambiguous autumn time the standard offset
+(`#the-time-window-panel`). The archive's naive times follow `data-integration.md#time-boundary`.
 
 ## Legend
 
@@ -647,8 +659,8 @@ with its rows indented beneath it; the active pen's row is marked by an accent b
 bar on its left edge, not by bold text. The panel has two states: collapsed, it leaves the box, the dot and the
 name. A handle on the panel's left edge drags its width in either state; each state remembers its own
 width for the session, and a restart returns both to their defaults. The value at the cursor is the
-chart's own hover readout (§CU-2) and no longer a legend cell; the grey scale range is gone with it —
-it read as the pen's measured extremes and was the padded axis bound.
+chart's own hover readout (§CU-2), not a legend cell. The row shows no scale range: the padded axis
+bound would read as the pen's measured extremes.
 
 ## Archive-overview minimap
 
@@ -823,8 +835,8 @@ the next read's scheduling included, goes to `TryReportFailure` as well.
   envelope; a NaN column segments the line at gaps; `DataLogger` is prior art, not the pattern. Shared-X
   invariant: all pens pinned to `plot.Axes.Bottom`.
 - **Avalonia 12.0.5 / net10** (as-built): hosts `ScottPlot.Avalonia` 5.1.59, which depends on Avalonia
-  12.0.0. Mirrors SemiStep's patterns (ReactiveUI + MS.DI + Serilog + Semi.Avalonia) and now its
-  versions too. `Avalonia.HarfBuzz` 12.0.5 is referenced and `UseHarfBuzz()` is called explicitly; Skia carries
+  12.0.0. Mirrors SemiStep's patterns (ReactiveUI + MS.DI + Serilog + Semi.Avalonia) and its
+  versions. `Avalonia.HarfBuzz` 12.0.5 is referenced and `UseHarfBuzz()` is called explicitly; Skia carries
   no text shaper.
 - No qualifying open-source .NET SCADA trend-viewer reference repo exists; built from library
   primitives, with ScottPlot's `DataLogger` demo as the nearest realtime pattern.
@@ -835,8 +847,9 @@ Same author, same conventions — reuse directly:
 
 - DI + two-phase startup (validate config → build provider → `App.RunStarted`); `IServiceCollection`
   extension methods.
-- Coordinator-as-event-hub: expose realtime as `IObservable<T>`, `ObserveOn(MainThreadScheduler)
-  .Publish().RefCount()` at the source; subscribers `DisposeWith(_disposables)`. This is the
+- Coordinator-as-event-hub: expose realtime as `IObservable<T>`, `ObserveOn(uiScheduler)
+  .Publish().RefCount()` at the source, `uiScheduler` being the `AvaloniaScheduler.Instance` the
+  composition root passes in; subscribers `DisposeWith(_disposables)`. This is the
   realtime sample → chart pipeline.
 - Serilog config; `MainWindow` `Grid` layout (menu / content / message panel / status bar) with
   the chart in the content row; ReactiveUI VM base; code style / naming.

@@ -20,7 +20,8 @@ Rules:
 - A claim resting on two classes carries both markers; that combination is the strongest evidence
   available here (e.g. vendor says X, we measured X).
 - Russian quotes are reproduced verbatim, followed by an English rendering.
-- Dates belong in this file only. Living architecture docs state the current design, not its history.
+- Citation dates live in this file. A measurement date stays inline with the measurement it dates;
+  apart from that, living architecture docs state the current design, not its history.
 
 ## Vendor manual
 
@@ -36,8 +37,6 @@ is the version cited here.
 | `[MAN:archsysv2]` | `archsysv2.html` | Система архивации v2 — differences from v1, in-memory accumulation limit during a database outage |
 | `[MAN:messet]` | `messet.html` | Настройки проекта: Сообщения — «Ограничение архива сообщений» |
 | `[MAN:db-access-rights]` | `db-access-rights.html` | Права доступа к БД — the privilege set the SCADA needs, and when `DROP` can be withheld |
-| `[MAN:postgresql]` | `postgresql.html` | PostgreSQL setup for the archive |
-| `[MAN:whats-new]` | `whats-new.html` | Release notes — archive system v2 history |
 
 ## Vendor forum
 
@@ -52,7 +51,6 @@ replies from the vendor's own account.
 | `[FORUM:345]` | 345 «Работа системы архивирования данных» | 2017-03-15 | **v1** | Flush cadence: «данные накапливаются в буферы и сбрасываются на жесткий диск каждые 5 минут (для основного слоя) ... Минутный слой сбрасывается каждую минуту, часовой - час, суточный - день.» Era flag matters: this describes archive system v1. Whether v2 kept these cadences is `UNVERIFIED`. |
 | `[FORUM:1847]` | 1847 | 2024-07-31 | v2 | Buffering: values accumulate in memory and are flushed periodically; a rarely changing variable reaches the database rarely; a write can also land within a millisecond. |
 | `[FORUM:1388]` | 1388 | — | v2 | Partitioning: «Новая система архивации разбивает БД на разделы для увеличения быстродействия». |
-| `[FORUM:1753]` | 1753 | — | — | The product is written in Object Pascal (Delphi). |
 
 Vendor download page `https://simple-scada.com/download/` defines the demo builds: `DEMO-64`
 (feature-limited, 64 tags) and `DEMO-TIME` (full functionality, server limited to one hour of
@@ -76,7 +74,7 @@ continuous operation; a restart grants another hour).
 
 | Marker | Decision |
 | --- | --- |
-| `[DEC:read-only-consumer]` | SemiPlot is a strict read-only consumer of `trends` and `messages`. No writes, no schema changes, no indexes, no triggers on vendor objects. |
+| `[DEC:read-only-consumer]` | SemiPlot is a strict read-only consumer of `trends` and `messages`. No writes, no schema changes, no indexes, no triggers on vendor objects. No shipped statement touches `messages`; the role's `SELECT` on it serves a gap explanation that is designed, not shipped. |
 | `[DEC:vendor-layers]` | Wide time windows are served by the vendor's own archive layers rather than by summary tables of our own. No rollup tables, no aggregator service, no scheduler, no PostgreSQL extensions. Rationale in `history-read-path-evaluation.md`. |
 | `[DEC:common-retention]` | One retention depth applies to all archived data. Raw samples are never dropped earlier than the coarse layers. |
 | `[DEC:semiplot-tags]` | The absent variable-number-to-name mapping is supplied by our own `semiplot_tags` table. SemiBase's `semiplot_register_new_pens()` adds a hidden default row for every key in `trends`; names and settings are edited afterwards. |

@@ -39,8 +39,8 @@ public sealed class SeededArchiveTests(SeededArchive seededArchive)
 		counts.Should().Equal(_generated.Value);
 	}
 
-	// A missing daily partition sends rows to the catch-all instead of failing the write, so a non-empty
-	// tpdefault is the documented fault signal (docs/architecture/scada-archive.md#reader-hazards).
+	// A missing daily partition sends rows to the catch-all instead of failing the write. The seeder creates
+	// every partition its rows need and the bench runs no SCADA, so tpdefault holds nothing here.
 	[Fact]
 	public async Task TheDefaultPartitionIsEmpty()
 	{

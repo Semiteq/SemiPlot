@@ -358,6 +358,18 @@ one method: nothing else may resolve a service through a static.
   in `C:\DISTR\Config\SemiPlot`, logs in `C:\DISTR\Logs\SemiPlot\`. Neither sits beside the
   executable and neither is per-user. Nothing in the application knows those paths: the three launch
   keys carry them, and the installer is what fills them in.
+- **The installer.** `Installer/SemiPlot.iss` (Inno Setup) installs the published
+  `SemiPlot.UI` into `Program Files\SemiPlot` and writes the three launch keys into its shortcuts,
+  with `--logging-level information`. It grants `Users` modify on both site folders, because the
+  installing admin is not the operator the settings window and the log sink write as. It copies
+  `ConfigFiles/` only where a file does not exist yet, so an upgrade keeps the operator's password,
+  and the uninstaller leaves both folders in place. The cost: a key a later version makes required
+  never reaches an upgraded site, and its start fails naming the key. An unattended install runs
+  `SemiPlot-Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART` and reads exit code 0 as success; a
+  deployment that knows the archive connection writes `connection/connection.yaml` under the
+  configuration folder before the installer runs, and the installer keeps it. `.github/workflows/release.yml`
+  builds the installer on a `vX.Y.Z` tag and publishes it with the tag annotation as the release body;
+  `release-tools:new` writes that annotation.
 - **Configuration is a tree of section folders.** A section is one folder under `--config-dir`, and
   every section folder behaves the same way: the loader reads every `*.yaml` in it, parses each file
   on its own and merges them at the key level. A key carried by two files of one folder stops the

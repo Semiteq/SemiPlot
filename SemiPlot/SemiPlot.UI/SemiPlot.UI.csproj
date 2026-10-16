@@ -5,6 +5,7 @@
     <!-- Program.Main is the explicit entry point. -->
     <StartupObject>SemiPlot.UI.Program</StartupObject>
     <NeutralLanguage>en</NeutralLanguage>
+    <ApplicationIcon>logo.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>

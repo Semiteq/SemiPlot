@@ -1,0 +1,95 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The release body is the tag annotation, which release-tools:new writes; this job is the only
+  # publisher of the release.
+  build-and-release:
+    name: Build and release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: extract version and release notes from tag
+        id: version
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          # Inno Setup's VersionInfoVersion accepts digits and dots only.
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "tag $TAG is not vMAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          BODY=$(git tag -l --format='%(contents)' "$TAG")
+          if [ -z "$BODY" ]; then
+            BODY="Release $VERSION"
+            echo "no tag annotation found, using default body"
+          fi
+
+          {
+            echo "body<<RELEASE_NOTES_EOF"
+            echo "$BODY"
+            echo "RELEASE_NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: restore
+        run: dotnet restore SemiPlot.slnx
+
+      - name: build
+        run: dotnet build SemiPlot.slnx -c Release --no-restore
+
+      - name: unit tests
+        run: dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj -c Release --no-build
+
+      - name: publish
+        run: dotnet publish SemiPlot/SemiPlot.UI/SemiPlot.UI.csproj -c Release -p:Version=${{ steps.version.outputs.version }}
+
+      # The jrsoftware.org direct download intermittently serves a corrupted file, so winget
+      # (preinstalled on windows runners) installs it instead. Machine scope keeps the
+      # Program Files (x86) path the build-installer step expects.
+      - name: install Inno Setup
+        shell: powershell
+        run: |
+          winget install --id JRSoftware.InnoSetup --exact --scope machine --silent `
+            --accept-source-agreements --accept-package-agreements --disable-interactivity
+          echo "C:\Program Files (x86)\Inno Setup 6" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: build installer
+        shell: cmd
+        run: iscc.exe /DAppVersion=${{ steps.version.outputs.version }} Installer/SemiPlot.iss
+
+      - name: create GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: SemiPlot ${{ steps.version.outputs.version }}
+          body: ${{ steps.version.outputs.body }}
+          draft: false
+          prerelease: false
+          make_latest: true
+          files: |
+            Installer/Output/SemiPlot-Setup.exe

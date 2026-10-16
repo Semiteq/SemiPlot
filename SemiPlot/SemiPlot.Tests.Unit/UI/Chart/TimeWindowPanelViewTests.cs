@@ -127,6 +127,25 @@ public sealed class TimeWindowPanelViewTests
 	}
 
 	[AvaloniaFact]
+	public void TypingOnlyTheDigitsOfADateAndEnter_MovesTheLeftEdgeToThatDate()
+	{
+		using var stand = PanelStand.Create(_daysWithRows);
+		stand.Open();
+		var day = new DateTime(2026, 6, 13);
+		var digits = new string([.. day.ToString(Resources.ExportDateFormat, CultureInfo.InvariantCulture)
+			.Where(char.IsAsciiDigit)]);
+		var field = ViewProbe.Descendant<TextBox>(stand.Picker("TimeWindowStartDate"), "PART_TextBox");
+
+		HeadlessInput.Clear(stand.Window, field);
+		HeadlessInput.Type(stand.Window, field, digits);
+		HeadlessInput.Press(stand.Window, PhysicalKey.Enter);
+
+		stand.Chart.Navigation.From.Should().Be(
+			new DateTime(2026, 6, 13, 8, 0, 0, DateTimeKind.Utc),
+			"the field puts the date separators between the typed digits");
+	}
+
+	[AvaloniaFact]
 	public void TypingADateAndClickingOutside_MovesTheLeftEdgeToThatDate()
 	{
 		using var stand = PanelStand.Create(_daysWithRows);

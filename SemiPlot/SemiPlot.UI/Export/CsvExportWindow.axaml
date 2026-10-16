@@ -3,6 +3,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:SemiPlot.UI.Export"
+        xmlns:navigation="clr-namespace:SemiPlot.UI.Navigation"
         xmlns:text="clr-namespace:SemiPlot.UI.Localization"
         mc:Ignorable="d"
         d:DesignHeight="420"
@@ -19,6 +20,9 @@
         <Style Selector="ListBox#ExportPens ListBoxItem">
             <Setter Property="Padding" Value="6,0" />
             <Setter Property="MinHeight" Value="0" />
+        </Style>
+        <Style Selector="CalendarDatePicker /template/ TextBox#PART_TextBox">
+            <Setter Property="navigation:TimeFieldInput.Layout" Value="Date" />
         </Style>
     </Window.Styles>
 
@@ -41,6 +45,7 @@
             <TextBox Grid.Row="0"
                      Grid.Column="1"
                      Name="ExportStartTime"
+                     navigation:TimeFieldInput.Layout="ClockTime"
                      Width="110"
                      Classes.invalid="{Binding Form.IsStartTimeInvalid}"
                      Text="{Binding Form.StartTimeText}" />
@@ -62,6 +67,7 @@
             <TextBox Grid.Row="1"
                      Grid.Column="1"
                      Name="ExportEndTime"
+                     navigation:TimeFieldInput.Layout="ClockTime"
                      Width="110"
                      Classes.invalid="{Binding Form.IsEndTimeInvalid}"
                      Text="{Binding Form.EndTimeText}" />

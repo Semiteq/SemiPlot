@@ -341,7 +341,7 @@ public sealed class AxisScalePanelViewModelTests
 	}
 
 	[AvaloniaFact]
-	public void Autoscale_ActsOnTheActivePenAndCloses()
+	public void ToggleAutoscale_SwitchesTheActivePenToAutoAndKeepsThePanelOpen()
 	{
 		var (chart, _, _, provider) = CreateViewModel();
 		chart.ApplyCatalogue(provider.Pens);
@@ -349,13 +349,34 @@ public sealed class AxisScalePanelViewModelTests
 		chart.SetAxisLimits(2, 20.0, 80.0);
 		chart.SetActivePen(2);
 		chart.AxisScale.Seed();
+		chart.AxisScale.IsAutoscaled.Should().BeFalse();
 		var closes = 0;
 		using var subscription = chart.AxisScale.CloseRequests.Subscribe(_ => closes++);
 
-		chart.AxisScale.AutoscaleCommand.Execute().Subscribe();
+		chart.AxisScale.ToggleAutoscaleCommand.Execute().Subscribe();
 
 		chart.ScaleSettings[2].Mode.Should().Be(ScaleMode.Auto);
-		closes.Should().Be(1);
+		chart.ScaleSettings[1].Mode.Should().Be(ScaleMode.Manual);
+		chart.AxisScale.IsAutoscaled.Should().BeTrue();
+		closes.Should().Be(0);
+	}
+
+	[AvaloniaFact]
+	public void ToggleAutoscale_OnAnAutoscaledPen_KeepsTheShownRangeAsTheManualPair()
+	{
+		var (chart, _, _, provider) = CreateViewModel();
+		chart.ApplyCatalogue(provider.Pens);
+		chart.SetActivePen(2);
+		chart.AutoscalePen(2);
+		chart.AxisScale.Seed();
+		chart.AxisScale.IsAutoscaled.Should().BeTrue();
+		var shown = chart.ScaleRangeForPen(2)!.Value;
+
+		chart.AxisScale.ToggleAutoscaleCommand.Execute().Subscribe();
+
+		chart.ScaleSettings[2].Mode.Should().Be(ScaleMode.Manual);
+		chart.ScaleRangeForPen(2)!.Value.Should().Be(shown);
+		chart.AxisScale.IsAutoscaled.Should().BeFalse();
 	}
 
 	[AvaloniaFact]
@@ -415,7 +436,7 @@ public sealed class AxisScalePanelViewModelTests
 
 		chart.AxisScale.MaximumText = "500";
 		chart.AxisScale.CommitBounds();
-		chart.AxisScale.AutoscaleCommand.Execute().Subscribe();
+		chart.AxisScale.ToggleAutoscaleCommand.Execute().Subscribe();
 		chart.AxisScale.InitialScaleCommand.Execute().Subscribe();
 
 		chart.ScaleSettings[1].Mode.Should().Be(ScaleMode.Manual);

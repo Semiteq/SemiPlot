@@ -197,6 +197,25 @@ public sealed class AxisScalePanelViewTests
 	}
 
 	[AvaloniaFact]
+	public void TheOpenedPanel_SelectsTheMaximumSoTheFirstKeyReplacesIt_AndAClickPlacesTheCaret()
+	{
+		using var viewModel = CreateLoadedViewModel();
+		viewModel.SetAxisLimits(1, 0.0, 100.0);
+		using var shown = ShowChart(viewModel);
+		var (_, panel) = OpenPanel(viewModel, shown);
+		var maximum = panel.FindControl<TextBox>("AxisScaleMaximum")!;
+		var minimum = panel.FindControl<TextBox>("AxisScaleMinimum")!;
+
+		maximum.IsFocused.Should().BeTrue("the flyout hands the keyboard to its first field");
+		maximum.SelectedText.Should().Be(maximum.Text);
+
+		HeadlessInput.Click(shown.Window, minimum);
+
+		minimum.IsFocused.Should().BeTrue();
+		minimum.SelectedText.Should().BeEmpty("a click places the caret");
+	}
+
+	[AvaloniaFact]
 	public void TabbingBetweenTheBounds_WritesNothing_UntilFocusLeavesThePair()
 	{
 		using var viewModel = CreateLoadedViewModel();
@@ -236,7 +255,7 @@ public sealed class AxisScalePanelViewTests
 	}
 
 	[AvaloniaFact]
-	public void TheAutoscaleButton_AfterATypedBound_RevertsThePensAxisToAutoAndClosesThePanel()
+	public void TheAutoscaleButton_AfterATypedBound_RevertsThePensAxisToAutoAndShowsItOn()
 	{
 		using var viewModel = CreateLoadedViewModel();
 		viewModel.SetAxisLimits(1, 10.0, 90.0);
@@ -244,10 +263,18 @@ public sealed class AxisScalePanelViewTests
 		var (flyout, panel) = OpenPanel(viewModel, shown);
 
 		TypeInto(shown.Window, panel, "AxisScaleMinimum", "20");
-		HeadlessInput.Click(shown.Window, panel.FindControl<Button>("AxisScaleAutoscaleButton")!);
+		var autoscale = panel.FindControl<ToggleButton>("AxisScaleAutoscaleButton")!;
+		autoscale.IsChecked.Should().BeFalse();
+		HeadlessInput.Click(shown.Window, autoscale);
 
 		viewModel.ScaleSettings[1].Mode.Should().Be(ScaleMode.Auto);
-		flyout.IsOpen.Should().BeFalse();
+		autoscale.IsChecked.Should().BeTrue();
+		flyout.IsOpen.Should().BeTrue("the toggle keeps the panel open so its state shows");
+
+		HeadlessInput.Click(shown.Window, autoscale);
+
+		viewModel.ScaleSettings[1].Mode.Should().Be(ScaleMode.Manual);
+		autoscale.IsChecked.Should().BeFalse();
 	}
 
 	[AvaloniaFact]
@@ -263,11 +290,11 @@ public sealed class AxisScalePanelViewTests
 		panel.FindControl<CheckBox>("AxisScaleLogarithmic")!.IsFocused.Should().BeTrue();
 		viewModel.ScaleRangeForPen(1)!.Value.Should().Be((20.0, 90.0), "focus left the pair");
 		HeadlessInput.Press(shown.Window, PhysicalKey.Tab);
-		panel.FindControl<Button>("AxisScaleAutoscaleButton")!.IsFocused.Should().BeTrue();
+		panel.FindControl<ToggleButton>("AxisScaleAutoscaleButton")!.IsFocused.Should().BeTrue();
 		HeadlessInput.Press(shown.Window, PhysicalKey.Enter);
 
 		viewModel.ScaleSettings[1].Mode.Should().Be(ScaleMode.Auto);
-		flyout.IsOpen.Should().BeFalse();
+		flyout.IsOpen.Should().BeTrue();
 	}
 
 	[AvaloniaFact]

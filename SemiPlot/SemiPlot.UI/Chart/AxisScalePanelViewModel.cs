@@ -27,7 +27,7 @@ public sealed class AxisScalePanelViewModel : ReactiveObject, IDisposable
 
 		_disposables.Add(_closeRequests);
 		_disposables.Add(CommitBoundsCommand = ReactiveCommand.Create(CommitBounds));
-		_disposables.Add(AutoscaleCommand = ReactiveCommand.Create(() => ActOnThePen(_chart.AutoscalePen)));
+		_disposables.Add(ToggleAutoscaleCommand = ReactiveCommand.Create(ToggleAutoscale));
 		_disposables.Add(InitialScaleCommand = ReactiveCommand.Create(
 			() => ActOnThePen(_chart.RestoreInitialScale)));
 		_disposables.Add(CancelCommand = ReactiveCommand.Create(RequestClose));
@@ -42,7 +42,7 @@ public sealed class AxisScalePanelViewModel : ReactiveObject, IDisposable
 
 	public ReactiveCommand<Unit, Unit> CommitBoundsCommand { get; }
 
-	public ReactiveCommand<Unit, Unit> AutoscaleCommand { get; }
+	public ReactiveCommand<Unit, Unit> ToggleAutoscaleCommand { get; }
 
 	public ReactiveCommand<Unit, Unit> InitialScaleCommand { get; }
 
@@ -87,6 +87,13 @@ public sealed class AxisScalePanelViewModel : ReactiveObject, IDisposable
 			RaiseValidationChanged();
 		}
 	} = string.Empty;
+
+	/// <summary>The pen's scale follows the data in this window, as the chart held it at the last seed.</summary>
+	public bool IsAutoscaled
+	{
+		get;
+		private set => this.RaiseAndSetIfChanged(ref field, value);
+	}
 
 	/// <summary>The pen's axis type in this window, as the chart held it at the last seed.</summary>
 	public bool IsLogarithmic
@@ -150,6 +157,7 @@ public sealed class AxisScalePanelViewModel : ReactiveObject, IDisposable
 
 		_penId = penId;
 		_isLogarithmicRefused = false;
+		IsAutoscaled = settings.Mode == ScaleMode.Auto;
 		IsLogarithmic = settings.IsLogarithmic;
 		PenName = state.Pen.Name;
 		PenUnit = state.Pen.Unit ?? string.Empty;
@@ -212,6 +220,34 @@ public sealed class AxisScalePanelViewModel : ReactiveObject, IDisposable
 		}
 
 		RequestClose();
+	}
+
+	/// <summary>Switches the pen to Auto, or fixes the range Auto shows as its manual pair; the panel stays open.</summary>
+	private void ToggleAutoscale()
+	{
+		if (_penId is not { } penId || _chart.ScaleSettings.GetValueOrDefault(penId) is not { } settings)
+		{
+			return;
+		}
+
+		if (settings.Mode == ScaleMode.Auto && _chart.ScaleRangeForPen(penId) is { } range)
+		{
+			_chart.SetAxisLimits(penId, range.Min, range.Max);
+		}
+		else
+		{
+			_chart.AutoscalePen(penId);
+		}
+
+		if (!Seed())
+		{
+			RequestClose();
+
+			return;
+		}
+
+		// The button toggles itself before the command runs; a seed that kept the flag raises nothing.
+		this.RaisePropertyChanged(nameof(IsAutoscaled));
 	}
 
 	private void ToggleLogarithmic()

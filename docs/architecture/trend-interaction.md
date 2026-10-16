@@ -326,6 +326,8 @@ control in `TrendChartView.axaml` and shown at the pointer) over `Chart/AxisScal
   Typed text is read by `PenFormRules.TryReadBound`, the pen editor's rule, in the
   current culture: an entry that is not a number in that culture, such as "150.5" under `ru-RU`, is
   invalid, and the last value that parsed is never applied in its place.
+  A field the keyboard reaches, the Maximum the opening flyout focuses or a field Tab lands on, selects its
+  text, so the first key replaces the seeded bound; a click places the caret (`AxisScalePanel.OnGotFocus`).
 - The panel has no apply button. The two fields are one edit, as the pen editor's scale pair is
   (`overview.md#the-pen-and-group-editor`), and the edit ends when keyboard focus leaves both: the view
   watches `IsKeyboardFocusWithin` of the grid that holds them, `AxisScaleBounds`, and calls
@@ -379,10 +381,14 @@ control in `TrendChartView.axaml` and shown at the pointer) over `Chart/AxisScal
   linear axis; the way out is to type a positive minimum and tick the box again. On an autoscaled pen with
   untouched fields the switch always lands. The box reaches only this window's chart; the stored flag is
   the pen editor's (`overview.md#the-pen-and-group-editor`).
-- Autoscale and Restore initial scale call `AutoscalePen` and `RestoreInitialScale(penId)` for the
-  panel's pen and close the panel. A press on either button takes focus off a typed pair, which is
-  written first; the button's own result then replaces it. Autoscale keeps the axis type; Restore initial
-  scale sets the stored one. The View -> Pen scale submenu items call `AutoscaleActivePen` and
+- Autoscale is a `ToggleButton` that shows whether the panel's pen is in `Auto` mode: it reads
+  `IsAutoscaled`, `Mode=OneWay`, seeded from the pen's `ScaleMode` at every seed, and writes only through
+  `ToggleAutoscaleCommand`. Switching on calls `AutoscalePen`; switching off calls `SetAxisLimits` with the
+  range `Auto` shows, so the axis stays where it is and becomes manual. Either way the panel re-seeds and
+  stays open, so the fields show the new bounds and the button its new state. Restore initial scale calls
+  `RestoreInitialScale(penId)` and closes the panel. A press on either button takes focus off a typed
+  pair, which is written first and turns the pen manual; the button's own result then replaces it.
+  Autoscale keeps the axis type; Restore initial scale sets the stored one. The View -> Pen scale submenu items call `AutoscaleActivePen` and
   `RestoreInitialScale()`. The submenu header names the drawn pen and follows `DrawnPenId` and the
   catalogue's pen names; while no pen's axis is drawn it reads "Pen scale".
 

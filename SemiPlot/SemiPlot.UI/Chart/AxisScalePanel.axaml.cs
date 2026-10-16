@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 
 namespace SemiPlot.UI.Chart;
@@ -27,6 +28,17 @@ public partial class AxisScalePanel : UserControl
 		_boundsFocus = null;
 
 		base.OnUnloaded(e);
+	}
+
+	/// <summary>A bound the keyboard reaches is typed over; a click places the caret.</summary>
+	protected override void OnGotFocus(FocusChangedEventArgs e)
+	{
+		base.OnGotFocus(e);
+
+		if (e.Source is TextBox bound && e.NavigationMethod != NavigationMethod.Pointer)
+		{
+			bound.SelectAll();
+		}
 	}
 
 	// docs/architecture/trend-interaction.md#the-axis-scale-panel

@@ -502,6 +502,12 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   `Export/ExportRangeForm` and `Navigation/TimeWindowForm` derive from; `TimeWindowForm` adds the width
   field, the skipped-time and span rules and the per-edge comparison with its seed.
   `Navigation/WindowWidthText` formats and parses the width as `h:mm:ss` with unbounded hours.
+- `Navigation/TimeFieldInput` — the attached `Layout` that keeps only the digits a text box receives and
+  inserts the separators: `ClockTime` and `Date` fill the slots of `WallClockRangeForm.TimeFieldFormat` and
+  `Resources.ExportDateFormat` from the left, `Duration` groups seconds and minutes from the right and leaves
+  the hours unbounded. Selection, Backspace and paste stay the `TextBox`'s own. The time window panel and the
+  export window set it on their time and width boxes, and a style sets `Date` on each
+  `CalendarDatePicker`'s `PART_TextBox`.
 - `Legend/TrendLegendView` + `TrendLegendViewModel` (+ group / row VMs and the converters) — the grouped
   sidebar. A row carries the on/off box, a round colour dot, the name, the current value in the pen's own
   mask and the unit; nothing in it is editable but the box, which an allowlist test over the built row

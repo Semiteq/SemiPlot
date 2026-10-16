@@ -245,7 +245,7 @@ public sealed class CsvExportWindowTests : IDisposable
 			var box = TextOf(startDate);
 
 			HeadlessInput.Clear(window, box);
-			HeadlessInput.Type(window, box, "not a date");
+			HeadlessInput.Type(window, box, "99999999");
 			HeadlessInput.Press(window, PhysicalKey.Enter);
 
 			box.Text.Should().Be(DateText(_startDay));

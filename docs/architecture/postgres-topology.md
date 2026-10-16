@@ -30,6 +30,7 @@ flowchart TB
         prov2["PostgresDataProvider"]
         editor["PostgresPenCatalogueEditor"]
         markers["PostgresMarkerStore"]
+        rows["PostgresArchiveRowReader"]
     end
 
     scada -- "writes rows" --> trends
@@ -38,9 +39,10 @@ flowchart TB
     prov -- "creates, never writes rows" --> config
     prov -- "creates" --> roles
     prov2 -- "SELECT only" --> trends
-    prov2 -- "SELECT only" --> config
-    editor -- "UPDATE of pen settings · group DML<br/>EXECUTE semiplot_register_new_pens()" --> config
-    markers -- "semiplot_markers DML" --> config
+    prov2 -- "SELECT only<br/>semiplot_tags · semiplot_groups · semiplot_pen_groups" --> config
+    rows -- "SELECT only" --> trends
+    editor -- "SELECT · UPDATE of pen settings · group DML<br/>EXECUTE semiplot_register_new_pens()" --> config
+    markers -- "semiplot_markers SELECT · DML" --> config
 
     classDef write stroke-width:3px
     class scada,prov,editor,markers write
@@ -53,7 +55,7 @@ defect, and the server answers `42501`.
 
 The configuration tables are the one place SemiPlot writes, from two places: the pen editor
 (`Edit` -> `Pens and groups`) and the chart's time markers. SemiBase gives the `semiplot` role a
-column-level `UPDATE` of the eight pen settings on `semiplot_tags`, full DML on `semiplot_groups` and
+column-level `UPDATE` of the nine pen settings columns on `semiplot_tags`, full DML on `semiplot_groups` and
 `semiplot_pen_groups`, `EXECUTE` on `semiplot_register_new_pens()`, and full DML on `semiplot_markers`,
 which only `PostgresMarkerStore` uses (`data-integration.md#the-marker-store`). A pen's `id` is the SCADA variable number, so the role never
 inserts, deletes or re-keys a pen; the function registers new keys, and the editor calls it only from
@@ -87,8 +89,10 @@ flowchart LR
 ```
 
 Partitions are daily ranges over `t`, named `tpYYYYmMMdDD`, with `tpdefault` catching anything that
-misses one. A non-empty `tpdefault` means a partition was missing at write time — a fault signal, not
-a normal state.
+misses one. Rows with `t >= current_date` in `tpdefault` mean a day partition was missing at write
+time; the SCADA erases `tpdefault` at 02:00 and at every project start, so a check for them runs before
+02:00 and before a project restart. Its other rows are
+normal (`scada-archive.md#reader-hazards`).
 
 The primary key is `(id, l, t)` and its leading column is `id`. Every query therefore carries the
 variable list, or it cannot use the key and reads every partition instead.
@@ -108,7 +112,7 @@ flowchart TB
         ds["NpgsqlDataSource<br/>pooled connections"]
         conv["ArchiveTimeConverter<br/>naive local ⇄ UTC"]
         mapper["ArchiveExceptionMapper<br/>SQLSTATE → typed error"]
-        loader["PostgresConnectionLoader<br/>the connection/ section<br/>eight keys"]
+        loader["PostgresConnectionLoader<br/>the connection/ section<br/>six keys, optional schema"]
     end
 
     errs["SemiPlot.Core/Data/Errors<br/>two sealed errors, two enums"]
@@ -124,16 +128,16 @@ flowchart TB
 ```
 
 The composition root resolves `PostgresDataProvider`, and the pen editor's
-`PostgresPenCatalogueEditor` and the chart's `PostgresMarkerStore` over the same `NpgsqlDataSource`;
+`PostgresPenCatalogueEditor`, the chart's `PostgresMarkerStore` and the export window's
+`PostgresArchiveRowReader` over the same `NpgsqlDataSource`;
 there is no fallback to resolve: an
 archive that does not answer opens the startup-failure window rather than
 falling back to invented data, which `data-integration.md` states under **Startup**.
-`ArchiveFailureMapper` turns each public error type into a title, a detail and a remedy — Core's ten
-plus the UI-local `StartupReadTimedOutError`, eleven in all; two of them reach the operator as a
-message-panel entry under a working chart rather than as the startup panel. Every member of
-`IDataProvider` is
-implemented — the pen catalogue, the archive extent, the windowed history read and the live-edge
-poll.
+`ArchiveFailureMapper` turns each error type into a title, a detail, a remedy and a severity: one arm
+per type, Core's and the UI-local ones, and inside the `ArchiveError` arm one per `ArchiveFault`
+member, twelve. Which kind gets which severity, and why, is in
+`data-integration.md#two-error-planes`. Every member of `IDataProvider` is implemented: the pen
+catalogue, the archive extent, the archive days, the windowed history read and the live-edge poll.
 
 ## The three provisioning states, and the fourth
 

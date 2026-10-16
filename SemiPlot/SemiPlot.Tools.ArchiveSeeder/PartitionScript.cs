@@ -3,8 +3,8 @@ using System.Globalization;
 namespace SemiPlot.Tools.ArchiveSeeder;
 
 // One day partition per covered day, named tpYYYYmMMdDD (docs/architecture/scada-archive.md#database-objects);
-// a row with no partition lands in tpdefault, a fault signal (#reader-hazards), so the writer creates them
-// all before it copies anything.
+// a row with no partition lands in tpdefault instead of failing the write (#reader-hazards), so the writer
+// creates them all before it copies anything.
 public static class PartitionScript
 {
 	// Invariant throughout: a machine running a non-Gregorian calendar would otherwise name the

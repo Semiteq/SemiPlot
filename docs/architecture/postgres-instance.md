@@ -54,11 +54,7 @@ Both timeouts are set on the role by `semibase` as session defaults, so they app
 session SemiPlot opens. They are defaults, not enforcement: PostgreSQL classes `statement_timeout` as
 `USERSET`, and a startup option or a plain `SET` overrides a role default from the client side.
 SemiPlot's contract is that it never sends `statement_timeout` in any form, so the value the role
-carries is the value every SemiPlot session runs under; the client reads the effective value
-only after a read has failed, from a fresh session of the same role, to report which bound that read
-hit. The number is stable while the role default is: role and database defaults bind at backend
-start and a pooled physical connection keeps its startup value, so an administrative change to the
-default mid-run can leave one report one increment stale. `-c jit=off` is the one startup option
+carries is the value every SemiPlot session runs under. `-c jit=off` is the one startup option
 SemiPlot sends, and it overrides no role default (`data-integration.md#configuration`).
 
 The credential is what makes the plaintext password in SemiPlot's configuration file an acceptable
@@ -132,11 +128,11 @@ SemiBase creates `public.trends` and the configuration tables in one run, in bot
 provisioning did not complete — and one command restores the set, which is why the second state
 covers the set rather than ordering it.
 
-One operational state belongs beside them: a non-empty `tpdefault` means a daily partition was
-missing at write time. The partition itself arrives with the provisioning and is empty by
-construction, so anything in it is a row the SCADA wrote with no daily partition to take it. It is
-read straight from the database at commissioning, and SemiPlot treats it as the fault signal
-`scada-archive.md` describes.
+One operational state belongs beside them: rows with `t >= current_date` in `tpdefault` mean a day
+partition was missing at write time. The partition's other rows, the coarse layers' 1899-12-30 rows
+and, with an archive limit set, late rows of dropped days, are normal. The SCADA erases `tpdefault`
+at 02:00 and at every project start, so the check runs before 02:00 and before a project restart, straight against the database at commissioning; no
+SemiPlot code reads `tpdefault` (`scada-archive.md#reader-hazards`).
 
 ## Retention and capacity
 

@@ -123,7 +123,7 @@ tests in every state it reaches.
 `SemiTheme` keys its built-in strings by specific culture and falls through to `zh-CN` for a neutral
 one, so `App.ApplyAppearance` calls `SemiTheme.OverrideLocaleResources` with
 `App.SemiLocaleFor(settings?.Locale ?? StartupSequence.BootstrapLocale)`, outside the
-`settings is not null` guard that the variant sits inside (`App.axaml.cs:133-141`): a settings failure
+`settings is not null` guard that the variant sits inside: a settings failure
 has no configured locale and reads its window in the bootstrap one.
 `AppConfigurationTests.ASettingsFailure_StillHandsSemiTheBootstrapLocale` calls `App.ConfigureFailed` with
 null settings and reads `STRING_MENU_COPY` back off `Application.Resources`, so moving the call
@@ -152,12 +152,12 @@ Semi owns the controls; these fifteen keys are ours, and each exists in both var
 
 | Key | Consumers | Light | Dark |
 | --- | --- | --- | --- |
-| `AppPanelBackgroundBrush` | Navigation bar, legend panel, message panel, status bar, startup-failure window's message panel, minimap frame, chart hover readout | `#F7F8FA` | `#2B2D30` |
-| `AppContentBackgroundBrush` | Chart area, minimap strip canvas, the sidebar's resize handle | `#FFFFFF` | `#1E1F22` |
-| `AppBorderBrush` | Every separator in the three views | `#EBECF0` | `#393B40` |
+| `AppPanelBackgroundBrush` | Navigation bar, legend panel, message panel, status bar, startup-failure window's message panel, minimap frame, chart hover readout, the plot's figure background | `#F7F8FA` | `#2B2D30` |
+| `AppContentBackgroundBrush` | Chart area and the plot's data background, minimap strip canvas, the sidebar's resize handle, the ground of the active pen's reading at each marker | `#FFFFFF` | `#1E1F22` |
+| `AppBorderBrush` | The border of the navigation bar, legend panel, message panel and status bar, of the startup-failure window's message panel, of the minimap frame, of the chart hover readout and of the export window's pen list | `#EBECF0` | `#393B40` |
 | `AppSubtleLineBrush` | Plot grid, the line above every sidebar group header but the first, the status bar's separator after the connection indicator, the navigation bar's group separator | `#EBECF0` | `#393B40` |
 | `AppMinorGridLineBrush` | The plot's minor gridlines, drawn on a log10 axis only | `#F4F5F7` | `#2B2D30` |
-| `AppSecondaryForegroundBrush` | Minimap end labels, hover line and hover time, chart crosshair, plot axis furniture, the sidebar group header caption and a row's unit | `#818594` | `#6F737A` |
+| `AppSecondaryForegroundBrush` | Minimap end labels, hover line and hover time, chart crosshair, plot axis furniture, the chart's empty-catalogue message, the sidebar group header caption and a row's unit, the axis scale panel's unit, the message panel's empty text and an entry's remedy, repeat count and time | `#818594` | `#6F737A` |
 | `AppAccentBrush` | Minimap window highlight border, the active sidebar row's left bar | `#3574F0` | `#3574F0` |
 | `AppAccentFillBrush` | Minimap window highlight fill, the active sidebar row's background | `#3574F0` at 0.25 opacity | `#3574F0` at 0.25 opacity |
 | `AppSeverityErrorBrush` | The message panel's dot on an `Error` entry; a form's invalid field border and its message line | `#DB3B4B` | `#E55765` |
@@ -363,7 +363,8 @@ the working area of a 768 px screen. The rule above holds for every part but the
 - The bottom bar, on both tabs, holds the added count and the refresh button in a right-aligned `Auto,Auto`
   grid, 12 px apart, and carries no notice. Each tab has its own reserved `form-message` line.
 - An invalid field is marked by the `invalid` class alone. The line-style combo box and the "on start"
-  checkbox refuse no value, and `Forms.axaml` styles `invalid` on `TextBox` and `NumericUpDown` only, so
+  checkbox refuse no value, and `Forms.axaml` styles `invalid` on `TextBox`, `NumericUpDown` and
+  `CalendarDatePicker` only, not on a `ComboBox` or a `CheckBox`, so
   a failed write of either shows on the message line and in the panel only. The log scale checkbox refuses
   a tick while the pen stores a minimum at or below zero; the refusal shows on the message line alone, and
   a minimum that breaks the rule while the box is ticked marks the minimum `TextBox` `invalid`.
@@ -411,7 +412,7 @@ the 100 px groups column at `MinWidth` and equal header button heights.
 ## How the variant reaches the application
 
 `Startup/AppSettingsLoader` reads `theme` into `AppSettings.Theme`
-(`Startup/AppSettings.cs:14-19`), and `App.ApplyAppearance`, which `App.ConfigureStarted` and
+(an `AppThemeVariant`, `Startup/AppSettings.cs`), and `App.ApplyAppearance`, which `App.ConfigureStarted` and
 `App.ConfigureFailed` call inside `AfterSetup`, assigns `RequestedThemeVariant` from it before either path
 builds a window. So an archive failure still renders on the configured variant. `settings` is null only when the settings load
 itself failed; that window renders on the `Light` variant `App.axaml:5` declares, which is also

@@ -20,21 +20,22 @@ compiles to a `ru` satellite; the SDK takes the culture from the file name, so t
 accessor serves both.
 
 The `locale` key of the `app/` section selects between them. `Startup/StartupSequence.Run` sets
-`CultureInfo.DefaultThreadCurrentUICulture` twice: to `ru` before the settings section is read
-(`StartupSequence.cs:22`, `:37`), and to the configured language immediately after (`:31`). Both
-writes happen before Avalonia is configured, so no window exists on the wrong language. The argument
-failure path never reaches `Run`, so `Program.Main` calls `ApplyBootstrapCulture` itself; without
-that its window would fall back to the neutral English set while every other failure window is
-Russian. `ui-theme.md` owns the other half of the same section, the `theme` key.
+`CultureInfo.DefaultThreadCurrentUICulture` twice, both times through its private `ApplyCulture`: to
+`ru` through `ApplyBootstrapCulture` before the settings section is read, and to the configured language
+immediately after. Both writes happen before Avalonia is configured, so no window exists on the wrong
+language. The argument failure and the log file failure never reach `Run`, so
+`Program.ReportStartupFailure` calls `ApplyBootstrapCulture` itself; without that their windows would
+fall back to the neutral English set while every other failure window is Russian. `ui-theme.md` owns the other half of the same section, the `theme` key.
 
 `Resources.Culture` stays unassigned. The generated accessor reads
 `ResourceManager.GetString(key, Culture)`, and a null `Culture` falls through to
 `CultureInfo.CurrentUICulture`, which leaves the thread culture the single writer.
 
-A failure reporting the settings section itself, and a failure reporting the launch arguments, are
-both emitted before any `locale` is known, so those windows are read in the bootstrap language,
-Russian. The comment above `ArchiveFailureMapper.MapAppSettings` states the settings half in one
-line; the arguments half is `Program.ReportStartupFailure`, which applies the culture itself.
+A failure reporting the settings section itself, a failure reporting the launch arguments, and a
+log file `LogFileTarget.Prepare` cannot open are all emitted before any `locale` is known, so those
+windows are read in the bootstrap language, Russian. The comment above
+`ArchiveFailureMapper.MapAppSettings` states the settings case in one line; the other two go through
+`Program.ReportStartupFailure`, which applies the culture itself.
 
 Number and timestamp formatting is a separate question and stays on `CultureInfo.CurrentCulture`:
 `Chart/ChartHoverReadout` and `Chart/ChartDeltaCursorReader` format what the operator reads on their own
@@ -83,7 +84,7 @@ targets instead: measured on 2026-09-09, a cold build fails with
 
 ## What stays a literal
 
-- The `h`, `m` and `s` suffixes `Chart/ChartDeltaCursorReader.FormatDeltaTime:55-67` glues to its
+- The `h`, `m` and `s` suffixes `Chart/ChartDeltaCursorReader.FormatDeltaTime` glues to its
   numbers. A unit suffix glued to a number is part of the format, not a caption.
 - The CSV export's file format, which belongs to the file and not to the window: the non-finite spellings
   `NaN`, `Infinity` and `-Infinity` (`ArchiveCsvWriter`), and the time boxes' format `HH:mm:ss`
@@ -106,7 +107,7 @@ targets instead: measured on 2026-09-09, a cold build fails with
   programming error reads as English developer text in a Russian window, the message panel included.
   That is the trade taken for an error class the operator cannot act on: the alternative is a
   sentence that says nothing, and the log carries the stack either way. It also widens what the
-  window shows: text these arms used to write only to the log now stands on screen, so a driver-level
+  window shows: the text of these arms stands on screen as well as in the log, so a driver-level
   exception over a malformed connection string can echo the string it was handed. The connection
   file's own arms name host, port, database and role and never the password.
 
@@ -121,10 +122,10 @@ so two failures sharing a title but differing in detail stay two entries. The pe
 lines read the title alone, beside the panel entry the same failure adds
 (`#the-pen-editors-text`).
 
-Because both surfaces read the same arms, no title may name a phase. `FailureThrownTitle` used to
-read "Startup failed unexpectedly", which was true while the mapper fed the startup window alone and
-false the moment a mid-session ReactiveUI exception reached the panel under it; it now reads
-"Unexpected failure" / "Непредвиденный сбой" and its detail names the exception rather than the startup sequence.
+Because both surfaces read the same arms, no title may name a phase: a mid-session ReactiveUI exception
+reaches the panel under the same title as a startup one. `FailureThrownTitle` reads "SemiPlot failed
+unexpectedly" / "Произошла непредвиденная ошибка", and its detail names the exception rather than the
+startup sequence.
 
 The aggregation layer is named the same way. `AppStatusBarViewModel.LayerNameOf` switches each
 `AggregationLayer` member onto a resx key and the bar reads `StatusLayerFormat` around it, so the
@@ -134,6 +135,37 @@ CS8509, so no compiler check stands behind it: a fourth `AggregationLayer` membe
 `Core/Trends/AggregationLayerTests.LayerCodes_KeepTheirOrdinalContract` red, which asserts
 `Enum.GetValues<AggregationLayer>()` against the three members it names.
 `ArchiveFailureMapper.NameOf` for `StartupRead` is the same shape.
+
+## The message panel's text
+
+`Messages/MessagePanelView.axaml` reads the panel's own strings; each entry's title, detail and remedy
+come from the mapper (`#what-the-mappers-two-consumers-read`):
+
+| Key | English / Russian | Where |
+| --- | --- | --- |
+| `MessagePanelTitle`, `MessagePanelClear` | "Messages" / "Сообщения", "Clear" / "Очистить" | The panel's header and its clear button |
+| `MessagePanelEmpty` | "No messages" / "Сообщений нет" | Under the header while the panel holds no entry |
+| `MessagePanelRepeatFormat` | "repeated {0} times" / "повторений: {0}" | Beside an entry that repeated, `{0}` the repeat count, through `StringFormat` |
+
+## The navigation bar's text
+
+`Navigation/NavigationBarView.axaml` reads the bar's three buttons:
+
+| Key | English / Russian | Where |
+| --- | --- | --- |
+| `NavigationJumpToNow` | "Jump to now" / "Перейти к текущему времени" | The jump button |
+| `NavigationSticky`, `NavigationDelta` | "Sticky" / "Следовать за текущим временем", "Delta" / "Приращение" | The two toggle buttons |
+
+## The sidebar's text
+
+`Legend/TrendLegendView.axaml` reads the sidebar's strings through `TrendLegendViewModel` and
+`TrendLegendGroupViewModel`. Pen and group names are data and pass through no resource.
+
+| Key | English / Russian | Where |
+| --- | --- | --- |
+| `LegendCollapsePanel`, `LegendExpandPanel` | "Collapse" / "Свернуть", "Expand" / "Развернуть" | The panel's toggle button, its text and accessible name (`TrendLegendViewModel.ToggleText`) |
+| `LegendUngroupedHeader` | "Ungrouped" / "Без группы" | The last group's header, over the pens that belong to no group, in capitals through `LegendConverters.ToCapitals`; absent while no pen has a group |
+| `LegendGroupSwitch` | "Show or hide every pen of group {0}" / "Показать или скрыть все перья группы {0}" | The accessible name of a group header's check box, `{0}` the group name (`TrendLegendGroupViewModel.SwitchName`) |
 
 ## The settings window's text
 
@@ -145,10 +177,10 @@ and `SettingsClose`. The language and theme choices read `SettingsLanguageRussia
 and the file keeps the token `SettingsVocabulary` pairs with it. The dialog's message line, left of the
 buttons, shows `SettingsSectionUnreadable` with the section header as `{0}` when a section fails to read,
 else `SettingsKeyAbsent` with the first edited key no file of its section carries as `{0}`, else the rule
-the first invalid field breaks, in form order: `SettingsHostInvalid`, `SettingsPortInvalid`,
-`SettingsPollIntervalInvalid`, and `SettingsFieldRequired` for a blank database, user or password or an
-unchosen language or theme, which takes the field's label as `{0}`. `SettingsViewModel.ValidationMessage`
-picks it. The line is not under the field, so each message opens with the field it names, and each is one
+the first invalid field breaks, in form order: `SettingsFieldRequired` for an unchosen language or theme,
+`SettingsHostInvalid`, `SettingsPortInvalid`, `SettingsFieldRequired` for a blank database, user or
+password, and `SettingsPollIntervalInvalid`. `SettingsFieldRequired` takes the field's label as `{0}`.
+`SettingsViewModel.ValidationMessage` picks it. The line is not under the field, so each message opens with the field it names, and each is one
 short line in both languages ("Host: expected an IP address such as 127.0.0.1");
 `ui-theme.md#a-form-never-resizes-on-validation` holds the width it has to fit. `SettingsRestartNotice`
 is the dialog's own text after a save that changed any key but `theme`, on the same line while no field is invalid;
@@ -229,7 +261,7 @@ format over the three labels the operator clicks: `{0}` is `MenuEdit`, `{1}` `Me
 and `{2}` `PenEditorRefresh`. The text withdraws when a catalogue read gives the chart its first
 pens, in the same session (`TrendChartViewModel.HasNoPens`). `Chart/TrendChartView.axaml` reads it through a `MultiBinding` whose
 `StringFormat` is `{x:Static text:Resources.EmptyCatalogueMessage}` over three `x:Static` sources, the
-AXAML form The generated accessor states, so a relabelled menu item or button changes the sentence
+AXAML form of the generated `Resources.FormatEmptyCatalogueMessage` accessor, so a relabelled menu item or button changes the sentence
 with it. `TrendChartViewTests.EmptyCatalogueMessage_ShowsWithNoPensAndWithdrawsWhenOneArrives` compares
 the realised text with `Resources.FormatEmptyCatalogueMessage(...)` over the three labels.
 
@@ -248,14 +280,14 @@ removed the marker, says that the chart no longer shows it and asks for it to be
 still needed. It is a `Warning`. The Russian term for a time marker is "метка" in every key, and
 "подпись" for its label.
 
-The kinds a write shares with a read name a statement, never a read, because the same text now serves
-both. The reworded keys are `FailureArchiveAccessDeniedTitle` and `...Remedy`,
+The kinds a write shares with a read name a statement, never a read, because the same text serves
+both. The shared keys are `FailureArchiveAccessDeniedTitle` and `...Remedy`,
 `FailureArchiveTableMissingDetail` and `...Remedy`, `FailureArchiveQueryTimedOutTitle`, `...Detail` and
 `...Remedy`, `FailureArchiveReadFailedTitle` and `...Detail`, and `FailureArchiveReadUnnamedDetail`.
-The `TableMissing` pair drops the word "table", because a missing function takes the same arm. The
-placeholders did not move, which
+The `TableMissing` pair carries no word "table", because a missing function takes the same arm. Each
+Russian value uses the placeholder indices of the neutral one, which
 `ResourcesTests.EveryRussianValue_UsesThePlaceholderIndicesOfTheNeutralOne` gates, and the timed-out
-detail keeps `(SQLSTATE 57014)`, which `ArchiveFailureMapperTests` asserts. `ArchiveError.Describe`, the
+detail carries `(SQLSTATE 57014)`, which `ArchiveFailureMapperTests` asserts. `ArchiveError.Describe`, the
 English log line, names a statement the same way (`data-integration.md#two-error-planes`).
 
 ## The axis scale panel's text
@@ -382,6 +414,19 @@ The editor has no message line: nothing in it can be invalid, and the watermark 
 is allowed (`ui-theme.md#the-marker-label-editor`). A failed marker write reaches the message panel,
 never the editor, which is closed by then. A label is operator data and passes through no resource.
 
+## The About dialog's text
+
+`MainWindow/AboutDialog.axaml` reads the dialog's strings. It opens from `MenuHelpAbout` and from the
+startup failure window's `StartupFailureAbout`; its first line is `WindowTitle`, and the version and the
+configuration directory are data (`MainWindow/AboutInfo`).
+
+| Key | English / Russian | Where |
+| --- | --- | --- |
+| `AboutTitle` | "About SemiPlot" / "О программе SemiPlot" | The window title |
+| `AboutVersionLabel`, `AboutConfigurationLabel` | "Version:" / "Версия:", "Configuration:" / "Настройки:" | The labels left of the version and the configuration directory |
+| `AboutConfigurationUnknown` | "unknown" / "не определены" | In place of the directory when the launch arguments do not parse (`AboutInfo.For`) |
+| `AboutClose` | "Close" / "Закрыть" | The close button |
+
 ## Adding a key
 
 1. Add the `<data>` entry to `Resources.resx`, value in English, and the same key to
@@ -395,8 +440,10 @@ never the editor, which is closed by then. A label is operator data and passes t
 3. `SemiPlot.Tests.Unit/UI/Localization/ResourcesTests.cs` enumerates the generated accessors by
    reflection and pins that each resolves to a non-empty string, and reads both sets back through
    `ResourceManager.GetResourceSet(culture, createIfNotExists: true, tryParents: false)`, so an
-   ordinary key needs no test of its own. A key whose value carries a glyph or a `{0}` placeholder
-   gets one assertion there.
+   ordinary key needs no test of its own. A key whose value carries a glyph gets one assertion in
+   `GlyphValues_KeepTheCodePointsTheOperatorSees`. A placeholder needs none of its own:
+   `EveryRussianValue_UsesThePlaceholderIndicesOfTheNeutralOne` compares the `{N}` indices of every
+   key across the two sets.
 
 Both resx files are hand-edited. An IDE resx editor rewrites the header, adds the `xsd:schema` block
 and a byte order mark; revert that.
@@ -409,5 +456,4 @@ process-global and the project runs its other classes in parallel.
 
 A glyph with no ASCII form belongs in the resx and nowhere else, never as a `\u` escape in
 production code: the escape hides the string from whoever reads the code, and `terse` does not read
-`.resx`. The only escapes in the repository are the three in `ResourcesTests`, which spell the code
-points they pin while the test file stays ASCII.
+`.resx`. A test file may spell the code points it pins as escapes, so the test file stays ASCII.

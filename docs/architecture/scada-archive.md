@@ -130,8 +130,9 @@ the name of the v1 table.
 | `uid` | `integer` | user identifier | Originating user, `-1` for system messages. |
 | `r`, `c` | `timestamp(3)` | | Alarm recovery and acknowledgement instants; null for non-alarm events. |
 
-SemiPlot reads `messages` for one purpose only: explaining a gap to the operator. It is not a data
-source for trends. A project start writes «Проект запущен» and a stop «Проект остановлен»
+SemiPlot issues no statement on `messages`. The `semiplot` role holds `SELECT` on it, and a gap
+explanation over it is designed, not shipped (`data-integration.md`). It is not a data source for
+trends. A project start writes «Проект запущен» and a stop «Проект остановлен»
 (`gid = -6`, `k = 2`); a database outage writes nothing there `[MEAS:capture-20261006]`.
 
 ## Time semantics
@@ -209,13 +210,14 @@ rendering:
 A **gap** is an interval during which archiving did not happen. It is not "value unknown": it is
 "no data was recorded, and none ever will be".
 
-Three states are easy to confuse and must be distinguished by a reader of this archive:
+Two states leave no rows, are easy to confuse and must be distinguished by a reader of this archive. A
+third leaves a row and draws as any other:
 
 | State | Rows present | Correct rendering |
 | --- | --- | --- |
 | Value unchanged | none | horizontal line at the last recorded value |
 | Gap | none | broken line |
-| Bad quality | row present, value present | point discarded |
+| Bad quality, any `q` other than `0`, `16` and `32` | row present, value present | an ordinary point; no such code appeared in either measured archive `[MEAS:dump-20260805]` `[MEAS:capture-20261006]` |
 
 Absence of rows alone cannot separate the first two, which is why the engine marks the boundaries in
 the quality column. The manual states that the quality code follows the OPC UA specification except

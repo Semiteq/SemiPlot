@@ -39,7 +39,8 @@ next start except the theme, which every running process applies live
 `.editorconfig`'s style and quality analyzer rules fail `dotnet build` (`TreatWarningsAsErrors`,
 `EnforceCodeStyleInBuild`) and `dotnet format SemiPlot.slnx --verify-no-changes` alike, so a
 regression stops both the build and the pre-commit hook. The hook is `.githooks/pre-commit`; wire it
-once per clone with `git config core.hooksPath .githooks`. Over the staged `.cs` files it runs
+once per clone with `git config core.hooksPath .githooks`. It refuses a commit on `master` or `main`,
+so branch first. Over the staged `.cs` files it runs
 `dotnet format --verify-no-changes` and the comment linter
 [terse](https://github.com/mrcsin/terse), pinned in `.config/dotnet-tools.json` and restored by the
 hook itself: ASCII-only source, a `<summary>` of at most three lines, no `//` essays, banners or
@@ -131,7 +132,9 @@ Two projects, split on one axis: crosses a machine boundary (a socket or a conta
 - `SemiPlot.Tests.Unit` sets `failSkips` in `xunit.runner.json`, so no gated test may live there.
   `SemiPlot.Tests.Integration` carries no `xunit.runner.json`.
 - An xunit v3 test project is an executable: a hung test leaves `SemiPlot.Tests.Unit.exe` locked and
-  the next build fails with MSB3027 until it is killed. The container half is bounded at two minutes.
+  the next build fails with MSB3027 until it is killed. `PostgresContainerFixture` bounds the image
+  pull at two minutes, and the image build, the container start and the readiness wait at a second
+  two minutes.
 - The way to hang one: build `PenCatalogueSync` over `ImmediateScheduler.Instance`. Its loop runs
   through `ScheduleAsync` and waits on `Schedule(ReadInterval)` before every read, and
   `ImmediateScheduler` runs each wait by sleeping on the calling thread, so `Start()` never returns. A
@@ -169,9 +172,9 @@ dotnet test SemiPlot.slnx --filter "FullyQualifiedName~TestMethodName"
 
 CI has two jobs: `unit-windows` runs `SemiPlot.Tests.Unit` on `windows-latest`; `linux` builds the
 solution once on `ubuntu-latest` and runs both test projects, the Docker daemon of the runner serving
-the container fixture. A Windows-only API fails
-the Linux leg only once a test executes the call (`CA1416` is a warning); a Windows path used as a
-string does not fail it at all. The fail-only behavior is in `docs/architecture/testing-strategy.md`.
+the container fixture. A call to a Windows-only API fails the build on both legs: `CA1416` is a
+warning, and `TreatWarningsAsErrors` makes it an error. Behaviour that differs only at run time fails
+the Linux leg once a test executes it, and a Windows path used as a string does not fail it at all.
 
 Test traits: `[Trait("Component", "Core|UI")]`,
 `[Trait("Area", "Data|Bridge|Chart|Di|Messages")]`,
@@ -336,8 +339,8 @@ No abbreviations in names.
   a single one would pan or pick adds a marker (`ChartPressAction.AddMarker`), and one where it would
   drag a marker deletes it (`ChartPressAction.DeleteMarker`,
   `docs/architecture/trend-interaction.md#the-time-markers`). The bar's `IsSticky` has a single writer
-  (the `WindowChanged` handler refreshing from `Navigation.IsSticky`) — do not reintroduce imperative
-  `IsSticky =` assignments.
+  after the constructor seeds it (the `WindowChanged` handler refreshing from `Navigation.IsSticky`) — do
+  not reintroduce imperative `IsSticky =` assignments.
 - A checkable menu item reads its flag `Mode=OneWay` and writes it only through the command it
   invokes, so the command is the flag's single writer. A two-way `IsChecked` would make the control a
   second writer and the two halves would drift. The sidebar's visibility box follows the same rule: it
@@ -440,4 +443,5 @@ No abbreviations in names.
 
 This is the project overview file; do not add specifics here. See the machine-readable
 architecture docs in `docs/architecture/*` (English). Plans live in `docs/plans/`
-(`YYYYMMDD-<name>.md`; completed ones in `docs/plans/completed/`).
+(`YYYYMMDD-<name>.md`; completed ones in `docs/plans/completed/`), multi-PR roadmaps in
+`docs/plans/roadmaps/`, and deferred follow-ups in `docs/plans/backlog.md`.

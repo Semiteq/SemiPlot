@@ -6,8 +6,7 @@ using SemiPlot.AppHost;
 var builder = DistributedApplication.CreateBuilder(args);
 
 // The Aspire AppHost SDK does not add a project resource's assembly as a compile reference, so the
-// role names and passwords cannot come from BenchRoles.cs (SemiPlot.Tools.ArchiveSeeder) directly;
-// they are repeated here, as they were in the now-deleted scripts/bench-demo.ps1.
+// role names and passwords repeat BenchRoles.cs (SemiPlot.Tools.ArchiveSeeder) here.
 const string StandDatabase = "semiplot_app";
 const string MaintenanceDatabase = "postgres";
 const string ProvisionedDatabase = "semiplot_provisioned";

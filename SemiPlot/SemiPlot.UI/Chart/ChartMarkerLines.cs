@@ -4,6 +4,7 @@ using ScottPlot;
 using ScottPlot.Plottables;
 
 using SemiPlot.Core.Data;
+using SemiPlot.UI.Localization;
 
 namespace SemiPlot.UI.Chart;
 
@@ -142,7 +143,7 @@ internal sealed class ChartMarkerLines(Plot plot)
 			.ToLocalTime()
 			.ToString(LabelTimeFormat, CultureInfo.CurrentCulture);
 
-		return marker.Label is { } label ? $"{label} \u00B7 {time}" : time;
+		return marker.Label is { } label ? Resources.FormatMarkerLineLabelFormat(label, time) : time;
 	}
 
 	private static double EstimatedLabelWidth(VerticalLine line)

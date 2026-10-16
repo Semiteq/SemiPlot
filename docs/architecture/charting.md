@@ -651,8 +651,9 @@ quoting). `SemiPlot.Core.Export.ArchiveRowSlices` holds the 15 minute slice widt
 - `PenValueFormat` — the `0.###` fallback mask, the character rule that accepts a stored mask, and the
   render under `CultureInfo.CurrentCulture`, for the sidebar row, the hover readout and the major labels
   of a log axis. The delta readout's Δy goes through `FormatDifference`, which keeps only the mask's
-  positive section: a difference is often negative and often zero, and a reading's negative or zero
-  section (a sign left out, a dash for no reading) would misstate it. The rule runs once, in `PostgresDataProvider.ReadPen`,
+  positive section without its sign literals: a difference is often negative and often zero, a reading's
+  negative or zero section (a sign left out, a dash for no reading) would misstate it, and a literal `+`
+  or parenthesis would print after the minus .NET puts ahead of a negative value. The rule runs once, in `PostgresDataProvider.ReadPen`,
   which is where the logger is; a rejected mask reaches the record as `null`, so `Pen.Format` in the
   row is always usable and the row neither validates nor logs. The rule is a character set rather than
   a `try`/`catch` because .NET throws on almost no bad mask: `qqq` prints literally and `%0.0`

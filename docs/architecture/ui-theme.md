@@ -183,8 +183,8 @@ colour and text, never size:
   the same rule for every part but its lists (A resizable window keeps its fixed parts, below).
 - An invalid field is marked by its border alone. The field binds `Classes.invalid` to its `Is*Valid`
   flag, and `Styles/Forms.axaml` paints that border with `AppSeverityErrorBrush`.
-- One message line sits left of the buttons, or on its own full-width row above them (the axis scale panel,
-  the export window), or as the last row of a form with no buttons (the time window panel). It is a
+- One message line sits left of the buttons, or on its own full-width row above them (the export window), or
+  as the last row of a form (the time window panel, and the axis scale panel below its buttons). It is a
   `TextBlock.form-message`: two lines of 20 px
   reserved, wrapped, trimmed past the second. It shows the rule the first invalid field breaks, in form
   order, and is empty while every field is valid. A notice that is not an error, such as the settings
@@ -278,45 +278,40 @@ gates the alignment. A longer message is measured again in both languages before
 
 ### The axis scale panel
 
-`Chart/AxisScalePanel` is a `Flyout` form under the same rule. The panel is 360 px wide, with rows that exist
-in every state: the pen name and unit, the two `TextBox` rows of the bounds grid, the Logarithmic scale
-`CheckBox` row, the reserved message line (`form-message`, 40 px) and one row of buttons, Autoscale and Restore initial
-scale side by side. The checkbox row is a grid of its own that shares the bounds grid's label column
-(`SharedSizeGroup="AxisScaleLabel"`), so the box sits in the field column. The panel has no apply button. An
-invalid or empty field takes the `invalid` border, and a refused Logarithmic scale click leaves the box as it
-was and fills the message line, so nothing appears or disappears.
+`Chart/AxisScalePanel` is a `Flyout` form under the same rule. The panel is 280 px wide, with rows that exist
+in every state: the header with the pen name and its unit right after it, the two `TextBox` rows of the
+bounds grid, the Logarithmic scale `CheckBox` row, the Autoscale toggle and the Restore initial scale button
+one per row across the full width, and the reserved message line (`form-message`, 40 px) last, so its empty
+band reads as the bottom margin. Each bound is a 140 px `TextBox` aligned left in the field column, on
+Semi's default fill. The checkbox spans the panel from the left edge under the labels. The Autoscale toggle
+keeps Semi's checked look, the one the navigation bar's Sticky and Delta toggles show. The panel has no apply
+button. An invalid or empty field takes the `invalid` border, and a refused Logarithmic scale click leaves
+the box as it was and fills the message line, so nothing appears or disappears.
 
-Measured with Skia and HarfBuzz, in the real theme, Inter at 14 px; the submenu header with the pen "Damper
-valve 01" in mTorr. The panel, the checkbox and the messages were measured again on 2026-10-07, without the
-apply row and with the logarithmic scale texts:
+Measured on 2026-10-16 with Skia and HarfBuzz, in the real theme at 14 px on the Windows machine fonts, off a
+realised panel with no view model, so the header row is empty:
 
 | | English | Russian |
 | --- | --- | --- |
-| Panel | 360 x 223 px | 360 x 223 px |
-| Flyout presenter | 386 x 249 px | 386 x 249 px |
-| Logarithmic scale checkbox | 140.6 x 18.5 px, ends 221.7 px from the left | 198.9 x 18.5 px, ends 286.7 px from the left |
-| Widest button text, Restore initial scale | 127.9 px in a 176 x 32 px button | 137.3 px in a 176 x 32 px button |
-| `ScaleLogMinimumPositive` on one line | 329.3 px | 468.6 px |
-| `ScaleLogMinimumPositive` in the panel | 329.3 px, one line | 336.8 and 127.7 px, two lines |
-| Longest other message text | 292.7 px, one line | 306.9 px, one line |
-| Panel and presenter size with the pair inverted | unchanged | unchanged |
-| Panel and presenter size with a field empty | unchanged | unchanged |
-| Panel and presenter size with a field unreadable | unchanged | unchanged |
-| Panel and presenter size with the log rule shown | unchanged | unchanged |
-| Submenu header text, "Damper valve 01" | 181.3 px, in a 270 px item | 215.1 px, in a 304 px item |
+| Panel | 280 x 264 px | 280 x 264 px |
+| Field column start, field width | 82.0 px, 140 px | 88.0 px, 140 px |
+| Logarithmic scale checkbox | 141 x 19 px, ends 141.0 px from the left | 199 x 19 px, ends 199.0 px from the left |
+| Button text in a 280 x 32 px button, Autoscale and Restore initial scale | 69.1 and 135.8 px | 99.1 and 145.8 px |
+| `AxisScaleBoundInvalid` | 188.6 px, one line | 211.0 px, one line |
+| `AxisScaleBoundsRequired` | 125.2 px, one line | 152.7 px, one line |
+| `AxisScaleMinimumBelowMaximum` | 226.2 and 66.5 px, two lines | 228.3 and 78.6 px, two lines |
+| `ScaleLogMinimumPositive` | 255.5 and 73.8 px, two lines | 283.2 and 185.4 px, two lines (the first with its trailing space) |
+| Panel size with each message shown | unchanged | unchanged |
 
-The presenter is the 360 px panel plus 8 px padding and a 1 px border on each side, a 378 x 241 px box, plus a
-4 px margin on each side that the theme reserves for the shadow. The 360 px width holds every English message
-and every Russian message but `ScaleLogMinimumPositive` on one line. The Russian log rule wraps to two lines,
-and the 40 px `form-message` line (two 20 px lines, `MaxLines` 2) holds them with nothing trimmed, so the panel
-keeps one height whether the line is empty, holds a one-line rule or holds the log rule. The checkbox sits in
-the field column, which starts 81.1 px from the panel's left edge in English and 87.8 px in Russian, and both
-boxes end inside the 360 px. Each button is half the width,
-so the widest label keeps 176 - 24 - 137.3 = 14.7 px in Russian and 176 - 24 - 127.9 = 24.1 px in English. A
-longer label or message is measured the same way before it ships.
+The submenu header with the pen "Damper valve 01" in mTorr, measured at 360 px: 181.3 px in a 270 px item in
+English, 215.1 px in a 304 px item in Russian.
+
+The 40 px `form-message` line (two 20 px lines, `MaxLines` 2) holds every message with nothing trimmed, so the
+panel keeps one height whether the line is empty, holds a one-line rule or holds a two-line one. A longer
+label or message is measured the same way before it ships.
 `AxisScalePanelViewTests.TheMessageLine_KeepsThePanelsSize_EmptyWithAOneLineRuleAndWithTheLogRule` gates the
-size under the test font, in both cultures. It does not check the trimming: the test font is about twice as wide, and under it the Russian log
-rule needs three lines, so the measurement above is the only evidence that nothing is trimmed.
+size under the test font, in both cultures. It does not check the trimming: the test font is about twice as
+wide, so the measurement above is the only evidence that nothing is trimmed.
 
 ### The time window panel
 

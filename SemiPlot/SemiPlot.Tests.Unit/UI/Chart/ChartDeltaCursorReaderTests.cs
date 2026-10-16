@@ -19,7 +19,7 @@ public sealed class ChartDeltaCursorReaderTests
 	{
 		var readout = new DeltaReadout(TimeSpan.FromSeconds(30.0), null);
 
-		var text = ChartDeltaCursorReader.FormatReadout(readout);
+		var text = ChartDeltaCursorReader.FormatReadout(readout, null);
 
 		text.Should()
 			.Contain(Resources.DeltaValueLabel)
@@ -32,11 +32,22 @@ public sealed class ChartDeltaCursorReaderTests
 		using var culture = new CultureScope("en-US");
 		var readout = new DeltaReadout(TimeSpan.FromSeconds(30.0), 1.5);
 
-		var text = ChartDeltaCursorReader.FormatReadout(readout);
+		var text = ChartDeltaCursorReader.FormatReadout(readout, null);
 
 		text.Should()
 			.Contain("1.5")
 			.And.NotContain(Resources.NoValuePlaceholder);
+	}
+
+	[Fact]
+	public void FormatReadout_RendersTheDeltaYUnderThePensMask()
+	{
+		using var culture = new CultureScope("en-US");
+		var readout = new DeltaReadout(TimeSpan.FromSeconds(30.0), -1.2e-5);
+
+		var text = ChartDeltaCursorReader.FormatReadout(readout, "0.00E+00");
+
+		text.Should().EndWith($"{Resources.DeltaValueLabel} -1.20E-05");
 	}
 
 	[Theory]
@@ -47,7 +58,7 @@ public sealed class ChartDeltaCursorReaderTests
 	{
 		var readout = new DeltaReadout(TimeSpan.FromSeconds(seconds), 1.5);
 
-		var text = ChartDeltaCursorReader.FormatReadout(readout);
+		var text = ChartDeltaCursorReader.FormatReadout(readout, null);
 
 		text.Should().Contain($"{Resources.DeltaTimeLabel} {expected}   ");
 	}

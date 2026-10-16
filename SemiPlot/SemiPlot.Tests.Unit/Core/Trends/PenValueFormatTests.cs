@@ -71,6 +71,21 @@ public sealed class PenValueFormatTests
 		});
 	}
 
+	// A difference is often negative and often zero, so it renders under the positive section alone: a
+	// reading's negative section may leave the sign out and its zero section may print a dash.
+	[Theory]
+	[InlineData("0.0;(0.0);-", -5.25, "-5.3")]
+	[InlineData("0.0;(0.0);-", 0.0, "0.0")]
+	[InlineData("0.0;0.0", -1.5, "-1.5")]
+	[InlineData("0.00E+00", -1.2e-5, "-1.20E-05")]
+	[InlineData("#,##0.00", 1234.5678, "1,234.57")]
+	[InlineData(null, -1.5, "-1.5")]
+	[InlineData("qqq", 0.0, "0")]
+	public void ADifferenceRendersUnderThePositiveSectionOfTheMask(string? mask, double value, string expected)
+	{
+		UnderTheInvariantCulture(() => PenValueFormat.FormatDifference(value, mask).Should().Be(expected));
+	}
+
 	// Format renders under the operator's culture, so the shapes above are stated in one this machine
 	// cannot move.
 	private static void UnderTheInvariantCulture(Action assertion)

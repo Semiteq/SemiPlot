@@ -63,6 +63,17 @@ public static partial class PenValueFormat
 		return value.ToString(IsAcceptable(mask) ? mask : FallbackMask, CultureInfo.CurrentCulture);
 	}
 
+	/// <summary>
+	/// A difference of two readings under the positive section of the pen's mask alone, so the sign always
+	/// prints and a zero difference reads as a number (docs/architecture/charting.md).
+	/// </summary>
+	public static string FormatDifference(double value, string? mask)
+	{
+		var positiveSection = IsAcceptable(mask) ? mask.Split(';')[0] : FallbackMask;
+
+		return value.ToString(positiveSection, CultureInfo.CurrentCulture);
+	}
+
 	// The positive and negative sections must carry a 0, which always prints; the third is the zero
 	// literal, where a dash standing for "no reading" is the operator's own idiom.
 	private static bool IsAcceptableSection(ReadOnlySpan<char> section, bool mustPrintTheReading)

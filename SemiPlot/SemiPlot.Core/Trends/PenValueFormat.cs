@@ -63,6 +63,19 @@ public static partial class PenValueFormat
 		return value.ToString(IsAcceptable(mask) ? mask : FallbackMask, CultureInfo.CurrentCulture);
 	}
 
+	/// <summary>
+	/// A difference of two readings under the positive section of the pen's mask alone, its sign literals
+	/// dropped, so .NET prints the one sign and a zero difference reads as a number (docs/architecture/charting.md).
+	/// </summary>
+	public static string FormatDifference(double value, string? mask)
+	{
+		var differenceMask = IsAcceptable(mask)
+			? SignLiteral().Replace(mask.Split(';')[0], string.Empty)
+			: FallbackMask;
+
+		return value.ToString(differenceMask, CultureInfo.CurrentCulture);
+	}
+
 	// The positive and negative sections must carry a 0, which always prints; the third is the zero
 	// literal, where a dash standing for "no reading" is the operator's own idiom.
 	private static bool IsAcceptableSection(ReadOnlySpan<char> section, bool mustPrintTheReading)
@@ -101,4 +114,9 @@ public static partial class PenValueFormat
 	// the reading rather than only shaping it.
 	[GeneratedRegex(@"^[0#.,;()Ee+\- ]+$")]
 	private static partial Regex AcceptableMask();
+
+	// A + or - right after E or e is the exponent's own sign; any other one, and a parenthesis, is a literal
+	// that .NET would print after the minus it puts ahead of a negative value.
+	[GeneratedRegex(@"(?<![Ee])[+\-]|[()]")]
+	private static partial Regex SignLiteral();
 }

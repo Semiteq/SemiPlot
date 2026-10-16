@@ -44,7 +44,8 @@ machine, and the generated `Format*` methods pass the same null `Culture` to `st
 argument inside a failure detail follows the machine too. A pen's reading is the one number with a rule
 of its own, and `SemiPlot.Core.Trends.PenValueFormat` is that rule's single home: it applies the pen's
 stored mask under `CultureInfo.CurrentCulture`, and both the sidebar row and the chart's hover readout
-render through it, so one reading never appears in two shapes on one screen.
+render through it, so one reading never appears in two shapes on one screen. The delta readout's Δy
+renders through its `FormatDifference`: the mask's positive section without its sign literals.
 
 ## The generated accessor
 

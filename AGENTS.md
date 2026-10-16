@@ -372,8 +372,8 @@ No abbreviations in names.
   `git grep -n "new HistoryRequest(" -- SemiPlot/SemiPlot.UI` prints only `ChartHistoryPlanner.cs` lines.
 - A pen's reading is rendered through `SemiPlot.Core.Trends.PenValueFormat` and nowhere else: it owns
   the stored mask's character-and-section rule and the `0.###` fallback, and the sidebar row, the
-  chart's hover readout and the major labels of a log10 axis (`Chart/LogTickGenerator`) all go through it
-  (`docs/architecture/ui-text.md`).
+  chart's hover readout, the major labels of a log10 axis (`Chart/LogTickGenerator`) and the delta
+  readout's Δy (`FormatDifference`) all go through it (`docs/architecture/ui-text.md`).
 - Every failure the operator should see goes to `Messages/MessagePanelViewModel` through
   `Messages/ArchiveFailureMapper.Map`, which assigns the severity in its own per-kind switch — never
   at the call site. The one message with no error behind it is

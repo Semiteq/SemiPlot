@@ -171,7 +171,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		}
 	}
 
-	public string DeltaReadoutText => ChartDeltaCursorReader.FormatReadout(DeltaReadout);
+	public string DeltaReadoutText => ChartDeltaCursorReader.FormatReadout(DeltaReadout, FindPen(ActivePenId)?.Pen.Format);
 
 	public void Dispose()
 	{
@@ -260,6 +260,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		this.RaisePropertyChanged(nameof(Pens));
 		this.RaisePropertyChanged(nameof(DrawnPenId));
 		this.RaisePropertyChanged(nameof(HasNoPens));
+		this.RaisePropertyChanged(nameof(DeltaReadoutText));
 		RequestRedraw();
 	}
 

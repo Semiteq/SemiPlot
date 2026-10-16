@@ -309,8 +309,8 @@ pointer, so a second finger neither moves, pans nor ends the first finger's drag
 - **Delta cursors (Δt / Δy) via an explicit navigation-bar mode.** The bar's "Delta" toggle
   (`NavigationBarViewModel.IsDeltaModeEnabled`) sets the chart into `DeltaPlacement`: two left clicks
   place the cursors and drag does NOT pan; toggling off clears the placed cursors and hides the
-  lines. Δt and the **active-pen** Δy (`Core/Trends/DeltaCursorModel` → `DeltaReadout`) are shown in
-  an inline readout next to the toggle.
+  lines. Δt and the **active-pen** Δy (`Core/Trends/DeltaCursorModel` → `DeltaReadout`, Δy under the
+  positive section of the pen's mask, `charting.md`) are shown in an inline readout next to the toggle.
 - **Y-axis click-region scale edit.** A press on the active pen's Y-axis panel band
   (`Chart/ChartAxisRegion`, computed from the last render layout) is handled before Ctrl, the time axis,
   pan and delta routing and opens the axis scale panel (below). The same region routes the wheel to `ScaleActivePen`.

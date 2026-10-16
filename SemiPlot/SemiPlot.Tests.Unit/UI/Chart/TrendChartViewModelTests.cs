@@ -1930,6 +1930,44 @@ public sealed class TrendChartViewModelTests
 	}
 
 	[AvaloniaFact]
+	public void DeltaMode_RendersTheDeltaYUnderTheActivePensMask_AndFollowsAMaskTheCatalogueChanges()
+	{
+		using var culture = new CultureScope("en-US");
+		var (viewModel, scheduler, _, _) = CreateViewModel();
+		viewModel.AddPen(FakeDataProvider.FirstPen with { Format = "0.00" });
+		LoadInitialHistory(viewModel, scheduler, From, To);
+		viewModel.SetDeltaModeEnabled(true);
+		viewModel.PlaceDeltaCursor(From);
+		viewModel.PlaceDeltaCursor(To.AddHours(1.0));
+		viewModel.DeltaReadoutText.Should().EndWith($"{Resources.DeltaValueLabel} 1.00");
+		using var monitor = viewModel.Monitor();
+
+		viewModel.ApplyCatalogue([FakeDataProvider.FirstPen with { Format = "0.000" }]);
+
+		monitor.Should().RaisePropertyChangeFor(chart => chart.DeltaReadoutText);
+		viewModel.DeltaReadoutText.Should().EndWith($"{Resources.DeltaValueLabel} 1.000");
+	}
+
+	[AvaloniaFact]
+	public void DeltaMode_SwitchingTheActivePen_RendersItsDeltaYUnderItsOwnMask()
+	{
+		using var culture = new CultureScope("en-US");
+		var (viewModel, scheduler, _, _) = CreateViewModel();
+		viewModel.AddPen(FakeDataProvider.FirstPen with { Format = "0.00" });
+		viewModel.AddPen(FakeDataProvider.SecondPen with { Format = "0.0000" });
+		LoadInitialHistory(viewModel, scheduler, From, To);
+		viewModel.SetDeltaModeEnabled(true);
+		viewModel.PlaceDeltaCursor(From);
+		viewModel.PlaceDeltaCursor(To.AddHours(1.0));
+		using var monitor = viewModel.Monitor();
+
+		viewModel.SetActivePen(FakeDataProvider.SecondPen.PenId);
+
+		monitor.Should().RaisePropertyChangeFor(chart => chart.DeltaReadoutText);
+		viewModel.DeltaReadoutText.Should().MatchRegex($@"{Resources.DeltaValueLabel} -?\d+\.\d{{4}}$");
+	}
+
+	[AvaloniaFact]
 	public void ExitingDeltaMode_ReturnsToPanAndClearsCursors()
 	{
 		var (viewModel, scheduler, _, _) = CreateViewModel();

@@ -1,5 +1,3 @@
-using System.Globalization;
-
 using SemiPlot.Core.Trends;
 using SemiPlot.UI.Localization;
 
@@ -37,7 +35,7 @@ public sealed class ChartDeltaCursorReader(
 		return _deltaCursor.Compute(envelope);
 	}
 
-	public static string FormatReadout(DeltaReadout? readout)
+	public static string FormatReadout(DeltaReadout? readout, string? penMask)
 	{
 		if (readout is null)
 		{
@@ -46,7 +44,7 @@ public sealed class ChartDeltaCursorReader(
 
 		var deltaTime = FormatDeltaTime(readout.DeltaTime);
 		var deltaY = readout.DeltaY is { } value
-			? value.ToString("0.###", CultureInfo.CurrentCulture)
+			? PenValueFormat.FormatDifference(value, penMask)
 			: Resources.NoValuePlaceholder;
 
 		return $"{Resources.DeltaTimeLabel} {deltaTime}   {Resources.DeltaValueLabel} {deltaY}";

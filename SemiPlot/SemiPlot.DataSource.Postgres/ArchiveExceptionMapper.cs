@@ -32,9 +32,10 @@ internal sealed class ArchiveExceptionMapper(PostgresConnectionSettings settings
 	}
 
 	/// <summary>
-	/// <paramref name="subject"/> is the pen or group name the three write kinds carry as their detail.
+	/// <paramref name="subject"/> is the detail of the three write kinds; <paramref name="relation"/> goes to
+	/// <see cref="Map"/>.
 	/// </summary>
-	public Error MapWrite(Exception exception, string subject)
+	public Error MapWrite(Exception exception, string subject, string relation)
 	{
 		if (exception is PostgresException postgres && WriteFaultOf(postgres.SqlState) is { } kind)
 		{
@@ -42,13 +43,19 @@ internal sealed class ArchiveExceptionMapper(PostgresConnectionSettings settings
 		}
 
 		// docs/architecture/data-integration.md#two-error-planes
-		return Map(exception, ArchiveStatements.PenCatalogRelations);
+		return Map(exception, relation);
 	}
 
 	/// <summary>A write that touched no row: the pen or group it names is gone.</summary>
 	public ArchiveError RowGone(string subject)
 	{
 		return Fault(ArchiveFault.RowGone, subject);
+	}
+
+	/// <summary>A move or rename that touched no row: the marker it names is gone.</summary>
+	public ArchiveError MarkerGone(string subject)
+	{
+		return Fault(ArchiveFault.MarkerGone, subject);
 	}
 
 	private static ArchiveFault? WriteFaultOf(string sqlState)

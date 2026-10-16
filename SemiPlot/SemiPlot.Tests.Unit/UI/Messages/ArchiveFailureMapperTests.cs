@@ -224,6 +224,12 @@ public sealed class ArchiveFailureMapperTests
 				() => Resources.FormatFailureArchiveRowGoneDetail(ArchiveName, "Etch gases"),
 				() => Resources.FailureArchiveRowGoneRemedy,
 				MessageSeverity.Warning),
+			["MarkerGone"] = new(
+				Archive(ArchiveFault.MarkerGone, "Etch start"),
+				() => Resources.FailureArchiveMarkerGoneTitle,
+				() => Resources.FormatFailureArchiveMarkerGoneDetail(ArchiveName, "Etch start"),
+				() => Resources.FailureArchiveMarkerGoneRemedy,
+				MessageSeverity.Warning),
 			["ConnectionLost"] = new(
 				new ArchiveError(ArchiveFault.ConnectionLost, "bench.example", 5432, "semiplot_dev", "3"),
 				() => Resources.FailureArchiveConnectionLostTitle,

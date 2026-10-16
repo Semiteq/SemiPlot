@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using ReactiveUI;
 
 using SemiPlot.Core.Data;
+using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.Messages;
 
@@ -39,7 +40,7 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 	private readonly IPenCatalogueEditor _penCatalogueEditor;
 	private readonly MessagePanelViewModel _messagePanel;
 	private readonly ILogger<PenEditorViewModel> _logger;
-	private readonly EditorCallQueue _editorCallQueue;
+	private readonly ArchiveCallQueue _archiveCallQueue;
 	private readonly CompositeDisposable _disposables = [];
 	private readonly ObservableAsPropertyHelper<PenFormViewModel?> _selectedForm;
 	private readonly ObservableAsPropertyHelper<bool> _isRefreshing;
@@ -58,7 +59,7 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 		_penCatalogueEditor = penCatalogueEditor;
 		_messagePanel = messagePanel;
 		_logger = logger;
-		_editorCallQueue = new EditorCallQueue(editorCallSucceeded);
+		_archiveCallQueue = new ArchiveCallQueue(editorCallSucceeded);
 
 		var rows = RowsOf(catalogue);
 		Rows = rows;
@@ -126,10 +127,10 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 	/// </summary>
 	public bool IsRefreshing => _isRefreshing.Value;
 
-	/// <inheritdoc cref="EditorCallQueue.WhenIdleAsync"/>
+	/// <inheritdoc cref="ArchiveCallQueue.WhenIdleAsync"/>
 	public Task WhenIdleAsync()
 	{
-		return _editorCallQueue.WhenIdleAsync();
+		return _archiveCallQueue.WhenIdleAsync();
 	}
 
 	/// <summary>The window's own code-behind route to the panel, for a throw it cannot let escape.</summary>
@@ -153,7 +154,7 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 		}
 
 		return Observable.Using(
-			() => new PenFormViewModel(row, _penCatalogueEditor, _editorCallQueue, _messagePanel, _logger),
+			() => new PenFormViewModel(row, _penCatalogueEditor, _archiveCallQueue, _messagePanel, _logger),
 			form => Observable.Return<PenFormViewModel?>(form).Concat(Observable.Never<PenFormViewModel?>()));
 	}
 
@@ -192,7 +193,7 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 
 	private async Task RefreshAsync()
 	{
-		var registered = await _editorCallQueue.RunAsync(_penCatalogueEditor.RegisterNewPensAsync);
+		var registered = await _archiveCallQueue.RunAsync(_penCatalogueEditor.RegisterNewPensAsync);
 
 		if (registered.IsFailed)
 		{
@@ -228,10 +229,10 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 	{
 		while (true)
 		{
-			var read = _editorCallQueue.RunAsync(_penCatalogueEditor.ReadAsync);
+			var read = _archiveCallQueue.RunAsync(_penCatalogueEditor.ReadAsync);
 			var catalogue = await read;
 
-			if (catalogue.IsFailed || _editorCallQueue.IsLast(read))
+			if (catalogue.IsFailed || _archiveCallQueue.IsLast(read))
 			{
 				return catalogue;
 			}
@@ -245,7 +246,7 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 
 	private PenGroupsViewModel GroupsOf(IReadOnlyList<PenRowViewModel> rows, IReadOnlyList<StoredGroup> groups)
 	{
-		return new PenGroupsViewModel(rows, groups, _penCatalogueEditor, _editorCallQueue, _messagePanel, _logger);
+		return new PenGroupsViewModel(rows, groups, _penCatalogueEditor, _archiveCallQueue, _messagePanel, _logger);
 	}
 
 	private static Comparison<PenRowViewModel> ComparisonOf(PenColumn column)

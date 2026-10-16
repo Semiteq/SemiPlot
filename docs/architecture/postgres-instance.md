@@ -11,7 +11,7 @@ document records only what constrains SemiPlot as a consumer of that instance.
 | Every configuration setting that differs from the PostgreSQL default | `Semiteq/SemiBase`: `docs/architecture/configuration.md` |
 | The provisioning order, and what `semibase site` and `semibase bench` each do | `Semiteq/SemiBase`: `docs/architecture/overview.md` and `docs/architecture/provisioning.md` |
 | The role definitions, the grants, the default-privileges chain and the `trends` DDL | `Semiteq/SemiBase`: `docs/architecture/provisioning.md` |
-| The configuration-schema DDL and the pen registration function | `Semiteq/SemiBase`: `sql/semiplot_tags.sql`, `sql/semiplot_register.sql`, `sql/semiplot_groups.sql`, `sql/semiplot_meta.sql` |
+| The configuration-schema DDL and the pen registration function | `Semiteq/SemiBase`: `sql/semiplot_tags.sql`, `sql/semiplot_register.sql`, `sql/semiplot_groups.sql`, `sql/semiplot_markers.sql`, `sql/semiplot_meta.sql` |
 | The archive schema itself | `scada-archive.md` |
 | The queries SemiPlot issues | `data-integration.md` |
 
@@ -29,8 +29,12 @@ commissioning day and the copy that has drifted.
 - Provisioned by SemiBase v0.5.0 or newer. Both catalogue reads name `scale_min_on_start`,
   `scale_max_on_start` and `log_scale_on_start`, which v0.5.0 introduced; against an older schema
   every catalogue read fails with `42703`, `ArchiveFault.ShapeUnexpected` (`data-integration.md`).
-- The archive database holds `trends`, which the SCADA writes and SemiBase creates, the four
-  configuration tables `semiplot_tags`, `semiplot_groups`, `semiplot_pen_groups` and `semiplot_meta`,
+- Provisioned by SemiBase v0.6.0 or newer for the time markers, because v0.6.0 introduced
+  `semiplot_markers`. Against an older schema every marker read fails with `42P01`,
+  `ArchiveFault.TableMissing` naming `semiplot_markers`, which the message panel shows from the third read
+  in a row; the rest of the viewer runs (`data-integration.md#the-marker-store`).
+- The archive database holds `trends`, which the SCADA writes and SemiBase creates, the five
+  configuration tables `semiplot_tags`, `semiplot_groups`, `semiplot_pen_groups`, `semiplot_markers` and `semiplot_meta`,
   which are SemiBase's outright, and `messages`, which is the SCADA's outright. Nothing of ours runs
   inside the database: no summary tables, triggers, functions, scheduled jobs or extensions
   `[DEC:vendor-layers]`. The reasoning is in `history-read-path-evaluation.md`.
@@ -42,7 +46,7 @@ archive and it reads and writes the configuration tables.
 
 | Property | Value | What it means for the client |
 | --- | --- | --- |
-| Privileges | `SELECT` on `trends` and `messages`; `SELECT` and a column-level `UPDATE` of the nine settings columns on `semiplot_tags`, never `INSERT` or `DELETE`; `SELECT, INSERT, UPDATE, DELETE` on `semiplot_groups` and `semiplot_pen_groups`; `SELECT` on `semiplot_meta`; `EXECUTE` on `semiplot_register_new_pens()`. Nothing else | The pen editor uses the configuration-table grants and the `EXECUTE`, and nothing else writes. Any write to the archive, and any `ALTER` or `CREATE`, is a defect; the server answers `42501` |
+| Privileges | `SELECT` on `trends` and `messages`; `SELECT` and a column-level `UPDATE` of the nine settings columns on `semiplot_tags`, never `INSERT` or `DELETE`; `SELECT, INSERT, UPDATE, DELETE` on `semiplot_groups`, `semiplot_pen_groups` and `semiplot_markers`; `SELECT` on `semiplot_meta`; `EXECUTE` on `semiplot_register_new_pens()`. Nothing else | The pen editor uses the catalogue grants and the `EXECUTE`, the marker store the `semiplot_markers` grant, and nothing else writes. Any write to the archive, and any `ALTER` or `CREATE`, is a defect; the server answers `42501` |
 | `statement_timeout` | 30 s | A read that exceeds it fails with SQLSTATE `57014`. That is a bug in layer selection, not a slow disk — surface it as a typed error instead of retrying |
 | `idle_in_transaction_session_timeout` | 60 s | A transaction held open is killed rather than blocking vacuum on the partitions |
 
@@ -58,13 +62,14 @@ default mid-run can leave one report one increment stale. `-c jit=off` is the on
 SemiPlot sends, and it overrides no role default (`data-integration.md#configuration`).
 
 The credential is what makes the plaintext password in SemiPlot's configuration file an acceptable
-risk: it grants reading process history and editing the pen catalogue, and no write to the archive.
+risk: it grants reading process history and editing the pen catalogue and the time markers, and no
+write to the archive.
 
 ## The configuration tables
 
 The archive has no mapping from a variable number to a name, so we supply one `[DEC:semiplot-tags]`.
-`semibase` creates the tables. The viewer reads them at start and every 5 s while it runs, and writes
-them from one place, the pen editor (`Edit` -> `Pens and groups`, `overview.md#the-pen-and-group-editor`).
+`semibase` creates the tables. The viewer reads the catalogue at start and every 5 s while it runs, and
+writes it from one place, the pen editor (`Edit` -> `Pens and groups`, `overview.md#the-pen-and-group-editor`).
 Its `Refresh pen list` button calls `semiplot_register_new_pens()`, which adds a hidden pen named by its number
 for every key the SCADA writes that has none; the operator then names the pens and switches them on in
 the same window. No startup step registers or writes anything
@@ -93,6 +98,11 @@ Group membership is many-to-many. `semiplot_groups` holds one row per group name
 catalogue read joins all three tables (`data-integration.md`). The editor creates, renames and deletes
 groups and adds and removes memberships; deleting a group removes its memberships through
 `ON DELETE CASCADE` and leaves the pens.
+
+`semiplot_markers` holds the chart's time markers, one row per marker: an identity `id`, a `timestamptz`
+moment and an optional label of 1 to 80 characters. Every window reads all of it when it opens and every
+5 s, and the chart writes it from its right-click menu and a marker drag
+(`data-integration.md#the-marker-store`).
 
 An absent table and an empty catalogue are both normal states with their own message, and neither is
 ever a crash — but they travel in different channels. An empty catalogue is a successful read of zero

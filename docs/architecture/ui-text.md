@@ -203,7 +203,8 @@ names what it refreshes, and `PenEditorAddedCount`, "Pens added: {0}" / "Доб�
 until the first successful refresh. It carries no notice: every running chart follows what the editor
 writes through the catalogue read (`overview.md#the-live-catalogue`), except the scale pair and the log
 scale flag, which change no pen already shown (`overview.md#what-a-read-changes`), so there is nothing to
-wait for. The `Groups` tab reads `PenGroupsNewNamePlaceholder`, the one watermark in the tree,
+wait for. The `Groups` tab reads `PenGroupsNewNamePlaceholder`, one of the tree's two watermarks beside
+the marker label editor's `MarkerLabelPlaceholder` (`#the-marker-menu-and-label-editors-text`),
 `PenGroupsCreate`, `PenGroupsNameLabel`, `PenGroupsDelete`, which is also the confirm button's caption,
 `PenGroupsCancel` and `PenGroupsMembersHeader`. `PenGroupsDeleteConfirmation` takes the group name as
 `{0}` and its member count as `{1}`, and is a snapshot taken when delete is pressed. The added count and
@@ -238,6 +239,14 @@ The editor adds three `ArchiveFault` kinds, each with a title, a detail and a re
 `FailureArchiveValueRejected*`, `FailureArchiveNameTaken*` and `FailureArchiveRowGone*`. Each detail
 wraps `{0}`, the archive, and `{1}`, the pen or group name `ArchiveError.Detail` carries, so no word of
 either language lives in `Detail`. Each is a `Warning`, because the operator's next edit is the remedy.
+
+The marker store adds a fourth write kind, `FailureArchiveMarkerGone*` ("The marker no longer exists" /
+"Метка больше не существует"), with a title, a detail and a remedy in both sets. Its detail wraps `{0}`,
+the archive, and `{1}`, the marker's label or its local moment, which `ArchiveError.Detail` carries
+(`data-integration.md#the-marker-store`). The remedy names the cause, another window or an administrator
+removed the marker, says that the chart no longer shows it and asks for it to be added again if it is
+still needed. It is a `Warning`. The Russian term for a time marker is "метка" in every key, and
+"подпись" for its label.
 
 The kinds a write shares with a read name a statement, never a read, because the same text now serves
 both. The reworded keys are `FailureArchiveAccessDeniedTitle` and `...Remedy`,
@@ -356,6 +365,22 @@ The message line shows the first rule the form breaks, the edges' rules ahead of
 
 The line always carries the `error` class, because it shows nothing but a broken rule. A failed day read
 reaches the message panel, not this line.
+
+## The marker menu and label editor's text
+
+`Chart/TrendChartView.axaml` reads every string of the time markers
+(`trend-interaction.md#the-time-markers`):
+
+| Key | English / Russian | Where |
+| --- | --- | --- |
+| `MarkerMenuAdd` | "Add marker here" / "Добавить метку здесь" | The chart menu, off a marker |
+| `MarkerMenuRename`, `MarkerMenuDelete` | "Rename" / "Переименовать", "Delete" / "Удалить" | The marker menu |
+| `MarkerLabelPlaceholder` | "Label (optional)" / "Подпись (необязательно)" | The label box's watermark |
+| `MarkerLabelOk`, `MarkerLabelCancel` | "OK" / "ОК", "Cancel" / "Отмена" | The editor's buttons |
+
+The editor has no message line: nothing in it can be invalid, and the watermark says that an empty box
+is allowed (`ui-theme.md#the-marker-label-editor`). A failed marker write reaches the message panel,
+never the editor, which is closed by then. A label is operator data and passes through no resource.
 
 ## Adding a key
 

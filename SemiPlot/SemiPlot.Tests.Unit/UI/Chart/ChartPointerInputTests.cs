@@ -5,13 +5,11 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
-using Avalonia.Interactivity;
 using Avalonia.Threading;
 
 using AwesomeAssertions;
 
 using ScottPlot;
-using ScottPlot.Avalonia;
 
 using SemiPlot.Core.Trends;
 using SemiPlot.UI.Chart;
@@ -874,19 +872,6 @@ public sealed class ChartPointerInputTests
 		cursorAfterRelease.Should().BeSameAs(handCursor);
 	}
 
-	private static Func<IPointer> CapturePointerOfNextPress(Window window)
-	{
-		IPointer? pressedPointer = null;
-		window.AddHandler(
-			InputElement.PointerPressedEvent,
-			(_, eventArgs) => pressedPointer = eventArgs.Pointer,
-			RoutingStrategies.Bubble,
-			handledEventsToo: true);
-
-		return () => pressedPointer
-					?? throw new InvalidOperationException("No pointer press reached the window.");
-	}
-
 	// The pens' axes hold fixed spans so the flat line of pen 2 lies inside the data area.
 	private static TrendChartViewModel CreateViewModelWithFixedScales()
 	{
@@ -961,11 +946,5 @@ public sealed class ChartPointerInputTests
 		var dataRect = viewModel.Plot.RenderManager.LastRender.Layout.DataRect;
 
 		return new Point((dataRect.Left + dataRect.Right) / 2.0, (dataRect.Top + dataRect.Bottom) / 2.0);
-	}
-
-	private static Point ToWindow(AvaPlot plotControl, Window window, Point plotPoint)
-	{
-		return plotControl.TranslatePoint(plotPoint, window)
-			?? throw new InvalidOperationException("The plot control is not in the window's visual tree.");
 	}
 }

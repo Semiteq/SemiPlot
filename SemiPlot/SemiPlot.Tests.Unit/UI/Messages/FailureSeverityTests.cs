@@ -28,6 +28,7 @@ public sealed class FailureSeverityTests
 			[ArchiveFault.ValueRejected] = MessageSeverity.Warning,
 			[ArchiveFault.NameTaken] = MessageSeverity.Warning,
 			[ArchiveFault.RowGone] = MessageSeverity.Warning,
+			[ArchiveFault.MarkerGone] = MessageSeverity.Warning,
 			[ArchiveFault.AccessDenied] = MessageSeverity.Error,
 			[ArchiveFault.DatabaseMissing] = MessageSeverity.Error,
 			[ArchiveFault.TableMissing] = MessageSeverity.Error,

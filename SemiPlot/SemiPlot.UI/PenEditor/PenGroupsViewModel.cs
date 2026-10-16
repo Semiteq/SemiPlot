@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using ReactiveUI;
 
 using SemiPlot.Core.Data;
+using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.Messages;
 
@@ -33,12 +34,12 @@ public sealed class PenGroupsViewModel : ReactiveObject, IDisposable
 		IReadOnlyList<PenRowViewModel> rows,
 		IReadOnlyList<StoredGroup> groups,
 		IPenCatalogueEditor penCatalogueEditor,
-		EditorCallQueue editorCallQueue,
+		ArchiveCallQueue archiveCallQueue,
 		MessagePanelViewModel messagePanel,
 		ILogger logger)
 	{
 		_rows = rows;
-		_penGroupWriter = new PenGroupWriter(penCatalogueEditor, editorCallQueue, messagePanel, logger, ShowGroupsOn);
+		_penGroupWriter = new PenGroupWriter(penCatalogueEditor, archiveCallQueue, messagePanel, logger, ShowGroupsOn);
 
 		Groups = [.. groups.Select(group => new PenGroupViewModel(group, _penGroupWriter))];
 

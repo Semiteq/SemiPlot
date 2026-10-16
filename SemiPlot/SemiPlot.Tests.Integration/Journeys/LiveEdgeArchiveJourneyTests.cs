@@ -147,6 +147,7 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 			var messagePanel = new MessagePanelViewModel();
 			var chart = new TrendChartViewModel(
 				coordinator,
+				new NoMarkers(),
 				dataScheduler,
 				ImmediateScheduler.Instance,
 				TimeZoneInfo.Utc,

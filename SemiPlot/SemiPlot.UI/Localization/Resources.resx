@@ -390,6 +390,15 @@
   <data name="FailureArchiveRowGoneRemedy" xml:space="preserve">
     <value>Read the catalogue again to see what it holds now. Repeat the edit if it still applies.</value>
   </data>
+  <data name="FailureArchiveMarkerGoneTitle" xml:space="preserve">
+    <value>The marker no longer exists</value>
+  </data>
+  <data name="FailureArchiveMarkerGoneDetail" xml:space="preserve">
+    <value>The archive {0} no longer holds the marker '{1}'.</value>
+  </data>
+  <data name="FailureArchiveMarkerGoneRemedy" xml:space="preserve">
+    <value>Another SemiPlot window or an administrator removed the marker, and the chart no longer shows it. Add it again if it is still needed.</value>
+  </data>
   <data name="FailureStartupReadTimedOutTitle" xml:space="preserve">
     <value>The archive did not answer in time</value>
   </data>
@@ -800,5 +809,23 @@
   </data>
   <data name="TimeWindowMessageWidthOutOfRange" xml:space="preserve">
     <value>The width has to be from {0} to {1}.</value>
+  </data>
+  <data name="MarkerMenuAdd" xml:space="preserve">
+    <value>Add marker here</value>
+  </data>
+  <data name="MarkerMenuRename" xml:space="preserve">
+    <value>Rename</value>
+  </data>
+  <data name="MarkerMenuDelete" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="MarkerLabelPlaceholder" xml:space="preserve">
+    <value>Label (optional)</value>
+  </data>
+  <data name="MarkerLabelOk" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="MarkerLabelCancel" xml:space="preserve">
+    <value>Cancel</value>
   </data>
 </root>

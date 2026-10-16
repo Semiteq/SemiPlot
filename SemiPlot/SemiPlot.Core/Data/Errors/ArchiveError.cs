@@ -40,6 +40,7 @@ public sealed class ArchiveError(ArchiveFault kind, string host, int port, strin
 				$"The {archive} refused a value written to pen '{detail}' (SQLSTATE 23514).",
 			ArchiveFault.NameTaken => $"The {archive} already holds a group named '{detail}' (SQLSTATE 23505).",
 			ArchiveFault.RowGone => $"The {archive} no longer holds '{detail}'.",
+			ArchiveFault.MarkerGone => $"The {archive} no longer holds the marker '{detail}'.",
 			_ => detail.Length == 0
 				? $"The {archive} rejected a statement for an unrecognised reason."
 				: $"The {archive} rejected a statement for an unrecognised reason (SQLSTATE {detail})."

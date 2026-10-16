@@ -11,6 +11,7 @@ using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.Export;
 using SemiPlot.UI.Legend;
+using SemiPlot.UI.Markers;
 using SemiPlot.UI.Messages;
 using SemiPlot.UI.Minimap;
 using SemiPlot.UI.Navigation;
@@ -25,6 +26,7 @@ namespace SemiPlot.UI.MainWindow;
 internal sealed class TrendWindow : IDisposable
 {
 	private readonly TrendCoordinator _coordinator;
+	private readonly MarkerSync _markerSync;
 	private readonly TrendChartViewModel _chart;
 	private readonly AppStatusBarViewModel _statusBar;
 	private readonly MinimapViewModel _minimap;
@@ -35,6 +37,7 @@ internal sealed class TrendWindow : IDisposable
 
 	private TrendWindow(
 		TrendCoordinator coordinator,
+		MarkerSync markerSync,
 		TrendChartViewModel chart,
 		AppStatusBarViewModel statusBar,
 		MinimapViewModel minimap,
@@ -45,6 +48,7 @@ internal sealed class TrendWindow : IDisposable
 		MainWindowViewModel viewModel)
 	{
 		_coordinator = coordinator;
+		_markerSync = markerSync;
 		_chart = chart;
 		_statusBar = statusBar;
 		_minimap = minimap;
@@ -70,12 +74,16 @@ internal sealed class TrendWindow : IDisposable
 		var messagePanel = serviceProvider.GetRequiredService<MessagePanelViewModel>();
 		var penCatalogueEditor = serviceProvider.GetRequiredService<IPenCatalogueEditor>();
 		var archiveRowReader = serviceProvider.GetRequiredService<IArchiveRowReader>();
+		var markerStore = serviceProvider.GetRequiredService<IMarkerStore>();
 		var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
 
 		var coordinator = new TrendCoordinator(dataProvider, startupData.Pens, dataScheduler, uiScheduler);
+		var markerSync = new MarkerSync(
+			markerStore, messagePanel, uiScheduler, loggerFactory.CreateLogger<MarkerSync>());
 
 		var chart = new TrendChartViewModel(
 			coordinator,
+			markerSync,
 			dataScheduler,
 			uiScheduler,
 			archiveZone,
@@ -127,11 +135,22 @@ internal sealed class TrendWindow : IDisposable
 			launcher);
 
 		catalogueSync.Start();
+		markerSync.Start();
+		markerSync.ReadNow();
 		chart.RequestInitialHistory();
 		StartExtentLoad(minimap, messagePanel, minimapLogger, uiScheduler);
 
 		return new TrendWindow(
-			coordinator, chart, statusBar, minimap, catalogueSync, navigationBar, legend, catalogueApplier, viewModel);
+			coordinator,
+			markerSync,
+			chart,
+			statusBar,
+			minimap,
+			catalogueSync,
+			navigationBar,
+			legend,
+			catalogueApplier,
+			viewModel);
 	}
 
 	public void Dispose()
@@ -144,6 +163,7 @@ internal sealed class TrendWindow : IDisposable
 		_minimap.Dispose();
 		_statusBar.Dispose();
 		_chart.Dispose();
+		_markerSync.Dispose();
 		_coordinator.Dispose();
 	}
 

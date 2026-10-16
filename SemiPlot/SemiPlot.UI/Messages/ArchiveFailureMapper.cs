@@ -215,6 +215,12 @@ public static class ArchiveFailureMapper
 				Resources.FailureArchiveRowGoneRemedy,
 				MessageSeverity.Warning),
 
+			ArchiveFault.MarkerGone => new ArchiveFailureView(
+				Resources.FailureArchiveMarkerGoneTitle,
+				Resources.FormatFailureArchiveMarkerGoneDetail(archive, error.Detail),
+				Resources.FailureArchiveMarkerGoneRemedy,
+				MessageSeverity.Warning),
+
 			_ => MapReadFailed(error, archive)
 		};
 	}

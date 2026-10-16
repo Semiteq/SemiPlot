@@ -41,6 +41,14 @@ public sealed class CompositionRootTests
 	}
 
 	[Fact]
+	public void Container_ResolvesTheMarkerStore()
+	{
+		using var provider = BuildContainer();
+
+		provider.GetRequiredService<IMarkerStore>().Should().BeOfType<PostgresMarkerStore>();
+	}
+
+	[Fact]
 	public void Container_ResolvesTheSchedulerAndLogging()
 	{
 		using var provider = BuildContainer();

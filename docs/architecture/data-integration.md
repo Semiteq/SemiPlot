@@ -27,9 +27,10 @@ Two rules follow and are not negotiable: SemiPlot never writes to vendor objects
 
 ## The provider surface
 
-The UI reads through `IDataProvider` (`SemiPlot.Core/Data/IDataProvider.cs`) and the pen editor alone
-writes, through `IPenCatalogueEditor` (The pen catalogue editor, below). Both interfaces and their
-DTOs live in `SemiPlot.Core`; each concrete provider is a sibling `SemiPlot.DataSource.*`
+The UI reads through `IDataProvider` (`SemiPlot.Core/Data/IDataProvider.cs`), and two write paths sit
+apart from it: the pen editor writes through `IPenCatalogueEditor` (The pen catalogue editor, below),
+and the chart's time markers are read and written through `IMarkerStore` (The marker store, below). The
+interfaces and their DTOs live in `SemiPlot.Core`; each concrete provider is a sibling `SemiPlot.DataSource.*`
 project, so Core never references a data source. `PostgresDataProvider` in
 `SemiPlot.DataSource.Postgres` is the only implementation of `IDataProvider`; tests build fakes
 against the interface.
@@ -152,9 +153,11 @@ settings columns and no `INSERT` or `DELETE` on `semiplot_tags` (`postgres-insta
 `PenCatalogueEditorSurfaceTests` pins the seven method names.
 
 The read interface stays read-only because the chart consumes it. A write member on `IDataProvider`
-would put a write in reach of every chart consumer; with the write path apart, `Chart/` and `Legend/`
-never name `IPenCatalogueEditor`, `IDataProvider` carries no `Insert`, `Update`, `Write` or `Save`, and
-two greps in `AGENTS.md` hold both. An axis the operator rescales stays a session edit (`charting.md`).
+would put a write in reach of every chart consumer; with the write paths apart, `Chart/` and `Legend/`
+name neither `IPenCatalogueEditor` nor `IMarkerStore`, `IDataProvider` carries no `Insert`, `Update`,
+`Write` or `Save`, and greps in `AGENTS.md` hold both. The chart writes time markers only, through its own
+port `Chart/IMarkerChannel` (The marker store, below). An axis the operator rescales stays a session edit
+(`charting.md`).
 
 `PostgresPenCatalogueEditor` in `SemiPlot.DataSource.Postgres` is the only implementation.
 `AddPostgresData()` registers it by factory beside `IDataProvider`, over the same `NpgsqlDataSource`
@@ -246,13 +249,72 @@ machine, and the last write wins per column. The read side keeps three rules for
 
 A read that adds or removes a pen moves the live edge onto the new pen set (Realtime, below).
 
+## The marker store
+
+A time marker is a vertical line the operator places on the chart at a moment
+(`trend-interaction.md#the-time-markers`). It is one row of `semiplot_markers`, a SemiBase table:
+
+| Column | Type | Use |
+| --- | --- | --- |
+| `id` | `bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY` | The marker's key; the server assigns it |
+| `t` | `timestamptz NOT NULL` | The marker's moment, an exact instant (Time boundary, below) |
+| `label` | `text CHECK (char_length(label) BETWEEN 1 AND 80)` | Optional: no label is `NULL`, and the check refuses `''` |
+
+The table has no index, because every read takes all of it. It is not partitioned and is outside any
+retention, so a marker outlives the day partition it points into. SemiBase v0.6.0 provisions it and grants
+`semiplot` `SELECT, INSERT, UPDATE, DELETE` on it (`postgres-instance.md#the-semiplot-role`).
+
+```csharp
+public interface IMarkerStore
+{
+    Task<Result<IReadOnlyList<StoredMarker>>> ReadAsync(CancellationToken cancellationToken = default);
+    Task<Result<long>> AddAsync(DateTime timeUtc, string? label);
+    Task<Result> MoveAsync(StoredMarker marker, DateTime timeUtc);
+    Task<Result> RenameAsync(StoredMarker marker, string? label);
+    Task<Result> DeleteAsync(StoredMarker marker);
+}
+
+public sealed record StoredMarker(long Id, DateTime TimeUtc, string? Label);
+```
+
+`StoredMarker` is one row as stored: `TimeUtc` has `DateTimeKind.Utc`, and a null `Label` is a stored
+`NULL`. `PostgresMarkerStore` in `SemiPlot.DataSource.Postgres` is the only implementation.
+`AddPostgresData()` registers it by factory as a singleton beside the editor, over the same
+`NpgsqlDataSource`, so the one `semiplot` role and connection string serve it too. Its one consumer is
+`Markers/MarkerSync` (`overview.md#the-live-markers`). The chart names no Core interface for markers: it
+reads and writes through `Chart/IMarkerChannel`, its own port, which `MarkerSync` implements.
+
+| Operation | Constant | What the statement keeps |
+| --- | --- | --- |
+| `ReadAsync` | `StoredMarkers` | `SELECT id, t, label FROM semiplot_markers ORDER BY t, id`: the whole table, in the order the chart keeps. |
+| `AddAsync` | `AddMarker` | `INSERT ... RETURNING id`; the result is the new marker's id. |
+| `MoveAsync` | `MoveMarker` | `UPDATE semiplot_markers SET t = @t WHERE id = @id`. |
+| `RenameAsync` | `RenameMarker` | `UPDATE semiplot_markers SET label = @label WHERE id = @id`; a null label binds `NULL`. |
+| `DeleteAsync` | `DeleteMarker` | One row by id. Idempotent: a delete that touches no row succeeds, because the operator wanted the marker gone, as `RemoveMembership` does. |
+
+A move or a rename must touch exactly one row. None touched means another window or an administrator
+removed the marker, and the store returns `ArchiveFault.MarkerGone`, never success. `t` binds as
+`NpgsqlDbType.TimestampTz` with `DateTimeKind.Utc` and reads back with `Kind = Utc`; no
+`ArchiveTimeConverter` runs on the path. Every relation-naming failure carries `MarkersRelation`,
+`semiplot_markers` (Error semantics, below). A write kind names the marker's label, or, for a marker with
+none, its moment as local `yyyy-MM-dd HH:mm:ss` in the current culture: a refused add or rename names the
+label asked for, and `MarkerGone` and every other refusal name the marker as stored. The chart's label
+editor trims the text and caps it at 80 characters, so the chart never reaches the check; a direct write
+that does gets `ValueRejected`.
+
+`ReadAsync` takes the read loop's stop token and rethrows `OperationCanceledException` ahead of the
+mapper; the four writes take no token. `ArchiveStatementTextTests` does not pin these constants.
+`MarkerStoreTests` (`SemiPlot.Tests.Integration`) runs every one of them as `semiplot` against a
+`CloneSource.Provisioned` clone, which also proves the grant, and pins the round trip of both UTC instants
+of the repeated autumn hour.
+
 ## Operation to statement
 
-Every statement the provider, the editor and the row reader issue is a constant in
+Every statement the provider, the editor, the row reader and the marker store issue is a constant in
 `SemiPlot.DataSource.Postgres/ArchiveStatements.cs`; parameters are always bound. The bench seeder
 and the test harness own SQL of their own (`bench.md`). `ArchiveStatementTextTests` pins each
 provider constant below clause by clause; `ExplainPlanTests` asserts each plan's shape against a
-container. The editor's statements are in the table above.
+container. The editor's and the marker store's statements are in their own tables above.
 
 | Operation | Constant | What the statement must keep, and why |
 | --- | --- | --- |
@@ -795,14 +857,15 @@ The archive days read (`ArchiveDays`) was measured 2026-10-15 on the `SemiPlot/b
 
 ## Time boundary
 
-The archive stores naive local wall-clock time; everything above the provider is UTC.
+The archive stores naive local wall-clock time; everything above the provider is UTC. The one column
+SemiPlot reads that is not naive local is `semiplot_markers.t`, a `timestamptz` (The marker store, above).
 
 - Reading: `t` is interpreted in the machine's time zone and converted to
   `DateTime(Kind = Utc)` by `ArchiveTimeConverter.ToUtc`.
 - Query bounds: UTC window edges are converted back to naive local (`ToArchiveLocal`) before binding.
 - The conversion happens only at the provider edge. Display-local rendering is a separate, later
   conversion in `LocalTimeAxis`.
-- Two reads skip `ArchiveTimeConverter`: the export path and the archive days read.
+- Three paths skip `ArchiveTimeConverter`: the export path, the archive days read and the marker store.
 - The export path: `PostgresArchiveRowReader` takes no `ArchiveTimeConverter`. It
   binds the range bounds as `Timestamp` values as typed, reads `t` with `GetDateTime`
   (`DateTimeKind.Unspecified`) and returns it in `StoredArchiveRow.Time` unconverted. The export window
@@ -818,6 +881,15 @@ The archive stores naive local wall-clock time; everything above the provider is
   panel's typed edges go the other way through `TimeZoneInfo.ConvertTimeToUtc` in the same zone: an
   ambiguous autumn hour takes the standard offset, under the cosmetic rule below, and a time the spring
   change skips is a form problem, never converted (`trend-interaction.md#the-time-window-panel`).
+- The marker store: the viewer knows the exact instant it places a marker at, so `semiplot_markers.t` is a
+  `timestamptz` and `PostgresMarkerStore` binds it as `TimestampTz` with `Kind = Utc` and reads it back as
+  UTC, unconverted. A naive local value would be ambiguous in the repeated autumn hour; an instant is not,
+  so the store returns a moment in either half of that hour as it was written.
+  `MarkerStoreTests.AMomentWrittenAsUtcReadsBackEqualThroughTheRepeatedHour` pins both halves. No
+  `LegacyTimestampBehavior` switch is set. The chart does not reach both halves: its axis is local wall
+  clock, and `LocalTimeAxis.FromAxis` turns a pixel of the repeated hour into one instant only, so the chart
+  places a marker in that half alone, and a marker another client stored in the other half draws but takes
+  no hover, drag or menu (`trend-interaction.md#the-time-markers`).
 
 The database does not record the zone. The SCADA, its archive and the viewer share one machine, so
 the provider converts in that machine's zone `[DEC:machine-time-zone]`: `PostgresConnectionLoader`
@@ -945,11 +1017,13 @@ handler would end the forwarding for the rest of the session instead of reaching
 | Credentials refused or a grant missing (`28P01`, `28000`, `42501`) | `ArchiveFault.AccessDenied` | "The archive refused access" — the user, password or grants |
 | A relation or function a statement needs does not exist (`42P01`, `42883`) | `ArchiveFault.TableMissing` whose detail names every relation that statement touches, or `semiplot_register_new_pens()` | "The archive is not provisioned" — run `semibase site`, which creates them all |
 | The catalogue re-read fails mid-session | failed `Result`; `PenCatalogueSync` keeps its snapshot | Nothing for the first two failures in a row, one log warning each; from the third one panel entry, coalesced with the ones after it. The next success applies everything stored since the last success |
+| The marker re-read fails mid-session | failed `Result`; `MarkerSync` emits nothing and the chart keeps the markers it shows | As for the catalogue: two log warnings, then one panel entry from the third failure in a row. Against a database without `semiplot_markers` that entry is a `TableMissing` Error about 10 s after the window opens, and the chart works without markers |
 | `semiplot_tags` present but empty | empty pen list, success | The chart area's own empty state, naming `Edit` -> `Pens and groups` -> `Refresh pen list`: no key has been registered as a pen yet. Not a message-panel entry: an empty catalogue is a state, not something that happened |
 | Archive present but no rows in the window | success, empty envelope list | Empty chart, no error |
 | A check constraint refuses a written value (`23514`) | `ArchiveFault.ValueRejected` | "The archive refused the value"; the field reverts, and the message line says why |
 | A group name another group already carries (`23505`) | `ArchiveFault.NameTaken` | "The name is already taken" |
 | A write names a pen or group that is gone (`23503`, or no row touched) | `ArchiveFault.RowGone` | "The entry no longer exists"; a refresh shows what the catalogue holds now |
+| A move or rename names a time marker that is gone (no row touched) | `ArchiveFault.MarkerGone` | "The marker no longer exists"; the chart drops the marker |
 
 ### Two error planes
 
@@ -981,20 +1055,25 @@ Reading a section folder is the only file access left on the connection path, wh
 | `Unreachable` | a socket failure, a client bound firing, any `NpgsqlException` without a SQLSTATE | empty |
 | `AccessDenied` | `28P01`, `28000`, `42501` | the username |
 | `DatabaseMissing` | `3D000` | empty |
-| `TableMissing` | `42P01`, `42883` | every relation the failing statement touches: `trends` for the history and realtime reads, `semiplot_tags, trends` for the archive extent and the archive days, all three catalogue tables for the pen catalogue and every editor write; `semiplot_register_new_pens()` for the registration |
+| `TableMissing` | `42P01`, `42883` | every relation the failing statement touches: `trends` for the history and realtime reads, `semiplot_tags, trends` for the archive extent and the archive days, all three catalogue tables for the pen catalogue and every editor write, `semiplot_markers` for every marker statement; `semiplot_register_new_pens()` for the registration |
 | `ShapeUnexpected` | `42703` | the server's own message |
 | `QueryTimedOut` | `57014` | empty |
 | `ConnectionLost` | three consecutive failed poll ticks | the number of failures that raised it |
-| `ValueRejected` | `23514` on an editor write | the pen's name |
+| `ValueRejected` | `23514` on an editor or marker write | the pen's name, or the marker's label or local moment |
 | `NameTaken` | `23505` on an editor write | the group name asked for |
 | `RowGone` | `23503` on an editor write, or an update, rename or delete that touched no row | the pen or group name |
+| `MarkerGone` | a marker move or rename that touched no row | the marker's label, or its local moment |
 | `ReadFailed` | any other SQLSTATE, or a client-side throw, on a read or a write | the SQLSTATE, or empty |
 
-The write kinds come from `ArchiveExceptionMapper.MapWrite(exception, subject)`. It maps `23514`,
-`23505` and `23503` to `ValueRejected`, `NameTaken` and `RowGone` carrying `subject`, and sends every
-other exception to the read classification with `PenCatalogRelations` as its relation: every write
-touches one of those three relations, and one provisioning run creates all three. `RowGone(subject)`
-is the form for an update that touched no row. The subject is the pen's committed name for a pen
+The write kinds come from `ArchiveExceptionMapper.MapWrite(exception, subject, relation)`. It maps
+`23514`, `23505` and `23503` to `ValueRejected`, `NameTaken` and `RowGone` carrying `subject`, and sends
+every other exception to the read classification with the `relation` its caller gives, the relations the
+caller's statement touches. The pen editor passes `PenCatalogRelations`: every editor write touches one of
+those three relations, and one provisioning run creates all three. The marker store passes
+`MarkersRelation`, so a marker write against a missing table names `semiplot_markers` and no pen table.
+`RowGone(subject)` is the form for an editor update that touched no row, and `MarkerGone(subject)` the
+form for a marker move or rename that touched none; a marker's subject is in The marker store, above.
+The subject is the pen's committed name for a pen
 change, including a `Name` change; for a rename it is the new name when the server refuses it and the
 stored name when the group is gone; a delete names the group; a membership names the pen when the
 server reports the pen's key `semiplot_pen_groups_pen_id_fkey` violated, and the group otherwise. No word of either language lives in `Detail`: the mapper wraps the
@@ -1016,11 +1095,12 @@ without anyone remembering: `AccessDenied`, `TableMissing`, `DatabaseMissing` an
 are `Error`, because nothing recovers until someone changes a grant, a schema or a provisioning run;
 `Unreachable`, `ConnectionLost`, `QueryTimedOut` and `ReadFailed` are `Warning`, because the poll
 loop retries by itself. `ValueRejected`, `NameTaken` and `RowGone` are `Warning` too: the operator's
-own edit was refused, and the next edit is the remedy.
+own edit was refused, and the next edit is the remedy. `MarkerGone` is `Warning` as well: the chart
+drops the marker, and the operator adds it again if it is still needed.
 `FailureSeverityTests.EveryArchiveFault_CarriesTheSeverityTheTableNames` pins that split. `ConnectionLost` never opens the startup-failure window; it is an entry in the message panel
 under a chart that works.
 
-The eleven rows above are the `ArchiveError` arm alone. `Map` has eight further arms — the startup
+The twelve rows above are the `ArchiveError` arm alone. `Map` has eight further arms — the startup
 arguments, the log file, the configuration section, the app settings, the connection file, the
 startup read timeout, an `IExceptionalError` and the `_` fallback — and every one of them is
 `Error`, because each is reachable only at startup, where nothing recovers until the operator edits
@@ -1040,8 +1120,8 @@ recovery afterwards), the failed extent query in `Minimap/MinimapViewModel`, and
 `LoadExtentAsync` task the composition root starts. `ApplyRealtimeBatch` carries the
 try-report-continue shape that `Chart/ChartHistoryRequestDebouncer.Deliver` applies to the history it
 hands on, so one bad batch does not end the realtime subscription. `Deliver` guards that hand-off
-only: the result it reports instead is reported by a handler that guards itself. The catalogue read
-loop reports from the third failure in a row, the live edge's threshold
+only: the result it reports instead is reported by a handler that guards itself. The catalogue and
+the marker read loops report from the third failure in a row, the live edge's threshold
 (`ArchiveConnectionState.ConsecutiveFailuresBeforeFault`); the first two log a warning
 (`overview.md#a-failed-read`). The minimap's band and extent reads each report the first failure of an
 outage and log every repeat at Warning (`trend-interaction.md#archive-overview-minimap`).
@@ -1060,7 +1140,9 @@ that report from a thread of their own.
 A handler that runs detached — an Rx `onNext`, an Rx `onError`, a job posted to the UI scheduler — wraps
 its whole body, not its report alone, and hands the throw to `TryReportFailure`:
 `TrendChartViewModel.OnHistoryQueryFailed`, `MainWindow/AppStatusBarViewModel.ApplyConnectionState`,
-`Bridge/PenCatalogueSync.RunAsync`, `MainWindow/PenCatalogueApplier.ApplyAsync`, the last through
+`Bridge/ArchiveReadLoop.RunAsync`, the loop of both the catalogue and the marker sync, whose guard lets
+the cancellation of its own stop end the loop unreported, since the marker read honours that token,
+`MainWindow/PenCatalogueApplier.ApplyAsync`, the last through
 `TrendChartViewModel.ReportFailure`, the minimap band's `Minimap/MinimapBandFeed.ApplyRead`, whose guard
 covers the next read's scheduling too, and `TryRequestRead`, which the schedule and the pen-change
 subscription call, `Minimap/MinimapViewModel.TryApplyExtent` for the extent read once more after a
@@ -1095,9 +1177,17 @@ failure out of the provider takes the same channel: a `Catch` ahead of the `Publ
 one `RealtimeFailures` message and completes the batch stream, so `RealtimeBatches` never faults and
 the one failure is not counted once per subscriber of it. `TrendChartViewModel` is the only reader of
 that channel, and it reports through the guarded `ResultReporting.TryReportFailure` because an escape
-would end the subscription that feeds the live edge. `TrendChartView`'s own three subscriptions report
-through
+would end the subscription that feeds the live edge. `TrendChartView`'s own subscriptions, the marker
+layer's `Changed` among them, report through
 `TrendChartViewModel.ReportFailure`, because a pipeline that ends stops repainting the chart.
+
+A marker write reports once, in `MarkerSync`: a failed write goes to the panel through
+`ResultReporting.ReportFailure` and returns to `ChartMarkers`, which reverts the marker and
+reports nothing more. `ChartMarkers` subscribes the channel's `Reads` with
+`TrendChartViewModel.ReportFailure` as its `onError`. The chart view's marker handlers, the capture loss
+that ends a drag, the press that adds or deletes a marker, the menu's Add and Delete and the label editor's OK and key
+handlers, are `async void` with the
+whole body in `try/catch`. Each `catch` reaches the panel through `TrendChartViewModel.ReportFailure`.
 
 The pen editor reports the same way. A failed write reverts its field, puts the title
 `ArchiveFailureMapper.Map` gives the error on the form's message line, and adds the full entry to the
@@ -1117,7 +1207,8 @@ which `TimeWindowPanelViewModel.Close()` cancels when the panel closes before it
 `OperationCanceledException` for a cancellation it requested, which the provider and the row reader rethrow
 ahead of the mapper; a `57014` that reaches the mapper is therefore the server's own timeout or an
 administrator's cancel. Of `IDataProvider`, only `QueryHistoryAsync` and `QueryArchiveDaysAsync` take a
-`CancellationToken`, and of `IArchiveRowReader` its three reads; no member of `IPenCatalogueEditor` takes one.
+`CancellationToken`, and of `IArchiveRowReader` its three reads; no member of `IPenCatalogueEditor` takes one,
+and of `IMarkerStore` only `ReadAsync` does, which the marker loop cancels when its window is disposed.
 
 ## Configuration
 
@@ -1226,7 +1317,10 @@ and the argument list are in `overview.md`.
 
 No startup code calls `IPenCatalogueEditor`. The container constructs it when `TrendWindow.Build`
 resolves it inside `.AfterSetup(...)`, and its constructor issues no statement. `RegisterNewPensAsync`
-has one caller, `PenEditorViewModel`, so every write the viewer issues follows an operator action.
+has one caller, `PenEditorViewModel`, so every write the viewer issues follows an operator action. No
+startup step reads or writes a marker either: `TrendWindow.Build` starts `MarkerSync` and asks for its
+first read, which runs asynchronously, so a database without `semiplot_markers` never blocks the start,
+and every marker write follows a gesture on the chart.
 
 ## Field triage
 

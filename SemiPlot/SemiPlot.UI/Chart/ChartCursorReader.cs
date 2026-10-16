@@ -17,4 +17,14 @@ public sealed class ChartCursorReader(
 
 		return _cursorReadout.ReadAt(cursorTime, visibleEnvelopes);
 	}
+
+	/// <summary>One visible pen's value at <paramref name="time"/>; null for a hidden pen or a gap.</summary>
+	public double? ReadPenAt(int penId, DateTime time)
+	{
+		return pensById.TryGetValue(penId, out var state)
+			&& state.IsVisible
+			&& envelopesById.TryGetValue(penId, out var envelope)
+				? CursorReadoutModel.ReadPenAt(time, envelope)
+				: null;
+	}
 }

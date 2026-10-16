@@ -50,7 +50,7 @@ public sealed class ChartPressRouterTests
 		LeftButtonTool tool,
 		ChartPressAction expected)
 	{
-		ChartPressRouter.Route(region, modifiers, tool).Should().Be(expected);
+		ChartPressRouter.Route(region, modifiers, tool, clickCount: 1).Should().Be(expected);
 	}
 
 	[Theory]
@@ -64,7 +64,73 @@ public sealed class ChartPressRouterTests
 		LeftButtonTool tool,
 		ChartPressAction expected)
 	{
-		ChartPressRouter.Route(ChartPressRegion.TimeAxis, modifiers, tool).Should().Be(expected);
+		ChartPressRouter.Route(ChartPressRegion.TimeAxis, modifiers, tool, clickCount: 1).Should().Be(expected);
+	}
+
+	[Theory]
+	[InlineData(KeyModifiers.None, LeftButtonTool.Pan, ChartPressAction.DragMarker)]
+	[InlineData(KeyModifiers.Shift, LeftButtonTool.Pan, ChartPressAction.DragMarker)]
+	[InlineData(KeyModifiers.None, LeftButtonTool.DeltaPlacement, ChartPressAction.PlaceDeltaCursor)]
+	[InlineData(KeyModifiers.Control, LeftButtonTool.Pan, ChartPressAction.ShiftActivePen)]
+	[InlineData(KeyModifiers.Control, LeftButtonTool.DeltaPlacement, ChartPressAction.ShiftActivePen)]
+	public void Route_SendsAMarkerPressAfterCtrlAndTheDeltaTool(
+		KeyModifiers modifiers,
+		LeftButtonTool tool,
+		ChartPressAction expected)
+	{
+		ChartPressRouter.Route(ChartPressRegion.Marker, modifiers, tool, clickCount: 1).Should().Be(expected);
+	}
+
+	[Theory]
+	[InlineData(ChartPressRegion.DataArea, KeyModifiers.None, LeftButtonTool.Pan, 2, ChartPressAction.AddMarker)]
+	[InlineData(ChartPressRegion.DataArea, KeyModifiers.Shift, LeftButtonTool.Pan, 2, ChartPressAction.AddMarker)]
+	[InlineData(ChartPressRegion.DataArea, KeyModifiers.None, LeftButtonTool.Pan, 3, ChartPressAction.PanOrPickPen)]
+	[InlineData(ChartPressRegion.Marker, KeyModifiers.None, LeftButtonTool.Pan, 2, ChartPressAction.DeleteMarker)]
+	[InlineData(ChartPressRegion.Marker, KeyModifiers.None, LeftButtonTool.Pan, 3, ChartPressAction.DragMarker)]
+	[InlineData(
+		ChartPressRegion.Marker,
+		KeyModifiers.None,
+		LeftButtonTool.DeltaPlacement,
+		2,
+		ChartPressAction.PlaceDeltaCursor)]
+	[InlineData(
+		ChartPressRegion.Marker,
+		KeyModifiers.Control,
+		LeftButtonTool.Pan,
+		2,
+		ChartPressAction.ShiftActivePen)]
+	[InlineData(
+		ChartPressRegion.DataArea,
+		KeyModifiers.None,
+		LeftButtonTool.DeltaPlacement,
+		2,
+		ChartPressAction.PlaceDeltaCursor)]
+	[InlineData(
+		ChartPressRegion.DataArea,
+		KeyModifiers.Control,
+		LeftButtonTool.Pan,
+		2,
+		ChartPressAction.ShiftActivePen)]
+	[InlineData(
+		ChartPressRegion.TimeAxis,
+		KeyModifiers.None,
+		LeftButtonTool.Pan,
+		2,
+		ChartPressAction.PanOrEditTimeWindow)]
+	[InlineData(
+		ChartPressRegion.ActivePenAxis,
+		KeyModifiers.None,
+		LeftButtonTool.Pan,
+		2,
+		ChartPressAction.EditAxisScale)]
+	public void Route_TurnsOnlyTheSecondClickOfAPanPressIntoAnAddOrADelete(
+		ChartPressRegion region,
+		KeyModifiers modifiers,
+		LeftButtonTool tool,
+		int clickCount,
+		ChartPressAction expected)
+	{
+		ChartPressRouter.Route(region, modifiers, tool, clickCount).Should().Be(expected);
 	}
 
 	[Theory]

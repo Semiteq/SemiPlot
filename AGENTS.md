@@ -124,7 +124,8 @@ Two projects, split on one axis: crosses a machine boundary (a socket or a conta
   `SemiPlot.Tests.Unit/UI/HeadlessInput.cs` (`Click`, `Clear`, `Type`, `Press`) on the `TopLevel` that
   shows the control; no test class carries a helper of its own for these four gestures.
   `git grep -nE "static void (Click|Clear|Type|Press)\(" -- SemiPlot/SemiPlot.Tests.Unit` prints only
-  `HeadlessInput.cs` lines. A hover, a drag or a held mouse button is outside the rule.
+  `HeadlessInput.cs` lines. A right click takes `Click`'s `MouseButton` overload. A hover, a drag or a
+  held mouse button is outside the rule.
 - Neither project references the other. Core, `SemiPlot.DataSource.Postgres` and `SemiPlot.UI` each
   name both in `InternalsVisibleTo`.
 - `SemiPlot.Tests.Unit` sets `failSkips` in `xunit.runner.json`, so no gated test may live there.
@@ -139,9 +140,12 @@ Two projects, split on one axis: crosses a machine boundary (a socket or a conta
   that lands schedules the next 2-60 s ahead, so over `ImmediateScheduler` and a synchronous fake it
   reads forever once an extent and a drawn pen exist, and `TestScheduler.Start()` never returns after a
   band read landed. A test builds it over a `TestScheduler` and never calls `Start()`
-  (`UI/Minimap/MinimapStand.cs`). A headless test that realises the chart never passes an immediate
-  UI scheduler, because a history result can then raise the redraw off the UI thread and the view's
-  `RequestAnimationFrame` throws there; it passes a `TestScheduler` or `AvaloniaScheduler.Instance`
+  (`UI/Minimap/MinimapStand.cs`). `MarkerSync` runs the same `Bridge/ArchiveReadLoop` as
+  `PenCatalogueSync` and hangs the same way; a test builds it over a `TestScheduler` and advances one
+  tick after `Start()` (`UI/Markers/MarkerSyncTests.cs`). A headless test that realises the chart never
+  passes an immediate UI scheduler, because a history result can then raise the redraw off the UI thread
+  and the view's `RequestAnimationFrame` throws there; it passes a `TestScheduler` or
+  `AvaloniaScheduler.Instance`
   (`docs/architecture/testing-strategy.md#the-ui-scheduler-in-a-realised-view`).
 - The chart view redraws on an animation frame. A test drives one frame as
   `Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); Dispatcher.UIThread.RunJobs();`
@@ -266,8 +270,8 @@ No abbreviations in names.
 - `AddPostgresData()` registers the bare data `IScheduler` (`DefaultScheduler.Instance`). The UI
   scheduler is not a second container registration: `App` reads the static
   `AvaloniaScheduler.Instance` and passes it explicitly to `TrendWindow.Build`, which hands it to the
-  coordinator, the chart, the minimap, `PenCatalogueSync` and the `CsvExportViewModel` factory it passes
-  to `MainWindowViewModel`. `RxApp` does
+  coordinator, `MarkerSync`, the chart, the minimap, `PenCatalogueSync` and the `CsvExportViewModel`
+  factory it passes to `MainWindowViewModel`. `RxApp` does
   not exist in the installed ReactiveUI 23.2.28 — its schedulers moved to `RxSchedulers` and its
   exception handler to `RxState`; this repository reads neither.
 - **Nothing may construct a ReactiveUI object before `AppBuilder.Setup()`.** `RxState.DefaultExceptionHandler`
@@ -327,9 +331,13 @@ No abbreviations in names.
   (`ChartPressAction.ShiftActivePen`), and Ctrl is a held key, not a `LeftButtonTool` value. A press on
   the time axis band is the last pre-branch, after Ctrl and ahead of the tool
   (`ChartPressAction.PanOrEditTimeWindow`): a drag pans, and a release inside the slop opens the time
-  window panel (`docs/architecture/trend-interaction.md#the-time-window-panel`). The bar's
-  `IsSticky` has a single writer (the `WindowChanged` handler refreshing from `Navigation.IsSticky`) — do
-  not reintroduce imperative `IsSticky =` assignments.
+  window panel (`docs/architecture/trend-interaction.md#the-time-window-panel`). A press on a time
+  marker is the last branch, read after the tool (`ChartPressAction.DragMarker`). A second click where
+  a single one would pan or pick adds a marker (`ChartPressAction.AddMarker`), and one where it would
+  drag a marker deletes it (`ChartPressAction.DeleteMarker`,
+  `docs/architecture/trend-interaction.md#the-time-markers`). The bar's `IsSticky` has a single writer
+  (the `WindowChanged` handler refreshing from `Navigation.IsSticky`) — do not reintroduce imperative
+  `IsSticky =` assignments.
 - A checkable menu item reads its flag `Mode=OneWay` and writes it only through the command it
   invokes, so the command is the flag's single writer. A two-way `IsChecked` would make the control a
   second writer and the two halves would drift. The sidebar's visibility box follows the same rule: it
@@ -337,7 +345,9 @@ No abbreviations in names.
   the chart's `SetPenVisibility`, the flag's one writer.
 - A menu item without a command, or without children, is not added. A disabled placeholder renders
   and does nothing, and it also forces an exemption into `AppMenuBarTests`, which walks the declared
-  `Items` and requires every leaf to carry one or the other.
+  `Items` and requires every leaf to carry one or the other. The chart's two marker menus, keyed
+  `MenuFlyout`s in `TrendChartView.axaml`, are no placeholders: each item runs a `Click` handler that acts
+  on the moment and the marker under the pointer.
 - The sidebar row is read-only but for its visibility box, and `TrendLegendViewTests` gates it as an
   allowlist over the realised row template: every control in it is a `Border`, `Grid`, `TextBlock` or
   `CheckBox`, and exactly one `CheckBox` is present. `ThePanel_RealisesNoTextEditor` gates the panel's
@@ -349,6 +359,10 @@ No abbreviations in names.
   and `MainWindow/PenCatalogueApplier` hands each read to the chart, which compares it with the pens it
   shows, then rebuilds the sidebar. The chart is never rebuilt whole
   (`docs/architecture/overview.md#the-live-catalogue`).
+- A stored time marker reaches the running chart through `Markers/MarkerSync` and no other route: it
+  re-reads `IMarkerStore.ReadAsync` every 5 s and on `ReadNow()` after each marker write, and
+  `Chart/ChartMarkers` reconciles each read into `Core/Trends/MarkerSet`, which keeps a marker
+  with a write in flight as the window shows it (`docs/architecture/overview.md#the-live-markers`).
 - Every chart history request comes from `Chart/ChartHistoryPlanner.Next` and names the visible pens
   only; no caller builds a `HistoryRequest` of its own
   (`docs/architecture/data-integration.md#what-one-history-query-covers`).
@@ -373,12 +387,17 @@ No abbreviations in names.
 - `IDataProvider` + its DTOs stay in `SemiPlot.Core`; every concrete provider lives in its own
   `SemiPlot.DataSource.*` project (`SemiPlot.DataSource.Postgres` is the only one). Core must not
   reference a data-source project; a further provider slots in as a sibling without touching Core.
-- The write path is its own interface and `IDataProvider` stays read-only. `IPenCatalogueEditor`,
+- Each write path is an interface of its own and `IDataProvider` stays read-only. `IPenCatalogueEditor`,
   `PenCatalogue` and `PenSettingChange` live in `SemiPlot.Core/Data`; `PostgresPenCatalogueEditor` lives
   in `SemiPlot.DataSource.Postgres`, which `AddPostgresData()` registers beside the provider over the
-  one `NpgsqlDataSource` (`docs/architecture/data-integration.md#the-pen-catalogue-editor`). The chart
-  never writes, and this prints nothing:
-  `git grep -l "IPenCatalogueEditor" -- SemiPlot/SemiPlot.UI/Chart SemiPlot/SemiPlot.UI/Legend`.
+  one `NpgsqlDataSource` (`docs/architecture/data-integration.md#the-pen-catalogue-editor`).
+  `IMarkerStore` and `StoredMarker` live in `SemiPlot.Core/Data` as well, and `AddPostgresData()`
+  registers `PostgresMarkerStore` beside the editor
+  (`docs/architecture/data-integration.md#the-marker-store`).
+  The chart writes time markers only, through its own port `Chart/IMarkerChannel`, which
+  `Markers/MarkerSync` implements; both of these print nothing:
+  `git grep -l "IPenCatalogueEditor" -- SemiPlot/SemiPlot.UI/Chart SemiPlot/SemiPlot.UI/Legend` and
+  `git grep -l "IMarkerStore" -- SemiPlot/SemiPlot.UI/Chart SemiPlot/SemiPlot.UI/Legend`.
 - The export reads through `IArchiveRowReader` in `SemiPlot.Core/Data`, implemented by
   `PostgresArchiveRowReader` and registered by `AddPostgresData()` beside the editor. It works in the
   archive's wall-clock time and, with `IDataProvider.QueryArchiveDaysAsync`, is one of the two reads that
@@ -388,7 +407,9 @@ No abbreviations in names.
   resolves it, and its constructor issues no statement.
   `RegisterNewPensAsync` has one caller, `PenEditorViewModel`:
   `git grep -l "RegisterNewPensAsync" -- SemiPlot/SemiPlot.UI` prints only
-  `SemiPlot/SemiPlot.UI/PenEditor/PenEditorViewModel.cs`.
+  `SemiPlot/SemiPlot.UI/PenEditor/PenEditorViewModel.cs`. No startup code reads or writes a marker:
+  `TrendWindow.Build` calls `MarkerSync.Start()` and then `ReadNow()`, an asynchronous read, so a missing
+  `semiplot_markers` never blocks the start.
 - Every history read of `SemiPlot.DataSource.Postgres` goes through `BucketedHistoryWindow`: the
   server reduces each layer to one row per column per pen (minimum, maximum, the newest non-null
   sample, a break flag), `BucketedRowFold` maps the rows onto `PenHistoryEnvelope`, and no decimator
@@ -412,8 +433,8 @@ No abbreviations in names.
   stays synchronous, pure and unit-testable, and nothing opens a second connection to enrich the
   error. Each read supplies every relation its statement touches, which the detail line names: one
   relation for the history and realtime reads, `semiplot_tags, trends` for the archive extent and the
-  archive days, and all
-  three of `semiplot_tags`, `semiplot_groups` and `semiplot_pen_groups` for the pen catalogue.
+  archive days, all three of `semiplot_tags`, `semiplot_groups` and `semiplot_pen_groups` for the pen
+  catalogue, and `semiplot_markers` for every marker read and write.
 
 ---
 

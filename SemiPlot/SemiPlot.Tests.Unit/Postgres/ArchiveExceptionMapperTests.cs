@@ -196,6 +196,18 @@ public sealed class ArchiveExceptionMapperTests
 		error.Detail.Should().Be(ArchiveStatements.PenCatalogRelations);
 	}
 
+	[Fact]
+	public void AWriteToAMissingRelationNamesTheRelationItsCallerGave()
+	{
+		const string Relation = "semiplot_markers";
+
+		var error = Mapper().MapWrite(Postgres("42P01"), "Etch start", Relation)
+			.Should().BeOfType<ArchiveError>().Which;
+
+		error.Kind.Should().Be(ArchiveFault.TableMissing);
+		error.Detail.Should().Be(Relation);
+	}
+
 	[Theory]
 	[InlineData("42501", ArchiveFault.AccessDenied)]
 	[InlineData("57014", ArchiveFault.QueryTimedOut)]
@@ -226,6 +238,18 @@ public sealed class ArchiveExceptionMapperTests
 		AssertEndpoint(error);
 	}
 
+	[Fact]
+	public void MarkerGoneCarriesTheSubjectAndTheEndpoint()
+	{
+		const string Subject = "Etch start";
+
+		var error = Mapper().MarkerGone(Subject);
+
+		error.Kind.Should().Be(ArchiveFault.MarkerGone);
+		error.Detail.Should().Be(Subject);
+		AssertEndpoint(error);
+	}
+
 	private static PostgresException Postgres(string sqlState)
 	{
 		return new PostgresException("the server said so", "ERROR", "ERROR", sqlState);
@@ -243,7 +267,8 @@ public sealed class ArchiveExceptionMapperTests
 
 	private static ArchiveError MapWrite(Exception exception, string subject)
 	{
-		return Mapper().MapWrite(exception, subject).Should().BeOfType<ArchiveError>().Which;
+		return Mapper().MapWrite(exception, subject, ArchiveStatements.PenCatalogRelations)
+			.Should().BeOfType<ArchiveError>().Which;
 	}
 
 	private static void AssertEndpoint(ArchiveError error)

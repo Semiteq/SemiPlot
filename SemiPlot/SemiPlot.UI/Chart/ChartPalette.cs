@@ -8,7 +8,9 @@ using Color = ScottPlot.Color;
 
 namespace SemiPlot.UI.Chart;
 
-/// <summary>Paints the five ScottPlot surfaces the library draws from its own defaults.</summary>
+/// <summary>
+/// Paints the five ScottPlot surfaces the library draws from its own defaults, and resolves the marker colours.
+/// </summary>
 public static class ChartPalette
 {
 	private const string FigureBackgroundKey = "AppPanelBackgroundBrush";
@@ -16,6 +18,8 @@ public static class ChartPalette
 	private const string GridLineKey = "AppSubtleLineBrush";
 	private const string MinorGridLineKey = "AppMinorGridLineBrush";
 	private const string AxisKey = "AppSecondaryForegroundBrush";
+	private const string MarkerLineKey = "AppMarkerLineBrush";
+	private const string MarkerLabelKey = "AppMarkerLabelBrush";
 
 	public static void Apply(Plot plot, IResourceHost resources, ThemeVariant variant)
 	{
@@ -38,6 +42,14 @@ public static class ChartPalette
 			axis.MinorTickStyle.Color = axisColor;
 			axis.FrameLineStyle.Color = axisColor;
 		}
+	}
+
+	public static MarkerPalette MarkerColors(IResourceHost resources, ThemeVariant variant)
+	{
+		return new MarkerPalette(
+			Resolve(resources, variant, MarkerLineKey),
+			Resolve(resources, variant, MarkerLabelKey),
+			Resolve(resources, variant, DataBackgroundKey));
 	}
 
 	private static Color Resolve(IResourceHost resources, ThemeVariant variant, string key)

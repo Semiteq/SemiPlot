@@ -1,6 +1,8 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Threading;
 
 using AwesomeAssertions;
@@ -85,6 +87,27 @@ internal static class ChartViewTestBuilder
 		};
 	}
 
+	/// <summary>A point of the plot control in the window's client coordinates, where headless input lands.</summary>
+	internal static Point ToWindow(AvaPlot plotControl, Window window, Point plotPoint)
+	{
+		return plotControl.TranslatePoint(plotPoint, window)
+			?? throw new InvalidOperationException("The plot control is not in the window's visual tree.");
+	}
+
+	/// <summary>The pointer of the next press on the window, to drop its capture the way the platform does.</summary>
+	internal static Func<IPointer> CapturePointerOfNextPress(Window window)
+	{
+		IPointer? pressedPointer = null;
+		window.AddHandler(
+			InputElement.PointerPressedEvent,
+			(_, eventArgs) => pressedPointer = eventArgs.Pointer,
+			RoutingStrategies.Bubble,
+			handledEventsToo: true);
+
+		return () => pressedPointer
+					?? throw new InvalidOperationException("No pointer press reached the window.");
+	}
+
 	/// <summary>One render pulse: docs/architecture/testing-strategy.md#frames-in-a-realised-view.</summary>
 	internal static void DriveOneFrame()
 	{
@@ -93,12 +116,13 @@ internal static class ChartViewTestBuilder
 		Dispatcher.UIThread.RunJobs();
 	}
 
-	internal static TrendChartViewModel CreateLoadedViewModel()
+	internal static TrendChartViewModel CreateLoadedViewModel(IMarkerChannel? markerChannel = null)
 	{
 		// AvaloniaScheduler, as in production: docs/architecture/testing-strategy.md#the-ui-scheduler-in-a-realised-view.
 		var viewModel = ChartTestBuilder.CreateViewModel(
 			ChartTestBuilder.RealtimeInterval,
-			uiScheduler: AvaloniaScheduler.Instance).ViewModel;
+			uiScheduler: AvaloniaScheduler.Instance,
+			markerChannel: markerChannel).ViewModel;
 		var state = viewModel.AddPen(FakeDataProvider.FirstPen);
 		state.LoadHistory(
 			new PenHistoryEnvelope(

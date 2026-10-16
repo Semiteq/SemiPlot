@@ -71,6 +71,7 @@ public sealed class BreakRenderArchiveJourneyTests(
 			dataProvider, catalogue.Value, dataScheduler, ImmediateScheduler.Instance);
 		using var chart = new TrendChartViewModel(
 			coordinator,
+			new NoMarkers(),
 			dataScheduler,
 			ImmediateScheduler.Instance,
 			TimeZoneInfo.Utc,

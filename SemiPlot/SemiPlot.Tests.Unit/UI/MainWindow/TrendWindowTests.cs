@@ -2,9 +2,12 @@ using Avalonia.Headless.XUnit;
 
 using AwesomeAssertions;
 
+using FluentResults;
+
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
+using SemiPlot.Tests.Unit.UI.Markers;
 using SemiPlot.Tests.Unit.UI.PenEditor;
 using SemiPlot.Tests.Unit.UI.Startup;
 using SemiPlot.UI;
@@ -53,9 +56,37 @@ public sealed class TrendWindowTests
 		var pensQueriesBefore = stand.Provider.PensQueryCount;
 
 		stand.Dispose();
-		stand.Scheduler.AdvanceBy(PenCatalogueSync.ReadInterval.Ticks * 2);
+		stand.Scheduler.AdvanceBy(ArchiveReadLoop.ReadInterval.Ticks * 2);
 
 		stand.Provider.PensQueryCount.Should().Be(pensQueriesBefore);
+	}
+
+	[AvaloniaFact]
+	public void TheWindowReadsItsMarkersAtOnce_AndDisposingItStopsTheMarkerRead()
+	{
+		var stand = NewWindowStand();
+		stand.MarkerStore.ReadCount.Should().Be(1, "the window shows its markers right after it opens");
+
+		stand.Dispose();
+		stand.Scheduler.AdvanceBy(ArchiveReadLoop.ReadInterval.Ticks * 2);
+
+		stand.MarkerStore.ReadCount.Should().Be(1);
+	}
+
+	[AvaloniaFact]
+	public async Task TheChart_ReadsAndWritesThroughTheMarkerSyncTheWindowStarts()
+	{
+		using var stand = NewWindowStand();
+		var marker = new StoredMarker(1, new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc), "Etch start");
+		stand.MarkerStore.ReadResult = Result.Ok<IReadOnlyList<StoredMarker>>([marker]);
+		var markers = stand.ViewModel.ChartViewModel.Markers;
+
+		stand.Scheduler.AdvanceBy(ArchiveReadLoop.ReadInterval.Ticks);
+		markers.Markers.Should().Equal(marker);
+
+		await markers.DeleteAsync(marker);
+
+		stand.MarkerStore.Writes.Should().Equal(new FakeMarkerWrite.Delete(marker));
 	}
 
 	// The TestScheduler defers a fault reported as the live edge opens past Build, so the bar is bound by then.

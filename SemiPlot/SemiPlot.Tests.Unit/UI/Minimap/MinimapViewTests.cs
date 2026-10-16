@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
@@ -5,10 +6,13 @@ using Avalonia.Threading;
 
 using AwesomeAssertions;
 
+using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
 using SemiPlot.UI.Minimap;
 
 using Xunit;
+
+using Path = Avalonia.Controls.Shapes.Path;
 
 namespace SemiPlot.Tests.Unit.UI.Minimap;
 
@@ -41,8 +45,8 @@ public sealed class MinimapViewTests
 		var last = stand.AreaInView(stand.Named<TextBlock>("ExtentLastLabel"));
 
 		stand.StripCanvas.Children.Select(child => child.Name).Should().Equal(
-			["BandLayer", "WindowHighlight", "HoverLine"],
-			"the strip draws the band, the marker over it and the hover line over both, and no line of its own");
+			["BandLayer", "WindowHighlight", "TimeMarkerTicks", "HoverLine"],
+			"the strip draws the band, the marker and the ticks over it and the hover line over all, and no line of its own");
 		foreach (var label in new[] { first, last })
 		{
 			label.Width.Should().BePositive("each end label carries its time");
@@ -127,5 +131,26 @@ public sealed class MinimapViewTests
 
 		stand.Model.Band.Should().BeNull();
 		stand.BandLayer.Figures.Should().BeEmpty();
+	}
+
+	[AvaloniaFact]
+	public async Task TheStrip_DrawsOneFullHeightTickPerTimeMarkerInsideTheExtent()
+	{
+		using var stand = await MinimapViewStand.ShowAsync(showPens: true);
+		var quarter = MinimapGeometry.TimeAtFraction(MinimapStand.ExtentFirst, MinimapStand.ExtentLast, 0.25);
+
+		stand.Model.MarkerChannel.Push(
+			new StoredMarker(1, quarter, "1"),
+			new StoredMarker(2, MinimapStand.ExtentLast.AddDays(1.0), "2"));
+		Dispatcher.UIThread.RunJobs();
+
+		var ticks = stand.Named<Path>("TimeMarkerTicks");
+		var tick = ticks.Data.Should().BeOfType<GeometryGroup>().Subject.Children
+			.Should().ContainSingle("a marker past the extent has no place on the strip")
+			.Which.Should().BeOfType<LineGeometry>().Subject;
+		var strip = stand.StripCanvas.Bounds;
+		tick.StartPoint.Should().Be(new Point(0.25 * strip.Width, 0.0));
+		tick.EndPoint.Should().Be(new Point(0.25 * strip.Width, strip.Height));
+		ticks.IsHitTestVisible.Should().BeFalse("a press on a tick navigates as a press on the strip does");
 	}
 }

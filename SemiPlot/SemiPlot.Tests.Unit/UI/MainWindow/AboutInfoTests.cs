@@ -12,6 +12,7 @@ using Xunit;
 namespace SemiPlot.Tests.Unit.UI.MainWindow;
 
 /// <summary>What Help > About names: the run's own identity, and the dialog that shows it.</summary>
+[Collection(ProcessGlobalStateCollection.Name)]
 [Trait("Component", "UI")]
 [Trait("Area", "Chart")]
 [Trait("Category", "Unit")]

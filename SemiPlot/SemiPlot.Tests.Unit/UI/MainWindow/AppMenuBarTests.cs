@@ -23,6 +23,7 @@ using RxUnit = System.Reactive.Unit;
 
 namespace SemiPlot.Tests.Unit.UI.MainWindow;
 
+[Collection(ProcessGlobalStateCollection.Name)]
 [Trait("Component", "UI")]
 [Trait("Area", "Chart")]
 [Trait("Category", "Unit")]

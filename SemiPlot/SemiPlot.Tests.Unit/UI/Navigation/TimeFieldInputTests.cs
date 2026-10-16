@@ -11,6 +11,7 @@ using Xunit;
 
 namespace SemiPlot.Tests.Unit.UI.Navigation;
 
+[Collection(ProcessGlobalStateCollection.Name)]
 [Trait("Component", "UI")]
 [Trait("Area", "Chart")]
 [Trait("Category", "Unit")]

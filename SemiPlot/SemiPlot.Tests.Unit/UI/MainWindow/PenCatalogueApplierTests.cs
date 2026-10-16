@@ -22,6 +22,7 @@ using static SemiPlot.Tests.Unit.UI.MainWindow.MainWindowTestBuilder;
 
 namespace SemiPlot.Tests.Unit.UI.MainWindow;
 
+[Collection(ProcessGlobalStateCollection.Name)]
 [Trait("Component", "UI")]
 [Trait("Area", "Bridge")]
 [Trait("Category", "Unit")]

@@ -90,7 +90,8 @@ flowchart LR
 
 Partitions are daily ranges over `t`, named `tpYYYYmMMdDD`, with `tpdefault` catching anything that
 misses one. Rows with `t >= current_date` in `tpdefault` mean a day partition was missing at write
-time; the SCADA erases `tpdefault` at 02:00, so a check for them runs before 02:00. Its other rows are
+time; the SCADA erases `tpdefault` at 02:00 and at every project start, so a check for them runs before
+02:00 and before a project restart. Its other rows are
 normal (`scada-archive.md#reader-hazards`).
 
 The primary key is `(id, l, t)` and its leading column is `id`. Every query therefore carries the

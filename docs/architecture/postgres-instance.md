@@ -131,7 +131,7 @@ covers the set rather than ordering it.
 One operational state belongs beside them: rows with `t >= current_date` in `tpdefault` mean a day
 partition was missing at write time. The partition's other rows, the coarse layers' 1899-12-30 rows
 and, with an archive limit set, late rows of dropped days, are normal. The SCADA erases `tpdefault`
-at 02:00, so the check runs before 02:00, straight against the database at commissioning; no
+at 02:00 and at every project start, so the check runs before 02:00 and before a project restart, straight against the database at commissioning; no
 SemiPlot code reads `tpdefault` (`scada-archive.md#reader-hazards`).
 
 ## Retention and capacity

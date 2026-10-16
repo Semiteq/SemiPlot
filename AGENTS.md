@@ -339,8 +339,8 @@ No abbreviations in names.
   a single one would pan or pick adds a marker (`ChartPressAction.AddMarker`), and one where it would
   drag a marker deletes it (`ChartPressAction.DeleteMarker`,
   `docs/architecture/trend-interaction.md#the-time-markers`). The bar's `IsSticky` has a single writer
-  (the `WindowChanged` handler refreshing from `Navigation.IsSticky`) — do not reintroduce imperative
-  `IsSticky =` assignments.
+  after the constructor seeds it (the `WindowChanged` handler refreshing from `Navigation.IsSticky`) — do
+  not reintroduce imperative `IsSticky =` assignments.
 - A checkable menu item reads its flag `Mode=OneWay` and writes it only through the command it
   invokes, so the command is the flag's single writer. A two-way `IsChecked` would make the control a
   second writer and the two halves would drift. The sidebar's visibility box follows the same rule: it

@@ -16,6 +16,7 @@ namespace SemiPlot.Tests.Unit.UI.Messages;
 
 // The entry's text is asserted against the mapper's own output rather than against a literal, so a
 // reworded resx value moves both sides and only a seam that stops calling the mapper turns these red.
+[Collection(ProcessGlobalStateCollection.Name)]
 [Trait("Component", "UI")]
 [Trait("Area", "Messages")]
 [Trait("Category", "Unit")]

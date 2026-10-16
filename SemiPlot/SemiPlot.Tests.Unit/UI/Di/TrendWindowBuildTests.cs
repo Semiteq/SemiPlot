@@ -30,6 +30,7 @@ namespace SemiPlot.Tests.Unit.UI.Di;
 /// What <c>TrendWindow.Build</c> wires, driven through the real method: the panel the chart, the
 /// minimap and the status bar all report into, the connection stream the bar follows, and the catalogue read loop.
 /// </summary>
+[Collection(ProcessGlobalStateCollection.Name)]
 [Trait("Component", "UI")]
 [Trait("Area", "Di")]
 [Trait("Category", "Unit")]

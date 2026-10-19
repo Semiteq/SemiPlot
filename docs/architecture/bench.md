@@ -91,6 +91,10 @@ dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.Archiv
 Every tick appends the raw rows of the window since the previous tick, thins them into the coarse
 layers and prints both counts; `Ctrl+C` stops the loop where it waits, never inside an append.
 
+To see a live break on the stand, insert one raw row for a pen in view as `scada_writer`, with `l = 0`,
+`q = 32` and `t` past the newest row: the line ends at its value and resumes at the writer's next row
+(`data-integration.md#realtime`).
+
 - **The window is `after < t <= to`.** `LiveTailGenerator.Generate(options, after, to)` takes the
   archive's edge on the first tick and the previous tick's own instant after that. Both are instants
   the archive already accounts for, so consecutive windows partition the lattice: a restart writes no

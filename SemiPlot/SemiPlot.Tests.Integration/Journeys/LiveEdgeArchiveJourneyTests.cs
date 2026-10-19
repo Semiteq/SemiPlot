@@ -86,6 +86,44 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 		chart.Pens.Should().AllSatisfy(pen => pen.CurrentValue.Should().Be(ValueFor(pen.Pen.PenId, tick: 2)));
 	}
 
+	[AvaloniaFact]
+	public async Task ARowMarkingTheLastSampleBeforeABreakReachesTheChartAsItsValueAndThenABreak()
+	{
+		await using var stand = await OpenStandAsync();
+		var pen = stand.Catalogue[0];
+		var seededLastLocal = ArchiveProviderFactory.TimeConverter.ToArchiveLocal(stand.Extent.LastUtc);
+		var appendLocal = seededLastLocal.AddSeconds(1);
+		var appendUtc = ArchiveProviderFactory.TimeConverter.ToUtc(appendLocal);
+		var value = ValueFor(pen.PenId, tick: 1);
+		var delivery = stand.Batches.NextBatch();
+
+		await AppendAsync(appendLocal, [pen], tick: 1, ArchiveRow.LastBeforeBreakQuality);
+		await delivery.WaitAsync(GateBound, TestContext.Current.CancellationToken);
+
+		// The batch is what the poll delivered, which no history read can race.
+		var batch = stand.Batches.Batches.Should().ContainSingle().Subject;
+		var breakUtc = appendUtc.AddMilliseconds(1);
+
+		batch.Timestamps.Should().Equal([appendUtc, breakUtc]);
+		var penValues = batch.Pens.Should().ContainSingle().Subject;
+		penValues.PenId.Should().Be(pen.PenId);
+		penValues.Values.Should().Equal([value, null]);
+		stand.Chart.Navigation.To.Should().Be(breakUtc, "the break is the batch's last timestamp");
+
+		var state = stand.Chart.Pens.Should().ContainSingle(candidate => candidate.Pen.PenId == pen.PenId).Subject;
+		var columns = state.Line.SnapshotColumns();
+
+		// A landed history read may add a NaN ahead of the break:
+		// docs/architecture/charting.md#per-pen-plottable-envelopeline
+		var lastRealColumn = columns.Last(column => !double.IsNaN(column.Center));
+
+		lastRealColumn.X.Should().Be(LocalTimeAxis.ToAxis(appendUtc));
+		lastRealColumn.Center.Should().Be(value);
+		columns[^1].X.Should().Be(LocalTimeAxis.ToAxis(breakUtc));
+		double.IsNaN(columns[^1].Center).Should().BeTrue("the row marks the last sample before a break");
+		state.CurrentValue.Should().Be(value);
+	}
+
 	// The archive is per-variable and change-based with a deadband, so one poll tick spans as many distinct
 	// timestamps as there are variables; a pen with no sample at a timestamp is left alone rather than
 	// appended as null, which would draw a break the archive never recorded.
@@ -120,7 +158,7 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 		});
 	}
 
-	// Only the raw layer appends a realtime sample as a point of its own; a coarse layer folds it
+	// Only the raw layer appends a realtime value as a point of its own; a coarse layer folds a value
 	// into the last column instead, and the assertions read the appended point.
 	private async Task<LiveEdgeStand> OpenStandAsync()
 	{
@@ -192,7 +230,11 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 	// One row per variable, written through the appending path ArchiveWriter takes for a follow run: the
 	// archive already carries the template's rows, so the seeded refusal has to be stood down. The day
 	// partition the rows fall into already exists, and CreateStatement's IF NOT EXISTS passes through it.
-	private async Task AppendAsync(DateTime archiveLocal, IReadOnlyList<Pen> pens, int tick)
+	private async Task AppendAsync(
+		DateTime archiveLocal,
+		IReadOnlyList<Pen> pens,
+		int tick,
+		int quality = ArchiveRow.OrdinaryQuality)
 	{
 		var rows = pens
 			.Select(pen => new ArchiveRow(
@@ -200,7 +242,7 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 				ArchiveRow.RawLayer,
 				archiveLocal,
 				ValueFor(pen.PenId, tick),
-				ArchiveRow.OrdinaryQuality))
+				quality))
 			.ToArray();
 
 		var written = await Writer()

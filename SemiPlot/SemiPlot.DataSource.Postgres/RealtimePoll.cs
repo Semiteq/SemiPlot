@@ -31,13 +31,15 @@ internal sealed class RealtimePoll(
 	int[] penIds,
 	ILogger logger)
 {
-	// q = 32 marks the last sample before a break; read for the debug line only
-	// (docs/architecture/scada-archive.md, Quality and gaps).
+	// docs/architecture/scada-archive.md#quality-and-gaps
 	private const int LastBeforeBreakQuality = 32;
 
 	// Must stay far below the connection string's backstop: three stalled ticks must raise the fault
 	// inside half a minute.
 	private const int TickCommandTimeoutSeconds = 10;
+
+	// docs/architecture/data-integration.md#realtime
+	private static readonly TimeSpan _breakAnchorStep = TimeSpan.FromMilliseconds(1);
 
 	private static readonly IReadOnlyList<Sample> _noSamples = [];
 
@@ -150,11 +152,14 @@ internal sealed class RealtimePoll(
 		var newest = lastSeen;
 		var rowCount = 0;
 		var droppedCount = 0;
-		var breakMarkCount = 0;
+		var breakCount = 0;
 
 		while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
 		{
+			var penId = reader.GetInt32(0);
 			var archiveLocal = reader.GetDateTime(1);
+			var timestampUtc = timeConverter.ToUtc(archiveLocal);
+			var isBreakMark = reader.GetInt32(3) == LastBeforeBreakQuality;
 
 			rowCount++;
 
@@ -163,33 +168,33 @@ internal sealed class RealtimePoll(
 				newest = archiveLocal;
 			}
 
-			if (reader.GetInt32(3) == LastBeforeBreakQuality)
-			{
-				breakMarkCount++;
-			}
-
-			// Sample.Value is non-nullable; GetDouble would throw and count as a connection failure, so the
-			// row is dropped and lastSeen still advances.
+			// docs/architecture/data-integration.md#realtime
 			if (reader.IsDBNull(2))
 			{
 				droppedCount++;
-
-				continue;
+			}
+			else
+			{
+				samples.Add(new Sample(penId, timestampUtc, reader.GetDouble(2)));
 			}
 
-			samples.Add(new Sample(reader.GetInt32(0), timeConverter.ToUtc(archiveLocal), reader.GetDouble(2)));
+			if (isBreakMark)
+			{
+				samples.Add(new Sample(penId, timestampUtc + _breakAnchorStep, null));
+				breakCount++;
+			}
 		}
 
 		Advance(newest);
 
 		logger.LogDebug(
-			"The realtime poll read {RowCount} rows past {LastSeen:O}: {SampleCount} samples, {DroppedCount} "
-			+ "dropped for a null value, {BreakMarkCount} marking the last sample before a break.",
+			"The realtime poll read {RowCount} rows past {LastSeen:O}: {ValueCount} value samples, {DroppedCount} "
+			+ "rows dropped for a null value, {BreakCount} breaks.",
 			rowCount,
 			lastSeen,
-			samples.Count,
+			rowCount - droppedCount,
 			droppedCount,
-			breakMarkCount);
+			breakCount);
 
 		return samples;
 	}

@@ -44,6 +44,7 @@ and built from the commit under test. Its value is diagnosis.
 | The shipped configuration set | `SemiPlot.Tests.Unit/DeliveredConfigurationTests.cs` over `ConfigFiles/**`, linked into the output directory by `SemiPlot.Tests.Unit.csproj` |
 | The live theme's pipeline, its watcher and `App`'s wiring of both | `SemiPlot.Tests.Unit/UI/Settings/AppSectionWatcherTests.cs`, `UI/Startup/AppConfigurationTests.cs`; the wall-clock exception below |
 | A pen's buffer and its derived state | `SemiPlot.Tests.Unit/UI/Chart/TrendPenStateTests.cs` |
+| The realtime append-or-fold rule per layer, and the live break | `SemiPlot.Tests.Unit/UI/Chart/ChartRealtimeApplierTests.cs` |
 
 Shared helpers sit beside the tests that use them, one home each: `ResultText` (a failed result read in an
 assertion), `TemporaryDirectory`, `FixedClock`, `HeadlessInput` (the four gestures), `ViewProbe` (find, measure,
@@ -215,13 +216,13 @@ at the far end. Its value is an existence proof that parts which each pass their
 connect. Its cost is that a failure names nothing, so they stay few and thin — the seams carry the
 coverage, and the journeys only prove the chain is closed.
 
-`SemiPlot.Tests.Integration/Journeys/` holds them — three tests in two classes over a container-backed
+`SemiPlot.Tests.Integration/Journeys/` holds them — four tests in two classes over a container-backed
 archive, each closing a chain whose halves are already proved apart:
 
 | Test | Chain it closes | The seam tests it joins |
 | --- | --- | --- |
 | `BreakRenderArchiveJourneyTests` | a seeded break reaches the canvas: archive → `AddPostgresData` → `TrendCoordinator` → `TrendChartViewModel` → the pixels the rasteriser leaves blank | `PostgresHistoryReadTests` counts the fold's NaN anchor; `ChartGapRenderTests` measures the blank pixels a NaN column leaves |
-| `LiveEdgeArchiveJourneyTests` | two: a row appended while the application runs reaches the chart's live edge and reaches it once; and rows on a variable of its own reach the chart without breaking a pen that has no sample at that timestamp | `RealtimeSubscriptionTests` asserts the first rule over the provider alone; `TrendCoordinatorTests` and `TrendChartViewModelTests` cover the per-variable batch shape above it |
+| `LiveEdgeArchiveJourneyTests` | three: a row appended while the application runs reaches the chart's live edge and reaches it once; rows on a variable of its own reach the chart without breaking a pen that has no sample at that timestamp; and a `q = 32` row written while the application runs reaches the chart as its value and then a `NaN` column 1 ms past it, while `CurrentValue` keeps the value | `RealtimeSubscriptionTests` asserts the first rule over the provider alone; `TrendCoordinatorTests` and `TrendChartViewModelTests` cover the per-variable batch shape above it; `RealtimePollReadTests` asserts the value-then-break pair, and `ChartRealtimeApplierTests` and `TrendPenStateTests` cover the append-never-fold rule and the 1 ms step |
 
 The composed path adds what those seam tests cannot see: the coordinator's buffering and folding,
 the chart view model's applier, the navigation controller. Each can lose a sample or replay one without

@@ -67,16 +67,20 @@ operator interaction.
 - **Decimation envelope contract:** history record per pen = ascending `X[]` + `Min[]` + `Max[]` + center
   `Y[]`; realtime stays single-value `double?[]` (null = gap); rendered as one `EnvelopeLine` polyline
   (see Renderer).
-  *As-built note:* realtime is `double`, not `double?`: `PenRealtimeValues` carries each pen's own
-  timestamps and values, and the live edge has no null, so every gap the chart draws comes from the
-  history path (charting.md, "Gaps via NaN").
+  *As-built note:* realtime is `double?` on each pen's own timestamps, not on a shared column:
+  `PenRealtimeValues` carries no entry at a timestamp the pen did not report, and a null is a break the
+  provider reported. The poll writes one 1 ms after a `q = 32` row (data-integration.md#realtime); every
+  other gap the chart draws comes from the history path (charting.md, "Gaps via NaN").
 - **Δ cursors:** Δy is reported only for the **active/selected pen** (pens share X but have independent Y
   scales, so a global Δy is meaningless).
 - **Bad quality → gap:** OPC bad-quality is mapped to `null` at the `IDataProvider` boundary, reusing the
   null = gap path; a distinct value-present-but-bad-quality flag is deferred.
-  *As-built note:* nothing maps to `null`. The archive marks the last sample before a break with
-  `q = 32`, the server closes the bucket there, and `BucketedRowFold` writes a `NaN` column one tick after
-  it. `q = 16` takes no branch: the next bucket resumes the line (data-integration.md#quality-and-gaps).
+  *As-built note:* no OPC quality exists yet, so no bad-quality status maps to `null`. The archive marks
+  the last sample before a break with `q = 32`, and that mark maps to a break. On the history path the
+  server closes the bucket there, and `BucketedRowFold` writes a `NaN` column one tick after it
+  (data-integration.md#quality-and-gaps). At the live edge the poll emits the row's value and then a null
+  `Sample` 1 ms after it, which the chart appends as a `NaN` column (data-integration.md#realtime).
+  `q = 16` takes no branch: the next bucket or sample resumes the line.
 - **Real-time return:** "jump to real-time" re-attaches sticky immediately; now-marker at the
   **right edge** (centering is at most a transient transition animation).
 - **Many-axes management:** **single active Y axis + per-pen autoscale** (legacy SCADA model);
@@ -612,11 +616,12 @@ and the render budget (§RT-4). The as-built rationale and mechanics:
   The column count carries **its own deadband** on the same grounds: one quantisation step doubles or
   halves every ceiling, so a pixel of jitter across a boundary must not move it.
 - **Gaps come from the break markers, not from empty spans** (§DA-5). The archive writes a row only
-  when a value changes, so a span with no row is no gap by itself. The provider anchors a `NaN` column
+  when a value changes, so a span with no row is no gap by itself. A history read anchors a `NaN` column
   by one route at every layer: the server closes a bucket at a `q = 32` marker, and `BucketedRowFold`
   writes the `NaN` column one tick after that bucket, so the line breaks there instead of bridging the
-  missing span with a straight line (see `data-integration.md`, Quality and gaps). No decimator runs
-  on the client.
+  missing span with a straight line (see `data-integration.md`, Quality and gaps). At the live edge the
+  poll emits a `q = 32` row's value and then a null sample 1 ms later, which the chart appends as a `NaN`
+  column at every layer (`data-integration.md#realtime`). No decimator runs on the client.
 - **Use a min/max-per-pixel envelope, not plain sampling.** Plain decimation aliases away spikes
   (AVEVA warns of exactly this). Retain min AND max per pixel column so spikes survive (M4:
   min/max/first/last per column → visually lossless; MinMaxLTTB for speed; Power Chart "MinMax").

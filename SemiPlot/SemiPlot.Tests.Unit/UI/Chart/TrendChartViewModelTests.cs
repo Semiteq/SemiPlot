@@ -1037,6 +1037,66 @@ public sealed class TrendChartViewModelTests
 	}
 
 	[AvaloniaFact]
+	public async Task ABreakAtACoarseLayerAppendsANaNColumnAndTheNextFoldOpensAColumnPastIt()
+	{
+		var (viewModel, scheduler, coordinator, provider) = CreateViewModel(RealtimeInterval);
+		var state = viewModel.AddPen(FakeDataProvider.FirstPen);
+		viewModel.Navigation.TrackDataExtents(
+			FakeDataProvider.RealtimeEpoch.AddDays(-30.0), FakeDataProvider.RealtimeEpoch);
+		await ZoomOutAndIssueTheCoarseRead(viewModel, scheduler, provider);
+		await ReleaseAndAwait(
+			viewModel, 1, () => provider.HistoryGate.SetResult(EnvelopeEndingAtTheRealtimeEpoch()));
+		LandTheMarginReadFromTheReleasedGate(scheduler);
+		var columnsBefore = state.Line.SnapshotColumns();
+		var foldedColumn = columnsBefore[^1];
+		foldedColumn.X.Should().Be(LocalTimeAxis.ToAxis(FakeDataProvider.RealtimeEpoch));
+		var batches = new List<RealtimeBatch>();
+		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
+
+		provider.BreakRealtimePenOnce(FakeDataProvider.FirstPen.PenId);
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks * 2);
+
+		var (_, _, breakUtc) = FakeDataProvider.TheBreakIn(batches, FakeDataProvider.FirstPen.PenId);
+		var columns = state.Line.SnapshotColumns();
+		columns.Should().HaveCount(columnsBefore.Count + 2, "the folds after the break land in one column");
+		var widened = columns[columnsBefore.Count - 1];
+		widened.X.Should().Be(foldedColumn.X);
+		double.IsNaN(widened.Center).Should().BeFalse();
+		widened.Max.Should().BeGreaterThan(foldedColumn.Max, "the value ahead of the break folds into it");
+		double.IsNaN(columns[^2].Center).Should().BeTrue();
+		columns[^2].X.Should().Be(LocalTimeAxis.ToAxis(breakUtc));
+		double.IsNaN(columns[^1].Center).Should().BeFalse();
+		columns[^1].X.Should().BeGreaterThan(columns[^2].X);
+		state.CurrentValue.Should().Be(columns[^1].Center);
+		viewModel.Navigation.To.Should().Be(batches[^1].Timestamps[^1]);
+	}
+
+	[AvaloniaFact]
+	public async Task ABreakAtRawAppendsANaNColumnOneMillisecondPastItsValue()
+	{
+		var (viewModel, scheduler, coordinator, provider) = CreateViewModel(RealtimeInterval);
+		var state = viewModel.AddPen(FakeDataProvider.FirstPen);
+		await LoadRawEndingAtTheRealtimeEpoch(viewModel, scheduler, provider);
+		state.Line.SnapshotColumns().Should().NotContain(column => double.IsNaN(column.Center));
+		var batches = new List<RealtimeBatch>();
+		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
+
+		provider.BreakRealtimePenOnce(FakeDataProvider.FirstPen.PenId);
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks * 2);
+
+		var (value, valueUtc, breakUtc) = FakeDataProvider.TheBreakIn(batches, FakeDataProvider.FirstPen.PenId);
+		var columns = state.Line.SnapshotColumns();
+		var breakIndex = columns.ToList().FindIndex(column => double.IsNaN(column.Center));
+		columns.Count(column => double.IsNaN(column.Center)).Should().Be(1);
+		breakIndex.Should().BePositive();
+		columns[breakIndex].X.Should().Be(LocalTimeAxis.ToAxis(breakUtc));
+		columns[breakIndex - 1].X.Should().Be(LocalTimeAxis.ToAxis(valueUtc));
+		columns[breakIndex - 1].Center.Should().Be(value);
+		columns.Should().HaveCountGreaterThan(breakIndex + 1, "the tick after the break resumes the line");
+		state.CurrentValue.Should().Be(columns[^1].Center);
+	}
+
+	[AvaloniaFact]
 	public async Task AnAppendOverRawColumnsKeepsTheRawBand()
 	{
 		var (viewModel, scheduler, _, provider) = CreateViewModel(RealtimeInterval);

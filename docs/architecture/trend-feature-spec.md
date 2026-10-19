@@ -199,7 +199,7 @@ through `TrendChartViewModel.SetActivePen`; the picked line is drawn 2 px wide a
 **Note.** Closes the most real correctness risk (b)7.
 
 ### DA-8 — Quality and gaps (SHOULD)
-**Definition.** The archive marks a break with `q = 32` on the last sample before it and `q = 16` on the first sample after it; absence of rows without a preceding `q = 32` means the value did not change and the line continues horizontally (`scada-archive.md`). The provider maps a break to a NaN anchor in the envelope along the whole path from PostgreSQL — from the archive's own `q` column, never from a synthesised marker. Any other quality code is drawn as an ordinary point; no such code appeared in either measured archive (`scada-archive.md#quality-and-gaps`).
+**Definition.** The archive marks a break with `q = 32` on the last sample before it and `q = 16` on the first sample after it; absence of rows without a preceding `q = 32` means the value did not change and the line continues horizontally (`scada-archive.md`). The provider maps a break to a NaN anchor in the envelope along the whole path from PostgreSQL — from the archive's own `q` column, never from a synthesised marker. At the live edge the poll emits the marker's value and then a null sample 1 ms later, which the chart appends as a NaN column (`data-integration.md#realtime`). Any other quality code is drawn as an ordinary point; no such code appeared in either measured archive (`scada-archive.md#quality-and-gaps`).
 **Acceptance.** DB: a marked break produces a line break, while a long run without rows produces a continuous horizontal line; the readout inside a break is "no data".
 **Note.** Closes gap (b)10.
 
@@ -220,7 +220,7 @@ through `TrendChartViewModel.SetActivePen`; the picked line is drawn 2 px wide a
 **Acceptance.** Core/test: `TrendNavigationModel` auto-detaches sticky when the live edge leaves the window; jump-to-now restores it. UI: in realtime the window rides the data, a manual shift stops the follow.
 
 ### RT-3 — Folding realtime on coarse layers (SHOULD)
-**Definition.** On coarse aggregation layers realtime folds into the last column (`FoldRealtime` widens Min/Max) rather than drawing raw points over the aggregate.
+**Definition.** On coarse aggregation layers realtime folds into the last column (`FoldRealtime` widens Min/Max) rather than drawing raw points over the aggregate. A live break (a null value) is never folded: it is appended as a NaN column at every layer (`charting.md`, Realtime append / live-edge join).
 **Acceptance.** Core/test: feeding a point on a coarse layer widens the Min/Max of the last column without adding a new raw point.
 
 ### RT-4 — Update/render parameters (NICE)

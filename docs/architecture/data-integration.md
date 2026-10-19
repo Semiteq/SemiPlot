@@ -67,7 +67,7 @@ public interface IDataProvider
 | Type | Shape | Notes |
 | --- | --- | --- |
 | `Pen` | `PenId`, `Name`, `Groups`, `Color`, `Unit`, `Format`, `EnabledOnStart`, `ScaleMinOnStart`, `ScaleMaxOnStart`, `LogScaleOnStart`, `LineStyle` | `PenId` is the archive's `trends.id`. Equality compares `Groups` element by element, ordinal, so two reads of one stored pen are equal; `LogScaleOnStart` takes part in it, so a pen whose flag alone changed is revised. |
-| `Sample` | `PenId`, `TimestampUtc`, `Value` | Realtime element. Timestamps are UTC by the time they leave the provider. |
+| `Sample` | `PenId`, `TimestampUtc`, `Value` | Realtime element. Timestamps are UTC by the time they leave the provider. A null `Value` is a break the provider reported: the pen has no data from that moment until its next sample. |
 | `PenHistoryEnvelope` | parallel `Timestamps` / `Min` / `Max` / `Center`, strictly ascending, `NaN` marks a gap | One per pen per history query. |
 | `ArchiveExtent` | `FirstUtc`, `LastUtc`, `IsEmpty` | The span of the configured variables, consumed by the minimap (`TM-4`). `ArchiveExtent.Empty` is the no-span form. |
 | `AggregationLayer` | `Raw`, `Minute`, `Hour` | Maps one-to-one onto the archive's `l` column. |
@@ -913,7 +913,7 @@ The provider maps the archive's quality marks onto the envelope's gap representa
 | Archive | Envelope |
 | --- | --- |
 | `q = 0` | ordinary point |
-| `q = 32` (last sample before a break) | point kept, then a `NaN` anchor inserted after it |
+| `q = 32` (last sample before a break) | point kept, then a `NaN` anchor inserted after it; at the live edge, a break 1 ms later ("Realtime") |
 | `q = 16` (first sample after a break) | point kept; the line resumes here |
 | absence of rows without a preceding `q = 32` | no anchor — the value simply did not change |
 
@@ -929,7 +929,8 @@ takes no branch: the next bucket resumes the line. A seed row carries its own `q
 `32` opens the window inside a gap. The coarse layers hold the markers too (`scada-archive.md#layers`),
 so a break splits a `Minute` or `Hour` bucket as it splits a `Raw` one. No decimator runs on the
 client. `RealArchiveGapTests` drives the fold with rows lifted from the customer dump, one row per
-bucket, including a 4 min 18 s absence carrying no marker.
+bucket, including a 4 min 18 s absence carrying no marker. This route and its one tick are the history
+read's; the poll maps the same mark to a break 1 ms past the row ("Realtime").
 
 A null `v` sets the same flag, because a bucket is the finest resolution a read has: `min(v)`,
 `max(v)` and the newest-value aggregate all skip a null, so without the flag a bucket holding data
@@ -979,10 +980,20 @@ catalogue. `Dispose` completes the subject.
 - **The sequence never completes and never faults.** A query error logs, drops that tick's rows and
   leaves the observable running.
 - **No timestamp is emitted at or before the last one already delivered** (`DA-7`).
-- **A row whose `v` is null is dropped, and `lastSeen` still advances past it.** `Sample.Value` is
-  non-nullable.
-- **A `q = 32` row opens no gap here.** `Sample` carries no null to rebuild one with; a break at the
-  live edge draws as a held line until the next history read covers it.
+- **A row whose `v` is null is dropped, and `lastSeen` still advances past it.** The history path flags
+  such a bucket as a gap instead ("Quality and gaps"), so a null run the poll reads draws as a held line
+  until the next history read covers it. `v` was never null in the measured archive
+  (`scada-archive.md#quality-and-gaps`), so the poll writes a live break for a `q = 32` row only.
+- **A `q = 32` row emits its value and then a break 1 ms later.** The break is a `Sample` with a null
+  `Value` at the row's UTC timestamp plus `RealtimePoll._breakAnchorStep`, added on the UTC side as
+  `BucketedRowFold` adds its tick. A `q = 32` row whose `v` is null emits the break alone. The step is
+  1 ms because the chart's X axis keeps milliseconds only (`LocalTimeAxis.ToAxis` is `ToOADate`): one
+  tick, the history path's anchor, maps to the marker's own X, and `EnvelopeLine` rejects an append at or
+  before the last X (`DA-7`), so the break would be dropped. The archive's `t` is `timestamp(3)` and a
+  change pair is about 100 ms apart (`scada-archive.md#write-behavior`), so no real row lands on the
+  break's millisecond. `RealtimePollReadTests` pins both row shapes, and
+  `TrendPenStateTests.Realtime_BreakOneTickAfterTheValue_IsRejectedAndOneMillisecondAfterIt_AddsANaNColumn`
+  pins the step.
 
 ### The connection state the poll reports
 

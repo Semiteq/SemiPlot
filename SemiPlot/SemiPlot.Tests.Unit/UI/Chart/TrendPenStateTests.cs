@@ -65,6 +65,25 @@ public sealed class TrendPenStateTests
 	}
 
 	[Fact]
+	public void Realtime_BreakOneTickAfterTheValue_IsRejectedAndOneMillisecondAfterIt_AddsANaNColumn()
+	{
+		var state = NewState();
+		state.AppendRealtime(_start, 5.0);
+
+		state.AppendRealtime(_start.AddTicks(1), value: null);
+
+		state.Line.SnapshotColumns().Should().ContainSingle("the axis keeps milliseconds only");
+
+		state.AppendRealtime(_start.AddMilliseconds(1.0), value: null);
+
+		var columns = state.Line.SnapshotColumns();
+		columns.Should().HaveCount(2);
+		columns[0].Center.Should().Be(5.0);
+		double.IsNaN(columns[1].Center).Should().BeTrue();
+		state.CurrentValue.Should().Be(5.0);
+	}
+
+	[Fact]
 	public void History_LoadsColumnsCarryingMinAndMax()
 	{
 		var state = NewState();

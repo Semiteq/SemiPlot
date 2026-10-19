@@ -4,6 +4,8 @@ using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 
+using AwesomeAssertions;
+
 using FluentResults;
 
 using SemiPlot.Core.Data;
@@ -35,6 +37,8 @@ internal sealed class FakeDataProvider(
 	// A test waits for a query on another thread and then reads it, so the log is appended and copied whole.
 	private readonly Lock _historyQueriesGate = new();
 	private readonly List<HistoryQuery> _historyQueries = [];
+
+	private int? _penToBreakOnNextTick;
 
 	public DateTime ArchiveFirstUtc { get; set; } = new(2025, 12, 25, 0, 0, 0, DateTimeKind.Utc);
 
@@ -181,6 +185,35 @@ internal sealed class FakeDataProvider(
 		_connectionFaults.OnNext(state);
 	}
 
+	/// <summary>The next tick follows the pen's value with a break 1 ms later, as the poll's q = 32 row.</summary>
+	public void BreakRealtimePenOnce(int penId)
+	{
+		_penToBreakOnNextTick = penId;
+	}
+
+	/// <summary>The pen's one break across the batches, and the value its tick carried 1 ms ahead of it.</summary>
+	public static (double Value, DateTime ValueUtc, DateTime BreakUtc) TheBreakIn(
+		IEnumerable<RealtimeBatch> batches,
+		int penId)
+	{
+		var samples = batches
+			.SelectMany(batch => batch.Pens)
+			.Where(values => values.PenId == penId)
+			.SelectMany(values => values.TimestampsUtc.Zip(values.Values))
+			.ToList();
+		var breakIndex = samples.FindIndex(sample => sample.Second is null);
+
+		samples.Count(sample => sample.Second is null).Should().Be(1);
+		breakIndex.Should().BePositive();
+
+		var (valueUtc, value) = samples[breakIndex - 1];
+		var breakUtc = samples[breakIndex].First;
+
+		breakUtc.Should().Be(valueUtc.AddMilliseconds(1));
+
+		return (value.GetValueOrDefault(), valueUtc, breakUtc);
+	}
+
 	public IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<int> penIds)
 	{
 		return Observable
@@ -211,14 +244,30 @@ internal sealed class FakeDataProvider(
 		return Observable
 			.Interval(_realtimeInterval, _scheduler)
 			.Select(tick => PoisonRealtimeWindow
-				? (IReadOnlyList<Sample>)new PoisonedSampleList()
-				: [.. subscribed
-				.Select((id, index) => new Sample(
-					id,
-					RealtimeEpoch
-					+ TimeSpan.FromTicks(_realtimeInterval.Ticks * (tick + 1))
-					+ (StaggerRealtimeTimestamps ? TimeSpan.FromMilliseconds(index) : TimeSpan.Zero),
-					id + tick))]);
+				? new PoisonedSampleList()
+				: TickSamples(subscribed, tick));
+	}
+
+	private IReadOnlyList<Sample> TickSamples(IReadOnlyList<int> subscribed, long tick)
+	{
+		var samples = new List<Sample>(subscribed.Count + 1);
+
+		for (var index = 0; index < subscribed.Count; index++)
+		{
+			var id = subscribed[index];
+			var timestampUtc = RealtimeEpoch
+				+ TimeSpan.FromTicks(_realtimeInterval.Ticks * (tick + 1))
+				+ (StaggerRealtimeTimestamps ? TimeSpan.FromMilliseconds(index) : TimeSpan.Zero);
+			samples.Add(new Sample(id, timestampUtc, id + tick));
+
+			if (id == _penToBreakOnNextTick)
+			{
+				samples.Add(new Sample(id, timestampUtc.AddMilliseconds(1), null));
+				_penToBreakOnNextTick = null;
+			}
+		}
+
+		return samples;
 	}
 
 	public Task<Result<IReadOnlyList<Pen>>> QueryPensAsync()

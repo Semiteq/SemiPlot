@@ -13,13 +13,6 @@ each is a scoped future task.
   missing is a real archive: the decimation and extent paths have been exercised against the seeded
   bench and against a customer dump, not against production volumes on a running tool.
 
-- **A break that opens at the live edge draws as a held line.** `Sample` carries no null channel, so
-  the realtime poll emits a `q = 32` row as an ordinary sample and cannot reconstruct the gap the way
-  `BucketedRowFold` does from a bucket's breaks flag. The line holds at the last value until the next
-  history read covers that span and redraws it as a break. Closing it means giving the realtime seam a
-  way to carry an absence — a nullable sample, or a separate break signal — which is a change to
-  `IDataProvider` and to every consumer of `RealtimeBatch`, so it is its own task.
-
 - **Two settings saves can lose one of them.** `SettingsSave.Save` reads a section at stage time and
   promotes its copy later; a save from another process that replaces the same file in between is
   overwritten (`overview.md#the-settings-window`). With the live theme the loss shows: every window

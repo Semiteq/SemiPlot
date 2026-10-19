@@ -160,7 +160,7 @@ public sealed class TrendCoordinator : IDisposable
 		return new RealtimeBatch(timestamps, pens);
 	}
 
-	// A pen carries only the samples it has; a filler null would draw a break the archive never recorded.
+	// A pen carries only its own samples, no filler at another pen's timestamp.
 	private static PenRealtimeValues BuildPenValues(IGrouping<int, Sample> penSamples)
 	{
 		var ordered = penSamples.OrderBy(sample => sample.TimestampUtc).ToArray();

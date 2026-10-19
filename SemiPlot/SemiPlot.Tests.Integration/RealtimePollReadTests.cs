@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Testing;
 
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
+using SemiPlot.Core.Trends;
 using SemiPlot.Tools.ArchiveSeeder;
 
 using Xunit;
@@ -144,23 +145,20 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 
 		await poll.ReadOnceAsync(cancellationToken);
 
-		var rowCounts = logs.Collector.GetSnapshot()
-			.Select(entry => entry.GetStructuredStateValue("RowCount"))
-			.OfType<string>();
-
-		rowCounts.Should().Equal("1", "0");
+		PollCounts(logs).Should().Equal(("1", "0", "1", "0"), ("0", "0", "0", "0"));
 	}
 
-	// The archive's break mark carries a real value (docs/architecture/scada-archive.md, Quality and gaps).
 	[Fact]
-	public async Task ARowMarkingTheLastSampleBeforeABreakEmitsAnOrdinarySample()
+	public async Task ARowMarkingTheLastSampleBeforeABreakEmitsItsValueAndThenABreak()
 	{
 		var cancellationToken = TestContext.Current.CancellationToken;
 		var appended = SeededLast.AddSeconds(1);
+		var appendedUtc = ArchiveProviderFactory.TimeConverter.ToUtc(appended);
 
 		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
+		using var logs = new FakeLoggerProvider();
 
-		var poll = NewPoll(services);
+		var poll = NewPoll(services, logs.CreateLogger("RealtimePoll"));
 
 		await poll.ReadOnceAsync(cancellationToken);
 		await AppendAsync(
@@ -171,10 +169,46 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 			ArchiveRow.LastBeforeBreakQuality,
 			cancellationToken: cancellationToken);
 
-		var sample = (await poll.ReadOnceAsync(cancellationToken)).Samples.Should().ContainSingle().Which;
+		var tick = await poll.ReadOnceAsync(cancellationToken);
 
-		sample.Value.Should().Be(11.25);
-		sample.TimestampUtc.Should().Be(ArchiveProviderFactory.TimeConverter.ToUtc(appended));
+		tick.Samples.Should().Equal(
+			new Sample(SubscribedPenIds[0], appendedUtc, 11.25),
+			new Sample(SubscribedPenIds[0], appendedUtc.AddMilliseconds(1), null));
+		PollCounts(logs).Should().Equal(("1", "1", "0", "1"));
+	}
+
+	// docs/architecture/data-integration.md#realtime
+	[Fact]
+	public async Task ARowMarkingTheLastSampleBeforeABreakWithANullValueEmitsOnlyTheBreak()
+	{
+		var cancellationToken = TestContext.Current.CancellationToken;
+		var appended = SeededLast.AddSeconds(1);
+
+		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
+		using var logs = new FakeLoggerProvider();
+
+		var poll = NewPoll(services, logs.CreateLogger("RealtimePoll"));
+
+		await poll.ReadOnceAsync(cancellationToken);
+		await AppendAsync(
+			Database,
+			SubscribedPenIds[0],
+			appended,
+			null,
+			ArchiveRow.LastBeforeBreakQuality,
+			cancellationToken: cancellationToken);
+
+		var tick = await poll.ReadOnceAsync(cancellationToken);
+
+		tick.Samples.Should().Equal(new Sample(
+			SubscribedPenIds[0],
+			ArchiveProviderFactory.TimeConverter.ToUtc(appended).AddMilliseconds(1),
+			null));
+		tick.StateChange.Should().BeNull();
+
+		await poll.ReadOnceAsync(cancellationToken);
+
+		PollCounts(logs).Should().Equal(("1", "0", "1", "1"), ("0", "0", "0", "0"));
 	}
 
 	// Renamed rather than dropped: the container is shared. The tick after recovery must report nothing.
@@ -259,6 +293,19 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 			Database.AdminConnectionString,
 			"ALTER TABLE public.trends_hidden_by_test RENAME TO trends;",
 			cancellationToken);
+	}
+
+	// The baseline entry carries no RowCount.
+	private static IEnumerable<(string? Rows, string? Values, string? Dropped, string? Breaks)> PollCounts(
+		FakeLoggerProvider logs)
+	{
+		return logs.Collector.GetSnapshot()
+			.Where(entry => entry.GetStructuredStateValue("RowCount") is not null)
+			.Select(entry => (
+				entry.GetStructuredStateValue("RowCount"),
+				entry.GetStructuredStateValue("ValueCount"),
+				entry.GetStructuredStateValue("DroppedCount"),
+				entry.GetStructuredStateValue("BreakCount")));
 	}
 
 	// The unsubscribed variable's newest row sits a minute after the subscribed ones, so a baseline read

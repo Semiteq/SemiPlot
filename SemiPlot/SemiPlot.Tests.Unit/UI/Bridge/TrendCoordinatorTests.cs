@@ -70,6 +70,29 @@ public sealed class TrendCoordinatorTests
 	}
 
 	[Fact]
+	public void ABreakTheProviderReports_SurvivesTheBufferWindowOnItsOwnTimestamp()
+	{
+		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: ChartTestBuilder.RealtimeInterval);
+		using var ownedCoordinator = coordinator;
+		var batches = new List<RealtimeBatch>();
+		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
+
+		provider.BreakRealtimePenOnce(FakeDataProvider.FirstPen.PenId);
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
+
+		var batch = batches.Single();
+		var (_, _, breakUtc) = FakeDataProvider.TheBreakIn([batch], FakeDataProvider.FirstPen.PenId);
+		batch.Timestamps.Should().Contain(breakUtc);
+		batch.Pens.Should().OnlyContain(values => values.Values.Count == values.TimestampsUtc.Count);
+		batch.Pens.Single(values => values.PenId == FakeDataProvider.SecondPen.PenId).Values.Should().NotContainNulls();
+
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
+
+		batches.Should().HaveCount(2);
+		batches[1].Pens.Should().AllSatisfy(values => values.Values.Should().NotContainNulls());
+	}
+
+	[Fact]
 	public void RealtimeBatches_WithAnEmptyCatalog_EmitNothing()
 	{
 		var scheduler = new TestScheduler();

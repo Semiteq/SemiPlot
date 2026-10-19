@@ -61,10 +61,12 @@ choice and keep the flag, so a thin line stays thin on the pen that takes the sl
 except after a catalogue read that leaves no pen: `ApplyCatalogue` then clears the flag, so the first pen a
 later read seats starts thin, as in a new window.
 
-**Gaps via NaN.** A column carrying `NaN` in `Min`/`Max` is the envelope's gap marker (and what
-`TrendPenState` encodes a null append as): `Build` breaks the path there and the next real column opens a
-new segment with a `MoveTo`. Every NaN a chart draws comes from the history path: `RealtimeBatch` carries
-`double` values, so the live edge has no null to encode.
+**Gaps via NaN.** A column carrying `NaN` in `Min`/`Max` is the envelope's gap marker: `Build` breaks the
+path there and the next real column opens a new segment with a `MoveTo`. A `NaN` column comes from one of
+two routes. The history path writes one after a bucket whose `breaks` flag a `q = 32` marker or a null
+`v` sets (`data-integration.md#quality-and-gaps`). The live edge writes one for a break the provider
+reported: `TrendPenState.AppendRealtime` encodes a null value as a `NaN` column and keeps `CurrentValue` at
+the last real value.
 
 **Per-pen stepping.** The line carries the Core `PenLineStyle` — `Stepped` for discrete/digital tags,
 `Interpolated` for analog. `Chart/TrendPenState` sets it and the colour from the pen through
@@ -109,14 +111,20 @@ meets the edit throws "Collection was modified" on the render thread, the crash 
 plottable's column list, which every render re-reads, so appends are live and nothing is re-set. The realtime
 tail appends one degenerate column (`Min == Max == Center == value`) at the live edge. At coarse layers
 (minute/hour) a realtime sample does **not** append; it folds into the current decimation column
-(`FoldRealtime` widens that column's `Min`/`Max` and moves its `Center`). A gap column takes no fold:
-when the last column is a `NaN` gap, as after a history envelope that ends on nulls, the sample opens a
-column at its own timestamp past the gap, and the samples after it fold into that one. The gap still draws
-as a break, and the line and `CurrentValue` resume at the first value instead of waiting for the next read.
-A sample at or before the gap's X is rejected, like any append at or before the last X. A pen with no
-column at all folds nothing. Cursor and legend read the `Center` channel consistently across the seam. The fold follows the layer in view, not the layer the columns
-were read at: until a coarse read lands, the columns are still Raw, and the fold over them opens the history
-gate so the return to Raw reads the folded span again
+(`FoldRealtime` widens that column's `Min`/`Max` and moves its `Center`). A live break is always appended,
+at every layer: `ChartRealtimeApplier` hands a null value to `AppendRealtime` ahead of the fold-or-append
+choice, because `Math.Min`/`Math.Max` with a `NaN` would turn the folded column into a gap and erase its
+extremes. A gap column takes no fold: when the last column is a `NaN` gap, as after a history envelope
+that ends on nulls or after a live break, the sample opens a column at its own timestamp past the gap, and
+the samples after it fold into that one. The gap still draws as a break, and the line and `CurrentValue`
+resume at the first value instead of waiting for the next read. A sample at or before the gap's X is
+rejected, like any append at or before the last X. A pen with no column folds no value, but a break still
+appends its `NaN` column, and the folds after it open a live column past it before any history read lands;
+the next read replaces that span up to its new last column, and the live columns past it, the break and
+the column after it among them where the last bucket sits before the break, stay under the kept-tail rule
+below. Cursor and legend read the `Center` channel consistently across the seam. The fold follows the
+layer in view, not the layer the columns were read at: until a coarse read lands, the columns are still
+Raw, and the fold over them opens the history gate so the return to Raw reads the folded span again
 (`data-integration.md#what-one-history-query-covers`).
 
 A history apply keeps the live tail past its snapshot. `EnvelopeLine.ReplaceColumns` takes the new
@@ -128,7 +136,11 @@ except where `EnvelopeSplice.Over` laid a margin-less read over the envelope in 
 (`data-integration.md#what-one-history-query-covers`). A
 pan into the past asks for a range that ends before the follow phase's tail, so the tail goes and the
 band just read keeps the whole buffer. `TrendPenState.ClearHistory` is a replace with no columns, so a
-requested pen absent from a result keeps its tail too. `LoadHistory` and `ClearHistory` both set
+requested pen absent from a result keeps its tail too. A live break column is a live append and follows the
+same rule. A read that ends at a `q = 32` marker writes its anchor `NaN` one tick past the marker, which
+maps to the marker's own X (`data-integration.md#quality-and-gaps`); the live value at that X is not after
+the new last column and goes, and the live break 1 ms past it stays. The pen then holds two adjacent `NaN`
+columns, and `Build` draws one break across them. `LoadHistory` and `ClearHistory` both set
 `CurrentValue` from the merged columns. An append at or before the last kept column is rejected,
 as before any other last column; at a coarse layer the next fold widens the last kept column
 (`data-integration.md#what-one-history-query-covers`). Only appended columns survive: a sample folded into
@@ -462,7 +474,9 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   caller.
 - `Chart/ChartRealtimeApplier` — the append-vs-fold rule per layer for incoming `RealtimeBatch`es.
   It walks each `PenRealtimeValues` on that pen's own timestamps, never on the batch's union, and
-  hands the union's last timestamp to `ChartNavigationController.OnLiveEdge`.
+  hands the union's last timestamp to `ChartNavigationController.OnLiveEdge`. A null value is a break:
+  it goes to `TrendPenState.AppendRealtime` ahead of the fold-or-append choice, so it appends a `NaN`
+  column at every layer and never folds.
 - `Chart/ChartCursorReader` / `ChartDeltaCursorReader` — view-side state wrapping the Core cursor
   models, resolving the visible / active pens (`ChartDeltaCursorReader.FormatReadout` formats Δt/Δy).
 - `Chart/ChartHoverReadout` — pure static `BuildContent`: builds the readout string (local timestamp +
@@ -767,13 +781,14 @@ view model:
   for run last. The minimap band is a second reader outside the debouncer: one pen at 250 columns
   every 2-60 s (`trend-interaction.md#archive-overview-minimap`).
 - **Realtime:** `IObservable<RealtimeBatch>` — an ascending union timeline the live edge advances
-  from, plus one `PenRealtimeValues` per pen carrying that pen's **own** timestamps and `double`
+  from, plus one `PenRealtimeValues` per pen carrying that pen's **own** timestamps and `double?`
   values; buffered on the data scheduler and observed on the UI scheduler. The values are per pen
   rather than a column over the union because the archive is per-variable and change-based with a
   deadband, so one buffer window routinely spans timestamps only one pen sampled. A pen carries no
-  entry at a timestamp it did not sample, and a consumer leaves it alone there. The type is `double`
-  and not `double?`: `Sample` carries a non-nullable value, so the live edge has no representation
-  for a break, and the gap a chart draws is the history path's reconstruction from `q = 32`. The pen
+  entry, null or real, at a timestamp it did not report, and a consumer leaves it alone there. A null
+  is a break the provider reported, a `Sample` whose `Value` is null: the pen has no data from that
+  moment until its next sample, and the chart appends a `NaN` column there. `RealtimePoll` writes one
+  1 ms after a `q = 32` row (`data-integration.md#realtime`). The pen
   set the stream carries follows the catalogue: `TrendCoordinator.SetPens` switches the provider
   subscription and `RealtimeBatches` stays one published stream (`data-integration.md#realtime`).
 - **Archive extent:** `QueryArchiveExtentAsync()` returns an `ArchiveExtent(FirstUtc, LastUtc)` —

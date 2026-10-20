@@ -35,7 +35,7 @@ and built from the commit under test. Its value is diagnosis.
 | --- | --- |
 | Navigation, scale, cursor geometry | `SemiPlot.Tests.Unit/Core/Trends/TrendNavigationModelTests.cs`, `PenScaleModelTests.cs`, `MinimapGeometryTests.cs`, `Chart/CursorReadoutModelTests.cs`, `DeltaCursorModelTests.cs` |
 | The seeder's generation rules | `SemiPlot.Tests.Unit/LayerThinnerTests.cs`, `RawLayerGeneratorTests.cs`, `BreakGenerationTests.cs`, `PartitionScriptTests.cs` |
-| The demo writer's own rules and the command line | `SemiPlot.Tests.Unit/LiveTailGeneratorTests.cs`, `SharedLatticeTests.cs`, `SeederCommandTests.cs`. Its coarse flush is not here: it reads the finer layer back from the server and thins it with `LayerThinner.Thin`, so `Integration/CoarseFlushTests.cs` carries it, gated |
+| The demo writer's own rules and the command line | `SemiPlot.Tests.Unit/LiveTailGeneratorTests.cs`, `SharedLatticeTests.cs`, `SeederCommandTests.cs`, `FollowEdgeTests.cs` (the archive edge's windows under `--archive-lag`). Its coarse flush is not here: it reads the finer layer back from the server and thins it with `LayerThinner.Thin`, so `Integration/CoarseFlushTests.cs` carries it, gated |
 | The error types' shape and extent arithmetic | `SemiPlot.Tests.Unit/Errors/DataErrorTests.cs`, `Data/ArchiveExtentTests.cs` |
 | The provider's statement text and its binder | `SemiPlot.Tests.Unit/Postgres/ArchiveStatementTextTests.cs` |
 | The bucketed fold: one column per bucket, the gap column, the DST drop | `SemiPlot.Tests.Unit/Postgres/BucketedRowFoldTests.cs`, `Postgres/RealArchiveGapTests.cs` |
@@ -145,7 +145,7 @@ An integration test crosses exactly one boundary to a real implementation of som
 repository does not build, to verify the translation across that seam. A fake cannot do this job: it
 would encode our own assumption on both sides. The value is contract verification.
 
-There are four families — the same category with different foreign parties.
+There are five families — the same category with different foreign parties.
 
 **Against a real PostgreSQL**, in `SemiPlot.Tests.Integration/`: every class carrying
 `[Collection(ArchiveDatabaseCollection.Name)]` outside `Journeys/`, for example `PostgresHistoryReadTests`,
@@ -177,6 +177,14 @@ naming the archive), `RealtimeSubscriptionDisposalTests` and `ConvergeReadinessT
 listener). They cross the machine boundary and need no container, so they carry no collection and take
 no `PostgresContainerFixture`; a missing container runtime does not fail them. `UnreachableArchive.Settings`
 gives them the unreachable address and an adjustable poll interval.
+
+**Against the OPC Foundation stack** — `DemoScadaServerLifecycleTests` and `DemoScadaServerTests`, under
+`SemiPlot.Tests.Integration/DemoScada/`, start the seeder's OPC UA demo server in process and read it
+through a 2.0.1 client over loopback. They run in `DemoScadaCollection`, which carries no fixture and only
+keeps two servers from starting side by side; they take no container and never dial 49875. Seams guarded:
+the endpoints and the anonymous token policy, the namespace at index 3, the address space, the served
+values and stamps under `Asia/Tokyo`, the start stamp, the busy-port mapping and the server's lifetime
+(`bench.md#the-opc-ua-demo-server`).
 
 **Against a real Avalonia** — `SemiPlot.Tests.Unit/UI/`, under `[AvaloniaFact]` and `[AvaloniaTheory]`,
 for example the classes that realise a view: `ChartPointerInputTests`, `MinimapPointerInputTests`,
@@ -391,14 +399,14 @@ Nothing skips. `SemiPlot.Tests.Unit` runs on any machine with the SDK, and
 failure on both CI legs; in `SemiPlot.Tests.Integration` a missing container runtime throws out of
 `PostgresContainerFixture.InitializeAsync`, and xunit fails every test of the collection with
 `TestPipelineException`. Only the container collection fails as a whole: the socket classes carry no
-collection and run without a runtime.
+collection, and the `DemoScadaCollection` classes take no fixture, so both run without a runtime.
 
 CI has two jobs: `unit-windows` runs `SemiPlot.Tests.Unit` on `windows-latest`, the platform the
 viewer ships on, and `linux` builds the solution once on `ubuntu-latest` and runs both projects, the
 runner's Docker daemon serving the fixture. The Windows runner cannot host a Linux container and runs
 `SemiPlot.Tests.Integration` nowhere but the Linux leg. That includes `RealtimePollTests`,
-`CatalogueReadUnreachableTests`, `RealtimeSubscriptionDisposalTests` and `ConvergeReadinessTests`: they
-need no container, but they live in
+`CatalogueReadUnreachableTests`, `RealtimeSubscriptionDisposalTests`, `ConvergeReadinessTests`,
+`DemoScadaServerLifecycleTests` and `DemoScadaServerTests`: they need no container, but they live in
 Integration, so they run only on the Linux leg.
 
 ## Ownership

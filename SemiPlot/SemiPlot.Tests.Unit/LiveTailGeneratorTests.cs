@@ -139,8 +139,53 @@ public sealed class LiveTailGeneratorTests
 		rows.Select(row => row.Timestamp).ToArray().Should().Equal(expected);
 	}
 
+	[Fact]
+	public void ChangesAtALatticeInstantServesThatInstant()
+	{
+		var onTheLattice = _midnight.AddSeconds(9);
+
+		var rows = LiveTailGenerator.ChangesAt(Options(), onTheLattice);
+
+		rows.Should().AllSatisfy(row => row.Timestamp.Should().Be(onTheLattice));
+	}
+
+	[Fact]
+	public void ChangesAtBetweenInstantsServesTheEarlierOne()
+	{
+		var onTheLattice = _midnight.AddSeconds(9);
+
+		var rows = LiveTailGenerator.ChangesAt(Options(), onTheLattice.AddMilliseconds(999.0));
+
+		rows.Should().AllSatisfy(row => row.Timestamp.Should().Be(onTheLattice));
+	}
+
+	[Fact]
+	public void ChangesAtServesOneRowPerPenInSelectionOrder()
+	{
+		var options = Options();
+
+		var rows = LiveTailGenerator.ChangesAt(options, _midnight.AddSeconds(9));
+
+		var selected = RawLayerGenerator.SelectPens(options.PenCount).Select(pen => pen.PenId);
+
+		rows.Select(row => row.Id).Should().Equal(selected);
+	}
+
+	[Theory]
+	[InlineData(1.0)]
+	[InlineData(0.05)]
+	public void ChangesAtServesNoAnchorRow(double changeSeconds)
+	{
+		var options = Options() with { PenCount = 1, ChangeSeconds = changeSeconds };
+		var onTheLattice = _midnight.AddSeconds(9);
+
+		var rows = LiveTailGenerator.ChangesAt(options, onTheLattice);
+
+		rows.Should().ContainSingle().Which.Timestamp.Should().Be(onTheLattice);
+	}
+
 	private static FollowOptions Options()
 	{
-		return new(BenchOptions.ConnectionString, TimeSpan.FromSeconds(1), 8, 1L, 1.0);
+		return new(BenchOptions.ConnectionString, TimeSpan.FromSeconds(1), 8, 1L, 1.0, TimeSpan.Zero, 55875);
 	}
 }

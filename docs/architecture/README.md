@@ -39,9 +39,9 @@ implementation plans see `docs/plans/`.
 - [sources.md](./sources.md) — citation convention and the registry every factual claim resolves
   against: vendor manual pages, vendor forum topics, vendor support answers, our own measurements, our
   own decisions.
-- [bench.md](./bench.md) — the seeded PostgreSQL bench: the seeder and the demo writer, the lattice
-  they share, the layer thinning, the container fixture and its template-and-clone lifecycle, the
-  application bench recipe, and the headless render and input guards.
+- [bench.md](./bench.md) — the seeded PostgreSQL bench: the seeder and the demo writer with its OPC UA
+  demo server, the lattice they share, the layer thinning, the container fixture and its
+  template-and-clone lifecycle, the application bench recipe, and the headless render and input guards.
 
 - [testing-strategy.md](./testing-strategy.md) — what each kind of test owns: the unit /
   integration / end-to-end distinction drawn on this repository's own files, why the two test

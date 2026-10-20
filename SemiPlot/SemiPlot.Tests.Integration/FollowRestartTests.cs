@@ -79,7 +79,9 @@ public sealed class FollowRestartTests(PostgresContainerFixture postgresContaine
 
 	private static FollowOptions Options()
 	{
-		return new("Host=127.0.0.1;Database=archive", TimeSpan.FromSeconds(1), PenCount, 1L, ChangeSeconds);
+		return new(
+			"Host=127.0.0.1;Database=archive", TimeSpan.FromSeconds(1), PenCount, 1L, ChangeSeconds,
+			TimeSpan.Zero, 55875);
 	}
 
 	private Task<long> CountRawRowsAsync(CancellationToken cancellationToken)

@@ -178,6 +178,12 @@ public static class RawLayerGenerator
 		return Math.Max(1L, (fromTicks + intervalTicks - 1) / intervalTicks);
 	}
 
+	/// <summary>The newest change instant at or before <paramref name="atTicks"/>, never below index 1.</summary>
+	internal static long LatestChangeTicks(long atTicks, long intervalTicks)
+	{
+		return Math.Max(1L, atTicks / intervalTicks) * intervalTicks;
+	}
+
 	private static double ValueAt(long seed, SyntheticPen pen, long index)
 	{
 		return pen.LogScaleOnStart

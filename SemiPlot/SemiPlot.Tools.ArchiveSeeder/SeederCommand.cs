@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.CommandLine.Parsing;
 using System.Globalization;
+using System.Net;
 
 namespace SemiPlot.Tools.ArchiveSeeder;
 
@@ -56,7 +57,8 @@ public static class SeederCommand
 	{
 		Description = "Interval between value changes, in seconds.",
 		DefaultValueFactory = _ => SeederOptions.DefaultChangeSeconds,
-		CustomParser = result => ParseSeconds(result, "--change-seconds") ?? SeederOptions.DefaultChangeSeconds
+		CustomParser = result =>
+			ParseSeconds(result, "--change-seconds", acceptsZero: false) ?? SeederOptions.DefaultChangeSeconds
 	};
 
 	private static readonly Option<double?> _follow = new("--follow")
@@ -64,7 +66,22 @@ public static class SeederCommand
 		Description = "Seconds between ticks, and the switch that selects the demo writer: each tick appends "
 					  + "the raw rows of the wall-clock span since the previous one and thins them into the coarse "
 					  + "layers. It seeds nothing.",
-		CustomParser = result => ParseSeconds(result, "--follow")
+		CustomParser = result => ParseSeconds(result, "--follow", acceptsZero: false)
+	};
+
+	private static readonly Option<double> _archiveLag = new("--archive-lag")
+	{
+		Description = "Seconds the archive inserts trail the clock, the way a SCADA's buffered archive trails the "
+					  + "plant. The OPC UA server is not held back. Follow only.",
+		DefaultValueFactory = _ => 0.0,
+		CustomParser = result => ParseSeconds(result, "--archive-lag", acceptsZero: true) ?? 0.0
+	};
+
+	private static readonly Option<int?> _opcPort = new("--opc-port")
+	{
+		Description = "Port the OPC UA demo server listens on, on 127.0.0.1. Required for a follow run; a running "
+					  + $"Simple-Scada holds {FollowOptions.SimpleScadaPort} by default.",
+		CustomParser = result => ParseWholeNumber(result, "--opc-port", 1, IPEndPoint.MaxPort)
 	};
 
 	private static readonly (Option Option, string Name)[] _seedingOnly =
@@ -72,6 +89,12 @@ public static class SeederCommand
 		(_end, "--end"),
 		(_days, "--days"),
 		(_adminConnection, "--admin-connection")
+	];
+
+	private static readonly (Option Option, string Name)[] _followOnly =
+	[
+		(_archiveLag, "--archive-lag"),
+		(_opcPort, "--opc-port")
 	];
 
 	private static readonly Option<string> _convergeAdminConnection = new("--admin-connection")
@@ -124,7 +147,8 @@ public static class SeederCommand
 
 		foreach (var option in new Option[]
 				 {
-					 _connection, _end, _adminConnection, _days, _pens, _seed, _changeSeconds, _follow
+					 _connection, _end, _adminConnection, _days, _pens, _seed, _changeSeconds, _follow, _archiveLag,
+					 _opcPort
 				 })
 		{
 			root.Options.Add(option);
@@ -213,8 +237,8 @@ public static class SeederCommand
 	}
 
 	// NaN fails every comparison, so a bare `<= 0` check lets it through, and Infinity survives it too and
-	// overflows the interval arithmetic.
-	private static double? ParseSeconds(ArgumentResult result, string name)
+	// overflows the interval arithmetic. The refusal quotes the token, which no culture renders differently.
+	private static double? ParseSeconds(ArgumentResult result, string name, bool acceptsZero)
 	{
 		var text = result.Tokens[^1].Value;
 
@@ -225,11 +249,15 @@ public static class SeederCommand
 			return null;
 		}
 
-		if (!double.IsFinite(seconds) || seconds <= 0.0 || seconds > FollowOptions.MaximumSeconds)
+		var belowFloor = acceptsZero ? seconds < 0.0 : seconds <= 0.0;
+
+		if (!double.IsFinite(seconds) || belowFloor || seconds > FollowOptions.MaximumSeconds)
 		{
+			var floor = acceptsZero ? "at least 0" : "greater than 0";
+
 			result.AddError(
-				$"Option '{name}' must be a finite number greater than 0 and at most "
-				+ $"{FollowOptions.MaximumSeconds:0}, got {seconds}.");
+				$"Option '{name}' must be a finite number {floor} and at most "
+				+ $"{FollowOptions.MaximumSeconds:0}, got '{text}'.");
 
 			return null;
 		}
@@ -300,27 +328,45 @@ public static class SeederCommand
 			return Report(errors);
 		}
 
-		var connection = parsed.GetValue(_connection)!;
-		var pens = parsed.GetValue(_pens);
-		var seedValue = parsed.GetValue(_seed);
-		var changeSeconds = parsed.GetValue(_changeSeconds);
+		return parsed.GetValue(_follow) is { } seconds
+			? InterpretFollow(parsed, seconds, follow)
+			: InterpretSeeding(parsed, seed);
+	}
 
-		if (parsed.GetValue(_follow) is { } seconds)
+	private static Task<int> InterpretFollow(ParseResult parsed, double seconds, Func<FollowOptions, Task<int>> follow)
+	{
+		var errors = ExplicitlyGiven(parsed, _seedingOnly)
+			.Select(name => $"Option '{name}' belongs to a seeding run: --follow appends to an archive somebody "
+							+ "else seeded, so it states no span and fills no tag catalogue.")
+			.ToList();
+
+		if (parsed.GetValue(_opcPort) is not { } opcPort)
 		{
-			foreach (var (option, name) in _seedingOnly)
-			{
-				if (parsed.GetResult(option) is { Implicit: false })
-				{
-					errors.Add(
-						$"Option '{name}' belongs to a seeding run: --follow appends to an archive somebody else "
-						+ "seeded, so it states no span and fills no tag catalogue.");
-				}
-			}
+			errors.Add(
+				"Option '--opc-port' is required for a follow run: a running Simple-Scada holds "
+				+ $"{FollowOptions.SimpleScadaPort} by default, so the demo server takes no port of its own choosing.");
 
-			return errors.Count > 0
-				? Report(errors)
-				: follow(new FollowOptions(connection, TimeSpan.FromSeconds(seconds), pens, seedValue, changeSeconds));
+			return Report(errors);
 		}
+
+		return errors.Count > 0
+			? Report(errors)
+			: follow(new FollowOptions(
+				parsed.GetValue(_connection)!,
+				TimeSpan.FromSeconds(seconds),
+				parsed.GetValue(_pens),
+				parsed.GetValue(_seed),
+				parsed.GetValue(_changeSeconds),
+				TimeSpan.FromSeconds(parsed.GetValue(_archiveLag)),
+				opcPort));
+	}
+
+	private static Task<int> InterpretSeeding(ParseResult parsed, Func<SeederOptions, Task<int>> seed)
+	{
+		var errors = ExplicitlyGiven(parsed, _followOnly)
+			.Select(name => $"Option '{name}' belongs to a follow run: a seeding run writes a closed span and "
+							+ "serves nothing live.")
+			.ToList();
 
 		if (parsed.GetValue(_end) is not { } end)
 		{
@@ -331,6 +377,7 @@ public static class SeederCommand
 
 		var days = parsed.GetValue(_days);
 		var span = TimeSpan.FromDays(days);
+		var changeSeconds = parsed.GetValue(_changeSeconds);
 
 		if (changeSeconds > span.TotalSeconds)
 		{
@@ -341,14 +388,21 @@ public static class SeederCommand
 		return errors.Count > 0
 			? Report(errors)
 			: seed(new SeederOptions(
-				connection,
+				parsed.GetValue(_connection)!,
 				end,
 				days,
-				pens,
-				seedValue,
+				parsed.GetValue(_pens),
+				parsed.GetValue(_seed),
 				changeSeconds,
 				SeederOptions.DefaultBreakCount,
 				parsed.GetValue(_adminConnection)));
+	}
+
+	private static IEnumerable<string> ExplicitlyGiven(ParseResult parsed, (Option Option, string Name)[] options)
+	{
+		return options
+			.Where(entry => parsed.GetResult(entry.Option) is { Implicit: false })
+			.Select(entry => entry.Name);
 	}
 
 	private static Task<int> Report(IReadOnlyList<string> errors)

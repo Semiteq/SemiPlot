@@ -67,7 +67,7 @@ public sealed class TrendCoordinatorTests
 	}
 
 	[Fact]
-	public void ABreakTheProviderReports_SurvivesTheBufferWindowOnItsOwnTimestamp()
+	public void ABreakTheLiveSourceReports_SurvivesTheBufferWindowOnItsOwnTimestamp()
 	{
 		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: ChartTestBuilder.RealtimeInterval);
 		using var ownedCoordinator = coordinator;
@@ -96,6 +96,7 @@ public sealed class TrendCoordinatorTests
 		var provider = new FakeDataProvider(scheduler, ChartTestBuilder.RealtimeInterval);
 		using var coordinator = new TrendCoordinator(
 			provider,
+			provider,
 			[],
 			scheduler,
 			ImmediateScheduler.Instance);
@@ -107,18 +108,19 @@ public sealed class TrendCoordinatorTests
 		batches.Should().BeEmpty();
 	}
 
-	// The provider ending the stream reaches every batch observer: with no onError Rx rethrows it out of the
+	// A live source that faults reaches every batch observer: with no onError Rx rethrows the fault out of the
 	// advance below and takes the emitting thread down.
 	[Fact]
 	public void AFaultingRealtimeStream_ReachesTheFailureChannelInsteadOfTheScheduler()
 	{
 		var scheduler = new TestScheduler();
-		var thrown = new InvalidOperationException("the provider ended the live edge");
+		var thrown = new InvalidOperationException("the live source ended the live edge");
 		var provider = new FakeDataProvider(scheduler, ChartTestBuilder.RealtimeInterval)
 		{
 			RealtimeStreamFailure = thrown
 		};
 		using var coordinator = new TrendCoordinator(
+			provider,
 			provider,
 			provider.Pens,
 			scheduler,
@@ -171,7 +173,7 @@ public sealed class TrendCoordinatorTests
 	}
 
 	[Fact]
-	public void SetPens_LeavesTheProviderHoldingExactlyOneLiveSubscription()
+	public void SetPens_LeavesTheLiveSourceHoldingExactlyOneLiveSubscription()
 	{
 		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: ChartTestBuilder.RealtimeInterval);
 		using var ownedCoordinator = coordinator;
@@ -188,7 +190,7 @@ public sealed class TrendCoordinatorTests
 	}
 
 	[Fact]
-	public void AProviderFailureAfterASwitch_ReachesRealtimeFailuresOnce()
+	public void ALiveSourceFailureAfterASwitch_ReachesRealtimeFailuresOnce()
 	{
 		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: ChartTestBuilder.RealtimeInterval);
 		using var ownedCoordinator = coordinator;
@@ -197,7 +199,7 @@ public sealed class TrendCoordinatorTests
 		using var liveEdge = coordinator.RealtimeBatches.Subscribe(_ => { });
 		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
 
-		var streamFailure = new InvalidOperationException("the provider ended the switched live edge");
+		var streamFailure = new InvalidOperationException("the live source ended the switched live edge");
 		provider.RealtimeStreamFailure = streamFailure;
 		coordinator.SetPens([1]);
 		var advance = () => scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks * 3);
@@ -206,12 +208,82 @@ public sealed class TrendCoordinatorTests
 		failures.Should().ContainSingle().Which.Should().BeSameAs(streamFailure);
 	}
 
+	[Fact]
+	public async Task TheLiveEdgeFollowsTheLiveSource_AndTheReadsGoToTheProvider()
+	{
+		const int ChartColumnCount = 100;
+		var scheduler = new TestScheduler();
+		var dataProvider = new FakeDataProvider(scheduler, ChartTestBuilder.RealtimeInterval);
+		var liveSource = new FakeDataProvider(
+			scheduler,
+			ChartTestBuilder.RealtimeInterval,
+			[new Pen(3, "Pen 3", ["Group B"], "#0000ff")]);
+		using var coordinator = new TrendCoordinator(
+			dataProvider,
+			liveSource,
+			liveSource.Pens,
+			scheduler,
+			ImmediateScheduler.Instance);
+		var batches = new List<RealtimeBatch>();
+		using var liveEdge = coordinator.RealtimeBatches.Subscribe(batches.Add);
+
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
+
+		batches.Should().ContainSingle().Which.Pens.Select(values => values.PenId).Should().Equal(3);
+
+		await coordinator.QueryHistoryAsync(
+			[FakeDataProvider.FirstPen.PenId],
+			FakeDataProvider.RealtimeEpoch.AddHours(-1),
+			FakeDataProvider.RealtimeEpoch,
+			AggregationLayer.Raw,
+			ChartColumnCount,
+			TestContext.Current.CancellationToken);
+		await coordinator.QueryArchiveExtentAsync();
+
+		liveSource.LiveSubscriptionsOpened.Should().Be(1);
+		liveSource.HistoryQueryCount.Should().Be(0);
+		liveSource.ExtentQueryCount.Should().Be(0);
+		dataProvider.LiveSubscriptionsOpened.Should().Be(0);
+		dataProvider.HistoryQueryCount.Should().Be(1);
+		dataProvider.ExtentQueryCount.Should().Be(1);
+	}
+
+	// docs/architecture/data-integration.md#realtime
+	[Fact]
+	public void ALiveSourceThatCompletes_LeavesTheLiveEdgeSilentUntilTheNextSetPens()
+	{
+		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: ChartTestBuilder.RealtimeInterval);
+		using var ownedCoordinator = coordinator;
+		var batches = new List<RealtimeBatch>();
+		var failures = new List<Exception>();
+		var completed = false;
+		using var reported = coordinator.RealtimeFailures.Subscribe(failures.Add);
+		provider.RealtimeStreamCompletes = true;
+		using var liveEdge = coordinator.RealtimeBatches.Subscribe(batches.Add, () => completed = true);
+
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks * 2);
+
+		batches.Should().BeEmpty();
+		failures.Should().BeEmpty();
+		completed.Should().BeFalse();
+		provider.OpenLiveSubscriptionCount.Should().Be(0);
+
+		provider.RealtimeStreamCompletes = false;
+		coordinator.SetPens([FakeDataProvider.FirstPen.PenId]);
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
+
+		batches.Should().ContainSingle().Which.Pens.Select(values => values.PenId).Should()
+			.Equal(FakeDataProvider.FirstPen.PenId);
+		failures.Should().BeEmpty();
+	}
+
 	private static (TrendCoordinator Coordinator, TestScheduler Scheduler, FakeDataProvider Provider)
 		CreateCoordinator(TimeSpan? realtimeInterval = null)
 	{
 		var scheduler = new TestScheduler();
 		var provider = new FakeDataProvider(scheduler, realtimeInterval ?? ChartTestBuilder.RealtimeInterval);
 		var coordinator = new TrendCoordinator(
+			provider,
 			provider,
 			provider.Pens,
 			scheduler,

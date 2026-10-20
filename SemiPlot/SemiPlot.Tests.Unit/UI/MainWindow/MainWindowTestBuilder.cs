@@ -98,7 +98,8 @@ internal static class MainWindowTestBuilder
 		IReadOnlyList<Pen>? pens = null,
 		IPenCatalogueEditor? penCatalogueEditor = null,
 		MessagePanelViewModel? panel = null,
-		IArchiveRowReader? rowReader = null)
+		IArchiveRowReader? rowReader = null,
+		ILiveSource? liveSource = null)
 	{
 		var scheduler = new TestScheduler();
 		var provider = new FakeDataProvider(scheduler, TimeSpan.FromSeconds(1), pens);
@@ -106,6 +107,7 @@ internal static class MainWindowTestBuilder
 		var services = new ServiceCollection()
 			.AddSingleton<IScheduler>(scheduler)
 			.AddSingleton<IDataProvider>(provider)
+			.AddSingleton(liveSource ?? provider)
 			.AddSingleton(penCatalogueEditor ?? new FakePenCatalogueEditor())
 			.AddSingleton(rowReader ?? new FakeArchiveRowReader())
 			.AddSingleton<IMarkerStore>(markerStore)

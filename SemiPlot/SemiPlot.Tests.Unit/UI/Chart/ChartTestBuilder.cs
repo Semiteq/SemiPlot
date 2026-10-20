@@ -57,7 +57,7 @@ internal static class ChartTestBuilder
 
 	public static TrendCoordinator CreateCoordinator(TestScheduler scheduler, FakeDataProvider provider)
 	{
-		return new TrendCoordinator(provider, provider.Pens, scheduler, ImmediateScheduler.Instance);
+		return new TrendCoordinator(provider, provider, provider.Pens, scheduler, ImmediateScheduler.Instance);
 	}
 
 	// The UI scheduler is immediate unless a test passes its own, so no default-built test realises a view.

@@ -16,7 +16,7 @@ namespace SemiPlot.Tests.Unit.UI.Bridge;
 internal sealed class FakeDataProvider(
 	IScheduler scheduler,
 	TimeSpan realtimeInterval,
-	IReadOnlyList<Pen>? pens = null) : IDataProvider
+	IReadOnlyList<Pen>? pens = null) : IDataProvider, ILiveSource
 {
 	// The default last-column center value an unoverridden layer returns; tests assert against this.
 	public const double DefaultCenter = 2.0;
@@ -156,9 +156,11 @@ internal sealed class FakeDataProvider(
 	// TrendCoordinator.BuildRealtimeBatch looks like from the pipeline's side.
 	public bool PoisonRealtimeWindow { get; set; }
 
-	// A provider that ends the live edge with OnError, the one terminal message TrendCoordinator.RealtimeBatches
-	// has to survive. The real provider catches everything inside its poll, so only this fake reaches it.
+	// A live source that ends the live edge with OnError, the terminal message TrendCoordinator.RealtimeBatches
+	// has to survive. The real live source catches everything inside its poll, so only this fake reaches it.
 	public Exception? RealtimeStreamFailure { get; set; }
+
+	public bool RealtimeStreamCompletes { get; set; }
 
 	/// <summary>The next tick follows the pen's value with a break 1 ms later, as the poll's q = 32 row.</summary>
 	public void BreakRealtimePenOnce(int penId)
@@ -212,6 +214,11 @@ internal sealed class FakeDataProvider(
 		if (RealtimeStreamFailure is { } failure)
 		{
 			return Observable.Throw<IReadOnlyList<Sample>>(failure, _scheduler);
+		}
+
+		if (RealtimeStreamCompletes)
+		{
+			return Observable.Empty<IReadOnlyList<Sample>>(_scheduler);
 		}
 
 		var subscribed = penIds.Where(id => Pens.Any(pen => pen.PenId == id)).ToArray();

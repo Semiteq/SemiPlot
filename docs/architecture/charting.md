@@ -64,7 +64,7 @@ later read seats starts thin, as in a new window.
 **Gaps via NaN.** A column carrying `NaN` in `Min`/`Max` is the envelope's gap marker: `Build` breaks the
 path there and the next real column opens a new segment with a `MoveTo`. A `NaN` column comes from one of
 two routes. The history path writes one after a bucket whose `breaks` flag a `q = 32` marker or a null
-`v` sets (`data-integration.md#quality-and-gaps`). The live edge writes one for a break the provider
+`v` sets (`data-integration.md#quality-and-gaps`). The live edge writes one for a break the live source
 reported: `TrendPenState.AppendRealtime` encodes a null value as a `NaN` column and keeps `CurrentValue` at
 the last real value.
 
@@ -770,9 +770,9 @@ floor is read again, while a window far from either floor reads nothing (`overvi
 
 ## Data contract (UI ↔ provider)
 
-The viewer consumes data only through `IDataProvider` (see data-integration.md), in-process and
-strongly typed — **no JSON message bridge**. `TrendCoordinator` is the Rx hub between provider and
-view model:
+The viewer consumes data only through `IDataProvider` and, for the live edge, `ILiveSource` (see
+data-integration.md), in-process and strongly typed — **no JSON message bridge**. `TrendCoordinator` is
+the Rx hub between the two and the view model:
 
 - **History:** `QueryHistoryAsync(penIds, from, to, layer, targetColumnCount)` is the single history
   query, returning one `PenHistoryEnvelope` per pen (ascending `Timestamps` + `Min` + `Max` +
@@ -780,16 +780,17 @@ view model:
   `ChartHistoryRequestDebouncer`, which runs one query at a time and lets the newest window asked
   for run last. The minimap band is a second reader outside the debouncer: one pen at 250 columns
   every 2-60 s (`trend-interaction.md#archive-overview-minimap`).
-- **Realtime:** `IObservable<RealtimeBatch>` — an ascending union timeline the live edge advances
+- **Realtime:** the live edge comes through `ILiveSource` as lists of `Sample`, and the coordinator
+  republishes it as `IObservable<RealtimeBatch>` — an ascending union timeline the live edge advances
   from, plus one `PenRealtimeValues` per pen carrying that pen's **own** timestamps and `double?`
   values; buffered on the data scheduler and observed on the UI scheduler. The values are per pen
   rather than a column over the union because the archive is per-variable and change-based with a
   deadband, so one buffer window routinely spans timestamps only one pen sampled. A pen carries no
   entry, null or real, at a timestamp it did not report, and a consumer leaves it alone there. A null
-  is a break the provider reported, a `Sample` whose `Value` is null: the pen has no data from that
+  is a break the live source reported, a `Sample` whose `Value` is null: the pen has no data from that
   moment until its next sample, and the chart appends a `NaN` column there. `RealtimePoll` writes one
   1 ms after a `q = 32` row (`data-integration.md#realtime`). The pen
-  set the stream carries follows the catalogue: `TrendCoordinator.SetPens` switches the provider
+  set the stream carries follows the catalogue: `TrendCoordinator.SetPens` switches the live-source
   subscription and `RealtimeBatches` stays one published stream (`data-integration.md#realtime`).
 - **Archive extent:** `QueryArchiveExtentAsync()` returns an `ArchiveExtent(FirstUtc, LastUtc)` —
   the full stored time span. `TrendCoordinator.QueryArchiveExtentAsync()` is a pass-through to the

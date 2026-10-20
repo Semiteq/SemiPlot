@@ -14,24 +14,26 @@ public sealed class TrendCoordinator : IDisposable
 	internal static readonly TimeSpan BatchWindow = TimeSpan.FromMilliseconds(100);
 
 	private readonly IDataProvider _dataProvider;
+	private readonly ILiveSource _liveSource;
 	private readonly IScheduler _dataScheduler;
 	private readonly IScheduler _uiScheduler;
 	private readonly BehaviorSubject<IReadOnlyList<int>> _penIds;
 
-	// Written from the data scheduler (a failed window, a provider that ends the stream) and completed from
+	// Written from the data scheduler (a failed window, a live source that faults) and completed from
 	// the UI thread at disposal, so the subject serializes its callers.
 	private readonly ISubject<Exception> _realtimeFailures = Subject.Synchronize(new Subject<Exception>());
 
-	// Every pen set, pens here and each one SetPens pushes, must be dataProvider's own catalogue: the
-	// coordinator subscribes to these identifiers without asking the provider whether it knows them, and a
-	// provider silently drops the ones it does not.
+	// Every pen set, pens here and each one SetPens pushes, holds identifiers the live source serves
+	// (docs/architecture/data-integration.md#realtime).
 	public TrendCoordinator(
 		IDataProvider dataProvider,
+		ILiveSource liveSource,
 		IReadOnlyList<Pen> pens,
 		IScheduler dataScheduler,
 		IScheduler uiScheduler)
 	{
 		_dataProvider = dataProvider;
+		_liveSource = liveSource;
 		_dataScheduler = dataScheduler;
 		_uiScheduler = uiScheduler;
 		_penIds = new BehaviorSubject<IReadOnlyList<int>>([.. pens.Select(pen => pen.PenId)]);
@@ -40,14 +42,14 @@ public sealed class TrendCoordinator : IDisposable
 	}
 
 	/// <summary>
-	/// The live edge. It never faults: a provider that ends the stream is reported through
+	/// The live edge. It never faults: a live source that faults is reported through
 	/// <see cref="RealtimeFailures"/> and this stream completes instead.
 	/// </summary>
 	public IObservable<RealtimeBatch> RealtimeBatches { get; }
 
 	/// <summary>
 	/// Every realtime failure once: a throw inside the batch projection, which the pipeline skips, and a
-	/// provider that ends the stream. Republished on the UI scheduler, like <see cref="RealtimeBatches"/>.
+	/// live source that faults. Republished on the UI scheduler, like <see cref="RealtimeBatches"/>.
 	/// </summary>
 	public IObservable<Exception> RealtimeFailures { get; }
 
@@ -95,7 +97,7 @@ public sealed class TrendCoordinator : IDisposable
 	private IObservable<RealtimeBatch> BuildRealtimeBatches()
 	{
 		return _penIds
-			.Select(_dataProvider.Subscribe)
+			.Select(_liveSource.Subscribe)
 			.Switch()
 			.Buffer(BatchWindow, _dataScheduler)
 			.Select(TryBuildRealtimeBatch)

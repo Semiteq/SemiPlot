@@ -1,3 +1,6 @@
+using System.Reactive;
+using System.Reactive.Linq;
+
 using AwesomeAssertions;
 
 using Microsoft.Extensions.DependencyInjection;
@@ -29,7 +32,7 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 		await Writer().WriteAsync(SeededRows(), Day, NextDay);
 	}
 
-	// The logger belongs to this provider and this one subscription, so every per-tick entry that carries a
+	// The logger belongs to this live source and this one subscription, so every per-tick entry that carries a
 	// row count (written on each successful tick after the baseline) is the subscription's own. A poll the
 	// disposal left running would write one a second.
 	[Fact]
@@ -41,9 +44,9 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 		using var armed = new ArmedGate(logs);
 		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString, armed);
 
-		var provider = services.GetRequiredService<IDataProvider>();
+		var liveSource = services.GetRequiredService<ILiveSource>();
 
-		using var subscription = new BatchCollector<IReadOnlyList<Sample>>(provider.Subscribe(SubscribedPenIds));
+		using var subscription = new BatchCollector<IReadOnlyList<Sample>>(liveSource.Subscribe(SubscribedPenIds));
 
 		await armed.Armed(1).WaitAsync(GateBound, cancellationToken);
 
@@ -82,9 +85,9 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 		using var armed = new ArmedGate();
 		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString, armed);
 
-		var provider = services.GetRequiredService<IDataProvider>();
+		var liveSource = services.GetRequiredService<ILiveSource>();
 
-		using var first = new BatchCollector<IReadOnlyList<Sample>>(provider.Subscribe(SubscribedPenIds));
+		using var first = new BatchCollector<IReadOnlyList<Sample>>(liveSource.Subscribe(SubscribedPenIds));
 
 		await armed.Armed(1).WaitAsync(GateBound, cancellationToken);
 
@@ -94,7 +97,7 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 			Database, SubscribedPenIds[0], beforeTheSecondSubscription, 1, cancellationToken: cancellationToken);
 		await firstSeesTheEarlyRow.WaitAsync(GateBound, cancellationToken);
 
-		using var second = new BatchCollector<IReadOnlyList<Sample>>(provider.Subscribe(SubscribedPenIds));
+		using var second = new BatchCollector<IReadOnlyList<Sample>>(liveSource.Subscribe(SubscribedPenIds));
 
 		await armed.Armed(2).WaitAsync(GateBound, cancellationToken);
 
@@ -115,6 +118,44 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 				ArchiveProviderFactory.TimeConverter.ToUtc(afterBoth)
 			]);
 		Delivered(second).Should().Equal([ArchiveProviderFactory.TimeConverter.ToUtc(afterBoth)]);
+	}
+
+	// The archive holds no row for the second identifier, which is what an identifier the source does not
+	// serve looks like to the poll.
+	[Fact]
+	public async Task AnIdentifierTheSourceDoesNotServeLeavesTheStreamRunning()
+	{
+		const int UnservedPenId = 9999;
+		var cancellationToken = TestContext.Current.CancellationToken;
+
+		using var armed = new ArmedGate();
+		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString, armed);
+
+		var liveSource = services.GetRequiredService<ILiveSource>();
+
+		using var notifications = new BatchCollector<Notification<IReadOnlyList<Sample>>>(
+			liveSource.Subscribe([SubscribedPenIds[0], UnservedPenId]).Materialize());
+
+		await armed.Armed(1).WaitAsync(GateBound, cancellationToken);
+
+		var firstDelivery = notifications.NextBatch();
+
+		await AppendAsync(
+			Database, SubscribedPenIds[0], SeededLast.AddSeconds(1), 1, cancellationToken: cancellationToken);
+		await firstDelivery.WaitAsync(GateBound, cancellationToken);
+
+		var secondDelivery = notifications.NextBatch();
+
+		await AppendAsync(
+			Database, SubscribedPenIds[0], SeededLast.AddSeconds(2), 2, cancellationToken: cancellationToken);
+		await secondDelivery.WaitAsync(GateBound, cancellationToken);
+
+		notifications.Batches.Should().HaveCount(2)
+			.And.OnlyContain(notification => notification.Kind == NotificationKind.OnNext);
+		notifications.Batches
+			.SelectMany(notification => notification.Value)
+			.Select(sample => sample.PenId)
+			.Should().Equal(SubscribedPenIds[0], SubscribedPenIds[0]);
 	}
 
 	private static IReadOnlyList<FakeLogRecord> PollEntries(FakeLoggerProvider logs)

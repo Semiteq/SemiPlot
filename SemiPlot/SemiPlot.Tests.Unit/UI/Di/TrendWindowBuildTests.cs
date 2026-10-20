@@ -6,6 +6,7 @@ using Avalonia.Threading;
 using AwesomeAssertions;
 
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Reactive.Testing;
 
 using ReactiveUI.Avalonia;
 
@@ -85,5 +86,26 @@ public sealed class TrendWindowBuildTests
 		Dispatcher.UIThread.RunJobs();
 
 		dataProvider.PensQueryCount.Should().Be(pensQueriesBefore + 1);
+	}
+
+	// One fake serves both interfaces elsewhere, so only a second instance tells a cast from a resolve.
+	[AvaloniaFact]
+	public async Task TheWindowFollowsTheContainersLiveSource()
+	{
+		var liveSource = new FakeDataProvider(new TestScheduler(), TimeSpan.FromSeconds(1));
+		using var stand = NewArchiveStand(liveSource: liveSource);
+
+		var probe = await StartupProbe.ReadAsync(stand.Data.ServiceProvider, StartupProbe.DefaultReadBound);
+
+		using var window = TrendWindow.Build(
+			probe.Value,
+			TestLaunch.LauncherAt(AppContext.BaseDirectory),
+			AvaloniaScheduler.Instance,
+			App.CsvDialectFor(UiLanguage.En),
+			TimeZoneInfo.Utc);
+		Dispatcher.UIThread.RunJobs();
+
+		liveSource.LiveSubscriptionsOpened.Should().Be(1);
+		stand.Provider.LiveSubscriptionsOpened.Should().Be(0);
 	}
 }

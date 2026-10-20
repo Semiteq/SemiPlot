@@ -2601,10 +2601,10 @@ public sealed class TrendChartViewModelTests
 	}
 
 	[AvaloniaFact]
-	public void AProviderThatEndsTheLiveEdge_IsReportedOnce()
+	public void ALiveSourceThatEndsTheLiveEdge_IsReportedOnce()
 	{
 		var scheduler = new TestScheduler();
-		var thrown = new InvalidOperationException("the provider ended the live edge");
+		var thrown = new InvalidOperationException("the live source ended the live edge");
 		var provider = new FakeDataProvider(scheduler, RealtimeInterval)
 		{
 			RealtimeStreamFailure = thrown

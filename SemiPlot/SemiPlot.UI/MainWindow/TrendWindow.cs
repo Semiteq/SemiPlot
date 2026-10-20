@@ -70,6 +70,7 @@ internal sealed class TrendWindow : IDisposable
 	{
 		var serviceProvider = startupData.ServiceProvider;
 		var dataProvider = serviceProvider.GetRequiredService<IDataProvider>();
+		var liveSource = serviceProvider.GetRequiredService<ILiveSource>();
 		var dataScheduler = serviceProvider.GetRequiredService<IScheduler>();
 		var messagePanel = serviceProvider.GetRequiredService<MessagePanelViewModel>();
 		var penCatalogueEditor = serviceProvider.GetRequiredService<IPenCatalogueEditor>();
@@ -77,7 +78,8 @@ internal sealed class TrendWindow : IDisposable
 		var markerStore = serviceProvider.GetRequiredService<IMarkerStore>();
 		var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
 
-		var coordinator = new TrendCoordinator(dataProvider, startupData.Pens, dataScheduler, uiScheduler);
+		var coordinator = new TrendCoordinator(
+			dataProvider, liveSource, startupData.Pens, dataScheduler, uiScheduler);
 		var markerSync = new MarkerSync(
 			markerStore, messagePanel, uiScheduler, loggerFactory.CreateLogger<MarkerSync>());
 

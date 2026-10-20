@@ -66,8 +66,8 @@ Constraint: **$0 budget** — only free/OSS components.
 |   StartupFailureWindow (+ view model): shown instead of     |
 |     MainWindow when the start fails                         |
 +----------------------────────────────────────--------------+
-              │ IDataProvider (subscribe realtime, query history,
-              │                re-read the catalogue)
+              │ IDataProvider (query history, re-read the catalogue)
+              │ ILiveSource (the live edge, via TrendCoordinator)
               │ IPenCatalogueEditor (the pen editor's writes)
               │ IArchiveRowReader (the export window's row reads)
               │ IMarkerStore (the chart's time markers, via MarkerSync)
@@ -76,6 +76,7 @@ Constraint: **$0 budget** — only free/OSS components.
 |  SemiPlot.Core                                              |
 |   - IDataProvider abstraction + records (Pen, envelope,     |
 |     ArchiveExtent, …)                                       |
+|   - ILiveSource + Sample, the live edge                     |
 |   - IPenCatalogueEditor + records, the catalogue writes     |
 |   - IArchiveRowReader + StoredArchiveRow, the export reads  |
 |   - IMarkerStore + StoredMarker, the time markers           |
@@ -87,21 +88,22 @@ Constraint: **$0 budget** — only free/OSS components.
 +-------------------------------------------------------------+
 |  SemiPlot.DataSource.Postgres  (the only one)               |
 |   - PostgresDataProvider over the Simple-Scada archive      |
-|   - history, extent, catalogue and the live-edge poll       |
+|   - history, extent, days and catalogue reads               |
+|   - PostgresLiveSource, the live-edge poll                  |
 |   - PostgresPenCatalogueEditor, the catalogue writes        |
 |   - PostgresArchiveRowReader, the export's row reads        |
 |   - PostgresMarkerStore, the time markers                   |
 +-------------------------------------------------------------+
 ```
 
-The UI never talks to a data source directly. It reads through `IDataProvider`; the pen editor writes
-through `IPenCatalogueEditor`, and `Markers/MarkerSync` reads and writes the chart's time markers through
-`IMarkerStore` (see [data-integration.md](./data-integration.md)). The export window reads stored rows
-through `IArchiveRowReader`. The composition root resolves the PostgreSQL
-provider, which is the only one the application ships; an archive that does not answer shows the
-startup failure in its own window rather than falling back to invented data. There is **no web
-bridge**: the chart is a native ScottPlot control, fed in-process by `TrendCoordinator` over
-`IObservable`/awaitable seams.
+The UI never talks to a data source directly. It reads through `IDataProvider`, and `TrendCoordinator`
+follows the live edge through `ILiveSource`; the pen editor writes through `IPenCatalogueEditor`, and
+`Markers/MarkerSync` reads and writes the chart's time markers through `IMarkerStore` (see
+[data-integration.md](./data-integration.md)). The export window reads stored rows through
+`IArchiveRowReader`. The composition root resolves the PostgreSQL provider, which is the only one the
+application ships; an archive that does not answer shows the startup failure in its own window rather
+than falling back to invented data. There is **no web bridge**: the chart is a native ScottPlot control,
+fed in-process by `TrendCoordinator` over `IObservable`/awaitable seams.
 
 ### One window per process
 
@@ -122,7 +124,7 @@ sequence's `StartupData`, the process's `InstanceLauncher` (which names the conf
 UI scheduler, the `CsvDialect` that `App.ConfigureStarted` picks through `App.CsvDialectFor` and the
 archive's time zone (`PostgresConnectionSettings.SourceTimeZone`), and constructs in order:
 
-1. the coordinator;
+1. the coordinator, over the container's `IDataProvider` and `ILiveSource`;
 2. the marker sync, over the container's `IMarkerStore` (`#the-live-markers`);
 3. the chart, whose constructor opens the live edge, seeded from the start sequence's pens and extent,
    with the marker sync as its marker channel;
@@ -155,9 +157,9 @@ on the UI thread.
 
 The container keeps the process services. `AddPostgresData()` registers the data scheduler,
 `TimeProvider.System`, the `PostgresConnectionSettings`, the `NpgsqlDataSource`, the `ArchiveTimeConverter`,
-the `ArchiveExceptionMapper`, the provider, the editor, the marker store and the row reader; `AddUi()`
-registers the message panel, and `StartupProbe.BuildArchiveServiceProvider` adds the logger factory. The
-container holds no window part, the status bar included. The UI scheduler is not a
+the `ArchiveExceptionMapper`, the provider, the live source, the editor, the marker store and the row
+reader; `AddUi()` registers the message panel, and `StartupProbe.BuildArchiveServiceProvider` adds the
+logger factory. The container holds no window part, the status bar included. The UI scheduler is not a
 container registration; `App` passes `AvaloniaScheduler.Instance` to `TrendWindow.Build`, while the data
 scheduler comes from the container.
 
@@ -330,12 +332,13 @@ one method: nothing else may resolve a service through a static.
 
 ## Data flow
 
-- **Realtime:** the provider polls the raw layer for the samples written past the last one it saw →
-  `TrendCoordinator` buffers them on the data scheduler into a coalesced `RealtimeBatch`
-  (≤ 10 Hz / 100 ms), crosses to the UI scheduler via `ObserveOn`, and exposes them as
-  `IObservable<RealtimeBatch>`; the chart view model subscribes and appends to the per-pen
-  plottables. The provider reports no connection state: the catalogue sync derives it from its reads,
-  and the status bar shows it and the message panel records it (`#a-failed-read`).
+- **Realtime:** `PostgresLiveSource`, behind `ILiveSource`, polls the raw layer for the samples
+  written past the last one it saw → `TrendCoordinator` buffers them on the data scheduler into a
+  coalesced `RealtimeBatch` (≤ 10 Hz / 100 ms), crosses to the UI scheduler via `ObserveOn`, and
+  exposes them as `IObservable<RealtimeBatch>`; the chart view model subscribes and appends to the
+  per-pen plottables. Neither the provider nor the live source reports a connection state: the
+  catalogue sync derives it from its reads, and the status bar shows it and the message panel records
+  it (`#a-failed-read`).
 - **History:** the chart requests a window → `TrendCoordinator.QueryHistoryAsync` (the single history
   query, reached through the debouncer by the initial load and every gesture alike) → provider
   returns one server-reduced `PenHistoryEnvelope` per pen (ascending `Timestamps` + `Min`/`Max`/`Center`) → the view
@@ -903,7 +906,8 @@ the startup failure and the fatal catch alike — so a launcher can tell one fro
 
 The application reads the real archive and nothing else: the composition root registers
 `AddPostgresData`, and every member of `IDataProvider` is implemented over it — the pen catalogue,
-the archive extent, the archive days read, the windowed history read and the live-edge poll. The chart draws history and
+the archive extent, the archive days read and the windowed history read. `PostgresLiveSource`
+implements `ILiveSource` with the live-edge poll over the same archive. The chart draws history and
 follows the archive as it grows. The pen editor writes the catalogue through `IPenCatalogueEditor`,
 and every running chart follows what it writes within 5 s (`#the-live-catalogue`), except the start
 values, which change nothing on screen (`#what-a-read-changes`). The chart places, drags, renames and

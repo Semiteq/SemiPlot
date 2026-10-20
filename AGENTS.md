@@ -396,6 +396,8 @@ No abbreviations in names.
 - `IDataProvider` + its DTOs stay in `SemiPlot.Core`; every concrete provider lives in its own
   `SemiPlot.DataSource.*` project (`SemiPlot.DataSource.Postgres` is the only one). Core must not
   reference a data-source project; a further provider slots in as a sibling without touching Core.
+  `ILiveSource` lives in `SemiPlot.Core/Data` beside `IDataProvider`, and `AddPostgresData()` registers
+  `PostgresLiveSource` over the same `NpgsqlDataSource` (`docs/architecture/data-integration.md#realtime`).
 - Each write path is an interface of its own and `IDataProvider` stays read-only. `IPenCatalogueEditor`,
   `PenCatalogue` and `PenSettingChange` live in `SemiPlot.Core/Data`; `PostgresPenCatalogueEditor` lives
   in `SemiPlot.DataSource.Postgres`, which `AddPostgresData()` registers beside the provider over the
@@ -438,12 +440,12 @@ No abbreviations in names.
   the configuration tables, the two roles and their grants are SemiBase's; the seeder fills the
   archive table and the catalogue, and creates only the day partitions its rows land in
   (`docs/architecture/bench.md`).
-- The provider runs no cold-path reader: a failed read is mapped by `ArchiveExceptionMapper`, which
-  stays synchronous, pure and unit-testable, and nothing opens a second connection to enrich the
-  error. Each read supplies every relation its statement touches, which the detail line names: one
-  relation for the history and realtime reads, `semiplot_tags, trends` for the archive extent and the
-  archive days, all three of `semiplot_tags`, `semiplot_groups` and `semiplot_pen_groups` for the pen
-  catalogue, and `semiplot_markers` for every marker read and write.
+- The provider and the live source run no cold-path reader: a failed read is mapped by
+  `ArchiveExceptionMapper`, which stays synchronous, pure and unit-testable, and nothing opens a second
+  connection to enrich the error. Each read supplies every relation its statement touches, which the
+  detail line names: one relation for the history and realtime reads, `semiplot_tags, trends` for the
+  archive extent and the archive days, all three of `semiplot_tags`, `semiplot_groups` and
+  `semiplot_pen_groups` for the pen catalogue, and `semiplot_markers` for every marker read and write.
 
 ---
 

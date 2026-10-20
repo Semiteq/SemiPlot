@@ -58,8 +58,8 @@ operator interaction.
   `ui-theme.md` is the record of what it does and how far it reaches.
 - **Scheduler seam:** Core keeps the bare `IScheduler` (`DefaultScheduler.Instance`) for data timing;
   the UI scheduler (`AvaloniaScheduler.Instance`) is captured in `AfterSetup` and passed explicitly to
-  the coordinator — `TrendCoordinator(IDataProvider dataProvider, IReadOnlyList<Pen> pens,
-  IScheduler dataScheduler, IScheduler uiScheduler)`,
+  the coordinator — `TrendCoordinator(IDataProvider dataProvider, ILiveSource liveSource,
+  IReadOnlyList<Pen> pens, IScheduler dataScheduler, IScheduler uiScheduler)`,
   `Buffer` (the 100 ms `TrendCoordinator.BatchWindow`) on the data scheduler, `ObserveOn` on the UI one. No second `IScheduler` container registration.
   The pen catalogue is passed in because the coordinator needs the pen identifiers in its constructor
   and `QueryPensAsync` cannot be awaited there; the composition root hands over the start sequence's
@@ -69,17 +69,19 @@ operator interaction.
   (see Renderer).
   *As-built note:* realtime is `double?` on each pen's own timestamps, not on a shared column:
   `PenRealtimeValues` carries no entry at a timestamp the pen did not report, and a null is a break the
-  provider reported. The poll writes one 1 ms after a `q = 32` row (data-integration.md#realtime); every
+  live source reported. The poll writes one 1 ms after a `q = 32` row (data-integration.md#realtime); every
   other gap the chart draws comes from the history path (charting.md, "Gaps via NaN").
 - **Δ cursors:** Δy is reported only for the **active/selected pen** (pens share X but have independent Y
   scales, so a global Δy is meaningless).
 - **Bad quality → gap:** OPC bad-quality is mapped to `null` at the `IDataProvider` boundary, reusing the
   null = gap path; a distinct value-present-but-bad-quality flag is deferred.
-  *As-built note:* no OPC quality exists yet, so no bad-quality status maps to `null`. The archive marks
-  the last sample before a break with `q = 32`, and that mark maps to a break. On the history path the
-  server closes the bucket there, and `BucketedRowFold` writes a `NaN` column one tick after it
-  (data-integration.md#quality-and-gaps). At the live edge the poll emits the row's value and then a null
-  `Sample` 1 ms after it, which the chart appends as a `NaN` column (data-integration.md#realtime).
+  *As-built note:* no OPC quality exists yet, so no bad-quality status maps to `null`. The live edge
+  crosses `ILiveSource`, not `IDataProvider`, so that port is the boundary an OPC status maps at. The
+  archive marks the last sample before a break with `q = 32`, and that mark maps to a break. On the
+  history path the server closes the bucket there, and `BucketedRowFold` writes a `NaN` column one tick
+  after it (data-integration.md#quality-and-gaps). At the live edge the poll emits the row's value and
+  then a null `Sample` 1 ms after it, which the chart appends as a `NaN` column
+  (data-integration.md#realtime).
   `q = 16` takes no branch: the next bucket or sample resumes the line.
 - **Real-time return:** "jump to real-time" re-attaches sticky immediately; now-marker at the
   **right edge** (centering is at most a transient transition animation).

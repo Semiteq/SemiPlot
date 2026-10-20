@@ -1,3 +1,5 @@
+using System.Reactive.Concurrency;
+
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -25,11 +27,19 @@ internal static class UnreachableArchive
 
 	public static ServiceProvider Services(
 		PostgresConnectionSettings settings,
-		ILoggerProvider? loggerProvider = null)
+		ILoggerProvider? loggerProvider = null,
+		IScheduler? scheduler = null)
 	{
-		return new ServiceCollection()
+		var services = new ServiceCollection()
 			.AddTestLogging(loggerProvider)
-			.AddPostgresData(settings)
-			.BuildServiceProvider();
+			.AddPostgresData(settings);
+
+		if (scheduler is not null)
+		{
+			// Registered after AddPostgresData's own scheduler, so every resolution takes this one.
+			services.AddSingleton(scheduler);
+		}
+
+		return services.BuildServiceProvider();
 	}
 }

@@ -12,9 +12,9 @@ using static SemiPlot.Tests.Integration.RealtimeArchive;
 
 namespace SemiPlot.Tests.Integration;
 
-// Every synchronisation point is an awaited emission (Connected, or a delivered batch) bounded by GateBound,
-// except the disposal check, which waits out poll intervals because a stopped poll emits nothing. Appending
-// before the baseline has run races the subscription and fails the await at the bound.
+// Every synchronisation point is an awaited emission (the poll's baseline log line, or a delivered batch)
+// bounded by GateBound, except the disposal check, which waits out poll intervals because a stopped poll emits
+// nothing. Appending before the baseline has run races the subscription and fails the await at the bound.
 [Collection(ArchiveDatabaseCollection.Name)]
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
@@ -22,6 +22,8 @@ namespace SemiPlot.Tests.Integration;
 public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresContainerFixture)
 	: ClonedArchiveTest(postgresContainerFixture, CloneSource.Provisioned)
 {
+	private const int FailureRunBound = 3;
+
 	protected override async ValueTask SeedAsync()
 	{
 		await Writer().WriteAsync(SeededRows(), Day, NextDay);
@@ -36,11 +38,11 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 		var cancellationToken = TestContext.Current.CancellationToken;
 
 		using var logs = new FakeLoggerProvider();
-		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString, logs);
+		using var armed = new ArmedGate(logs);
+		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString, armed);
 
 		var provider = services.GetRequiredService<IDataProvider>();
 
-		using var armed = new ArmedGate(provider.ConnectionFaults);
 		using var subscription = new BatchCollector<IReadOnlyList<Sample>>(provider.Subscribe(SubscribedPenIds));
 
 		await armed.Armed(1).WaitAsync(GateBound, cancellationToken);
@@ -77,11 +79,11 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 		var beforeTheSecondSubscription = SeededLast.AddSeconds(1);
 		var afterBoth = SeededLast.AddSeconds(2);
 
-		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
+		using var armed = new ArmedGate();
+		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString, armed);
 
 		var provider = services.GetRequiredService<IDataProvider>();
 
-		using var armed = new ArmedGate(provider.ConnectionFaults);
 		using var first = new BatchCollector<IReadOnlyList<Sample>>(provider.Subscribe(SubscribedPenIds));
 
 		await armed.Armed(1).WaitAsync(GateBound, cancellationToken);
@@ -104,9 +106,9 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 		await firstSeesTheLateRow.WaitAsync(GateBound, cancellationToken);
 		await secondSeesTheLateRow.WaitAsync(GateBound, cancellationToken);
 
-		armed.NoFaultWasSeen.Should().BeTrue(
-			"the second subscription's armed point is the second connected state only while no fault has "
-			+ "been raised and cleared behind it");
+		armed.HighestConsecutiveFailures.Should().BeLessThan(
+			FailureRunBound,
+			"the test relies on an archive that answers the poll, and a run of failed ticks this long says it did not");
 		Delivered(first).Should().Equal(
 			[
 				ArchiveProviderFactory.TimeConverter.ToUtc(beforeTheSecondSubscription),

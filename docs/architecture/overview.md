@@ -126,9 +126,9 @@ archive's time zone (`PostgresConnectionSettings.SourceTimeZone`), and construct
 2. the marker sync, over the container's `IMarkerStore` (`#the-live-markers`);
 3. the chart, whose constructor opens the live edge, seeded from the start sequence's pens and extent,
    with the marker sync as its marker channel;
-4. the status bar, over the coordinator's connection stream and the chart's navigation;
-5. the minimap;
-6. the catalogue sync;
+4. the minimap;
+5. the catalogue sync;
+6. the status bar, over the catalogue sync's `ConnectionStates` and the chart's navigation;
 7. the navigation bar and the legend;
 8. the catalogue applier;
 9. `MainWindowViewModel`, over the message panel, the status bar, the chart, the minimap, the navigation
@@ -138,13 +138,13 @@ archive's time zone (`PostgresConnectionSettings.SourceTimeZone`), and construct
    panel, a logger, the UI scheduler, the archive zone and the chart navigation's `FirstSample` and
    `NewestSample`, so the window view model holds none of the export's own inputs.
 
-The coordinator republishes the provider's connection stream through `ObserveOn` on the UI scheduler.
-`AvaloniaScheduler` runs a zero-delay action at once when the caller is already on the dispatcher thread,
-so `ObserveOn` alone defers nothing for a state emitted on the UI thread. The bar is bound in time for the
-first state because the provider emits off the UI thread; the tests' `TestScheduler` defers it.
+The status bar subscribes to `ConnectionStates` in its constructor, and the catalogue sync emits a state
+only from a read, which none runs before `Start()`. So `Build` builds the bar before it starts the sync,
+and no state precedes the bar's subscription
+(`data-integration.md#the-connection-state-the-catalogue-read-reports`).
 
-`Build` then starts the catalogue sync, starts the marker sync and asks it for its first read, requests
-the initial history and starts the minimap's extent load. A part
+`Build` then starts the catalogue sync and asks it for its first read, starts the marker sync and asks
+it for its first read, requests the initial history and starts the minimap's extent load. A part
 is built once and never replaced, so every part of the window view model is non-null.
 `TrendWindow.Dispose` disposes the same objects in reverse order, the coordinator last, and
 `MainWindowViewModel` disposes only its own commands and request subjects. A throw out of `Build` ends
@@ -334,8 +334,8 @@ one method: nothing else may resolve a service through a static.
   `TrendCoordinator` buffers them on the data scheduler into a coalesced `RealtimeBatch`
   (≤ 10 Hz / 100 ms), crosses to the UI scheduler via `ObserveOn`, and exposes them as
   `IObservable<RealtimeBatch>`; the chart view model subscribes and appends to the per-pen
-  plottables. The same provider reports its own connection state, which the status bar shows and the
-  message panel records.
+  plottables. The provider reports no connection state: the catalogue sync derives it from its reads,
+  and the status bar shows it and the message panel records it (`#a-failed-read`).
 - **History:** the chart requests a window → `TrendCoordinator.QueryHistoryAsync` (the single history
   query, reached through the debouncer by the initial load and every gesture alike) → provider
   returns one server-reduced `PenHistoryEnvelope` per pen (ascending `Timestamps` + `Min`/`Max`/`Center`) → the view
@@ -614,19 +614,25 @@ connection it edits is the one every read runs over (`#the-settings-window`).
 reads, so the read carries the provider's normalisation and nothing repeats it. Its loop waits for
 `ReadInterval`, 5 s, or for a `ReadNow()`, whichever comes first, and then reads:
 
-- the first read comes one interval after `Start`, because the start sequence has just read the same
-  catalogue;
+- the first read comes at once: `TrendWindow.Build` calls `ReadNow()` right after `Start()`. The start
+  sequence has just read the same catalogue, but this read starts the connection state, so its first
+  `Connected`, or its run of failures, starts when the window opens;
+- each read runs under the catalogue command's own 5 s statement bound
+  (`data-integration.md#configuration`), so a stalled server fails it within seconds rather than at the
+  connection string's 300 s backstop;
 - reads never overlap;
 - `ReadNow()` during the wait starts a read at once; during a read it makes exactly one more read
   follow it; the wait after any read is a full interval.
 
 The loop is `Bridge/ArchiveReadLoop`, which `PenCatalogueSync` delegates to with the read name "pen
 catalogue" and `MarkerSync` runs as well (`#the-live-markers`). It holds the wait, `ReadNow`, the failure
-count and its warning; each sync keeps its read and what it does with a result.
+counts and their warning, and the connection state it emits through the sink `PenCatalogueSync` hands it;
+each sync keeps its read and what it does with a result.
 The loop runs on the UI scheduler through `ScheduleAsync`. The read is asynchronous I/O and holds no
 thread, and the loop, `ReadNow`, the snapshot and `Dispose` all run on the UI thread, so nothing is
 locked. `TrendWindow.Build` builds the sync from the pens the start sequence read, after the
-minimap, hands its `ReadNow` to `MainWindowViewModel`, and starts it once the window view model exists.
+minimap, hands its `ConnectionStates` to the status bar and its `ReadNow` to `MainWindowViewModel`, and
+starts it and asks for the first read once the window view model exists.
 `Dispose` cancels the wait, and a read that lands after it emits nothing.
 
 The editor asks for a read after every write it lands. `ArchiveCallQueue` invokes its success callback
@@ -698,13 +704,21 @@ without touching the chart.
 
 #### A failed read
 
-A failed read keeps the snapshot, so the next success carries everything since. The first two failures
-in a row write a warning to the log. The third failure in a row and every one after it go to the
-message panel, and a success resets the count. Three is the live edge's threshold, one constant for
-both (`ArchiveConnectionState.ConsecutiveFailuresBeforeFault`), so one reconnect after a server restart
-opens no panel. A read that throws instead of answering is a defect, not an
-outage: it adds one panel entry at once and leaves the count as it was. A subscriber that throws adds
-one panel entry, and the loop reads on; the read it threw on is the baseline all the same.
+A failed read keeps the snapshot, so the next success carries everything since. The loop routes a
+failure by its kind (`data-integration.md#the-connection-state-the-catalogue-read-reports`):
+
+- A failure for lack of a connection, `ArchiveFault.Unreachable`, writes a warning to the log and never
+  reaches the panel from the loop. Three in a row emit the `ConnectionLost` state once per outage; the
+  status bar turns to the fault and adds one panel entry. The first success after it emits `Connected`,
+  and the bar adds the recovery entry.
+- Any other failure goes to the message panel when it is the third failed read in a row or a later one,
+  whatever the kinds before it; the first two write a warning to the log.
+
+A success resets both counts. Three is one constant for both routes
+(`ArchiveConnectionState.ConsecutiveFailuresBeforeFault`), so one reconnect after a server restart
+opens no panel entry and raises no fault. A read that throws instead of answering is a defect, not an
+outage: it adds one panel entry at once and leaves both counts as they were. A `Deltas` subscriber that
+throws adds one panel entry, and the loop reads on; the read it threw on is the baseline all the same.
 
 #### Why nothing is pushed and nothing is rebuilt whole
 
@@ -714,8 +728,8 @@ few hundred rows every 5 s costs less than the live edge's statement per second,
 itself arrives 1 to 2 s after the SCADA writes, so 5 s between stations reads as immediate.
 
 The chart applies the delta to the pens it has and is never rebuilt whole. A window's parts are built
-once by `TrendWindow.Build` and never replaced. The status bar takes the coordinator's connection
-stream and the chart's navigation in its constructor, the navigation controller has no way to take a
+once by `TrendWindow.Build` and never replaced. The status bar takes the catalogue sync's
+`ConnectionStates` and the chart's navigation in its constructor, the navigation controller has no way to take a
 window back, and a gesture started on a replaced chart would end on a disposed one.
 
 ### The live markers
@@ -728,7 +742,7 @@ no other route. Nothing is pushed between windows, for the reasons
 
 | Part | Holds |
 | --- | --- |
-| `Markers/MarkerSync` | The read loop and the write queue over `IMarkerStore`. It implements `Chart/IMarkerChannel` and reports every failure to the message panel. `TrendWindow` builds and disposes it. |
+| `Markers/MarkerSync` | The read loop and the write queue over `IMarkerStore`. It implements `Chart/IMarkerChannel` and reports every failure but a lost connection to the message panel; a lost connection reaches it through the catalogue read's state (`#a-failed-read`). `TrendWindow` builds and disposes it. |
 | `Chart/IMarkerChannel` | The chart's port: `Reads`, every read no write overtook, on the UI thread, and the four writes, each returning a `Result`. |
 | `Chart/ChartMarkers` | `TrendChartViewModel.Markers`, created and disposed by the chart view model. It reconciles each read into a `MarkerSet`, runs the gestures' writes and raises `Changed` once per change. |
 | `Core/Trends/MarkerSet` | The markers sorted by moment, then id, the hold counts and the hit test `NearestWithin`, a binary search. |
@@ -741,12 +755,14 @@ would make the two folders use each other.
 #### The marker read
 
 `MarkerSync` runs `Bridge/ArchiveReadLoop` with the read name "marker": every 5 s or at once on
-`ReadNow()`, never two reads at a time, as `#the-read` states for the catalogue. Unlike the catalogue it
-reads at once when the window opens, because the start sequence reads no marker: `TrendWindow.Build`
+`ReadNow()`, never two reads at a time, as `#the-read` states for the catalogue. Like the catalogue it
+reads at once when the window opens, here because the start sequence reads no marker: `TrendWindow.Build`
 calls `Start()` and then `ReadNow()`. Every read that lands emits on `Reads`, changed or not;
 `MarkerSet.Apply` is the one comparison, and the chart raises `Changed` only when the set differs. A
-failed read emits nothing and the chart keeps the markers it shows. The first two failures in a row log
-a warning, and the third and every one after it go to the panel (`#a-failed-read`). Against a database
+failed read emits nothing and the chart keeps the markers it shows. A failure for lack of a connection
+only logs a warning, and the bar's `ConnectionLost` entry, which the catalogue read raises, stands for
+it. Any other failure logs a warning for the first two in a row and goes to the panel from the third
+(`#a-failed-read`). Against a database
 provisioned before SemiBase v0.6.0, which has no `semiplot_markers`, that is a `TableMissing` Error about
 10 s after the window opens, and the chart works without markers.
 

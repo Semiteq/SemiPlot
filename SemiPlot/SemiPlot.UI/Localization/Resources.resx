@@ -292,10 +292,10 @@
     <value>SemiPlot cannot reach the archive</value>
   </data>
   <data name="FailureArchiveUnreachableDetail" xml:space="preserve">
-    <value>SemiPlot could not open a connection to {0}.</value>
+    <value>SemiPlot could not open a connection to {0}, or the connection did not answer in time.</value>
   </data>
   <data name="FailureArchiveUnreachableRemedy" xml:space="preserve">
-    <value>Check that the PostgreSQL server is running. Check that the host and port in the connection file are reachable from this machine. Check the route and the firewall.</value>
+    <value>Check that the PostgreSQL server is running. Check that the host and port in the connection file are reachable from this machine. Check the route and the firewall. Check that the server has a free connection slot (max_connections).</value>
   </data>
   <data name="FailureArchiveAccessDeniedTitle" xml:space="preserve">
     <value>The archive refused access</value>

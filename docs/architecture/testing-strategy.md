@@ -39,7 +39,7 @@ and built from the commit under test. Its value is diagnosis.
 | The error types' shape and extent arithmetic | `SemiPlot.Tests.Unit/Errors/DataErrorTests.cs`, `Data/ArchiveExtentTests.cs` |
 | The provider's statement text and its binder | `SemiPlot.Tests.Unit/Postgres/ArchiveStatementTextTests.cs` |
 | The bucketed fold: one column per bucket, the gap column, the DST drop | `SemiPlot.Tests.Unit/Postgres/BucketedRowFoldTests.cs`, `Postgres/RealArchiveGapTests.cs` |
-| The fresh tail's bound, and a tick's own command timeout | `SemiPlot.Tests.Unit/Postgres/FreshTailBoundTests.cs`, `Postgres/ArchiveStatementTextTests.cs` |
+| The fresh tail's bound, and the tick's and the catalogue read's own command timeouts | `SemiPlot.Tests.Unit/Postgres/FreshTailBoundTests.cs`, `Postgres/ArchiveStatementTextTests.cs` |
 | The vendor's observed row shape | `SemiPlot.Tests.Unit/Fixtures/RealArchiveFixtureTests.cs` over `Fixtures/real-archive-rows.csv` |
 | The shipped configuration set | `SemiPlot.Tests.Unit/DeliveredConfigurationTests.cs` over `ConfigFiles/**`, linked into the output directory by `SemiPlot.Tests.Unit.csproj` |
 | The live theme's pipeline, its watcher and `App`'s wiring of both | `SemiPlot.Tests.Unit/UI/Settings/AppSectionWatcherTests.cs`, `UI/Startup/AppConfigurationTests.cs`; the wall-clock exception below |
@@ -169,9 +169,10 @@ so no plan shape at `Minute` or `Hour` holds either way. The seed look-back clau
 layer: `ArchiveStatementTextTests` pins it, and
 `PostgresHistoryReadTests.AWindowWiderThanTheLookBackFloorSeeksBackAsFarAsItAsks` runs it.
 
-**Against a socket, with no server** — `RealtimePollTests` (the live edge's failure ladder, every tick
-connecting to `127.0.0.1:1`), `RealtimeSubscriptionDisposalTests` and `ConvergeReadinessTests` (a loopback
-listener). They cross the machine boundary and need no container, so they carry no collection and take no
+**Against a socket, with no server** — `RealtimePollTests` (a failed tick and its logged run of failures,
+every tick connecting to `127.0.0.1:1`), `CatalogueReadUnreachableTests` (the catalogue read over a refused
+socket answers `Unreachable` naming the archive), `RealtimeSubscriptionDisposalTests` and
+`ConvergeReadinessTests` (a loopback listener). They cross the machine boundary and need no container, so they carry no collection and take no
 `PostgresContainerFixture`; a missing container runtime does not fail them. `UnreachableArchive.Settings`
 gives them the unreachable address and an adjustable poll interval.
 
@@ -394,7 +395,8 @@ CI has two jobs: `unit-windows` runs `SemiPlot.Tests.Unit` on `windows-latest`, 
 viewer ships on, and `linux` builds the solution once on `ubuntu-latest` and runs both projects, the
 runner's Docker daemon serving the fixture. The Windows runner cannot host a Linux container and runs
 `SemiPlot.Tests.Integration` nowhere but the Linux leg. That includes `RealtimePollTests`,
-`RealtimeSubscriptionDisposalTests` and `ConvergeReadinessTests`: they need no container, but they live in
+`CatalogueReadUnreachableTests`, `RealtimeSubscriptionDisposalTests` and `ConvergeReadinessTests`: they
+need no container, but they live in
 Integration, so they run only on the Linux leg.
 
 ## Ownership

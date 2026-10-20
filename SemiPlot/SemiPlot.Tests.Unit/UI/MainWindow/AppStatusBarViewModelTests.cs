@@ -98,8 +98,8 @@ public sealed class AppStatusBarViewModelTests
 		panel.Entries[0].View.Severity.Should().Be(MessageSeverity.Warning);
 	}
 
-	// TrendCoordinator forwards this stream with a bare Subscribe, so an escaping throw would end the
-	// forwarding subscription and the bar would never move again.
+	// PenCatalogueSync raises this stream from inside its read loop, ahead of the read's apply, so an escaping
+	// throw would skip that read's apply.
 	[Fact]
 	public void AThrowInTheHandler_IsReportedAndTheStreamSurvives()
 	{
@@ -123,7 +123,7 @@ public sealed class AppStatusBarViewModelTests
 	}
 
 	// The panel edit is the likeliest thrower of the two, and it is also what the catch reports through, so
-	// a second throw out of it would escape into the coordinator's bare forwarding subscription.
+	// a second throw out of it would escape into the catalogue read loop and skip that read's apply.
 	[Fact]
 	public void AThrowOutOfThePanel_IsLoggedAndTheStreamSurvives()
 	{

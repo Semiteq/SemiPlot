@@ -217,7 +217,7 @@ public sealed class ArchiveStatementTextTests
 	}
 
 	// A tick must not inherit the connection string's five-minute backstop, or a server that accepts and
-	// then answers nothing would freeze the chart for minutes before the fault threshold banner shows.
+	// then answers nothing would hold the live edge for minutes.
 	[Theory]
 	[InlineData(ArchiveStatements.RealtimeBaseline)]
 	[InlineData(ArchiveStatements.RealtimePoll)]
@@ -230,6 +230,21 @@ public sealed class ArchiveStatementTextTests
 		using var command = RealtimePoll.CreateTickCommand(statementText, connection);
 
 		command.CommandTimeout.Should().Be(TickBoundSeconds);
+	}
+
+	// Three failed catalogue reads raise the archive fault, so each must fail at its own bound rather than at
+	// the connection string's five-minute backstop.
+	[Fact]
+	public void TheCatalogueCommandCarriesItsOwnBoundAndNotTheDataSourceBackstop()
+	{
+		const int CatalogueBoundSeconds = 5;
+
+		using var connection = new NpgsqlConnection();
+
+		using var command = PostgresDataProvider.CreateCatalogueCommand(connection);
+
+		command.CommandText.Should().Be(ArchiveStatements.PenCatalog);
+		command.CommandTimeout.Should().Be(CatalogueBoundSeconds);
 	}
 
 	private static void AssertBinderNamesTheStatementsOwnParameters(NpgsqlCommand command, string statement)

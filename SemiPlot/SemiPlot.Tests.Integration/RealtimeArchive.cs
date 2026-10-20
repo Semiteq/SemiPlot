@@ -6,12 +6,8 @@ using Npgsql;
 
 using NpgsqlTypes;
 
-using SemiPlot.Core.Data;
 using SemiPlot.DataSource.Postgres;
-using SemiPlot.DataSource.Postgres.Configuration;
 using SemiPlot.Tools.ArchiveSeeder;
-
-using Xunit;
 
 namespace SemiPlot.Tests.Integration;
 
@@ -21,10 +17,6 @@ internal static class RealtimeArchive
 	private const string AppendCommand = """
 		INSERT INTO public.trends (id, l, t, v, q) VALUES (@id, 0, @t, @v, @q);
 		""";
-
-	// Restated here rather than read off RealtimePoll: the threshold is a promise to the operator, and a
-	// test computing it from the constant it guards would pass whatever the constant became.
-	public const int ConsecutiveFailuresBeforeFault = 3;
 
 	// A strict subset of the seeded identifiers, so a tick that ignored @ids would fail.
 	public static readonly int[] SubscribedPenIds = [1, 2];
@@ -45,21 +37,8 @@ internal static class RealtimeArchive
 			services.GetRequiredService<NpgsqlDataSource>(),
 			services.GetRequiredService<ArchiveTimeConverter>(),
 			services.GetRequiredService<ArchiveExceptionMapper>(),
-			services.GetRequiredService<PostgresConnectionSettings>(),
 			SubscribedPenIds,
 			logger ?? NullLogger.Instance);
-	}
-
-	public static async Task<IReadOnlyList<ArchiveConnectionState?>> TickAsync(RealtimePoll poll, int tickCount)
-	{
-		var states = new List<ArchiveConnectionState?>();
-
-		for (var tick = 0; tick < tickCount; tick++)
-		{
-			states.Add((await poll.ReadOnceAsync(TestContext.Current.CancellationToken)).StateChange);
-		}
-
-		return states;
 	}
 
 	// Two rows per subscribed variable, the second of them the baseline every subscription starts from.

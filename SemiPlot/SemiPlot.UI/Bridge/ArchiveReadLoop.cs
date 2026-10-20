@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reactive.Concurrency;
 
 using FluentResults;
@@ -5,6 +6,7 @@ using FluentResults;
 using Microsoft.Extensions.Logging;
 
 using SemiPlot.Core.Data;
+using SemiPlot.Core.Data.Errors;
 using SemiPlot.UI.Messages;
 
 namespace SemiPlot.UI.Bridge;
@@ -17,9 +19,9 @@ internal static class ArchiveReadLoop
 }
 
 /// <summary>
-/// Re-reads one archive source every <see cref="ArchiveReadLoop.ReadInterval"/> or at once on
-/// <see cref="ReadNow"/>, hands each successful read to the apply, and reports a failure from the third in a row.
-/// Runs on the UI thread, unlocked.
+/// Re-reads one archive source every <see cref="ArchiveReadLoop.ReadInterval"/> or on <see cref="ReadNow"/>, applies
+/// each success and reports any other failure than a lost connection from the third in a row. A lost connection only
+/// logs; the catalogue loop's state sink carries it to the bar. Runs on the UI thread, unlocked.
 /// </summary>
 internal sealed class ArchiveReadLoop<T>(
 	Func<CancellationToken, Task<Result<T>>> read,
@@ -27,7 +29,8 @@ internal sealed class ArchiveReadLoop<T>(
 	string readName,
 	MessagePanelViewModel messagePanel,
 	IScheduler uiScheduler,
-	ILogger logger) : IDisposable
+	ILogger logger,
+	Action<ArchiveConnectionState>? reportConnectionState) : IDisposable
 {
 	private readonly Func<CancellationToken, Task<Result<T>>> _read = read;
 	private readonly Action<T> _apply = apply;
@@ -35,10 +38,13 @@ internal sealed class ArchiveReadLoop<T>(
 	private readonly MessagePanelViewModel _messagePanel = messagePanel;
 	private readonly IScheduler _uiScheduler = uiScheduler;
 	private readonly ILogger _logger = logger;
+	private readonly Action<ArchiveConnectionState>? _reportConnectionState = reportConnectionState;
 
 	private IDisposable? _loop;
 	private TaskCompletionSource _wake = new();
 	private int _consecutiveFailures;
+	private int _consecutiveConnectionFailures;
+	private ArchiveConnectionState? _lastReportedState;
 
 	/// <summary>Starts the loop; its first read comes one interval later.</summary>
 	public void Start()
@@ -114,12 +120,40 @@ internal sealed class ArchiveReadLoop<T>(
 		}
 
 		_consecutiveFailures = 0;
+		_consecutiveConnectionFailures = 0;
+		ReportConnected();
 		_apply(read.Value);
+	}
+
+	private void ReportConnected()
+	{
+		if (_reportConnectionState is null || _lastReportedState is { IsConnected: true })
+		{
+			return;
+		}
+
+		_lastReportedState = ArchiveConnectionState.Connected;
+		_reportConnectionState(_lastReportedState);
 	}
 
 	private void ReportFailedRead(Result<T> read)
 	{
 		_consecutiveFailures++;
+
+		if (read.Errors[0] is ArchiveError { Kind: ArchiveFault.Unreachable } connectionFailure)
+		{
+			_consecutiveConnectionFailures++;
+			_logger.LogWarning(
+				"The {Read} read failed for lack of a connection, {ConsecutiveConnectionFailures} in a row: {Reason}",
+				_readName,
+				_consecutiveConnectionFailures,
+				connectionFailure.Message);
+			RaiseFaultOnceReached(connectionFailure);
+
+			return;
+		}
+
+		_consecutiveConnectionFailures = 0;
 
 		if (_consecutiveFailures < ArchiveConnectionState.ConsecutiveFailuresBeforeFault)
 		{
@@ -133,5 +167,23 @@ internal sealed class ArchiveReadLoop<T>(
 		}
 
 		_messagePanel.ReportFailure(read, _logger);
+	}
+
+	private void RaiseFaultOnceReached(ArchiveError connectionFailure)
+	{
+		var isRunComplete = _consecutiveConnectionFailures >= ArchiveConnectionState.ConsecutiveFailuresBeforeFault;
+
+		if (_reportConnectionState is null || !isRunComplete || _lastReportedState is { IsConnected: false })
+		{
+			return;
+		}
+
+		_lastReportedState = new ArchiveConnectionState(new ArchiveError(
+			ArchiveFault.ConnectionLost,
+			connectionFailure.Host,
+			connectionFailure.Port,
+			connectionFailure.Database,
+			ArchiveConnectionState.ConsecutiveFailuresBeforeFault.ToString(CultureInfo.InvariantCulture)));
+		_reportConnectionState(_lastReportedState);
 	}
 }

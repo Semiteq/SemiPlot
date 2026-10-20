@@ -131,7 +131,7 @@ internal static class MainWindowTestBuilder
 
 	/// <summary>
 	/// A window built through <see cref="TrendWindow.Build"/> over one virtual clock and one provider; the
-	/// catalogue read loop has entered its first wait.
+	/// catalogue read loop has made its first read.
 	/// </summary>
 	public static WindowStand NewWindowStand(
 		IReadOnlyList<Pen>? pens = null,

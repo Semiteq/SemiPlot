@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
-using System.Reactive.Subjects;
 
 using FluentResults;
 
@@ -24,13 +23,16 @@ namespace SemiPlot.DataSource.Postgres;
 /// configured variables, <see cref="QueryArchiveExtentAsync"/> the span they cover, <see cref="QueryHistoryAsync"/>
 /// a window of one layer and <see cref="Subscribe"/> the live edge, all crossing the boundary in UTC.
 /// </summary>
-public sealed class PostgresDataProvider : IDataProvider, IDisposable
+public sealed class PostgresDataProvider : IDataProvider
 {
 	/// <summary>
 	/// The most pen groups one history read runs concurrently
 	/// (docs/architecture/data-integration.md#operation-to-statement).
 	/// </summary>
 	internal const int HistoryReadConcurrency = 4;
+
+	// docs/architecture/data-integration.md#configuration
+	private const int CatalogueCommandTimeoutSeconds = 5;
 
 	private const string UncommissionedPenColor = "#808080";
 	private const string HistoryReadRequestTemplate =
@@ -46,18 +48,10 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 	private readonly ILogger<PostgresDataProvider> _logger;
 	private readonly int _historyReadConcurrency;
 
-	private readonly Subject<ArchiveConnectionState> _connectionFaultsSource = new();
-
-	// PollAsync's OnNext and Dispose's OnCompleted run on different threads; Synchronize() serializes them,
-	// as System.Reactive's contract for a multi-writer Subject requires.
-	private readonly ISubject<ArchiveConnectionState> _connectionFaults;
-
 	// docs/architecture/data-integration.md#the-catalogue-while-the-viewer-runs
 	// Written from whichever pool thread a catalogue read resumes on.
 	private readonly ConcurrentDictionary<(int PenId, int Column, string? StoredValue), byte> _warnedNormalisations =
 		new();
-
-	private int _disposed;
 
 	internal PostgresDataProvider(
 		NpgsqlDataSource dataSource,
@@ -77,14 +71,7 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		_timeProvider = timeProvider;
 		_logger = logger;
 		_historyReadConcurrency = historyReadConcurrency;
-		_connectionFaults = Subject.Synchronize(_connectionFaultsSource);
 	}
-
-	/// <summary>
-	/// The connection state of the live edge. Hot, shared by every subscription and never terminating, as
-	/// <see cref="IDataProvider.ConnectionFaults"/> states.
-	/// </summary>
-	public IObservable<ArchiveConnectionState> ConnectionFaults => _connectionFaults;
 
 	/// <summary>
 	/// The live edge of the requested variables. Cold: each subscription starts a poll loop of its own, on the
@@ -107,7 +94,7 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		try
 		{
 			await using var connection = await _dataSource.OpenConnectionAsync().ConfigureAwait(false);
-			await using var command = new NpgsqlCommand(ArchiveStatements.PenCatalog, connection);
+			await using var command = CreateCatalogueCommand(connection);
 			await using var reader = await command.ExecuteReaderAsync().ConfigureAwait(false);
 
 			var pens = new List<Pen>();
@@ -243,22 +230,6 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		}
 	}
 
-	/// <summary>
-	/// Completes <see cref="ConnectionFaults"/>; the container disposes the singleton provider.
-	/// </summary>
-	public void Dispose()
-	{
-		if (Interlocked.Exchange(ref _disposed, 1) != 0)
-		{
-			return;
-		}
-
-		// The raw subject is never disposed: PollAsync keeps writing OnNext after Dispose returns (its
-		// loop is not cancelled here), and OnNext on a disposed Subject<T> throws where OnNext after
-		// OnCompleted is a silent no-op. Subject<T> holds no unmanaged resource, so completing it is enough.
-		_connectionFaults.OnCompleted();
-	}
-
 	// docs/architecture/data-integration.md#operation-to-statement
 	private async Task<IReadOnlyList<PenHistoryEnvelope>> ReadHistoryAsync(
 		int[] penIds,
@@ -375,7 +346,6 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 			_dataSource,
 			_timeConverter,
 			_exceptionMapper,
-			_settings,
 			penIds,
 			_logger);
 
@@ -383,7 +353,7 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		{
 			while (!cancellationToken.IsCancellationRequested)
 			{
-				var tick = await poll.ReadOnceAsync(cancellationToken).ConfigureAwait(false);
+				var samples = await poll.ReadOnceAsync(cancellationToken).ConfigureAwait(false);
 
 				// A disposal landing while the query is in flight delivers nothing further: the subscriber
 				// is gone, and a batch arriving behind its back is a leaked loop by another name.
@@ -392,14 +362,9 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 					return;
 				}
 
-				if (tick.Samples.Count > 0)
+				if (samples.Count > 0)
 				{
-					observer.OnNext(tick.Samples);
-				}
-
-				if (tick.StateChange is { } state)
-				{
-					_connectionFaults.OnNext(state);
+					observer.OnNext(samples);
 				}
 
 				await _scheduler.Sleep(_settings.PollInterval, cancellationToken).ConfigureAwait(false);
@@ -409,6 +374,14 @@ public sealed class PostgresDataProvider : IDataProvider, IDisposable
 		{
 			// Disposal ends the loop.
 		}
+	}
+
+	internal static NpgsqlCommand CreateCatalogueCommand(NpgsqlConnection connection)
+	{
+		return new NpgsqlCommand(ArchiveStatements.PenCatalog, connection)
+		{
+			CommandTimeout = CatalogueCommandTimeoutSeconds
+		};
 	}
 
 	// Bound on the archive's own wall clock: a UTC round trip is not injective across DST.

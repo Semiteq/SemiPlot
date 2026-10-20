@@ -588,8 +588,8 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
 - `MainWindow/AppMenuBar` — the File / Edit / View / Help menu. Each checkable item reads its flag
   `Mode=OneWay` and writes it only through the command it invokes (`AGENTS.md`, UI).
 - `MainWindow/AppStatusBar` + `AppStatusBarViewModel` — current connection state and the active
-  aggregation layer, named from resx. Built by `TrendWindow` over the coordinator's connection stream and
-  the chart's navigation, and writes the fault and recovery entries (`data-integration.md`).
+  aggregation layer, named from resx. Built by `TrendWindow` over the catalogue sync's `ConnectionStates`
+  and the chart's navigation, and writes the fault and recovery entries (`data-integration.md`).
 - `MainWindow/AboutDialog` + `AboutInfo` — the modal naming the product, the assembly version and the
   configuration directory this run read.
 - `Settings/SettingsDialog` + `SettingsViewModel` — the modal that edits the `app/` and `connection/`
@@ -798,11 +798,12 @@ view model:
   that hold a layer-0 row of a catalogue pen. `TrendCoordinator.QueryArchiveDaysAsync` is a pass-through
   to the provider; the time window panel reads it once per open and the export window once per window for
   their calendars' blackout days (`trend-interaction.md#the-time-window-panel`).
-- **Connection state:** `TrendCoordinator.ConnectionFaults` republishes the provider's own
-  `IObservable<ArchiveConnectionState>` on the UI scheduler. `MainWindow/AppStatusBarViewModel` binds
-  it and shows it in the status bar, over a chart that keeps its history; every fault it carries
-  becomes a message-panel entry (see data-integration.md). `TrendCoordinator.Dispose` completes the
-  republished stream, while the provider's own stream never terminates (`data-integration.md`).
+- **Connection state:** `Bridge/PenCatalogueSync.ConnectionStates` carries the
+  `ArchiveConnectionState` its catalogue reads show, on the UI thread; neither the provider nor the
+  coordinator carries one. `MainWindow/AppStatusBarViewModel` binds it and shows it in the status bar,
+  over a chart that keeps its history; a fault becomes one message-panel entry
+  (`data-integration.md#the-connection-state-the-catalogue-read-reports`). `PenCatalogueSync.Dispose`
+  completes the stream.
 
 These records are the plottables' input shape after the view model maps them onto `EnvelopeColumn`
 buffers; there is no serialization step.

@@ -86,8 +86,23 @@ internal sealed class ArchiveExceptionMapper(PostgresConnectionSettings settings
 		return Fault(IsConnectionFailure(exception) ? ArchiveFault.Unreachable : ArchiveFault.ReadFailed);
 	}
 
+	// docs/architecture/data-integration.md#the-connection-state-the-catalogue-read-reports
+	private static bool EndsOrRefusesSession(string sqlState)
+	{
+		return sqlState.StartsWith("08", StringComparison.Ordinal)
+			|| sqlState is PostgresErrorCodes.AdminShutdown
+				or PostgresErrorCodes.CrashShutdown
+				or PostgresErrorCodes.CannotConnectNow
+				or PostgresErrorCodes.TooManyConnections;
+	}
+
 	private ArchiveError MapSqlState(PostgresException postgres, string? relation)
 	{
+		if (EndsOrRefusesSession(postgres.SqlState))
+		{
+			return Fault(ArchiveFault.Unreachable);
+		}
+
 		return postgres.SqlState switch
 		{
 			PostgresErrorCodes.InvalidCatalogName => Fault(ArchiveFault.DatabaseMissing),

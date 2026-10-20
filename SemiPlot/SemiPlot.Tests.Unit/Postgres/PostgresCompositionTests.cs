@@ -131,31 +131,4 @@ public sealed class PostgresCompositionTests
 
 		services.GetRequiredService<PostgresConnectionSettings>().Should().BeSameAs(settings);
 	}
-
-	[Fact]
-	public void DisposingTheProviderCompletesTheConnectionFaultStream()
-	{
-		using var services = BuildProvider();
-		var provider = (PostgresDataProvider)services.GetRequiredService<IDataProvider>();
-		var completed = false;
-
-		using var watch = provider.ConnectionFaults.Subscribe(_ => { }, () => completed = true);
-
-		provider.Dispose();
-
-		completed.Should().BeTrue();
-	}
-
-	[Fact]
-	public void DisposingTwiceDoesNotThrow()
-	{
-		using var services = BuildProvider();
-		var provider = (PostgresDataProvider)services.GetRequiredService<IDataProvider>();
-
-		provider.Dispose();
-
-		var act = provider.Dispose;
-
-		act.Should().NotThrow();
-	}
 }

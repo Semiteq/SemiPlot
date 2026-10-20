@@ -28,9 +28,9 @@ internal sealed class TrendWindow : IDisposable
 	private readonly TrendCoordinator _coordinator;
 	private readonly MarkerSync _markerSync;
 	private readonly TrendChartViewModel _chart;
-	private readonly AppStatusBarViewModel _statusBar;
 	private readonly MinimapViewModel _minimap;
 	private readonly PenCatalogueSync _catalogueSync;
+	private readonly AppStatusBarViewModel _statusBar;
 	private readonly NavigationBarViewModel _navigationBar;
 	private readonly TrendLegendViewModel _legend;
 	private readonly PenCatalogueApplier _catalogueApplier;
@@ -39,9 +39,9 @@ internal sealed class TrendWindow : IDisposable
 		TrendCoordinator coordinator,
 		MarkerSync markerSync,
 		TrendChartViewModel chart,
-		AppStatusBarViewModel statusBar,
 		MinimapViewModel minimap,
 		PenCatalogueSync catalogueSync,
+		AppStatusBarViewModel statusBar,
 		NavigationBarViewModel navigationBar,
 		TrendLegendViewModel legend,
 		PenCatalogueApplier catalogueApplier,
@@ -50,9 +50,9 @@ internal sealed class TrendWindow : IDisposable
 		_coordinator = coordinator;
 		_markerSync = markerSync;
 		_chart = chart;
-		_statusBar = statusBar;
 		_minimap = minimap;
 		_catalogueSync = catalogueSync;
+		_statusBar = statusBar;
 		_navigationBar = navigationBar;
 		_legend = legend;
 		_catalogueApplier = catalogueApplier;
@@ -95,12 +95,6 @@ internal sealed class TrendWindow : IDisposable
 		chart.Navigation.SeedFromArchiveExtent(startupData.Extent);
 		chart.ApplyCatalogue(startupData.Pens);
 
-		var statusBar = new AppStatusBarViewModel(
-			messagePanel,
-			coordinator.ConnectionFaults,
-			chart.Navigation,
-			loggerFactory.CreateLogger<AppStatusBarViewModel>());
-
 		var minimapLogger = loggerFactory.CreateLogger<MinimapViewModel>();
 		var minimap = new MinimapViewModel(coordinator, chart, uiScheduler, messagePanel, minimapLogger);
 		var catalogueSync = new PenCatalogueSync(
@@ -109,6 +103,13 @@ internal sealed class TrendWindow : IDisposable
 			messagePanel,
 			uiScheduler,
 			loggerFactory.CreateLogger<PenCatalogueSync>());
+
+		// Subscribed before catalogueSync.Start(), so no state precedes the bar.
+		var statusBar = new AppStatusBarViewModel(
+			messagePanel,
+			catalogueSync.ConnectionStates,
+			chart.Navigation,
+			loggerFactory.CreateLogger<AppStatusBarViewModel>());
 		var navigationBar = new NavigationBarViewModel(chart);
 		var legend = new TrendLegendViewModel(chart);
 		var catalogueApplier = new PenCatalogueApplier(catalogueSync, chart, minimap, legend, uiScheduler);
@@ -138,6 +139,7 @@ internal sealed class TrendWindow : IDisposable
 			launcher);
 
 		catalogueSync.Start();
+		catalogueSync.ReadNow();
 		markerSync.Start();
 		markerSync.ReadNow();
 		chart.RequestInitialHistory();
@@ -147,9 +149,9 @@ internal sealed class TrendWindow : IDisposable
 			coordinator,
 			markerSync,
 			chart,
-			statusBar,
 			minimap,
 			catalogueSync,
+			statusBar,
 			navigationBar,
 			legend,
 			catalogueApplier,
@@ -162,9 +164,9 @@ internal sealed class TrendWindow : IDisposable
 		_catalogueApplier.Dispose();
 		_legend.Dispose();
 		_navigationBar.Dispose();
+		_statusBar.Dispose();
 		_catalogueSync.Dispose();
 		_minimap.Dispose();
-		_statusBar.Dispose();
 		_chart.Dispose();
 		_markerSync.Dispose();
 		_coordinator.Dispose();

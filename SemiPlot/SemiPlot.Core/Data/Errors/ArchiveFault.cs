@@ -6,7 +6,10 @@ namespace SemiPlot.Core.Data.Errors;
 /// </summary>
 public enum ArchiveFault
 {
-	/// <summary>No connection: a refused or reset socket, a client bound firing, a host that does not answer.</summary>
+	/// <summary>
+	/// No connection: a refused or reset socket, a client bound firing, a host that does not answer, or a server
+	/// that refuses or ends the session (SQLSTATE class 08, 57P01-57P03, 53300).
+	/// </summary>
 	Unreachable,
 
 	/// <summary>The server answered and refused the credentials or a grant (28P01, 28000, 42501). Detail is the username.</summary>
@@ -24,7 +27,9 @@ public enum ArchiveFault
 	/// <summary>The server ended a statement (57014): a statement_timeout or an administrator's cancel.</summary>
 	QueryTimedOut,
 
-	/// <summary>A run of consecutive poll ticks failed. Detail is the number of failures that raised it.</summary>
+	/// <summary>
+	/// A run of consecutive reads failed for lack of a connection. Detail is the number of failures that raised it.
+	/// </summary>
 	ConnectionLost,
 
 	/// <summary>A constraint refused a written value (23514). Detail is the pen's name.</summary>

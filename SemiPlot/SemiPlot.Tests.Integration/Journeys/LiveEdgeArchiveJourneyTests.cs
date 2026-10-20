@@ -162,7 +162,8 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 	// into the last column instead, and the assertions read the appended point.
 	private async Task<LiveEdgeStand> OpenStandAsync()
 	{
-		var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
+		var armed = new ArmedGate();
+		var services = ArchiveProviderFactory.Build(Database.PlotConnectionString, armed);
 		LiveEdgeStand? stand = null;
 
 		try
@@ -178,10 +179,6 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 			var coordinator = new TrendCoordinator(
 				dataProvider, catalogue.Value, dataScheduler, ImmediateScheduler.Instance);
 
-			// Before the view model, because its constructor takes the first RefCount subscription on
-			// RealtimeBatches and that is what starts the poll. A gate opened after the poll's first tick would
-			// have nothing left to wait for and would never complete.
-			var armed = new ArmedGate(coordinator.ConnectionFaults);
 			var messagePanel = new MessagePanelViewModel();
 			var chart = new TrendChartViewModel(
 				coordinator,
@@ -217,6 +214,7 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 			if (stand is null)
 			{
 				await services.DisposeAsync();
+				armed.Dispose();
 			}
 			else
 			{
@@ -310,10 +308,10 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 			batches.Dispose();
 			chart.Dispose();
 			messagePanel.Dispose();
-			armed.Dispose();
 			coordinator.Dispose();
 
 			await services.DisposeAsync();
+			armed.Dispose();
 		}
 	}
 }

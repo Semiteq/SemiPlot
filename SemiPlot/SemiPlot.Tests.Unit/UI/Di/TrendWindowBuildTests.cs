@@ -9,10 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 using ReactiveUI.Avalonia;
 
-using SemiPlot.Core.Data;
-using SemiPlot.Core.Data.Errors;
 using SemiPlot.Tests.Unit.UI.Bridge;
-using SemiPlot.Tests.Unit.UI.PenEditor;
 using SemiPlot.Tests.Unit.UI.Startup;
 using SemiPlot.UI;
 using SemiPlot.UI.Localization;
@@ -28,7 +25,7 @@ namespace SemiPlot.Tests.Unit.UI.Di;
 
 /// <summary>
 /// What <c>TrendWindow.Build</c> wires, driven through the real method: the panel the chart, the
-/// minimap and the status bar all report into, the connection stream the bar follows, and the catalogue read loop.
+/// minimap and the status bar all report into, and the catalogue read the bar's connection state comes from.
 /// </summary>
 [Collection(ProcessGlobalStateCollection.Name)]
 [Trait("Component", "UI")]
@@ -71,14 +68,13 @@ public sealed class TrendWindowBuildTests
 	}
 
 	[AvaloniaFact]
-	public async Task TheStatusBar_FollowsTheCoordinatorsConnectionState()
+	public async Task TheWindowReadsTheCatalogueAtOnce_OnTheRealScheduler()
 	{
 		using var stand = NewArchiveStand();
-		var scheduler = stand.Scheduler;
 		var dataProvider = stand.Provider;
-		var container = stand.Data.ServiceProvider;
 
-		var probe = await StartupProbe.ReadAsync(container, StartupProbe.DefaultReadBound);
+		var probe = await StartupProbe.ReadAsync(stand.Data.ServiceProvider, StartupProbe.DefaultReadBound);
+		var pensQueriesBefore = dataProvider.PensQueryCount;
 
 		using var window = TrendWindow.Build(
 			probe.Value,
@@ -86,17 +82,8 @@ public sealed class TrendWindowBuildTests
 			AvaloniaScheduler.Instance,
 			App.CsvDialectFor(UiLanguage.En),
 			TimeZoneInfo.Utc);
-		var mainWindowViewModel = window.ViewModel;
-
-		mainWindowViewModel.StatusBar.IsConnected.Should().BeTrue();
-
-		dataProvider.ReportConnectionState(
-			new ArchiveConnectionState(
-				FakePenCatalogueEditor.Refusal(ArchiveFault.ConnectionLost, "3")));
 		Dispatcher.UIThread.RunJobs();
 
-		mainWindowViewModel.StatusBar.IsConnected.Should().BeFalse("the bar is bound to the coordinator");
-		container.GetRequiredService<MessagePanelViewModel>().Entries.Should().NotBeEmpty(
-			"the fault reaches the one panel the window shows");
+		dataProvider.PensQueryCount.Should().Be(pensQueriesBefore + 1);
 	}
 }

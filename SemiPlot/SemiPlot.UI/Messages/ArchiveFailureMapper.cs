@@ -177,8 +177,8 @@ public static class ArchiveFailureMapper
 				Resources.FormatFailureArchiveTableMissingRemedy(error.Detail),
 				MessageSeverity.Error),
 
-			// A lost live edge never opens the startup failure window: it is reported beside a chart that
-			// keeps its history, so the words say what is still true as well as what failed.
+			// A lost connection never opens the startup failure window: the status bar reports it beside a chart
+			// that keeps its history, so the words say what is still true as well as what failed.
 			ArchiveFault.ConnectionLost => new ArchiveFailureView(
 				Resources.FailureArchiveConnectionLostTitle,
 				Resources.FormatFailureArchiveConnectionLostDetail(archive, error.Detail),

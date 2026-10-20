@@ -14,8 +14,9 @@ using SemiPlot.UI.Messages;
 namespace SemiPlot.UI.Markers;
 
 /// <summary>
-/// Re-reads the stored markers and runs the chart's marker writes one at a time, reporting every failure to the
-/// panel. Everything runs on the UI thread, unlocked.
+/// Re-reads the stored markers and runs the chart's marker writes one at a time. A read failing for lack of a
+/// connection only logs, any other read failure reports from the third in a row; a failed write reports at once.
+/// Runs on the UI thread.
 /// </summary>
 public sealed class MarkerSync : IMarkerChannel, IDisposable
 {
@@ -38,7 +39,7 @@ public sealed class MarkerSync : IMarkerChannel, IDisposable
 		_messagePanel = messagePanel;
 		_logger = logger;
 		_readLoop = new ArchiveReadLoop<GenerationRead>(
-			ReadAsync, Apply, "marker", messagePanel, uiScheduler, logger);
+			ReadAsync, Apply, "marker", messagePanel, uiScheduler, logger, reportConnectionState: null);
 		_archiveCallQueue = new ArchiveCallQueue(() => _writeGeneration++);
 	}
 

@@ -816,11 +816,12 @@ string, null with no drawn pen, and the view converts it with the legend's
 other read. `Minimap/OutageReport` holds the outage policy, one instance for the band reads in
 `MinimapBandFeed` and one for the extent reads in `MinimapViewModel`: it reports the first failed read
 of an outage and logs every further one at Warning, with the exception when the read threw, and the
-first successful read ends the outage and arms the report again. The report starts armed. During an outage the catalogue
-sync reports every 5 s with its own detail, and the panel coalesces a repeat of its newest entry only,
-so a band entry per read would never coalesce; one entry per outage keeps the panel readable. The
-catalogue sync answers its 5 s loop the other way: it logs its first two failures in a row and reports
-from the third (`overview.md#a-failed-read`). Each read turns a throw into a failed `Result`, so a
+first successful read ends the outage and arms the report again. The report starts armed. The panel coalesces a repeat
+of its newest entry only, and during an outage other entries land between two band reads, the status
+bar's `ConnectionLost` and the chart's failed history reads among them, so a band entry per read would
+not coalesce; one entry per outage keeps the panel readable. The catalogue sync reports no lost
+connection itself: it logs each one, and three in a row turn the status bar to the fault with one entry
+(`overview.md#a-failed-read`). Each read turns a throw into a failed `Result`, so a
 throw never ends the pipeline and the next read is still scheduled; a throw while a read is applied,
 the next read's scheduling included, goes to `TryReportFailure` as well.
 

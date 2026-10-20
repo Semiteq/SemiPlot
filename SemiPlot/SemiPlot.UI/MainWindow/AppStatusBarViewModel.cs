@@ -81,8 +81,8 @@ public sealed class AppStatusBarViewModel : ReactiveObject, IDisposable
 		_navigation.WindowChanged -= OnNavigationWindowChanged;
 	}
 
-	// TrendCoordinator forwards the connection stream with a bare Subscribe, so a throw out of this handler
-	// would end that forwarding for the rest of the session rather than reaching an onError.
+	// PenCatalogueSync raises the state from inside its read loop, ahead of the read's apply, so a throw out of
+	// this handler would skip that read's apply.
 	private void ApplyConnectionState(ArchiveConnectionState state)
 	{
 		try
@@ -97,8 +97,8 @@ public sealed class AppStatusBarViewModel : ReactiveObject, IDisposable
 				return;
 			}
 
-			// ArchiveConnectionState: every subscription's first tick reports Connected, so a recovery
-			// entry is owed only once a fault has been seen.
+			// The first catalogue read reports Connected too, so a recovery entry is owed only once a fault
+			// has been seen.
 			if (_hasSeenFault)
 			{
 				var restored = ConnectionRestored();

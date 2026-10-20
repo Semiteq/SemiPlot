@@ -95,6 +95,7 @@ public sealed class MainWindowViewModelTests
 	public async Task AnEditorWriteThatLands_ReadsTheCatalogueBeforeTheIntervalPasses()
 	{
 		using var stand = NewWindowStand(penCatalogueEditor: new FakePenCatalogueEditor());
+		var pensQueriesBefore = stand.Provider.PensQueryCount;
 		var viewModel = stand.ViewModel;
 		using var penEditor = await OpenPenEditorAsync(viewModel);
 
@@ -102,7 +103,7 @@ public sealed class MainWindowViewModelTests
 		await penEditor.Groups.CreateGroupCommand.Execute();
 		Dispatcher.UIThread.RunJobs();
 
-		stand.Provider.PensQueryCount.Should().Be(1);
+		stand.Provider.PensQueryCount.Should().Be(pensQueriesBefore + 1);
 	}
 
 	[AvaloniaFact]
@@ -115,6 +116,7 @@ public sealed class MainWindowViewModelTests
 			ReadResult = Result.Ok(new PenCatalogue([pen], []))
 		};
 		using var stand = NewWindowStand(penCatalogueEditor: penCatalogueEditor);
+		var pensQueriesBefore = stand.Provider.PensQueryCount;
 		var viewModel = stand.ViewModel;
 		using var penEditor = await OpenPenEditorAsync(viewModel);
 		penEditor.SelectedRow = penEditor.Rows.Single();
@@ -125,7 +127,7 @@ public sealed class MainWindowViewModelTests
 		Dispatcher.UIThread.RunJobs();
 
 		penCatalogueEditor.Changes.Should().ContainSingle();
-		stand.Provider.PensQueryCount.Should().Be(1);
+		stand.Provider.PensQueryCount.Should().Be(pensQueriesBefore + 1);
 	}
 
 	[AvaloniaFact]
@@ -136,6 +138,7 @@ public sealed class MainWindowViewModelTests
 			CreateGroupResult = Result.Fail<int>(FakePenCatalogueEditor.Refusal(ArchiveFault.NameTaken, "Gas"))
 		};
 		using var stand = NewWindowStand(penCatalogueEditor: penCatalogueEditor);
+		var pensQueriesBefore = stand.Provider.PensQueryCount;
 		var viewModel = stand.ViewModel;
 		using var penEditor = await OpenPenEditorAsync(viewModel);
 
@@ -144,7 +147,7 @@ public sealed class MainWindowViewModelTests
 		Dispatcher.UIThread.RunJobs();
 
 		penCatalogueEditor.Calls.Should().Contain(new FakeEditorCall.CreateGroup("Gas"));
-		stand.Provider.PensQueryCount.Should().Be(0);
+		stand.Provider.PensQueryCount.Should().Be(pensQueriesBefore);
 	}
 
 	[AvaloniaFact]

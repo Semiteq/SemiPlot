@@ -1,6 +1,7 @@
 using AwesomeAssertions;
 
-using SemiPlot.Core.Data.Errors;
+using Microsoft.Extensions.Logging.Testing;
+
 using SemiPlot.DataSource.Postgres.Configuration;
 
 using Xunit;
@@ -9,43 +10,45 @@ using static SemiPlot.Tests.Integration.RealtimeArchive;
 
 namespace SemiPlot.Tests.Integration;
 
-// The failure ladder alone, which needs no server: every tick connects to an address nothing answers and
-// fails there. What a successful tick reads is a database question and is covered by RealtimePollReadTests.
+// A failed tick and its logged run of failures, which needs no server: every tick connects to an address
+// nothing answers and fails there. What a successful tick reads is a database question and is covered by
+// RealtimePollReadTests.
 [Trait("Component", "Core")]
 [Trait("Area", "Data")]
 [Trait("Category", "Integration")]
 public sealed class RealtimePollTests
 {
+	private const int TickCount = 5;
+
 	private static readonly PostgresConnectionSettings _settings = UnreachableArchive.Settings(TimeSpan.FromSeconds(1));
 
 	[Fact]
-	public async Task ASingleFailureReportsNoSampleAndRaisesNoFault()
+	public async Task AFailedTickEmitsNoSample()
 	{
 		await using var services = UnreachableArchive.Services(_settings);
 
-		var tick = await NewPoll(services).ReadOnceAsync(TestContext.Current.CancellationToken);
+		var samples = await NewPoll(services).ReadOnceAsync(TestContext.Current.CancellationToken);
 
-		tick.Samples.Should().BeEmpty();
-		tick.StateChange.Should().BeNull();
+		samples.Should().BeEmpty();
 	}
 
 	[Fact]
-	public async Task TheThirdConsecutiveFailureRaisesExactlyOneFaultNamingTheArchive()
+	public async Task EachFailedTickLogsTheRunOfFailuresItExtends()
 	{
+		var cancellationToken = TestContext.Current.CancellationToken;
+
 		await using var services = UnreachableArchive.Services(_settings);
+		using var logs = new FakeLoggerProvider();
 
-		var states = await TickAsync(NewPoll(services), ConsecutiveFailuresBeforeFault + 2);
+		var poll = NewPoll(services, logs.CreateLogger("RealtimePoll"));
 
-		states.Take(ConsecutiveFailuresBeforeFault - 1).Should().AllSatisfy(state => state.Should().BeNull());
+		for (var tick = 0; tick < TickCount; tick++)
+		{
+			await poll.ReadOnceAsync(cancellationToken);
+		}
 
-		var thirdFault = states[ConsecutiveFailuresBeforeFault - 1]?.Fault;
-		var fault = thirdFault.Should().BeOfType<ArchiveError>().Which;
-
-		fault.Kind.Should().Be(ArchiveFault.ConnectionLost);
-		fault.Detail.Should().Be($"{ConsecutiveFailuresBeforeFault}");
-		fault.Host.Should().Be(_settings.Host);
-		fault.Port.Should().Be(_settings.Port);
-		fault.Database.Should().Be(_settings.Database);
-		states.Skip(ConsecutiveFailuresBeforeFault).Should().AllSatisfy(state => state.Should().BeNull());
+		logs.Collector.GetSnapshot()
+			.Select(entry => entry.GetStructuredStateValue(ArmedGate.FailureRunKey))
+			.Should().Equal("1", "2", "3", "4", "5");
 	}
 }

@@ -18,14 +18,9 @@ public sealed class TrendCoordinator : IDisposable
 	private readonly IScheduler _uiScheduler;
 	private readonly BehaviorSubject<IReadOnlyList<int>> _penIds;
 
-	// Own subject so disposal stops forwarding to every consumer.
-	private readonly Subject<ArchiveConnectionState> _connectionFaults = new();
-
 	// Written from the data scheduler (a failed window, a provider that ends the stream) and completed from
 	// the UI thread at disposal, so the subject serializes its callers.
 	private readonly ISubject<Exception> _realtimeFailures = Subject.Synchronize(new Subject<Exception>());
-
-	private readonly IDisposable _connectionSubscription;
 
 	// Every pen set, pens here and each one SetPens pushes, must be dataProvider's own catalogue: the
 	// coordinator subscribes to these identifiers without asking the provider whether it knows them, and a
@@ -42,10 +37,6 @@ public sealed class TrendCoordinator : IDisposable
 		_penIds = new BehaviorSubject<IReadOnlyList<int>>([.. pens.Select(pen => pen.PenId)]);
 		RealtimeBatches = BuildRealtimeBatches();
 		RealtimeFailures = _realtimeFailures.ObserveOn(_uiScheduler);
-		ConnectionFaults = _connectionFaults.AsObservable();
-		_connectionSubscription = dataProvider.ConnectionFaults
-			.ObserveOn(_uiScheduler)
-			.Subscribe(_connectionFaults.OnNext);
 	}
 
 	/// <summary>
@@ -56,28 +47,19 @@ public sealed class TrendCoordinator : IDisposable
 
 	/// <summary>
 	/// Every realtime failure once: a throw inside the batch projection, which the pipeline skips, and a
-	/// provider that ends the stream. Republished on the UI scheduler, like <see cref="ConnectionFaults"/>.
+	/// provider that ends the stream. Republished on the UI scheduler, like <see cref="RealtimeBatches"/>.
 	/// </summary>
 	public IObservable<Exception> RealtimeFailures { get; }
-
-	/// <summary>
-	/// The provider's connection state, republished on the UI scheduler so a view model binds to it directly.
-	/// It never faults; disposal completes it.
-	/// </summary>
-	public IObservable<ArchiveConnectionState> ConnectionFaults { get; }
 
 	/// <summary>The pen set the live edge follows: the constructor's, or the last one handed to SetPens.</summary>
 	public IReadOnlyList<int> PenIds => _penIds.Value;
 
 	public void Dispose()
 	{
-		_connectionSubscription.Dispose();
-
 		// Never disposed: a buffer flush still running on the data scheduler would throw out of
 		// TryBuildRealtimeBatch, and Rx would turn that into the OnError the catch exists to prevent.
 		_realtimeFailures.OnCompleted();
 		_penIds.OnCompleted();
-		_connectionFaults.OnCompleted();
 	}
 
 	/// <summary>Moves the live edge onto this pen set; the history query covers rows the switch skips.</summary>

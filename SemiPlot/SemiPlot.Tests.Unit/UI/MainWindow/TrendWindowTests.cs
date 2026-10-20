@@ -7,13 +7,11 @@ using FluentResults;
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
+using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.Tests.Unit.UI.Markers;
-using SemiPlot.Tests.Unit.UI.PenEditor;
-using SemiPlot.Tests.Unit.UI.Startup;
-using SemiPlot.UI;
 using SemiPlot.UI.Bridge;
-using SemiPlot.UI.MainWindow;
-using SemiPlot.UI.Startup;
+using SemiPlot.UI.Localization;
+using SemiPlot.UI.Messages;
 
 using Xunit;
 
@@ -30,23 +28,15 @@ namespace SemiPlot.Tests.Unit.UI.MainWindow;
 public sealed class TrendWindowTests
 {
 	[AvaloniaFact]
-	public void DisposingTheWindowClosesTheLiveEdgeBeforeTheConnectionStream()
+	public void DisposingTheWindowClosesTheLiveEdge()
 	{
 		var stand = NewWindowStand();
 		var provider = stand.Provider;
-		var connectionObserversAtLiveEdgeClose = new List<int>();
 		provider.OpenLiveSubscriptionCount.Should().Be(1);
-		provider.ConnectionFaultsObserverCount.Should().Be(1);
-		provider.LiveSubscriptionChanging = () =>
-			connectionObserversAtLiveEdgeClose.Add(provider.ConnectionFaultsObserverCount);
 
 		stand.Dispose();
 
-		connectionObserversAtLiveEdgeClose.Should().Equal(
-			[1],
-			"the live edge closed once, with the coordinator's connection subscription still open");
 		provider.OpenLiveSubscriptionCount.Should().Be(0);
-		provider.ConnectionFaultsObserverCount.Should().Be(0, "the coordinator is disposed after the chart");
 	}
 
 	[AvaloniaFact]
@@ -89,25 +79,43 @@ public sealed class TrendWindowTests
 		stand.MarkerStore.Writes.Should().Equal(new FakeMarkerWrite.Delete(marker));
 	}
 
-	// The TestScheduler defers a fault reported as the live edge opens past Build, so the bar is bound by then.
 	[AvaloniaFact]
-	public void AFaultReportedAsTheLiveEdgeOpens_ReachesTheStatusBar()
+	public void TheWindowReadsTheCatalogueAtOnce()
 	{
-		using var archive = NewArchiveStand();
-		var lost = new ArchiveConnectionState(
-			FakePenCatalogueEditor.Refusal(ArchiveFault.ConnectionLost, "3"));
-		archive.Provider.LiveSubscriptionChanging = () => archive.Provider.ReportConnectionState(lost);
-		using var window = TrendWindow.Build(
-			archive.Data,
-			TestLaunch.LauncherAt(AppContext.BaseDirectory),
-			archive.Scheduler,
-			App.CsvDialectFor(UiLanguage.En),
-			TimeZoneInfo.Utc);
-		archive.Provider.LiveSubscriptionChanging = null;
+		using var stand = NewWindowStand();
 
-		archive.Scheduler.AdvanceBy(1);
+		stand.Provider.PensQueryCount.Should().Be(1, "the connection state starts at window open");
+	}
 
-		window.ViewModel.StatusBar.IsConnected.Should().BeFalse();
+	[AvaloniaFact]
+	public void ThreeUnreachableCatalogueReads_TurnTheBarToFault_WithOneConnectionLostEntry()
+	{
+		using var panel = new MessagePanelViewModel();
+		using var stand = NewWindowStand(panel: panel);
+		var statusBar = stand.ViewModel.StatusBar;
+		var connectionLost = ArchiveFailureMapper.Map(
+			FakeDataProvider.BenchArchiveError(ArchiveFault.ConnectionLost, "3"));
+		stand.Provider.FailPens = true;
+
+		stand.Scheduler.AdvanceBy(ArchiveReadLoop.ReadInterval.Ticks * 3);
+
+		statusBar.IsConnected.Should().BeFalse();
+		var entry = panel.Entries.Should().ContainSingle().Which;
+		entry.View.Should().Be(connectionLost);
+
+		stand.Scheduler.AdvanceBy(ArchiveReadLoop.ReadInterval.Ticks);
+
+		panel.Entries.Should().ContainSingle().Which.Should().BeSameAs(entry);
+		entry.RepeatCount.Should().Be(1, "a fourth failure neither adds nor restamps an entry");
+
+		stand.Provider.FailPens = false;
+		stand.Scheduler.AdvanceBy(ArchiveReadLoop.ReadInterval.Ticks);
+
+		statusBar.IsConnected.Should().BeTrue();
+		panel.Entries.Select(message => message.View.Severity).Should().Equal(
+			MessageSeverity.Info, MessageSeverity.Warning);
+		panel.Entries[0].View.Title.Should().Be(Resources.StatusConnectionRestoredTitle);
+		panel.Entries[0].View.Detail.Should().Be(Resources.StatusConnectionRestoredDetail);
 	}
 
 	[AvaloniaFact]

@@ -188,8 +188,8 @@ Frame cost during a drag is measured, not asserted: `docs/architecture/testing-s
 ### Container tests
 
 Every test of the `ArchiveDatabaseCollection` in `SemiPlot.Tests.Integration` needs a container runtime and
-nothing else. The socket classes (`RealtimePollTests`, `RealtimeSubscriptionDisposalTests`,
-`ConvergeReadinessTests`) carry no collection, take no fixture and run without a runtime.
+nothing else. The socket classes (`RealtimePollTests`, `CatalogueReadUnreachableTests`,
+`RealtimeSubscriptionDisposalTests`, `ConvergeReadinessTests`) carry no collection, take no fixture and run without a runtime.
 `SemiPlot/bench/Dockerfile` copies `/semibase` out of
 `ghcr.io/semiteq/semibase:latest`, which the fixture pulls ahead of the build, and runs
 `semibase bench` from `/docker-entrypoint-initdb.d/` before the published port opens. The container
@@ -358,10 +358,12 @@ No abbreviations in names.
   `Pens and groups`, `docs/architecture/overview.md#the-pen-and-group-editor`), so a control
   added to the row fails the suite rather than quietly shipping a second editor.
 - A stored pen change reaches the running chart through `Bridge/PenCatalogueSync` and no other route: it
-  re-reads `IDataProvider.QueryPensAsync` every 5 s and on `ReadNow()` after each write the editor lands,
-  and `MainWindow/PenCatalogueApplier` hands each read to the chart, which compares it with the pens it
-  shows, then rebuilds the sidebar. The chart is never rebuilt whole
-  (`docs/architecture/overview.md#the-live-catalogue`).
+  re-reads `IDataProvider.QueryPensAsync` once when the window opens, every 5 s and on `ReadNow()` after
+  each write the editor lands, and `MainWindow/PenCatalogueApplier` hands each read to the chart, which
+  compares it with the pens it shows, then rebuilds the sidebar. The chart is never rebuilt whole
+  (`docs/architecture/overview.md#the-live-catalogue`). The same reads are the source of the archive
+  connection state the status bar shows, `PenCatalogueSync.ConnectionStates`
+  (`docs/architecture/data-integration.md#the-connection-state-the-catalogue-read-reports`).
 - A stored time marker reaches the running chart through `Markers/MarkerSync` and no other route: it
   re-reads `IMarkerStore.ReadAsync` every 5 s and on `ReadNow()` after each marker write, and
   `Chart/ChartMarkers` reconciles each read into `Core/Trends/MarkerSet`, which keeps a marker
@@ -379,7 +381,11 @@ No abbreviations in names.
   at the call site. The one message with no error behind it is
   `AppStatusBarViewModel.ConnectionRestored`, which builds its own `Info` view because the mapper maps
   errors. A `catch`, or an Rx `onError`, that only logs is a defect
-  (`docs/architecture/data-integration.md#no-failure-stops-at-the-log`). Code-behind reaches the
+  (`docs/architecture/data-integration.md#no-failure-stops-at-the-log`). A failure for lack of a
+  connection (`ArchiveFault.Unreachable`) in the catalogue loop, the marker loop or the live-edge poll is
+  logged by that reader and reaches the panel through the status bar's one `ConnectionLost` entry, which
+  the catalogue reads raise; the three cases that reach only the log are listed in that same section.
+  Code-behind reaches the
   panel through its view model (`TrendChartViewModel.ReportFailure`, `MainWindowViewModel.ReportFailure`,
   `PenEditorViewModel.ReportFailure`, `StartupFailureViewModel.ReportFailure`,
   `AxisScalePanelViewModel.ReportFailure`, `TimeWindowPanelViewModel.ReportFailure`,

@@ -41,9 +41,6 @@ public interface IDataProvider
     // Cold per call: no samples flow until subscribed; the subscriber disposes the returned IDisposable.
     IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<int> penIds);
 
-    // Hot, shared by every subscription, never completes and never faults.
-    IObservable<ArchiveConnectionState> ConnectionFaults { get; }
-
     Task<Result<IReadOnlyList<Pen>>> QueryPensAsync();
 
     Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(
@@ -71,7 +68,7 @@ public interface IDataProvider
 | `PenHistoryEnvelope` | parallel `Timestamps` / `Min` / `Max` / `Center`, strictly ascending, `NaN` marks a gap | One per pen per history query. |
 | `ArchiveExtent` | `FirstUtc`, `LastUtc`, `IsEmpty` | The span of the configured variables, consumed by the minimap (`TM-4`). `ArchiveExtent.Empty` is the no-span form. |
 | `AggregationLayer` | `Raw`, `Minute`, `Hour` | Maps one-to-one onto the archive's `l` column. |
-| `ArchiveConnectionState` | `Fault`, `IsConnected` | `Fault` is null while the archive answers and carries the typed error while it does not. |
+| `ArchiveConnectionState` | `Fault`, `IsConnected` | `Fault` is null while the archive answers and carries the typed error while it does not. No member of `IDataProvider` returns it: `PenCatalogueSync` derives it from its catalogue reads (The connection state the catalogue read reports, below). |
 
 Contract points every implementation keeps:
 
@@ -995,28 +992,69 @@ catalogue. `Dispose` completes the subject.
   `TrendPenStateTests.Realtime_BreakOneTickAfterTheValue_IsRejectedAndOneMillisecondAfterIt_AddsANaNColumn`
   pins the step.
 
-### The connection state the poll reports
+### The connection state the catalogue read reports
 
-`ConnectionFaults` is hot, shared by every subscription and never terminating.
+The provider reports no connection state, and the poll keeps none. `Bridge/PenCatalogueSync` derives
+the state from its own catalogue reads and exposes it as `ConnectionStates`, an
+`IObservable<ArchiveConnectionState>` on the UI thread that its `Dispose` completes. `Bridge/ArchiveReadLoop`
+decides each state and emits it through the sink `PenCatalogueSync` hands it. `MarkerSync` hands no sink,
+so the marker loop raises no state.
 
-- Every subscription's first successful tick reports `Connected`, and so does the first success
-  after a raised fault; ordinary ticks report nothing. That first report is how a consumer knows a
-  subscription is armed, so nothing filters the stream with `DistinctUntilChanged`.
-- A fault is raised after three consecutive failed ticks, not one: Npgsql opens a fresh physical
-  connection after a reset, so one failed tick is ordinary. The state carries
-  `ArchiveFault.ConnectionLost` with the host, port, database and the threshold that raised it.
-- The fault is raised once per outage and carries the threshold, not a running count. The poll
-  reports nothing further until a tick succeeds.
-- A self-cancelled read is not a failure: disposal's `OperationCanceledException` ends the loop
-  ahead of the mapper.
+- A read fails for lack of a connection when its first error is an `ArchiveError` of kind
+  `ArchiveFault.Unreachable`: a refused or reset socket, a client bound firing, an `NpgsqlException`
+  without a SQLSTATE, or a server that refuses or ends the session with SQLSTATE class `08`,
+  `57P01` (admin shutdown), `57P02` (crash shutdown), `57P03` (starting up) or `53300` (too many connections). This is
+  the connection class. `57014` is not in it: the server answered and ended the statement, so it stays
+  `QueryTimedOut`. Any other kind, and an error that is not an `ArchiveError`, is not connection class.
+- The first successful read emits `Connected`, and so does the first success after a raised fault;
+  every other success emits nothing. The state goes out before the read is applied, so an apply that
+  throws leaves the state right.
+- Three connection-class failures in a row raise the fault, not one: Npgsql opens a fresh physical
+  connection after a reset, so one failed read is ordinary. The state carries
+  `ArchiveFault.ConnectionLost` with the failing error's host, port and database, and the threshold
+  `ArchiveConnectionState.ConsecutiveFailuresBeforeFault` (3) as its detail, not a running count.
+- The fault is raised once per outage. The loop emits nothing more until a read succeeds. A failure of
+  another kind ends the run of connection-class failures.
+- So after the fault, a failure of another kind leaves the bar on the fault while the server answers.
+  The indicator turns back only at the next success. The other kind's entry reaches the panel at once,
+  because the failed reads before it count toward the third in a row.
+- Each connection-class failure writes one log warning naming the read and its run of connection-class
+  failures (`ConsecutiveConnectionFailures`). It never reaches the panel from the loop; the bar's one
+  entry stands for it. A failure of another kind logs its run of failed reads of any kind
+  (`ConsecutiveFailures`).
+- A read that throws instead of answering adds one panel entry at once and leaves both counts as they
+  were. A read that lands after `Dispose` emits nothing.
 
-`MainWindow/AppStatusBarViewModel` renders the state: the indicator reads connected or not, and
-every fault is mapped by `Messages/ArchiveFailureMapper.Map` into an entry in the message panel. The
-bar has a single writer, the stream `TrendWindow.Build` hands its constructor. Because every
-subscription's first tick reports `Connected`, the recovery entry is written only once a fault has
-been seen — otherwise every launch would announce a connection it never lost. The handler is
-wrapped: `TrendCoordinator` forwards this stream with a bare `Subscribe`, so a throw out of the
-handler would end the forwarding for the rest of the session instead of reaching an `onError`.
+`TrendWindow.Build` calls `ReadNow()` right after `Start()`, so the first `Connected`, or the run of
+failures, starts when the window opens (`overview.md#the-read`). Each read waits for a connection under
+the 15 s connect bound (`PostgresConnectionSettings.ConnectTimeoutSeconds`) and runs its statement under
+its own 5 s bound (Configuration, below), and the loop waits 5 s after each read before the next. The
+fault lands with the third failed read of that sequence; how long that takes depends on where in the
+wait the outage begins and on which bound ends each read.
+
+One rule covers the three readers of the shared `NpgsqlDataSource` that repeat on their own: the
+catalogue loop, the marker loop and the live-edge poll. A connection-class failure is logged by the
+reader that meets it and reaches the operator through this state and the bar's one `ConnectionLost`
+entry. Any other kind reaches the panel through the two loops' own route, from the third failure in a
+row, coalescing repeats into the newest entry (`overview.md#a-failed-read`). The poll has no route of
+its own: it logs every failed tick with its run (`ConsecutiveFailures`) and emits no sample. A
+`TableMissing`, an `AccessDenied` or a role `statement_timeout` on `trends` reaches the panel through
+the minimap's band reads, every 2 to 60 s and the first failure of each outage
+(`trend-interaction.md#archive-overview-minimap`), and through the chart's history read on the next
+gesture. The band reads run only while the minimap has an extent and a drawn pen. So an outage makes one
+entry from the catalogue state, and the minimap's first failed band read of the outage adds an
+`Unreachable` entry of its own. Three cases reach only the log: a stalled marker statement, a poll tick
+that keeps exceeding its bound, and a poll failure on `trends` that no band read or gesture repeats
+(No failure stops at the log, below).
+
+`MainWindow/AppStatusBarViewModel` renders the state: the indicator reads connected or not, and a
+fault is mapped by `Messages/ArchiveFailureMapper.Map` into one `Warning` entry in the message panel.
+The bar has a single writer, `PenCatalogueSync.ConnectionStates`, which `TrendWindow.Build` hands its
+constructor before it starts the sync, so no state precedes the subscription. The first catalogue read
+reports `Connected` too, so the recovery entry is written only once a fault has been seen; otherwise
+every launch would announce a connection it never lost. The handler is wrapped: the sync raises the
+state from inside its read loop, ahead of the read's apply, so a throw out of the handler would skip
+that read's apply.
 
 ## Error semantics
 
@@ -1024,14 +1062,14 @@ handler would end the forwarding for the rest of the session instead of reaching
 | --- | --- | --- |
 | Connection refused or DNS failure at startup | failed `Result` | The startup-failure window opens, titled "No connection to the archive", naming the host and port, with a remedy |
 | Connection lost mid-session | failed `Result` on the query; realtime tick dropped | Chart keeps the data it has |
-| Three consecutive realtime ticks fail | `ArchiveFault.ConnectionLost` on `ConnectionFaults`; the observable keeps running | The status indicator turns to the fault state and one `Warning` entry appears; the first tick that succeeds restores the indicator and adds one `Info` entry |
+| Three consecutive catalogue reads fail for lack of a connection | `ArchiveFault.ConnectionLost` on `PenCatalogueSync.ConnectionStates`; the loop keeps reading | The status indicator turns to the fault state and one `Warning` entry appears; the first catalogue read that succeeds restores the indicator and adds one `Info` entry |
 | A column the read needs is absent (`42703`) | `ArchiveFault.ShapeUnexpected` with the server's detail | "The archive has an unexpected shape" — run `semibase site`, then find what altered the table |
 | Query timeout (`57014`) | `ArchiveFault.QueryTimedOut` | "The archive ended the statement"; `statement_timeout` is the `semiplot` role's own setting |
 | The database does not exist (`3D000`) | `ArchiveFault.DatabaseMissing` | "The archive is not provisioned" — run `semibase site` |
 | Credentials refused or a grant missing (`28P01`, `28000`, `42501`) | `ArchiveFault.AccessDenied` | "The archive refused access" — the user, password or grants |
 | A relation or function a statement needs does not exist (`42P01`, `42883`) | `ArchiveFault.TableMissing` whose detail names every relation that statement touches, or `semiplot_register_new_pens()` | "The archive is not provisioned" — run `semibase site`, which creates them all |
-| The catalogue re-read fails mid-session | failed `Result`; `PenCatalogueSync` keeps its snapshot | Nothing for the first two failures in a row, one log warning each; from the third one panel entry, coalesced with the ones after it. The next success applies everything stored since the last success |
-| The marker re-read fails mid-session | failed `Result`; `MarkerSync` emits nothing and the chart keeps the markers it shows | As for the catalogue: two log warnings, then one panel entry from the third failure in a row. Against a database without `semiplot_markers` that entry is a `TableMissing` Error about 10 s after the window opens, and the chart works without markers |
+| The catalogue re-read fails mid-session | failed `Result`; `PenCatalogueSync` keeps its snapshot | A connection-class failure logs one warning and goes to the bar's `ConnectionLost` entry, never to an entry of its own. Any other kind: nothing for the first two failures in a row, one log warning each; from the third one panel entry, coalesced with the ones after it. The next success applies everything stored since the last success |
+| The marker re-read fails mid-session | failed `Result`; `MarkerSync` emits nothing and the chart keeps the markers it shows | As for the catalogue: a connection-class failure logs one warning and goes to the bar's entry, which the catalogue read raises; any other kind writes two log warnings, then one panel entry from the third failure in a row. Against a database without `semiplot_markers` that entry is a `TableMissing` Error about 10 s after the window opens, and the chart works without markers |
 | `semiplot_tags` present but empty | empty pen list, success | The chart area's own empty state, naming `Edit` -> `Pens and groups` -> `Refresh pen list`: no key has been registered as a pen yet. Not a message-panel entry: an empty catalogue is a state, not something that happened |
 | Archive present but no rows in the window | success, empty envelope list | Empty chart, no error |
 | A check constraint refuses a written value (`23514`) | `ArchiveFault.ValueRejected` | "The archive refused the value"; the field reverts, and the message line says why |
@@ -1066,13 +1104,13 @@ carries no file-access kind.
 
 | `ArchiveFault` | Raised by | Detail |
 | --- | --- | --- |
-| `Unreachable` | a socket failure, a client bound firing, any `NpgsqlException` without a SQLSTATE | empty |
+| `Unreachable` | a socket failure, a client bound firing, any `NpgsqlException` without a SQLSTATE, a session the server refuses or ends: SQLSTATE class `08`, `57P01`, `57P02`, `57P03`, `53300` | empty |
 | `AccessDenied` | `28P01`, `28000`, `42501` | the username |
 | `DatabaseMissing` | `3D000` | empty |
 | `TableMissing` | `42P01`, `42883` | every relation the failing statement touches: `trends` for the history and realtime reads, `semiplot_tags, trends` for the archive extent and the archive days, all three catalogue tables for the pen catalogue and every editor write, `semiplot_markers` for every marker statement; `semiplot_register_new_pens()` for the registration |
 | `ShapeUnexpected` | `42703` | the server's own message |
 | `QueryTimedOut` | `57014` | empty |
-| `ConnectionLost` | three consecutive failed poll ticks | the number of failures that raised it |
+| `ConnectionLost` | three consecutive catalogue reads that fail as `Unreachable` | the number of failures that raised it |
 | `ValueRejected` | `23514` on an editor or marker write | the pen's name, or the marker's label or local moment |
 | `NameTaken` | `23505` on an editor write | the group name asked for |
 | `RowGone` | `23503` on an editor write, or an update, rename or delete that touched no row | the pen or group name |
@@ -1107,8 +1145,8 @@ and a `MessageSeverity`, and is the one place a remedy is written. The severity 
 mapper rather than at the call site, so a future error type gets one from the `MapUnknown` arm
 without anyone remembering: `AccessDenied`, `TableMissing`, `DatabaseMissing` and `ShapeUnexpected`
 are `Error`, because nothing recovers until someone changes a grant, a schema or a provisioning run;
-`Unreachable`, `ConnectionLost`, `QueryTimedOut` and `ReadFailed` are `Warning`, because the poll
-loop retries by itself. `ValueRejected`, `NameTaken` and `RowGone` are `Warning` too: the operator's
+`Unreachable`, `ConnectionLost`, `QueryTimedOut` and `ReadFailed` are `Warning`, because the reads
+retry by themselves. `ValueRejected`, `NameTaken` and `RowGone` are `Warning` too: the operator's
 own edit was refused, and the next edit is the remedy. `MarkerGone` is `Warning` as well: the chart
 drops the marker, and the operator adds it again if it is still needed.
 `FailureSeverityTests.EveryArchiveFault_CarriesTheSeverityTheTableNames` pins that split. `ConnectionLost` never opens the startup-failure window; it is an entry in the message panel
@@ -1137,10 +1175,27 @@ only the log. That includes the failed history query in `Chart/TrendChartViewMod
 try-report-continue shape that `Chart/ChartHistoryRequestDebouncer.Deliver` applies to the history it
 hands on, so one bad batch does not end the realtime subscription. `Deliver` guards that hand-off
 only: the result it reports instead is reported by a handler that guards itself. The catalogue and
-the marker read loops report from the third failure in a row, the live edge's threshold
-(`ArchiveConnectionState.ConsecutiveFailuresBeforeFault`); the first two log a warning
-(`overview.md#a-failed-read`). The minimap's band and extent reads each report the first failure of an
-outage and log every repeat at Warning (`trend-interaction.md#archive-overview-minimap`).
+the marker read loops report any failure but a lost connection from the third in a row, the threshold
+that also raises the connection fault (`ArchiveConnectionState.ConsecutiveFailuresBeforeFault`); the
+first two log a warning (`overview.md#a-failed-read`). The minimap's band and extent reads each report
+the first failure of an outage and log every repeat at Warning
+(`trend-interaction.md#archive-overview-minimap`).
+
+A failure for lack of a connection follows one rule in the three readers that repeat on their own, the
+catalogue loop, the marker loop and the live-edge poll: the reader logs it, and it reaches the operator
+through the catalogue read's state and the status bar's one `ConnectionLost` entry (The connection state
+the catalogue read reports, above). The poll's other failures on `trends` reach the panel through the
+minimap's band reads and the chart's history reads over the same relation. Three cases stay in the log,
+written at every failure:
+
+- A marker statement stalls while the catalogue answers. The marker read has no bound of its own and
+  runs to the connection string's 300 s backstop, so after a stall the marker loop can sit on a dead
+  pooled connection for up to 300 s after the bar has written the recovery entry.
+- A poll tick's incremental read exceeds its 10 s bound at every tick. A failed tick does not advance
+  `lastSeen`, so the next tick repeats the same read, and the live edge stays frozen while the catalogue
+  answers and the indicator reads connected.
+- A poll tick fails with another kind on `trends` while no band read runs, because the archive has no
+  extent or the minimap draws no pen, and the operator makes no gesture.
 
 `Messages/ResultReporting` treats the log and the panel as two independent sinks: the panel edit runs
 first and the log line from a `finally`, so whichever of the two refuses the failure, the other still
@@ -1186,7 +1241,7 @@ indicator, a `Button` bound to the panel's own `ToggleCommand` — the same comm
 invokes. `overview.md` holds the panel's place in the window and the reach of the ReactiveUI
 exception observer under it.
 
-`TrendCoordinator.RealtimeBatches` needs one more guard than the connection stream does. Its
+`TrendCoordinator.RealtimeBatches` needs a guard of its own. Its
 projection runs inside `Select`, and Rx turns a throwing projection into `OnError`, which would end
 the `Publish().RefCount()` stream for every subscriber. `TryBuildRealtimeBatch` catches instead,
 skips the window and publishes the exception on `TrendCoordinator.RealtimeFailures`. A terminal
@@ -1266,8 +1321,9 @@ zones, and no key overrides the zone `[DEC:machine-time-zone]`.
 
 The file states no query bound: `statement_timeout` belongs to the `semiplot` role and SemiBase owns
 it (`postgres-instance.md`). The connection
-string carries `Command Timeout=300` as a client backstop; the live-edge poll uses a 10 s bound of
-its own on every tick. Loading returns a `Result`; a malformed file is reported at startup, not at
+string carries `Command Timeout=300` as a client backstop. Two reads override it with a bound of their
+own: the live-edge poll's tick (10 s, `RealtimePoll.CreateTickCommand`) and the catalogue read (5 s,
+`PostgresDataProvider.CreateCatalogueCommand`), whose failures raise the connection fault. Loading returns a `Result`; a malformed file is reported at startup, not at
 first query. The password is stored in plain text; the mitigation is a role that cannot write the
 archive.
 
@@ -1327,6 +1383,10 @@ process data. `Program.Main` returns 1 once that window closes.
 - **The read bound sits above the connect timeout** (`PostgresConnectionSettings.ConnectTimeoutSeconds`,
   15 s), so an unreachable host fails inside the connect attempt and reports `Unreachable` rather
   than a timeout. `StartupProbeTests.DefaultReadBound_StaysAboveTheConnectTimeout` pins the ordering.
+- **The catalogue read fails as `Unreachable` past 5 s**, its own statement bound (Configuration,
+  above), ahead of the 30 s caller bound. A server that answers the catalogue more slowly than 5 s at
+  start, under a lock a provisioning run holds for one, fails the start as `Unreachable` rather than as
+  `StartupReadTimedOutError`. The failure window's Restart is the remedy; one statement keeps one bound.
 - **A throw on the startup path is a failed `Result`.** `StartupProbe.ReadAsync` catches, logs with
   the stack, disposes the container and returns an `ExceptionalError`, which `ArchiveFailureMapper`
   maps through its `IExceptionalError` arm.

@@ -35,7 +35,7 @@ public sealed class ArchiveError(ArchiveFault kind, string host, int port, strin
 				$"The {archive} does not carry the columns SemiPlot reads (SQLSTATE 42703): {detail}",
 			ArchiveFault.QueryTimedOut => $"The server ended a statement against the {archive} (SQLSTATE 57014).",
 			ArchiveFault.ConnectionLost =>
-				$"The live edge of the {archive} stopped answering after {detail} consecutive failed reads.",
+				$"The {archive} stopped answering after {detail} consecutive failed reads.",
 			ArchiveFault.ValueRejected =>
 				$"The {archive} refused a value written to pen '{detail}' (SQLSTATE 23514).",
 			ArchiveFault.NameTaken => $"The {archive} already holds a group named '{detail}' (SQLSTATE 23505).",

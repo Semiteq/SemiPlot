@@ -292,10 +292,10 @@
     <value>Нет связи с базой данных</value>
   </data>
   <data name="FailureArchiveUnreachableDetail" xml:space="preserve">
-    <value>Не удалось подключиться к {0}.</value>
+    <value>Не удалось подключиться к {0}, или подключение не ответило вовремя.</value>
   </data>
   <data name="FailureArchiveUnreachableRemedy" xml:space="preserve">
-    <value>Проверьте, что сервер PostgreSQL запущен. Проверьте, что хост и порт из файла подключения доступны с этой машины. Проверьте маршрут и межсетевой экран.</value>
+    <value>Проверьте, что сервер PostgreSQL запущен. Проверьте, что хост и порт из файла подключения доступны с этой машины. Проверьте маршрут и межсетевой экран. Проверьте, что у сервера есть свободные подключения (max_connections).</value>
   </data>
   <data name="FailureArchiveAccessDeniedTitle" xml:space="preserve">
     <value>База данных отказала в доступе</value>

@@ -35,14 +35,7 @@ public static class ArchiveProviderFactory
 	{
 		var services = new ServiceCollection();
 
-		services.AddLogging(builder =>
-		{
-			if (loggerProvider is not null)
-			{
-				builder.SetMinimumLevel(LogLevel.Debug);
-				builder.AddProvider(loggerProvider);
-			}
-		});
+		services.AddTestLogging(loggerProvider);
 
 		if (timeProvider is not null)
 		{
@@ -64,6 +57,19 @@ public static class ArchiveProviderFactory
 		}
 
 		return services.BuildServiceProvider();
+	}
+
+	/// <summary>Sends every log line from Debug up to <paramref name="loggerProvider"/>, when one is passed.</summary>
+	internal static IServiceCollection AddTestLogging(this IServiceCollection services, ILoggerProvider? loggerProvider)
+	{
+		return services.AddLogging(builder =>
+		{
+			if (loggerProvider is not null)
+			{
+				builder.SetMinimumLevel(LogLevel.Debug);
+				builder.AddProvider(loggerProvider);
+			}
+		});
 	}
 
 	private static PostgresConnectionSettings SettingsFor(string connectionString)

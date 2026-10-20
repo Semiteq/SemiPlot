@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 using SemiPlot.DataSource.Postgres;
 using SemiPlot.DataSource.Postgres.Configuration;
@@ -22,10 +23,12 @@ internal static class UnreachableArchive
 			Schema: "public");
 	}
 
-	public static ServiceProvider Services(PostgresConnectionSettings settings)
+	public static ServiceProvider Services(
+		PostgresConnectionSettings settings,
+		ILoggerProvider? loggerProvider = null)
 	{
 		return new ServiceCollection()
-			.AddLogging()
+			.AddTestLogging(loggerProvider)
 			.AddPostgresData(settings)
 			.BuildServiceProvider();
 	}

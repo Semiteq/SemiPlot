@@ -40,7 +40,6 @@ public sealed class AppMainWindowTests
 		App.ResolveMessagePanel().Should().BeSameAs(
 			viewModel.MessagePanel, "the ReactiveUI handler reaches the panel the window shows");
 		archive.Provider.OpenLiveSubscriptionCount.Should().Be(1);
-		archive.Provider.ConnectionFaultsObserverCount.Should().Be(1);
 
 		window.Show();
 		Dispatcher.UIThread.RunJobs();
@@ -48,6 +47,5 @@ public sealed class AppMainWindowTests
 		Dispatcher.UIThread.RunJobs();
 
 		archive.Provider.OpenLiveSubscriptionCount.Should().Be(0, "closing the window disposes the chart");
-		archive.Provider.ConnectionFaultsObserverCount.Should().Be(0, "closing the window disposes the coordinator");
 	}
 }

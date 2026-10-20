@@ -91,7 +91,7 @@ public sealed class MarkerSyncTests : IDisposable
 	[Fact]
 	public async Task ADiscardedRead_CountsAsNoFailure()
 	{
-		_store.ReadResult = Result.Fail<IReadOnlyList<StoredMarker>>(FakeDataProvider.UnreachableArchive());
+		_store.ReadResult = MarkersTableMissing();
 		StartAndEnterTheWait();
 		Advance(_readInterval * 2);
 		var heldRead = _store.HoldNextRead();
@@ -177,7 +177,7 @@ public sealed class MarkerSyncTests : IDisposable
 	[Fact]
 	public void TwoFailedReads_LogTheMarkerRead_TheThirdReportsOnce()
 	{
-		_store.ReadResult = Result.Fail<IReadOnlyList<StoredMarker>>(FakeDataProvider.UnreachableArchive());
+		_store.ReadResult = MarkersTableMissing();
 		StartAndEnterTheWait();
 
 		Advance(_readInterval * 2);
@@ -192,6 +192,20 @@ public sealed class MarkerSyncTests : IDisposable
 
 		Advance(_readInterval);
 		_messagePanel.Entries.Should().ContainSingle();
+	}
+
+	[Fact]
+	public void ThreeUnreachableMarkerReads_AddNoEntry_AndLogEach()
+	{
+		_store.ReadResult = Result.Fail<IReadOnlyList<StoredMarker>>(FakeDataProvider.UnreachableArchive());
+		StartAndEnterTheWait();
+
+		Advance(_readInterval * 3);
+
+		_store.ReadCount.Should().Be(3);
+		_messagePanel.Entries.Should().BeEmpty("the catalogue read's state carries a lost connection to the bar");
+		_logger.Collector.GetSnapshot().Should().HaveCount(3)
+			.And.AllSatisfy(record => record.Level.Should().Be(LogLevel.Warning));
 	}
 
 	[Fact]
@@ -224,5 +238,11 @@ public sealed class MarkerSyncTests : IDisposable
 	private static Result<IReadOnlyList<StoredMarker>> Stored(params StoredMarker[] markers)
 	{
 		return Result.Ok<IReadOnlyList<StoredMarker>>(markers);
+	}
+
+	private static Result<IReadOnlyList<StoredMarker>> MarkersTableMissing()
+	{
+		return Result.Fail<IReadOnlyList<StoredMarker>>(
+			FakeDataProvider.BenchArchiveError(ArchiveFault.TableMissing, "semiplot_markers"));
 	}
 }

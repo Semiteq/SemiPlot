@@ -2,8 +2,6 @@ using AwesomeAssertions;
 
 using Microsoft.Extensions.Logging.Testing;
 
-using SemiPlot.Core.Data;
-using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
 using SemiPlot.Tools.ArchiveSeeder;
 
@@ -36,14 +34,13 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 
 	// It emits nothing: a first tick that emitted rows would have to emit every row since the archive began.
 	[Fact]
-	public async Task TheFirstTickEmitsNoSampleAndReportsTheSubscriptionArmed()
+	public async Task TheFirstTickEmitsNoSample()
 	{
 		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
-		var tick = await NewPoll(services).ReadOnceAsync(TestContext.Current.CancellationToken);
+		var samples = await NewPoll(services).ReadOnceAsync(TestContext.Current.CancellationToken);
 
-		tick.Samples.Should().BeEmpty();
-		tick.StateChange.Should().BeSameAs(ArchiveConnectionState.Connected);
+		samples.Should().BeEmpty();
 	}
 
 	[Fact]
@@ -65,16 +62,13 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 			ArchiveRow.OrdinaryQuality,
 			cancellationToken: cancellationToken);
 
-		var tick = await poll.ReadOnceAsync(cancellationToken);
+		var samples = await poll.ReadOnceAsync(cancellationToken);
 
-		var sample = tick.Samples.Should().ContainSingle().Which;
+		var sample = samples.Should().ContainSingle().Which;
 
 		sample.PenId.Should().Be(SubscribedPenIds[0]);
 		sample.Value.Should().Be(42.5);
 		sample.TimestampUtc.Should().Be(ArchiveProviderFactory.TimeConverter.ToUtc(appended));
-
-		// The subscription was armed by the first tick, so an ordinary delivery reports no state change.
-		tick.StateChange.Should().BeNull();
 	}
 
 	[Fact]
@@ -88,10 +82,9 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 
 		await poll.ReadOnceAsync(cancellationToken);
 
-		var tick = await poll.ReadOnceAsync(cancellationToken);
+		var samples = await poll.ReadOnceAsync(cancellationToken);
 
-		tick.Samples.Should().BeEmpty();
-		tick.StateChange.Should().BeNull();
+		samples.Should().BeEmpty();
 	}
 
 	[Fact]
@@ -112,15 +105,15 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 			ArchiveRow.OrdinaryQuality,
 			cancellationToken: cancellationToken);
 
-		var tick = await poll.ReadOnceAsync(cancellationToken);
+		var samples = await poll.ReadOnceAsync(cancellationToken);
 
-		tick.Samples.Should().BeEmpty();
+		samples.Should().BeEmpty();
 	}
 
 	// The poll advances past the null row, or it would re-read the same row on every later tick. A delivered
 	// row cannot show that, so the tick after the null row reads its own debug entry: it must count no row.
 	[Fact]
-	public async Task ARowCarryingANullValueEmitsNoSampleReportsNoFaultAndIsNotReadAgain()
+	public async Task ARowCarryingANullValueEmitsNoSampleAndIsNotReadAgain()
 	{
 		var cancellationToken = TestContext.Current.CancellationToken;
 
@@ -138,10 +131,9 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 			ArchiveRow.OrdinaryQuality,
 			cancellationToken: cancellationToken);
 
-		var tick = await poll.ReadOnceAsync(cancellationToken);
+		var samples = await poll.ReadOnceAsync(cancellationToken);
 
-		tick.Samples.Should().BeEmpty();
-		tick.StateChange.Should().BeNull();
+		samples.Should().BeEmpty();
 
 		await poll.ReadOnceAsync(cancellationToken);
 
@@ -169,9 +161,9 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 			ArchiveRow.LastBeforeBreakQuality,
 			cancellationToken: cancellationToken);
 
-		var tick = await poll.ReadOnceAsync(cancellationToken);
+		var samples = await poll.ReadOnceAsync(cancellationToken);
 
-		tick.Samples.Should().Equal(
+		samples.Should().Equal(
 			new Sample(SubscribedPenIds[0], appendedUtc, 11.25),
 			new Sample(SubscribedPenIds[0], appendedUtc.AddMilliseconds(1), null));
 		PollCounts(logs).Should().Equal(("1", "1", "0", "1"));
@@ -198,35 +190,37 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 			ArchiveRow.LastBeforeBreakQuality,
 			cancellationToken: cancellationToken);
 
-		var tick = await poll.ReadOnceAsync(cancellationToken);
+		var samples = await poll.ReadOnceAsync(cancellationToken);
 
-		tick.Samples.Should().Equal(new Sample(
+		samples.Should().Equal(new Sample(
 			SubscribedPenIds[0],
 			ArchiveProviderFactory.TimeConverter.ToUtc(appended).AddMilliseconds(1),
 			null));
-		tick.StateChange.Should().BeNull();
 
 		await poll.ReadOnceAsync(cancellationToken);
 
 		PollCounts(logs).Should().Equal(("1", "0", "1", "1"), ("0", "0", "0", "0"));
 	}
 
-	// Renamed rather than dropped: the container is shared. The tick after recovery must report nothing.
+	// Renamed rather than dropped: the container is shared.
 	[Fact]
-	public async Task TheFirstSuccessAfterARaisedFaultReportsConnectedExactlyOnce()
+	public async Task TheFirstTickAfterTheTableReturnsTakesTheBaseline()
 	{
+		const int FailedTickCount = 3;
 		var cancellationToken = TestContext.Current.CancellationToken;
 
 		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
 		var poll = NewPoll(services);
-		var states = new List<ArchiveConnectionState?>();
 
 		await HideTrendsAsync(cancellationToken);
 
 		try
 		{
-			states.AddRange(await TickAsync(poll, ConsecutiveFailuresBeforeFault));
+			for (var tick = 0; tick < FailedTickCount; tick++)
+			{
+				(await poll.ReadOnceAsync(cancellationToken)).Should().BeEmpty();
+			}
 		}
 		finally
 		{
@@ -248,8 +242,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 
 		var recovery = await poll.ReadOnceAsync(cancellationToken);
 
-		states.Add(recovery.StateChange);
-		recovery.Samples.Should().BeEmpty();
+		recovery.Should().BeEmpty();
 
 		await AppendAsync(
 			Database,
@@ -261,20 +254,10 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 
 		var delivery = await poll.ReadOnceAsync(cancellationToken);
 
-		states.Add(delivery.StateChange);
-
-		var delivered = delivery.Samples.Should().ContainSingle().Which;
+		var delivered = delivery.Should().ContainSingle().Which;
 
 		delivered.PenId.Should().Be(SubscribedPenIds[1]);
 		delivered.TimestampUtc.Should().Be(ArchiveProviderFactory.TimeConverter.ToUtc(appendedSecond));
-
-		states.Take(ConsecutiveFailuresBeforeFault - 1).Should().AllSatisfy(state => state.Should().BeNull());
-
-		var raisedFault = states[ConsecutiveFailuresBeforeFault - 1]?.Fault?.Kind;
-
-		raisedFault.Should().Be(ArchiveFault.ConnectionLost);
-		states[ConsecutiveFailuresBeforeFault].Should().BeSameAs(ArchiveConnectionState.Connected);
-		states[ConsecutiveFailuresBeforeFault + 1].Should().BeNull();
 	}
 
 	// Renamed rather than dropped: the rows and the day partitions come back with it, so the recovering

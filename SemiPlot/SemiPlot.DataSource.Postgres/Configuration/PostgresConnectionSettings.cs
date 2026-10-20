@@ -23,7 +23,7 @@ public sealed record PostgresConnectionSettings(
 	public const int ConnectTimeoutSeconds = 15;
 
 	/// <summary>
-	/// Client backstop for a server that stops answering; the poll overrides it per tick.
+	/// Client backstop for a server that stops answering; the poll's tick and the catalogue read override it.
 	/// </summary>
 	public const int CommandTimeoutSeconds = 300;
 

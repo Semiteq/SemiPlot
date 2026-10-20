@@ -1,23 +1,12 @@
-using System.Globalization;
-
 using Microsoft.Extensions.Logging;
 
 using Npgsql;
 
 using NpgsqlTypes;
 
-using SemiPlot.Core.Data;
-using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
-using SemiPlot.DataSource.Postgres.Configuration;
 
 namespace SemiPlot.DataSource.Postgres;
-
-/// <summary>
-/// One tick's result. <see cref="StateChange"/> is null when the tick changed nothing the operator has to
-/// be told about; otherwise it is the connection state the subscription has just moved to.
-/// </summary>
-internal readonly record struct RealtimeTick(IReadOnlyList<Sample> Samples, ArchiveConnectionState? StateChange);
 
 /// <summary>
 /// The live edge of one subscription, as an awaitable read rather than as an observable; one instance per
@@ -27,15 +16,13 @@ internal sealed class RealtimePoll(
 	NpgsqlDataSource dataSource,
 	ArchiveTimeConverter timeConverter,
 	ArchiveExceptionMapper exceptionMapper,
-	PostgresConnectionSettings settings,
 	int[] penIds,
 	ILogger logger)
 {
 	// docs/architecture/scada-archive.md#quality-and-gaps
 	private const int LastBeforeBreakQuality = 32;
 
-	// Must stay far below the connection string's backstop: three stalled ticks must raise the fault
-	// inside half a minute.
+	// A stalled tick holds the live edge for at most this long, not for the connection string's backstop.
 	private const int TickCommandTimeoutSeconds = 10;
 
 	// docs/architecture/data-integration.md#realtime
@@ -45,19 +32,15 @@ internal sealed class RealtimePoll(
 
 	private int _consecutiveFailures;
 
-	private bool _faultRaised;
-
-	private bool _reportedConnected;
-
 	// The archive's own naive wall clock, null until the baseline is read; never taken from the local clock:
 	// a clock difference between the two hosts would drop or repeat the first seconds.
 	private DateTime? _lastSeen;
 
 	/// <summary>
 	/// One tick. The first one establishes the baseline and emits no sample; every later one emits the
-	/// rows written since the previous tick, converted to UTC.
+	/// rows written since the previous tick, converted to UTC. A failed tick emits no sample.
 	/// </summary>
-	public async Task<RealtimeTick> ReadOnceAsync(CancellationToken cancellationToken)
+	public async Task<IReadOnlyList<Sample>> ReadOnceAsync(CancellationToken cancellationToken)
 	{
 		try
 		{
@@ -69,16 +52,20 @@ internal sealed class RealtimePoll(
 				? await ReadSamplesAsync(connection, lastSeen, cancellationToken).ConfigureAwait(false)
 				: await ReadBaselineAsync(connection, cancellationToken).ConfigureAwait(false);
 
-			return new RealtimeTick(samples, Succeed());
+			_consecutiveFailures = 0;
+
+			return samples;
 		}
 		catch (OperationCanceledException)
 		{
-			// Ahead of the general catch: a self-cancelled read must not count towards the fault threshold.
+			// Ahead of the general catch: a self-cancelled read is no failed tick.
 			throw;
 		}
 		catch (Exception exception)
 		{
-			return new RealtimeTick(_noSamples, Fail(exception));
+			LogFailure(exception);
+
+			return _noSamples;
 		}
 	}
 
@@ -126,12 +113,13 @@ internal sealed class RealtimePoll(
 		{
 			Advance(baseline);
 
-			logger.LogDebug("The realtime baseline for {PenCount} variables is {Baseline:O}.", penIds.Length,
-				baseline);
+			logger.LogDebug("The realtime baseline for {SubscribedPenCount} variables is {Baseline:O}.",
+				penIds.Length, baseline);
 		}
 		else
 		{
-			logger.LogDebug("The {PenCount} subscribed variables carry no archived row yet.", penIds.Length);
+			logger.LogDebug("The {SubscribedPenCount} subscribed variables carry no archived row yet.",
+				penIds.Length);
 		}
 
 		return _noSamples;
@@ -207,22 +195,7 @@ internal sealed class RealtimePoll(
 		}
 	}
 
-	private ArchiveConnectionState? Succeed()
-	{
-		_consecutiveFailures = 0;
-
-		if (_reportedConnected && !_faultRaised)
-		{
-			return null;
-		}
-
-		_reportedConnected = true;
-		_faultRaised = false;
-
-		return ArchiveConnectionState.Connected;
-	}
-
-	private ArchiveConnectionState? Fail(Exception exception)
+	private void LogFailure(Exception exception)
 	{
 		var error = exceptionMapper.Map(exception, ArchiveStatements.TrendsRelation);
 
@@ -233,19 +206,5 @@ internal sealed class RealtimePoll(
 			"The realtime poll tick failed, {ConsecutiveFailures} in a row: {Reason}",
 			_consecutiveFailures,
 			error.Message);
-
-		if (_consecutiveFailures < ArchiveConnectionState.ConsecutiveFailuresBeforeFault || _faultRaised)
-		{
-			return null;
-		}
-
-		_faultRaised = true;
-
-		return new ArchiveConnectionState(new ArchiveError(
-			ArchiveFault.ConnectionLost,
-			settings.Host,
-			settings.Port,
-			settings.Database,
-			ArchiveConnectionState.ConsecutiveFailuresBeforeFault.ToString(CultureInfo.InvariantCulture)));
 	}
 }

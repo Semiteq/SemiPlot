@@ -4,11 +4,8 @@ using AwesomeAssertions;
 
 using Microsoft.Reactive.Testing;
 
-using SemiPlot.Core.Data;
-using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Chart;
-using SemiPlot.Tests.Unit.UI.PenEditor;
 using SemiPlot.UI.Bridge;
 
 using Xunit;
@@ -110,80 +107,6 @@ public sealed class TrendCoordinatorTests
 		batches.Should().BeEmpty();
 	}
 
-	// The UI scheduler is the coordinator's own, not the provider's, so a state pushed from the data side is
-	// held until the UI scheduler runs it. A view model binding to this stream therefore never has to marshal.
-	[Fact]
-	public void ConnectionFaults_ReachTheConsumerOnTheUiScheduler()
-	{
-		var uiScheduler = new TestScheduler();
-		var (coordinator, _, provider) = CreateCoordinator(uiScheduler: uiScheduler);
-		using var ownedCoordinator = coordinator;
-		var states = new List<ArchiveConnectionState>();
-		using var subscription = coordinator.ConnectionFaults.Subscribe(states.Add);
-
-		provider.ReportConnectionState(ArchiveConnectionState.Connected);
-		states.Should().BeEmpty();
-
-		uiScheduler.AdvanceBy(1);
-
-		states.Should().Equal(ArchiveConnectionState.Connected);
-	}
-
-	[Fact]
-	public void ConnectionFaults_CarryTheProvidersFault()
-	{
-		var uiScheduler = new TestScheduler();
-		var (coordinator, _, provider) = CreateCoordinator(uiScheduler: uiScheduler);
-		using var ownedCoordinator = coordinator;
-		var states = new List<ArchiveConnectionState>();
-		using var subscription = coordinator.ConnectionFaults.Subscribe(states.Add);
-
-		provider.ReportConnectionState(
-			new ArchiveConnectionState(FakePenCatalogueEditor.Refusal(ArchiveFault.ConnectionLost, "3")));
-		uiScheduler.AdvanceBy(1);
-
-		states.Should().ContainSingle().Which.IsConnected.Should().BeFalse();
-		states[0].Fault!.Kind.Should().Be(ArchiveFault.ConnectionLost);
-		states[0].Fault!.Detail.Should().Be("3");
-	}
-
-	[Fact]
-	public void Dispose_StopsForwardingTheProvidersConnectionState()
-	{
-		var uiScheduler = new TestScheduler();
-		var (coordinator, _, provider) = CreateCoordinator(uiScheduler: uiScheduler);
-		var states = new List<ArchiveConnectionState>();
-		using var subscription = coordinator.ConnectionFaults.Subscribe(states.Add);
-
-		coordinator.Dispose();
-		provider.ReportConnectionState(ArchiveConnectionState.Connected);
-		uiScheduler.AdvanceBy(1);
-
-		states.Should().BeEmpty();
-	}
-
-	// The two streams are independent: a fault must not stand in for a batch, and a chart holding history
-	// keeps drawing it while the banner is up.
-	[Fact]
-	public void AConnectionFault_LeavesTheRealtimeBatchesUntouched()
-	{
-		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: ChartTestBuilder.RealtimeInterval);
-		using var ownedCoordinator = coordinator;
-		var batches = new List<RealtimeBatch>();
-		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
-
-		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
-
-		provider.ReportConnectionState(
-			new ArchiveConnectionState(FakePenCatalogueEditor.Refusal(ArchiveFault.ConnectionLost, "3")));
-
-		batches.Should().HaveCount(1);
-
-		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
-
-		batches.Should().HaveCount(2);
-	}
-
 	// The provider ending the stream reaches every batch observer: with no onError Rx rethrows it out of the
 	// advance below and takes the emitting thread down.
 	[Fact]
@@ -208,18 +131,6 @@ public sealed class TrendCoordinatorTests
 
 		advance.Should().NotThrow();
 		failures.Should().ContainSingle().Which.Should().BeSameAs(thrown);
-	}
-
-	[Fact]
-	public void Dispose_CompletesTheConnectionFaults()
-	{
-		var (coordinator, _, _) = CreateCoordinator();
-		var isCompleted = false;
-		using var subscription = coordinator.ConnectionFaults.Subscribe(_ => { }, () => isCompleted = true);
-
-		coordinator.Dispose();
-
-		isCompleted.Should().BeTrue("a consumer of the stream learns that the window is gone");
 	}
 
 	// A window failing while disposal runs: OnNext on a disposed subject throws, and Rx turns that into the
@@ -296,7 +207,7 @@ public sealed class TrendCoordinatorTests
 	}
 
 	private static (TrendCoordinator Coordinator, TestScheduler Scheduler, FakeDataProvider Provider)
-		CreateCoordinator(TimeSpan? realtimeInterval = null, IScheduler? uiScheduler = null)
+		CreateCoordinator(TimeSpan? realtimeInterval = null)
 	{
 		var scheduler = new TestScheduler();
 		var provider = new FakeDataProvider(scheduler, realtimeInterval ?? ChartTestBuilder.RealtimeInterval);
@@ -304,7 +215,7 @@ public sealed class TrendCoordinatorTests
 			provider,
 			provider.Pens,
 			scheduler,
-			uiScheduler ?? ImmediateScheduler.Instance);
+			ImmediateScheduler.Instance);
 
 		return (coordinator, scheduler, provider);
 	}

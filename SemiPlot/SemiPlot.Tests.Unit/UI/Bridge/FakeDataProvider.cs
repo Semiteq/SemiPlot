@@ -1,8 +1,6 @@
 using System.Collections;
 using System.Reactive.Concurrency;
-using System.Reactive.Disposables;
 using System.Reactive.Linq;
-using System.Reactive.Subjects;
 
 using AwesomeAssertions;
 
@@ -30,10 +28,6 @@ internal sealed class FakeDataProvider(
 
 	private readonly IScheduler _scheduler = scheduler;
 
-	// Hot and never completed, like the real provider's. A test pushes into it through ReportConnectionState
-	// instead of waiting for a tick that this fake never runs.
-	private readonly Subject<ArchiveConnectionState> _connectionFaults = new();
-
 	// A test waits for a query on another thread and then reads it, so the log is appended and copied whole.
 	private readonly Lock _historyQueriesGate = new();
 	private readonly List<HistoryQuery> _historyQueries = [];
@@ -50,6 +44,8 @@ internal sealed class FakeDataProvider(
 	// could never be tested against. Both switches answer with a typed error, the shape a real provider
 	// returns, so a consumer routing on error type is exercised rather than one reading a message.
 	public bool FailPens { get; set; }
+
+	public ArchiveFault PensFailureKind { get; set; } = ArchiveFault.Unreachable;
 
 	public bool FailExtent { get; set; }
 
@@ -164,27 +160,6 @@ internal sealed class FakeDataProvider(
 	// has to survive. The real provider catches everything inside its poll, so only this fake reaches it.
 	public Exception? RealtimeStreamFailure { get; set; }
 
-	public IObservable<ArchiveConnectionState> ConnectionFaults => Observable.Create<ArchiveConnectionState>(observer =>
-	{
-		ConnectionFaultsObserverCount++;
-		var subscription = _connectionFaults.Subscribe(observer);
-
-		return Disposable.Create(() =>
-		{
-			subscription.Dispose();
-			ConnectionFaultsObserverCount--;
-		});
-	});
-
-	public int ConnectionFaultsObserverCount { get; private set; }
-
-	// The seam a test drives the connection banner from: the fake runs no poll, so nothing else would ever
-	// push a state onto the stream.
-	public void ReportConnectionState(ArchiveConnectionState state)
-	{
-		_connectionFaults.OnNext(state);
-	}
-
 	/// <summary>The next tick follows the pen's value with a break 1 ms later, as the poll's q = 32 row.</summary>
 	public void BreakRealtimePenOnce(int penId)
 	{
@@ -282,7 +257,7 @@ internal sealed class FakeDataProvider(
 		if (FailPens)
 		{
 			return Task.FromResult(
-				Result.Fail<IReadOnlyList<Pen>>(UnreachableArchive()));
+				Result.Fail<IReadOnlyList<Pen>>(BenchArchiveError(PensFailureKind)));
 		}
 
 		if (GatePens)

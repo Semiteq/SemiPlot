@@ -44,6 +44,33 @@ public sealed class ArchiveExceptionMapperTests
 		Map(exception).Kind.Should().Be(ArchiveFault.Unreachable);
 	}
 
+	[Theory]
+	[InlineData("08006", ArchiveFault.Unreachable)]
+	[InlineData("57P01", ArchiveFault.Unreachable)]
+	[InlineData("57P02", ArchiveFault.Unreachable)]
+	[InlineData("57P03", ArchiveFault.Unreachable)]
+	[InlineData("53300", ArchiveFault.Unreachable)]
+	[InlineData("57014", ArchiveFault.QueryTimedOut)]
+	public void ARefusedSessionMapsToUnreachable_AndAnEndedStatementStaysQueryTimedOut(
+		string sqlState,
+		ArchiveFault kind)
+	{
+		var exception = Postgres(sqlState);
+
+		var error = Map(exception);
+
+		error.Kind.Should().Be(kind);
+		error.Detail.Should().Be(string.Empty);
+		AssertEndpoint(error);
+		error.Reasons.OfType<ExceptionalError>().Should().ContainSingle().Which.Exception.Should().BeSameAs(exception);
+	}
+
+	[Fact]
+	public void AWriteThatMeetsAnAdminShutdownMapsToUnreachable()
+	{
+		MapWrite(Postgres("57P01"), "Chamber pressure").Kind.Should().Be(ArchiveFault.Unreachable);
+	}
+
 	[Fact]
 	public void AMissingDatabaseMapsToDatabaseMissingAndNamesNoTable()
 	{

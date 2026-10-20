@@ -14,7 +14,6 @@ using ReactiveUI;
 
 using ScottPlot;
 
-using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.Tests.Unit.UI.Messages;
@@ -69,20 +68,6 @@ public sealed class TrendChartViewModelTests
 
 		state.IsVisible.Should().BeFalse();
 		state.Line.IsVisible.Should().BeFalse();
-	}
-
-	[AvaloniaFact]
-	public void DisposingTheChart_LeavesTheConnectionFaultsForwarding()
-	{
-		var (viewModel, _, coordinator, provider) = CreateViewModel();
-		var states = new List<ArchiveConnectionState>();
-		using var subscription = coordinator.ConnectionFaults.Subscribe(states.Add);
-
-		viewModel.Dispose();
-		provider.ReportConnectionState(ArchiveConnectionState.Connected);
-
-		states.Should().Equal(ArchiveConnectionState.Connected);
-		coordinator.Dispose();
 	}
 
 	[AvaloniaFact]

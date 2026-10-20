@@ -1,76 +1,143 @@
-using SemiPlot.Core.Data;
+using Microsoft.Extensions.Logging;
 
 namespace SemiPlot.Tests.Integration;
 
-/// <summary>The nth Connected is the nth subscription's armed point; one caller awaits at a time.</summary>
-internal sealed class ArmedGate : IDisposable
+/// <summary>
+/// Counts, across every logger of the container, the poll's baseline lines (the nth is the nth armed point) and
+/// the highest run of failed ticks it logs; one caller awaits each count at a time.
+/// </summary>
+internal sealed class ArmedGate(ILoggerProvider? inner = null) : ILoggerProvider
 {
-	private readonly List<ArchiveConnectionState> _states = [];
+	public const string BaselineKey = "SubscribedPenCount";
+
+	public const string FailureRunKey = "ConsecutiveFailures";
 
 	private readonly Lock _guard = new();
 
-	private readonly IDisposable _subscription;
+	private int _baselineLineCount;
 
-	private (int Count, TaskCompletionSource Reached)? _waiter;
+	private int _highestConsecutiveFailures;
 
-	private int _connectedCount;
+	private (int Count, TaskCompletionSource Reached)? _armedWaiter;
 
-	public ArmedGate(IObservable<ArchiveConnectionState> states)
-	{
-		_subscription = states.Subscribe(Record);
-	}
+	private (int Count, TaskCompletionSource Reached)? _failureWaiter;
 
-	public bool NoFaultWasSeen
+	public int HighestConsecutiveFailures
 	{
 		get
 		{
 			lock (_guard)
 			{
-				return _states.All(state => state.IsConnected);
+				return _highestConsecutiveFailures;
 			}
 		}
 	}
 
-	public Task Armed(int subscriptionCount)
+	public Task Armed(int baselineLineCount)
 	{
 		lock (_guard)
 		{
-			if (_connectedCount >= subscriptionCount)
+			if (_baselineLineCount >= baselineLineCount)
 			{
 				return Task.CompletedTask;
 			}
 
 			var waiter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-			_waiter = (subscriptionCount, waiter);
+			_armedWaiter = (baselineLineCount, waiter);
 
 			return waiter.Task;
 		}
 	}
 
-	public void Dispose()
-	{
-		_subscription.Dispose();
-	}
-
-	private void Record(ArchiveConnectionState state)
+	public Task FailuresReached(int consecutiveFailures)
 	{
 		lock (_guard)
 		{
-			_states.Add(state);
-
-			if (!state.IsConnected)
+			if (_highestConsecutiveFailures >= consecutiveFailures)
 			{
-				return;
+				return Task.CompletedTask;
 			}
 
-			_connectedCount++;
+			var waiter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-			if (_waiter is { } waiter && waiter.Count <= _connectedCount)
+			_failureWaiter = (consecutiveFailures, waiter);
+
+			return waiter.Task;
+		}
+	}
+
+	public ILogger CreateLogger(string categoryName)
+	{
+		return new ForwardingLogger(this, inner?.CreateLogger(categoryName));
+	}
+
+	// The inner provider belongs to the caller that passed it in.
+	public void Dispose()
+	{
+	}
+
+	private void Record<TState>(TState state)
+	{
+		if (state is not IReadOnlyList<KeyValuePair<string, object?>> values)
+		{
+			return;
+		}
+
+		lock (_guard)
+		{
+			foreach (var (key, value) in values)
 			{
-				waiter.Reached.TrySetResult();
-				_waiter = null;
+				if (key == BaselineKey)
+				{
+					_baselineLineCount++;
+					_armedWaiter = Release(_armedWaiter, _baselineLineCount);
+				}
+				else if (key == FailureRunKey && value is int consecutiveFailures)
+				{
+					_highestConsecutiveFailures = Math.Max(_highestConsecutiveFailures, consecutiveFailures);
+					_failureWaiter = Release(_failureWaiter, _highestConsecutiveFailures);
+				}
 			}
+		}
+	}
+
+	private static (int Count, TaskCompletionSource Reached)? Release(
+		(int Count, TaskCompletionSource Reached)? waiter,
+		int reached)
+	{
+		if (waiter is not { } pending || pending.Count > reached)
+		{
+			return waiter;
+		}
+
+		pending.Reached.TrySetResult();
+
+		return null;
+	}
+
+	private sealed class ForwardingLogger(ArmedGate gate, ILogger? inner) : ILogger
+	{
+		public IDisposable? BeginScope<TState>(TState state)
+			where TState : notnull
+		{
+			return inner?.BeginScope(state);
+		}
+
+		public bool IsEnabled(LogLevel logLevel)
+		{
+			return true;
+		}
+
+		public void Log<TState>(
+			LogLevel logLevel,
+			EventId eventId,
+			TState state,
+			Exception? exception,
+			Func<TState, Exception?, string> formatter)
+		{
+			gate.Record(state);
+			inner?.Log(logLevel, eventId, state, exception, formatter);
 		}
 	}
 }

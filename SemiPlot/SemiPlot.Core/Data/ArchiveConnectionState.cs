@@ -3,9 +3,8 @@ using SemiPlot.Core.Data.Errors;
 namespace SemiPlot.Core.Data;
 
 /// <summary>
-/// What a provider reports about its own connection to the archive. <see cref="Fault"/> is null while the
-/// archive answers and names the fault while it does not; never filter with <c>DistinctUntilChanged</c>,
-/// every subscription's first tick reports <see cref="Connected"/>.
+/// What a reader of the archive reports about its connection to it. <see cref="Fault"/> is null while the
+/// archive answers and names the fault while it does not.
 /// </summary>
 public sealed record ArchiveConnectionState(ArchiveError? Fault)
 {

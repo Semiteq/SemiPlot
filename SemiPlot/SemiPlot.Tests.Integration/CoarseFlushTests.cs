@@ -248,7 +248,9 @@ public sealed class CoarseFlushTests(PostgresContainerFixture postgresContainerF
 			TimeSpan.FromSeconds(1),
 			PenCount,
 			SeederOptions.DefaultSeed,
-			SeederOptions.DefaultChangeSeconds);
+			SeederOptions.DefaultChangeSeconds,
+			TimeSpan.Zero,
+			55875);
 	}
 
 	// What LayerThinner selects for one period, in the order the read returns.

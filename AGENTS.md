@@ -88,9 +88,10 @@ dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.Archiv
   --config-dir SemiPlot\Artifacts\dev-config
 ```
 
-The demo writer is the same seeder run with `--follow <seconds>` instead of `--end`: it appends to
-the archive `converge` created and thins it into the coarse layers on every tick
-(`docs/architecture/bench.md#the-demo-writer`).
+The demo writer is the same seeder run with `--follow <seconds> --opc-port <port>` instead of `--end`:
+it appends to the archive `converge` created and thins it into the coarse layers on every tick
+(`docs/architecture/bench.md#the-demo-writer`), and serves every value over OPC UA on the port
+`--opc-port` names (`docs/architecture/bench.md#the-opc-ua-demo-server`).
 
 `SemiPlot.AppHost` runs the whole demo stand — the bench container, `converge`, the demo writer and
 the viewer — in dependency order and stops the processes it launched together; a window the viewer starts
@@ -114,7 +115,7 @@ Two projects, split on one axis: crosses a machine boundary (a socket or a conta
 | Project | Framework | References | Holds |
 | --- | --- | --- | --- |
 | `SemiPlot.Tests.Unit` | xunit v3 + `Avalonia.Headless.XUnit` | `SemiPlot.UI`, `SemiPlot.Core`, `SemiPlot.DataSource.Postgres`, `SemiPlot.Tools.ArchiveSeeder` | Every test that opens no socket and starts no container: the UI, the Core models, the seeder's generators and the provider's pure classes |
-| `SemiPlot.Tests.Integration` | xunit v3 + `Avalonia.Headless.XUnit` | the same four | The container harness, the container tests and the journeys in one xunit collection, and the socket tests that need no server |
+| `SemiPlot.Tests.Integration` | xunit v3 + `Avalonia.Headless.XUnit` | the same four | The container harness, the container tests and the journeys in one xunit collection, the OPC UA demo server's tests in `DemoScadaCollection`, and the socket tests that need no server |
 
 - Each project carries its own `TestAppBuilder.cs` with `[assembly: AvaloniaTestApplication]`. Pure
   logic uses plain `[Fact]`; tests touching ReactiveUI/ScottPlot/Avalonia use
@@ -190,11 +191,13 @@ Frame cost during a drag is measured, not asserted: `docs/architecture/testing-s
 Every test of the `ArchiveDatabaseCollection` in `SemiPlot.Tests.Integration` needs a container runtime and
 nothing else. The socket classes (`RealtimePollTests`, `CatalogueReadUnreachableTests`,
 `RealtimeSubscriptionDisposalTests`, `ConvergeReadinessTests`) carry no collection, take no fixture and run without a runtime.
+The OPC UA demo server's classes under `DemoScada/` run in `DemoScadaCollection`, which carries no
+fixture, and need no runtime either.
 `SemiPlot/bench/Dockerfile` copies `/semibase` out of
 `ghcr.io/semiteq/semibase:latest`, which the fixture pulls ahead of the build, and runs
 `semibase bench` from `/docker-entrypoint-initdb.d/` before the published port opens. The container
 carries fixed dummy passwords of the fixture's own, and the base image is the constant
-`postgres:17-alpine`. A missing runtime fails every test of the collection with
+`postgres:17-alpine`. A missing runtime fails every test of `ArchiveDatabaseCollection` with
 `TestPipelineException`; nothing skips.
 
 A run leaves nothing behind but the images it pulled: the resource reaper removes the built image,

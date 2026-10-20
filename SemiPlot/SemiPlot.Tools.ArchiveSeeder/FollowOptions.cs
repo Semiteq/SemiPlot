@@ -6,9 +6,14 @@ public sealed record FollowOptions(
 	TimeSpan Interval,
 	int PenCount,
 	long Seed,
-	double ChangeSeconds)
+	double ChangeSeconds,
+	TimeSpan ArchiveLag,
+	int OpcPort)
 {
-	// The ceiling on both --follow and --change-seconds: an interval above one day emits nothing and far
-	// above it overflows the tick arithmetic.
+	// The ceiling on --follow, --change-seconds and --archive-lag: an interval above one day emits nothing
+	// and far above it overflows the tick arithmetic.
 	public const double MaximumSeconds = 86400.0;
+
+	/// <summary>The port a running Simple-Scada holds by default.</summary>
+	internal const int SimpleScadaPort = 49875;
 }

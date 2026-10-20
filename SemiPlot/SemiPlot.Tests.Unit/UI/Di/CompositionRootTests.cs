@@ -33,6 +33,14 @@ public sealed class CompositionRootTests
 	}
 
 	[Fact]
+	public void Container_ResolvesTheLiveSource()
+	{
+		using var provider = BuildContainer();
+
+		provider.GetRequiredService<ILiveSource>().Should().BeOfType<PostgresLiveSource>();
+	}
+
+	[Fact]
 	public void Container_ResolvesThePenCatalogueEditor()
 	{
 		using var provider = BuildContainer();

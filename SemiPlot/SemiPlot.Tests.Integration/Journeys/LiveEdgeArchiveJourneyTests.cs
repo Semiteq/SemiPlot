@@ -20,7 +20,7 @@ using Xunit;
 namespace SemiPlot.Tests.Integration.Journeys;
 
 // Proves a row written while the app runs reaches the chart's live edge exactly once, composing
-// TrendCoordinator, TrendChartViewModel and navigation over RealtimeSubscriptionTests' provider rule.
+// TrendCoordinator, TrendChartViewModel and navigation over RealtimeSubscriptionTests' live source rule.
 // Clones the template because this class appends; every wait is an awaited emission bounded by GateBound.
 [Collection(ArchiveDatabaseCollection.Name)]
 [Trait("Component", "UI")]
@@ -169,6 +169,7 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 		try
 		{
 			var dataProvider = services.GetRequiredService<IDataProvider>();
+			var liveSource = services.GetRequiredService<ILiveSource>();
 			var dataScheduler = services.GetRequiredService<IScheduler>();
 			var catalogue = await dataProvider.QueryPensAsync();
 			var extent = await dataProvider.QueryArchiveExtentAsync();
@@ -177,7 +178,7 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 			extent.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(extent));
 
 			var coordinator = new TrendCoordinator(
-				dataProvider, catalogue.Value, dataScheduler, ImmediateScheduler.Instance);
+				dataProvider, liveSource, catalogue.Value, dataScheduler, ImmediateScheduler.Instance);
 
 			var messagePanel = new MessagePanelViewModel();
 			var chart = new TrendChartViewModel(

@@ -73,9 +73,9 @@ public sealed class RealtimeEmptyArchiveTests(PostgresContainerFixture postgresC
 		using var armed = new ArmedGate();
 		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString, armed);
 
-		var provider = services.GetRequiredService<IDataProvider>();
+		var liveSource = services.GetRequiredService<ILiveSource>();
 
-		using var subscription = provider.Subscribe(SubscribedPenIds).Subscribe(_ => { });
+		using var subscription = liveSource.Subscribe(SubscribedPenIds).Subscribe(_ => { });
 
 		await armed.Armed(1).WaitAsync(GateBound, TestContext.Current.CancellationToken);
 	}

@@ -19,10 +19,10 @@ implementation plans see `docs/plans/`.
   the application's own surface keys, how the `theme` key picks a variant, the five ScottPlot
   surfaces, and the rule that a colour literal in AXAML is a defect.
 - [data-integration.md](./data-integration.md) - the contract between SemiPlot and the archive
-  database: responsibility zones, the `IDataProvider` surface, the statement each operation issues
-  and what it must keep, layer selection and the measured read cost per layer, the time boundary, gap
-  mapping, error semantics, the connection settings with the session's `jit = off`, the startup path
-  and field triage.
+  database: responsibility zones, the `IDataProvider` and `ILiveSource` surfaces, the statement each
+  operation issues and what it must keep, layer selection and the measured read cost per layer, the
+  time boundary, gap mapping, error semantics, the connection settings with the session's `jit = off`,
+  the startup path and field triage.
 - [scada-archive.md](./scada-archive.md) — the Simple-Scada 2 archive as it exists: tables and
   columns, archive layers, quality marks and gaps, write and retention behaviour, reader hazards,
   and what remains unverified.

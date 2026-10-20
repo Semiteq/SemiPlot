@@ -170,10 +170,12 @@ layer: `ArchiveStatementTextTests` pins it, and
 `PostgresHistoryReadTests.AWindowWiderThanTheLookBackFloorSeeksBackAsFarAsItAsks` runs it.
 
 **Against a socket, with no server** — `RealtimePollTests` (a failed tick and its logged run of failures,
-every tick connecting to `127.0.0.1:1`), `CatalogueReadUnreachableTests` (the catalogue read over a refused
-socket answers `Unreachable` naming the archive), `RealtimeSubscriptionDisposalTests` and
-`ConvergeReadinessTests` (a loopback listener). They cross the machine boundary and need no container, so they carry no collection and take no
-`PostgresContainerFixture`; a missing container runtime does not fail them. `UnreachableArchive.Settings`
+every tick connecting to `127.0.0.1:1`; a subscription through `ILiveSource` that only fails emits neither
+`OnCompleted` nor `OnError`, logs under `PostgresLiveSource` and waits the configured poll interval after
+a tick), `CatalogueReadUnreachableTests` (the catalogue read over a refused socket answers `Unreachable`
+naming the archive), `RealtimeSubscriptionDisposalTests` and `ConvergeReadinessTests` (a loopback
+listener). They cross the machine boundary and need no container, so they carry no collection and take
+no `PostgresContainerFixture`; a missing container runtime does not fail them. `UnreachableArchive.Settings`
 gives them the unreachable address and an adjustable poll interval.
 
 **Against a real Avalonia** — `SemiPlot.Tests.Unit/UI/`, under `[AvaloniaFact]` and `[AvaloniaTheory]`,
@@ -223,7 +225,7 @@ archive, each closing a chain whose halves are already proved apart:
 | Test | Chain it closes | The seam tests it joins |
 | --- | --- | --- |
 | `BreakRenderArchiveJourneyTests` | a seeded break reaches the canvas: archive → `AddPostgresData` → `TrendCoordinator` → `TrendChartViewModel` → the pixels the rasteriser leaves blank | `PostgresHistoryReadTests` counts the fold's NaN anchor; `ChartGapRenderTests` measures the blank pixels a NaN column leaves |
-| `LiveEdgeArchiveJourneyTests` | three: a row appended while the application runs reaches the chart's live edge and reaches it once; rows on a variable of its own reach the chart without breaking a pen that has no sample at that timestamp; and a `q = 32` row written while the application runs reaches the chart as its value and then a `NaN` column 1 ms past it, while `CurrentValue` keeps the value | `RealtimeSubscriptionTests` asserts the first rule over the provider alone; `TrendCoordinatorTests` and `TrendChartViewModelTests` cover the per-variable batch shape above it; `RealtimePollReadTests` asserts the value-then-break pair, and `ChartRealtimeApplierTests` and `TrendPenStateTests` cover the append-never-fold rule and the 1 ms step |
+| `LiveEdgeArchiveJourneyTests` | three: a row appended while the application runs reaches the chart's live edge and reaches it once; rows on a variable of its own reach the chart without breaking a pen that has no sample at that timestamp; and a `q = 32` row written while the application runs reaches the chart as its value and then a `NaN` column 1 ms past it, while `CurrentValue` keeps the value | `RealtimeSubscriptionTests` asserts the first rule over the live source alone; `TrendCoordinatorTests` and `TrendChartViewModelTests` cover the per-variable batch shape above it; `RealtimePollReadTests` asserts the value-then-break pair, and `ChartRealtimeApplierTests` and `TrendPenStateTests` cover the append-never-fold rule and the 1 ms step |
 
 The composed path adds what those seam tests cannot see: the coordinator's buffering and folding,
 the chart view model's applier, the navigation controller. Each can lose a sample or replay one without

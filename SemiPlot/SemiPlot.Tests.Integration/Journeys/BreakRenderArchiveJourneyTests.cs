@@ -57,6 +57,7 @@ public sealed class BreakRenderArchiveJourneyTests(
 	{
 		await using var services = ArchiveProviderFactory.Build(seededArchive.Database.PlotConnectionString);
 		var dataProvider = services.GetRequiredService<IDataProvider>();
+		var liveSource = services.GetRequiredService<ILiveSource>();
 		var dataScheduler = services.GetRequiredService<IScheduler>();
 		var catalogue = await dataProvider.QueryPensAsync();
 		var extent = await dataProvider.QueryArchiveExtentAsync();
@@ -68,7 +69,7 @@ public sealed class BreakRenderArchiveJourneyTests(
 			"the blank-column probe reads chroma, so a greyscale pen would be invisible to it"));
 
 		using var coordinator = new TrendCoordinator(
-			dataProvider, catalogue.Value, dataScheduler, ImmediateScheduler.Instance);
+			dataProvider, liveSource, catalogue.Value, dataScheduler, ImmediateScheduler.Instance);
 		using var chart = new TrendChartViewModel(
 			coordinator,
 			new NoMarkers(),

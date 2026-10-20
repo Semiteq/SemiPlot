@@ -6,9 +6,6 @@ namespace SemiPlot.Core.Data;
 
 public interface IDataProvider
 {
-	// Cold per call: no samples flow until subscribed; the subscriber disposes the returned IDisposable.
-	IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<int> penIds);
-
 	Task<Result<IReadOnlyList<Pen>>> QueryPensAsync();
 
 	Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(

@@ -1,8 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
-using System.Reactive.Concurrency;
-using System.Reactive.Linq;
 
 using FluentResults;
 
@@ -14,14 +12,13 @@ using NpgsqlTypes;
 
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
-using SemiPlot.DataSource.Postgres.Configuration;
 
 namespace SemiPlot.DataSource.Postgres;
 
 /// <summary>
 /// Reads the archive over the pooled <see cref="NpgsqlDataSource"/>: <see cref="QueryPensAsync"/> answers the
-/// configured variables, <see cref="QueryArchiveExtentAsync"/> the span they cover, <see cref="QueryHistoryAsync"/>
-/// a window of one layer and <see cref="Subscribe"/> the live edge, all crossing the boundary in UTC.
+/// configured variables, <see cref="QueryArchiveExtentAsync"/> the span they cover and
+/// <see cref="QueryHistoryAsync"/> a window of one layer, all crossing the boundary in UTC.
 /// </summary>
 public sealed class PostgresDataProvider : IDataProvider
 {
@@ -42,8 +39,6 @@ public sealed class PostgresDataProvider : IDataProvider
 	private readonly NpgsqlDataSource _dataSource;
 	private readonly ArchiveTimeConverter _timeConverter;
 	private readonly ArchiveExceptionMapper _exceptionMapper;
-	private readonly PostgresConnectionSettings _settings;
-	private readonly IScheduler _scheduler;
 	private readonly TimeProvider _timeProvider;
 	private readonly ILogger<PostgresDataProvider> _logger;
 	private readonly int _historyReadConcurrency;
@@ -57,8 +52,6 @@ public sealed class PostgresDataProvider : IDataProvider
 		NpgsqlDataSource dataSource,
 		ArchiveTimeConverter timeConverter,
 		ArchiveExceptionMapper exceptionMapper,
-		PostgresConnectionSettings settings,
-		IScheduler scheduler,
 		TimeProvider timeProvider,
 		ILogger<PostgresDataProvider> logger,
 		int historyReadConcurrency)
@@ -66,24 +59,9 @@ public sealed class PostgresDataProvider : IDataProvider
 		_dataSource = dataSource;
 		_timeConverter = timeConverter;
 		_exceptionMapper = exceptionMapper;
-		_settings = settings;
-		_scheduler = scheduler;
 		_timeProvider = timeProvider;
 		_logger = logger;
 		_historyReadConcurrency = historyReadConcurrency;
-	}
-
-	/// <summary>
-	/// The live edge of the requested variables. Cold: each subscription starts a poll loop of its own, on the
-	/// injected scheduler and at the operator's <see cref="PostgresConnectionSettings.PollInterval"/>, holding
-	/// its own baseline; disposing it cancels the loop's query and its wait, so no further statement is issued.
-	/// </summary>
-	public IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<int> penIds)
-	{
-		var subscribedIds = penIds.ToArray();
-
-		return Observable.Create<IReadOnlyList<Sample>>(observer =>
-			_scheduler.ScheduleAsync((_, cancellationToken) => PollAsync(subscribedIds, observer, cancellationToken)));
 	}
 
 	/// <summary>
@@ -335,45 +313,6 @@ public sealed class PostgresDataProvider : IDataProvider
 			groupCount,
 			outcome,
 			stopwatch.ElapsedMilliseconds);
-	}
-
-	private async Task PollAsync(
-		int[] penIds,
-		IObserver<IReadOnlyList<Sample>> observer,
-		CancellationToken cancellationToken)
-	{
-		var poll = new RealtimePoll(
-			_dataSource,
-			_timeConverter,
-			_exceptionMapper,
-			penIds,
-			_logger);
-
-		try
-		{
-			while (!cancellationToken.IsCancellationRequested)
-			{
-				var samples = await poll.ReadOnceAsync(cancellationToken).ConfigureAwait(false);
-
-				// A disposal landing while the query is in flight delivers nothing further: the subscriber
-				// is gone, and a batch arriving behind its back is a leaked loop by another name.
-				if (cancellationToken.IsCancellationRequested)
-				{
-					return;
-				}
-
-				if (samples.Count > 0)
-				{
-					observer.OnNext(samples);
-				}
-
-				await _scheduler.Sleep(_settings.PollInterval, cancellationToken).ConfigureAwait(false);
-			}
-		}
-		catch (OperationCanceledException)
-		{
-			// Disposal ends the loop.
-		}
 	}
 
 	internal static NpgsqlCommand CreateCatalogueCommand(NpgsqlConnection connection)

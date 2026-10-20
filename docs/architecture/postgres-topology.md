@@ -105,6 +105,8 @@ flowchart TB
     coord["TrendCoordinator"]
     iface{{"IDataProvider"}}
     pg["PostgresDataProvider<br/>the only implementation"]
+    live{{"ILiveSource"}}
+    poll["PostgresLiveSource<br/>the live-edge poll"]
 
     subgraph plumbing["SemiPlot.DataSource.Postgres"]
         direction TB
@@ -118,17 +120,23 @@ flowchart TB
     errs["SemiPlot.Core/Data/Errors<br/>two sealed errors, two enums"]
 
     ui --> coord --> iface
+    coord --> live
     iface --> pg
+    live --> poll
     pg --> stmts
     pg --> ds
     pg --> conv
     pg --> mapper
+    poll --> stmts
+    poll --> ds
+    poll --> conv
+    poll --> mapper
     loader --> ds
     mapper --> errs
 ```
 
-The composition root resolves `PostgresDataProvider`, and the pen editor's
-`PostgresPenCatalogueEditor`, the chart's `PostgresMarkerStore` and the export window's
+The composition root resolves `PostgresDataProvider`, `PostgresLiveSource` for the live-edge poll, and
+the pen editor's `PostgresPenCatalogueEditor`, the chart's `PostgresMarkerStore` and the export window's
 `PostgresArchiveRowReader` over the same `NpgsqlDataSource`;
 there is no fallback to resolve: an
 archive that does not answer opens the startup-failure window rather than
@@ -137,7 +145,8 @@ falling back to invented data, which `data-integration.md` states under **Startu
 per type, Core's and the UI-local ones, and inside the `ArchiveError` arm one per `ArchiveFault`
 member, twelve. Which kind gets which severity, and why, is in
 `data-integration.md#two-error-planes`. Every member of `IDataProvider` is implemented: the pen
-catalogue, the archive extent, the archive days, the windowed history read and the live-edge poll.
+catalogue, the archive extent, the archive days and the windowed history read. `PostgresLiveSource`
+implements `ILiveSource` with the live-edge poll.
 
 ## The three provisioning states, and the fourth
 

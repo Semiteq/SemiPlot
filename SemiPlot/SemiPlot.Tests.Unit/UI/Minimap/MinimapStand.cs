@@ -34,7 +34,7 @@ internal sealed class MinimapStand : IDisposable
 			ArchiveFirstUtc = ExtentFirst,
 			ArchiveLastUtc = ExtentLast
 		};
-		_coordinator = new TrendCoordinator(Provider, Provider.Pens, Scheduler, Scheduler);
+		_coordinator = new TrendCoordinator(Provider, Provider, Provider.Pens, Scheduler, Scheduler);
 		Chart = ChartTestBuilder.CreateChart(Scheduler, _coordinator, Panel, MarkerChannel);
 		ViewModel = new MinimapViewModel(
 			_coordinator, Chart, Scheduler, Panel, logger ?? NullLogger<MinimapViewModel>.Instance);

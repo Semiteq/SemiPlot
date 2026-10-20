@@ -27,20 +27,17 @@ Two rules follow and are not negotiable: SemiPlot never writes to vendor objects
 
 ## The provider surface
 
-The UI reads through `IDataProvider` (`SemiPlot.Core/Data/IDataProvider.cs`), and two write paths sit
-apart from it: the pen editor writes through `IPenCatalogueEditor` (The pen catalogue editor, below),
-and the chart's time markers are read and written through `IMarkerStore` (The marker store, below). The
-interfaces and their DTOs live in `SemiPlot.Core`; each concrete provider is a sibling `SemiPlot.DataSource.*`
-project, so Core never references a data source. `PostgresDataProvider` in
-`SemiPlot.DataSource.Postgres` is the only implementation of `IDataProvider`; tests build fakes
-against the interface.
+The UI reads through `IDataProvider` (`SemiPlot.Core/Data/IDataProvider.cs`), the chart's live edge
+follows `ILiveSource` (below), and two write paths sit apart from both: the pen editor writes through
+`IPenCatalogueEditor` (The pen catalogue editor, below), and the chart's time markers are read and
+written through `IMarkerStore` (The marker store, below). The interfaces and their DTOs live in
+`SemiPlot.Core`; each concrete provider is a sibling `SemiPlot.DataSource.*` project, so Core never
+references a data source. `PostgresDataProvider` in `SemiPlot.DataSource.Postgres` is the only
+implementation of `IDataProvider`; tests build fakes against the interface.
 
 ```csharp
 public interface IDataProvider
 {
-    // Cold per call: no samples flow until subscribed; the subscriber disposes the returned IDisposable.
-    IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<int> penIds);
-
     Task<Result<IReadOnlyList<Pen>>> QueryPensAsync();
 
     Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(
@@ -64,7 +61,7 @@ public interface IDataProvider
 | Type | Shape | Notes |
 | --- | --- | --- |
 | `Pen` | `PenId`, `Name`, `Groups`, `Color`, `Unit`, `Format`, `EnabledOnStart`, `ScaleMinOnStart`, `ScaleMaxOnStart`, `LogScaleOnStart`, `LineStyle` | `PenId` is the archive's `trends.id`. Equality compares `Groups` element by element, ordinal, so two reads of one stored pen are equal; `LogScaleOnStart` takes part in it, so a pen whose flag alone changed is revised. |
-| `Sample` | `PenId`, `TimestampUtc`, `Value` | Realtime element. Timestamps are UTC by the time they leave the provider. A null `Value` is a break the provider reported: the pen has no data from that moment until its next sample. |
+| `Sample` | `PenId`, `TimestampUtc`, `Value` | Realtime element. Timestamps are UTC by the time they leave the live source. A null `Value` is a break the live source reported: the pen has no data from that moment until its next sample. |
 | `PenHistoryEnvelope` | parallel `Timestamps` / `Min` / `Max` / `Center`, strictly ascending, `NaN` marks a gap | One per pen per history query. |
 | `ArchiveExtent` | `FirstUtc`, `LastUtc`, `IsEmpty` | The span of the configured variables, consumed by the minimap (`TM-4`). `ArchiveExtent.Empty` is the no-span form. |
 | `AggregationLayer` | `Raw`, `Minute`, `Hour` | Maps one-to-one onto the archive's `l` column. |
@@ -125,6 +122,20 @@ for 16 pens and 450 000 for 50, which the reader holds as one list. Measured on 
 50 pens at 100 ms (43.2 million rows), a 50 pen slice took 0.36 s cold and 0.63 s warm, far under the role's
 30 s `statement_timeout`, so the width stayed at 15 minutes. The export reads one such slice at a time; a 24 h
 range is 96 slice statements plus one seed probe per pen.
+
+The live edge reads through a port of its own, `ILiveSource` (`SemiPlot.Core/Data/ILiveSource.cs`), with
+one member. `PostgresLiveSource` in `SemiPlot.DataSource.Postgres` implements it by polling the archive, and
+`AddPostgresData` registers it beside the provider over the same `NpgsqlDataSource`, with the operator's
+`poll_interval_ms` and the bare data `IScheduler`. Its one consumer is `TrendCoordinator`, which
+`TrendWindow.Build` hands both interfaces. The contract, and what the coordinator does with a source that
+breaks it, are under Realtime, below.
+
+```csharp
+public interface ILiveSource
+{
+    IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<int> penIds);
+}
+```
 
 ## The pen catalogue editor
 
@@ -308,11 +319,12 @@ of the repeated autumn hour.
 
 ## Operation to statement
 
-Every statement the provider, the editor, the row reader and the marker store issue is a constant in
-`SemiPlot.DataSource.Postgres/ArchiveStatements.cs`; parameters are always bound. The bench seeder
-and the test harness own SQL of their own (`bench.md`). `ArchiveStatementTextTests` pins each
-provider constant below clause by clause except `PenCatalog` and `ArchiveExtent`; `ExplainPlanTests`
-asserts the plan shape of each one except `PenCatalog` against a container. The editor's and the marker store's statements are in their own tables above.
+Every statement the provider, the live source, the editor, the row reader and the marker store issue is
+a constant in `SemiPlot.DataSource.Postgres/ArchiveStatements.cs`; parameters are always bound. The
+bench seeder and the test harness own SQL of their own (`bench.md`). `ArchiveStatementTextTests` pins
+each constant below clause by clause except `PenCatalog` and `ArchiveExtent`; `ExplainPlanTests`
+asserts the plan shape of each one except `PenCatalog` against a container. The editor's and the
+marker store's statements are in their own tables above.
 
 | Operation | Constant | What the statement must keep, and why |
 | --- | --- | --- |
@@ -940,11 +952,49 @@ nulls either, and `ArchiveStatementTextTests` plus `BucketedRowFoldTests` pin th
 
 ## Realtime
 
-`Subscribe` returns a cold observable: each subscription runs a poll loop of its own on the injected
-data scheduler, at the operator's `poll_interval_ms`, holding a baseline of its own and carrying the
-variable list in every query (`RT-1`). Disposing the subscription cancels the loop. Batching, the
-union timeline and the hand-off to the UI scheduler happen above the provider, in `TrendCoordinator`
-(`charting.md`).
+The live edge reads through `ILiveSource.Subscribe(penIds)` (The provider surface, above). Every live
+source keeps this contract:
+
+- **Cold per call.** No sample flows until a subscription opens. Each subscription does its own work, and
+  disposing it stops that work.
+- **The stream never completes and never faults.** A failure inside a source is the source's to log or
+  to report out of band, and it emits nothing.
+  `RealtimePollTests.ASubscriptionThatOnlyFailsNeitherCompletesNorFaults` pins it for `PostgresLiveSource`.
+- **A break is a `Sample` whose `Value` is null,** at a moment the source itself observes: the pen has no
+  data from that moment until its next sample.
+- **Timestamps are UTC.**
+- **An identifier the source does not serve emits nothing** and leaves the stream running.
+  `RealtimeSubscriptionTests.AnIdentifierTheSourceDoesNotServeLeavesTheStreamRunning` pins it for
+  `PostgresLiveSource`.
+
+Ordering is not part of the port: the chart appends a pen's sample only past that pen's last column
+(`DA-7`) and drops any other.
+
+Either terminal message breaks the contract, and neither crashes the window. `TrendCoordinator` catches
+an `OnError` after the `Switch` and ahead of the `Publish`: `ReportTerminalFailure` writes one
+`RealtimeFailures` entry and swaps in `Observable.Empty`, which completes `RealtimeBatches` and drops the
+subscription to the pen set. Nothing rebuilds it, so the live edge stays empty for the rest of the
+window's life (No failure stops at the log, below). An `OnCompleted` is not caught: `Switch` idles on a
+completed inner stream, so the live edge goes silent with no entry until the next `SetPens` opens a new
+subscription. `TrendCoordinatorTests.ALiveSourceThatCompletes_LeavesTheLiveEdgeSilentUntilTheNextSetPens`
+pins the second case.
+
+A break travels through the port when the source can decide it from its own input, as the archive poll
+does from a `q = 32` row. The port carries no chart state, so a source cannot know a pen's last column,
+and no rule covers a break ahead of a pen's first live sample. A subscription restarts on every
+`SetPens` (`Switch`), so a break that each subscription wrote ahead of its first sample would land past
+the pen's last live column after every pen-set change, and the chart would draw it:
+`EnvelopeLine.AppendColumn` rejects a column at or before the last one only when columns exist, and
+`EnvelopeLine.ReplaceColumns` keeps the appended tail past the history end.
+
+`PostgresLiveSource` is the one implementation, and it polls the archive. Each subscription runs a poll
+loop of its own on the injected data scheduler, at the operator's `poll_interval_ms`, holding a baseline
+of its own and carrying the variable list in every query (`RT-1`). Disposing the subscription cancels
+the loop's query and its wait. Batching, the union timeline and the hand-off to the UI scheduler happen
+above the live source, in `TrendCoordinator` (`charting.md`). The poll's log lines carry the source
+context `SemiPlot.DataSource.Postgres.PostgresLiveSource`; the history reads keep
+`PostgresDataProvider`'s. `RealtimePollTests` pins the source context and the wait of the configured
+`poll_interval_ms` after a tick.
 
 The first tick reads the baseline and emits nothing; every later tick reads the rows past
 `lastSeen`, converts them to UTC and emits them. `lastSeen` is the archive's own naive clock, not
@@ -963,7 +1013,7 @@ clock by passing a `TimeProvider` to `ArchiveProviderFactory.Build`, which regis
 
 The pen set can change while the viewer runs. `TrendCoordinator` holds it in a
 `BehaviorSubject<IReadOnlyList<int>>` seeded from its constructor's pens and subscribes through
-`Select(_dataProvider.Subscribe)` and `Switch()`, ahead of the `Buffer`. `SetPens` pushes the list it
+`Select(_liveSource.Subscribe)` and `Switch()`, ahead of the `Buffer`. `SetPens` pushes the list it
 is handed, which the chart builds fresh for each call, and the chart calls it only when the id set it
 shows differs from `PenIds`, the subject's current set, so the coordinator carries no change check of its
 own.
@@ -972,10 +1022,11 @@ the window, sees no change. A switch disposes the old subscription and starts a 
 tick reads the baseline and emits nothing. The rows written between the old poll's last tick and the
 new baseline, at most one poll interval, are not delivered live; the history query the chart issues on
 every set change covers them. Every set the chart pushes holds only pens of the provider's own
-catalogue. `Dispose` completes the subject.
+catalogue, and the live source drops any identifier it does not serve. `Dispose` completes the subject.
 
-- **The sequence never completes and never faults.** A query error logs, drops that tick's rows and
-  leaves the observable running.
+`PostgresLiveSource` keeps the contract, and the poll adds rules of its own:
+
+- **A query error logs, drops that tick's rows and leaves the observable running.**
 - **No timestamp is emitted at or before the last one already delivered** (`DA-7`).
 - **A row whose `v` is null is dropped, and `lastSeen` still advances past it.** The history path flags
   such a bucket as a gap instead ("Quality and gaps"), so a null run the poll reads draws as a held line
@@ -1245,7 +1296,7 @@ exception observer under it.
 projection runs inside `Select`, and Rx turns a throwing projection into `OnError`, which would end
 the `Publish().RefCount()` stream for every subscriber. `TryBuildRealtimeBatch` catches instead,
 skips the window and publishes the exception on `TrendCoordinator.RealtimeFailures`. A terminal
-failure out of the provider takes the same channel: a `Catch` ahead of the `Publish` turns it into
+failure out of the live source takes the same channel: a `Catch` ahead of the `Publish` turns it into
 one `RealtimeFailures` message and completes the batch stream, so `RealtimeBatches` never faults and
 the one failure is not counted once per subscriber of it. `TrendChartViewModel` is the only reader of
 that channel, and it reports through the guarded `ResultReporting.TryReportFailure` because an escape

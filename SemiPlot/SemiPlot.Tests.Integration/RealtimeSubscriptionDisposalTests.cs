@@ -17,7 +17,7 @@ public sealed class RealtimeSubscriptionDisposalTests
 	private const int CalibrationTicks = 3;
 
 	// Silence alone proves nothing (a leaked loop against this unreachable address is also silent), so a
-	// second, left-running provider's own failed ticks calibrate the wait.
+	// second, left-running live source's own failed ticks calibrate the wait.
 	[Fact]
 	public async Task SubscribingAndDisposingAtOnceDeliversNothingAndStopsThePoll()
 	{
@@ -28,8 +28,8 @@ public sealed class RealtimeSubscriptionDisposalTests
 		using var droppedServices = UnreachableArchive.Services(settings, droppedGate);
 		using var runningServices = UnreachableArchive.Services(settings, runningGate);
 
-		var dropped = droppedServices.GetRequiredService<IDataProvider>();
-		var running = runningServices.GetRequiredService<IDataProvider>();
+		var dropped = droppedServices.GetRequiredService<ILiveSource>();
+		var running = runningServices.GetRequiredService<ILiveSource>();
 
 		using var droppedBatches = new BatchCollector<IReadOnlyList<Sample>>(dropped.Subscribe([1]));
 

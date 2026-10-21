@@ -79,8 +79,9 @@ public static class SeederCommand
 
 	private static readonly Option<int?> _opcPort = new("--opc-port")
 	{
-		Description = "Port the OPC UA demo server listens on, on 127.0.0.1. Required for a follow run; a running "
-					  + $"Simple-Scada holds {FollowOptions.SimpleScadaPort} by default.",
+		Description = $"Port the OPC UA demo server listens on, on {DemoScadaServer.Host}. Required for a follow run "
+					  + "and for converge, which writes it into opc/opc.yaml; a running Simple-Scada holds "
+					  + $"{FollowOptions.SimpleScadaPort} by default.",
 		CustomParser = result => ParseWholeNumber(result, "--opc-port", 1, IPEndPoint.MaxPort)
 	};
 
@@ -105,7 +106,8 @@ public static class SeederCommand
 
 	private static readonly Option<string> _configDir = new("--config-dir")
 	{
-		Description = "Configuration root. The archive connection is written into its connection/ folder.",
+		Description = "Configuration root. The archive connection is written into its connection/ folder and the "
+					  + "OPC UA endpoint into its opc/ folder.",
 		Required = true
 	};
 
@@ -165,16 +167,20 @@ public static class SeederCommand
 		return root;
 	}
 
-	// Shares --connection and --end with the root command: converge accepts the same connection string
-	// shape and the same optional end bound, and System.CommandLine allows one Option under several commands.
+	// Shares --connection, --end and --opc-port with the root command: converge accepts the same connection
+	// string shape, the same optional end bound and the same port range, and System.CommandLine allows one
+	// Option under several commands.
 	private static Command BuildConverge()
 	{
 		var converge = new Command(
 			"converge",
 			"Recreates the stand database from semiplot_provisioned, seeds it, fills the tag catalogue and "
-			+ "writes the connection file. Bench only.");
+			+ "writes the connection and OPC UA files. Bench only.");
 
-		foreach (var option in new Option[] { _connection, _convergeAdminConnection, _configDir, _end, _changeSeconds })
+		foreach (var option in new Option[]
+				 {
+					 _connection, _convergeAdminConnection, _configDir, _end, _changeSeconds, _opcPort
+				 })
 		{
 			converge.Options.Add(option);
 		}
@@ -307,12 +313,21 @@ public static class SeederCommand
 			return Report(errors);
 		}
 
+		if (parsed.GetValue(_opcPort) is not { } opcPort)
+		{
+			return Report([
+				"Option '--opc-port' is required for converge: it names the port the stand's demo server serves "
+				+ $"in opc/opc.yaml, and a running Simple-Scada holds {FollowOptions.SimpleScadaPort} by default."
+			]);
+		}
+
 		return converge(new ConvergeOptions(
 			parsed.GetValue(_connection)!,
 			parsed.GetValue(_convergeAdminConnection)!,
 			parsed.GetValue(_configDir)!,
 			parsed.GetValue(_end),
-			parsed.GetValue(_changeSeconds)));
+			parsed.GetValue(_changeSeconds),
+			opcPort));
 	}
 
 	// Both modes are decided here, after the parse, so no value is read off an option that failed to parse.

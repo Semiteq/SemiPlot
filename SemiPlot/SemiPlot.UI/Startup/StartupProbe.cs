@@ -3,6 +3,8 @@ using FluentResults;
 using Microsoft.Extensions.DependencyInjection;
 
 using SemiPlot.Core.Data;
+using SemiPlot.DataSource.OpcUa;
+using SemiPlot.DataSource.OpcUa.Configuration;
 using SemiPlot.DataSource.Postgres;
 using SemiPlot.DataSource.Postgres.Configuration;
 
@@ -12,12 +14,15 @@ namespace SemiPlot.UI.Startup;
 
 /// <summary>
 /// The startup sequence that runs in <see cref="Program"/>, before Avalonia is configured: load the
-/// connection section, build the container, read the pen catalogue and the archive extent.
+/// connection and OPC UA sections, build the container, read the pen catalogue and the archive extent.
 /// </summary>
 public static class StartupProbe
 {
 	/// <summary>The connection section's folder inside <see cref="StartupOptions.ConfigDir"/>.</summary>
 	public const string ConnectionDirectoryName = "connection";
+
+	/// <summary>The OPC UA section's folder inside <see cref="StartupOptions.ConfigDir"/>.</summary>
+	public const string OpcDirectoryName = "opc";
 
 	// Must stay above PostgresConnectionSettings.ConnectTimeoutSeconds, or an unreachable host reads as
 	// an accepted connection that timed out.
@@ -32,18 +37,30 @@ public static class StartupProbe
 			return Result.Fail<StartupData>(settings.Errors);
 		}
 
+		var opcSettings = OpcUaConnectionLoader.Load(Path.Combine(options.ConfigDir, OpcDirectoryName));
+
+		if (opcSettings.IsFailed)
+		{
+			return Result.Fail<StartupData>(opcSettings.Errors);
+		}
+
 		Log.Information("Reading the archive in the time zone {TimeZone}", settings.Value.SourceTimeZone.Id);
 
-		var serviceProvider = BuildArchiveServiceProvider(settings.Value);
+		var serviceProvider = BuildArchiveServiceProvider(settings.Value, opcSettings.Value);
 
 		// Main runs with no SynchronizationContext ahead of BuildAvaloniaApp, so this cannot deadlock.
 		return ReadAsync(serviceProvider, DefaultReadBound).GetAwaiter().GetResult();
 	}
 
 	/// <summary>The container the archive path runs on.</summary>
-	internal static ServiceProvider BuildArchiveServiceProvider(PostgresConnectionSettings settings)
+	internal static ServiceProvider BuildArchiveServiceProvider(
+		PostgresConnectionSettings settings,
+		OpcUaConnectionSettings opcSettings)
 	{
-		var services = new ServiceCollection().AddPostgresData(settings).AddUi();
+		var services = new ServiceCollection()
+			.AddPostgresData(settings)
+			.AddOpcUaLiveSource(opcSettings)
+			.AddUi();
 
 		services.AddLogging(builder => builder.AddSerilog(Log.Logger, dispose: false));
 

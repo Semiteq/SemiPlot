@@ -207,6 +207,7 @@ public sealed class SettingsSaveTests : IDisposable
 
 		var error = SingleError<ConnectionFileError>(result);
 		error.Kind.Should().Be(ConnectionFileProblem.Unparseable);
+		error.Section.Should().Be(ConfigurationSectionName.Connection);
 		error.Path.Should().Be(_sandbox.ConnectionDirectory);
 		error.Reasons.OfType<ExceptionalError>().Should().ContainSingle()
 			.Which.Exception.Should().BeAssignableTo<YamlException>();

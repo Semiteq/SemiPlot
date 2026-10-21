@@ -35,8 +35,17 @@ public sealed class FailureSeverityTests
 			[ArchiveFault.ShapeUnexpected] = MessageSeverity.Error
 		};
 
-	// One row per arm of ArchiveFailureMapper.Map that is not ArchiveError, keyed by the type the arm
-	// matches. The two FluentResults types are the IExceptionalError and the default arm.
+	private static readonly IReadOnlyDictionary<LiveSourceFault, MessageSeverity> _liveSourceFaults =
+		new Dictionary<LiveSourceFault, MessageSeverity>
+		{
+			[LiveSourceFault.Unreachable] = MessageSeverity.Warning,
+			[LiveSourceFault.PensUnserved] = MessageSeverity.Warning,
+			[LiveSourceFault.EndpointRefused] = MessageSeverity.Error,
+			[LiveSourceFault.ProjectMissing] = MessageSeverity.Error
+		};
+
+	// One row per arm of ArchiveFailureMapper.Map that has no fault table, keyed by the type the arm matches.
+	// The two FluentResults types are the IExceptionalError and the default arm.
 	private static readonly IReadOnlyDictionary<Type, (IError Sample, MessageSeverity Severity)> _mapArms =
 		new Dictionary<Type, (IError, MessageSeverity)>
 		{
@@ -53,7 +62,11 @@ public sealed class FailureSeverityTests
 				new AppSettingsError(@"C:\config\ui", AppSettingsProblem.KeyMissing, "locale"),
 				MessageSeverity.Error),
 			[typeof(ConnectionFileError)] = (
-				new ConnectionFileError(@"C:\config\archive", ConnectionFileProblem.MissingField, ["host"]),
+				new ConnectionFileError(
+					ConfigurationSectionName.Connection,
+					@"C:\config\archive",
+					ConnectionFileProblem.MissingField,
+					["host"]),
 				MessageSeverity.Error),
 			[typeof(StartupReadTimedOutError)] = (
 				new StartupReadTimedOutError(StartupRead.PenCatalogue, TimeSpan.FromSeconds(5)),
@@ -81,10 +94,13 @@ public sealed class FailureSeverityTests
 				.Remedy.Should().NotBeNullOrWhiteSpace("StartupArgumentsProblem.{0}", problem);
 		}
 
-		foreach (var problem in Enum.GetValues<ConnectionFileProblem>())
+		foreach (var section in new[] { ConfigurationSectionName.Connection, ConfigurationSectionName.Opc })
 		{
-			ArchiveFailureMapper.Map(new ConnectionFileError(@"C:\config\archive", problem, ["host"]))
-				.Remedy.Should().NotBeNullOrWhiteSpace("ConnectionFileProblem.{0}", problem);
+			foreach (var problem in Enum.GetValues<ConnectionFileProblem>())
+			{
+				ArchiveFailureMapper.Map(new ConnectionFileError(section, @"C:\config\archive", problem, ["host"]))
+					.Remedy.Should().NotBeNullOrWhiteSpace("ConnectionFileProblem.{0} of {1}", problem, section);
+			}
 		}
 
 		foreach (var read in Enum.GetValues<StartupRead>())
@@ -107,9 +123,14 @@ public sealed class FailureSeverityTests
 
 		foreach (var section in Enum.GetValues<ConfigurationSectionName>())
 		{
-			ConfigurationSectionFailureMapper.Map(
-					new ConfigurationSectionError(section, @"C:\config", SectionProblem.NoFiles))
-				.Title.Should().NotBeNullOrWhiteSpace("ConfigurationSectionName.{0}", section);
+			foreach (var problem in new[] { SectionProblem.NoFiles, SectionProblem.DirectoryMissing })
+			{
+				var view = ConfigurationSectionFailureMapper.Map(
+					new ConfigurationSectionError(section, @"C:\config", problem));
+
+				view.Title.Should().NotBeNullOrWhiteSpace("ConfigurationSectionName.{0}", section);
+				view.Remedy.Should().NotBeNullOrWhiteSpace("ConfigurationSectionName.{0} {1}", section, problem);
+			}
 		}
 	}
 
@@ -117,6 +138,12 @@ public sealed class FailureSeverityTests
 	public void ArchiveFaultTable_CoversEveryMemberOfTheEnum()
 	{
 		_archiveFaults.Keys.Should().BeEquivalentTo(Enum.GetValues<ArchiveFault>());
+	}
+
+	[Fact]
+	public void LiveSourceFaultTable_CoversEveryMemberOfTheEnum()
+	{
+		_liveSourceFaults.Keys.Should().BeEquivalentTo(Enum.GetValues<LiveSourceFault>());
 	}
 
 	// The declared error types are what Map switches on, so a new one with no arm falls into MapUnknown
@@ -129,8 +156,10 @@ public sealed class FailureSeverityTests
 			.Where(type => type is { IsClass: true, IsAbstract: false } && typeof(IError).IsAssignableFrom(type));
 
 		declared.Should().OnlyContain(
-			type => type == typeof(ArchiveError) || _mapArms.ContainsKey(type),
-			"ArchiveError is covered by the fault table and every other error type needs its own arm");
+			type => type == typeof(ArchiveError)
+				|| type == typeof(LiveSourceError)
+				|| _mapArms.ContainsKey(type),
+			"ArchiveError and LiveSourceError are covered by their fault tables and every other one needs an arm");
 	}
 
 	[Fact]
@@ -142,6 +171,16 @@ public sealed class FailureSeverityTests
 				.Should().Be(severity, "ArchiveFault.{0} carries a detail", fault);
 			ArchiveFailureMapper.Map(Archive(fault)).Severity
 				.Should().Be(severity, "ArchiveFault.{0} carries no detail", fault);
+		}
+	}
+
+	[Fact]
+	public void EveryLiveSourceFault_CarriesTheSeverityTheTableNames()
+	{
+		foreach (var (fault, severity) in _liveSourceFaults)
+		{
+			ArchiveFailureMapper.Map(LiveSource(fault)).Severity
+				.Should().Be(severity, "LiveSourceFault.{0}", fault);
 		}
 	}
 
@@ -158,6 +197,11 @@ public sealed class FailureSeverityTests
 	private static ArchiveError Archive(ArchiveFault kind, string detail = "")
 	{
 		return new ArchiveError(kind, "scada-host", 5432, "semiplot", detail);
+	}
+
+	private static LiveSourceError LiveSource(LiveSourceFault kind)
+	{
+		return new LiveSourceError(kind, "opc.tcp://127.0.0.1:4841", [7], [9]);
 	}
 
 	private static ConfigurationSectionError Section(SectionProblem problem)

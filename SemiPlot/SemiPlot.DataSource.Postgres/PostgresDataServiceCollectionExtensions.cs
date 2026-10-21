@@ -41,13 +41,6 @@ public static class PostgresDataServiceCollectionExtensions
 			provider.GetRequiredService<TimeProvider>(),
 			provider.GetRequiredService<ILogger<PostgresDataProvider>>(),
 			historyReadConcurrency));
-		services.AddSingleton<ILiveSource>(provider => new PostgresLiveSource(
-			provider.GetRequiredService<NpgsqlDataSource>(),
-			provider.GetRequiredService<ArchiveTimeConverter>(),
-			provider.GetRequiredService<ArchiveExceptionMapper>(),
-			provider.GetRequiredService<IScheduler>(),
-			provider.GetRequiredService<ILogger<PostgresLiveSource>>(),
-			provider.GetRequiredService<PostgresConnectionSettings>().PollInterval));
 		services.AddSingleton<IPenCatalogueEditor>(provider => new PostgresPenCatalogueEditor(
 			provider.GetRequiredService<NpgsqlDataSource>(),
 			provider.GetRequiredService<ArchiveExceptionMapper>(),

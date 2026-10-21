@@ -24,32 +24,37 @@ public sealed class ChartRealtimeApplierTests
 		Apply(state, foldIntoColumn: false, (_start, SampledValue), (_start.AddMilliseconds(1), null));
 
 		var columns = state.Line.SnapshotColumns();
-		columns.Should().HaveCount(2);
-		columns[0].Center.Should().Be(SampledValue);
-		double.IsNaN(columns[1].Center).Should().BeTrue();
-		columns[1].X.Should().Be(LocalTimeAxis.ToAxis(_start.AddMilliseconds(1)));
+		columns.Should().HaveCount(3, "the first value opens behind its own break");
+		double.IsNaN(columns[0].Center).Should().BeTrue();
+		columns[1].Center.Should().Be(SampledValue);
+		double.IsNaN(columns[2].Center).Should().BeTrue();
+		columns[2].X.Should().Be(LocalTimeAxis.ToAxis(_start.AddMilliseconds(1)));
 		state.CurrentValue.Should().Be(SampledValue);
 	}
 
 	[Fact]
 	public void AtACoarseLayer_TheValueFoldsAndTheBreakAppendsPastTheFoldedColumn()
 	{
+		const double FirstValue = 3.0;
 		var state = NewState();
 		state.LoadHistory(new PenHistoryEnvelope(1, [_start], [1.0], [5.0], [2.0]), _start);
 
 		Apply(
 			state,
 			foldIntoColumn: true,
-			(_start.AddSeconds(1), SampledValue),
-			(_start.AddSeconds(1).AddMilliseconds(1), null));
+			(_start.AddSeconds(1), FirstValue),
+			(_start.AddSeconds(2), SampledValue),
+			(_start.AddSeconds(2).AddMilliseconds(1), null));
 
 		var columns = state.Line.SnapshotColumns();
-		columns.Should().HaveCount(2);
-		columns[0].Min.Should().Be(1.0);
-		columns[0].Max.Should().Be(SampledValue);
-		columns[0].Center.Should().Be(SampledValue);
+		columns.Should().HaveCount(4, "the first value opens a column behind its own break");
 		double.IsNaN(columns[1].Center).Should().BeTrue();
-		columns[1].X.Should().Be(LocalTimeAxis.ToAxis(_start.AddSeconds(1).AddMilliseconds(1)));
+		columns[2].X.Should().Be(LocalTimeAxis.ToAxis(_start.AddSeconds(1)));
+		columns[2].Min.Should().Be(FirstValue);
+		columns[2].Max.Should().Be(SampledValue);
+		columns[2].Center.Should().Be(SampledValue);
+		double.IsNaN(columns[3].Center).Should().BeTrue();
+		columns[3].X.Should().Be(LocalTimeAxis.ToAxis(_start.AddSeconds(2).AddMilliseconds(1)));
 		state.CurrentValue.Should().Be(SampledValue);
 	}
 
@@ -63,7 +68,6 @@ public sealed class ChartRealtimeApplierTests
 		Apply(
 			state,
 			foldIntoColumn: true,
-			(_start, SampledValue),
 			(_start.AddMilliseconds(1), null),
 			(_start.AddSeconds(1), NextValue));
 

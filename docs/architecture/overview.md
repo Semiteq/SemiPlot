@@ -9,7 +9,7 @@ SCADA's built-in trends.
 
 It must handle two classes of data:
 
-- **Real-time** — current tag values, continuously updated.
+- **Real-time**: current tag values from the SCADA's built-in OPC UA server, continuously updated.
 - **Archive (history)** — selections over a period (shift, day, month), smooth on large ranges.
 
 ## Technology stack
@@ -21,7 +21,8 @@ It must handle two classes of data:
 | Chart renderer   | ScottPlot 5 (`ScottPlot.Avalonia` 5.1.59, MIT, SkiaSharp) — native control |
 | MVVM             | ReactiveUI (`ReactiveUI.Avalonia` 12.0.3)                             |
 | Backend (in-proc)| .NET data provider abstraction over the data sources                   |
-| Data source      | One PostgreSQL role on the Simple-Scada archive: history, extent and realtime read it, the pen editor writes the catalogue tables, and the chart reads and writes its time markers in `semiplot_markers` (`data-integration.md`) |
+| Data source      | One PostgreSQL role on the Simple-Scada archive: history and extent read it, the pen editor writes the catalogue tables, and the chart reads and writes its time markers in `semiplot_markers` (`data-integration.md`) |
+| Live edge        | The SCADA's built-in OPC UA server, read by the OPC Foundation client `OPCFoundation.NetStandard.Opc.Ua.Client` 2.0.1: one anonymous session per process on the `None` endpoint, one subscription per pen set (`data-integration.md#realtime`, `[DEC:opc-live-edge]`) |
 | Coarse resolutions | The SCADA's own archive layers; nothing of ours runs in or beside the database (`history-read-path-evaluation.md`) |
 | Logging          | Serilog, path and level from the launch keys, rolling 5 MB / 5 files (`data-integration.md`) |
 | Configuration    | YAML (YamlDotNet 18.1.0), one folder per section merged by `SemiPlot.Core/Configuration/ConfigurationSection` |
@@ -55,7 +56,7 @@ Constraint: **$0 budget** — only free/OSS components.
 |     +-- TrendLegendView     grouped pen rows                |
 |     +-- MinimapView         archive-overview strip          |
 |     +-- MessagePanelView    every failure lands here        |
-|     +-- AppStatusBar        connection state, layer         |
+|     +-- AppStatusBar        archive and OPC UA state, layer |
 |     +-- PenEditorWindow     pens and groups dialog          |
 |     +-- CsvExportWindow     range to CSV file dialog        |
 |     +-- SettingsDialog      app and connection settings     |
@@ -76,7 +77,9 @@ Constraint: **$0 budget** — only free/OSS components.
 |  SemiPlot.Core                                              |
 |   - IDataProvider abstraction + records (Pen, envelope,     |
 |     ArchiveExtent, …)                                       |
-|   - ILiveSource + Sample, the live edge                     |
+|   - ILiveSource + Sample, LiveSourceState, the live edge    |
+|   - errors: ArchiveError, ConnectionFileError,              |
+|     LiveSourceError                                         |
 |   - IPenCatalogueEditor + records, the catalogue writes     |
 |   - IArchiveRowReader + StoredArchiveRow, the export reads  |
 |   - IMarkerStore + StoredMarker, the time markers           |
@@ -86,13 +89,18 @@ Constraint: **$0 budget** — only free/OSS components.
               │ implemented by a SemiPlot.DataSource.* project
               ▼
 +-------------------------------------------------------------+
-|  SemiPlot.DataSource.Postgres  (the only one)               |
+|  SemiPlot.DataSource.Postgres  (the archive)                |
 |   - PostgresDataProvider over the Simple-Scada archive      |
 |   - history, extent, days and catalogue reads               |
-|   - PostgresLiveSource, the live-edge poll                  |
 |   - PostgresPenCatalogueEditor, the catalogue writes        |
 |   - PostgresArchiveRowReader, the export's row reads        |
 |   - PostgresMarkerStore, the time markers                   |
++-------------------------------------------------------------+
++-------------------------------------------------------------+
+|  SemiPlot.DataSource.OpcUa  (the live edge)                 |
+|   - OpcUaLiveSource: ILiveSource over the SCADA's OPC UA    |
+|     server, one session per process                         |
+|   - OpcUaConnectionLoader, the opc/ section                 |
 +-------------------------------------------------------------+
 ```
 
@@ -100,9 +108,11 @@ The UI never talks to a data source directly. It reads through `IDataProvider`, 
 follows the live edge through `ILiveSource`; the pen editor writes through `IPenCatalogueEditor`, and
 `Markers/MarkerSync` reads and writes the chart's time markers through `IMarkerStore` (see
 [data-integration.md](./data-integration.md)). The export window reads stored rows through
-`IArchiveRowReader`. The composition root resolves the PostgreSQL provider, which is the only one the
-application ships; an archive that does not answer shows the startup failure in its own window rather
-than falling back to invented data. There is **no web bridge**: the chart is a native ScottPlot control,
+`IArchiveRowReader`. The composition root resolves the PostgreSQL provider, which is the only
+`IDataProvider` the application ships, and `OpcUaLiveSource` as the only `ILiveSource`; an archive that
+does not answer shows the startup failure in its own window rather than falling back to invented data.
+An OPC UA server that does not answer fails no start: the chart draws the archive and the status bar's
+second indicator reads not answering (`data-integration.md#realtime`). There is **no web bridge**: the chart is a native ScottPlot control,
 fed in-process by `TrendCoordinator` over `IObservable`/awaitable seams.
 
 ### One window per process
@@ -130,7 +140,8 @@ archive's time zone (`PostgresConnectionSettings.SourceTimeZone`), and construct
    with the marker sync as its marker channel;
 4. the minimap;
 5. the catalogue sync;
-6. the status bar, over the catalogue sync's `ConnectionStates` and the chart's navigation;
+6. the status bar, over the catalogue sync's `ConnectionStates`, the coordinator's `LiveSourceStates` and
+   the chart's navigation;
 7. the navigation bar and the legend;
 8. the catalogue applier;
 9. `MainWindowViewModel`, over the message panel, the status bar, the chart, the minimap, the navigation
@@ -143,7 +154,9 @@ archive's time zone (`PostgresConnectionSettings.SourceTimeZone`), and construct
 The status bar subscribes to `ConnectionStates` in its constructor, and the catalogue sync emits a state
 only from a read, which none runs before `Start()`. So `Build` builds the bar before it starts the sync,
 and no state precedes the bar's subscription
-(`data-integration.md#the-connection-state-the-catalogue-read-reports`).
+(`data-integration.md#the-connection-state-the-catalogue-read-reports`). `LiveSourceStates` needs no such
+order: the source replays its current state to each subscriber, `Connecting` until its first session
+(`data-integration.md#the-session-state-the-live-source-reports`).
 
 `Build` then starts the catalogue sync and asks it for its first read, starts the marker sync and asks
 it for its first read, requests the initial history and starts the minimap's extent load. A part
@@ -157,11 +170,14 @@ on the UI thread.
 
 The container keeps the process services. `AddPostgresData()` registers the data scheduler,
 `TimeProvider.System`, the `PostgresConnectionSettings`, the `NpgsqlDataSource`, the `ArchiveTimeConverter`,
-the `ArchiveExceptionMapper`, the provider, the live source, the editor, the marker store and the row
-reader; `AddUi()` registers the message panel, and `StartupProbe.BuildArchiveServiceProvider` adds the
-logger factory. The container holds no window part, the status bar included. The UI scheduler is not a
-container registration; `App` passes `AvaloniaScheduler.Instance` to `TrendWindow.Build`, while the data
-scheduler comes from the container.
+the `ArchiveExceptionMapper`, the provider, the editor, the marker store and the row reader;
+`AddOpcUaLiveSource()` registers `OpcUaLiveSource` as the singleton `ILiveSource` and a logging filter that
+raises the stack's `Opc.Ua.Bindings.UaSCUaBinaryClientChannel` category to `Critical`; `AddUi()` registers
+the message panel, and `StartupProbe.BuildArchiveServiceProvider` adds the logger factory. The container
+holds no window part, the status bar included. The UI scheduler is not a container registration; `App`
+passes `AvaloniaScheduler.Instance` to `TrendWindow.Build`, while the data scheduler comes from the
+container. `OpcUaLiveSource` takes neither: it reads `DefaultScheduler.Instance` itself; its registration
+passes none.
 
 ### Another instance
 
@@ -284,12 +300,13 @@ Row 4 is the one whose flag the operator is not the only source of. `MessagePane
 closed, so a session that never fails is never given the row, and `MessagePanelViewModel.Report`
 opens it for a failure the list does not already carry — an entry that landed off screen would be a
 failure nobody is shown. A repeat of the entry on top does not reopen a panel the operator closed.
-The row and the `View` item's check state read the same flag, and the `View` item and the status bar's
-connection indicator both invoke `MessagePanel.ToggleCommand`, so one click always moves the row and the
+The row and the `View` item's check state read the same flag, and the `View` item and both of the status
+bar's connection indicators invoke `MessagePanel.ToggleCommand`, so one click always moves the row and the
 check state always describes it.
 
-The status bar carries current state only: whether the archive answers, and the layer the chart
-reads, named from resx rather than from `AggregationLayer.ToString()`. It holds no pen count and no
+The status bar carries current state only: whether the archive answers, whether the OPC UA session is
+up (connecting, connected or not answering), and the layer the chart reads, named from resx rather than
+from `AggregationLayer.ToString()`. It holds no pen count and no
 history; the legend lists the pens and the message panel holds what happened.
 
 ### Where a failure goes
@@ -332,13 +349,18 @@ one method: nothing else may resolve a service through a static.
 
 ## Data flow
 
-- **Realtime:** `PostgresLiveSource`, behind `ILiveSource`, polls the raw layer for the samples
-  written past the last one it saw → `TrendCoordinator` buffers them on the data scheduler into a
-  coalesced `RealtimeBatch` (≤ 10 Hz / 100 ms), crosses to the UI scheduler via `ObserveOn`, and
-  exposes them as `IObservable<RealtimeBatch>`; the chart view model subscribes and appends to the
-  per-pen plottables. Neither the provider nor the live source reports a connection state: the
-  catalogue sync derives it from its reads, and the status bar shows it and the message panel records
-  it (`#a-failed-read`).
+- **Realtime:** `OpcUaLiveSource`, behind `ILiveSource`, holds one OPC UA session to the SCADA's
+  built-in server and one subscription per pen set, at a 100 ms publishing interval with a queue of 1
+  per pen. Each notification becomes a `Sample` stamped with the server's `SourceTimestamp`, true UTC.
+  `TrendCoordinator` buffers the samples on the data scheduler into a coalesced `RealtimeBatch` (at most
+  10 Hz, 100 ms), crosses to the UI scheduler with `ObserveOn`, and exposes them as
+  `IObservable<RealtimeBatch>`; the chart view model subscribes and appends to the per-pen plottables.
+  The chart writes a break 1 ms ahead of a pen's first live sample past its last column, and the source
+  writes one per pen when the session is lost (`data-integration.md#realtime`). The source reports its
+  session state on `ILiveSource.States` and its pen faults on `ILiveSource.PenFaults`; the coordinator
+  republishes both on the UI scheduler. The provider reports no connection state: the catalogue sync
+  derives the archive's from its reads. The status bar shows both states, and the message panel
+  records their faults (`#a-failed-read`).
 - **History:** the chart requests a window → `TrendCoordinator.QueryHistoryAsync` (the single history
   query, reached through the debouncer by the initial load and every gesture alike) → provider
   returns one server-reduced `PenHistoryEnvelope` per pen (ascending `Timestamps` + `Min`/`Max`/`Center`) → the view
@@ -384,26 +406,31 @@ one method: nothing else may resolve a service through a static.
   | --- | --- | --- |
   | `app/` | `locale` (`ru` \| `en`) and `theme` (`light` \| `dark`), both required, no default and no fallback | `Startup/AppSettingsLoader`, first — a broken archive cannot mask a broken configuration |
   | `connection/` | The archive connection | `Startup/StartupProbe`, second — [data-integration.md](./data-integration.md) |
+  | `opc/` | `host` (an IPv4 address) and `port` (1 to 65535) of the SCADA's OPC UA server, both required | `Startup/StartupProbe`, third, through `OpcUaConnectionLoader`; nothing connects at start (`data-integration.md#the-opc-ua-section`) |
 
-  `SemiPlot.Core/Configuration/ConfigurationSection.Read` is the one merge both loaders call. It
+  `SemiPlot.Core/Configuration/ConfigurationSection.Read` is the one merge every loader calls. It
   returns the merged mapping as one YAML text, which the caller hands to its own typed deserializer
   unchanged. An absent folder and a folder holding no `*.yaml` are separate failures with separate
   remedies; every failure opens the startup window rather than escaping as an exception.
 
   `locale` is in [ui-text.md](./ui-text.md), `theme` in [ui-theme.md](./ui-theme.md); a changed `theme`
   applies live in every running process (`#the-live-theme`). The set that
-  ships is tracked at `ConfigFiles/` in the repository — `ConfigFiles/app/app.yaml` and
-  `ConfigFiles/connection/connection.yaml` — and `SemiPlot.Tests.Unit/DeliveredConfigurationTests`
+  ships is tracked at `ConfigFiles/` in the repository: `ConfigFiles/app/app.yaml`,
+  `ConfigFiles/connection/connection.yaml` and `ConfigFiles/opc/opc.yaml` (`host: 127.0.0.1`,
+  `port: 49875`, Simple-Scada's default). `SemiPlot.Tests.Unit/DeliveredConfigurationTests`
   runs the production loaders over it, so a broken delivered file fails the build.
   `connection/connection.yaml` ships with an empty `password`, which is already a named startup
-  failure, so the repository carries no credential and a forgotten edit fails loudly.
+  failure, so the repository carries no credential and a forgotten edit fails loudly. A configuration
+  directory without `opc/` fails the start with that section's `DirectoryMissing` entry; the installer's
+  copy adds the folder on an upgrade. An upgraded site's `connection.yaml` can still carry
+  `poll_interval_ms`, a key earlier versions read; the loader ignores it as an unknown key.
 
 ### The settings window
 
 `Edit` -> `Settings` opens `Settings/SettingsDialog`, the viewer's only writer of the section folders. It
-edits `locale` and `theme` in `app/`, and `host`, `port`, `database`, `user`, `password` and
-`poll_interval_ms` in `connection/`. A key the window does not show, such as `schema`, stays in its file
-and survives every rewrite. A saved `theme` applies live in every running process (`#the-live-theme`), so
+edits `locale` and `theme` in `app/`, and `host`, `port`, `database`, `user` and `password` in
+`connection/`. It does not edit `opc/` yet; the operator edits `opc/opc.yaml` by hand. A key the window
+does not show, such as `schema`, stays in its file and survives every rewrite. A saved `theme` applies live in every running process (`#the-live-theme`), so
 a save that changed only the theme shows no notice. The dialog shows a restart notice after a save that
 changed any other key, and that change takes effect at the next start. A save that also changed the theme
 words the notice `SettingsRestartNoticeThemeApplied`, which names the theme as applied
@@ -416,13 +443,13 @@ takes that restart as a required argument: the failure window opens the dialog o
 parsed, so it always has one to hand.
 
 Each connection field takes only what its loader accepts. `host` is a text box checked by
-`PostgresConnectionLoader.IsIPv4Address`, the loader's own rule. `port` and `poll_interval_ms` are
-`NumericUpDown` controls held to whole numbers, `port` from `LowestPort` to `HighestPort` and the poll
-interval from `LowestPollIntervalMs`, the loader's constants. `database`, `user` and `password` must not be
+`NetworkAddress.IsIPv4` (`SemiPlot.Core/Configuration`), the rule the loader applies. `port` is a
+`NumericUpDown` control held to whole numbers from `NetworkAddress.LowestPort` to
+`NetworkAddress.HighestPort`. `database`, `user` and `password` must not be
 blank. A field that breaks its rule takes the error border, the message line names the first such
 field, and the save stays disabled (`ui-theme.md#a-form-never-resizes-on-validation`). A file value the
 rule refuses opens as an invalid field: a host name stays as text in a field with the error border, and
-a port or poll interval that is not a whole number in range opens empty.
+a port that is not a whole number in range opens empty.
 
 The window reads the files, not the typed settings. `SettingsSave.ReadOwned` runs
 `ConfigurationSection.ReadOwned` over both section folders, which returns each section's scalar values
@@ -466,7 +493,7 @@ A save goes through `Settings/SettingsSave.Save`:
    away, and the backup is then the only copy.
 7. The staging directory is removed on every path but one: a failed save that leaves a rewritten
    target missing keeps it, and the log names it and the missing target. A removal that fails after
-   promotion goes to the log and the save still succeeds. The loaders read only `app/` and `connection/`, so a staging
+   promotion goes to the log and the save still succeeds. The loaders read only `app/`, `connection/` and `opc/`, so a staging
    directory left by a killed process is inert.
 
 A failed save reaches the message panel through `ArchiveFailureMapper`, and the dialog stays open. A
@@ -486,8 +513,8 @@ with `SectionProblem.KeyAbsent`; the writer never picks a file for it.
 A rewrite parses the owning file into a mapping, sets the keys and serializes the whole mapping back
 through the serializer `ConfigurationSection` reads with. A key the loaders do not model survives.
 Comments in a rewritten file do not: YamlDotNet does not round-trip them. Scalars round-trip as
-strings, so an untouched `port` or `poll_interval_ms` in a rewritten file may come back as
-`port: "5432"`, and it still loads.
+strings, so an untouched `port` in a rewritten file may come back as `port: "5432"`, and it still
+loads.
 
 Several viewers may share one configuration directory, and the last write wins per key. A save applies
 only its own changed keys over a read taken at save time, so a key another instance saved survives a save
@@ -727,12 +754,12 @@ throws adds one panel entry, and the loop reads on; the read it threw on is the 
 
 Nothing is pushed between instances. `LISTEN/NOTIFY` loses what is sent while an instance is
 disconnected, so the periodic read would stay as the fallback in that design too. One statement of a
-few hundred rows every 5 s costs less than the live edge's statement per second, and the live edge
-itself arrives 1 to 2 s after the SCADA writes, so 5 s between stations reads as immediate.
+few hundred rows every 5 s is cheap, and a catalogue edit is an operator's action, so 5 s between
+stations reads as immediate.
 
 The chart applies the delta to the pens it has and is never rebuilt whole. A window's parts are built
 once by `TrendWindow.Build` and never replaced. The status bar takes the catalogue sync's
-`ConnectionStates` and the chart's navigation in its constructor, the navigation controller has no way to take a
+`ConnectionStates`, the coordinator's `LiveSourceStates` and the chart's navigation in its constructor, the navigation controller has no way to take a
 window back, and a gesture started on a replaced chart would end on a disposed one.
 
 ### The live markers
@@ -841,7 +868,9 @@ the only thread that writes a bound property. The outcome stays in the window's 
 "Written x of N", where N is the counted total clamped to at least the rows written
 (`Math.Max(rowsWritten, total)` in `CsvExportViewModel`), since rows arrive during the export, then the written row count and the file name
 on success (the full path is the line's tooltip), or the failure title. A failure also reaches the message panel through the mapper; a success adds no panel entry, so
-`AppStatusBarViewModel.ConnectionRestored` stays the one message with no error behind it.
+the status bar's two recovery entries stay the only messages with no error behind them:
+`AppStatusBarViewModel.ConnectionRestored` for the archive indicator and `LiveConnectionRestored` for the
+OPC UA indicator.
 
 `CsvFileExporter` writes `<path>.partial` and moves it over `<path>` on success. A cancel, a failure or an
 exception deletes the partial file and leaves a file already at `<path>` as it was. A file the export
@@ -861,7 +890,7 @@ All three keys are required and none carries a default.
 
 | Argument | Effect |
 | --- | --- |
-| `--config-dir <dir>` | Directory holding the `app/` and `connection/` section folders |
+| `--config-dir <dir>` | Directory holding the `app/`, `connection/` and `opc/` section folders |
 | `--log-file <path>` | Log file, rolling 5 MB / 5 files |
 | `--logging-level <level>` | `verbose` \| `debug` \| `info` (or `information`) \| `warning` \| `error` \| `fatal`, case-insensitive |
 
@@ -904,11 +933,12 @@ the startup failure and the fatal catch alike — so a launcher can tell one fro
 
 ## Scope status
 
-The application reads the real archive and nothing else: the composition root registers
-`AddPostgresData`, and every member of `IDataProvider` is implemented over it — the pen catalogue,
-the archive extent, the archive days read and the windowed history read. `PostgresLiveSource`
-implements `ILiveSource` with the live-edge poll over the same archive. The chart draws history and
-follows the archive as it grows. The pen editor writes the catalogue through `IPenCatalogueEditor`,
+The application reads the real archive and the SCADA's OPC UA server and nothing else: the composition
+root registers `AddPostgresData`, and every member of `IDataProvider` is implemented over it: the pen catalogue,
+the archive extent, the archive days read and the windowed history read. `AddOpcUaLiveSource` registers
+`OpcUaLiveSource`, which implements `ILiveSource` over the SCADA's OPC UA server. The chart draws history
+from the archive and the live edge from OPC UA; the archive replaces a live point only when a history
+read covers it (`[DEC:opc-live-edge]`). The settings window does not edit the `opc/` section yet. The pen editor writes the catalogue through `IPenCatalogueEditor`,
 and every running chart follows what it writes within 5 s (`#the-live-catalogue`), except the start
 values, which change nothing on screen (`#what-a-read-changes`). The chart places, drags, renames and
 deletes time markers stored in `semiplot_markers`, and every window follows them within 5 s

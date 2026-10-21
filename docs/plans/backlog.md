@@ -7,9 +7,10 @@ each is a scoped future task.
 ## Functional / integration
 
 - **Real data provider (accuracy).** The viewer reads the PostgreSQL archive through
-  `PostgresDataProvider` — one read-only Npgsql data source (a connection pool) serving the catalogue,
-  the extent, the history window and the live-edge poll; a history read holds up to four pooled
-  connections at once, specified in `docs/architecture/data-integration.md`. What is still
+  `PostgresDataProvider`, one read-only Npgsql data source (a connection pool) serving the catalogue,
+  the extent and the history window; a history read holds up to four pooled connections at once,
+  specified in `docs/architecture/data-integration.md`. The live edge reads the SCADA's OPC UA server,
+  not the archive (`data-integration.md#the-opc-ua-live-source`). What is still
   missing is a real archive: the decimation and extent paths have been exercised against the seeded
   bench and against a customer dump, not against production volumes on a running tool.
 
@@ -100,7 +101,7 @@ Paths are under `SemiPlot/SemiPlot.UI/` unless they name another project.
   closed list in `LoggingLevelValues` and `readme.md`; a replacement checks `Enum.IsDefined` and rejects
   numeric input.
 - **`ThrowIfNull` on repository-internal APIs.** `SemiPlot.Core/Trends/PenHistoryEnvelope.cs:12-15`,
-  `ArchiveTimeConverter.cs:13` and `RealtimePoll.cs:64-69` in `SemiPlot.DataSource.Postgres`, and the two
+  `ArchiveTimeConverter.cs:13` in `SemiPlot.DataSource.Postgres`, and the two
   `PostgresDataProvider` entry points at `:80` and `:127`.
 - **Two copies of the empty-reading format.** `TrendLegendRowViewModel.FormatReading`
   (`Legend/TrendLegendRowViewModel.cs:65-68`) and `ChartHoverReadout.FormatValue` (`Chart/ChartHoverReadout.cs:43-48`)

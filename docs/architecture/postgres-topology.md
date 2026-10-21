@@ -106,7 +106,7 @@ flowchart TB
     iface{{"IDataProvider"}}
     pg["PostgresDataProvider<br/>the only implementation"]
     live{{"ILiveSource"}}
-    poll["PostgresLiveSource<br/>the live-edge poll"]
+    opc["OpcUaLiveSource<br/>SemiPlot.DataSource.OpcUa<br/>no database connection"]
 
     subgraph plumbing["SemiPlot.DataSource.Postgres"]
         direction TB
@@ -114,30 +114,26 @@ flowchart TB
         ds["NpgsqlDataSource<br/>pooled connections"]
         conv["ArchiveTimeConverter<br/>naive local ⇄ UTC"]
         mapper["ArchiveExceptionMapper<br/>SQLSTATE → typed error"]
-        loader["PostgresConnectionLoader<br/>the connection/ section<br/>six keys, optional schema"]
+        loader["PostgresConnectionLoader<br/>the connection/ section<br/>five keys, optional schema"]
     end
 
-    errs["SemiPlot.Core/Data/Errors<br/>two sealed errors, two enums"]
+    errs["SemiPlot.Core/Data/Errors<br/>ArchiveError, ConnectionFileError"]
 
     ui --> coord --> iface
     coord --> live
     iface --> pg
-    live --> poll
+    live --> opc
     pg --> stmts
     pg --> ds
     pg --> conv
     pg --> mapper
-    poll --> stmts
-    poll --> ds
-    poll --> conv
-    poll --> mapper
     loader --> ds
     mapper --> errs
 ```
 
-The composition root resolves `PostgresDataProvider`, `PostgresLiveSource` for the live-edge poll, and
-the pen editor's `PostgresPenCatalogueEditor`, the chart's `PostgresMarkerStore` and the export window's
-`PostgresArchiveRowReader` over the same `NpgsqlDataSource`;
+The composition root resolves `PostgresDataProvider`, the pen editor's `PostgresPenCatalogueEditor`, the
+chart's `PostgresMarkerStore` and the export window's `PostgresArchiveRowReader` over the same
+`NpgsqlDataSource`;
 there is no fallback to resolve: an
 archive that does not answer opens the startup-failure window rather than
 falling back to invented data, which `data-integration.md` states under **Startup**.
@@ -145,8 +141,9 @@ falling back to invented data, which `data-integration.md` states under **Startu
 per type, Core's and the UI-local ones, and inside the `ArchiveError` arm one per `ArchiveFault`
 member, twelve. Which kind gets which severity, and why, is in
 `data-integration.md#two-error-planes`. Every member of `IDataProvider` is implemented: the pen
-catalogue, the archive extent, the archive days and the windowed history read. `PostgresLiveSource`
-implements `ILiveSource` with the live-edge poll.
+catalogue, the archive extent, the archive days and the windowed history read. No reader of the
+archive serves the live edge: `OpcUaLiveSource` in `SemiPlot.DataSource.OpcUa` implements `ILiveSource`
+over the SCADA's OPC UA server and opens no database connection (`data-integration.md#realtime`).
 
 ## The three provisioning states, and the fourth
 

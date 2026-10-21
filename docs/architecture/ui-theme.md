@@ -155,7 +155,7 @@ Semi owns the controls; these fifteen keys are ours, and each exists in both var
 | `AppPanelBackgroundBrush` | Navigation bar, legend panel, message panel, status bar, startup-failure window's message panel, minimap frame, chart hover readout, the plot's figure background | `#F7F8FA` | `#2B2D30` |
 | `AppContentBackgroundBrush` | Chart area and the plot's data background, minimap strip canvas, the sidebar's resize handle, the ground of the active pen's reading at each marker | `#FFFFFF` | `#1E1F22` |
 | `AppBorderBrush` | The border of the navigation bar, legend panel, message panel and status bar, of the startup-failure window's message panel, of the minimap frame, of the chart hover readout and of the export window's pen list | `#EBECF0` | `#393B40` |
-| `AppSubtleLineBrush` | Plot grid, the line above every sidebar group header but the first, the status bar's separator after the connection indicator, the navigation bar's group separator | `#EBECF0` | `#393B40` |
+| `AppSubtleLineBrush` | Plot grid, the line above every sidebar group header but the first, the status bar's separators after each connection indicator, the navigation bar's group separator | `#EBECF0` | `#393B40` |
 | `AppMinorGridLineBrush` | The plot's minor gridlines, drawn on a log10 axis only | `#F4F5F7` | `#2B2D30` |
 | `AppSecondaryForegroundBrush` | Minimap end labels, hover line and hover time, chart crosshair, plot axis furniture, the chart's empty-catalogue message, the sidebar group header caption and a row's unit, the axis scale panel's unit, the message panel's empty text and an entry's remedy, repeat count and time | `#818594` | `#6F737A` |
 | `AppAccentBrush` | Minimap window highlight border, the active sidebar row's left bar | `#3574F0` | `#3574F0` |
@@ -163,8 +163,8 @@ Semi owns the controls; these fifteen keys are ours, and each exists in both var
 | `AppSeverityErrorBrush` | The message panel's dot on an `Error` entry; a form's invalid field border and its message line | `#DB3B4B` | `#E55765` |
 | `AppSeverityWarningBrush` | The same dot on a `Warning` entry | `#E3AE4D` | `#F2C55C` |
 | `AppSeverityInfoBrush` | The same dot on an `Info` entry | `#3574F0` | `#3574F0` |
-| `AppConnectionOkBrush` | The status bar's connection indicator, `connection-ok` | `#208A3C` | `#5FAD65` |
-| `AppConnectionFaultBrush` | The same indicator, `connection-fault` | `#DB3B4B` | `#E55765` |
+| `AppConnectionOkBrush` | Both of the status bar's connection indicators, the archive's and the OPC UA one, `connection-ok` | `#208A3C` | `#5FAD65` |
+| `AppConnectionFaultBrush` | The same two indicators, `connection-fault`. The OPC UA indicator carries neither class while it reads connecting, so it draws in the bar's own text colour then | `#DB3B4B` | `#E55765` |
 | `AppMarkerLineBrush` | Every time marker line on the plot (`#the-plot`) and its tick on the minimap strip | `#6F737A` | `#A8ADBD` |
 | `AppMarkerLabelBrush` | Every time marker label on the plot | `#000000` | `#DFE1E5` |
 

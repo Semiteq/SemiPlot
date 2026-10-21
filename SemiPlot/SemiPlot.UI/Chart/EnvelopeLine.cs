@@ -192,13 +192,15 @@ public sealed class EnvelopeLine : IPlottable
 	}
 
 	// docs/architecture/data-integration.md#what-one-history-query-covers
-	internal void ReplaceColumns(IReadOnlyList<EnvelopeColumn> columns, double requestedEndX)
+	/// <summary>True when a live column past <paramref name="requestedEndX"/> was dropped.</summary>
+	internal bool ReplaceColumns(IReadOnlyList<EnvelopeColumn> columns, double requestedEndX)
 	{
 		lock (_renderStateLock)
 		{
 			var newHistoryEndX = columns.Count > 0 ? columns[^1].X : double.NegativeInfinity;
 			var keptTailStart = EnvelopePath.FirstAfter(_columns, Math.Max(_historyEndX, newHistoryEndX));
 			var keptTailEnd = Math.Max(keptTailStart, EnvelopePath.FirstAfter(_columns, requestedEndX));
+			var droppedPastRequestedEnd = keptTailEnd < _columns.Count;
 
 			_columns.RemoveRange(keptTailEnd, _columns.Count - keptTailEnd);
 			_columns.RemoveRange(0, keptTailStart);
@@ -210,6 +212,27 @@ public sealed class EnvelopeLine : IPlottable
 			{
 				_columns.RemoveRange(0, overflow);
 			}
+
+			return droppedPastRequestedEnd;
+		}
+	}
+
+	/// <summary>Appends the sample behind the gap; the gap only where the line does not already end on one.</summary>
+	internal bool AppendAfterBreak(EnvelopeColumn gap, EnvelopeColumn sample)
+	{
+		lock (_renderStateLock)
+		{
+			if (_columns.Count > 0 && sample.X <= _columns[^1].X)
+			{
+				return false;
+			}
+
+			if (_columns.Count == 0 || (!EndsOnGap(_columns[^1]) && gap.X > _columns[^1].X))
+			{
+				AppendAfterLastColumn(gap);
+			}
+
+			return AppendAfterLastColumn(sample);
 		}
 	}
 
@@ -234,8 +257,7 @@ public sealed class EnvelopeLine : IPlottable
 
 			var index = _columns.Count - 1;
 			var column = _columns[index];
-			var endsOnGap = double.IsNaN(column.Min) || double.IsNaN(column.Max);
-			if (endsOnGap)
+			if (EndsOnGap(column))
 			{
 				return AppendAfterLastColumn(sample);
 			}
@@ -266,6 +288,11 @@ public sealed class EnvelopeLine : IPlottable
 
 			return null;
 		}
+	}
+
+	private static bool EndsOnGap(EnvelopeColumn column)
+	{
+		return double.IsNaN(column.Min) || double.IsNaN(column.Max);
 	}
 
 	private bool AppendAfterLastColumn(EnvelopeColumn column)

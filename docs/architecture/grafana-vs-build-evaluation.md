@@ -9,7 +9,7 @@ Language: EN.
 
 ## 1. Summary and primary recommendation
 
-**Context.** The functional reference is MasterSCADA's "MasterTrend". SemiPlot's core value is not "a chart in general", but the combination of three things that almost nothing else offers: an individual axis per pen when N>2 pens (AY-2), independent per-pen Y-layer resize (PN-2), and T1/T2 measurement cursors with Δt/Δy (CU-3). Plus the hard requirement DA-1: history and realtime always come from PostgreSQL, and with your invariants (M4 decimation DA-5, NaN anchors, X monotonicity at the seam DA-7, latest-wins DA-9).
+**Context.** The functional reference is MasterSCADA's "MasterTrend". SemiPlot's core value is not "a chart in general", but the combination of three things that almost nothing else offers: an individual axis per pen when N>2 pens (AY-2), independent per-pen Y-layer resize (PN-2), and T1/T2 measurement cursors with Δt/Δy (CU-3). Plus the hard requirement DA-1: history and realtime always come from PostgreSQL (as of this evaluation; the live edge now comes from OPC UA, `[DEC:opc-live-edge]` in `sources.md`), and with your invariants (M4 decimation DA-5, NaN anchors, X monotonicity at the seam DA-7, latest-wins DA-9).
 
 **What the research showed (objectively, without fixating on Grafana).**
 - **Grafana stock is insurmountable on three MUST blockers:** AY-2 (the axis is bound to the unit, physically only 2 sides, the override is ignored when units are equal — issues #37489/#32165), consequently PN-2, and CU-3 is entirely absent. Grafana's deployment simplicity does not compensate for this — three direct user requirements cannot be met in principle.

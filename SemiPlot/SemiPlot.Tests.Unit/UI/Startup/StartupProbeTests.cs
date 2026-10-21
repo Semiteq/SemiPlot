@@ -200,6 +200,59 @@ public sealed class StartupProbeTests
 		error.Directory.Should().Be(Path.Combine(emptyConfigDir, StartupProbe.ConnectionDirectoryName));
 	}
 
+	// The connection section points at a port nothing answers: a start that went on to build the container
+	// and read would carry an ArchiveError beside or instead of the OPC section's error.
+	[Fact]
+	public void Run_WithNoOpcSection_FailsOnThatSectionBeforeAnyRead()
+	{
+		using var configDirectory = new TemporaryDirectory("semiplot-probe-opc");
+		WriteUnreachableConnectionSection(configDirectory);
+
+		var result = StartupProbe.Run(OptionsFor(configDirectory));
+
+		var error = result.Errors.Should().ContainSingle().Which.Should().BeOfType<ConfigurationSectionError>().Which;
+		error.Section.Should().Be(ConfigurationSectionName.Opc);
+		error.Problem.Should().Be(SectionProblem.DirectoryMissing);
+		error.Directory.Should().Be(Path.Combine(configDirectory, StartupProbe.OpcDirectoryName));
+	}
+
+	[Fact]
+	public void Run_WithAnOpcPortOfZero_FailsOnThatSectionBeforeAnyRead()
+	{
+		using var configDirectory = new TemporaryDirectory("semiplot-probe-opc");
+		WriteUnreachableConnectionSection(configDirectory);
+		WriteSection(configDirectory, StartupProbe.OpcDirectoryName, "opc.yaml", "host: 127.0.0.1\nport: 0\n");
+
+		var result = StartupProbe.Run(OptionsFor(configDirectory));
+
+		var error = result.Errors.Should().ContainSingle().Which.Should().BeOfType<ConnectionFileError>().Which;
+		error.Section.Should().Be(ConfigurationSectionName.Opc);
+		error.Kind.Should().Be(ConnectionFileProblem.OutOfRange);
+		error.Fields.Should().Equal("port");
+	}
+
+	private static void WriteUnreachableConnectionSection(string configDirectory)
+	{
+		WriteSection(
+			configDirectory,
+			StartupProbe.ConnectionDirectoryName,
+			"connection.yaml",
+			"host: 127.0.0.1\nport: 1\ndatabase: semiplot\nuser: semiplot\npassword: unused\n");
+	}
+
+	private static void WriteSection(string configDirectory, string section, string fileName, string content)
+	{
+		var directory = Path.Combine(configDirectory, section);
+
+		Directory.CreateDirectory(directory);
+		File.WriteAllText(Path.Combine(directory, fileName), content);
+	}
+
+	private static StartupOptions OptionsFor(string configDirectory)
+	{
+		return new StartupOptions(configDirectory, Path.Combine(configDirectory, "semiplot.log"), LogEventLevel.Fatal);
+	}
+
 	private static FakeDataProvider NewProvider(IReadOnlyList<Pen>? pens = null)
 	{
 		return new FakeDataProvider(CurrentThreadScheduler.Instance, TimeSpan.FromSeconds(1), pens);

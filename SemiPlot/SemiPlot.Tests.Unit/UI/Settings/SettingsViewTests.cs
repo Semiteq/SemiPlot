@@ -69,8 +69,6 @@ public sealed class SettingsViewTests : IDisposable
 			Named<TextBox>(dialog, "SettingsDatabase").Text.Should().Be("semiplot");
 			Named<TextBox>(dialog, "SettingsUser").Text.Should().Be("semiplot");
 			Named<TextBox>(dialog, "SettingsPassword").Text.Should().Be("secret");
-			Named<NumericUpDown>(dialog, "SettingsPollInterval").Value.Should().Be(1000);
-			Named<NumericUpDown>(dialog, "SettingsPollInterval").Text.Should().Be("1000");
 			Named<TextBlock>(dialog, "SettingsValidationMessage").Text.Should().BeEmpty();
 			InvalidFields(dialog).Should().BeEmpty();
 		}

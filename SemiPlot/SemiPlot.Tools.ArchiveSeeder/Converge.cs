@@ -14,8 +14,6 @@ public static class Converge
 
 	private static readonly TimeSpan _retryDelay = TimeSpan.FromMilliseconds(500);
 
-	private static readonly TimeSpan _pollInterval = TimeSpan.FromSeconds(1);
-
 	private const string DatabasePrefix = "semiplot_";
 
 	public static async Task<ConvergeResult> RunAsync(
@@ -59,8 +57,10 @@ public static class Converge
 			database,
 			BenchRoles.PlotRole,
 			BenchRoles.PlotPassword,
-			_pollInterval,
 			cancellationToken);
+
+		await OpcFileWriter.WriteAsync(
+			options.ConfigDirectory, DemoScadaServer.Host, options.OpcPort, cancellationToken);
 
 		return new ConvergeResult(waited, fill.RowsWritten, fill.TagsWritten ?? 0, database);
 	}

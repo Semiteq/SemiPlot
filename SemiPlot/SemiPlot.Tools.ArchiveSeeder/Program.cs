@@ -225,6 +225,7 @@ public static class Program
 		Console.WriteLine($"rows written    {result.RowsWritten}");
 		Console.WriteLine($"tags written    {result.TagsWritten}");
 		Console.WriteLine($"config          {ConnectionFileWriter.PathFor(options.ConfigDirectory)}");
+		Console.WriteLine($"opc config      {OpcFileWriter.PathFor(options.ConfigDirectory)}");
 
 		return 0;
 	}

@@ -51,16 +51,6 @@ public sealed class PostgresCompositionTests
 		provider.Should().BeOfType<PostgresDataProvider>();
 	}
 
-	[Fact]
-	public void AddPostgresDataResolvesThePostgresLiveSource()
-	{
-		using var services = BuildProvider();
-
-		var liveSource = services.GetRequiredService<ILiveSource>();
-
-		liveSource.Should().BeOfType<PostgresLiveSource>();
-	}
-
 	// The data source is a DI singleton, and ServiceProvider.Dispose() throws for an instantiated
 	// singleton implementing only IAsyncDisposable. Resolving one and then disposing synchronously is the
 	// case that catches an async-only wrapper.
@@ -92,7 +82,6 @@ public sealed class PostgresCompositionTests
 	// cannot tell the two apart.
 	[Theory]
 	[InlineData(typeof(IDataProvider))]
-	[InlineData(typeof(ILiveSource))]
 	[InlineData(typeof(IPenCatalogueEditor))]
 	[InlineData(typeof(IMarkerStore))]
 	[InlineData(typeof(IScheduler))]

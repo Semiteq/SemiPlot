@@ -39,12 +39,15 @@ and built from the commit under test. Its value is diagnosis.
 | The error types' shape and extent arithmetic | `SemiPlot.Tests.Unit/Errors/DataErrorTests.cs`, `Data/ArchiveExtentTests.cs` |
 | The provider's statement text and its binder | `SemiPlot.Tests.Unit/Postgres/ArchiveStatementTextTests.cs` |
 | The bucketed fold: one column per bucket, the gap column, the DST drop | `SemiPlot.Tests.Unit/Postgres/BucketedRowFoldTests.cs`, `Postgres/RealArchiveGapTests.cs` |
-| The fresh tail's bound, and the tick's and the catalogue read's own command timeouts | `SemiPlot.Tests.Unit/Postgres/FreshTailBoundTests.cs`, `Postgres/ArchiveStatementTextTests.cs` |
+| The fresh tail's bound, and the catalogue read's own command timeout | `SemiPlot.Tests.Unit/Postgres/FreshTailBoundTests.cs`, `Postgres/ArchiveStatementTextTests.cs` |
 | The vendor's observed row shape | `SemiPlot.Tests.Unit/Fixtures/RealArchiveFixtureTests.cs` over `Fixtures/real-archive-rows.csv` |
 | The shipped configuration set | `SemiPlot.Tests.Unit/DeliveredConfigurationTests.cs` over `ConfigFiles/**`, linked into the output directory by `SemiPlot.Tests.Unit.csproj` |
 | The live theme's pipeline, its watcher and `App`'s wiring of both | `SemiPlot.Tests.Unit/UI/Settings/AppSectionWatcherTests.cs`, `UI/Startup/AppConfigurationTests.cs`; the wall-clock exception below |
-| A pen's buffer and its derived state | `SemiPlot.Tests.Unit/UI/Chart/TrendPenStateTests.cs` |
+| A pen's buffer and its derived state, and the break ahead of a pen's first live sample | `SemiPlot.Tests.Unit/UI/Chart/TrendPenStateTests.cs`, `EnvelopeLineTests.cs` (`AppendAfterBreak`, the return of `ReplaceColumns`) |
 | The realtime append-or-fold rule per layer, and the live break | `SemiPlot.Tests.Unit/UI/Chart/ChartRealtimeApplierTests.cs` |
+| The OPC UA client's pure pieces: the endpoint choice, the project folder, the value mapping, the loss and `Bad` breaks, the subscription plan with its queue size of 1, the client configuration, the session states, the retry waits and the unserved pens | `SemiPlot.Tests.Unit/OpcUa/EndpointChoiceTests.cs`, `ProjectFolderTests.cs`, `LiveValueTests.cs`, `DeliveredStampsTests.cs`, `SubscriptionPlanTests.cs`, `ClientApplicationConfigurationTests.cs`, `LiveSessionStatesTests.cs`, `ConnectBackoffTests.cs`, `UnservedPensTests.cs` |
+| One OPC UA subscription with no session: the routing of a `Bad`, a non-numeric and an unstamped notification, which the stack raises from `MonitoredItem.SaveValueInCache`; a closed subscription that emits nothing; a loss queued ahead of a pen-set change that still breaks the kept pens | `SemiPlot.Tests.Unit/OpcUa/PenSubscriptionTests.cs`, `PenSubscriptionSetTests.cs` |
+| The `opc/` section, the OPC UA composition and the file `converge` writes | `SemiPlot.Tests.Unit/OpcUa/OpcUaConnectionLoaderTests.cs`, `OpcUa/OpcUaCompositionTests.cs` (resolving and disposing the source with no server opens no socket), `OpcFileWriterTests.cs` |
 
 Shared helpers sit beside the tests that use them, one home each: `ResultText` (a failed result read in an
 assertion), `TemporaryDirectory`, `FixedClock`, `HeadlessInput` (the four gestures), `ViewProbe` (find, measure,
@@ -111,12 +114,11 @@ Statement text is pinned clause by clause, in `ArchiveStatementTextTests.cs` aga
 `ArchiveStatements.cs`: one assertion per guarantee whose loss nothing else catches without a
 container: the bucketed history window's outer `ORDER BY id, t`, its
 `GROUP BY id, segment, date_bin(@bucket, t, @from)`, its break flag, its newest non-null timestamp,
-`l = @layer` in both branches, its strict seed bound and its one-day seed floor; the realtime poll's
-`l = 0` filter and its `ORDER BY t`; the realtime baseline's `l = 0` filter and its
-`DISTINCT unnest(@ids)`. Five binders are each pinned against their statement's parameter names:
-`PostgresDataProvider.BindLocalBucketedWindow`, `RealtimePoll.BindPoll`,
-`RealtimePoll.BindBaseline`, `PostgresArchiveRowReader.BindSeed` and
-`PostgresArchiveRowReader.BindPensRange`. Two assertions more pin
+`l = @layer` in both branches, its strict seed bound and its one-day seed floor; the export statements'
+`l = 0` filter and bounds; the archive days read's `l = 0` filter, its catalogue root and its ordered
+`LIMIT 1` probe. Four binders are each pinned against their statement's parameter names:
+`PostgresDataProvider.BindLocalBucketedWindow`, `PostgresDataProvider.BindArchiveDays`,
+`PostgresArchiveRowReader.BindSeed` and `PostgresArchiveRowReader.BindPensRange`. Two assertions more pin
 `PostgresDataProvider.BucketFor`: the bucket is the window divided by the column target, and it floors
 at one millisecond. `data-integration.md` names the constants and quotes
 no SQL, so there is no second copy to drift.
@@ -149,10 +151,11 @@ There are five families — the same category with different foreign parties.
 
 **Against a real PostgreSQL**, in `SemiPlot.Tests.Integration/`: every class carrying
 `[Collection(ArchiveDatabaseCollection.Name)]` outside `Journeys/`, for example `PostgresHistoryReadTests`,
-`PostgresCatalogReadTests`, `RealtimePollReadTests`, `RealtimeSubscriptionTests`, `RealtimeEmptyArchiveTests`,
+`PostgresCatalogReadTests`,
 `CoarseFlushTests`, `ProviderSessionTests`, `ExplainPlanTests`, `ArchiveRowReaderTests`,
-`PenCatalogueEditorTests`, `MarkerStoreTests`, and the seeder's `ConvergeTests` and `TagCatalogWriterTests`. The realtime classes
-share `RealtimeArchive` (rows, subscription and append path), `BatchCollector` and `ArmedGate`. Seams
+`PenCatalogueEditorTests`, `MarkerStoreTests`, and the seeder's `ConvergeTests` and `TagCatalogWriterTests`.
+`ArchiveRowReaderTests` writes its own rows through `RealtimeArchive` (the archive day and the append
+path). Seams
 guarded: statement text, type mapping, the demo writer's coarse
 flush (`CoarseFlushTests` pins period bounds, which periods close, the NULL skip, `ON CONFLICT` and the
 opening-row statement; the thinning itself is `LayerThinner.Thin`'s, tested in Unit),
@@ -169,22 +172,53 @@ so no plan shape at `Minute` or `Hour` holds either way. The seed look-back clau
 layer: `ArchiveStatementTextTests` pins it, and
 `PostgresHistoryReadTests.AWindowWiderThanTheLookBackFloorSeeksBackAsFarAsItAsks` runs it.
 
-**Against a socket, with no server** — `RealtimePollTests` (a failed tick and its logged run of failures,
-every tick connecting to `127.0.0.1:1`; a subscription through `ILiveSource` that only fails emits neither
-`OnCompleted` nor `OnError`, logs under `PostgresLiveSource` and waits the configured poll interval after
-a tick), `CatalogueReadUnreachableTests` (the catalogue read over a refused socket answers `Unreachable`
-naming the archive), `RealtimeSubscriptionDisposalTests` and `ConvergeReadinessTests` (a loopback
-listener). They cross the machine boundary and need no container, so they carry no collection and take
-no `PostgresContainerFixture`; a missing container runtime does not fail them. `UnreachableArchive.Settings`
-gives them the unreachable address and an adjustable poll interval.
+**Against a socket, with no server**: `CatalogueReadUnreachableTests` (the catalogue read over a refused
+socket at `127.0.0.1:1` answers `Unreachable` naming the archive), `ConvergeReadinessTests` (a loopback
+listener) and `StartupProbeOpcSectionTests` (a valid `opc/` section passes the start on to the archive
+read, which fails on the refused socket, and a loopback listener on the `opc/` port sees no connection:
+the start opens no OPC UA socket). They cross the machine boundary and need no container, so they carry
+no collection and take no `PostgresContainerFixture`; a missing container runtime does not fail them.
+`UnreachableArchive.Settings` gives them the unreachable address.
 
-**Against the OPC Foundation stack** — `DemoScadaServerLifecycleTests` and `DemoScadaServerTests`, under
-`SemiPlot.Tests.Integration/DemoScada/`, start the seeder's OPC UA demo server in process and read it
-through a 2.0.1 client over loopback. They run in `DemoScadaCollection`, which carries no fixture and only
-keeps two servers from starting side by side; they take no container and never dial 49875. Seams guarded:
+**Against the OPC Foundation stack**: two groups of classes over the seeder's OPC UA demo server, started
+in process. `DemoScadaServerLifecycleTests` and `DemoScadaServerTests`, under
+`SemiPlot.Tests.Integration/DemoScada/`, read it through a 2.0.1 client over loopback. Seams guarded:
 the endpoints and the anonymous token policy, the namespace at index 3, the address space, the served
 values and stamps under `Asia/Tokyo`, the start stamp, the busy-port mapping and the server's lifetime
-(`bench.md#the-opc-ua-demo-server`).
+(`bench.md#the-opc-ua-demo-server`). `OpcUaSessionTests`, `OpcUaLiveSourceTests` and
+`OpcUaLiveSourceRestartTests`, under `SemiPlot.Tests.Integration/OpcUa/`, read it through the production
+`OpcUaLiveSource` (`data-integration.md#the-opc-ua-live-source`). Seams guarded: the session states
+(`Connecting`, `Connected`, the `Unreachable` fault after the grace or a loss, `Connected` again), the
+lattice values at true UTC stamps with the server in `Asia/Tokyo`, one `PensUnserved` fault for a set of
+unknown pens, no break on a pen-set change, one break per pen at its newest stamp plus 1 ms after a
+server restart in place and after a cut transport, a listener that is no OPC UA server, the 10 s
+discovery bound against a peer that accepts and never answers, and the bounded close, also under a
+`SynchronizationContext` that drops every post. Every class runs in
+`DemoScadaCollection`, which carries no fixture and only keeps two servers from starting side by side;
+they take no container. Each server starts through `DemoScadaHost` on a free port, never 4840 or 49875.
+The live source's helpers sit beside its tests: `LiveSourceHost` builds a source over a `DemoScadaHost`
+endpoint and records its states, pen faults and subscriptions; `SampleRecorder` records one
+subscription's batches and every completion or fault of its stream; `LoopbackRelay` stands between the
+source and the server and cuts the transport with the session alive. `LiveSourceHost` takes the
+production 30 s grace, so a slow first connect under a full run writes no `Unreachable` ahead of
+`Connected`; only `NoServer_TakesUnreachableAfterTheGrace_ThenConnectedOnceAServerStartsOnThePort`,
+`AListenerThatAcceptsAndCloses_KeepsTheSourceInDiscoveryWithNoSetupFault` and
+`AListenerThatAcceptsAndNeverAnswers_IsDialledAgainAfterTheDiscoveryBound` pass `ShortGrace` (1 s). A
+test that binds a port a source already dials (a server restarted on its port, a listener after a
+dispose) goes through `DemoScadaHost.StartOnPortOnceFreeAsync` or `ListenOnPortOnceFreeAsync`, which wait
+while another socket still holds the port; a fresh listener comes from `DemoScadaHost.ListenOnFreePort`,
+which binds before it answers. The tests run on the wall clock: they assert values, stamps, orderings
+and floors on counts, bound every wait, and assert no latency. A dispose bound is the source's own bound
+plus room for the pool under a full run, and the synchronous `Dispose`, which returns at its 3 s bound
+whatever the close does, is judged by the stream completing after it, not by its duration.
+
+The demo server always answers with a usable endpoint and one constant project folder, and it exposes no
+subscription count, so four paths of the source have no test against it, and the session they need has no
+seam that opens no socket: a project-ID change that deletes and recreates every subscription (only
+`ProjectFolderTests.Next_...` pins the decision), a `CreateSubscriptionAsync` that fails or passes its
+10 s bound and is tried again 10 s later, the delete of a subscription closed while the session was down
+at the next `Connected`, and a `Closed` the stack raises on its own, which ends the pass and starts
+discovery again. Each is read in `data-integration.md#the-opc-ua-live-source`.
 
 **Against a real Avalonia** — `SemiPlot.Tests.Unit/UI/`, under `[AvaloniaFact]` and `[AvaloniaTheory]`,
 for example the classes that realise a view: `ChartPointerInputTests`, `MinimapPointerInputTests`,
@@ -227,13 +261,13 @@ at the far end. Its value is an existence proof that parts which each pass their
 connect. Its cost is that a failure names nothing, so they stay few and thin — the seams carry the
 coverage, and the journeys only prove the chain is closed.
 
-`SemiPlot.Tests.Integration/Journeys/` holds them — four tests in two classes over a container-backed
-archive, each closing a chain whose halves are already proved apart:
+`SemiPlot.Tests.Integration/Journeys/` holds them: two tests in two classes, one over a container-backed
+archive and one over the OPC UA demo server, each closing a chain whose halves are already proved apart:
 
 | Test | Chain it closes | The seam tests it joins |
 | --- | --- | --- |
 | `BreakRenderArchiveJourneyTests` | a seeded break reaches the canvas: archive → `AddPostgresData` → `TrendCoordinator` → `TrendChartViewModel` → the pixels the rasteriser leaves blank | `PostgresHistoryReadTests` counts the fold's NaN anchor; `ChartGapRenderTests` measures the blank pixels a NaN column leaves |
-| `LiveEdgeArchiveJourneyTests` | three: a row appended while the application runs reaches the chart's live edge and reaches it once; rows on a variable of its own reach the chart without breaking a pen that has no sample at that timestamp; and a `q = 32` row written while the application runs reaches the chart as its value and then a `NaN` column 1 ms past it, while `CurrentValue` keeps the value | `RealtimeSubscriptionTests` asserts the first rule over the live source alone; `TrendCoordinatorTests` and `TrendChartViewModelTests` cover the per-variable batch shape above it; `RealtimePollReadTests` asserts the value-then-break pair, and `ChartRealtimeApplierTests` and `TrendPenStateTests` cover the append-never-fold rule and the 1 ms step |
+| `OpcUaLiveEdgeJourneyTests` | a value the demo server serves over OPC UA reaches the chart: demo server -> `OpcUaLiveSource` -> `TrendCoordinator` -> `TrendChartViewModel`. Each pen's line holds the history an in-file `IDataProvider` answers, then a `NaN` column 1 ms ahead of its first live column, then live columns carrying the lattice's values, none at or before the history's last stamp; the sticky window's end reaches the newest delivered stamp. It runs in `DemoScadaCollection` and needs no container | `OpcUaLiveSourceTests` asserts the values and stamps over the source alone; `TrendPenStateTests` covers the break ahead of a first live sample; `TrendCoordinatorTests` and `TrendChartViewModelTests` cover the batch shape and the live edge above it |
 
 The composed path adds what those seam tests cannot see: the coordinator's buffering and folding,
 the chart view model's applier, the navigation controller. Each can lose a sample or replay one without
@@ -386,13 +420,14 @@ socket or a container? A test that opens none runs in Unit.
 
 | Project | Holds | References |
 | --- | --- | --- |
-| `SemiPlot.Tests.Unit` | every test that opens no socket and starts no container: the UI, the Core models, the seeder's generators, the provider's pure classes | `SemiPlot.UI`, `SemiPlot.Core`, `SemiPlot.DataSource.Postgres`, `SemiPlot.Tools.ArchiveSeeder` |
-| `SemiPlot.Tests.Integration` | the container harness, the container tests and the journeys in one xunit collection, and the socket tests that need no server | the same four |
+| `SemiPlot.Tests.Unit` | every test that opens no socket and starts no container: the UI, the Core models, the seeder's generators, the providers' pure classes | `SemiPlot.UI`, `SemiPlot.Core`, `SemiPlot.DataSource.Postgres`, `SemiPlot.DataSource.OpcUa`, `SemiPlot.Tools.ArchiveSeeder` |
+| `SemiPlot.Tests.Integration` | the container harness, the container tests and the archive journey in one xunit collection, the OPC UA classes and the OPC UA journey in `DemoScadaCollection`, and the socket tests that need no server | the same five |
 
 Neither references the other, and both target plain `net10.0`, so both build on the Linux runner and
 the target framework separates nothing. An xunit v3 test project is one executable, so the split also
 keeps the container lifecycle out of the process a developer iterates the unit suite in. Core,
-`SemiPlot.DataSource.Postgres` and `SemiPlot.UI` each name both projects in `InternalsVisibleTo`.
+`SemiPlot.DataSource.Postgres`, `SemiPlot.DataSource.OpcUa` and `SemiPlot.UI` each name both projects in
+`InternalsVisibleTo`.
 
 Nothing skips. `SemiPlot.Tests.Unit` runs on any machine with the SDK, and
 `SemiPlot/SemiPlot.Tests.Unit/xunit.runner.json` sets `failSkips` so a skipped test there is a
@@ -404,10 +439,12 @@ collection, and the `DemoScadaCollection` classes take no fixture, so both run w
 CI has two jobs: `unit-windows` runs `SemiPlot.Tests.Unit` on `windows-latest`, the platform the
 viewer ships on, and `linux` builds the solution once on `ubuntu-latest` and runs both projects, the
 runner's Docker daemon serving the fixture. The Windows runner cannot host a Linux container and runs
-`SemiPlot.Tests.Integration` nowhere but the Linux leg. That includes `RealtimePollTests`,
-`CatalogueReadUnreachableTests`, `RealtimeSubscriptionDisposalTests`, `ConvergeReadinessTests`,
-`DemoScadaServerLifecycleTests` and `DemoScadaServerTests`: they need no container, but they live in
-Integration, so they run only on the Linux leg.
+`SemiPlot.Tests.Integration` nowhere but the Linux leg. That includes `CatalogueReadUnreachableTests`,
+`ConvergeReadinessTests`, `StartupProbeOpcSectionTests`, `DemoScadaServerLifecycleTests`,
+`DemoScadaServerTests`, `OpcUaSessionTests`, `OpcUaLiveSourceTests`, `OpcUaLiveSourceRestartTests` and
+`OpcUaLiveEdgeJourneyTests`: they need no container, but they live in Integration, so they run only on the
+Linux leg. The Linux leg runs in UTC, where a stamp read as local time passes unnoticed, so
+`OpcUaLiveSourceTests` runs the demo server in `Asia/Tokyo` and checks every stamp against true UTC.
 
 ## Ownership
 
@@ -444,8 +481,9 @@ correctness.
 | Dependencies with an independent release cycle — PostgreSQL, `semibase` | a container image |
 
 The delivered configuration set is pinned by the production loaders rather than by a copy of their
-rules: `DeliveredConfigurationTests` runs `AppSettingsLoader` and `PostgresConnectionLoader` over the
-tracked `ConfigFiles/` tree, so a delivered file that stopped parsing fails the build.
+rules: `DeliveredConfigurationTests` runs `AppSettingsLoader`, `PostgresConnectionLoader` and
+`OpcUaConnectionLoader` over the tracked `ConfigFiles/` tree, so a delivered file that stopped parsing
+fails the build.
 
 This repository's own generator output is pinned by properties rather than by a digest:
 `RawLayerGeneratorTests` asserts that the same options generate the same rows twice, that every row

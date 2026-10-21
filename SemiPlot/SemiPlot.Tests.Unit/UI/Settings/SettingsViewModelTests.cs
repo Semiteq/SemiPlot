@@ -51,8 +51,7 @@ public sealed class SettingsViewModelTests : IDisposable
 		WriteFile(
 			_connectionDirectory,
 			"connection.yaml",
-			"host: 10.20.30.40\nport: 5433\ndatabase: archive\nuser: viewer\npassword: secret\n"
-			+ "poll_interval_ms: 250\n");
+			"host: 10.20.30.40\nport: 5433\ndatabase: archive\nuser: viewer\npassword: secret\n");
 
 		using var viewModel = Build();
 
@@ -63,7 +62,6 @@ public sealed class SettingsViewModelTests : IDisposable
 		viewModel.Database.Should().Be("archive");
 		viewModel.User.Should().Be("viewer");
 		viewModel.Password.Should().Be("secret");
-		viewModel.PollInterval.Should().Be(250);
 		_messagePanel.Entries.Should().BeEmpty();
 	}
 
@@ -79,7 +77,6 @@ public sealed class SettingsViewModelTests : IDisposable
 		viewModel.Database.Should().Be("semiplot");
 		viewModel.User.Should().Be("semiplot");
 		viewModel.Password.Should().BeEmpty();
-		viewModel.PollInterval.Should().Be(1000);
 		_messagePanel.Entries.Should().BeEmpty();
 	}
 
@@ -188,7 +185,7 @@ public sealed class SettingsViewModelTests : IDisposable
 		WriteFile(
 			_connectionDirectory,
 			"connection.yaml",
-			"host: 127.0.0.1\ndatabase: semiplot\nuser: semiplot\npassword: secret\npoll_interval_ms: 1000\n");
+			"host: 127.0.0.1\ndatabase: semiplot\nuser: semiplot\npassword: secret\n");
 
 		using var viewModel = Build();
 		viewModel.Port = 5432;
@@ -310,7 +307,6 @@ public sealed class SettingsViewModelTests : IDisposable
 		viewModel.Database = "archive";
 		viewModel.User = "viewer";
 		viewModel.Password = "secret";
-		viewModel.PollInterval = 250;
 
 		await viewModel.SaveCommand.Execute();
 
@@ -324,7 +320,6 @@ public sealed class SettingsViewModelTests : IDisposable
 		connection.Database.Should().Be("archive");
 		connection.Username.Should().Be("viewer");
 		connection.Password.Should().Be("secret");
-		connection.PollInterval.Should().Be(TimeSpan.FromMilliseconds(250));
 	}
 
 	[AvaloniaFact]
@@ -394,34 +389,18 @@ public sealed class SettingsViewModelTests : IDisposable
 	}
 
 	[AvaloniaTheory]
-	[InlineData(null)]
-	[InlineData(0d)]
-	public void TheSaveCannotExecuteWhileThePollIntervalIsNotAPositiveWholeNumber(double? pollInterval)
-	{
-		using var viewModel = Build();
-		viewModel.Password = "secret";
-
-		viewModel.PollInterval = (decimal?)pollInterval;
-
-		viewModel.IsPollIntervalValid.Should().BeFalse();
-		CanSave(viewModel).Should().BeFalse();
-	}
-
-	[AvaloniaTheory]
-	[InlineData("port: not-a-number", "poll_interval_ms: 1000", nameof(SettingsViewModel.Port))]
-	[InlineData("port: 70000", "poll_interval_ms: 1000", nameof(SettingsViewModel.Port))]
-	[InlineData("port: 5432", "poll_interval_ms: -5", nameof(SettingsViewModel.PollInterval))]
-	public void ANumberTheRuleRejectsLoadsAsAnEmptyField(string port, string pollInterval, string field)
+	[InlineData("port: not-a-number")]
+	[InlineData("port: 70000")]
+	public void APortTheRuleRejectsLoadsAsAnEmptyField(string port)
 	{
 		WriteFile(
 			_connectionDirectory,
 			"connection.yaml",
-			$"host: 127.0.0.1\n{port}\ndatabase: archive\nuser: viewer\npassword: secret\n"
-			+ $"{pollInterval}\n");
+			$"host: 127.0.0.1\n{port}\ndatabase: archive\nuser: viewer\npassword: secret\n");
 
 		using var viewModel = Build();
 
-		typeof(SettingsViewModel).GetProperty(field)!.GetValue(viewModel).Should().BeNull();
+		viewModel.Port.Should().BeNull();
 		CanSave(viewModel).Should().BeFalse();
 		viewModel.Host.Should().Be("127.0.0.1");
 	}
@@ -432,8 +411,7 @@ public sealed class SettingsViewModelTests : IDisposable
 		WriteFile(
 			_connectionDirectory,
 			"connection.yaml",
-			"host: scada-01\nport: 5432\ndatabase: archive\nuser: viewer\npassword: secret\n"
-			+ "poll_interval_ms: 1000\n");
+			"host: scada-01\nport: 5432\ndatabase: archive\nuser: viewer\npassword: secret\n");
 
 		using var viewModel = Build();
 
@@ -494,7 +472,6 @@ public sealed class SettingsViewModelTests : IDisposable
 		viewModel.ValidationMessage.Should().Be(
 			Resources.FormatSettingsFieldRequired(Resources.SettingsPasswordLabel), "the shipped password is empty");
 
-		viewModel.PollInterval = null;
 		viewModel.Database = string.Empty;
 		viewModel.Host = "scada-01";
 
@@ -505,11 +482,10 @@ public sealed class SettingsViewModelTests : IDisposable
 		viewModel.ValidationMessage.Should().Be(Resources.FormatSettingsFieldRequired(Resources.SettingsDatabaseLabel));
 
 		viewModel.Database = "archive";
+
+		viewModel.ValidationMessage.Should().Be(Resources.FormatSettingsFieldRequired(Resources.SettingsPasswordLabel));
+
 		viewModel.Password = "secret";
-
-		viewModel.ValidationMessage.Should().Be(Resources.SettingsPollIntervalInvalid);
-
-		viewModel.PollInterval = 1000;
 
 		viewModel.ValidationMessage.Should().BeEmpty();
 	}

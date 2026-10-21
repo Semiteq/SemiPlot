@@ -1,11 +1,10 @@
 namespace SemiPlot.Tools.ArchiveSeeder;
 
-// Bench only: recreates the database ConnectionString names from BenchRoles.ProvisionedDatabase, seeds
-// it up to End or now at ChangeSeconds, fills the tag catalogue and writes the connection file into
-// ConfigDirectory.
+// docs/architecture/bench.md#the-converge-verb
 public sealed record ConvergeOptions(
 	string ConnectionString,
 	string AdminConnectionString,
 	string ConfigDirectory,
 	DateTime? End,
-	double ChangeSeconds);
+	double ChangeSeconds,
+	int OpcPort);

@@ -57,12 +57,10 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 		SelectedLanguage = Match(Languages, appValues.GetValueOrDefault(AppSettingsLoader.LocaleKey));
 		SelectedTheme = Match(Themes, appValues.GetValueOrDefault(AppSettingsLoader.ThemeKey));
 		Host = connectionValues.GetValueOrDefault(PostgresConnectionLoader.HostKey, string.Empty);
-		Port = NumberOf(connectionValues, PostgresConnectionLoader.PortKey, LowestPort, HighestPort);
+		Port = PortOf(connectionValues);
 		Database = connectionValues.GetValueOrDefault(PostgresConnectionLoader.DatabaseKey, string.Empty);
 		User = connectionValues.GetValueOrDefault(PostgresConnectionLoader.UserKey, string.Empty);
 		Password = connectionValues.GetValueOrDefault(PostgresConnectionLoader.PasswordKey, string.Empty);
-		PollInterval = NumberOf(
-			connectionValues, PostgresConnectionLoader.PollIntervalKey, LowestPollInterval, HighestPollInterval);
 
 		_loadedApp = SpelledAsInTheFile(CurrentApp(), appValues);
 		_loadedConnection = SpelledAsInTheFile(CurrentConnection(), connectionValues);
@@ -76,8 +74,7 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 			vm => vm.IsDatabaseValid,
 			vm => vm.IsUserValid,
 			vm => vm.IsPasswordValid,
-			vm => vm.IsPollIntervalValid,
-			(language, theme, host, port, database, user, password, pollInterval) =>
+			(language, theme, host, port, database, user, password) =>
 				canWriteSections
 				&& language is not null
 				&& theme is not null
@@ -85,8 +82,7 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 				&& port
 				&& database
 				&& user
-				&& password
-				&& pollInterval);
+				&& password);
 
 		SaveCommand = ReactiveCommand.CreateFromTask(SaveAsync, canSave);
 		var canRestartNow = this.WhenAnyValue(vm => vm.IsRestartPending)
@@ -108,17 +104,12 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 		new(PostgresConnectionLoader.PortKey, vm => TextOf(vm.Port)),
 		new(PostgresConnectionLoader.DatabaseKey, vm => vm.Database),
 		new(PostgresConnectionLoader.UserKey, vm => vm.User),
-		new(PostgresConnectionLoader.PasswordKey, vm => vm.Password),
-		new(PostgresConnectionLoader.PollIntervalKey, vm => TextOf(vm.PollInterval))
+		new(PostgresConnectionLoader.PasswordKey, vm => vm.Password)
 	];
 
-	public static decimal LowestPort => PostgresConnectionLoader.LowestPort;
+	public static decimal LowestPort => NetworkAddress.LowestPort;
 
-	public static decimal HighestPort => PostgresConnectionLoader.HighestPort;
-
-	public static decimal LowestPollInterval => PostgresConnectionLoader.LowestPollIntervalMs;
-
-	public static decimal HighestPollInterval => int.MaxValue;
+	public static decimal HighestPort => NetworkAddress.HighestPort;
 
 	public IReadOnlyList<SettingsChoice> Languages { get; }
 
@@ -201,28 +192,15 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 		}
 	}
 
-	public decimal? PollInterval
-	{
-		get;
-		set
-		{
-			this.RaiseAndSetIfChanged(ref field, value);
-			this.RaisePropertyChanged(nameof(IsPollIntervalValid));
-			this.RaisePropertyChanged(nameof(ValidationMessage));
-		}
-	}
+	public bool IsHostValid => NetworkAddress.IsIPv4(Host);
 
-	public bool IsHostValid => PostgresConnectionLoader.IsIPv4Address(Host);
-
-	public bool IsPortValid => IsWholeNumberIn(Port, LowestPort, HighestPort);
+	public bool IsPortValid => IsPort(Port);
 
 	public bool IsDatabaseValid => !string.IsNullOrWhiteSpace(Database);
 
 	public bool IsUserValid => !string.IsNullOrWhiteSpace(User);
 
 	public bool IsPasswordValid => !string.IsNullOrWhiteSpace(Password);
-
-	public bool IsPollIntervalValid => IsWholeNumberIn(PollInterval, LowestPollInterval, HighestPollInterval);
 
 	/// <summary>
 	/// The section a file cannot be read from or a key it lacks, else the rule the first invalid field breaks in form
@@ -361,12 +339,9 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 			return Resources.FormatSettingsFieldRequired(Resources.SettingsUserLabel);
 		}
 
-		if (!IsPasswordValid)
-		{
-			return Resources.FormatSettingsFieldRequired(Resources.SettingsPasswordLabel);
-		}
-
-		return IsPollIntervalValid ? string.Empty : Resources.SettingsPollIntervalInvalid;
+		return IsPasswordValid
+			? string.Empty
+			: Resources.FormatSettingsFieldRequired(Resources.SettingsPasswordLabel);
 	}
 
 	private Dictionary<string, string> CurrentApp()
@@ -440,18 +415,23 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 		return section.Value.Values;
 	}
 
-	private static decimal? NumberOf(
-		IReadOnlyDictionary<string, string> values, string key, decimal lowest, decimal highest)
+	private static decimal? PortOf(IReadOnlyDictionary<string, string> values)
 	{
 		var parsed = int.TryParse(
-			values.GetValueOrDefault(key), NumberStyles.None, CultureInfo.InvariantCulture, out var number);
+			values.GetValueOrDefault(PostgresConnectionLoader.PortKey),
+			NumberStyles.None,
+			CultureInfo.InvariantCulture,
+			out var number);
 
-		return parsed && IsWholeNumberIn(number, lowest, highest) ? number : null;
+		return parsed && IsPort(number) ? number : null;
 	}
 
-	private static bool IsWholeNumberIn(decimal? value, decimal lowest, decimal highest)
+	private static bool IsPort(decimal? value)
 	{
-		return value is { } number && number == decimal.Truncate(number) && number >= lowest && number <= highest;
+		return value is { } number
+			&& number == decimal.Truncate(number)
+			&& number >= LowestPort
+			&& number <= HighestPort;
 	}
 
 	private static string TextOf(decimal? value)

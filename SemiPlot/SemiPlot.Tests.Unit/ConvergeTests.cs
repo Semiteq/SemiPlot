@@ -15,7 +15,13 @@ public sealed class ConvergeTests
 	[Fact]
 	public async Task AConnectionStringWithNoDatabaseIsRejected()
 	{
-		var options = new ConvergeOptions("Host=127.0.0.1;Username=postgres", "Host=127.0.0.1", "C:\\config", null, SeederOptions.DefaultChangeSeconds);
+		var options = new ConvergeOptions(
+			"Host=127.0.0.1;Username=postgres",
+			"Host=127.0.0.1",
+			"C:\\config",
+			null,
+			SeederOptions.DefaultChangeSeconds,
+			55875);
 
 		Func<Task> act = () => Converge.RunAsync(options, TestContext.Current.CancellationToken);
 
@@ -28,7 +34,12 @@ public sealed class ConvergeTests
 	public async Task AConnectionNamingANonBenchDatabaseIsRejected(string database)
 	{
 		var options = new ConvergeOptions(
-			$"Host=127.0.0.1;Database={database};Username=scada_writer", "Host=127.0.0.1", "C:\\config", null, SeederOptions.DefaultChangeSeconds);
+			$"Host=127.0.0.1;Database={database};Username=scada_writer",
+			"Host=127.0.0.1",
+			"C:\\config",
+			null,
+			SeederOptions.DefaultChangeSeconds,
+			55875);
 
 		Func<Task> act = () => Converge.RunAsync(options, TestContext.Current.CancellationToken);
 

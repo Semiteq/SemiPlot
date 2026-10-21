@@ -15,7 +15,7 @@ namespace SemiPlot.Tests.Integration;
 [Trait("Category", "Integration")]
 public sealed class CatalogueReadUnreachableTests
 {
-	private static readonly PostgresConnectionSettings _settings = UnreachableArchive.Settings(TimeSpan.FromSeconds(1));
+	private static readonly PostgresConnectionSettings _settings = UnreachableArchive.Settings();
 
 	[Fact]
 	public async Task ACatalogueReadOverARefusedSocket_AnswersUnreachableNamingTheArchive()

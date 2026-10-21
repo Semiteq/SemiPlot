@@ -645,8 +645,8 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   and the chart's navigation, and writes the fault and recovery entries (`data-integration.md`).
 - `MainWindow/AboutDialog` + `AboutInfo` — the modal naming the product, the assembly version and the
   configuration directory this run read.
-- `Settings/SettingsDialog` + `SettingsViewModel` — the modal that edits the `app/` and `connection/`
-  section folders, opened from Edit -> Settings (`overview.md#the-settings-window`).
+- `Settings/SettingsDialog` + `SettingsViewModel` - the modal that edits the `app/`, `connection/` and
+  `opc/` section folders, opened from Edit -> Settings (`overview.md#the-settings-window`).
 - `PenEditor/PenEditorWindow` + `PenEditorViewModel` (+ `PenFormViewModel`, `PenGroupsViewModel`, the
   row and membership VMs, over `Bridge/ArchiveCallQueue`) - the modal that edits the pen catalogue through
   `IPenCatalogueEditor`, opened from Edit -> Pens and groups (`overview.md#the-pen-and-group-editor`).

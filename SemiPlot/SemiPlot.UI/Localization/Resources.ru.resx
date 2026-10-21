@@ -648,6 +648,9 @@
   <data name="SettingsPasswordLabel" xml:space="preserve">
     <value>Пароль</value>
   </data>
+  <data name="SettingsOpcHeader" xml:space="preserve">
+    <value>Подключение к серверу OPC UA</value>
+  </data>
   <data name="SettingsRestartNotice" xml:space="preserve">
     <value>Сохранено. Вступит в силу после перезапуска.</value>
   </data>
@@ -669,6 +672,12 @@
   <data name="SettingsPortInvalid" xml:space="preserve">
     <value>Порт: целое число 1–65535</value>
   </data>
+  <data name="SettingsOpcHostInvalid" xml:space="preserve">
+    <value>Сервер OPC UA: ожидается IP-адрес вида 127.0.0.1</value>
+  </data>
+  <data name="SettingsOpcPortInvalid" xml:space="preserve">
+    <value>Порт OPC UA: целое число 1–65535</value>
+  </data>
   <data name="SettingsFieldRequired" xml:space="preserve">
     <value>{0}: обязательное поле</value>
   </data>
@@ -676,7 +685,7 @@
     <value>{0}: файл не читается. Его имя в панели сообщений.</value>
   </data>
   <data name="SettingsKeyAbsent" xml:space="preserve">
-    <value>Ключ '{0}': ни один файл раздела его не содержит. Добавьте его в файл вручную.</value>
+    <value>{0}: ни один файл не содержит ключ '{1}'. Добавьте его в файл вручную.</value>
   </data>
   <data name="PenFormNameRequired" xml:space="preserve">
     <value>Имя: обязательное поле</value>

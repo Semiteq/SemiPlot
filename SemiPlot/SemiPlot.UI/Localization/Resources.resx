@@ -648,6 +648,9 @@
   <data name="SettingsPasswordLabel" xml:space="preserve">
     <value>Password</value>
   </data>
+  <data name="SettingsOpcHeader" xml:space="preserve">
+    <value>OPC UA connection</value>
+  </data>
   <data name="SettingsRestartNotice" xml:space="preserve">
     <value>Saved. Takes effect after a restart.</value>
   </data>
@@ -669,6 +672,12 @@
   <data name="SettingsPortInvalid" xml:space="preserve">
     <value>Port: a whole number 1–65535</value>
   </data>
+  <data name="SettingsOpcHostInvalid" xml:space="preserve">
+    <value>OPC UA host: expected an IP address such as 127.0.0.1</value>
+  </data>
+  <data name="SettingsOpcPortInvalid" xml:space="preserve">
+    <value>OPC UA port: a whole number 1–65535</value>
+  </data>
   <data name="SettingsFieldRequired" xml:space="preserve">
     <value>{0}: required</value>
   </data>
@@ -676,7 +685,7 @@
     <value>{0}: a file cannot be read. The message panel names it.</value>
   </data>
   <data name="SettingsKeyAbsent" xml:space="preserve">
-    <value>Key '{0}': no file of its section carries it. Add it to a file by hand.</value>
+    <value>{0}: no file carries the key '{1}'. Add it to a file by hand.</value>
   </data>
   <data name="PenFormNameRequired" xml:space="preserve">
     <value>Name: required</value>

@@ -12,9 +12,11 @@ using FluentResults;
 
 using Microsoft.Extensions.Logging.Abstractions;
 
+using SemiPlot.DataSource.OpcUa.Configuration;
 using SemiPlot.DataSource.Postgres.Configuration;
 using SemiPlot.Tests.Unit.UI.Settings;
 using SemiPlot.UI;
+using SemiPlot.UI.Localization;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
 using SemiPlot.UI.Settings;
@@ -91,28 +93,46 @@ public sealed class StartupFailureWindowTests
 
 	[AvaloniaTheory]
 	[InlineData("missing-directory")]
-	[InlineData("no-files-in-a-section")]
 	[InlineData("unreadable-file")]
 	[InlineData("key-absent")]
+	[InlineData("no-files-in-a-section")]
+	[InlineData("opc-missing-directory")]
+	[InlineData("opc-no-files")]
+	[InlineData("opc-unreadable-file")]
+	[InlineData("opc-key-absent")]
 	public void TheSettingsButton_IsHiddenWhenASectionCannotSave(string fault)
 	{
 		using var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
+		var appFile = Path.Combine(configDirectory, StartupSequence.SettingsDirectoryName, "app.yaml");
+		var opcDirectory = Path.Combine(configDirectory, StartupProbe.OpcDirectoryName);
 		switch (fault)
 		{
 			case "missing-directory":
 				Directory.Delete(configDirectory, recursive: true);
 				break;
+			case "unreadable-file":
+				File.WriteAllText(appFile, "locale: [unclosed\n");
+				break;
+			case "key-absent":
+				File.WriteAllText(appFile, "theme: light\n");
+				break;
 			case "no-files-in-a-section":
 				File.Delete(Path.Combine(configDirectory, StartupProbe.ConnectionDirectoryName, "connection.yaml"));
 				break;
-			case "key-absent":
-				var appWithoutLocale = Path.Combine(configDirectory, StartupSequence.SettingsDirectoryName, "app.yaml");
-				File.WriteAllText(appWithoutLocale, "theme: light\n");
+			case "opc-missing-directory":
+				Directory.Delete(opcDirectory, recursive: true);
+				break;
+			case "opc-no-files":
+				File.Delete(Path.Combine(opcDirectory, "opc.yaml"));
+				break;
+			case "opc-unreadable-file":
+				File.WriteAllText(Path.Combine(opcDirectory, "opc.yaml"), "host: [unclosed\n");
+				break;
+			case "opc-key-absent":
+				File.WriteAllText(Path.Combine(opcDirectory, "opc.yaml"), "host: 127.0.0.1\n");
 				break;
 			default:
-				var appFile = Path.Combine(configDirectory, StartupSequence.SettingsDirectoryName, "app.yaml");
-				File.WriteAllText(appFile, "locale: [unclosed\n");
-				break;
+				throw new ArgumentOutOfRangeException(nameof(fault), fault, null);
 		}
 
 		using var viewModel = NewFailureViewModel(configDirectory);
@@ -129,6 +149,19 @@ public sealed class StartupFailureWindowTests
 		using var viewModel = NewFailureViewModel(configDirectory);
 
 		viewModel.OffersSettings.Should().BeTrue();
+		ButtonIsVisible(viewModel, "StartupFailureSettings").Should().BeTrue();
+	}
+
+	[AvaloniaFact]
+	public void TheSettingsButton_IsShownOverAnOpcValueTheLoaderRefuses()
+	{
+		using var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
+		var opcFile = Path.Combine(configDirectory, StartupProbe.OpcDirectoryName, "opc.yaml");
+		File.WriteAllText(opcFile, "host: 127.0.0.1\nport: 70000\n");
+
+		using var viewModel = NewFailureViewModel(configDirectory);
+
+		viewModel.OffersSettings.Should().BeTrue("the dialog opens the refused port as an invalid field");
 		ButtonIsVisible(viewModel, "StartupFailureSettings").Should().BeTrue();
 	}
 
@@ -232,6 +265,52 @@ public sealed class StartupFailureWindowTests
 
 		started.Should().Be(1);
 		window.IsVisible.Should().BeFalse("the restart closes the failure window");
+
+		dialog.Close();
+		Dispatcher.UIThread.RunJobs();
+		window.Close();
+	}
+
+	[AvaloniaFact]
+	public async Task TheSettingsDialog_OverARefusedOpcPort_WritesTheFixedPortIntoTheOpcFile()
+	{
+		using var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
+		ShippedConfiguration.FillPassword(configDirectory, "secret");
+		var opcDirectory = Path.Combine(configDirectory, StartupProbe.OpcDirectoryName);
+		File.WriteAllText(Path.Combine(opcDirectory, "opc.yaml"), "host: 127.0.0.1\nport: 70000\n");
+		var connectionFile = Path.Combine(configDirectory, StartupProbe.ConnectionDirectoryName, "connection.yaml");
+		var appFile = Path.Combine(configDirectory, StartupSequence.SettingsDirectoryName, "app.yaml");
+		var connectionBefore = File.ReadAllBytes(connectionFile);
+		var appBefore = File.ReadAllBytes(appFile);
+		using var viewModel = NewFailureViewModel(configDirectory);
+		var window = new StartupFailureWindow { DataContext = viewModel };
+		ViewProbe.Realise(window);
+		HeadlessInput.Click(window, ViewProbe.Named<Button>(window, "StartupFailureSettings"));
+		await HeadlessWait.Until(() => window.OwnedWindows.OfType<SettingsDialog>().Any());
+		var dialog = window.OwnedWindows.OfType<SettingsDialog>().Single();
+		var settings = dialog.DataContext.Should().BeOfType<SettingsViewModel>().Which;
+		var save = ViewProbe.Named<Button>(dialog, "SettingsSaveButton");
+		var opcPort = ViewProbe.Named<NumericUpDown>(dialog, "SettingsOpcPort");
+		var opcPortText = ViewProbe.Descendant<TextBox>(opcPort, "PART_TextBox");
+		var message = ViewProbe.Named<TextBlock>(dialog, "SettingsValidationMessage");
+
+		opcPort.Value.Should().BeNull("the loader refuses port 70000");
+		opcPortText.Text.Should().BeNullOrEmpty();
+		opcPort.Classes.Should().Contain(ViewProbe.InvalidClass);
+		message.Text.Should().Be(Resources.SettingsOpcPortInvalid);
+		save.IsEffectivelyEnabled.Should().BeFalse();
+		HeadlessInput.Type(dialog, opcPortText, "49875");
+
+		opcPort.Classes.Should().NotContain(ViewProbe.InvalidClass);
+		message.Text.Should().BeEmpty();
+		save.IsEffectivelyEnabled.Should().BeTrue(settings.ValidationMessage);
+		HeadlessInput.Click(dialog, save);
+		await HeadlessWait.Until(() => settings.IsRestartPending);
+
+		OpcUaConnectionLoader.Load(opcDirectory).Value.Port.Should().Be(49875);
+		File.ReadAllBytes(connectionFile).Should().Equal(connectionBefore);
+		File.ReadAllBytes(appFile).Should().Equal(appBefore);
+		viewModel.MessagePanel.Entries.Should().BeEmpty();
 
 		dialog.Close();
 		Dispatcher.UIThread.RunJobs();

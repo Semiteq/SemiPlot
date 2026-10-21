@@ -190,7 +190,8 @@ colour and text, never size:
   order, and is empty while every field is valid. A notice that is not an error, such as the settings
   dialog's restart notice with its Restart now button in the same cell, shares the same line and gives
   way to an error, the button with it.
-- Each message is one short line in both languages, `ui-text.md#the-settings-windows-text`.
+- Each field-rule message is one short line in both languages; `SettingsKeyAbsent`, which opens with a
+  section header, may use the second reserved line (`ui-text.md#the-settings-windows-text`).
 
 The invalid style targets the template part, not the control. Semi paints a `TextBox` border on
 `Border#PART_ContentPresenterBorder` from its own state styles: `Transparent` at rest and
@@ -235,6 +236,23 @@ same way on 2026-10-01 in the realised 640 px dialog, with the notice showing be
 line in English, in a 334 px cell, and 420 px in Russian, which wraps in its 241 x 40 px cell into
 "Сохранено. Тема применена," at 208.6 px and "остальное после перезапуска." at 210.5 px, two lines with
 nothing trimmed.
+
+The OPC UA block and its messages were measured on 2026-10-21 in the realised 640 px dialog, at 14 px with
+20 px lines, on the headless platform with real drawing over Skia and HarfBuzz. That run reproduced the
+2026-09-30 message cells and Save and Close buttons above; the theme's font resolved to Microsoft YaHei, as
+Inter is not installed on the measuring machine. Each message is its single-line width against the message
+cell:
+
+| | English | Russian |
+| --- | --- | --- |
+| Dialog, every field valid and with each message below | 640 x 575 px | 640 x 575 px |
+| `SettingsOpcHostInvalid` | 365.2 px, one line | 354.3 px, one line |
+| `SettingsOpcPortInvalid` | 263.8 px, one line | 248.8 px, one line |
+| `SettingsKeyAbsent` with `SettingsOpcHeader` and `port` | 487.0 px, two lines, the first 445.6 px | 727.0 px, two lines, 344.5 and 370.1 px |
+
+Nothing is trimmed: the 457 px English cell holds 914 px in its two lines and the 388 px Russian cell
+776 px. `SettingsViewTests.TheDialog_KeepsItsSizeAndItsButtonsWhenAnOpcFieldTurnsInvalid` gates the block's
+effect on the dialog's and the Save button's `Bounds`.
 
 The export window (`Export/CsvExportWindow`) is 390 px wide with `SizeToContent="Height"` and
 `CanResize="False"`, a 20 px margin and 12 px between its three rows: the form grid, the message line and the

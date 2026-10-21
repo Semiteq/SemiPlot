@@ -74,6 +74,15 @@ each is a scoped future task.
   nested interaction sub-VM (mirror the existing `Navigation` sub-VM pattern). Deferred during the fix pass
   as risky public-surface churn with no net saving; do it as a focused refactor.
 
+- **Splitting the settings view model.** `Settings/SettingsViewModel` is 512 lines, past the 300-line
+  preference. The seams that cut the size are the edit tracking (`_loaded*`, `Current`, `SpelledAsInTheFile`,
+  `EditsOf`) and the validation (`FirstBrokenRule`, 49 lines, at the method cap, with the `Is*Valid` rules).
+  A host-and-port child view model is a separate change for the duplicate, not for the size: the archive and
+  OPC UA blocks repeat one shape (`Host`/`OpcHost` and `Port`/`OpcPort` carry the same setter, each raising
+  its `Is*Valid` flag and `ValidationMessage`, over the same `NetworkAddress` rule). It removes about 25
+  lines, needs `ValidationMessage` to follow a child's change, and moves the dialog's bindings and about forty
+  test references. Both were deferred out of `20261021-opc-settings.md` as focused refactors.
+
 - **~~Latent: coordinator history sequence frozen at 1.~~ Resolved (20260618-post-review-fixes, Task 4).**
   The standalone coordinator history path (`RequestHistory`/`SetLayer`/`HistoryResults`) was removed.
   `RequestInitialHistory` now awaits `QueryHistoryAsync` directly and applies through the same

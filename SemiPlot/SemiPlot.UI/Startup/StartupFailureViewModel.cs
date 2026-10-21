@@ -59,8 +59,8 @@ public sealed class StartupFailureViewModel : ReactiveObject, IDisposable
 	public MessagePanelViewModel MessagePanel { get; }
 
 	/// <summary>
-	/// True only when both configuration sections read as the files carry them; the dialog edits existing keys and
-	/// creates no file, so any other state leaves the failure text alone to instruct the operator.
+	/// True only when every configuration section the dialog edits reads as the files carry it; the dialog edits
+	/// existing keys and creates no file, so any other state leaves the failure text alone to instruct the operator.
 	/// </summary>
 	public bool OffersSettings { get; }
 
@@ -98,9 +98,9 @@ public sealed class StartupFailureViewModel : ReactiveObject, IDisposable
 
 	private static bool EverySavedKeyPresent(string configDirectory)
 	{
-		var (app, connection) = SettingsSave.ReadOwned(configDirectory);
+		var sections = SettingsSave.ReadOwned(configDirectory);
 
-		return app.IsSuccess && connection.IsSuccess && SettingsSave.FirstAbsentKey(app.Value, connection.Value) is null;
+		return sections.All(read => read.Owned.IsSuccess) && SettingsSave.FirstAbsentKey(sections) is null;
 	}
 
 	private void Restart(InstanceLauncher launcher)

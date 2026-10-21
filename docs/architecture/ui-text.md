@@ -200,18 +200,23 @@ come from the mapper (`#what-the-mappers-two-consumers-read`):
 ## The settings window's text
 
 The `Edit` menu is `MenuEdit` with two items, `MenuEditSettings` and `MenuEditPensAndGroups`
-(`#the-pen-editors-text`). `Settings/SettingsDialog.axaml` reads `SettingsTitle`, the two section headers
-`SettingsInterfaceHeader` and `SettingsConnectionHeader`, one `Settings*Label` per field, `SettingsSave`
-and `SettingsClose`. The language and theme choices read `SettingsLanguageRussian`,
+(`#the-pen-editors-text`). `Settings/SettingsDialog.axaml` reads `SettingsTitle`, the three section headers
+`SettingsInterfaceHeader`, `SettingsConnectionHeader` and `SettingsOpcHeader`, one `Settings*Label` per
+field, `SettingsSave` and `SettingsClose`. The OPC UA block reuses `SettingsHostLabel` and
+`SettingsPortLabel` under its own header. The language and theme choices read `SettingsLanguageRussian`,
 `SettingsLanguageEnglish`, `SettingsThemeLight` and `SettingsThemeDark`: the combo box shows the label
 and the file keeps the token `SettingsVocabulary` pairs with it. The dialog's message line, left of the
 buttons, shows `SettingsSectionUnreadable` with the section header as `{0}` when a section fails to read,
-else `SettingsKeyAbsent` with the first edited key no file of its section carries as `{0}`, else the rule
-the first invalid field breaks, in form order: `SettingsFieldRequired` for an unchosen language or theme,
-`SettingsHostInvalid`, `SettingsPortInvalid`, and `SettingsFieldRequired` for a blank database, user or
-password. `SettingsFieldRequired` takes the field's label as `{0}`.
+else `SettingsKeyAbsent` with the section header as `{0}` and the first edited key no file of that section
+carries as `{1}`, else the rule the first invalid field breaks, in form order: `SettingsFieldRequired` for
+an unchosen language or theme, `SettingsHostInvalid`, `SettingsPortInvalid`, `SettingsFieldRequired` for a
+blank database, user or password, `SettingsOpcHostInvalid` and `SettingsOpcPortInvalid`.
+`SettingsFieldRequired` takes the field's label as `{0}`.
 `SettingsViewModel.ValidationMessage` picks it. The line is not under the field, so each message opens with the field it names, and each is one
-short line in both languages ("Host: expected an IP address such as 127.0.0.1");
+short line in both languages ("Host: expected an IP address such as 127.0.0.1"). The OPC UA messages
+open with "OPC UA host" and "OPC UA port", because "Host" names the archive host. `SettingsKeyAbsent`,
+which opens with a section header, can wrap into the second reserved line (with `SettingsOpcHeader` and
+`port` it does in both languages);
 `ui-theme.md#a-form-never-resizes-on-validation` holds the width it has to fit. `SettingsRestartNotice`
 is the dialog's own text after a save that changed any key but `theme`, on the same line while no field is invalid;
 `SettingsRestartNoticeThemeApplied` replaces it when that save also changed `theme`, which already applies,

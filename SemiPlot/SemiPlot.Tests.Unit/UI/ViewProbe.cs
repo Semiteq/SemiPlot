@@ -7,6 +7,8 @@ namespace SemiPlot.Tests.Unit.UI;
 
 internal static class ViewProbe
 {
+	public const string InvalidClass = "invalid";
+
 	public static TWindow Realise<TWindow>(TWindow window)
 		where TWindow : Window
 	{

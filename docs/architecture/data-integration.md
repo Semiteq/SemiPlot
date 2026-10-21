@@ -1771,8 +1771,8 @@ included, `Unparseable`, each a `ConnectionFileError` of section
 The certificate store root is `<config-dir>/opc/pki`, the folder the four directory stores of the client
 configuration sit under (Realtime, The OPC UA live source). The section is read top-level only, so a
 `.yaml` file under `pki` is never parsed (`OpcUaConnectionLoaderTests.AYamlFileUnderThePkiFolderIsNotRead`).
-The settings window does not edit `opc/`; an operator edits the file by hand, and the change takes effect
-at the next start.
+The settings window edits `host` and `port` of `opc/` under the rules it applies to every section
+(`overview.md#the-settings-window`), and a saved change takes effect at the next start.
 
 ## Startup
 
@@ -1818,7 +1818,7 @@ and `Run_WithAnOpcPortOfZero_FailsOnThatSectionBeforeAnyRead` pin the failing st
 
 The container, the pens and the extent cross the boundary in a `StartupData` record, so `TrendWindow.Build` awaits nothing. `Program.Main` passes the settings, the `StartupData` or the first `IError`, and the parsed `StartupOptions` to `App.RunStarted(AppSettings?, StartupData, StartupOptions)` on
 success and to `App.RunFailed(AppSettings?, IError, StartupOptions?)` on failure, the configuration
-directory reaching the settings window and the keys reaching `InstanceLauncher` on both paths (the failure window offers Settings only when both sections read and every
+directory reaching the settings window and the keys reaching `InstanceLauncher` on both paths (the failure window offers Settings only when all three sections read and every
 key the dialog edits is present; `overview.md#another-instance`): on success `App` builds one
 `TrendWindow` (`overview.md#one-window-per-process`); on failure `App` maps the error through
 `ArchiveFailureMapper` and opens `Startup/StartupFailureWindow`, which names what broke and what to do

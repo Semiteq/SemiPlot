@@ -32,8 +32,8 @@ the tracked file (`docs/architecture/overview.md`).
 
 The settings window (`SemiPlot.UI/Settings`) is the viewer's only writer of the section folders. It
 edits only keys that already exist, each in the file that owns it, and only the keys the operator
-changed; it creates no file, and it edits no key of `opc/` yet. The startup-failure window offers it only
-when both sections it edits, `app/` and `connection/`, read and carry every key it edits. The
+changed; it creates no file. The startup-failure window offers it only when all three sections it edits,
+`app/`, `connection/` and `opc/`, read and carry every key it edits. The
 production loaders validate a staged copy before any file is replaced, and every change takes effect at the
 next start except the theme, which every running process applies live
 (`docs/architecture/overview.md#the-live-theme`).

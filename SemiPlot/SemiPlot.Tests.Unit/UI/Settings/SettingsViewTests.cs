@@ -32,8 +32,6 @@ namespace SemiPlot.Tests.Unit.UI.Settings;
 [Trait("Category", "Unit")]
 public sealed class SettingsViewTests : IDisposable
 {
-	private const string InvalidClass = "invalid";
-
 	private readonly TemporaryDirectory _configDirectory = new("semiplot-settings-view");
 
 	private readonly string _appDirectory;
@@ -69,6 +67,9 @@ public sealed class SettingsViewTests : IDisposable
 			Named<TextBox>(dialog, "SettingsDatabase").Text.Should().Be("semiplot");
 			Named<TextBox>(dialog, "SettingsUser").Text.Should().Be("semiplot");
 			Named<TextBox>(dialog, "SettingsPassword").Text.Should().Be("secret");
+			Named<TextBox>(dialog, "SettingsOpcHost").Text.Should().Be("127.0.0.1");
+			Named<NumericUpDown>(dialog, "SettingsOpcPort").Value.Should().Be(49875);
+			Named<NumericUpDown>(dialog, "SettingsOpcPort").Text.Should().Be("49875");
 			Named<TextBlock>(dialog, "SettingsValidationMessage").Text.Should().BeEmpty();
 			InvalidFields(dialog).Should().BeEmpty();
 		}
@@ -255,6 +256,55 @@ public sealed class SettingsViewTests : IDisposable
 
 			dialog.Bounds.Should().Be(validBounds, "a message never resizes the form");
 			save.Bounds.Should().Be(validSaveBounds, "a message never moves the buttons");
+		}
+		finally
+		{
+			dialog.Close();
+		}
+	}
+
+	[AvaloniaFact]
+	public void TheDialog_KeepsItsSizeAndItsButtonsWhenAnOpcFieldTurnsInvalid()
+	{
+		using var viewModel = Build();
+		var dialog = Realise(new SettingsDialog { DataContext = viewModel });
+		try
+		{
+			var opcHost = Named<TextBox>(dialog, "SettingsOpcHost");
+			var save = Named<Button>(dialog, "SettingsSaveButton");
+			var validBounds = dialog.Bounds;
+			var validSaveBounds = save.Bounds;
+
+			HeadlessInput.Clear(dialog, opcHost);
+			HeadlessInput.Type(dialog, opcHost, "scada-01");
+
+			viewModel.ValidationMessage.Should().NotBeEmpty();
+			dialog.Bounds.Should().Be(validBounds, "a message never resizes the form");
+			save.Bounds.Should().Be(validSaveBounds, "a message never moves the buttons");
+		}
+		finally
+		{
+			dialog.Close();
+		}
+	}
+
+	[AvaloniaFact]
+	public void AnInvalidOpcHost_NamesTheOpcFieldOnTheMessageLine()
+	{
+		using var viewModel = Build();
+		var dialog = Realise(new SettingsDialog { DataContext = viewModel });
+		try
+		{
+			var opcHost = Named<TextBox>(dialog, "SettingsOpcHost");
+			var save = Named<Button>(dialog, "SettingsSaveButton");
+
+			HeadlessInput.Clear(dialog, opcHost);
+			HeadlessInput.Type(dialog, opcHost, "scada-01");
+
+			Named<TextBlock>(dialog, "SettingsValidationMessage").Text.Should().Be(Resources.SettingsOpcHostInvalid);
+			opcHost.Classes.Should().Contain(InvalidClass);
+			Named<TextBox>(dialog, "SettingsHost").Classes.Should().NotContain(InvalidClass);
+			save.IsEffectivelyEnabled.Should().BeFalse("an OPC UA host must be an IP address");
 		}
 		finally
 		{

@@ -2,13 +2,12 @@ using System.Globalization;
 using System.Reactive;
 using System.Reactive.Linq;
 
-using FluentResults;
-
 using Microsoft.Extensions.Logging;
 
 using ReactiveUI;
 
 using SemiPlot.Core.Configuration;
+using SemiPlot.DataSource.OpcUa.Configuration;
 using SemiPlot.DataSource.Postgres.Configuration;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.Messages;
@@ -34,11 +33,11 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 	private readonly string _sectionRefusal;
 	private Dictionary<string, string> _loadedApp;
 	private Dictionary<string, string> _loadedConnection;
+	private Dictionary<string, string> _loadedOpc;
 
-	public SettingsViewModel(
+	internal SettingsViewModel(
 		string configDirectory,
-		Result<OwnedSection> app,
-		Result<OwnedSection> connection,
+		IReadOnlyList<SectionRead> sections,
 		MessagePanelViewModel messagePanel,
 		ILogger<SettingsViewModel> logger,
 		Action restartApplication)
@@ -50,40 +49,27 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 		Languages = [.. SettingsVocabulary.Languages.Select(ChoiceOf)];
 		Themes = [.. SettingsVocabulary.Themes.Select(ChoiceOf)];
 
-		var appValues = ValuesOf(app);
-		var connectionValues = ValuesOf(connection);
-		_sectionRefusal = RefusalOf(app, connection);
+		var appValues = ValuesOf(sections, ConfigurationSectionName.App);
+		var connectionValues = ValuesOf(sections, ConfigurationSectionName.Connection);
+		var opcValues = ValuesOf(sections, ConfigurationSectionName.Opc);
+		_sectionRefusal = RefusalOf(sections);
 
 		SelectedLanguage = Match(Languages, appValues.GetValueOrDefault(AppSettingsLoader.LocaleKey));
 		SelectedTheme = Match(Themes, appValues.GetValueOrDefault(AppSettingsLoader.ThemeKey));
 		Host = connectionValues.GetValueOrDefault(PostgresConnectionLoader.HostKey, string.Empty);
-		Port = PortOf(connectionValues);
+		Port = PortOf(connectionValues.GetValueOrDefault(PostgresConnectionLoader.PortKey));
 		Database = connectionValues.GetValueOrDefault(PostgresConnectionLoader.DatabaseKey, string.Empty);
 		User = connectionValues.GetValueOrDefault(PostgresConnectionLoader.UserKey, string.Empty);
 		Password = connectionValues.GetValueOrDefault(PostgresConnectionLoader.PasswordKey, string.Empty);
+		OpcHost = opcValues.GetValueOrDefault(OpcUaConnectionLoader.HostKey, string.Empty);
+		OpcPort = PortOf(opcValues.GetValueOrDefault(OpcUaConnectionLoader.PortKey));
 
-		_loadedApp = SpelledAsInTheFile(CurrentApp(), appValues);
-		_loadedConnection = SpelledAsInTheFile(CurrentConnection(), connectionValues);
+		_loadedApp = SpelledAsInTheFile(Current(AppKeys), appValues);
+		_loadedConnection = SpelledAsInTheFile(Current(ConnectionKeys), connectionValues);
+		_loadedOpc = SpelledAsInTheFile(Current(OpcKeys), opcValues);
 
-		var canWriteSections = _sectionRefusal.Length == 0;
-		var canSave = this.WhenAnyValue(
-			vm => vm.SelectedLanguage,
-			vm => vm.SelectedTheme,
-			vm => vm.IsHostValid,
-			vm => vm.IsPortValid,
-			vm => vm.IsDatabaseValid,
-			vm => vm.IsUserValid,
-			vm => vm.IsPasswordValid,
-			(language, theme, host, port, database, user, password) =>
-				canWriteSections
-				&& language is not null
-				&& theme is not null
-				&& host
-				&& port
-				&& database
-				&& user
-				&& password);
-
+		var canSave = this.WhenAnyValue(vm => vm.ValidationMessage)
+			.Select(message => message.Length == 0);
 		SaveCommand = ReactiveCommand.CreateFromTask(SaveAsync, canSave);
 		var canRestartNow = this.WhenAnyValue(vm => vm.IsRestartPending)
 			.CombineLatest(SaveCommand.IsExecuting, (pending, saving) => pending && !saving);
@@ -105,6 +91,12 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 		new(PostgresConnectionLoader.DatabaseKey, vm => vm.Database),
 		new(PostgresConnectionLoader.UserKey, vm => vm.User),
 		new(PostgresConnectionLoader.PasswordKey, vm => vm.Password)
+	];
+
+	internal static IReadOnlyList<EditedKey> OpcKeys { get; } =
+	[
+		new(OpcUaConnectionLoader.HostKey, vm => vm.OpcHost),
+		new(OpcUaConnectionLoader.PortKey, vm => TextOf(vm.OpcPort))
 	];
 
 	public static decimal LowestPort => NetworkAddress.LowestPort;
@@ -192,6 +184,29 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 		}
 	}
 
+	public string OpcHost
+	{
+		get;
+		set
+		{
+			this.RaiseAndSetIfChanged(ref field, value);
+			this.RaisePropertyChanged(nameof(IsOpcHostValid));
+			this.RaisePropertyChanged(nameof(ValidationMessage));
+		}
+	}
+
+	/// <summary>Null while the field holds no whole number in range, which keeps the save disabled.</summary>
+	public decimal? OpcPort
+	{
+		get;
+		set
+		{
+			this.RaiseAndSetIfChanged(ref field, value);
+			this.RaisePropertyChanged(nameof(IsOpcPortValid));
+			this.RaisePropertyChanged(nameof(ValidationMessage));
+		}
+	}
+
 	public bool IsHostValid => NetworkAddress.IsIPv4(Host);
 
 	public bool IsPortValid => IsPort(Port);
@@ -201,6 +216,10 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 	public bool IsUserValid => !string.IsNullOrWhiteSpace(User);
 
 	public bool IsPasswordValid => !string.IsNullOrWhiteSpace(Password);
+
+	public bool IsOpcHostValid => NetworkAddress.IsIPv4(OpcHost);
+
+	public bool IsOpcPortValid => IsPort(OpcPort);
 
 	/// <summary>
 	/// The section a file cannot be read from or a key it lacks, else the rule the first invalid field breaks in form
@@ -233,12 +252,11 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 		ILoggerFactory loggerFactory,
 		Action restartApplication)
 	{
-		var (app, connection) = await Task.Run(() => SettingsSave.ReadOwned(configDirectory));
+		var sections = await Task.Run(() => SettingsSave.ReadOwned(configDirectory));
 
 		return new SettingsViewModel(
 			configDirectory,
-			app,
-			connection,
+			sections,
 			messagePanel,
 			loggerFactory.CreateLogger<SettingsViewModel>(),
 			restartApplication);
@@ -270,14 +288,17 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 
 	private async Task SaveAsync()
 	{
-		var app = CurrentApp();
-		var connection = CurrentConnection();
+		var app = Current(AppKeys);
+		var connection = Current(ConnectionKeys);
+		var opc = Current(OpcKeys);
 		var appEdits = EditsOf(app, _loadedApp);
 		var connectionEdits = EditsOf(connection, _loadedConnection);
+		var opcEdits = EditsOf(opc, _loadedOpc);
 		var edits = new Dictionary<ConfigurationSectionName, IReadOnlyDictionary<string, string>>
 		{
 			[ConfigurationSectionName.App] = appEdits,
-			[ConfigurationSectionName.Connection] = connectionEdits
+			[ConfigurationSectionName.Connection] = connectionEdits,
+			[ConfigurationSectionName.Opc] = opcEdits
 		};
 
 		var saved = await Task.Run(() => SettingsSave.Save(_configDirectory, edits, _logger));
@@ -291,8 +312,11 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 
 		_loadedApp = app;
 		_loadedConnection = connection;
+		_loadedOpc = opc;
 
-		if (appEdits.Keys.Any(key => key != AppSettingsLoader.ThemeKey) || connectionEdits.Count > 0)
+		if (appEdits.Keys.Any(key => key != AppSettingsLoader.ThemeKey)
+			|| connectionEdits.Count > 0
+			|| opcEdits.Count > 0)
 		{
 			IsRestartPending = true;
 		}
@@ -339,19 +363,17 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 			return Resources.FormatSettingsFieldRequired(Resources.SettingsUserLabel);
 		}
 
-		return IsPasswordValid
-			? string.Empty
-			: Resources.FormatSettingsFieldRequired(Resources.SettingsPasswordLabel);
-	}
+		if (!IsPasswordValid)
+		{
+			return Resources.FormatSettingsFieldRequired(Resources.SettingsPasswordLabel);
+		}
 
-	private Dictionary<string, string> CurrentApp()
-	{
-		return Current(AppKeys);
-	}
+		if (!IsOpcHostValid)
+		{
+			return Resources.SettingsOpcHostInvalid;
+		}
 
-	private Dictionary<string, string> CurrentConnection()
-	{
-		return Current(ConnectionKeys);
+		return IsOpcPortValid ? string.Empty : Resources.SettingsOpcPortInvalid;
 	}
 
 	private Dictionary<string, string> Current(IReadOnlyList<EditedKey> keys)
@@ -386,39 +408,59 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 			.ToDictionary(StringComparer.Ordinal);
 	}
 
-	private static string RefusalOf(Result<OwnedSection> app, Result<OwnedSection> connection)
+	private static string RefusalOf(IReadOnlyList<SectionRead> sections)
 	{
-		if (app.IsFailed)
+		if (sections.FirstOrDefault(read => read.Owned.IsFailed) is { } unreadable)
 		{
-			return Resources.FormatSettingsSectionUnreadable(Resources.SettingsInterfaceHeader);
+			return Resources.FormatSettingsSectionUnreadable(HeaderOf(unreadable.Section));
 		}
 
-		if (connection.IsFailed)
-		{
-			return Resources.FormatSettingsSectionUnreadable(Resources.SettingsConnectionHeader);
-		}
-
-		var absentKey = SettingsSave.FirstAbsentKey(app.Value, connection.Value);
-
-		return absentKey is null ? string.Empty : Resources.FormatSettingsKeyAbsent(absentKey);
+		return SettingsSave.FirstAbsentKey(sections) is { } absent
+			? Resources.FormatSettingsKeyAbsent(HeaderOf(absent.Section), absent.Key)
+			: string.Empty;
 	}
 
-	private IReadOnlyDictionary<string, string> ValuesOf(Result<OwnedSection> section)
+	private static string HeaderOf(ConfigurationSectionName section)
 	{
-		if (section.IsFailed)
+		return section switch
 		{
-			_messagePanel.ReportFailure(section, _logger);
+			ConfigurationSectionName.App => Resources.SettingsInterfaceHeader,
+			ConfigurationSectionName.Connection => Resources.SettingsConnectionHeader,
+			ConfigurationSectionName.Opc => Resources.SettingsOpcHeader,
+			_ => throw new ArgumentOutOfRangeException(nameof(section), section, null)
+		};
+	}
+
+	internal static IReadOnlyList<EditedKey> KeysOf(ConfigurationSectionName section)
+	{
+		return section switch
+		{
+			ConfigurationSectionName.App => AppKeys,
+			ConfigurationSectionName.Connection => ConnectionKeys,
+			ConfigurationSectionName.Opc => OpcKeys,
+			_ => throw new ArgumentOutOfRangeException(nameof(section), section, null)
+		};
+	}
+
+	private IReadOnlyDictionary<string, string> ValuesOf(
+		IReadOnlyList<SectionRead> sections, ConfigurationSectionName section)
+	{
+		var owned = sections.Single(read => read.Section == section).Owned;
+
+		if (owned.IsFailed)
+		{
+			_messagePanel.ReportFailure(owned, _logger);
 
 			return new Dictionary<string, string>();
 		}
 
-		return section.Value.Values;
+		return owned.Value.Values;
 	}
 
-	private static decimal? PortOf(IReadOnlyDictionary<string, string> values)
+	private static decimal? PortOf(string? text)
 	{
 		var parsed = int.TryParse(
-			values.GetValueOrDefault(PostgresConnectionLoader.PortKey),
+			text,
 			NumberStyles.None,
 			CultureInfo.InvariantCulture,
 			out var number);

@@ -59,7 +59,7 @@ Constraint: **$0 budget** — only free/OSS components.
 |     +-- AppStatusBar        archive and OPC UA state, layer |
 |     +-- PenEditorWindow     pens and groups dialog          |
 |     +-- CsvExportWindow     range to CSV file dialog        |
-|     +-- SettingsDialog      app and connection settings     |
+|     +-- SettingsDialog      app, connection, OPC UA fields  |
 |     +-- AboutDialog         version and config folder       |
 |   ViewModels (ReactiveUI) ◄── TrendCoordinator (Rx hub)     |
 |                           ◄── PenCatalogueSync (5 s reads)  |
@@ -203,7 +203,7 @@ A failed start opens `Startup/StartupFailureWindow` instead, over its own `Start
 failure's title, detail and remedy, a message panel of its own, and the Settings, Restart, About and Exit
 buttons. The view model builds and disposes that panel; the window disposes the view model when it
 closes. Settings and Restart are present when the launch keys parsed, which is when the view model has an
-`InstanceLauncher`; Settings also needs both sections to read and carry every key it edits
+`InstanceLauncher`; Settings also needs every section it edits to read and carry every key it edits
 (`#the-settings-window`). Restart starts a copy and closes the window only once the copy has started.
 `App` stores the panel of the window the process shows, the container's in `ConfigureStarted` on a start and
 the failure window's in `CreateMainWindow` on a failed start, and `App.ResolveMessagePanel` returns that
@@ -429,7 +429,7 @@ one method: nothing else may resolve a service through a static.
 
 `Edit` -> `Settings` opens `Settings/SettingsDialog`, the viewer's only writer of the section folders. It
 edits `locale` and `theme` in `app/`, and `host`, `port`, `database`, `user` and `password` in
-`connection/`. It does not edit `opc/` yet; the operator edits `opc/opc.yaml` by hand. A key the window
+`connection/`, and `host` and `port` in `opc/`, in an OPC UA block after the archive block. A key the window
 does not show, such as `schema`, stays in its file and survives every rewrite. A saved `theme` applies live in every running process (`#the-live-theme`), so
 a save that changed only the theme shows no notice. The dialog shows a restart notice after a save that
 changed any other key, and that change takes effect at the next start. A save that also changed the theme
@@ -449,23 +449,31 @@ Each connection field takes only what its loader accepts. `host` is a text box c
 blank. A field that breaks its rule takes the error border, the message line names the first such
 field, and the save stays disabled (`ui-theme.md#a-form-never-resizes-on-validation`). A file value the
 rule refuses opens as an invalid field: a host name stays as text in a field with the error border, and
-a port that is not a whole number in range opens empty.
+a port that is not a whole number in range opens empty. The OPC UA `host` and `port` follow the same
+rules, the ones `OpcUaConnectionLoader` applies through `ConnectionFile`, and each has a message of its
+own (`SettingsOpcHostInvalid`, `SettingsOpcPortInvalid`), because the message line is not under the field.
 
 The window reads the files, not the typed settings. `SettingsSave.ReadOwned` runs
-`ConfigurationSection.ReadOwned` over both section folders, which returns each section's scalar values
+`ConfigurationSection.ReadOwned` over the three section folders, which returns each section's scalar values
 as text and the file that owns each key, and the view model fills its fields from that. The typed
 loaders fail on exactly the values the window is there to fix, such as the shipped empty password, so a
 typed read would open the window empty on the startup-failure path.
 
-The failure window offers Settings only when both sections read and carry every key the dialog edits:
-`StartupFailureViewModel.OffersSettings` is true when `SettingsSave.ReadOwned` succeeds for both and
+The failure window offers Settings only when all three sections read and carry every key the dialog edits:
+`StartupFailureViewModel.OffersSettings` is true when `SettingsSave.ReadOwned` succeeds for all three and
 `SettingsSave.FirstAbsentKey` finds nothing absent when the window opens. A missing configuration
 directory, a section folder with no `*.yaml` file, an unreadable file, and a required key that no file of
 its section carries leave the button hidden, and the
 failure text, which names the path and the keys to create, alone instructs the operator; the window
 creates no file, so a dialog over a section it cannot read, or over an absent key, has nothing to save into.
+An `opc/` fault behind a reported `connection/` failure also hides the button. `StartupProbe.Run` loads
+`connection/` before `opc/`, so the failure text names only `connection/`, and the `opc/` fault is reported at
+the next start.
 `Edit` -> `Settings` over such a folder opens with Save disabled and the reason on the message line. An empty password
-still offers Settings, and a save writes it into the existing `connection.yaml`. `App.RunStarted` and
+still offers Settings, and a save writes it into the existing `connection.yaml`. An `opc/` value the loader
+refuses, such as port 70000 or a host name, offers Settings too: the dialog opens it as an invalid field and
+saves the fix (`StartupFailureWindowTests.TheSettingsButton_IsShownOverAnOpcValueTheLoaderRefuses`).
+`App.RunStarted` and
 `App.RunFailed` hand the parsed launch options to the window they show. When the argument parse failed, the options
 are null and the failure window shows neither Settings nor Restart. A `LogFileTarget.Prepare` failure
 follows a successful parse, so `Program` passes the parsed options and the window offers both.
@@ -475,14 +483,15 @@ A save goes through `Settings/SettingsSave.Save`:
 1. The view model sends only the keys whose text differs from what it loaded. A key the file spells in
    another case, such as `Host:`, counts as changed: the window reads keys ignoring case and the loaders
    do not, so the save rewrites it under the loader's spelling.
-2. `ReadOwned` re-reads both section folders at save time.
+2. `ReadOwned` re-reads the three section folders at save time.
 3. `SettingsSave` creates `<config-dir>/.settings-staging-<random>/` with a folder per section; one
    that cannot be created fails the save with `Unwritable` naming `<config-dir>` under the `App`
    title, because that folder belongs to no section.
    `ConfigurationSectionWriter.Stage` copies every file of a section into it, and rewrites each file
    that owns an edited key. A key goes into the file that already carries it. A file with no edited
    key is copied byte for byte and never rewritten.
-4. `AppSettingsLoader.Load` and `PostgresConnectionLoader.Load` run over the staged folders. A refusal
+4. `AppSettingsLoader.Load`, `PostgresConnectionLoader.Load` and `OpcUaConnectionLoader.Load` run over
+   the staged folders. A refusal
    is returned with the real section directory in place of the staging one.
 5. Every rewritten target is opened for writing and closed, sharing as a section read does
    (`#the-live-theme`). One that refuses fails the save with `SectionProblem.Unwritable`, and nothing moves.
@@ -938,7 +947,8 @@ root registers `AddPostgresData`, and every member of `IDataProvider` is impleme
 the archive extent, the archive days read and the windowed history read. `AddOpcUaLiveSource` registers
 `OpcUaLiveSource`, which implements `ILiveSource` over the SCADA's OPC UA server. The chart draws history
 from the archive and the live edge from OPC UA; the archive replaces a live point only when a history
-read covers it (`[DEC:opc-live-edge]`). The settings window does not edit the `opc/` section yet. The pen editor writes the catalogue through `IPenCatalogueEditor`,
+read covers it (`[DEC:opc-live-edge]`). The settings window edits the `opc/` section's `host` and `port`
+(`#the-settings-window`). The pen editor writes the catalogue through `IPenCatalogueEditor`,
 and every running chart follows what it writes within 5 s (`#the-live-catalogue`), except the start
 values, which change nothing on screen (`#what-a-read-changes`). The chart places, drags, renames and
 deletes time markers stored in `semiplot_markers`, and every window follows them within 5 s

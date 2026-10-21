@@ -6,7 +6,6 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions"/>
     <PackageReference Include="Npgsql"/>
     <PackageReference Include="System.Reactive"/>
-    <PackageReference Include="YamlDotNet"/>
   </ItemGroup>
 
   <ItemGroup>

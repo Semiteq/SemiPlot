@@ -41,6 +41,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SemiPlot.Core\SemiPlot.Core.csproj"/>
+    <ProjectReference Include="..\SemiPlot.DataSource.OpcUa\SemiPlot.DataSource.OpcUa.csproj"/>
     <ProjectReference Include="..\SemiPlot.DataSource.Postgres\SemiPlot.DataSource.Postgres.csproj"/>
   </ItemGroup>
 

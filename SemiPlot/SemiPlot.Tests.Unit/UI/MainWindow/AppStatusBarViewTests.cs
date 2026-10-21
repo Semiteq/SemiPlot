@@ -23,7 +23,7 @@ using static SemiPlot.Tests.Unit.UI.MainWindow.MainWindowTestBuilder;
 
 namespace SemiPlot.Tests.Unit.UI.MainWindow;
 
-/// <summary>The realised bar: the indicator's class, its palette brush, its command, and the layer caption.</summary>
+/// <summary>The realised bar: each indicator's class, its palette brush, its command, and the layer caption.</summary>
 [Collection(ProcessGlobalStateCollection.Name)]
 [Trait("Component", "UI")]
 [Trait("Area", "Chart")]
@@ -32,6 +32,9 @@ public sealed class AppStatusBarViewTests
 {
 	private static readonly ArchiveConnectionState _lost =
 		new(FakePenCatalogueEditor.Refusal(ArchiveFault.ConnectionLost, "3"));
+
+	private static readonly LiveSourceState _liveLost =
+		LiveSourceState.FaultedBy(new LiveSourceError(LiveSourceFault.Unreachable, "opc.tcp://127.0.0.1:4840"));
 
 	[AvaloniaFact]
 	public void ConnectionIndicator_CarriesTheStateClassAndOpensThePanel()
@@ -88,6 +91,76 @@ public sealed class AppStatusBarViewTests
 			ColourOf(indicator!.Foreground).Should().Be(ThemeProbe.Colour("AppConnectionOkBrush", variant));
 
 			states.OnNext(_lost);
+			Dispatcher.UIThread.RunJobs();
+
+			ColourOf(indicator.Foreground).Should().Be(ThemeProbe.Colour("AppConnectionFaultBrush", variant));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[AvaloniaFact]
+	public void LiveConnectionIndicator_CarriesTheStateClassAndOpensThePanel()
+	{
+		using var panel = new MessagePanelViewModel();
+		using var liveStates = new Subject<LiveSourceState>();
+		using var statusBar = NewStatusBar(panel, liveSourceStates: liveStates);
+		var view = new AppStatusBar { DataContext = statusBar };
+		var window = new Window { Content = view };
+		window.Show();
+		var indicator = view.FindControl<Button>("LiveConnectionIndicator");
+
+		indicator.Should().NotBeNull();
+		indicator!.Classes.Should().NotContain("connection-ok");
+		indicator.Classes.Should().NotContain("connection-fault", "connecting draws in the bar's own colour");
+		indicator.Content.Should().Be(Resources.StatusLiveConnecting);
+
+		liveStates.OnNext(LiveSourceState.Connected);
+		Dispatcher.UIThread.RunJobs();
+
+		indicator.Classes.Should().Contain("connection-ok");
+		indicator.Content.Should().Be(Resources.StatusLiveConnectionOk);
+
+		liveStates.OnNext(_liveLost);
+		Dispatcher.UIThread.RunJobs();
+
+		indicator.Classes.Should().Contain("connection-fault");
+		indicator.Classes.Should().NotContain("connection-ok");
+		indicator.Content.Should().Be(
+			Resources.StatusLiveConnectionFault, "the caption follows the state, not only the class");
+
+		panel.IsVisible.Should().BeTrue();
+		indicator.Command!.Execute(null);
+		Dispatcher.UIThread.RunJobs();
+
+		panel.IsVisible.Should().BeFalse("the indicator invokes the panel's own toggle");
+	}
+
+	[AvaloniaTheory]
+	[InlineData(AppThemeVariant.Light)]
+	[InlineData(AppThemeVariant.Dark)]
+	public void LiveConnectionIndicator_PaintsBothStatesFromThePalette(AppThemeVariant theme)
+	{
+		var variant = App.VariantFor(theme);
+		using var scope = ThemeProbe.ApplyVariant(variant);
+		using var panel = new MessagePanelViewModel();
+		using var liveStates = new Subject<LiveSourceState>();
+		using var statusBar = NewStatusBar(panel, liveSourceStates: liveStates);
+		var view = new AppStatusBar { DataContext = statusBar };
+		var window = new Window { Content = view };
+		try
+		{
+			window.Show();
+			liveStates.OnNext(LiveSourceState.Connected);
+			Dispatcher.UIThread.RunJobs();
+			var indicator = view.FindControl<Button>("LiveConnectionIndicator");
+
+			indicator.Should().NotBeNull();
+			ColourOf(indicator!.Foreground).Should().Be(ThemeProbe.Colour("AppConnectionOkBrush", variant));
+
+			liveStates.OnNext(_liveLost);
 			Dispatcher.UIThread.RunJobs();
 
 			ColourOf(indicator.Foreground).Should().Be(ThemeProbe.Colour("AppConnectionFaultBrush", variant));

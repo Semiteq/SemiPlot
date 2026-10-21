@@ -138,6 +138,34 @@ CS8509, so no compiler check stands behind it: a fourth `AggregationLayer` membe
 `Enum.GetValues<AggregationLayer>()` against the three members it names.
 `ArchiveFailureMapper.NameOf` for `StartupRead` is the same shape.
 
+The bar's two connection indicators read one key per state. The archive indicator reads
+`StatusConnectionOk` ("Archive connected") and `StatusConnectionFault` ("Archive not answering"). The
+OPC UA indicator reads `StatusLiveConnecting` ("OPC UA connecting") until the source's first session or
+its grace runs out, then `StatusLiveConnectionOk` ("OPC UA connected") or `StatusLiveConnectionFault`
+("OPC UA not answering"), picked by `AppStatusBarViewModel.LiveConnectionText`. Each indicator's recovery
+entry has a title and a detail and no remedy: `StatusConnectionRestoredTitle` and `...Detail` for the
+archive, `StatusLiveConnectionRestoredTitle` and `...Detail` for OPC UA. The Russian set names the
+database and the OPC UA server in the same pairs.
+
+## The live source's failure text
+
+`ArchiveFailureMapper.MapLiveSource` maps each `LiveSourceFault` onto a title, a detail and a remedy,
+`FailureLiveSource<Kind>Title`, `...Detail` and `...Remedy`, and every detail takes the configured endpoint
+`opc.tcp://<host>:<port>` as `{0}`. The stack's status reaches the log only, on the source's own state
+line, never a panel text, so two faults of one kind at one endpoint coalesce into one panel entry.
+
+| `LiveSourceFault` | Title (English) | Severity |
+| --- | --- | --- |
+| `Unreachable` | "SemiPlot cannot reach the OPC UA server" | `Warning`: the chart keeps the archive and the source reconnects |
+| `EndpointRefused` | "The OPC UA server refuses SemiPlot" | `Error` |
+| `ProjectMissing` | "The OPC UA server holds no SCADA project" | `Error` |
+| `PensUnserved` | "The OPC UA server does not serve some pens" | `Warning` |
+
+The `EndpointRefused` and `ProjectMissing` remedies name the source's retry, "every 30 seconds", as a
+literal: the 30 s wait is private to `ConnectBackoff` in `SemiPlot.DataSource.OpcUa`. The `PensUnserved` detail takes the id groups as `{1}`: `FailureLiveSourceUnknownPens`
+and `FailureLiveSourceNotNumericPens` each carry one comma-joined group as `{0}`, and the mapper joins the
+groups that are not empty with a space.
+
 ## The message panel's text
 
 `Messages/MessagePanelView.axaml` reads the panel's own strings; each entry's title, detail and remedy
@@ -180,8 +208,8 @@ and the file keeps the token `SettingsVocabulary` pairs with it. The dialog's me
 buttons, shows `SettingsSectionUnreadable` with the section header as `{0}` when a section fails to read,
 else `SettingsKeyAbsent` with the first edited key no file of its section carries as `{0}`, else the rule
 the first invalid field breaks, in form order: `SettingsFieldRequired` for an unchosen language or theme,
-`SettingsHostInvalid`, `SettingsPortInvalid`, `SettingsFieldRequired` for a blank database, user or
-password, and `SettingsPollIntervalInvalid`. `SettingsFieldRequired` takes the field's label as `{0}`.
+`SettingsHostInvalid`, `SettingsPortInvalid`, and `SettingsFieldRequired` for a blank database, user or
+password. `SettingsFieldRequired` takes the field's label as `{0}`.
 `SettingsViewModel.ValidationMessage` picks it. The line is not under the field, so each message opens with the field it names, and each is one
 short line in both languages ("Host: expected an IP address such as 127.0.0.1");
 `ui-theme.md#a-form-never-resizes-on-validation` holds the width it has to fit. `SettingsRestartNotice`
@@ -198,15 +226,22 @@ A refused save reads the same text as the startup failure for the same value, be
 `ArchiveFailureMapper.Map`. The save adds two `SectionProblem` arms, each with a detail and a remedy
 and the section's existing title: `FailureConfigurationSectionUnwritableDetail` and `...Remedy` for a
 file or staging folder the save cannot write, and `FailureConfigurationSectionKeyAbsentDetail` and
-`...Remedy` for an edited key no file of the folder carries. A refused connection folder reads one detail per `ConnectionFileProblem`:
+`...Remedy` for an edited key no file of the folder carries. A refused connection folder, `connection/` or
+`opc/`, reads one detail per `ConnectionFileProblem`:
 `FailureConnectionFileUnparseableDetail` (path), `FailureConnectionFileMissingFieldDetail` and
 `FailureConnectionFileOutOfRangeDetail` (path, comma-joined field names) and
 `FailureConnectionFileHostNotIPv4Detail` (path, the host field name), each with the remedy of the same arm
-(`FailureConnectionFileHostNotIPv4Remedy` for `HostNotIPv4`). `FailureConnectionFileOutOfRangeRemedy` takes
-the three `PostgresConnectionLoader` range constants (lowest port, highest port, lowest poll interval).
-`ArchiveFailureMapper` therefore references `SemiPlot.DataSource.Postgres`, the only provider; a second
-provider with its own bounds moves them onto `ConnectionFileError`. `ConnectionFileError` carries field names,
-never prose, so the detail follows the UI language. A refusal from a loader names the
+(`FailureConnectionFileHostNotIPv4Remedy` for `HostNotIPv4`). The details say "the folder '{0}'", because
+the path names the section. The title follows `ConnectionFileError.Section`:
+`FailureConnectionFileRejectedTitle` for `Connection` and `FailureOpcFileRejectedTitle` ("SemiPlot cannot
+read the OPC UA connection settings") for `Opc`. `FailureConnectionFileOutOfRangeRemedy` takes
+`NetworkAddress.LowestPort` and `NetworkAddress.HighestPort` (`SemiPlot.Core/Configuration`), the port range
+both sections share, and names nothing else.
+`ArchiveFailureMapper` therefore references no data-source project for the bounds. `ConnectionFileError`
+carries field names, never prose, so the detail follows the UI language. A missing or empty `opc/` folder
+reads the section titles of `ConfigurationSectionFailureMapper`: `FailureConfigurationSectionOpcTitle`, with
+`FailureConfigurationSectionOpcDirectoryMissingRemedy` and `...OpcNoFilesRemedy`, both naming the `host` and
+`port` keys. A refusal from a loader names the
 operator's section folder, never the staging copy it read; a staging folder that cannot be created is
 the one detail naming `<config-dir>` and the staging folder (`overview.md#the-settings-window`).
 

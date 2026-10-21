@@ -6,7 +6,7 @@ Language: EN. Architecture doc convention — EN (see README): this artifact has
 
 # Specification: Trend canvas with pens (SemiPlot)
 
-A single prioritized list of requirements for the trend visualization component. The functional reference is MasterSCADA "MasterTrend" (adapted to the SemiPlot scope). The data source is **always PostgreSQL**. Priorities: **MUST** (without it the product does not solve the user's task), **SHOULD** (important, but a workaround is acceptable at the start), **NICE** (an improvement, can be deferred).
+A single prioritized list of requirements for the trend visualization component. The functional reference is MasterSCADA "MasterTrend" (adapted to the SemiPlot scope). History and the archive extent always come from **PostgreSQL**; the live edge comes from the SCADA's OPC UA server (RT-1). Priorities: **MUST** (without it the product does not solve the user's task), **SHOULD** (important, but a workaround is acceptable at the start), **NICE** (an improvement, can be deferred).
 
 Acceptance-criterion labels: "UI" — verified in the running application; "Core/test" — verified by a unit test on renderer-agnostic logic; "DB" — verified against a real PostgreSQL connection.
 
@@ -167,7 +167,7 @@ through `TrendChartViewModel.SetActivePen`; the picked line is drawn 2 px wide a
 
 ## 5. Data and archive (PostgreSQL)
 
-### DA-1 — The data source is always PostgreSQL (MUST)
+### DA-1 - History and extent always come from PostgreSQL (MUST)
 **Definition.** The production provider for history and extent is PostgreSQL. The provider contract: `QueryHistoryAsync` (window + target column count), `QueryArchiveExtentAsync` (full range), `QueryArchiveDaysAsync` (the local days of a date range that hold a layer-0 row, for the calendars of the time window panel and the export window). The history read returns a `PenHistoryEnvelope` (Min/Max/Center, NaN gaps). Errors flow via `FluentResults`, with no exceptions on the UI thread.
 **Acceptance.** DB: against a real PostgreSQL, history load fills the canvas; the extent is pulled from the DB; a dropped connection yields a failed `Result` rather than a UI crash. A stub provider is acceptable only in tests/demos, not in production.
 
@@ -199,7 +199,7 @@ through `TrendChartViewModel.SetActivePen`; the picked line is drawn 2 px wide a
 **Note.** Closes the most real correctness risk (b)7.
 
 ### DA-8 — Quality and gaps (SHOULD)
-**Definition.** The archive marks a break with `q = 32` on the last sample before it and `q = 16` on the first sample after it; absence of rows without a preceding `q = 32` means the value did not change and the line continues horizontally (`scada-archive.md`). The provider maps a break to a NaN anchor in the envelope along the whole path from PostgreSQL — from the archive's own `q` column, never from a synthesised marker. At the live edge the poll emits the marker's value and then a null sample 1 ms later, which the chart appends as a NaN column (`data-integration.md#realtime`). Any other quality code is drawn as an ordinary point; no such code appeared in either measured archive (`scada-archive.md#quality-and-gaps`).
+**Definition.** The archive marks a break with `q = 32` on the last sample before it and `q = 16` on the first sample after it; absence of rows without a preceding `q = 32` means the value did not change and the line continues horizontally (`scada-archive.md`). The provider maps a break to a NaN anchor in the envelope along the whole path from PostgreSQL, from the archive's own `q` column, never from a synthesised marker. The live edge reads no archive row, so a `q = 32` marker reaches the chart through a history read only; the live source writes breaks of its own for a lost session and a `Bad` notification (`data-integration.md#the-breaks-the-source-writes`). Any other quality code is drawn as an ordinary point; no such code appeared in either measured archive (`scada-archive.md#quality-and-gaps`).
 **Acceptance.** DB: a marked break produces a line break, while a long run without rows produces a continuous horizontal line; the readout inside a break is "no data".
 **Note.** Closes gap (b)10.
 
@@ -211,8 +211,8 @@ through `TrendChartViewModel.SetActivePen`; the picked line is drawn 2 px wide a
 
 ## 6. Real time
 
-### RT-1 — Realtime stream from PostgreSQL (MUST)
-**Definition.** A subscription to new data with batching (Buffer ~100 ms on the data scheduler → assemble a union timeline → ObserveOn the UI scheduler → RefCount). The realtime buffer is bounded (cap ~100k points).
+### RT-1 - Realtime stream from the SCADA's OPC UA server (MUST)
+**Definition.** A subscription to the SCADA's OPC UA server for new values (`ILiveSource`, `OpcUaLiveSource`, `data-integration.md#realtime`) with batching (Buffer ~100 ms on the data scheduler -> assemble a union timeline -> ObserveOn the UI scheduler -> RefCount). The realtime buffer is bounded (cap ~100k points).
 **Acceptance.** Core/test: a batch assembles a union over distinct timestamps; per-pen values with null=gap. UI: new points appear in batches, the buffer does not grow without bound.
 
 ### RT-2 — Auto-scroll / live-edge mode (sticky) (MUST)
@@ -269,6 +269,6 @@ through `TrendChartViewModel.SetActivePen`; the picked line is drawn 2 px wide a
 
 **NICE:** TM-7, TM-8; AY-7; PN-9, PN-10; CU-5; RT-4; MS-3, MS-4, MS-5, MS-6, MS-7.
 
-**Direct user requirements (all MUST):** continuous time canvas → TM-1; multiple Y axes → AY-1/AY-2; resize a pen's Y layer, min/max, disable → PN-2/PN-3/PN-4; T1/T2 markers → CU-3; pen value at a point → CU-2; source always PostgreSQL → DA-1.
+**Direct user requirements (all MUST):** continuous time canvas -> TM-1; multiple Y axes -> AY-1/AY-2; resize a pen's Y layer, min/max, disable -> PN-2/PN-3/PN-4; T1/T2 markers -> CU-3; pen value at a point -> CU-2; history and extent always from PostgreSQL -> DA-1.
 
 **Known "model exists — UI missing" discrepancies promoted to requirements:** AY-6 (log axis, closed), DA-4 (manual layer), AY-2 (axis ≠ group, closed), DA-7 (X monotonicity, closed), CU-6 (readout at the live edge), DA-6 (column-count stability, closed).

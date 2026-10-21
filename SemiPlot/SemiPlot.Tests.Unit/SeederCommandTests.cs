@@ -16,6 +16,12 @@ public sealed class SeederCommandTests
 	private const string Connection = BenchOptions.ConnectionString;
 	private const string EndText = BenchOptions.EndText;
 
+	private static readonly string[] _convergeRequired =
+	[
+		"converge", "--connection", Connection, "--admin-connection", "Host=127.0.0.1;Database=postgres",
+		"--config-dir", "C:\\config"
+	];
+
 	[Fact]
 	public async Task ASeedingRunAppliesDefaultsWhenOnlyRequiredOptionsAreGiven()
 	{
@@ -167,15 +173,32 @@ public sealed class SeederCommandTests
 	}
 
 	[Fact]
-	public async Task AConvergeRunRejectsAnOpcPort()
+	public async Task AConvergeRunCarriesItsOpcPort()
 	{
-		var run = await RunAsync(
-		[
-			"converge", "--connection", Connection, "--admin-connection", "Host=127.0.0.1;Database=postgres",
-			"--config-dir", "C:\\config", "--opc-port", "1"
-		]);
+		var run = await RunAsync([.. _convergeRequired, "--opc-port", "55875"]);
+
+		run.ExitCode.Should().Be(0);
+		run.Converge.Should().BeOfType<ConvergeOptions>().Which.OpcPort.Should().Be(55875);
+	}
+
+	[Fact]
+	public async Task AConvergeRunWithoutAnOpcPortIsRejected()
+	{
+		var run = await RunAsync(_convergeRequired);
 
 		AssertRejectedWith(run, "--opc-port");
+		AssertRejectedWith(run, "49875");
+	}
+
+	[Theory]
+	[InlineData("0")]
+	[InlineData("65536")]
+	public async Task AConvergeOpcPortOutsideItsRangeIsRejectedNamingTheValue(string value)
+	{
+		var run = await RunAsync([.. _convergeRequired, "--opc-port", value]);
+
+		AssertRejectedWith(run, "Option '--opc-port'");
+		AssertRejectedWith(run, value);
 	}
 
 	[Theory]
@@ -293,8 +316,7 @@ public sealed class SeederCommandTests
 	[Fact]
 	public async Task AConvergeRunAppliesDefaultsWhenOnlyRequiredOptionsAreGiven()
 	{
-		var run = await RunAsync(
-			["converge", "--connection", Connection, "--admin-connection", "Host=127.0.0.1;Database=postgres", "--config-dir", "C:\\config"]);
+		var run = await RunAsync([.. _convergeRequired, "--opc-port", "55875"]);
 
 		run.ExitCode.Should().Be(0);
 		run.Seed.Should().BeNull();
@@ -313,10 +335,7 @@ public sealed class SeederCommandTests
 	public async Task AConvergeRunAcceptsAChangeIntervalAndAnEnd()
 	{
 		var run = await RunAsync(
-		[
-			"converge", "--connection", Connection, "--admin-connection", "Host=127.0.0.1;Database=postgres",
-			"--config-dir", "C:\\config", "--change-seconds", "0.5", "--end", EndText
-		]);
+			[.. _convergeRequired, "--opc-port", "55875", "--change-seconds", "0.5", "--end", EndText]);
 
 		run.ExitCode.Should().Be(0);
 
@@ -333,13 +352,16 @@ public sealed class SeederCommandTests
 	[InlineData("--connection", true)]
 	[InlineData("--admin-connection", true)]
 	[InlineData("--config-dir", true)]
+	[InlineData("--opc-port", false)]
+	[InlineData("--opc-port", true)]
 	public async Task AConvergeRunRejectsAMissingOrBlankRequiredOption(string option, bool blank)
 	{
 		(string Flag, string Value)[] every =
 		[
 			("--connection", Connection),
 			("--admin-connection", "Host=127.0.0.1;Database=postgres"),
-			("--config-dir", "C:\\config")
+			("--config-dir", "C:\\config"),
+			("--opc-port", "55875")
 		];
 
 		var arguments = new List<string> { "converge" };

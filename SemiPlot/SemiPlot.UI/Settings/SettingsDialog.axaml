@@ -28,7 +28,7 @@
 
         <Grid Grid.Row="0"
               ColumnDefinitions="Auto,*"
-              RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+              RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
               ColumnSpacing="14"
               RowSpacing="10">
 
@@ -130,23 +130,6 @@
                      PasswordChar="*"
                      Classes.invalid="{Binding !IsPasswordValid}"
                      Text="{Binding Password}" />
-
-            <TextBlock Grid.Row="9"
-                       Grid.Column="0"
-                       VerticalAlignment="Center"
-                       Text="{x:Static text:Resources.SettingsPollIntervalLabel}" />
-
-            <NumericUpDown Grid.Row="9"
-                           Grid.Column="1"
-                           Name="SettingsPollInterval"
-                           HorizontalAlignment="Stretch"
-                           Classes.invalid="{Binding !IsPollIntervalValid}"
-                           Minimum="{x:Static local:SettingsViewModel.LowestPollInterval}"
-                           Maximum="{x:Static local:SettingsViewModel.HighestPollInterval}"
-                           Increment="1"
-                           FormatString="0"
-                           ParsingNumberStyle="Integer"
-                           Value="{Binding PollInterval}" />
 
         </Grid>
 

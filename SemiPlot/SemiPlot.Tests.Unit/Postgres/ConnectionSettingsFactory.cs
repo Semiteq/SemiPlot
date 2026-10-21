@@ -10,8 +10,6 @@ internal static class ConnectionSettingsFactory
 
 	public const string Username = "semiplot_reader";
 
-	private static readonly TimeSpan _pollInterval = TimeSpan.FromSeconds(1);
-
 	public static PostgresConnectionSettings Create(
 		TimeZoneInfo? sourceTimeZone = null,
 		string host = "127.0.0.1",
@@ -24,7 +22,6 @@ internal static class ConnectionSettingsFactory
 			Username: Username,
 			Password: "unused",
 			SourceTimeZone: sourceTimeZone ?? TimeZoneInfo.Utc,
-			PollInterval: _pollInterval,
 			Schema: "public");
 	}
 }

@@ -1,18 +1,12 @@
-using System.Globalization;
-
 using FluentResults;
 
 using SemiPlot.Core.Configuration;
 using SemiPlot.Core.Data.Errors;
 
-using YamlDotNet.Serialization;
-using YamlDotNet.Serialization.NamingConventions;
-
 namespace SemiPlot.DataSource.Postgres.Configuration;
 
 /// <summary>
-/// Every member nullable so an absent field reaches the loader as a state to report; YAML keys follow
-/// the underscored convention (<c>PollIntervalMs</c> reads <c>poll_interval_ms</c>).
+/// Every member nullable so an absent field reaches the loader as a state to report.
 /// </summary>
 internal sealed class PostgresConnectionDto
 {
@@ -26,8 +20,6 @@ internal sealed class PostgresConnectionDto
 
 	public string? Password { get; set; }
 
-	public int? PollIntervalMs { get; set; }
-
 	public string? Schema { get; set; }
 }
 
@@ -38,9 +30,9 @@ internal sealed class PostgresConnectionDto
 /// </summary>
 public static class PostgresConnectionLoader
 {
-	public const string HostKey = "host";
+	public const string HostKey = ConnectionFile.HostKey;
 
-	public const string PortKey = "port";
+	public const string PortKey = ConnectionFile.PortKey;
 
 	public const string DatabaseKey = "database";
 
@@ -48,33 +40,20 @@ public static class PostgresConnectionLoader
 
 	public const string PasswordKey = "password";
 
-	public const string PollIntervalKey = "poll_interval_ms";
-
-	public const int LowestPort = 1;
-
-	public const int HighestPort = 65535;
-
-	public const int LowestPollIntervalMs = 1;
-
-	private const int HighestOctet = 255;
-
 	private const string DefaultSchema = "public";
 
-	private static readonly IDeserializer _deserializer = new DeserializerBuilder()
-		.WithNamingConvention(UnderscoredNamingConvention.Instance)
-		.IgnoreUnmatchedProperties()
-		.Build();
+	private const ConfigurationSectionName Section = ConfigurationSectionName.Connection;
 
 	public static Result<PostgresConnectionSettings> Load(string sectionDirectory)
 	{
-		var section = ConfigurationSection.Read(sectionDirectory, ConfigurationSectionName.Connection);
+		var section = ConfigurationSection.Read(sectionDirectory, Section);
 
 		if (section.IsFailed)
 		{
 			return Result.Fail<PostgresConnectionSettings>(section.Errors);
 		}
 
-		var read = Deserialize(sectionDirectory, section.Value);
+		var read = ConnectionFile.Deserialize<PostgresConnectionDto>(Section, sectionDirectory, section.Value);
 
 		if (read.IsFailed)
 		{
@@ -82,52 +61,19 @@ public static class PostgresConnectionLoader
 		}
 
 		var dto = read.Value;
+		var checks = ConnectionFile.Validate(
+			Section,
+			sectionDirectory,
+			dto.Host,
+			dto.Port,
+			[(DatabaseKey, dto.Database), (UserKey, dto.User), (PasswordKey, dto.Password)]);
 
-		var fields = ValidateFields(sectionDirectory, dto);
-
-		if (fields.IsFailed)
+		if (checks.IsFailed)
 		{
-			return Result.Fail<PostgresConnectionSettings>(fields.Errors);
-		}
-
-		var ranges = ValidateRanges(sectionDirectory, dto);
-
-		if (ranges.IsFailed)
-		{
-			return Result.Fail<PostgresConnectionSettings>(ranges.Errors);
-		}
-
-		var host = ValidateHost(sectionDirectory, dto.Host);
-
-		if (host.IsFailed)
-		{
-			return Result.Fail<PostgresConnectionSettings>(host.Errors);
+			return Result.Fail<PostgresConnectionSettings>(checks.Errors);
 		}
 
 		return Result.Ok(Map(dto));
-	}
-
-	/// <summary>
-	/// Four dot-separated decimal octets from 0 to 255 with no leading zero, so no shortened or octal form.
-	/// </summary>
-	public static bool IsIPv4Address(string? text)
-	{
-		if (text is null)
-		{
-			return false;
-		}
-
-		var octets = text.Split('.');
-
-		return octets.Length == 4 && octets.All(IsOctet);
-	}
-
-	private static bool IsOctet(string octet)
-	{
-		return octet.Length is >= 1 and <= 3
-			&& octet.All(char.IsAsciiDigit)
-			&& (octet.Length == 1 || octet[0] != '0')
-			&& int.Parse(octet, CultureInfo.InvariantCulture) <= HighestOctet;
 	}
 
 	private static PostgresConnectionSettings Map(PostgresConnectionDto dto)
@@ -139,98 +85,6 @@ public static class PostgresConnectionLoader
 			dto.User!,
 			dto.Password!,
 			TimeZoneInfo.Local,
-			TimeSpan.FromMilliseconds(dto.PollIntervalMs!.Value),
 			dto.Schema ?? DefaultSchema);
-	}
-
-	// The error carries no text of the exception: a parser message embeds the offending scalar, and the
-	// password is a scalar. The raw detail rides on CausedBy, where only the log reads it.
-	private static Result<PostgresConnectionDto> Deserialize(string sectionDirectory, string content)
-	{
-		try
-		{
-			return Result.Ok(_deserializer.Deserialize<PostgresConnectionDto?>(content) ?? new PostgresConnectionDto());
-		}
-		catch (Exception exception)
-		{
-			var error = new ConnectionFileError(
-				sectionDirectory,
-				ConnectionFileProblem.Unparseable,
-				[]);
-
-			return Result.Fail<PostgresConnectionDto>(error.CausedBy(new ExceptionalError(exception)));
-		}
-	}
-
-	private static Result ValidateFields(string sectionDirectory, PostgresConnectionDto dto)
-	{
-		(string Name, string? Value)[] texts =
-		[
-			(HostKey, dto.Host),
-			(DatabaseKey, dto.Database),
-			(UserKey, dto.User),
-			(PasswordKey, dto.Password)
-		];
-
-		var missing = new List<string>();
-
-		foreach (var (name, value) in texts)
-		{
-			if (string.IsNullOrWhiteSpace(value))
-			{
-				missing.Add(name);
-			}
-		}
-
-		if (dto.Port is null)
-		{
-			missing.Add(PortKey);
-		}
-
-		if (dto.PollIntervalMs is null)
-		{
-			missing.Add(PollIntervalKey);
-		}
-
-		return missing.Count == 0
-			? Result.Ok()
-			: Invalid(sectionDirectory, ConnectionFileProblem.MissingField, missing);
-	}
-
-	private static Result ValidateRanges(string sectionDirectory, PostgresConnectionDto dto)
-	{
-		var outOfRange = new List<string>();
-
-		if (dto.Port!.Value is < LowestPort or > HighestPort)
-		{
-			outOfRange.Add(PortKey);
-		}
-
-		if (dto.PollIntervalMs!.Value < LowestPollIntervalMs)
-		{
-			outOfRange.Add(PollIntervalKey);
-		}
-
-		return outOfRange.Count == 0
-			? Result.Ok()
-			: Invalid(sectionDirectory, ConnectionFileProblem.OutOfRange, outOfRange);
-	}
-
-	private static Result ValidateHost(string sectionDirectory, string? host)
-	{
-		return IsIPv4Address(host)
-			? Result.Ok()
-			: Result.Fail(new ConnectionFileError(
-				sectionDirectory,
-				ConnectionFileProblem.HostNotIPv4,
-				[HostKey]));
-	}
-
-	private static Result Invalid(
-		string sectionDirectory,
-		ConnectionFileProblem kind,
-		IReadOnlyList<string> fieldNames)
-	{
-		return Result.Fail(new ConnectionFileError(sectionDirectory, kind, fieldNames));
 	}
 }

@@ -2,6 +2,7 @@ using AwesomeAssertions;
 
 using Npgsql;
 
+using SemiPlot.DataSource.OpcUa.Configuration;
 using SemiPlot.DataSource.Postgres.Configuration;
 
 using SemiPlot.Tools.ArchiveSeeder;
@@ -18,6 +19,9 @@ namespace SemiPlot.Tests.Integration;
 [Trait("Category", "Integration")]
 public sealed class ConvergeTests(PostgresContainerFixture postgresContainerFixture)
 {
+	// Only written into opc/opc.yaml; nothing dials it.
+	private const int OpcPort = 55875;
+
 	[Fact]
 	public async Task ConvergeCreatesSeedsWritesTheFileAndRecreatesOnASecondRun()
 	{
@@ -29,7 +33,8 @@ public sealed class ConvergeTests(PostgresContainerFixture postgresContainerFixt
 			server.AdminConnectionString,
 			configDirectory,
 			ArchiveTemplate.Slice.End,
-			ArchiveTemplate.Slice.ChangeSeconds);
+			ArchiveTemplate.Slice.ChangeSeconds,
+			OpcPort);
 
 		try
 		{
@@ -50,6 +55,12 @@ public sealed class ConvergeTests(PostgresContainerFixture postgresContainerFixt
 			loaded.IsSuccess.Should().BeTrue();
 			loaded.Value.Database.Should().Be(database);
 			loaded.Value.Username.Should().Be(BenchRoles.PlotRole);
+
+			var opc = OpcUaConnectionLoader.Load(Path.Combine(configDirectory, OpcFileWriter.DirectoryName));
+
+			opc.IsSuccess.Should().BeTrue();
+			opc.Value.Host.Should().Be(DemoScadaServer.Host);
+			opc.Value.Port.Should().Be(OpcPort);
 
 			var oidBefore = await DatabaseOidAsync(server, database);
 

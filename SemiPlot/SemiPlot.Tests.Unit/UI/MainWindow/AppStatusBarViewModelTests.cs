@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Resources;
 
@@ -24,8 +25,8 @@ using static SemiPlot.Tests.Unit.UI.MainWindow.MainWindowTestBuilder;
 namespace SemiPlot.Tests.Unit.UI.MainWindow;
 
 /// <summary>
-/// The status bar's own state: the connection it follows, the layer named from resx, and the two entries
-/// the connection writes into the message panel.
+/// The status bar's own state: the archive and live connections it follows, the layer named from resx, and
+/// the two entries each connection writes into the message panel.
 /// </summary>
 [Collection(ProcessGlobalStateCollection.Name)]
 [Trait("Component", "UI")]
@@ -35,6 +36,9 @@ public sealed class AppStatusBarViewModelTests
 {
 	private static readonly ArchiveConnectionState _lost =
 		new(FakePenCatalogueEditor.Refusal(ArchiveFault.ConnectionLost, "3"));
+
+	private static readonly LiveSourceState _liveLost =
+		LiveSourceState.FaultedBy(new LiveSourceError(LiveSourceFault.Unreachable, "opc.tcp://127.0.0.1:4840"));
 
 	[Fact]
 	public void Connected_AsTheFirstTick_WritesNoEntry()
@@ -107,7 +111,7 @@ public sealed class AppStatusBarViewModelTests
 		var logger = new ThrowingLogger<AppStatusBarViewModel>(throwsOnce: true);
 		using var states = new Subject<ArchiveConnectionState>();
 		using var statusBar = new AppStatusBarViewModel(
-			panel, states, NavigationAtRawLayer(), logger);
+			panel, states, Observable.Never<LiveSourceState>(), NavigationAtRawLayer(), logger);
 
 		states.OnNext(_lost);
 
@@ -131,7 +135,7 @@ public sealed class AppStatusBarViewModelTests
 		var logger = new FakeLogger<AppStatusBarViewModel>();
 		using var states = new Subject<ArchiveConnectionState>();
 		using var statusBar = new AppStatusBarViewModel(
-			panel, states, NavigationAtRawLayer(), logger);
+			panel, states, Observable.Never<LiveSourceState>(), NavigationAtRawLayer(), logger);
 		var poison = ReportingTestDoubles.PoisonEntries(panel);
 
 		states.OnNext(_lost);
@@ -158,6 +162,141 @@ public sealed class AppStatusBarViewModelTests
 		states.OnNext(_lost);
 
 		statusBar.IsConnected.Should().BeTrue();
+		panel.Entries.Should().BeEmpty();
+	}
+
+	[Fact]
+	public void LiveConnecting_WritesNoEntryAndReadsNeitherConnectedNorFaulted()
+	{
+		using var panel = new MessagePanelViewModel();
+		using var liveStates = new Subject<LiveSourceState>();
+		using var statusBar = NewStatusBar(panel, liveSourceStates: liveStates);
+
+		liveStates.OnNext(LiveSourceState.Connecting);
+
+		panel.Entries.Should().BeEmpty();
+		statusBar.IsLiveConnected.Should().BeFalse();
+		statusBar.IsLiveFaulted.Should().BeFalse("the grace is not a fault");
+		statusBar.LiveConnectionText.Should().Be(Resources.StatusLiveConnecting);
+	}
+
+	[Fact]
+	public void LiveConnected_AsTheFirstTick_WritesNoEntry()
+	{
+		using var panel = new MessagePanelViewModel();
+		using var liveStates = new Subject<LiveSourceState>();
+		using var statusBar = NewStatusBar(panel, liveSourceStates: liveStates);
+
+		liveStates.OnNext(LiveSourceState.Connecting);
+		liveStates.OnNext(LiveSourceState.Connected);
+
+		panel.Entries.Should().BeEmpty();
+		statusBar.IsLiveConnected.Should().BeTrue();
+		statusBar.IsLiveFaulted.Should().BeFalse();
+		statusBar.LiveConnectionText.Should().Be(Resources.StatusLiveConnectionOk);
+	}
+
+	[Fact]
+	public void ALiveFault_WritesOneWarningAndSetsTheFaultText()
+	{
+		using var panel = new MessagePanelViewModel();
+		using var liveStates = new Subject<LiveSourceState>();
+		using var statusBar = NewStatusBar(panel, liveSourceStates: liveStates);
+
+		liveStates.OnNext(_liveLost);
+
+		statusBar.IsLiveConnected.Should().BeFalse();
+		statusBar.IsLiveFaulted.Should().BeTrue();
+		statusBar.LiveConnectionText.Should().Be(Resources.StatusLiveConnectionFault);
+		statusBar.IsConnected.Should().BeTrue("the archive indicator follows its own stream");
+		panel.Entries.Should().ContainSingle();
+		panel.Entries[0].View.Should().Be(ArchiveFailureMapper.Map(_liveLost.Fault!));
+		panel.Entries[0].View.Severity.Should().Be(MessageSeverity.Warning);
+	}
+
+	[Fact]
+	public void LiveConnected_AfterAFault_WritesExactlyOneInfoEntry()
+	{
+		using var panel = new MessagePanelViewModel();
+		using var liveStates = new Subject<LiveSourceState>();
+		using var statusBar = NewStatusBar(panel, liveSourceStates: liveStates);
+
+		liveStates.OnNext(LiveSourceState.Connected);
+		liveStates.OnNext(_liveLost);
+		liveStates.OnNext(LiveSourceState.Connected);
+
+		panel.Entries.Should().HaveCount(2);
+		panel.Entries[0].View.Severity.Should().Be(MessageSeverity.Info);
+		panel.Entries[0].View.Title.Should().Be(Resources.StatusLiveConnectionRestoredTitle);
+		panel.Entries[0].View.Detail.Should().Be(Resources.StatusLiveConnectionRestoredDetail);
+		panel.Entries[1].View.Should().Be(ArchiveFailureMapper.Map(_liveLost.Fault!));
+		statusBar.IsLiveConnected.Should().BeTrue();
+		statusBar.IsLiveFaulted.Should().BeFalse();
+	}
+
+	[Fact]
+	public void LiveConnected_TwiceAfterOneFault_WritesOneRecoveryEntry()
+	{
+		using var panel = new MessagePanelViewModel();
+		using var liveStates = new Subject<LiveSourceState>();
+		using var statusBar = NewStatusBar(panel, liveSourceStates: liveStates);
+
+		liveStates.OnNext(_liveLost);
+		liveStates.OnNext(LiveSourceState.Connected);
+		liveStates.OnNext(LiveSourceState.Connected);
+
+		panel.Entries.Where(entry => entry.View.Severity == MessageSeverity.Info).Should().ContainSingle();
+		panel.Entries[0].RepeatCount.Should().Be(1, "a second Connected owes no second entry");
+	}
+
+	[Fact]
+	public void LiveConnected_AfterAnArchiveFault_WritesNoRecoveryEntry()
+	{
+		using var panel = new MessagePanelViewModel();
+		using var states = new Subject<ArchiveConnectionState>();
+		using var liveStates = new Subject<LiveSourceState>();
+		using var statusBar = NewStatusBar(panel, states, liveStates);
+
+		states.OnNext(_lost);
+		liveStates.OnNext(LiveSourceState.Connected);
+
+		panel.Entries.Should().ContainSingle().Which.View.Severity.Should().Be(MessageSeverity.Warning);
+	}
+
+	[Fact]
+	public void AThrowInTheLiveHandler_IsReportedAndTheStreamSurvives()
+	{
+		using var panel = new MessagePanelViewModel();
+		var logger = new ThrowingLogger<AppStatusBarViewModel>(throwsOnce: true);
+		using var liveStates = new Subject<LiveSourceState>();
+		using var statusBar = new AppStatusBarViewModel(
+			panel, Observable.Never<ArchiveConnectionState>(), liveStates, NavigationAtRawLayer(), logger);
+
+		liveStates.OnNext(_liveLost);
+
+		panel.Entries.Should().HaveCount(2);
+		panel.Entries[0].View.Should().Be(ArchiveFailureMapper.Map(new ExceptionalError(logger.Thrown)));
+		panel.Entries[1].View.Severity.Should().Be(MessageSeverity.Warning);
+
+		liveStates.OnNext(LiveSourceState.Connected);
+
+		statusBar.IsLiveConnected.Should().BeTrue("the next state still arrives");
+		panel.Entries.Should().HaveCount(3);
+		panel.Entries[0].View.Severity.Should().Be(MessageSeverity.Info);
+	}
+
+	[Fact]
+	public void AfterDisposal_TheBarStopsFollowingTheLiveStream()
+	{
+		using var panel = new MessagePanelViewModel();
+		using var liveStates = new Subject<LiveSourceState>();
+		var statusBar = NewStatusBar(panel, liveSourceStates: liveStates);
+		statusBar.Dispose();
+
+		liveStates.OnNext(_liveLost);
+
+		statusBar.IsLiveFaulted.Should().BeFalse();
+		statusBar.LiveConnectionText.Should().Be(Resources.StatusLiveConnecting);
 		panel.Entries.Should().BeEmpty();
 	}
 

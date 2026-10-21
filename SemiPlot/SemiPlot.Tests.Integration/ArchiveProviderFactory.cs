@@ -19,8 +19,6 @@ public static class ArchiveProviderFactory
 
 	public static readonly ArchiveTimeConverter TimeConverter = new(SourceTimeZone);
 
-	public static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
-
 	// The pool wait a test that caps the pool sets: one connect past the cap fails within it.
 	private const int CappedPoolWaitSeconds = 2;
 
@@ -83,7 +81,6 @@ public static class ArchiveProviderFactory
 			Username: builder.Username ?? string.Empty,
 			Password: builder.Password ?? string.Empty,
 			SourceTimeZone: SourceTimeZone,
-			PollInterval: PollInterval,
 			Schema: Schema);
 	}
 }

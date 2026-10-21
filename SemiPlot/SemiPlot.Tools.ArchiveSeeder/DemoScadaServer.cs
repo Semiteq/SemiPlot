@@ -15,6 +15,8 @@ namespace SemiPlot.Tools.ArchiveSeeder;
 /// </summary>
 public sealed class DemoScadaServer : IAsyncDisposable
 {
+	public const string Host = "127.0.0.1";
+
 	private const string ApplicationName = "SemiPlotDemoScada";
 
 	private readonly StandardServer _server;
@@ -48,7 +50,7 @@ public sealed class DemoScadaServer : IAsyncDisposable
 		ILoggerFactory loggerFactory)
 	{
 		var telemetry = new Telemetry(loggerFactory);
-		var endpointUrl = $"opc.tcp://127.0.0.1:{options.OpcPort}";
+		var endpointUrl = $"opc.tcp://{Host}:{options.OpcPort}";
 		var configuration = CreateConfiguration(endpointUrl, certificateDirectory, telemetry);
 
 		await configuration.ValidateAsync(ApplicationType.Server, CancellationToken.None);
@@ -81,7 +83,7 @@ public sealed class DemoScadaServer : IAsyncDisposable
 			await server.DisposeAsync();
 
 			throw new SeederException(
-				$"OPC UA port {options.OpcPort} is in use on 127.0.0.1; a running Simple-Scada holds " +
+				$"OPC UA port {options.OpcPort} is in use on {Host}; a running Simple-Scada holds " +
 				$"{FollowOptions.SimpleScadaPort} by default. Pass a free --opc-port.",
 				exception);
 		}

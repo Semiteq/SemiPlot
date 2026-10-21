@@ -22,13 +22,17 @@ implementation plans see `docs/plans/`.
   database: responsibility zones, the `IDataProvider` and `ILiveSource` surfaces, the statement each
   operation issues and what it must keep, layer selection and the measured read cost per layer, the
   time boundary, gap mapping, error semantics, the connection settings with the session's `jit = off`,
-  the startup path and field triage.
+  the startup path and field triage. Its Realtime section holds the OPC UA live source: the session
+  and its states, the subscriptions, the breaks the source writes and the one the chart writes ahead of
+  a pen's first live sample, and the `opc/` section.
 - [scada-archive.md](./scada-archive.md) — the Simple-Scada 2 archive as it exists: tables and
   columns, archive layers, quality marks and gaps, write and retention behaviour, reader hazards,
   and what remains unverified.
 - [scada-archive-observed.md](./scada-archive-observed.md) - what a running Simple-Scada 2 server did
   to the archive over 48 hours: every statement and when it ran, per-variable batching and write
-  latency, the coarse-layer selection rule, retention timing, outage replay and loss, disk per row.
+  latency, the coarse-layer selection rule, retention timing, outage replay and loss, disk per row; and
+  what its OPC UA server answers: endpoints, namespaces, node addresses, stamps, and the session through
+  a restart, a kill and a cut transport.
 - [postgres-instance.md](./postgres-instance.md) — the instance as SemiPlot consumes it: the `semiplot`
   role's contract, the configuration tables and the columns read, the provisioning states the client
   must survive, retention and capacity. Installation, configuration, provisioning order and the role
@@ -49,7 +53,7 @@ implementation plans see `docs/plans/`.
   dependency.
 
 Two tracked data sets are referenced from the docs above. One is the shipped configuration set,
-[`ConfigFiles/`](../../ConfigFiles) - `app/app.yaml` and `connection/connection.yaml`, read by the
+[`ConfigFiles/`](../../ConfigFiles) - `app/app.yaml`, `connection/connection.yaml` and `opc/opc.yaml`, read by the
 production loaders from the test output directory; `overview.md` holds the section-folder rule.
 The other is the committed 140-row real-archive slice,
 [`SemiPlot.Tests.Unit/Fixtures/real-archive-rows.csv`](../../SemiPlot/SemiPlot.Tests.Unit/Fixtures).
@@ -78,7 +82,7 @@ SemiBase creates `public.trends`, as `bench.md` and `postgres-instance.md` state
 | Platform        | .NET 10 (`net10.0`), ships on Windows, C# 14                                |
 | Desktop shell   | Avalonia 12.0.5 (Win32 + Skia + HarfBuzz + `Semi.Avalonia`), ReactiveUI MVVM |
 | Chart renderer  | ScottPlot 5 (`ScottPlot.Avalonia` 5.1.59, MIT, SkiaSharp) — native control  |
-| Data source     | One read-only Npgsql data source (a connection pool) on the Simple-Scada archive (`trends`; the role may read `messages`, and no statement does) — history, extent and realtime alike; a history read holds up to four pooled connections at once (`data-integration.md#operation-to-statement`). No application server, no OPC UA client, no local TCP protocol |
+| Data source     | One read-only Npgsql data source (a connection pool) on the Simple-Scada archive (`trends`; the role may read `messages`, and no statement does) for history and extent; a history read holds up to four pooled connections at once (`data-integration.md#operation-to-statement`). An OPC UA client of the SCADA's built-in server for the live edge only, one session per process (`[DEC:opc-live-edge]`). No application server, no local TCP protocol |
 | Wide windows    | The SCADA's own archive layers (`l = 1/2`); no summary tables, aggregator service, scheduler or extensions of ours (`history-read-path-evaluation.md`) |
 | Retention       | One depth for all archived data; coarse layers cannot outlive raw data       |
 | Tag names       | Our own `semiplot_tags` table, one row per key SCADA writes, registered by `semiplot_register_new_pens()` — the archive stores numbers only |

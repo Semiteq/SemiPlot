@@ -29,7 +29,6 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 		("database", "\"semiplot_dev\""),
 		("user", "\"semiplot_reader\""),
 		("password", "\"s3cret\""),
-		("poll_interval_ms", "1000"),
 		("schema", "\"public\"")
 	];
 
@@ -53,8 +52,19 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 		result.Value.Database.Should().Be("semiplot_dev");
 		result.Value.Username.Should().Be("semiplot_reader");
 		result.Value.Password.Should().Be("s3cret");
-		result.Value.PollInterval.Should().Be(TimeSpan.FromSeconds(1));
 		result.Value.Schema.Should().Be("public");
+	}
+
+	// An upgraded site keeps its installed connection file, which still carries the retired poll period.
+	[Fact]
+	public void ALeftoverPollIntervalKeyIsIgnored()
+	{
+		WriteFile(Compose(_validFields.Append(("poll_interval_ms", "1000"))));
+
+		var result = PostgresConnectionLoader.Load(_directory);
+
+		result.IsSuccess.Should().BeTrue(Describe(result));
+		result.Value.Port.Should().Be(5433);
 	}
 
 	[Fact]
@@ -112,6 +122,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 		var result = PostgresConnectionLoader.Load(_directory);
 
 		var error = ErrorOf<ConnectionFileError>(result);
+		error.Section.Should().Be(ConfigurationSectionName.Connection);
 		error.Path.Should().Be(_directory);
 		error.Kind.Should().Be(ConnectionFileProblem.Unparseable);
 	}
@@ -132,7 +143,6 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	[InlineData("database")]
 	[InlineData("user")]
 	[InlineData("password")]
-	[InlineData("poll_interval_ms")]
 	public void AnAbsentRequiredFieldYieldsTheMissingFieldDiscriminator(string field)
 	{
 		WriteFile(Compose(_validFields.Where(pair => pair.Field != field)));
@@ -140,6 +150,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 		var result = PostgresConnectionLoader.Load(_directory);
 
 		var error = ErrorOf<ConnectionFileError>(result);
+		error.Section.Should().Be(ConfigurationSectionName.Connection);
 		error.Path.Should().Be(_directory);
 		error.Kind.Should().Be(ConnectionFileProblem.MissingField);
 		error.Fields.Should().Equal(field);
@@ -157,36 +168,6 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 		error.Fields.Should().Equal("host");
 	}
 
-	[Theory]
-	[InlineData("0.0.0.0")]
-	[InlineData("127.0.0.1")]
-	[InlineData("192.168.0.10")]
-	[InlineData("255.255.255.255")]
-	public void AnIPv4AddressOfFourDecimalOctetsIsAHost(string host)
-	{
-		PostgresConnectionLoader.IsIPv4Address(host).Should().BeTrue();
-	}
-
-	[Theory]
-	[InlineData(null)]
-	[InlineData("")]
-	[InlineData("localhost")]
-	[InlineData("::1")]
-	[InlineData("::ffff:127.0.0.1")]
-	[InlineData("127.1")]
-	[InlineData("1.2.3.4.5")]
-	[InlineData("1..2.3")]
-	[InlineData("256.0.0.1")]
-	[InlineData("1.2.3.1000")]
-	[InlineData("010.0.0.1")]
-	[InlineData("+1.2.3.4")]
-	[InlineData(" 127.0.0.1")]
-	[InlineData("\uFF11.2.3.4")]
-	public void AnythingButFourDecimalOctetsIsNotAHost(string? host)
-	{
-		PostgresConnectionLoader.IsIPv4Address(host).Should().BeFalse();
-	}
-
 	[Fact]
 	public void AHostThatIsNotAnIPv4AddressYieldsTheHostNotIPv4Discriminator()
 	{
@@ -195,6 +176,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 		var result = PostgresConnectionLoader.Load(_directory);
 
 		var error = ErrorOf<ConnectionFileError>(result);
+		error.Section.Should().Be(ConfigurationSectionName.Connection);
 		error.Path.Should().Be(_directory);
 		error.Kind.Should().Be(ConnectionFileProblem.HostNotIPv4);
 		error.Fields.Should().Equal("host");
@@ -203,7 +185,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	[Fact]
 	public void EveryAbsentFieldIsReportedInOneError()
 	{
-		var absent = new[] { "host", "poll_interval_ms" };
+		var absent = new[] { "host", "port" };
 		WriteFile(Compose(_validFields.Where(pair => !absent.Contains(pair.Field))));
 
 		var result = PostgresConnectionLoader.Load(_directory);
@@ -217,8 +199,6 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 	[InlineData("port", "0")]
 	[InlineData("port", "-1")]
 	[InlineData("port", "65536")]
-	[InlineData("poll_interval_ms", "0")]
-	[InlineData("poll_interval_ms", "-1")]
 	public void AValueOutsideItsRangeYieldsTheOutOfRangeDiscriminator(string field, string value)
 	{
 		WriteFile(Compose(Replace(field, value)));
@@ -226,6 +206,7 @@ public sealed class PostgresConnectionLoaderTests : IDisposable
 		var result = PostgresConnectionLoader.Load(_directory);
 
 		var error = ErrorOf<ConnectionFileError>(result);
+		error.Section.Should().Be(ConfigurationSectionName.Connection);
 		error.Path.Should().Be(_directory);
 		error.Kind.Should().Be(ConnectionFileProblem.OutOfRange);
 		error.Fields.Should().Equal(field);

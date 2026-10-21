@@ -205,30 +205,6 @@ internal static class ArchiveStatements
 	                                  """;
 
 	/// <summary>
-	/// Every raw sample newer than the last one a subscription saw, issued once per poll tick with a strict
-	/// <c>&gt;</c> so the row that set <c>@lastSeen</c> never returns twice (docs/architecture/scada-archive.md).
-	/// </summary>
-	public const string RealtimePoll = """
-	                                   SELECT id, t, v, q
-	                                   FROM trends
-	                                   WHERE id = ANY(@ids) AND l = 0 AND t > @lastSeen
-	                                   ORDER BY t;
-	                                   """;
-
-	/// <summary>
-	/// The newest raw timestamp across the subscribed variables, read once to establish where a poll starts;
-	/// a <c>NULL</c> answer is a content state, not a failure. Lateral on purpose: a bare <c>max(t)</c>
-	/// under <c>id = ANY(...)</c> loses the index-edge transform.
-	/// </summary>
-	public const string RealtimeBaseline = """
-	                                       SELECT max(hi) AS last
-	                                       FROM (SELECT DISTINCT unnest(@ids) AS id) requested
-	                                       CROSS JOIN LATERAL (
-	                                           SELECT (SELECT max(t) FROM trends WHERE id = requested.id AND l = 0) AS hi
-	                                       ) bounds;
-	                                       """;
-
-	/// <summary>
 	/// A window of one layer, one row per bucket, seeded before the window.
 	/// </summary>
 	public const string BucketedHistoryWindow = """

@@ -124,7 +124,8 @@ public sealed class EnvelopeLineTests
 		line.AppendColumn(Column(11.0)).Should().BeTrue();
 		line.AppendColumn(Column(12.0)).Should().BeTrue();
 
-		line.ReplaceColumns(ColumnsFrom(0.0, 4), UnboundedRequestedEndX);
+		line.ReplaceColumns(ColumnsFrom(0.0, 4), UnboundedRequestedEndX)
+			.Should().BeFalse("no column lies past the end");
 
 		line.SnapshotColumns().Select(column => column.X).Should().Equal(
 			[0.0, 1.0, 2.0, 3.0, 11.0, 12.0],
@@ -155,9 +156,50 @@ public sealed class EnvelopeLineTests
 		line.AppendColumn(Column(6.0)).Should().BeTrue();
 		line.AppendColumn(Column(7.0)).Should().BeTrue();
 
-		line.ReplaceColumns(ColumnsFrom(0.0, 3), requestedEndX: 6.0);
+		line.ReplaceColumns(ColumnsFrom(0.0, 3), requestedEndX: 6.0).Should().BeTrue();
 
 		line.SnapshotColumns().Select(column => column.X).Should().Equal(0.0, 1.0, 2.0, 5.0, 6.0);
+	}
+
+	[Fact]
+	public void AnAppendAfterBreakAtOrBeforeTheLastColumn_AppendsNothing()
+	{
+		var line = new EnvelopeLine();
+		line.ReplaceColumns(ColumnsFrom(0.0, 2), UnboundedRequestedEndX);
+
+		line.AppendAfterBreak(Gap(0.5), Column(1.0)).Should().BeFalse();
+		line.AppendAfterBreak(Gap(-1.0), Column(0.0)).Should().BeFalse();
+
+		line.SnapshotColumns().Select(column => column.X).Should().Equal(0.0, 1.0);
+	}
+
+	[Fact]
+	public void AnAppendAfterBreakOnAnEmptyLine_AppendsTheGapAndThenTheSample()
+	{
+		var line = new EnvelopeLine();
+
+		line.AppendAfterBreak(Gap(4.0), Column(5.0)).Should().BeTrue();
+
+		line.SnapshotColumns().Should().Equal(Gap(4.0), Column(5.0));
+	}
+
+	[Theory]
+	[InlineData(false, 2.5, new[] { 0.0, 1.0, 2.5, 3.0 }, 1)]
+	[InlineData(false, 1.0, new[] { 0.0, 1.0, 3.0 }, 0)]
+	[InlineData(true, 2.5, new[] { 0.0, 1.0, 3.0 }, 1)]
+	public void AnAppendAfterBreak_AppendsTheGapOnlyPastTheLastColumnOfALineNotEndingOnOne(
+		bool endsOnGap,
+		double gapX,
+		double[] expectedXs,
+		int expectedGaps)
+	{
+		var line = new EnvelopeLine();
+		line.ReplaceColumns(endsOnGap ? [Column(0.0), Gap(1.0)] : ColumnsFrom(0.0, 2), UnboundedRequestedEndX);
+
+		line.AppendAfterBreak(Gap(gapX), Column(3.0)).Should().BeTrue();
+
+		line.SnapshotColumns().Select(column => column.X).Should().Equal(expectedXs);
+		line.SnapshotColumns().Count(column => double.IsNaN(column.Center)).Should().Be(expectedGaps);
 	}
 
 	[Fact]
@@ -489,6 +531,11 @@ public sealed class EnvelopeLineTests
 	private static EnvelopeColumn Column(double x)
 	{
 		return new EnvelopeColumn(x, 0.0, 1.0, 0.5);
+	}
+
+	private static EnvelopeColumn Gap(double x)
+	{
+		return new EnvelopeColumn(x, double.NaN, double.NaN, double.NaN);
 	}
 
 	private static EnvelopeColumn[] ColumnsFrom(double firstX, int count)

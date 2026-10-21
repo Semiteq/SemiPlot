@@ -82,6 +82,8 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			.Subscribe(ApplyRealtimeBatch));
 		_disposables.Add(_coordinator.RealtimeFailures
 			.Subscribe(ReportFailure));
+		_disposables.Add(_coordinator.LivePenFaults
+			.Subscribe(fault => _messagePanel.TryReportFailure(fault, _logger)));
 
 		Plot.HideLegend();
 	}
@@ -804,11 +806,51 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 			_realtimeApplier.Apply(batch, foldIntoColumn);
 			RequestRedraw();
+			LogLiveLag(batch);
 		}
 		catch (Exception applyFailure)
 		{
 			ReportFailure(applyFailure);
 		}
+	}
+
+	private void LogLiveLag(RealtimeBatch batch)
+	{
+		if (!_logger.IsEnabled(LogLevel.Debug))
+		{
+			return;
+		}
+
+		var valueCount = 0;
+		var newestValueUtc = DateTime.MinValue;
+
+		foreach (var pen in batch.Pens)
+		{
+			for (var index = 0; index < pen.Values.Count; index++)
+			{
+				if (pen.Values[index] is null)
+				{
+					continue;
+				}
+
+				valueCount++;
+
+				if (pen.TimestampsUtc[index] > newestValueUtc)
+				{
+					newestValueUtc = pen.TimestampsUtc[index];
+				}
+			}
+		}
+
+		if (valueCount == 0)
+		{
+			return;
+		}
+
+		_logger.LogDebug(
+			"Live batch applied: {ValueCount} values, {LagMilliseconds} ms after the newest",
+			valueCount,
+			(DateTime.UtcNow - newestValueUtc).TotalMilliseconds);
 	}
 
 	/// <summary>The chart's own Rx pipelines, the view's included, route a terminal failure here.</summary>

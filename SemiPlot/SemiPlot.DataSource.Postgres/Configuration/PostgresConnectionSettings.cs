@@ -14,7 +14,6 @@ public sealed record PostgresConnectionSettings(
 	string Username,
 	string Password,
 	TimeZoneInfo SourceTimeZone,
-	TimeSpan PollInterval,
 	string Schema)
 {
 	/// <summary>
@@ -23,7 +22,7 @@ public sealed record PostgresConnectionSettings(
 	public const int ConnectTimeoutSeconds = 15;
 
 	/// <summary>
-	/// Client backstop for a server that stops answering; the poll's tick and the catalogue read override it.
+	/// Client backstop for a server that stops answering; the catalogue read overrides it.
 	/// </summary>
 	public const int CommandTimeoutSeconds = 300;
 
@@ -59,7 +58,6 @@ public sealed record PostgresConnectionSettings(
 		return $"{nameof(PostgresConnectionSettings)} {{ {nameof(Host)} = {Host}, "
 			+ $"{nameof(Port)} = {Port.ToString(invariant)}, "
 			+ $"{nameof(Database)} = {Database}, {nameof(Username)} = {Username}, {nameof(Password)} = ***, "
-			+ $"{nameof(SourceTimeZone)} = {SourceTimeZone.Id}, {nameof(PollInterval)} = {PollInterval}, "
-			+ $"{nameof(Schema)} = {Schema} }}";
+			+ $"{nameof(SourceTimeZone)} = {SourceTimeZone.Id}, {nameof(Schema)} = {Schema} }}";
 	}
 }

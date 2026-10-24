@@ -82,6 +82,8 @@ public sealed class EnvelopeLineTests
 				realtime = realtime.AddSeconds(1);
 				state.AppendRealtime(realtime, 1.0);
 				state.FoldRealtime(realtime, 0.5);
+				line.ConfirmLive(LocalTimeAxis.ToAxis(realtime));
+				line.SetHoldEnd(LocalTimeAxis.ToAxis(realtime.AddSeconds(1)));
 
 				state.ClearHistory(requestedTo);
 
@@ -200,6 +202,32 @@ public sealed class EnvelopeLineTests
 
 		line.SnapshotColumns().Select(column => column.X).Should().Equal(expectedXs);
 		line.SnapshotColumns().Count(column => double.IsNaN(column.Center)).Should().Be(expectedGaps);
+	}
+
+	[Fact]
+	public void AnAheadBreakKeepsItsKindThroughAReplaceThatKeepsItAndAnAppendPastTheCap()
+	{
+		const double LastHistoryX = TrimChunk;
+		const double AheadBreakX = LastHistoryX + 0.5;
+		var line = new EnvelopeLine();
+		var history = ColumnsFrom(0.0, TrimChunk + 1);
+		line.ReplaceColumns(history, UnboundedRequestedEndX);
+		line.AppendAfterBreak(AheadGap(AheadBreakX), Column(LastHistoryX + 1.0)).Should().BeTrue();
+
+		line.ReplaceColumns(history, UnboundedRequestedEndX);
+
+		line.SnapshotColumns()[TrimChunk + 1].Should().Be(AheadGap(AheadBreakX), "the kept tail carries the kind");
+
+		var appendsToPassTheCap = ColumnCap + 1 - line.SnapshotColumns().Count;
+		for (var appended = 0; appended < appendsToPassTheCap; appended++)
+		{
+			line.AppendColumn(Column(LastHistoryX + 2.0 + appended));
+		}
+
+		var columns = line.SnapshotColumns();
+		columns.Should().HaveCount(ColumnCap + 1 - TrimChunk, "one append past the cap trims one chunk");
+		columns[0].X.Should().Be(LastHistoryX);
+		columns[1].Should().Be(AheadGap(AheadBreakX), "the trim moves the column, kind and all");
 	}
 
 	[Fact]
@@ -445,6 +473,89 @@ public sealed class EnvelopeLineTests
 	}
 
 	[Fact]
+	public void DistanceTo_AClickOnTheHeldSegment_IsZero()
+	{
+		using var plot = new Plot();
+		var (line, dataRect) = LineOverTenByTen(plot, [Flat(0.0, 2.0), Flat(2.0, 6.0)], PenLineStyle.Interpolated);
+		var onTheHold = PixelAt(line, dataRect, 5.0, 6.0);
+
+		line.DistanceTo(onTheHold, dataRect).Should().BeGreaterThan(MissDistance, "nothing is held yet");
+
+		line.ConfirmLive(2.0);
+		line.SetHoldEnd(8.0);
+
+		line.DistanceTo(onTheHold, dataRect).Should().BeApproximately(0.0, HitTolerance);
+	}
+
+	[Fact]
+	public void DistanceTo_AClickPastTheHoldEnd_MeasuresToTheHoldsEndPoint()
+	{
+		using var plot = new Plot();
+		var (line, dataRect) = LineOverTenByTen(plot, [Flat(0.0, 2.0), Flat(2.0, 6.0)], PenLineStyle.Interpolated);
+		line.ConfirmLive(2.0);
+		line.SetHoldEnd(8.0);
+		var click = PixelAt(line, dataRect, 9.0, 6.0);
+		var holdEnd = PixelAt(line, dataRect, 8.0, 6.0);
+
+		line.DistanceTo(click, dataRect).Should().BeApproximately(click.X - holdEnd.X, HitTolerance);
+	}
+
+	[Fact]
+	public void HeldSpan_RunsFromTheLastColumnToTheHoldEndAtItsCenter()
+	{
+		var line = new EnvelopeLine();
+		line.ReplaceColumns(ColumnsFrom(0.0, 2), UnboundedRequestedEndX);
+
+		line.ReadHeldSpan().Should().BeNull("no live value confirmed the line");
+
+		line.ConfirmLive(1.0);
+
+		line.ReadHeldSpan().Should().BeNull("no hold end is set");
+
+		line.SetHoldEnd(4.0);
+
+		line.ReadHeldSpan().Should().Be(new HeldSpan(1.0, 4.0, Column(1.0).Center));
+
+		line.SetHoldEnd(double.NaN);
+
+		line.ReadHeldSpan().Should().BeNull();
+	}
+
+	[Fact]
+	public void ConfirmLive_KeepsTheSmallerOfTheValuesXAndTheLastColumnsX()
+	{
+		var line = new EnvelopeLine();
+		line.ReplaceColumns(ColumnsFrom(0.0, 2), UnboundedRequestedEndX);
+		line.SetHoldEnd(4.0);
+
+		line.ConfirmLive(3.0);
+
+		line.ReadHeldSpan().Should().NotBeNull("a value past the last column confirms that column");
+
+		line.ConfirmLive(0.5);
+		line.ReplaceColumns(ColumnsFrom(0.0, 1), UnboundedRequestedEndX);
+
+		line.ReadHeldSpan().Should().BeNull("the read cut the line back before the confirmed value");
+
+		line.ReplaceColumns(ColumnsFrom(0.0, 2), UnboundedRequestedEndX);
+
+		line.ReadHeldSpan().Should().Be(new HeldSpan(1.0, 4.0, Column(1.0).Center), "the rows came back");
+	}
+
+	[Fact]
+	public void ConfirmLive_AfterAFold_ConfirmsTheBucketsOpeningX()
+	{
+		var line = new EnvelopeLine();
+		line.ReplaceColumns([Column(0.0)], UnboundedRequestedEndX);
+		line.FoldIntoLastColumn(Flat(3.0, 9.0)).Should().BeTrue();
+		line.SetHoldEnd(5.0);
+
+		line.ConfirmLive(3.0);
+
+		line.ReadHeldSpan().Should().Be(new HeldSpan(0.0, 5.0, 9.0));
+	}
+
+	[Fact]
 	public void SetLineWidth_WidensTheDrawnStroke()
 	{
 		var thinRows = StrokeRowsAtWidth(1f);
@@ -536,6 +647,11 @@ public sealed class EnvelopeLineTests
 	private static EnvelopeColumn Gap(double x)
 	{
 		return new EnvelopeColumn(x, double.NaN, double.NaN, double.NaN);
+	}
+
+	private static EnvelopeColumn AheadGap(double x)
+	{
+		return Gap(x) with { Break = BreakKind.Ahead };
 	}
 
 	private static EnvelopeColumn[] ColumnsFrom(double firstX, int count)

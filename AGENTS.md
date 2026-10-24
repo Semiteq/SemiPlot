@@ -395,6 +395,11 @@ No abbreviations in names.
   only; no caller builds a `HistoryRequest` of its own
   (`docs/architecture/data-integration.md#what-one-history-query-covers`).
   `git grep -n "new HistoryRequest(" -- SemiPlot/SemiPlot.UI` prints only `ChartHistoryPlanner.cs` lines.
+- `Chart/TrendPenState` alone writes `BreakKind.Ahead` and a line's hold end
+  (`docs/architecture/charting.md#the-hold-to-the-live-edge`):
+  `git grep -n "BreakKind.Ahead" -- SemiPlot/SemiPlot.UI` prints only `Chart/TrendPenState.cs` and
+  `Chart/EnvelopePath.cs` (the one reader) lines, and `git grep -n "SetHoldEnd(" -- SemiPlot/SemiPlot.UI`
+  prints the declaration in `Chart/EnvelopeLine.cs` and the one call, in `TrendPenState.ApplyHold`.
 - A pen's reading is rendered through `SemiPlot.Core.Trends.PenValueFormat` and nowhere else: it owns
   the stored mask's character-and-section rule and the `0.###` fallback, and the sidebar row, the
   chart's hover readout, the major labels of a log10 axis (`Chart/LogTickGenerator`) and the delta
@@ -431,9 +436,9 @@ No abbreviations in names.
   `IObservable<LiveSourceError>`, `SemiPlot.Core/Data/Errors`, so `FailureSeverityTests` covers its
   kinds). `OpcUaLiveSource` in `SemiPlot.DataSource.OpcUa` is the one implementation, one session per
   process started by the first `Subscribe`, configured from the `opc/` section
-  (`docs/architecture/data-integration.md#realtime`). The source writes a break for a lost session and
-  for a `Bad` notification; the break ahead of a pen's first live sample is the chart's, in
-  `Chart/TrendPenState`, and never the source's
+  (`docs/architecture/data-integration.md#realtime`). The source writes a break for a lost session, for
+  a `Bad` notification and for a pen whose value turns non-numeric; the break ahead of a pen's first live
+  sample is the chart's, in `Chart/TrendPenState`, and never the source's
   (`docs/architecture/data-integration.md#the-break-ahead-of-a-first-live-sample`). Only the
   coordinator and the window hold the port, and this prints only `Bridge/TrendCoordinator.cs` and
   `MainWindow/TrendWindow.cs` lines: `git grep -n "ILiveSource" -- SemiPlot/SemiPlot.UI`.

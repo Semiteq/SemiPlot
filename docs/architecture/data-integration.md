@@ -1066,15 +1066,17 @@ The chart writes this break, in `TrendPenState`, and only the chart. The source 
 chart state, and `Switch` restarts its subscription on every pen-set change, so a break it wrote ahead
 of each subscription's first sample would land past every kept pen's last live column and draw a gap
 after each catalogue change. The chart knows each pen's last column and whether the pen's line is
-already joined to the live stream. A chart-side break also carries a meaning of its own for the
-`live-hold-to-edge` slice, which shades exactly this break grey and leaves a source's break, a lost
-session or a `Bad` status, with the ordinary look.
+already joined to the live stream. A chart-side break also carries a meaning of its own: the chart marks
+it `BreakKind.Ahead` and shades its span grey on the drawn pen (`charting.md#the-ahead-break-shade`), and
+a source's break, a lost session or a `Bad` status, keeps the ordinary look.
 
-The rule, per pen (`TrendPenState._isJoinedToLive`):
+The rule, per pen (`TrendPenState`'s `LiveJoin`; the full table is in
+`charting.md#per-pen-plottable-envelopeline`):
 
-- A pen's line is **joined** to the live stream once a live value has reached it, taken or not. A new
-  `TrendPenState` starts unjoined, so the window's first live sample of every pen, and the first sample
-  of a pen a catalogue read adds, are first samples.
+- A pen's line is **joined** to the live stream once a live value has reached it, taken or not, except
+  for a rejected value after a source break (below). A new `TrendPenState` starts `Unjoined`, so the
+  window's first live sample of every pen, and the first sample of a pen a catalogue read adds, are first
+  samples.
 - A live value that reaches an unjoined line at or before the line's last column (the line already
   covers that moment, as when the archive already holds a slow pen's last change) is rejected at `Raw`
   and folded at a coarse layer, as for a joined line, and the line joins.
@@ -1084,14 +1086,26 @@ The rule, per pen (`TrendPenState._isJoinedToLive`):
   is not past the last column. At a coarse layer the value opens a new column past the break, and the
   values after it fold into that column, which keeps its opening X (`EnvelopeLine.FoldIntoLastColumn`),
   so the live line resumes from the start of its first live bucket (`charting.md`).
-- A break from the source appends its `NaN` column and unjoins the line, whether the line takes the
-  column or rejects it. A rejected break is the case of a pen whose live samples all lay inside the
-  archive's span, a constant pen whose archive holds a later row: without the unjoin, the first sample
-  of the next session would draw a straight line across the outage.
-- A history apply that drops live columns past the read's requested end unjoins the line, because the
-  live run it held is gone and the read does not reach past its end. `EnvelopeLine.ReplaceColumns`
-  returns whether it dropped one. A sticky window's read keeps its right margin past the live edge
-  (What one history query covers, above), so following the edge never takes this branch. A pan into
+- A break from the source appends its `NaN` column and unjoins the line (`UnjoinedBySourceBreak`),
+  whether the line takes the column or rejects it. A rejected break is the case of a pen whose live
+  samples all lay inside the archive's span, a constant pen whose archive holds a later row: without the
+  unjoin, the first sample of the next session would draw a straight line across the outage. A value
+  the line then rejects, such as a recreated session's replay (The breaks the source writes, below),
+  re-confirms the line (`ReconfirmedAfterSourceBreak`), which holds it to the live edge again while it
+  ends on a value (`charting.md#the-hold-to-the-live-edge`), but does not join it: the next value past the
+  last column still opens behind a `NaN` column, and that column is `BreakKind.Ordinary`, because it
+  stands in for the outage. This holds at every layer: while the line is unjoined by a source break, a
+  coarse layer rejects a value at or before the last column too, rather than fold it into the bucket the
+  outage cut.
+- A history apply that drops live columns past the read's requested end unjoins the line (`Unjoined`),
+  because the live run it held is gone and the read does not reach past its end. At a coarse layer the
+  same holds for a read that replaces the bucket the newest live value folded into, the live bucket or an
+  archive bucket a joined pen's values fold into, while that value lies past both the read's requested end
+  and its last row: the value is gone with the bucket. `EnvelopeLine.ReplaceColumns` returns whether it
+  lost a live value either way. The latest unjoin
+  wins, so after a source break and then such an apply the next value past the last column opens behind an
+  ahead-break. A sticky window's read keeps its right margin past the live edge (What one history query
+  covers, above), so following the edge never takes this branch. A pan into
   the past does take it: its read ends before the live tail, and between the archive's newest row and
   the clock (the archive lag) those dropped columns were the only copy of the OPC UA points. A return to
   the edge within the archive lag therefore shows a gap there, behind a new ahead-break, until a later
@@ -1108,11 +1122,15 @@ The step is 1 ms because the chart's X axis keeps milliseconds only (`LocalTimeA
 at or before the last X (`DA-7`).
 `TrendPenStateTests.Realtime_BreakOneTickAfterTheValue_IsRejectedAndOneMillisecondAfterIt_AddsANaNColumn`
 pins that step for a break after a value, and the `Realtime_AFirstValue...`, `Realtime_OnAnEmptyLine_...`,
-`Realtime_ARejectedBreak_...`, `Realtime_AfterAHistoryApply_...` and `FoldRealtime_AFirstValue...` cases
-of `TrendPenStateTests` pin the rule. `TrendChartViewModelTests.ACatalogueThatAddsAPen_BreaksOnlyTheAddedPensFirstLiveValue`
-pins the pen-set change, and
+`Realtime_ARejectedBreak_...`, `Realtime_ARejectedReplayAfterARejectedBreak_...`,
+`Realtime_ASourceBreakThenADroppingHistoryApply_...`, `Realtime_AfterAHistoryApply_...`,
+`FoldRealtime_AFirstValue...` and `FoldRealtime_AReplayAfterARejectedBreak_...` cases of
+`TrendPenStateTests` pin the rule.
+`TrendChartViewModelTests.ACatalogueThatAddsAPen_BreaksOnlyTheAddedPensFirstLiveValue` pins the pen-set
+change, and
 `OpcUaLiveEdgeJourneyTests.AServedValue_ReachesTheChartBehindABreak_AndMovesTheStickyWindowToTheNewestStamp`
-drives a value served over OPC UA by the demo server to a live column 1 ms behind its `NaN` column.
+drives a value served over OPC UA by the demo server to a live column 1 ms behind its `NaN` column, a
+`BreakKind.Ahead` one.
 
 ### The OPC UA live source
 
@@ -1267,8 +1285,10 @@ indicator keeps the bar's ordinary text colour during the grace. A fault is mapp
 `ArchiveFailureMapper.Map` into one panel entry, `Warning` for `Unreachable` and `Error` for
 `EndpointRefused` and `ProjectMissing`; the first `Connected` after a fault writes one `Info` entry,
 `LiveConnectionRestored`. `TrendWindow.Build` hands the bar `coordinator.LiveSourceStates`, and the bar is
-the indicator's single writer. The `live-hold-to-edge` slice reads the same `States` for "the session is
-up". `LiveSessionStatesTests` pins the decisions, `AppStatusBarViewModelTests` the indicator, and
+the indicator's single writer. The chart's live hold reads the same `States`, through the same
+`LiveSourceStates`, for "the session is up": `TrendChartViewModel` hands `IsConnected` to
+`Chart/ChartLiveHold`, and only `Connected` holds a pen (`charting.md#the-hold-to-the-live-edge`).
+`LiveSessionStatesTests` pins the decisions, `AppStatusBarViewModelTests` the indicator, and
 `OpcUaSessionTests` the sequences against the demo server: `ARunningServer_TakesConnectingThenConnected`,
 `NoServer_TakesUnreachableAfterTheGrace_ThenConnectedOnceAServerStartsOnThePort`,
 `AServerRestartedOnItsPort_TakesConnectedUnreachableConnected`,
@@ -1312,8 +1332,9 @@ and the coordinator buffers them:
   otherwise draw as a value and show as the pen's current reading.
 - The stamp is the `SourceTimestamp`, else the `ServerTimestamp`; a value with neither is dropped with a
   `Debug` line.
-- Anything else, `Boolean`, `String`, `DateTime`, an array or a null, is not numeric: the pen emits
-  nothing and joins its subscription's unserved pens.
+- Anything else, `Boolean`, `String`, `DateTime`, an array or a null, is not numeric: the pen joins its
+  subscription's unserved pens, and a pen with a delivered value also emits one break at the
+  notification's stamp, raised to the pen's newest delivered stamp (The breaks the source writes, below).
 
 **One entry per subscription for the pens the source cannot serve.** `UnservedPens` collects a
 subscription's unknown pens, whose item reads `BadNodeIdUnknown` (the real server answers an unknown node
@@ -1327,9 +1348,11 @@ that only shrinks writes no entry. `ReportedUnservedSets` keeps every set the
 process has reported, so a pen-set change or a recreated session that meets the same set writes nothing;
 a site with retired variables would otherwise get one entry per pen set at every catalogue change, since
 the panel coalesces only an entry equal to its newest one. An item the server refuses for any other
-status logs a `Warning` and is not waited for. An unserved pen draws the archive's values only.
-`PenSubscriptionTests` routes a `Bad`, a non-numeric and an unstamped notification through one
-subscription, raised by the stack's own `MonitoredItem.SaveValueInCache`, with no session.
+status logs a `Warning` and is not waited for. A pen unserved from its first notification draws the
+archive's values only; a pen that turns non-numeric keeps the live run it drew up to its break.
+`PenSubscriptionTests` routes a `Bad`, a non-numeric, a numeric-then-non-numeric and an unstamped
+notification through one subscription, raised by the stack's own `MonitoredItem.SaveValueInCache`, with no
+session.
 
 ### The breaks the source writes
 
@@ -1357,10 +1380,33 @@ gap until its next change, which is honest about the outage and costs a constant
 gap until a history read covers it. Waiting for the next session to place the break exactly would leave
 the outage without a break while it lasts.
 
+The chart's live hold follows the same two cases (`charting.md#the-hold-to-the-live-edge`). A loss ends
+every hold, because the session leaves `Connected`. A recreated session's replay re-confirms an unchanged
+pen: when the pen's loss break was rejected, because the archive holds a later row, the line still ends on
+that row and is held from it to the edge again, and the pen's next change still opens behind an ordinary
+`NaN` column, so no line crosses the outage. When the loss break was appended, the line ends on the gap and
+holds nothing until the next change. A reactivated session re-delivers nothing for an unchanged pen, so
+the pen stays unheld until its next change; a read of the current values after a reactivation would
+close that, and it is a backlog entry (`docs/plans/backlog.md`). A value that turns non-numeric ends the
+pen's hold through its break, below, so the chart never holds a value the server no longer states.
+
 **`Bad` writes a break.** Its stamp is the notification's `SourceTimestamp`, else its `ServerTimestamp`,
 raised to at least 1 ms past the pen's newest delivered stamp (`DeliveredStamps.BadBreak`). A `Bad` with
 neither stamp and no delivered value writes nothing, and a pen whose last emission is a break takes no
 second one, whether or not it has a delivered value.
+
+**A value that turns non-numeric writes a break.** A pen with a delivered value whose notification is no
+longer a number emits one break at that notification's `SourceTimestamp`, else its `ServerTimestamp`,
+raised to the pen's newest delivered stamp when it lies behind it (`DeliveredStamps.NotNumericBreak`). The
+raise stops at that stamp: a break placed where no sample lies, such as 1 ms past it, would move the
+chart's newest sample, the hold's edge, to a moment the server never stated. It still reaches that stamp,
+because the coordinator orders one pen's samples in a 100 ms batch by stamp: a break behind the newest
+value in the same batch would reach the chart ahead of the value, and the value would rejoin the line and
+hold it. At the newest value's stamp the stable sort keeps the value first, and the chart rejects the break
+as at or before the line's last column; a rejected break still unjoins the line, which ends its hold
+(`TrendChartLiveHoldTests.ABreakAtTheStampOfTheValueAheadOfItInOneBatch_EndsTheHold`). A pen with no
+delivered value or a notification with neither stamp writes nothing, and a pen whose last emission is a
+break takes no second one.
 
 `DeliveredStampsTests` pins the rules.
 `OpcUaLiveSourceRestartTests.AServerRestartedOnItsPort_BreaksEachPenOnceAtItsNewestStamp_BeforeTheNewSessionsSamples`
@@ -1444,7 +1490,7 @@ that read's apply.
 | Connection lost mid-session | failed `Result` on the query | Chart keeps the data it has |
 | No OPC UA session: the server does not answer within the 30 s grace, or a session is lost | `LiveSourceFault.Unreachable` on `ILiveSource.States`; the source keeps connecting; a lost session writes one break per delivered pen | The OPC UA indicator turns to the fault state and one `Warning` entry appears; the chart keeps the archive and its live points; the first session after it restores the indicator and adds one `Info` entry |
 | The OPC UA server offers no `None` endpoint with anonymous access, or holds no project folder | `LiveSourceFault.EndpointRefused` or `ProjectMissing` on `States`; retried every 30 s | One `Error` entry; the chart draws the archive only |
-| The OPC UA server does not know a pen, or serves a value that is not a number | `LiveSourceFault.PensUnserved` on `ILiveSource.PenFaults`, once per pen set | One `Warning` entry naming the unknown and the non-numeric pen ids; those pens draw the archive only |
+| The OPC UA server does not know a pen, or serves a value that is not a number | `LiveSourceFault.PensUnserved` on `ILiveSource.PenFaults`, once per pen set | One `Warning` entry naming the unknown and the non-numeric pen ids; those pens draw the archive only, and a pen that turns non-numeric breaks at that notification's stamp, raised to its newest delivered stamp |
 | An `opc/` section that is missing, unreadable, unparseable or carries a bad value | the loader's failed `Result` | The startup-failure window, as for `connection/`; an unreachable OPC UA server never fails the start |
 | Three consecutive catalogue reads fail for lack of a connection | `ArchiveFault.ConnectionLost` on `PenCatalogueSync.ConnectionStates`; the loop keeps reading | The status indicator turns to the fault state and one `Warning` entry appears; the first catalogue read that succeeds restores the indicator and adds one `Info` entry |
 | A column the read needs is absent (`42703`) | `ArchiveFault.ShapeUnexpected` with the server's detail | "The archive has an unexpected shape" — run `semibase site`, then find what altered the table |
@@ -1894,5 +1940,6 @@ When the chart draws a straight segment across a span the archive holds, or fill
 viewer at `--logging-level Debug` and match the segment's timestamps against the history-read entries
 and the live batch lines around them: each history read logs its layer, range, outcome and duration
 (`#what-one-history-query-covers`). A gap past the archive's newest row that does not close is the
-ahead-break or a loss break waiting for a history read to cover it (Realtime, above); a gesture that
+ahead-break, shaded grey on the drawn pen, or a loss break waiting for a history read to cover it
+(Realtime, above); a gesture that
 re-reads the window closes it where the archive now holds rows.

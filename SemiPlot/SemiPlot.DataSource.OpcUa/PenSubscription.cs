@@ -151,16 +151,11 @@ internal sealed class PenSubscription(
 				Report(_unserved.OnValue(penId));
 				break;
 			case LiveReadingKind.Break:
-				if (context.Stamps.BadBreak(penId, reading.StampUtc) is { } badBreak)
-				{
-					context.Logger.LogDebug(
-						"Pen {PenId} reads Bad: a break at {Stamp:O}", penId, badBreak.TimestampUtc);
-					Emit([badBreak]);
-				}
-
+				EmitBreak(context.Stamps.BadBreak(penId, reading.StampUtc), "reads Bad");
 				Report(_unserved.OnAnswered(penId));
 				break;
 			case LiveReadingKind.NotNumeric:
+				EmitBreak(context.Stamps.NotNumericBreak(penId, reading.StampUtc), "turned non-numeric");
 				Report(_unserved.OnNotNumeric(penId));
 				break;
 			default:
@@ -168,6 +163,18 @@ internal sealed class PenSubscription(
 				Report(_unserved.OnAnswered(penId));
 				break;
 		}
+	}
+
+	private void EmitBreak(Sample? placed, string reason)
+	{
+		if (placed is null)
+		{
+			return;
+		}
+
+		context.Logger.LogDebug(
+			"Pen {PenId} {Reason}: a break at {Stamp:O}", placed.PenId, reason, placed.TimestampUtc);
+		Emit([placed]);
 	}
 
 	private void Emit(IReadOnlyList<Sample> samples)

@@ -148,7 +148,7 @@ and the picker's flyout keep Semi's 6 px, as the menu flyout does.
 
 ## The application's own surfaces
 
-Semi owns the controls; these fifteen keys are ours, and each exists in both variants.
+Semi owns the controls; these sixteen keys are ours, and each exists in both variants.
 
 | Key | Consumers | Light | Dark |
 | --- | --- | --- | --- |
@@ -157,7 +157,7 @@ Semi owns the controls; these fifteen keys are ours, and each exists in both var
 | `AppBorderBrush` | The border of the navigation bar, legend panel, message panel and status bar, of the startup-failure window's message panel, of the minimap frame, of the chart hover readout and of the export window's pen list | `#EBECF0` | `#393B40` |
 | `AppSubtleLineBrush` | Plot grid, the line above every sidebar group header but the first, the status bar's separators after each connection indicator, the navigation bar's group separator | `#EBECF0` | `#393B40` |
 | `AppMinorGridLineBrush` | The plot's minor gridlines, drawn on a log10 axis only | `#F4F5F7` | `#2B2D30` |
-| `AppSecondaryForegroundBrush` | Minimap end labels, hover line and hover time, chart crosshair, plot axis furniture, the chart's empty-catalogue message, the sidebar group header caption and a row's unit, the axis scale panel's unit, the message panel's empty text and an entry's remedy, repeat count and time | `#818594` | `#6F737A` |
+| `AppSecondaryForegroundBrush` | Minimap end labels, hover line and hover time, chart crosshair, plot axis furniture, the chart's empty-catalogue message, the ahead-break shade's label, the sidebar group header caption and a row's unit, the axis scale panel's unit, the message panel's empty text and an entry's remedy, repeat count and time | `#818594` | `#6F737A` |
 | `AppAccentBrush` | Minimap window highlight border, the active sidebar row's left bar | `#3574F0` | `#3574F0` |
 | `AppAccentFillBrush` | Minimap window highlight fill, the active sidebar row's background | `#3574F0` at 0.25 opacity | `#3574F0` at 0.25 opacity |
 | `AppSeverityErrorBrush` | The message panel's dot on an `Error` entry; a form's invalid field border and its message line | `#DB3B4B` | `#E55765` |
@@ -167,6 +167,7 @@ Semi owns the controls; these fifteen keys are ours, and each exists in both var
 | `AppConnectionFaultBrush` | The same two indicators, `connection-fault`. The OPC UA indicator carries neither class while it reads connecting, so it draws in the bar's own text colour then | `#DB3B4B` | `#E55765` |
 | `AppMarkerLineBrush` | Every time marker line on the plot (`#the-plot`) and its tick on the minimap strip | `#6F737A` | `#A8ADBD` |
 | `AppMarkerLabelBrush` | Every time marker label on the plot | `#000000` | `#DFE1E5` |
+| `AppAheadBreakFillBrush` | The grey band over the drawn pen's ahead-break spans on the plot (`#the-plot`) | `#33818594`, the secondary grey at 20 % alpha | `#406F737A`, the secondary grey at 25 % alpha |
 
 Pen colours are not theme keys. They come from the archive with the pen and stay per pen under both
 variants. The pen editor's colour swatch is the pen's own colour through `LegendConverters.HexToBrush`,
@@ -488,6 +489,17 @@ opacity so the number stays legible over the pen lines; the reading's dot takes 
 `ChartPaletteTests.MarkerColors_ResolveBothMarkerKeysUnderTheVariant` resolves both keys under both
 variants, and `ChartMarkerViewTests.AfterAThemeVariantSwitch_EveryMarkerDrawsInTheNewVariant` reads an
 existing line and a later one after a switch.
+
+The ahead-break shade takes two colours (`charting.md#the-ahead-break-shade`). `ChartPalette.AheadBreakColors`
+resolves `AppAheadBreakFillBrush` for the band and `AppSecondaryForegroundBrush` for its label under the
+variant into an `AheadBreakPalette`, and `PaintChartOverlays`, which `ApplyChartPalette` calls, hands it to
+the shade beside the marker palette, so a variant switch repaints the band. The band is translucent, so the
+gridlines stay readable inside it. `Resolve` copies the brush's ARGB value and ignores `Opacity`, so the
+fill key carries its alpha in its colour: the variant's secondary grey at 20 % under Light and at 25 %
+under Dark. It is the one key whose colour carries an alpha below `FF`. The two values are chosen, not
+measured; the stand check judges them.
+`ChartPaletteTests.AheadBreakColors_ResolveTheFillWithItsAlphaUnderTheVariant` resolves both keys under
+both variants and asserts the fill's alpha is below 255.
 
 The minor gridlines take their colour on every axis but draw only on a log10 axis: `ChartAxisBinder` sets
 their width to 1 px when the drawn axis is logarithmic and to 0 otherwise (`charting.md#log10-y-axis`).

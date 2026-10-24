@@ -1,21 +1,7 @@
 namespace SemiPlot.Core.Trends;
 
-public sealed class CursorReadoutModel
+public static class CursorReadoutModel
 {
-	public IReadOnlyDictionary<int, double?> ReadAt(
-		DateTime cursorTime,
-		IReadOnlyCollection<PenHistoryEnvelope> envelopes)
-	{
-		var readouts = new Dictionary<int, double?>(envelopes.Count);
-
-		foreach (var envelope in envelopes)
-		{
-			readouts[envelope.PenId] = ReadPenAt(cursorTime, envelope);
-		}
-
-		return readouts;
-	}
-
 	public static double? ReadPenAt(DateTime cursorTime, PenHistoryEnvelope envelope)
 	{
 		var timestamps = envelope.Timestamps;

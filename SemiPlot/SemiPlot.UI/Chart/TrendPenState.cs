@@ -8,7 +8,8 @@ namespace SemiPlot.UI.Chart;
 
 public sealed class TrendPenState : ReactiveObject
 {
-	private bool _isJoinedToLive;
+	private LiveJoin _liveJoin = LiveJoin.Unjoined;
+	private double _holdEdgeX = double.NaN;
 
 	public TrendPenState(Pen pen, EnvelopeLine line)
 	{
@@ -42,6 +43,9 @@ public sealed class TrendPenState : ReactiveObject
 		private set => this.RaiseAndSetIfChanged(ref field, value);
 	}
 
+	private bool IsAfterASourceBreak =>
+		_liveJoin is LiveJoin.UnjoinedBySourceBreak or LiveJoin.ReconfirmedAfterSourceBreak;
+
 	/// <summary>Takes a stored revision of the pen; visibility and the loaded history stay.</summary>
 	public void Revise(Pen pen)
 	{
@@ -52,6 +56,30 @@ public sealed class TrendPenState : ReactiveObject
 	internal void SetVisibility(bool isVisible)
 	{
 		IsVisible = isVisible;
+	}
+
+	/// <summary>The axis X the line is held to while the live stream confirms it; NaN holds nothing.</summary>
+	internal void HoldTo(double edgeX)
+	{
+		if (_holdEdgeX.Equals(edgeX))
+		{
+			return;
+		}
+
+		_holdEdgeX = edgeX;
+		ApplyHold();
+	}
+
+	internal double? HeldValueAt(DateTime time)
+	{
+		if (Line.ReadHeldSpan() is not { } span)
+		{
+			return null;
+		}
+
+		var x = LocalTimeAxis.ToAxis(time);
+
+		return x >= span.FromX && x <= span.ToX ? CurrentValue : null;
 	}
 
 	/// <summary>
@@ -84,12 +112,12 @@ public sealed class TrendPenState : ReactiveObject
 		if (value is not { } sampled)
 		{
 			Line.AppendColumn(LiveColumn(timestampUtc, double.NaN));
-			_isJoinedToLive = false;
+			SetLiveJoin(LiveJoin.UnjoinedBySourceBreak);
 			return;
 		}
 
 		var sample = LiveColumn(timestampUtc, sampled);
-		TakeLiveValue(sampled, _isJoinedToLive
+		TakeLiveValue(sample, _liveJoin == LiveJoin.Joined
 			? Line.AppendColumn(sample)
 			: Line.AppendAfterBreak(AheadBreak(timestampUtc), sample));
 	}
@@ -98,30 +126,67 @@ public sealed class TrendPenState : ReactiveObject
 	public void FoldRealtime(DateTime timestampUtc, double value)
 	{
 		var sample = LiveColumn(timestampUtc, value);
-		var isAppendedAfterBreak = !_isJoinedToLive && Line.AppendAfterBreak(AheadBreak(timestampUtc), sample);
 
-		if (isAppendedAfterBreak)
+		if (_liveJoin == LiveJoin.Joined)
 		{
-			TakeLiveValue(value, isTaken: true);
+			TakeLiveValue(sample, Line.FoldIntoLastColumn(sample));
 
 			return;
 		}
 
-		TakeLiveValue(value, Line.FoldIntoLastColumn(sample));
+		if (Line.AppendAfterBreak(AheadBreak(timestampUtc), sample))
+		{
+			TakeLiveValue(sample, isTaken: true);
+
+			return;
+		}
+
+		TakeLiveValue(sample, !IsAfterASourceBreak && Line.FoldIntoLastColumn(sample));
 	}
 
-	private void TakeLiveValue(double value, bool isTaken)
+	private void TakeLiveValue(EnvelopeColumn sample, bool isTaken)
 	{
-		_isJoinedToLive = true;
+		Line.ConfirmLive(sample.X);
+
 		if (isTaken)
 		{
-			CurrentValue = value;
+			CurrentValue = sample.Center;
+			SetLiveJoin(LiveJoin.Joined);
+
+			return;
 		}
+
+		SetLiveJoin(_liveJoin switch
+		{
+			LiveJoin.Unjoined => LiveJoin.Joined,
+			LiveJoin.UnjoinedBySourceBreak => LiveJoin.ReconfirmedAfterSourceBreak,
+			_ => _liveJoin
+		});
 	}
 
-	private static EnvelopeColumn AheadBreak(DateTime timestampUtc)
+	private void SetLiveJoin(LiveJoin liveJoin)
 	{
-		return LiveColumn(timestampUtc - Sample.BreakStep, double.NaN);
+		if (_liveJoin == liveJoin)
+		{
+			return;
+		}
+
+		_liveJoin = liveJoin;
+		ApplyHold();
+	}
+
+	private void ApplyHold()
+	{
+		var isHeld = _liveJoin is LiveJoin.Joined or LiveJoin.ReconfirmedAfterSourceBreak;
+		Line.SetHoldEnd(isHeld ? _holdEdgeX : double.NaN);
+	}
+
+	// docs/architecture/charting.md#per-pen-plottable-envelopeline
+	private EnvelopeColumn AheadBreak(DateTime timestampUtc)
+	{
+		var kind = IsAfterASourceBreak ? BreakKind.Ordinary : BreakKind.Ahead;
+
+		return LiveColumn(timestampUtc - Sample.BreakStep, double.NaN) with { Break = kind };
 	}
 
 	private static EnvelopeColumn LiveColumn(DateTime timestampUtc, double value)
@@ -139,9 +204,18 @@ public sealed class TrendPenState : ReactiveObject
 	{
 		if (Line.ReplaceColumns(columns, LocalTimeAxis.ToAxis(requestedToUtc)))
 		{
-			_isJoinedToLive = false;
+			SetLiveJoin(LiveJoin.Unjoined);
 		}
 
 		CurrentValue = Line.LastNonGapCenter();
+	}
+
+	// docs/architecture/charting.md#per-pen-plottable-envelopeline
+	private enum LiveJoin
+	{
+		Unjoined,
+		UnjoinedBySourceBreak,
+		ReconfirmedAfterSourceBreak,
+		Joined
 	}
 }

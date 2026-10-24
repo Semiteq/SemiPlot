@@ -28,6 +28,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	private readonly ILogger<TrendChartViewModel> _logger;
 	private readonly ChartAxisBinder _axisBinder;
 	private readonly ChartPenSet _penSet;
+	private readonly ChartLiveHold _liveHold;
 	private readonly ChartCursorReader _cursorReader;
 	private readonly ChartDeltaCursorReader _deltaCursorReader;
 	private readonly ChartRealtimeApplier _realtimeApplier;
@@ -59,6 +60,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_logger = logger;
 		_axisBinder = new ChartAxisBinder(Plot);
 		_penSet = new ChartPenSet(Plot, _axisBinder);
+		_liveHold = new ChartLiveHold(_penSet, Navigation);
 		_cursorReader = new ChartCursorReader(_penSet.ById, _envelopesById);
 		_deltaCursorReader = new ChartDeltaCursorReader(_envelopesById);
 		_realtimeApplier = new ChartRealtimeApplier(_penSet.ById, Navigation);
@@ -84,6 +86,8 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			.Subscribe(ReportFailure));
 		_disposables.Add(_coordinator.LivePenFaults
 			.Subscribe(fault => _messagePanel.TryReportFailure(fault, _logger)));
+		_disposables.Add(_coordinator.LiveSourceStates
+			.Subscribe(OnLiveSourceState, ReportFailure));
 
 		Plot.HideLegend();
 	}
@@ -189,6 +193,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		Markers.Dispose();
 		TimeWindow.Dispose();
 		_disposables.Dispose();
+		_liveHold.Dispose();
 		_redrawRequests.OnCompleted();
 		Plot.Dispose();
 	}
@@ -257,6 +262,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			}
 		}
 
+		_liveHold.Apply();
 		Navigation.SetVisiblePenCount(VisiblePenIds().Count);
 		MoveTheLiveEdgeOntoThePensShown();
 		this.RaisePropertyChanged(nameof(Pens));
@@ -851,6 +857,19 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			"Live batch applied: {ValueCount} values, {LagMilliseconds} ms after the newest",
 			valueCount,
 			(DateTime.UtcNow - newestValueUtc).TotalMilliseconds);
+	}
+
+	private void OnLiveSourceState(LiveSourceState state)
+	{
+		try
+		{
+			_liveHold.SetSessionUp(state.IsConnected);
+			RequestRedraw();
+		}
+		catch (Exception holdFailure)
+		{
+			ReportFailure(holdFailure);
+		}
 	}
 
 	/// <summary>The chart's own Rx pipelines, the view's included, route a terminal failure here.</summary>

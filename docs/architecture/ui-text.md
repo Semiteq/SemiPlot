@@ -440,6 +440,21 @@ The message line shows the first rule the form breaks, the edges' rules ahead of
 The line always carries the `error` class, because it shows nothing but a broken rule. A failed day read
 reaches the message panel, not this line.
 
+## The chart's text
+
+`Chart/ChartAheadBreakShade` reads the label of the grey span ahead of a pen's first live value
+(`charting.md#the-ahead-break-shade`):
+
+| Key | English / Russian | Where |
+| --- | --- | --- |
+| `ChartAheadBreakLabel` | "No archive data when the window opened" / "Нет данных архива на момент открытия окна" | Centred along the bottom edge of the drawn pen's ahead-break span, only when the span is wide enough for it |
+
+The label names the common case, the span between the archive's newest row and the first live value at
+window open. After a pan into the past and a return to the edge, the span between the archive's newest row
+and the pen's next live value carries the same label, where it reads loosely: the window opened long
+before. The shade reads the value once, when the view builds it, and measures its width once, because the
+culture is fixed for the process (`#two-sets-one-selector`).
+
 ## The marker menu and label editor's text
 
 `Chart/TrendChartView.axaml` reads every string of the time markers but the line label, which

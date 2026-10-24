@@ -2,11 +2,8 @@ using SemiPlot.Core.Trends;
 
 namespace SemiPlot.DataSource.OpcUa;
 
-/// <summary>
-/// The newest delivered value stamp per pen for the process, across subscriptions, and the breaks it places:
-/// <see cref="Sample.BreakStep"/> past that stamp, never two in a row for one pen; only the source's loop calls it
-/// (docs/architecture/data-integration.md#the-breaks-the-source-writes).
-/// </summary>
+// docs/architecture/data-integration.md#the-breaks-the-source-writes
+/// <summary>The newest value stamp per pen and the breaks it places; only the source's loop calls it.</summary>
 internal sealed class DeliveredStamps
 {
 	private readonly Dictionary<int, PenStamp> _pens = [];
@@ -36,14 +33,21 @@ internal sealed class DeliveredStamps
 			_ => (DateTime?)null
 		};
 
-		if (breakUtc is null)
+		return breakUtc is { } at ? PlaceBreak(penId, pen, at) : null;
+	}
+
+	/// <summary>The break a value that turned non-numeric writes, at the later of its stamp and the newest.</summary>
+	public Sample? NotNumericBreak(int penId, DateTime? stampUtc)
+	{
+		if (!_pens.TryGetValue(penId, out var pen)
+			|| pen.NewestUtc is not { } newest
+			|| pen.EndsOnBreak
+			|| stampUtc is not { } stamp)
 		{
 			return null;
 		}
 
-		_pens[penId] = pen with { EndsOnBreak = true };
-
-		return new Sample(penId, breakUtc.Value, null);
+		return PlaceBreak(penId, pen, stamp > newest ? stamp : newest);
 	}
 
 	/// <summary>One break per pen with a delivered value whose last emission is not already a break.</summary>
@@ -58,11 +62,17 @@ internal sealed class DeliveredStamps
 				continue;
 			}
 
-			_pens[penId] = pen with { EndsOnBreak = true };
-			breaks.Add(new Sample(penId, newest + Sample.BreakStep, null));
+			breaks.Add(PlaceBreak(penId, pen, newest + Sample.BreakStep));
 		}
 
 		return breaks;
+	}
+
+	private Sample PlaceBreak(int penId, PenStamp pen, DateTime at)
+	{
+		_pens[penId] = pen with { EndsOnBreak = true };
+
+		return new Sample(penId, at, null);
 	}
 
 	/// <summary>A pen that only ever read <c>Bad</c> has no newest value stamp.</summary>

@@ -312,7 +312,10 @@ pointer, so a second finger neither moves, pans nor ends the first finger's drag
   crosshair endpoints in DIP space; the readout hangs from the line's top end). A cursor X outside the
   data rect's X range hides the crosshair and the readout. The readout text is the pure
   `Chart/ChartHoverReadout.BuildContent` string: the local timestamp plus every *visible* pen's value
-  at the cursor X (one line per pen; gap or missing pen → dash). With the pointer on a time marker the
+  at the cursor X (one line per pen; gap or missing pen → dash). Inside a pen's held span, from its last
+  column to the newest sample (`charting.md#the-hold-to-the-live-edge`), the pen reads its `CurrentValue`,
+  the value the held segment is drawn at and the sidebar shows; past the hold end, and over the live run
+  between the history envelope's end and the held span, it reads a dash. With the pointer on a time marker the
   cursor X is the marker's moment, so the readout lists every visible pen's value there
   (`#the-time-markers`). The overlay is suppressed while a drag
   is in progress or delta mode is active (`IsDragging || IsDeltaModeEnabled`) and is repositioned from
@@ -544,7 +547,8 @@ window.
   `PenValueFormat` with no unit, as the hover readout shows it. The other pens show no value at a marker,
   so many pens do not crowd it; picking another pen moves every reading to that pen, and the hover readout
   still lists every visible pen. The value is the one the cursor reads (`ChartCursorReader.ReadPenAt`), so
-  a hidden active pen, a gap or a marker outside the pen's data draws no reading. The layer is one
+  a hidden active pen, a gap or a marker outside the pen's data draws no reading, and a marker inside the
+  pen's held span reads its `CurrentValue`. The layer is one
   plottable with no axis limits; the view refreshes it in `ServeFrame` before every redraw, because a
   history result, a live sample, a pick, a visibility change, a marker change and a pan all reach the
   chart as a frame request. It projects through the pen's own `EnvelopeLine.PixelOf`, so a log10 axis

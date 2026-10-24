@@ -384,6 +384,9 @@ platform would be a second test application, which one test assembly cannot host
 each marker's `VerticalLine` by id. The alternative is to tell the plot's `VerticalLine`s apart from the two delta
 lines by position and label. `TrendChartView.MarkerReadings` and its `SnapshotReadings()` are the same kind of seam
 for the active pen's readings at the markers: the alternative is a pixel probe of the dots.
+`TrendChartView.AheadBreakShade` and its `ShownLine` are the same kind of seam for the line the ahead-break shade
+follows: internal, no production reader of `ShownLine`, and the alternative is a pixel probe of two pens' grey
+spans through a realised view, whose headless drawing renders nothing.
 
 `EnvelopeLine.SnapshotColumns()` is the chart's data seam, beside `ServedFrameCount`: internal, no production reader,
 and the alternative is a pixel probe. It returns a snapshot taken under the line's lock, because the render

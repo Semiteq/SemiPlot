@@ -78,6 +78,24 @@ public sealed class PenSubscriptionTests : IDisposable
 		fault.NotNumericPenIds.Should().Equal(2);
 	}
 
+	[Theory]
+	[InlineData(true)]
+	[InlineData(false)]
+	public async Task APenTurningNonNumeric_EmitsABreakNoEarlierThanItsValue_AndReportsThePen(
+		bool isStampedAfterTheValue)
+	{
+		var (_, subscription) = Attached(1);
+		var valueUtc = isStampedAfterTheValue ? _firstUtc : _secondUtc;
+		var notNumericUtc = isStampedAfterTheValue ? _secondUtc : _firstUtc;
+
+		Notify(subscription, 1, new DataValue(Variant.From(2.5), StatusCodes.Good, valueUtc, valueUtc));
+		Notify(subscription, 1, new DataValue(Variant.From("12.5"), StatusCodes.Good, notNumericUtc, notNumericUtc));
+		await DrainAsync();
+
+		_samples.Should().Equal(new Sample(1, valueUtc, 2.5), new Sample(1, _secondUtc, null));
+		_faults.Should().ContainSingle().Which.NotNumericPenIds.Should().Equal(1);
+	}
+
 	[Fact]
 	public void AClosedSubscription_EmitsNoLossBreak()
 	{

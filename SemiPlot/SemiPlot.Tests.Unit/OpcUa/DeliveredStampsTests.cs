@@ -133,6 +133,40 @@ public sealed class DeliveredStampsTests
 		_stamps.LossBreaks([1]).Should().Equal(new Sample(1, _secondUtc + _oneMillisecond, null));
 	}
 
+	[Theory]
+	[InlineData(true)]
+	[InlineData(false)]
+	public void ANonNumericValueAfterADeliveredOne_BreaksAtTheLaterOfItsStampAndTheNewest(bool isStampedAfterTheNewest)
+	{
+		var newest = isStampedAfterTheNewest ? _firstUtc : _secondUtc;
+		var notNumeric = isStampedAfterTheNewest ? _secondUtc : _firstUtc;
+		_stamps.RecordValue(1, newest);
+
+		_stamps.NotNumericBreak(1, notNumeric).Should().Be(
+			new Sample(1, _secondUtc, null),
+			"a break behind the newest value would be sorted ahead of it in one batch, and none goes past it");
+	}
+
+	[Fact]
+	public void ANonNumericValueWithNoDeliveredValueOrNoStamp_WritesNothing()
+	{
+		_stamps.NotNumericBreak(1, _firstUtc).Should().BeNull("the pen was never drawn from a live value");
+
+		_stamps.RecordValue(1, _firstUtc);
+
+		_stamps.NotNumericBreak(1, null).Should().BeNull("there is no stamp to place it at");
+	}
+
+	[Fact]
+	public void ASecondNonNumericValue_WritesNoSecondBreak_AndNoLossBreakFollows()
+	{
+		_stamps.RecordValue(1, _firstUtc);
+		_stamps.NotNumericBreak(1, _secondUtc);
+
+		_stamps.NotNumericBreak(1, _secondUtc.AddSeconds(1)).Should().BeNull();
+		_stamps.LossBreaks([1]).Should().BeEmpty();
+	}
+
 	[Fact]
 	public void ALossAfterABadBreak_WritesNoSecondBreak()
 	{

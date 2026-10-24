@@ -130,6 +130,7 @@ public sealed class OpcUaLiveEdgeJourneyTests(OpcUaLiveEdgeJourneyTests.ServerFi
 
 		columns.Take(HistoryColumnCount).Should().Equal(historyColumns, "pen {0}; {1}", penId, because);
 		double.IsNaN(aheadBreak.Center).Should().BeTrue("pen {0}; {1}", penId, because);
+		aheadBreak.Break.Should().Be(BreakKind.Ahead, "pen {0}; {1}", penId, because);
 		(LocalTimeAxis.FromAxis(liveColumns[0].X) - LocalTimeAxis.FromAxis(aheadBreak.X)).Should().Be(
 			_aheadBreakStep,
 			"the chart writes its break 1 ms ahead of the pen's first live column; pen {0}; {1}",

@@ -903,4 +903,7 @@
   <data name="MarkerLineLabelFormat" xml:space="preserve">
     <value>{0} · {1}</value>
   </data>
+  <data name="ChartAheadBreakLabel" xml:space="preserve">
+    <value>Нет данных архива на момент открытия окна</value>
+  </data>
 </root>

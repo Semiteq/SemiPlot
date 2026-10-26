@@ -53,7 +53,7 @@ public sealed class TrendPenState : ReactiveObject
 	}
 
 	/// <summary><paramref name="requestedToUtc"/> is the read's own right edge: no live column past it is kept.</summary>
-	public void LoadHistory(PenHistoryEnvelope envelope, DateTime requestedToUtc)
+	public void LoadHistory(PenHistoryEnvelope envelope, DateTime requestedToUtc, DateTime? newestSampleUtc)
 	{
 		var columns = new List<EnvelopeColumn>(envelope.Timestamps.Count);
 
@@ -66,12 +66,12 @@ public sealed class TrendPenState : ReactiveObject
 				envelope.Center[index]));
 		}
 
-		ReplaceHistory(columns, requestedToUtc);
+		ReplaceHistory(columns, requestedToUtc, newestSampleUtc);
 	}
 
-	public void ClearHistory(DateTime requestedToUtc)
+	public void ClearHistory(DateTime requestedToUtc, DateTime? newestSampleUtc)
 	{
-		ReplaceHistory([], requestedToUtc);
+		ReplaceHistory([], requestedToUtc, newestSampleUtc);
 	}
 
 	public void AppendRealtime(DateTime timestampUtc, double? value)
@@ -102,9 +102,13 @@ public sealed class TrendPenState : ReactiveObject
 	}
 
 	// docs/architecture/charting.md#per-pen-plottable-envelopeline
-	private void ReplaceHistory(IReadOnlyList<EnvelopeColumn> columns, DateTime requestedToUtc)
+	private void ReplaceHistory(
+		IReadOnlyList<EnvelopeColumn> columns,
+		DateTime requestedToUtc,
+		DateTime? newestSampleUtc)
 	{
-		Line.ReplaceColumns(columns, LocalTimeAxis.ToAxis(requestedToUtc));
+		var isUnreadPastEnd = newestSampleUtc is { } newest && requestedToUtc < newest;
+		Line.ReplaceColumns(columns, LocalTimeAxis.ToAxis(requestedToUtc), isUnreadPastEnd);
 		CurrentValue = Line.LastNonGapCenter();
 	}
 }

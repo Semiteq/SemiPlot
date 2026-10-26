@@ -20,7 +20,7 @@ public sealed class TrendPenStateTests
 	{
 		var state = NewState();
 
-		state.LoadHistory(TwoColumnEnvelope(), _start.AddHours(1.0));
+		state.LoadHistory(TwoColumnEnvelope(), _start.AddHours(1.0), null);
 
 		// Reading through the plottable rather than the backing field proves it renders the buffer the
 		// state mutates: the limits are taken from the very list LoadHistory filled.
@@ -43,7 +43,7 @@ public sealed class TrendPenStateTests
 			[1.0, double.NaN, 3.0],
 			[1.0, double.NaN, 3.0]);
 
-		state.LoadHistory(envelope, _start.AddMinutes(2.0));
+		state.LoadHistory(envelope, _start.AddMinutes(2.0), null);
 
 		var columns = state.Line.SnapshotColumns();
 		columns.Should().HaveCount(3);
@@ -88,7 +88,7 @@ public sealed class TrendPenStateTests
 	{
 		var state = NewState();
 
-		state.LoadHistory(TwoColumnEnvelope(), _start.AddMinutes(1.0));
+		state.LoadHistory(TwoColumnEnvelope(), _start.AddMinutes(1.0), null);
 
 		var columns = state.Line.SnapshotColumns();
 		columns.Should().HaveCount(2);
@@ -121,7 +121,7 @@ public sealed class TrendPenStateTests
 		double expectedCurrentValue)
 	{
 		var state = NewState();
-		state.LoadHistory(TwoColumnEnvelope(), _start.AddHours(1.0));
+		state.LoadHistory(TwoColumnEnvelope(), _start.AddHours(1.0), null);
 
 		state.AppendRealtime(_start.AddMinutes(minutesFromStart), 42.0);
 
@@ -136,7 +136,7 @@ public sealed class TrendPenStateTests
 		var state = NewState();
 		state.AppendRealtime(_start.AddMinutes(10.0), 7.0);
 
-		state.LoadHistory(TwoColumnEnvelope(), _start.AddHours(1.0));
+		state.LoadHistory(TwoColumnEnvelope(), _start.AddHours(1.0), null);
 		AppendAtOrBeforeTheLiveColumn(state);
 
 		state.Line.SnapshotColumns().Should().HaveCount(3);
@@ -150,7 +150,7 @@ public sealed class TrendPenStateTests
 		var state = NewState();
 		state.AppendRealtime(_start.AddMinutes(10.0), 7.0);
 
-		state.ClearHistory(_start.AddHours(1.0));
+		state.ClearHistory(_start.AddHours(1.0), null);
 		AppendAtOrBeforeTheLiveColumn(state);
 
 		state.Line.SnapshotColumns().Should().ContainSingle();
@@ -162,7 +162,7 @@ public sealed class TrendPenStateTests
 	public void FoldRealtime_WidensTheMinMaxOfTheCurrentColumn()
 	{
 		var state = NewState();
-		state.LoadHistory(new PenHistoryEnvelope(1, [_start], [1.0], [5.0], [2.0]), _start);
+		state.LoadHistory(new PenHistoryEnvelope(1, [_start], [1.0], [5.0], [2.0]), _start, null);
 
 		state.FoldRealtime(_start.AddMinutes(1.0), 9.0);
 
@@ -172,6 +172,26 @@ public sealed class TrendPenStateTests
 		columns[0].Min.Should().Be(1.0);
 		columns[0].Center.Should().Be(9.0);
 		state.CurrentValue.Should().Be(9.0);
+	}
+
+	[Theory]
+	[InlineData(30.0, true)]
+	[InlineData(-30.0, false)]
+	[InlineData(null, false)]
+	public void LoadHistory_MarksTheSpanPastItsEndUnreadOnlyWhenTheNewestSampleLiesBeyondIt(
+		double? newestSampleMinutesPastEnd,
+		bool breaksBeforeTheNextLiveColumn)
+	{
+		var state = NewState();
+		var requestedTo = _start.AddMinutes(5.0);
+		DateTime? newestSample = newestSampleMinutesPastEnd is { } minutes ? requestedTo.AddMinutes(minutes) : null;
+
+		state.LoadHistory(TwoColumnEnvelope(), requestedTo, newestSample);
+		state.AppendRealtime(_start.AddMinutes(60.0), 12.0);
+
+		var columns = state.Line.SnapshotColumns();
+		columns.Any(column => double.IsNaN(column.Center)).Should().Be(breaksBeforeTheNextLiveColumn);
+		state.CurrentValue.Should().Be(12.0);
 	}
 
 	private static void AppendAtOrBeforeTheLiveColumn(TrendPenState state)

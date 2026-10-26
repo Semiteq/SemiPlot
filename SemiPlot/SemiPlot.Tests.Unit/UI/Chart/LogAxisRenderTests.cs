@@ -80,7 +80,7 @@ public sealed class LogAxisRenderTests
 		var pen = new TrendPenState(
 			new Pen(PenId, "Pressure", ["Group A"], PenColorHex, LineStyle: PenLineStyle.Stepped),
 			line);
-		pen.LoadHistory(SteppedHistory(), PlateauStart(_plateaus.Length));
+		pen.LoadHistory(SteppedHistory(), PlateauStart(_plateaus.Length), null);
 
 		var binder = new ChartAxisBinder(plot);
 		binder.Apply(

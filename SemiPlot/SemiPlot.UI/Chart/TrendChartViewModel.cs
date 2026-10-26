@@ -328,7 +328,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		}
 
 		DropEnvelope(state.Pen.PenId);
-		state.ClearHistory(_historyPlanner.RangeInHand?.ToUtc ?? _windowEnd);
+		state.ClearHistory(_historyPlanner.RangeInHand?.ToUtc ?? _windowEnd, Navigation.NewestSample);
 	}
 
 	private void DropEnvelope(int penId)
@@ -692,7 +692,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 				Navigation.TrackDataExtents(envelope.Timestamps[0], envelope.Timestamps[^1]);
 			}
 
-			state.LoadHistory(drawn, request.ToUtc);
+			state.LoadHistory(drawn, span.ToUtc, Navigation.NewestSample);
 			_readSpansById[envelope.PenId] = span;
 		}
 
@@ -748,7 +748,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			}
 
 			DropEnvelope(penId);
-			FindPen(penId)?.ClearHistory(request.ToUtc);
+			FindPen(penId)?.ClearHistory(request.ToUtc, Navigation.NewestSample);
 		}
 	}
 

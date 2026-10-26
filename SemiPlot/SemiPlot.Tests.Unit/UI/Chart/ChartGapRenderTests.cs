@@ -133,7 +133,7 @@ public sealed class ChartGapRenderTests
 	{
 		var viewModel = ChartTestBuilder.CreateViewModel(ChartTestBuilder.RealtimeInterval).ViewModel;
 		var state = viewModel.AddPen(new Pen(PenId, "Pen 1", ["Group A"], PenColorHex));
-		state.LoadHistory(EnvelopeOf(timestamps, values), windowEnd);
+		state.LoadHistory(EnvelopeOf(timestamps, values), windowEnd, null);
 
 		var plot = viewModel.Plot;
 		plot.Axes.SetLimitsX(LocalTimeAxis.ToAxis(windowStart), LocalTimeAxis.ToAxis(windowEnd));

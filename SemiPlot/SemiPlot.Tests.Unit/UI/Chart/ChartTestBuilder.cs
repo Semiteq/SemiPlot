@@ -169,7 +169,7 @@ internal static class ChartTestBuilder
 	{
 		viewModel.AddPen(pen).LoadHistory(
 			new PenHistoryEnvelope(pen.PenId, [From, windowEnd], [value, value], [value, value], [value, value]),
-			windowEnd);
+			windowEnd, null);
 
 		// An Auto pen with no envelope scales to (0, 1), which takes a flat line out of the data area.
 		viewModel.SetAxisLimits(pen.PenId, FlatPlotAxisMin, FlatPlotAxisMax);

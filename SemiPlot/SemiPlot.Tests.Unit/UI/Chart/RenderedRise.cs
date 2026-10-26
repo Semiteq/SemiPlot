@@ -30,7 +30,7 @@ internal static class RenderedRise
 	{
 		pen.LoadHistory(
 			new PenHistoryEnvelope(pen.Pen.PenId, [_start, _end], [Low, High], [Low, High], [Low, High]),
-			_end);
+			_end, null);
 
 		var plot = chart.Plot;
 		var yAxis = pen.Line.Axes.YAxis;

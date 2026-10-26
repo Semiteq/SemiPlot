@@ -147,6 +147,17 @@ as before any other last column; at a coarse layer the next fold widens the last
 the last coarse column after the next coarse read's snapshot is lost with that column, and an extreme it
 carried shows again only when a later read covers that span.
 
+**The unread span.** A history apply whose drawn span ends before the chart's newest sample
+(`ChartNavigationController.NewestSample`) marks that end: the span past it was dropped or never read, and the next
+live sample must not join the band across it. The edge is the end of the span `EnvelopeSplice.Over` returns, not
+the request's, because a margin-less read inside the span in hand draws the in-hand columns past its own edge; the
+same edge is the kept-tail cutoff. The first live column past the mark opens behind a `NaN` column, appended or
+folded alike, so a coarse fold never moves the band's last column across the span. The gap sits at the mark, or
+halfway to the new column when the last column sits on the mark, and the mark then clears. A later apply whose edge
+reaches that gap removes it, because that read covered the span. In follow mode a read's span ends one window
+width past the window end, so no mark is set unless the read lands more than one width after it was issued; the
+short break that case draws stands where the kept-tail rule already dropped the live columns.
+
 **Axes / shared-X invariant.** Each pen gets its own `IYAxis`, keyed on the pen id; no two pens ever
 share one, whatever their unit or group. Every axis is a left axis — `Axes.Left` for the first pen,
 `AddLeftAxis()` for the rest — because only the active pen's axis is drawn and alternating sides

@@ -3,4 +3,4 @@ port: 5432
 database: semiplot
 user: semiplot
 password: ""
-poll_interval_ms: 1000
+poll_interval_ms: 250

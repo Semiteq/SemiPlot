@@ -14,7 +14,7 @@ public static class Converge
 
 	private static readonly TimeSpan _retryDelay = TimeSpan.FromMilliseconds(500);
 
-	private static readonly TimeSpan _pollInterval = TimeSpan.FromSeconds(1);
+	private static readonly TimeSpan _pollInterval = TimeSpan.FromMilliseconds(250);
 
 	private const string DatabasePrefix = "semiplot_";
 

@@ -1351,7 +1351,7 @@ port: 5432
 database: semiplot_dev
 user: semiplot
 password: "change me"
-poll_interval_ms: 1000
+poll_interval_ms: 250
 ```
 
 The set that ships is `ConfigFiles/connection/connection.yaml` in the repository, with an empty

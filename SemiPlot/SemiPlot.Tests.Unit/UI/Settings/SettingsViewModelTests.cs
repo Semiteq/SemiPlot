@@ -79,7 +79,7 @@ public sealed class SettingsViewModelTests : IDisposable
 		viewModel.Database.Should().Be("semiplot");
 		viewModel.User.Should().Be("semiplot");
 		viewModel.Password.Should().BeEmpty();
-		viewModel.PollInterval.Should().Be(1000);
+		viewModel.PollInterval.Should().Be(250);
 		_messagePanel.Entries.Should().BeEmpty();
 	}
 

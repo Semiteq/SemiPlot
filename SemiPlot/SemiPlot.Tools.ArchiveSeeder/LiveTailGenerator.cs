@@ -30,14 +30,4 @@ public static class LiveTailGenerator
 
 		return rows;
 	}
-
-	// The change rows at the newest lattice instant at or before `instant`, one per pen. A window one tick
-	// wide holds the change row and never its anchor, which lies one poll interval earlier.
-	public static IReadOnlyList<ArchiveRow> ChangesAt(FollowOptions options, DateTime instant)
-	{
-		var interval = RawLayerGenerator.ChangeIntervalTicks(options.ChangeSeconds);
-		var change = new DateTime(RawLayerGenerator.LatestChangeTicks(instant.Ticks, interval));
-
-		return Generate(options, change.AddTicks(-1), change);
-	}
 }

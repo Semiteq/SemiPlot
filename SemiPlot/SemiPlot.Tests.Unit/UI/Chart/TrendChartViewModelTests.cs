@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Globalization;
 using System.Reactive.Linq;
 
 using Avalonia.Headless.XUnit;
@@ -8,7 +7,6 @@ using AwesomeAssertions;
 
 using FluentResults;
 
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Testing;
 using Microsoft.Reactive.Testing;
 
@@ -16,7 +14,6 @@ using ReactiveUI;
 
 using ScottPlot;
 
-using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.Tests.Unit.UI.Messages;
@@ -970,8 +967,6 @@ public sealed class TrendChartViewModelTests
 		// A coarse (non-Raw) layer folds realtime into the current column instead of appending.
 		viewModel.Navigation.ZoomAt(48.0, viewModel.Navigation.To);
 		viewModel.Navigation.ActiveLayer.Should().NotBe(AggregationLayer.Raw);
-		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
-		state.Line.SnapshotColumns().Should().HaveCount(2, "the first value opens a column behind its break");
 		var columnsBefore = state.Line.SnapshotColumns().Count;
 
 		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
@@ -1039,9 +1034,7 @@ public sealed class TrendChartViewModelTests
 		LandTheMarginReadFromTheReleasedGate(scheduler);
 		var columnsBefore = state.Line.SnapshotColumns();
 		var foldedColumn = columnsBefore[^1];
-		foldedColumn.X.Should().BeGreaterThan(
-			LocalTimeAxis.ToAxis(FakeDataProvider.RealtimeEpoch), "the first live value opened a column of its own");
-		double.IsNaN(columnsBefore[^2].Center).Should().BeTrue("that column opens behind a break");
+		foldedColumn.X.Should().Be(LocalTimeAxis.ToAxis(FakeDataProvider.RealtimeEpoch));
 		var batches = new List<RealtimeBatch>();
 		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
 
@@ -1069,8 +1062,7 @@ public sealed class TrendChartViewModelTests
 		var (viewModel, scheduler, coordinator, provider) = CreateViewModel(RealtimeInterval);
 		var state = viewModel.AddPen(FakeDataProvider.FirstPen);
 		await LoadRawEndingAtTheRealtimeEpoch(viewModel, scheduler, provider);
-		state.Line.SnapshotColumns().Should().ContainSingle(
-			column => double.IsNaN(column.Center), "only the first live value opened behind a break");
+		state.Line.SnapshotColumns().Should().NotContain(column => double.IsNaN(column.Center));
 		var batches = new List<RealtimeBatch>();
 		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
 
@@ -1079,8 +1071,8 @@ public sealed class TrendChartViewModelTests
 
 		var (value, valueUtc, breakUtc) = FakeDataProvider.TheBreakIn(batches, FakeDataProvider.FirstPen.PenId);
 		var columns = state.Line.SnapshotColumns();
-		var breakIndex = columns.ToList().FindLastIndex(column => double.IsNaN(column.Center));
-		columns.Count(column => double.IsNaN(column.Center)).Should().Be(2);
+		var breakIndex = columns.ToList().FindIndex(column => double.IsNaN(column.Center));
+		columns.Count(column => double.IsNaN(column.Center)).Should().Be(1);
 		breakIndex.Should().BePositive();
 		columns[breakIndex].X.Should().Be(LocalTimeAxis.ToAxis(breakUtc));
 		columns[breakIndex - 1].X.Should().Be(LocalTimeAxis.ToAxis(valueUtc));
@@ -1258,38 +1250,10 @@ public sealed class TrendChartViewModelTests
 
 		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
 
-		foreach (var state in new[] { first, second })
-		{
-			var columns = state.Line.SnapshotColumns();
-			columns.Should().HaveCountGreaterThan(2);
-			double.IsNaN(columns[0].Center).Should().BeTrue("the first live value opens behind a break");
-			columns.Skip(1).Should().NotContain(column => double.IsNaN(column.Center));
-		}
-	}
-
-	[AvaloniaFact]
-	public void ACatalogueThatAddsAPen_BreaksOnlyTheAddedPensFirstLiveValue()
-	{
-		var (viewModel, scheduler, _, provider) = CreateViewModel(RealtimeInterval);
-		var kept = viewModel.AddPen(FakeDataProvider.FirstPen);
-		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks * 2);
-		var keptColumnsBefore = kept.Line.SnapshotColumns().Count;
-		var subscriptionsBefore = provider.LiveSubscriptionsOpened;
-
-		var added = viewModel.AddPen(FakeDataProvider.SecondPen);
-		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks * 4);
-
-		provider.LiveSubscriptionsOpened.Should().Be(subscriptionsBefore + 1, "the new pen set is subscribed afresh");
-		var keptColumns = kept.Line.SnapshotColumns();
-		keptColumns.Should().HaveCountGreaterThan(keptColumnsBefore);
-		keptColumns.Skip(keptColumnsBefore).Should().NotContain(
-			column => double.IsNaN(column.Center), "the kept pen stays joined to the live stream");
-		var addedColumns = added.Line.SnapshotColumns();
-		double.IsNaN(addedColumns[0].Center).Should().BeTrue("the added pen's first live value opens behind a break");
-		var firstAddedUtc = FakeDataProvider.RealtimeEpoch + RealtimeInterval;
-		addedColumns[1].X.Should().Be(LocalTimeAxis.ToAxis(firstAddedUtc));
-		addedColumns[0].X.Should().Be(LocalTimeAxis.ToAxis(firstAddedUtc.AddMilliseconds(-1.0)));
-		addedColumns.Skip(1).Should().NotContain(column => double.IsNaN(column.Center));
+		first.Line.SnapshotColumns().Should().NotBeEmpty();
+		second.Line.SnapshotColumns().Should().NotBeEmpty();
+		first.Line.SnapshotColumns().Should().NotContain(column => double.IsNaN(column.Center));
+		second.Line.SnapshotColumns().Should().NotContain(column => double.IsNaN(column.Center));
 	}
 
 	[AvaloniaFact]
@@ -2688,52 +2652,6 @@ public sealed class TrendChartViewModelTests
 
 		state.CurrentValue.Should().NotBe(
 			valueWhenTheReportThrew, "the batches after the failed report still reach the pen");
-	}
-
-	[AvaloniaFact]
-	public void APensUnservedFault_LandsInThePanelOnceAsAWarning()
-	{
-		using var panel = new MessagePanelViewModel();
-		var (viewModel, _, _, provider) = CreateViewModel(messagePanel: panel);
-		using var chart = viewModel;
-
-		provider.RaisePenFault(
-			new LiveSourceError(LiveSourceFault.PensUnserved, "opc.tcp://127.0.0.1:4840", unknownPenIds: [7, 9]));
-
-		panel.Entries.Should().ContainSingle();
-		panel.Entries[0].RepeatCount.Should().Be(1);
-		panel.Entries[0].View.Severity.Should().Be(MessageSeverity.Warning);
-		panel.Entries[0].View.Title.Should().Be(Resources.FailureLiveSourcePensUnservedTitle);
-	}
-
-	// The break sits minutes past the value, so a lag taken from it would land minutes outside the bracket.
-	[AvaloniaFact]
-	public void ALiveBatch_LogsOneLagLineFromItsNewestValueNotFromABreak()
-	{
-		var logger = new FakeLogger<TrendChartViewModel>();
-		var (viewModel, scheduler, _, provider) = CreateViewModel(logger: logger);
-		using var chart = viewModel;
-		chart.AddPen(FakeDataProvider.FirstPen);
-		chart.AddPen(FakeDataProvider.SecondPen);
-		var newestValueUtc = DateTime.UtcNow.AddMinutes(-10);
-		var before = DateTime.UtcNow;
-
-		provider.PushLiveSamples(
-		[
-			new Sample(FakeDataProvider.SecondPen.PenId, newestValueUtc.AddSeconds(-1), 3.0),
-			new Sample(FakeDataProvider.FirstPen.PenId, newestValueUtc, 4.0),
-			new Sample(FakeDataProvider.FirstPen.PenId, newestValueUtc.AddMinutes(20), null)
-		]);
-		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
-		var after = DateTime.UtcNow;
-
-		var lagLine = logger.Collector.GetSnapshot()
-			.Should().ContainSingle(record => record.Message.StartsWith("Live batch applied", StringComparison.Ordinal))
-			.Subject;
-		lagLine.Level.Should().Be(LogLevel.Debug);
-		lagLine.GetStructuredStateValue("ValueCount").Should().Be("2");
-		var lag = double.Parse(lagLine.GetStructuredStateValue("LagMilliseconds")!, CultureInfo.InvariantCulture);
-		lag.Should().BeInRange((before - newestValueUtc).TotalMilliseconds, (after - newestValueUtc).TotalMilliseconds);
 	}
 
 	private static (TrendChartViewModel ViewModel, PixelRect DataRect) RenderTwoFlatPens(

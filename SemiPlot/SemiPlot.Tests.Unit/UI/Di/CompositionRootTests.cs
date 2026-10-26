@@ -6,8 +6,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 using SemiPlot.Core.Data;
-using SemiPlot.DataSource.OpcUa;
-using SemiPlot.DataSource.OpcUa.Configuration;
 using SemiPlot.DataSource.Postgres;
 using SemiPlot.Tests.Unit.Postgres;
 using SemiPlot.UI.MainWindow;
@@ -39,7 +37,7 @@ public sealed class CompositionRootTests
 	{
 		using var provider = BuildContainer();
 
-		provider.GetServices<ILiveSource>().Should().ContainSingle().Which.Should().BeOfType<OpcUaLiveSource>();
+		provider.GetRequiredService<ILiveSource>().Should().BeOfType<PostgresLiveSource>();
 	}
 
 	[Fact]
@@ -89,8 +87,6 @@ public sealed class CompositionRootTests
 
 	private static ServiceProvider BuildContainer()
 	{
-		return StartupProbe.BuildArchiveServiceProvider(
-			ConnectionSettingsFactory.Create(),
-			new OpcUaConnectionSettings("127.0.0.1", 1, Path.Combine(Path.GetTempPath(), "semiplot-unused-pki")));
+		return StartupProbe.BuildArchiveServiceProvider(ConnectionSettingsFactory.Create());
 	}
 }

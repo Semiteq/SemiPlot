@@ -1,7 +1,6 @@
 using AwesomeAssertions;
 
 using SemiPlot.Core.Data.Errors;
-using SemiPlot.DataSource.OpcUa.Configuration;
 using SemiPlot.DataSource.Postgres.Configuration;
 using SemiPlot.Tests.Unit.UI.Settings;
 using SemiPlot.Tools.ArchiveSeeder;
@@ -70,22 +69,10 @@ public sealed class DeliveredConfigurationTests : IDisposable
 		result.Value.Database.Should().Be("semiplot");
 		result.Value.Username.Should().Be("semiplot");
 		result.Value.Schema.Should().Be("public");
+		result.Value.PollInterval.Should().Be(TimeSpan.FromMilliseconds(1000));
 	}
 
-	[Fact]
-	public void TheShippedOpcSectionLoads()
-	{
-		var directory = ShippedConfiguration.SectionDirectory(StartupProbe.OpcDirectoryName);
-
-		var result = OpcUaConnectionLoader.Load(directory);
-
-		result.IsSuccess.Should().BeTrue(Describe(result));
-		result.Value.Host.Should().Be("127.0.0.1");
-		result.Value.Port.Should().Be(49875);
-		result.Value.CertificateStoreRoot.Should().Be(Path.Combine(directory, "pki"));
-	}
-
-	// converge overwrites these files inside the demo's copy of the set. A writer aiming anywhere else
+	// converge overwrites this one file inside the demo's copy of the set. A writer aiming anywhere else
 	// would add a second file carrying the same keys, which is the conflict the section rule refuses.
 	[Fact]
 	public void TheSeederWritesOverTheShippedConnectionFile()
@@ -93,16 +80,6 @@ public sealed class DeliveredConfigurationTests : IDisposable
 		ConnectionFileWriter.DirectoryName.Should().Be(StartupProbe.ConnectionDirectoryName);
 
 		var target = ConnectionFileWriter.PathFor(ShippedConfiguration.Root);
-
-		File.Exists(target).Should().BeTrue(target);
-	}
-
-	[Fact]
-	public void TheSeederWritesOverTheShippedOpcFile()
-	{
-		OpcFileWriter.DirectoryName.Should().Be(StartupProbe.OpcDirectoryName);
-
-		var target = OpcFileWriter.PathFor(ShippedConfiguration.Root);
 
 		File.Exists(target).Should().BeTrue(target);
 	}

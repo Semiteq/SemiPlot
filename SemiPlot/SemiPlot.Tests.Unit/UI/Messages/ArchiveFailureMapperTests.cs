@@ -28,10 +28,8 @@ public sealed class ArchiveFailureMapperTests
 {
 	private const string AppDirectory = @"C:\Config\app";
 	private const string ConnectionDirectory = @"C:\Config\connection";
-	private const string OpcDirectory = @"C:\Config\opc";
 	private const string ArchiveAddress = "scada-host:5432";
 	private const string ArchiveDatabase = "semiplot";
-	private const string OpcEndpoint = "opc.tcp://127.0.0.1:4841";
 
 	private static readonly IReadOnlyDictionary<string, FailureCase> _startupArgumentCases =
 		new Dictionary<string, FailureCase>
@@ -99,12 +97,6 @@ public sealed class ArchiveFailureMapperTests
 				() => Resources.FailureConfigurationSectionConnectionTitle,
 				() => Resources.FormatFailureConfigurationSectionDirectoryMissingDetail(ConnectionDirectory),
 				() => Resources.FailureConfigurationSectionConnectionDirectoryMissingRemedy),
-			["OpcDirectoryMissing"] = new(
-				new ConfigurationSectionError(
-					ConfigurationSectionName.Opc, OpcDirectory, SectionProblem.DirectoryMissing),
-				() => Resources.FailureConfigurationSectionOpcTitle,
-				() => Resources.FormatFailureConfigurationSectionDirectoryMissingDetail(OpcDirectory),
-				() => Resources.FailureConfigurationSectionOpcDirectoryMissingRemedy),
 			["AppNoFiles"] = new(
 				new ConfigurationSectionError(ConfigurationSectionName.App, AppDirectory, SectionProblem.NoFiles),
 				() => Resources.FailureConfigurationSectionAppTitle,
@@ -116,11 +108,6 @@ public sealed class ArchiveFailureMapperTests
 				() => Resources.FailureConfigurationSectionConnectionTitle,
 				() => Resources.FormatFailureConfigurationSectionNoFilesDetail(ConnectionDirectory),
 				() => Resources.FailureConfigurationSectionConnectionNoFilesRemedy),
-			["OpcNoFiles"] = new(
-				new ConfigurationSectionError(ConfigurationSectionName.Opc, OpcDirectory, SectionProblem.NoFiles),
-				() => Resources.FailureConfigurationSectionOpcTitle,
-				() => Resources.FormatFailureConfigurationSectionNoFilesDetail(OpcDirectory),
-				() => Resources.FailureConfigurationSectionOpcNoFilesRemedy),
 			["DuplicateKey"] = new(
 				new ConfigurationSectionError(
 					ConfigurationSectionName.App, AppDirectory, SectionProblem.DuplicateKey, "locale", ["app.yaml"]),
@@ -257,47 +244,42 @@ public sealed class ArchiveFailureMapperTests
 				() => Resources.FailureArchiveShapeUnexpectedRemedy)
 		};
 
-	private static readonly IReadOnlyDictionary<string, FailureCase> _liveSourceCases =
+	private static readonly IReadOnlyDictionary<string, FailureCase> _connectionFileCases =
 		new Dictionary<string, FailureCase>
 		{
-			["Unreachable"] = new(
-				new LiveSourceError(LiveSourceFault.Unreachable, OpcEndpoint),
-				() => Resources.FailureLiveSourceUnreachableTitle,
-				() => Resources.FormatFailureLiveSourceUnreachableDetail(OpcEndpoint),
-				() => Resources.FailureLiveSourceUnreachableRemedy,
-				MessageSeverity.Warning),
-			["EndpointRefused"] = new(
-				new LiveSourceError(LiveSourceFault.EndpointRefused, OpcEndpoint),
-				() => Resources.FailureLiveSourceEndpointRefusedTitle,
-				() => Resources.FormatFailureLiveSourceEndpointRefusedDetail(OpcEndpoint),
-				() => Resources.FailureLiveSourceEndpointRefusedRemedy),
-			["ProjectMissing"] = new(
-				new LiveSourceError(LiveSourceFault.ProjectMissing, OpcEndpoint),
-				() => Resources.FailureLiveSourceProjectMissingTitle,
-				() => Resources.FormatFailureLiveSourceProjectMissingDetail(OpcEndpoint),
-				() => Resources.FailureLiveSourceProjectMissingRemedy),
-			["PensUnserved"] = new(
-				PensUnserved([7, 12], [9]),
-				() => Resources.FailureLiveSourcePensUnservedTitle,
-				() => Resources.FormatFailureLiveSourcePensUnservedDetail(
-					OpcEndpoint,
-					Resources.FormatFailureLiveSourceUnknownPens("7, 12")
-					+ " "
-					+ Resources.FormatFailureLiveSourceNotNumericPens("9")),
-				() => Resources.FailureLiveSourcePensUnservedRemedy,
-				MessageSeverity.Warning)
+			["Unparseable"] = new(
+				new ConnectionFileError(ConnectionDirectory, ConnectionFileProblem.Unparseable, []),
+				() => Resources.FailureConnectionFileRejectedTitle,
+				() => Resources.FormatFailureConnectionFileUnparseableDetail(ConnectionDirectory),
+				() => Resources.FailureConnectionFileUnparseableRemedy),
+			["MissingField"] = new(
+				new ConnectionFileError(
+					ConnectionDirectory, ConnectionFileProblem.MissingField, [PostgresConnectionLoader.PasswordKey]),
+				() => Resources.FailureConnectionFileRejectedTitle,
+				() => Resources.FormatFailureConnectionFileMissingFieldDetail(
+					ConnectionDirectory, PostgresConnectionLoader.PasswordKey),
+				() => Resources.FailureConnectionFileMissingFieldRemedy),
+			["OutOfRange"] = new(
+				new ConnectionFileError(
+					ConnectionDirectory,
+					ConnectionFileProblem.OutOfRange,
+					[PostgresConnectionLoader.PortKey, PostgresConnectionLoader.PollIntervalKey]),
+				() => Resources.FailureConnectionFileRejectedTitle,
+				() => Resources.FormatFailureConnectionFileOutOfRangeDetail(
+					ConnectionDirectory,
+					$"{PostgresConnectionLoader.PortKey}, {PostgresConnectionLoader.PollIntervalKey}"),
+				() => Resources.FormatFailureConnectionFileOutOfRangeRemedy(
+					PostgresConnectionLoader.LowestPort,
+					PostgresConnectionLoader.HighestPort,
+					PostgresConnectionLoader.LowestPollIntervalMs)),
+			["HostNotIPv4"] = new(
+				new ConnectionFileError(
+					ConnectionDirectory, ConnectionFileProblem.HostNotIPv4, [PostgresConnectionLoader.HostKey]),
+				() => Resources.FailureConnectionFileRejectedTitle,
+				() => Resources.FormatFailureConnectionFileHostNotIPv4Detail(
+					ConnectionDirectory, PostgresConnectionLoader.HostKey),
+				() => Resources.FailureConnectionFileHostNotIPv4Remedy)
 		};
-
-	private static readonly IReadOnlyDictionary<string, FailureCase> _connectionFileCases =
-		ConnectionFileCases(
-				ConfigurationSectionName.Connection,
-				ConnectionDirectory,
-				() => Resources.FailureConnectionFileRejectedTitle)
-			.Concat(ConnectionFileCases(
-				ConfigurationSectionName.Opc,
-				OpcDirectory,
-				() => Resources.FailureOpcFileRejectedTitle))
-			.ToDictionary();
 
 	public static TheoryData<string> StartupArgumentKeys => [.. _startupArgumentCases.Keys];
 
@@ -308,8 +290,6 @@ public sealed class ArchiveFailureMapperTests
 	public static TheoryData<string> ArchiveKeys => [.. _archiveCases.Keys];
 
 	public static TheoryData<string> ConnectionFileKeys => [.. _connectionFileCases.Keys];
-
-	public static TheoryData<string> LiveSourceKeys => [.. _liveSourceCases.Keys];
 
 	private static string ArchiveName => Resources.FormatFailureArchiveNameFormat(ArchiveDatabase, ArchiveAddress);
 
@@ -339,47 +319,6 @@ public sealed class ArchiveFailureMapperTests
 	public void ArchiveFault_ReadsItsOwnTitleDetailAndRemedy(string caseName)
 	{
 		AssertMapsTo(_archiveCases[caseName]);
-	}
-
-	[Theory]
-	[MemberData(nameof(LiveSourceKeys))]
-	public void LiveSourceFault_ReadsItsOwnTitleDetailAndRemedy(string caseName)
-	{
-		AssertMapsTo(_liveSourceCases[caseName]);
-	}
-
-	[Theory]
-	[MemberData(nameof(LiveSourceKeys))]
-	public void LiveSourceFault_NamesTheEndpointInTheDetail(string caseName)
-	{
-		ArchiveFailureMapper.Map(_liveSourceCases[caseName].Error).Detail.Should().Contain(OpcEndpoint);
-	}
-
-	[Fact]
-	public void PensUnserved_NamesBothIdGroups()
-	{
-		var detail = ArchiveFailureMapper.Map(PensUnserved([7, 12], [9])).Detail;
-
-		detail.Should().Contain(Resources.FormatFailureLiveSourceUnknownPens("7, 12"))
-			.And.Contain(Resources.FormatFailureLiveSourceNotNumericPens("9"));
-	}
-
-	[Fact]
-	public void PensUnserved_WithNoNonNumericPen_LeavesThatGroupOut()
-	{
-		var detail = ArchiveFailureMapper.Map(PensUnserved([7], [])).Detail;
-
-		detail.Should().Be(Resources.FormatFailureLiveSourcePensUnservedDetail(
-			OpcEndpoint, Resources.FormatFailureLiveSourceUnknownPens("7")));
-	}
-
-	[Fact]
-	public void PensUnserved_WithNoUnknownPen_LeavesThatGroupOut()
-	{
-		var detail = ArchiveFailureMapper.Map(PensUnserved([], [9])).Detail;
-
-		detail.Should().Be(Resources.FormatFailureLiveSourcePensUnservedDetail(
-			OpcEndpoint, Resources.FormatFailureLiveSourceNotNumericPens("9")));
 	}
 
 	[Fact]
@@ -536,50 +475,6 @@ public sealed class ArchiveFailureMapperTests
 	private static ArchiveError Archive(ArchiveFault kind, string detail = "")
 	{
 		return new ArchiveError(kind, "scada-host", 5432, ArchiveDatabase, detail);
-	}
-
-	private static LiveSourceError PensUnserved(IReadOnlyList<int> unknownPenIds, IReadOnlyList<int> notNumericPenIds)
-	{
-		return new LiveSourceError(
-			LiveSourceFault.PensUnserved,
-			OpcEndpoint,
-			unknownPenIds: unknownPenIds,
-			notNumericPenIds: notNumericPenIds);
-	}
-
-	// The four detail texts name only the folder, so both sections read the same detail under their own title.
-	private static IEnumerable<KeyValuePair<string, FailureCase>> ConnectionFileCases(
-		ConfigurationSectionName section,
-		string directory,
-		Func<string> title)
-	{
-		const string Host = PostgresConnectionLoader.HostKey;
-		const string Port = PostgresConnectionLoader.PortKey;
-
-		yield return KeyValuePair.Create($"{section} Unparseable", new FailureCase(
-			new ConnectionFileError(section, directory, ConnectionFileProblem.Unparseable, []),
-			title,
-			() => Resources.FormatFailureConnectionFileUnparseableDetail(directory),
-			() => Resources.FailureConnectionFileUnparseableRemedy));
-
-		yield return KeyValuePair.Create($"{section} MissingField", new FailureCase(
-			new ConnectionFileError(section, directory, ConnectionFileProblem.MissingField, [Host, Port]),
-			title,
-			() => Resources.FormatFailureConnectionFileMissingFieldDetail(directory, $"{Host}, {Port}"),
-			() => Resources.FailureConnectionFileMissingFieldRemedy));
-
-		yield return KeyValuePair.Create($"{section} OutOfRange", new FailureCase(
-			new ConnectionFileError(section, directory, ConnectionFileProblem.OutOfRange, [Port]),
-			title,
-			() => Resources.FormatFailureConnectionFileOutOfRangeDetail(directory, Port),
-			() => Resources.FormatFailureConnectionFileOutOfRangeRemedy(
-				NetworkAddress.LowestPort, NetworkAddress.HighestPort)));
-
-		yield return KeyValuePair.Create($"{section} HostNotIPv4", new FailureCase(
-			new ConnectionFileError(section, directory, ConnectionFileProblem.HostNotIPv4, [Host]),
-			title,
-			() => Resources.FormatFailureConnectionFileHostNotIPv4Detail(directory, Host),
-			() => Resources.FailureConnectionFileHostNotIPv4Remedy));
 	}
 
 	private sealed record FailureCase(

@@ -16,12 +16,6 @@ public sealed class SeederCommandTests
 	private const string Connection = BenchOptions.ConnectionString;
 	private const string EndText = BenchOptions.EndText;
 
-	private static readonly string[] _convergeRequired =
-	[
-		"converge", "--connection", Connection, "--admin-connection", "Host=127.0.0.1;Database=postgres",
-		"--config-dir", "C:\\config"
-	];
-
 	[Fact]
 	public async Task ASeedingRunAppliesDefaultsWhenOnlyRequiredOptionsAreGiven()
 	{
@@ -71,7 +65,7 @@ public sealed class SeederCommandTests
 	[Fact]
 	public async Task AFollowRunAppliesDefaultsWhenOnlyRequiredOptionsAreGiven()
 	{
-		var run = await RunAsync(["--connection", Connection, "--follow", "1", "--opc-port", "55875"]);
+		var run = await RunAsync(["--connection", Connection, "--follow", "1"]);
 
 		run.ExitCode.Should().Be(0);
 		run.Seed.Should().BeNull();
@@ -83,18 +77,13 @@ public sealed class SeederCommandTests
 		options.PenCount.Should().Be(SeederOptions.DefaultPenCount);
 		options.Seed.Should().Be(SeederOptions.DefaultSeed);
 		options.ChangeSeconds.Should().Be(SeederOptions.DefaultChangeSeconds);
-		options.ArchiveLag.Should().Be(TimeSpan.Zero);
-		options.OpcPort.Should().Be(55875);
 	}
 
 	[Fact]
 	public async Task AFollowRunAcceptsEveryParameter()
 	{
 		var run = await RunAsync(
-		[
-			"--connection", Connection, "--follow", "0.5", "--pens", "12", "--seed", "77", "--change-seconds", "2.5",
-			"--archive-lag", "120", "--opc-port", "4841"
-		]);
+			["--connection", Connection, "--follow", "0.5", "--pens", "12", "--seed", "77", "--change-seconds", "2.5"]);
 
 		run.ExitCode.Should().Be(0);
 
@@ -104,49 +93,6 @@ public sealed class SeederCommandTests
 		options.PenCount.Should().Be(12);
 		options.Seed.Should().Be(77L);
 		options.ChangeSeconds.Should().Be(2.5);
-		options.ArchiveLag.Should().Be(TimeSpan.FromSeconds(120));
-		options.OpcPort.Should().Be(4841);
-	}
-
-	[Fact]
-	public async Task AFollowRunAcceptsAnArchiveLagOfZero()
-	{
-		var run = await RunAsync(
-			["--connection", Connection, "--follow", "1", "--opc-port", "55875", "--archive-lag", "0"]);
-
-		run.ExitCode.Should().Be(0);
-		run.Follow.Should().BeOfType<FollowOptions>().Which.ArchiveLag.Should().Be(TimeSpan.Zero);
-	}
-
-	[Fact]
-	public async Task AFollowRunWithoutAnOpcPortIsRejected()
-	{
-		var run = await RunAsync(["--connection", Connection, "--follow", "1"]);
-
-		AssertRejectedWith(run, "--opc-port");
-		AssertRejectedWith(run, "49875");
-	}
-
-	// Port 0 is refused because the OPC UA stack binds 4840 for it rather than a free port.
-	[Theory]
-	[InlineData("--archive-lag", "-1")]
-	[InlineData("--archive-lag", "NaN")]
-	[InlineData("--archive-lag", "86401")]
-	[InlineData("--archive-lag", "x")]
-	[InlineData("--opc-port", "0")]
-	[InlineData("--opc-port", "65536")]
-	[InlineData("--opc-port", "8.5")]
-	public async Task AFollowOnlyValueOutsideItsRangeIsRejectedNamingTheValue(string option, string value)
-	{
-		string[] required = option == "--opc-port"
-			? ["--connection", Connection, "--follow", "1"]
-			: ["--connection", Connection, "--follow", "1", "--opc-port", "55875"];
-
-		var run = await RunAsync([.. required, option, value]);
-
-		AssertRejectedWith(run, $"Option '{option}'");
-		AssertRejectedWith(run, value);
-		run.Error.Should().NotContain("Unrecognized");
 	}
 
 	// A follow run appends to an archive somebody else seeded. Each of these states a span or a tag
@@ -157,48 +103,9 @@ public sealed class SeederCommandTests
 	[InlineData("--admin-connection", "Host=127.0.0.1;Database=archive;Username=postgres")]
 	public async Task AFollowRunRejectsASeedingOption(string option, string value)
 	{
-		var run = await RunAsync(["--connection", Connection, "--follow", "1", "--opc-port", "55875", option, value]);
+		var run = await RunAsync(["--connection", Connection, "--follow", "1", option, value]);
 
 		AssertRejectedWith(run, option);
-	}
-
-	[Theory]
-	[InlineData("--archive-lag", "120")]
-	[InlineData("--opc-port", "55875")]
-	public async Task ASeedingRunRejectsAFollowOption(string option, string value)
-	{
-		var run = await RunAsync(["--connection", Connection, "--end", EndText, option, value]);
-
-		AssertRejectedWith(run, $"Option '{option}' belongs to a follow run");
-	}
-
-	[Fact]
-	public async Task AConvergeRunCarriesItsOpcPort()
-	{
-		var run = await RunAsync([.. _convergeRequired, "--opc-port", "55875"]);
-
-		run.ExitCode.Should().Be(0);
-		run.Converge.Should().BeOfType<ConvergeOptions>().Which.OpcPort.Should().Be(55875);
-	}
-
-	[Fact]
-	public async Task AConvergeRunWithoutAnOpcPortIsRejected()
-	{
-		var run = await RunAsync(_convergeRequired);
-
-		AssertRejectedWith(run, "--opc-port");
-		AssertRejectedWith(run, "49875");
-	}
-
-	[Theory]
-	[InlineData("0")]
-	[InlineData("65536")]
-	public async Task AConvergeOpcPortOutsideItsRangeIsRejectedNamingTheValue(string value)
-	{
-		var run = await RunAsync([.. _convergeRequired, "--opc-port", value]);
-
-		AssertRejectedWith(run, "Option '--opc-port'");
-		AssertRejectedWith(run, value);
 	}
 
 	[Theory]
@@ -279,8 +186,8 @@ public sealed class SeederCommandTests
 	public async Task AFollowValueOutsideItsRangeIsRejected(string option, string value)
 	{
 		string[] required = option == "--follow"
-			? ["--connection", Connection, "--opc-port", "55875"]
-			: ["--connection", Connection, "--follow", "1", "--opc-port", "55875"];
+			? ["--connection", Connection]
+			: ["--connection", Connection, "--follow", "1"];
 
 		AssertRejectedWith(await RunAsync([.. required, option, value]), option);
 	}
@@ -316,7 +223,8 @@ public sealed class SeederCommandTests
 	[Fact]
 	public async Task AConvergeRunAppliesDefaultsWhenOnlyRequiredOptionsAreGiven()
 	{
-		var run = await RunAsync([.. _convergeRequired, "--opc-port", "55875"]);
+		var run = await RunAsync(
+			["converge", "--connection", Connection, "--admin-connection", "Host=127.0.0.1;Database=postgres", "--config-dir", "C:\\config"]);
 
 		run.ExitCode.Should().Be(0);
 		run.Seed.Should().BeNull();
@@ -335,7 +243,10 @@ public sealed class SeederCommandTests
 	public async Task AConvergeRunAcceptsAChangeIntervalAndAnEnd()
 	{
 		var run = await RunAsync(
-			[.. _convergeRequired, "--opc-port", "55875", "--change-seconds", "0.5", "--end", EndText]);
+		[
+			"converge", "--connection", Connection, "--admin-connection", "Host=127.0.0.1;Database=postgres",
+			"--config-dir", "C:\\config", "--change-seconds", "0.5", "--end", EndText
+		]);
 
 		run.ExitCode.Should().Be(0);
 
@@ -352,16 +263,13 @@ public sealed class SeederCommandTests
 	[InlineData("--connection", true)]
 	[InlineData("--admin-connection", true)]
 	[InlineData("--config-dir", true)]
-	[InlineData("--opc-port", false)]
-	[InlineData("--opc-port", true)]
 	public async Task AConvergeRunRejectsAMissingOrBlankRequiredOption(string option, bool blank)
 	{
 		(string Flag, string Value)[] every =
 		[
 			("--connection", Connection),
 			("--admin-connection", "Host=127.0.0.1;Database=postgres"),
-			("--config-dir", "C:\\config"),
-			("--opc-port", "55875")
+			("--config-dir", "C:\\config")
 		];
 
 		var arguments = new List<string> { "converge" };

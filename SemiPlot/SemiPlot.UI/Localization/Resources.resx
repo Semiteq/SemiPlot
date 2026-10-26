@@ -54,21 +54,6 @@
   <data name="StatusConnectionRestoredDetail" xml:space="preserve">
     <value>SemiPlot is reading the archive again.</value>
   </data>
-  <data name="StatusLiveConnecting" xml:space="preserve">
-    <value>OPC UA connecting</value>
-  </data>
-  <data name="StatusLiveConnectionOk" xml:space="preserve">
-    <value>OPC UA connected</value>
-  </data>
-  <data name="StatusLiveConnectionFault" xml:space="preserve">
-    <value>OPC UA not answering</value>
-  </data>
-  <data name="StatusLiveConnectionRestoredTitle" xml:space="preserve">
-    <value>The connection to the OPC UA server is restored</value>
-  </data>
-  <data name="StatusLiveConnectionRestoredDetail" xml:space="preserve">
-    <value>SemiPlot is receiving live values again.</value>
-  </data>
   <data name="StatusLayerFormat" xml:space="preserve">
     <value>Layer: {0}</value>
   </data>
@@ -276,20 +261,17 @@
   <data name="FailureConnectionFileRejectedTitle" xml:space="preserve">
     <value>SemiPlot cannot read the archive connection settings</value>
   </data>
-  <data name="FailureOpcFileRejectedTitle" xml:space="preserve">
-    <value>SemiPlot cannot read the OPC UA connection settings</value>
-  </data>
   <data name="FailureConnectionFileUnparseableDetail" xml:space="preserve">
-    <value>SemiPlot cannot parse a file of the folder '{0}': a key carries a value this format does not accept.</value>
+    <value>SemiPlot cannot parse a file of the connection folder '{0}': a key carries a value this format does not accept.</value>
   </data>
   <data name="FailureConnectionFileMissingFieldDetail" xml:space="preserve">
-    <value>SemiPlot rejected the folder '{0}': required fields are absent or blank: {1}.</value>
+    <value>SemiPlot rejected the connection folder '{0}': required fields are absent or blank: {1}.</value>
   </data>
   <data name="FailureConnectionFileOutOfRangeDetail" xml:space="preserve">
-    <value>SemiPlot rejected the folder '{0}': values outside the range this build accepts: {1}.</value>
+    <value>SemiPlot rejected the connection folder '{0}': values outside the range this build accepts: {1}.</value>
   </data>
   <data name="FailureConnectionFileHostNotIPv4Detail" xml:space="preserve">
-    <value>SemiPlot rejected the folder '{0}': the field '{1}' is not an IPv4 address of four decimal numbers from 0 to 255.</value>
+    <value>SemiPlot rejected the connection folder '{0}': the field '{1}' is not an IPv4 address of four decimal numbers from 0 to 255.</value>
   </data>
   <data name="FailureConnectionFileUnparseableRemedy" xml:space="preserve">
     <value>Correct the value whose type the field does not accept, such as a port that is not a number.</value>
@@ -298,7 +280,7 @@
     <value>Every field is required. Add the fields the detail lists to a file in that folder.</value>
   </data>
   <data name="FailureConnectionFileOutOfRangeRemedy" xml:space="preserve">
-    <value>Set port to a number from {0} to {1}.</value>
+    <value>Set port to a number from {0} to {1} and poll_interval_ms to {2} or more.</value>
   </data>
   <data name="FailureConnectionFileHostNotIPv4Remedy" xml:space="preserve">
     <value>Set the host to an IPv4 address of four numbers from 0 to 255, such as 127.0.0.1. A host name is not accepted.</value>
@@ -347,48 +329,6 @@
   </data>
   <data name="FailureArchiveConnectionLostRemedy" xml:space="preserve">
     <value>SemiPlot keeps reading and clears this message once the archive answers. Check that the PostgreSQL server is running. Check that it is reachable from this machine.</value>
-  </data>
-  <data name="FailureLiveSourceUnreachableTitle" xml:space="preserve">
-    <value>SemiPlot cannot reach the OPC UA server</value>
-  </data>
-  <data name="FailureLiveSourceUnreachableDetail" xml:space="preserve">
-    <value>SemiPlot has no OPC UA session to {0}. The chart keeps the history it shows and gets no live values until the session is back.</value>
-  </data>
-  <data name="FailureLiveSourceUnreachableRemedy" xml:space="preserve">
-    <value>SemiPlot keeps connecting in the background and writes a new message once the session is back. Check that the SCADA project is running. Check that the host and port in the OPC UA connection settings are reachable from this machine. Check the route and the firewall.</value>
-  </data>
-  <data name="FailureLiveSourceEndpointRefusedTitle" xml:space="preserve">
-    <value>The OPC UA server refuses SemiPlot</value>
-  </data>
-  <data name="FailureLiveSourceEndpointRefusedDetail" xml:space="preserve">
-    <value>The OPC UA server at {0} offers no endpoint with security mode None and anonymous access.</value>
-  </data>
-  <data name="FailureLiveSourceEndpointRefusedRemedy" xml:space="preserve">
-    <value>Allow an endpoint with security mode None and anonymous access in the settings of the SCADA's OPC UA server. SemiPlot tries again every 30 seconds.</value>
-  </data>
-  <data name="FailureLiveSourceProjectMissingTitle" xml:space="preserve">
-    <value>The OPC UA server holds no SCADA project</value>
-  </data>
-  <data name="FailureLiveSourceProjectMissingDetail" xml:space="preserve">
-    <value>The OPC UA server at {0} answers but holds no project folder with the pens.</value>
-  </data>
-  <data name="FailureLiveSourceProjectMissingRemedy" xml:space="preserve">
-    <value>Start the SCADA project. Check that the host and port in the OPC UA connection settings name the server of this project. SemiPlot tries again every 30 seconds.</value>
-  </data>
-  <data name="FailureLiveSourcePensUnservedTitle" xml:space="preserve">
-    <value>The OPC UA server does not serve some pens</value>
-  </data>
-  <data name="FailureLiveSourcePensUnservedDetail" xml:space="preserve">
-    <value>The OPC UA server at {0} sends no live values for some pens. {1}</value>
-  </data>
-  <data name="FailureLiveSourcePensUnservedRemedy" xml:space="preserve">
-    <value>Check that each listed pen still exists in the SCADA project and archives a number. These pens show the archive's values only.</value>
-  </data>
-  <data name="FailureLiveSourceUnknownPens" xml:space="preserve">
-    <value>Unknown pen ids: {0}.</value>
-  </data>
-  <data name="FailureLiveSourceNotNumericPens" xml:space="preserve">
-    <value>Pen ids whose value is not a number: {0}.</value>
   </data>
   <data name="FailureArchiveShapeUnexpectedTitle" xml:space="preserve">
     <value>The archive has an unexpected structure</value>
@@ -501,9 +441,6 @@
   <data name="FailureConfigurationSectionConnectionTitle" xml:space="preserve">
     <value>SemiPlot cannot read the archive connection folder</value>
   </data>
-  <data name="FailureConfigurationSectionOpcTitle" xml:space="preserve">
-    <value>SemiPlot cannot read the OPC UA connection folder</value>
-  </data>
   <data name="FailureConfigurationSectionDirectoryMissingDetail" xml:space="preserve">
     <value>SemiPlot did not find the configuration folder '{0}'.</value>
   </data>
@@ -528,17 +465,11 @@
   <data name="FailureConfigurationSectionConnectionDirectoryMissingRemedy" xml:space="preserve">
     <value>Create that folder with a '*.yaml' file carrying the archive connection fields. Or start SemiPlot with the --config-dir argument naming the folder that holds it.</value>
   </data>
-  <data name="FailureConfigurationSectionOpcDirectoryMissingRemedy" xml:space="preserve">
-    <value>Create that folder with a '*.yaml' file carrying a 'host' key and a 'port' key of the SCADA's OPC UA server. Or start SemiPlot with the --config-dir argument naming the folder that holds it.</value>
-  </data>
   <data name="FailureConfigurationSectionAppNoFilesRemedy" xml:space="preserve">
     <value>Add a '*.yaml' file carrying a 'locale' key and a 'theme' key to that folder.</value>
   </data>
   <data name="FailureConfigurationSectionConnectionNoFilesRemedy" xml:space="preserve">
     <value>Add a '*.yaml' file carrying the archive connection fields to that folder.</value>
-  </data>
-  <data name="FailureConfigurationSectionOpcNoFilesRemedy" xml:space="preserve">
-    <value>Add a '*.yaml' file carrying a 'host' key and a 'port' key of the SCADA's OPC UA server to that folder.</value>
   </data>
   <data name="FailureConfigurationSectionUnreadableRemedy" xml:space="preserve">
     <value>Give the account running SemiPlot read access to that folder. Correct the syntax of the files in it.</value>
@@ -648,8 +579,8 @@
   <data name="SettingsPasswordLabel" xml:space="preserve">
     <value>Password</value>
   </data>
-  <data name="SettingsOpcHeader" xml:space="preserve">
-    <value>OPC UA connection</value>
+  <data name="SettingsPollIntervalLabel" xml:space="preserve">
+    <value>Poll interval, ms</value>
   </data>
   <data name="SettingsRestartNotice" xml:space="preserve">
     <value>Saved. Takes effect after a restart.</value>
@@ -672,11 +603,8 @@
   <data name="SettingsPortInvalid" xml:space="preserve">
     <value>Port: a whole number 1–65535</value>
   </data>
-  <data name="SettingsOpcHostInvalid" xml:space="preserve">
-    <value>OPC UA host: expected an IP address such as 127.0.0.1</value>
-  </data>
-  <data name="SettingsOpcPortInvalid" xml:space="preserve">
-    <value>OPC UA port: a whole number 1–65535</value>
+  <data name="SettingsPollIntervalInvalid" xml:space="preserve">
+    <value>Poll interval: a whole number above 0</value>
   </data>
   <data name="SettingsFieldRequired" xml:space="preserve">
     <value>{0}: required</value>
@@ -685,7 +613,7 @@
     <value>{0}: a file cannot be read. The message panel names it.</value>
   </data>
   <data name="SettingsKeyAbsent" xml:space="preserve">
-    <value>{0}: no file carries the key '{1}'. Add it to a file by hand.</value>
+    <value>Key '{0}': no file of its section carries it. Add it to a file by hand.</value>
   </data>
   <data name="PenFormNameRequired" xml:space="preserve">
     <value>Name: required</value>
@@ -902,8 +830,5 @@
   </data>
   <data name="MarkerLineLabelFormat" xml:space="preserve">
     <value>{0} · {1}</value>
-  </data>
-  <data name="ChartAheadBreakLabel" xml:space="preserve">
-    <value>No archive data when the window opened</value>
   </data>
 </root>

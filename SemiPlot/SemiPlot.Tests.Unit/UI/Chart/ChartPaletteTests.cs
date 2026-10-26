@@ -62,20 +62,6 @@ public sealed class ChartPaletteTests
 		palette.ReadingBackground.Should().Be(Resolve("AppContentBackgroundBrush", variant));
 	}
 
-	[AvaloniaTheory]
-	[InlineData(AppThemeVariant.Light)]
-	[InlineData(AppThemeVariant.Dark)]
-	public void AheadBreakColors_ResolveTheFillWithItsAlphaUnderTheVariant(AppThemeVariant theme)
-	{
-		var variant = App.VariantFor(theme);
-
-		var palette = ChartPalette.AheadBreakColors(Application.Current!, variant);
-
-		palette.Fill.Should().Be(Resolve("AppAheadBreakFillBrush", variant));
-		palette.Fill.A.Should().BeLessThan(byte.MaxValue, "the band is translucent through its colour's alpha");
-		palette.Label.Should().Be(Resolve("AppSecondaryForegroundBrush", variant));
-	}
-
 	private static Color Resolve(string key, ThemeVariant variant)
 	{
 		return ThemeProbe.PlotColour(key, variant);

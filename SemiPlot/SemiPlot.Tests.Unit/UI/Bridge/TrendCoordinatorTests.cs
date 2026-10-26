@@ -4,8 +4,6 @@ using AwesomeAssertions;
 
 using Microsoft.Reactive.Testing;
 
-using SemiPlot.Core.Data;
-using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Chart;
 using SemiPlot.UI.Bridge;
@@ -19,8 +17,6 @@ namespace SemiPlot.Tests.Unit.UI.Bridge;
 [Trait("Category", "Unit")]
 public sealed class TrendCoordinatorTests
 {
-	private const string OpcEndpoint = "opc.tcp://127.0.0.1:4840";
-
 	[Fact]
 	public void RealtimeBatches_EmitOnePerBufferWindow()
 	{
@@ -279,39 +275,6 @@ public sealed class TrendCoordinatorTests
 		batches.Should().ContainSingle().Which.Pens.Select(values => values.PenId).Should()
 			.Equal(FakeDataProvider.FirstPen.PenId);
 		failures.Should().BeEmpty();
-	}
-
-	// The source raises both streams on its own loop thread, and the bar and the panel are bound state.
-	[Fact]
-	public void TheLiveSourcesStatesAndPenFaults_ArriveOnTheUiScheduler()
-	{
-		var dataScheduler = new TestScheduler();
-		var uiScheduler = new TestScheduler();
-		var provider = new FakeDataProvider(dataScheduler, ChartTestBuilder.RealtimeInterval);
-		using var coordinator = new TrendCoordinator(provider, provider, provider.Pens, dataScheduler, uiScheduler);
-		var states = new List<LiveSourceState>();
-		var faults = new List<LiveSourceError>();
-		using var stateSubscription = coordinator.LiveSourceStates.Subscribe(states.Add);
-		using var faultSubscription = coordinator.LivePenFaults.Subscribe(faults.Add);
-		var lost = LiveSourceState.FaultedBy(new LiveSourceError(LiveSourceFault.Unreachable, OpcEndpoint));
-		var unserved = new LiveSourceError(LiveSourceFault.PensUnserved, OpcEndpoint, unknownPenIds: [7]);
-
-		states.Should().BeEmpty("the replayed state waits for the UI scheduler");
-
-		uiScheduler.AdvanceBy(1);
-
-		states.Should().Equal(LiveSourceState.Connected);
-
-		provider.PushLiveState(lost);
-		provider.RaisePenFault(unserved);
-
-		states.Should().HaveCount(1);
-		faults.Should().BeEmpty();
-
-		uiScheduler.AdvanceBy(1);
-
-		states.Should().Equal(LiveSourceState.Connected, lost);
-		faults.Should().ContainSingle().Which.Should().BeSameAs(unserved);
 	}
 
 	private static (TrendCoordinator Coordinator, TestScheduler Scheduler, FakeDataProvider Provider)

@@ -54,21 +54,6 @@
   <data name="StatusConnectionRestoredDetail" xml:space="preserve">
     <value>SemiPlot снова опрашивает базу данных.</value>
   </data>
-  <data name="StatusLiveConnecting" xml:space="preserve">
-    <value>Подключение к серверу OPC UA</value>
-  </data>
-  <data name="StatusLiveConnectionOk" xml:space="preserve">
-    <value>Связь с сервером OPC UA установлена</value>
-  </data>
-  <data name="StatusLiveConnectionFault" xml:space="preserve">
-    <value>Сервер OPC UA не отвечает</value>
-  </data>
-  <data name="StatusLiveConnectionRestoredTitle" xml:space="preserve">
-    <value>Связь с сервером OPC UA восстановлена</value>
-  </data>
-  <data name="StatusLiveConnectionRestoredDetail" xml:space="preserve">
-    <value>SemiPlot снова получает новые значения с сервера OPC UA.</value>
-  </data>
   <data name="StatusLayerFormat" xml:space="preserve">
     <value>Детализация: {0}</value>
   </data>
@@ -276,20 +261,17 @@
   <data name="FailureConnectionFileRejectedTitle" xml:space="preserve">
     <value>Не удаётся прочитать настройки подключения к базе данных</value>
   </data>
-  <data name="FailureOpcFileRejectedTitle" xml:space="preserve">
-    <value>Не удаётся прочитать настройки подключения к серверу OPC UA</value>
-  </data>
   <data name="FailureConnectionFileUnparseableDetail" xml:space="preserve">
-    <value>SemiPlot не может разобрать файл в каталоге «{0}»: ключ содержит значение недопустимого формата.</value>
+    <value>SemiPlot не может разобрать файл в каталоге подключения «{0}»: ключ содержит значение недопустимого формата.</value>
   </data>
   <data name="FailureConnectionFileMissingFieldDetail" xml:space="preserve">
-    <value>SemiPlot отклонил каталог «{0}»: обязательные поля отсутствуют или пусты: {1}.</value>
+    <value>SemiPlot отклонил каталог подключения «{0}»: обязательные поля отсутствуют или пусты: {1}.</value>
   </data>
   <data name="FailureConnectionFileOutOfRangeDetail" xml:space="preserve">
-    <value>SemiPlot отклонил каталог «{0}»: значения полей вне допустимого диапазона: {1}.</value>
+    <value>SemiPlot отклонил каталог подключения «{0}»: значения полей вне допустимого диапазона: {1}.</value>
   </data>
   <data name="FailureConnectionFileHostNotIPv4Detail" xml:space="preserve">
-    <value>SemiPlot отклонил каталог «{0}»: в поле «{1}» не IPv4-адрес: нужны четыре десятичных числа от 0 до 255.</value>
+    <value>SemiPlot отклонил каталог подключения «{0}»: в поле «{1}» не IPv4-адрес: нужны четыре десятичных числа от 0 до 255.</value>
   </data>
   <data name="FailureConnectionFileUnparseableRemedy" xml:space="preserve">
     <value>Исправьте значение неверного типа, например порт, который не является числом.</value>
@@ -298,7 +280,7 @@
     <value>Все поля обязательны. Добавьте поля из сообщения в файл этого каталога.</value>
   </data>
   <data name="FailureConnectionFileOutOfRangeRemedy" xml:space="preserve">
-    <value>Задайте port от {0} до {1}.</value>
+    <value>Задайте port от {0} до {1} и poll_interval_ms не меньше {2}.</value>
   </data>
   <data name="FailureConnectionFileHostNotIPv4Remedy" xml:space="preserve">
     <value>Укажите в поле host IPv4-адрес из четырёх чисел от 0 до 255, например 127.0.0.1. Имя сервера не принимается.</value>
@@ -347,48 +329,6 @@
   </data>
   <data name="FailureArchiveConnectionLostRemedy" xml:space="preserve">
     <value>SemiPlot продолжает опрашивать базу данных и снимет это сообщение, когда она ответит. Проверьте, что сервер PostgreSQL запущен. Проверьте, что он доступен с этой машины.</value>
-  </data>
-  <data name="FailureLiveSourceUnreachableTitle" xml:space="preserve">
-    <value>Нет связи с сервером OPC UA</value>
-  </data>
-  <data name="FailureLiveSourceUnreachableDetail" xml:space="preserve">
-    <value>У SemiPlot нет сеанса OPC UA с {0}. График сохраняет показанную историю и не получает новых значений, пока сеанс не восстановится.</value>
-  </data>
-  <data name="FailureLiveSourceUnreachableRemedy" xml:space="preserve">
-    <value>SemiPlot продолжает подключаться в фоне и напишет новое сообщение, когда сеанс восстановится. Проверьте, что проект SCADA запущен. Проверьте, что хост и порт из настроек подключения к серверу OPC UA доступны с этой машины. Проверьте маршрут и межсетевой экран.</value>
-  </data>
-  <data name="FailureLiveSourceEndpointRefusedTitle" xml:space="preserve">
-    <value>Сервер OPC UA не принимает SemiPlot</value>
-  </data>
-  <data name="FailureLiveSourceEndpointRefusedDetail" xml:space="preserve">
-    <value>Сервер OPC UA по адресу {0} не предлагает точку подключения без защиты (режим None) с анонимным доступом.</value>
-  </data>
-  <data name="FailureLiveSourceEndpointRefusedRemedy" xml:space="preserve">
-    <value>Разрешите в настройках сервера OPC UA системы SCADA точку подключения без защиты (режим None) с анонимным доступом. SemiPlot повторяет попытку каждые 30 секунд.</value>
-  </data>
-  <data name="FailureLiveSourceProjectMissingTitle" xml:space="preserve">
-    <value>На сервере OPC UA нет проекта SCADA</value>
-  </data>
-  <data name="FailureLiveSourceProjectMissingDetail" xml:space="preserve">
-    <value>Сервер OPC UA по адресу {0} отвечает, но не содержит каталога проекта с перьями.</value>
-  </data>
-  <data name="FailureLiveSourceProjectMissingRemedy" xml:space="preserve">
-    <value>Запустите проект SCADA. Проверьте, что хост и порт из настроек подключения к серверу OPC UA указывают на сервер этого проекта. SemiPlot повторяет попытку каждые 30 секунд.</value>
-  </data>
-  <data name="FailureLiveSourcePensUnservedTitle" xml:space="preserve">
-    <value>Сервер OPC UA не передаёт значения некоторых перьев</value>
-  </data>
-  <data name="FailureLiveSourcePensUnservedDetail" xml:space="preserve">
-    <value>Сервер OPC UA по адресу {0} не передаёт новые значения некоторых перьев. {1}</value>
-  </data>
-  <data name="FailureLiveSourcePensUnservedRemedy" xml:space="preserve">
-    <value>Проверьте, что каждое из перечисленных перьев есть в проекте SCADA и архивирует число. Эти перья показывают только значения из архива.</value>
-  </data>
-  <data name="FailureLiveSourceUnknownPens" xml:space="preserve">
-    <value>Неизвестные номера перьев: {0}.</value>
-  </data>
-  <data name="FailureLiveSourceNotNumericPens" xml:space="preserve">
-    <value>Номера перьев, значение которых не число: {0}.</value>
   </data>
   <data name="FailureArchiveShapeUnexpectedTitle" xml:space="preserve">
     <value>Структура базы данных не соответствует ожидаемой</value>
@@ -501,9 +441,6 @@
   <data name="FailureConfigurationSectionConnectionTitle" xml:space="preserve">
     <value>Не удаётся прочитать каталог подключения к базе данных</value>
   </data>
-  <data name="FailureConfigurationSectionOpcTitle" xml:space="preserve">
-    <value>Не удаётся прочитать каталог подключения к серверу OPC UA</value>
-  </data>
   <data name="FailureConfigurationSectionDirectoryMissingDetail" xml:space="preserve">
     <value>SemiPlot не нашёл каталог настроек «{0}».</value>
   </data>
@@ -528,17 +465,11 @@
   <data name="FailureConfigurationSectionConnectionDirectoryMissingRemedy" xml:space="preserve">
     <value>Создайте этот каталог и поместите в него файл «*.yaml» с настройками подключения к базе данных. Или запустите SemiPlot с аргументом --config-dir, указав каталог, в котором этот файл уже есть.</value>
   </data>
-  <data name="FailureConfigurationSectionOpcDirectoryMissingRemedy" xml:space="preserve">
-    <value>Создайте этот каталог и поместите в него файл «*.yaml» с настройками «host» и «port» сервера OPC UA системы SCADA. Или запустите SemiPlot с аргументом --config-dir, указав каталог, в котором этот файл уже есть.</value>
-  </data>
   <data name="FailureConfigurationSectionAppNoFilesRemedy" xml:space="preserve">
     <value>Добавьте в этот каталог файл «*.yaml» с настройками «locale» и «theme».</value>
   </data>
   <data name="FailureConfigurationSectionConnectionNoFilesRemedy" xml:space="preserve">
     <value>Добавьте в этот каталог файл «*.yaml» с настройками подключения к базе данных.</value>
-  </data>
-  <data name="FailureConfigurationSectionOpcNoFilesRemedy" xml:space="preserve">
-    <value>Добавьте в этот каталог файл «*.yaml» с настройками «host» и «port» сервера OPC UA системы SCADA.</value>
   </data>
   <data name="FailureConfigurationSectionUnreadableRemedy" xml:space="preserve">
     <value>Предоставьте учётной записи, от имени которой работает SemiPlot, право на чтение этого каталога. Исправьте синтаксис в файлах каталога.</value>
@@ -648,8 +579,8 @@
   <data name="SettingsPasswordLabel" xml:space="preserve">
     <value>Пароль</value>
   </data>
-  <data name="SettingsOpcHeader" xml:space="preserve">
-    <value>Подключение к серверу OPC UA</value>
+  <data name="SettingsPollIntervalLabel" xml:space="preserve">
+    <value>Период опроса, мс</value>
   </data>
   <data name="SettingsRestartNotice" xml:space="preserve">
     <value>Сохранено. Вступит в силу после перезапуска.</value>
@@ -672,11 +603,8 @@
   <data name="SettingsPortInvalid" xml:space="preserve">
     <value>Порт: целое число 1–65535</value>
   </data>
-  <data name="SettingsOpcHostInvalid" xml:space="preserve">
-    <value>Сервер OPC UA: ожидается IP-адрес вида 127.0.0.1</value>
-  </data>
-  <data name="SettingsOpcPortInvalid" xml:space="preserve">
-    <value>Порт OPC UA: целое число 1–65535</value>
+  <data name="SettingsPollIntervalInvalid" xml:space="preserve">
+    <value>Период опроса: целое число больше 0</value>
   </data>
   <data name="SettingsFieldRequired" xml:space="preserve">
     <value>{0}: обязательное поле</value>
@@ -685,7 +613,7 @@
     <value>{0}: файл не читается. Его имя в панели сообщений.</value>
   </data>
   <data name="SettingsKeyAbsent" xml:space="preserve">
-    <value>{0}: ни один файл не содержит ключ '{1}'. Добавьте его в файл вручную.</value>
+    <value>Ключ '{0}': ни один файл раздела его не содержит. Добавьте его в файл вручную.</value>
   </data>
   <data name="PenFormNameRequired" xml:space="preserve">
     <value>Имя: обязательное поле</value>
@@ -902,8 +830,5 @@
   </data>
   <data name="MarkerLineLabelFormat" xml:space="preserve">
     <value>{0} · {1}</value>
-  </data>
-  <data name="ChartAheadBreakLabel" xml:space="preserve">
-    <value>Нет данных архива на момент открытия окна</value>
   </data>
 </root>

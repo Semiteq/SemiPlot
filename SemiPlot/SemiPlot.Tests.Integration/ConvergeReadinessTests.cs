@@ -29,8 +29,7 @@ public sealed class ConvergeReadinessTests
 			$"Host=127.0.0.1;Port={port};Database=postgres;Username=postgres;Password=x",
 			"C:\\config",
 			null,
-			SeederOptions.DefaultChangeSeconds,
-			55875);
+			SeederOptions.DefaultChangeSeconds);
 		using var giveUp = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
 		giveUp.CancelAfter(TimeSpan.FromSeconds(2));
 

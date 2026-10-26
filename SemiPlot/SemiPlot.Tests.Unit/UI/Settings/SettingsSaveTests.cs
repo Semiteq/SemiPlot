@@ -7,7 +7,6 @@ using FluentResults;
 
 using SemiPlot.Core.Configuration;
 using SemiPlot.Core.Data.Errors;
-using SemiPlot.DataSource.OpcUa.Configuration;
 using SemiPlot.DataSource.Postgres.Configuration;
 using SemiPlot.UI.Messages;
 using SemiPlot.UI.Settings;
@@ -39,8 +38,6 @@ public sealed class SettingsSaveTests : IDisposable
 	[InlineData(ConfigurationSectionName.Connection, "port", "70000", ConnectionFileProblem.OutOfRange)]
 	[InlineData(ConfigurationSectionName.Connection, "host", "scada-01", ConnectionFileProblem.HostNotIPv4)]
 	[InlineData(ConfigurationSectionName.Connection, "password", "", ConnectionFileProblem.MissingField)]
-	[InlineData(ConfigurationSectionName.Opc, "port", "70000", ConnectionFileProblem.OutOfRange)]
-	[InlineData(ConfigurationSectionName.Opc, "host", "scada-01", ConnectionFileProblem.HostNotIPv4)]
 	public void AnInvalidValueIsRefusedAndNoFileChanges(
 		ConfigurationSectionName section,
 		string key,
@@ -61,7 +58,6 @@ public sealed class SettingsSaveTests : IDisposable
 		problem.Should().Be(expectedProblem);
 		(error as AppSettingsError)?.Key.Should().Be(key);
 		(error as ConnectionFileError)?.Fields.Should().Equal(key);
-		(error as ConnectionFileError)?.Section.Should().Be(section);
 		_sandbox.ShouldMatch(before);
 	}
 
@@ -211,7 +207,6 @@ public sealed class SettingsSaveTests : IDisposable
 
 		var error = SingleError<ConnectionFileError>(result);
 		error.Kind.Should().Be(ConnectionFileProblem.Unparseable);
-		error.Section.Should().Be(ConfigurationSectionName.Connection);
 		error.Path.Should().Be(_sandbox.ConnectionDirectory);
 		error.Reasons.OfType<ExceptionalError>().Should().ContainSingle()
 			.Which.Exception.Should().BeAssignableTo<YamlException>();
@@ -257,7 +252,6 @@ public sealed class SettingsSaveTests : IDisposable
 	[Theory]
 	[InlineData(ConfigurationSectionName.App, "locale", "de")]
 	[InlineData(ConfigurationSectionName.Connection, "port", "70000")]
-	[InlineData(ConfigurationSectionName.Opc, "port", "70000")]
 	public void ARefusedSaveNamesTheOperatorsFolderAndNeverTheStagingOne(
 		ConfigurationSectionName section,
 		string key,
@@ -276,53 +270,8 @@ public sealed class SettingsSaveTests : IDisposable
 		};
 		path.Should().Be(realDirectory);
 		(error as ConnectionFileError)?.Fields.Should().Equal(key);
-		(error as ConnectionFileError)?.Section.Should().Be(section);
 		var detail = ArchiveFailureMapper.Map(error).Detail;
 		detail.Should().Contain(realDirectory).And.NotContain(SettingsSave.StagingPrefix);
 	}
 
-	[Fact]
-	public void AnOpcEditReachesTheOpcFileAndLeavesTheOtherSectionsByteIdentical()
-	{
-		var before = _sandbox.Snapshot();
-
-		var result = _sandbox.Save(Edit(ConfigurationSectionName.Opc, ("port", "55875")));
-
-		result.IsSuccess.Should().BeTrue(Describe(result));
-		var opc = _sandbox.LoadOpc();
-		opc.Host.Should().Be("127.0.0.1");
-		opc.Port.Should().Be(55875);
-		var after = _sandbox.Snapshot();
-		after.Keys.Should().BeEquivalentTo(before.Keys, "the save creates no file");
-		var otherSections = before.Keys
-			.Where(file => Path.GetDirectoryName(file)
-				is StartupSequence.SettingsDirectoryName or StartupProbe.ConnectionDirectoryName)
-			.ToList();
-		otherSections.Should().HaveCount(2, "the shipped set carries one app file and one connection file");
-
-		foreach (var file in otherSections)
-		{
-			after[file].Should().Equal(before[file], file);
-		}
-
-		_sandbox.StagingDirectories().Should().BeEmpty();
-	}
-
-	[Fact]
-	public void TheCertificateStoreUnderTheOpcSectionSurvivesASaveUntouched()
-	{
-		var certificates = Path.Combine(
-			_sandbox.OpcDirectory, OpcUaConnectionLoader.CertificateStoreDirectoryName, "own", "certs");
-		Directory.CreateDirectory(certificates);
-		var certificate = Path.Combine(certificates, "semiplot.der");
-		byte[] content = [0x30, 0x82, 0x01, 0x0a];
-		File.WriteAllBytes(certificate, content);
-
-		var result = _sandbox.Save(Edit(ConfigurationSectionName.Opc, ("port", "55875")));
-
-		result.IsSuccess.Should().BeTrue(Describe(result));
-		_sandbox.LoadOpc().Port.Should().Be(55875);
-		File.ReadAllBytes(certificate).Should().Equal(content);
-		_sandbox.StagingDirectories().Should().BeEmpty();
-	}
 }

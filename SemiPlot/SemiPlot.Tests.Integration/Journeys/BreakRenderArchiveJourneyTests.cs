@@ -1,5 +1,4 @@
 using System.Reactive.Concurrency;
-using System.Reactive.Linq;
 
 using Avalonia.Headless.XUnit;
 
@@ -11,8 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using ScottPlot;
 
 using SemiPlot.Core.Data;
-using SemiPlot.Core.Data.Errors;
-using SemiPlot.Core.Trends;
 using SemiPlot.Tools.ArchiveSeeder;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
@@ -60,7 +57,7 @@ public sealed class BreakRenderArchiveJourneyTests(
 	{
 		await using var services = ArchiveProviderFactory.Build(seededArchive.Database.PlotConnectionString);
 		var dataProvider = services.GetRequiredService<IDataProvider>();
-		var liveSource = new SilentLiveSource();
+		var liveSource = services.GetRequiredService<ILiveSource>();
 		var dataScheduler = services.GetRequiredService<IScheduler>();
 		var catalogue = await dataProvider.QueryPensAsync();
 		var extent = await dataProvider.QueryArchiveExtentAsync();
@@ -201,18 +198,4 @@ public sealed class BreakRenderArchiveJourneyTests(
 	}
 
 	private readonly record struct ArchiveBreak(DateTime StartUtc, DateTime EndUtc);
-
-	/// <summary>A connected live source that delivers nothing, so every drawn column comes from the archive.</summary>
-	private sealed class SilentLiveSource : ILiveSource
-	{
-		public IObservable<LiveSourceState> States { get; } =
-			Observable.Never<LiveSourceState>().StartWith(LiveSourceState.Connected);
-
-		public IObservable<LiveSourceError> PenFaults { get; } = Observable.Never<LiveSourceError>();
-
-		public IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<int> penIds)
-		{
-			return Observable.Never<IReadOnlyList<Sample>>();
-		}
-	}
 }

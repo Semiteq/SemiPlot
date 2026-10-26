@@ -21,8 +21,7 @@ dotnet format SemiPlot.slnx                    # pre-commit hook enforces this
 `converge` example below produce `SemiPlot/Artifacts/dev-config`, which is also where the `.zed/` and `.run/`
 launchers point `--config-dir`, and the password is then filled in the viewer's `Edit` -> `Settings`.
 
-Configuration is a tree of section folders under `--config-dir`: `app/`, `connection/` (the archive)
-and `opc/` (the SCADA's OPC UA server, `host` and `port`). Every
+Configuration is a tree of section folders under `--config-dir`: `app/` and `connection/`. Every
 section folder is read whole — each `*.yaml` in it parsed on its own and merged at the key level —
 and a key carried by two files of one folder is a startup failure naming both. The set that ships is
 tracked at `ConfigFiles/` and gated by the production loaders in
@@ -32,8 +31,7 @@ the tracked file (`docs/architecture/overview.md`).
 
 The settings window (`SemiPlot.UI/Settings`) is the viewer's only writer of the section folders. It
 edits only keys that already exist, each in the file that owns it, and only the keys the operator
-changed; it creates no file. The startup-failure window offers it only when all three sections it edits,
-`app/`, `connection/` and `opc/`, read and carry every key it edits. The
+changed; it creates no file, and the startup-failure window offers it only when both sections read and carry every key it edits. The
 production loaders validate a staged copy before any file is replaced, and every change takes effect at the
 next start except the theme, which every running process applies live
 (`docs/architecture/overview.md#the-live-theme`).
@@ -76,11 +74,9 @@ privilege on. Run it with `--help` for the option list.
 `converge` is a separate, bench-only subcommand: unlike the seeding run above, it does issue `DROP
 DATABASE ... WITH (FORCE)`. It waits for `--admin-connection` up to 60 s, recreates the database
 `--connection` names from `semiplot_provisioned`, seeds it up to `--end` or this machine's clock,
-fills the catalogue and writes two files into `--config-dir`: `connection/connection.yaml` with the
-bench `semiplot` role's fixed password, and `opc/opc.yaml` with `host: 127.0.0.1` and the port its
-required `--opc-port` names, the port the demo writer serves OPC UA on. These two files are all it
-writes, so run it against a directory that already holds a copy of the tracked set
-(`docs/architecture/bench.md#the-converge-verb`):
+fills the catalogue and writes `connection/connection.yaml` into `--config-dir` with the bench
+`semiplot` role's fixed password. That one file is all it writes, so run it against a directory that
+already holds a copy of the tracked set (`docs/architecture/bench.md#the-converge-verb`):
 
 ```powershell
 New-Item -ItemType Directory -Force SemiPlot\Artifacts\dev-config | Out-Null
@@ -89,13 +85,12 @@ Copy-Item ConfigFiles\* SemiPlot\Artifacts\dev-config -Recurse -Force
 dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.ArchiveSeeder.csproj -- converge `
   --connection "Host=127.0.0.1;Port=55432;Database=semiplot_app;Username=scada_writer;Password=<writer>" `
   --admin-connection "Host=127.0.0.1;Port=55432;Database=postgres;Username=postgres;Password=<super>" `
-  --config-dir SemiPlot\Artifacts\dev-config --opc-port 55875
+  --config-dir SemiPlot\Artifacts\dev-config
 ```
 
-The demo writer is the same seeder run with `--follow <seconds> --opc-port <port>` instead of `--end`:
-it appends to the archive `converge` created and thins it into the coarse layers on every tick
-(`docs/architecture/bench.md#the-demo-writer`), and serves every value over OPC UA on the port
-`--opc-port` names (`docs/architecture/bench.md#the-opc-ua-demo-server`).
+The demo writer is the same seeder run with `--follow <seconds>` instead of `--end`: it appends to
+the archive `converge` created and thins it into the coarse layers on every tick
+(`docs/architecture/bench.md#the-demo-writer`).
 
 `SemiPlot.AppHost` runs the whole demo stand — the bench container, `converge`, the demo writer and
 the viewer — in dependency order and stops the processes it launched together; a window the viewer starts
@@ -118,8 +113,8 @@ Two projects, split on one axis: crosses a machine boundary (a socket or a conta
 
 | Project | Framework | References | Holds |
 | --- | --- | --- | --- |
-| `SemiPlot.Tests.Unit` | xunit v3 + `Avalonia.Headless.XUnit` | `SemiPlot.UI`, `SemiPlot.Core`, `SemiPlot.DataSource.Postgres`, `SemiPlot.DataSource.OpcUa`, `SemiPlot.Tools.ArchiveSeeder` | Every test that opens no socket and starts no container: the UI, the Core models, the seeder's generators and the providers' pure classes |
-| `SemiPlot.Tests.Integration` | xunit v3 + `Avalonia.Headless.XUnit` | the same five | The container harness, the container tests and the archive journeys in one xunit collection, the OPC UA demo server's tests and the OPC UA live source's tests in `DemoScadaCollection`, and the socket tests that need no server |
+| `SemiPlot.Tests.Unit` | xunit v3 + `Avalonia.Headless.XUnit` | `SemiPlot.UI`, `SemiPlot.Core`, `SemiPlot.DataSource.Postgres`, `SemiPlot.Tools.ArchiveSeeder` | Every test that opens no socket and starts no container: the UI, the Core models, the seeder's generators and the provider's pure classes |
+| `SemiPlot.Tests.Integration` | xunit v3 + `Avalonia.Headless.XUnit` | the same four | The container harness, the container tests and the journeys in one xunit collection, and the socket tests that need no server |
 
 - Each project carries its own `TestAppBuilder.cs` with `[assembly: AvaloniaTestApplication]`. Pure
   logic uses plain `[Fact]`; tests touching ReactiveUI/ScottPlot/Avalonia use
@@ -132,8 +127,8 @@ Two projects, split on one axis: crosses a machine boundary (a socket or a conta
   `git grep -nE "static void (Click|Clear|Type|Press)\(" -- SemiPlot/SemiPlot.Tests.Unit` prints only
   `HeadlessInput.cs` lines. A right click takes `Click`'s `MouseButton` overload. A hover, a drag or a
   held mouse button is outside the rule.
-- Neither project references the other. Core, `SemiPlot.DataSource.Postgres`, `SemiPlot.DataSource.OpcUa`
-  and `SemiPlot.UI` each name both in `InternalsVisibleTo`.
+- Neither project references the other. Core, `SemiPlot.DataSource.Postgres` and `SemiPlot.UI` each
+  name both in `InternalsVisibleTo`.
 - `SemiPlot.Tests.Unit` sets `failSkips` in `xunit.runner.json`, so no gated test may live there.
   `SemiPlot.Tests.Integration` carries no `xunit.runner.json`.
 - An xunit v3 test project is an executable: a hung test leaves `SemiPlot.Tests.Unit.exe` locked and
@@ -155,10 +150,6 @@ Two projects, split on one axis: crosses a machine boundary (a socket or a conta
   and the view's `RequestAnimationFrame` throws there; it passes a `TestScheduler` or
   `AvaloniaScheduler.Instance`
   (`docs/architecture/testing-strategy.md#the-ui-scheduler-in-a-realised-view`).
-- A test that disposes a container holding `OpcUaLiveSource` awaits `DisposeAsync()`. The synchronous
-  `OpcUaLiveSource.Dispose` runs the close through `Task.Run(...).Wait` with a 3 s bound, which a starved
-  pool under a full run outlasts; `OpcUaSessionTests.DisposeOnAConnectedSource_UnderAContextThatDropsEveryPost_ReturnsWithinItsBound`
-  alone covers that path.
 - The chart view redraws on an animation frame. A test drives one frame as
   `Dispatcher.UIThread.RunJobs(); AvaloniaHeadlessPlatform.ForceRenderTimerTick(); Dispatcher.UIThread.RunJobs();`
   (`ChartViewTestBuilder.DriveOneFrame`) and counts frames through `TrendChartView.ServedFrameCount`,
@@ -174,8 +165,7 @@ Two projects, split on one axis: crosses a machine boundary (a socket or a conta
 ```powershell
 dotnet test SemiPlot.slnx                                                        # both projects
 dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj              # no container needed
-dotnet test SemiPlot/SemiPlot.Tests.Integration/SemiPlot.Tests.Integration.csproj  # archive tests need a container
-dotnet test SemiPlot/SemiPlot.Tests.Integration/SemiPlot.Tests.Integration.csproj --filter "FullyQualifiedName~OpcUa"  # no container needed
+dotnet test SemiPlot/SemiPlot.Tests.Integration/SemiPlot.Tests.Integration.csproj  # container required
 dotnet test SemiPlot.slnx --filter "Area=Data"
 dotnet test SemiPlot.slnx --filter "FullyQualifiedName~TestMethodName"
 ```
@@ -198,18 +188,13 @@ Frame cost during a drag is measured, not asserted: `docs/architecture/testing-s
 ### Container tests
 
 Every test of the `ArchiveDatabaseCollection` in `SemiPlot.Tests.Integration` needs a container runtime and
-nothing else. The socket classes (`CatalogueReadUnreachableTests`, `ConvergeReadinessTests`,
-`StartupProbeOpcSectionTests`) carry no collection, take no fixture and run without a runtime.
-The OPC UA demo server's classes under `DemoScada/`, the live source's classes under `OpcUa/`
-(`OpcUaSessionTests`, `OpcUaLiveSourceTests`, `OpcUaLiveSourceRestartTests`) and
-`Journeys/OpcUaLiveEdgeJourneyTests` run in `DemoScadaCollection`, which carries no fixture, and need
-no runtime either. Each starts the demo server through `DemoScadaHost` on a free port, never 4840 or
-49875: `git grep -n "49875" -- SemiPlot/SemiPlot.Tests.Integration/OpcUa` prints nothing.
+nothing else. The socket classes (`RealtimePollTests`, `CatalogueReadUnreachableTests`,
+`RealtimeSubscriptionDisposalTests`, `ConvergeReadinessTests`) carry no collection, take no fixture and run without a runtime.
 `SemiPlot/bench/Dockerfile` copies `/semibase` out of
 `ghcr.io/semiteq/semibase:latest`, which the fixture pulls ahead of the build, and runs
 `semibase bench` from `/docker-entrypoint-initdb.d/` before the published port opens. The container
 carries fixed dummy passwords of the fixture's own, and the base image is the constant
-`postgres:17-alpine`. A missing runtime fails every test of `ArchiveDatabaseCollection` with
+`postgres:17-alpine`. A missing runtime fails every test of the collection with
 `TestPipelineException`; nothing skips.
 
 A run leaves nothing behind but the images it pulled: the resource reaper removes the built image,
@@ -277,12 +262,7 @@ No abbreviations in names.
 
 - Constructor injection only (primary constructors preferred). No property injection, no service locator.
 - Register services in extension methods, each named for what it registers: `AddPostgresData()` in
-  `SemiPlot.DataSource.Postgres`, `AddOpcUaLiveSource()` in `SemiPlot.DataSource.OpcUa`, `AddUi()` in
-  `SemiPlot.UI`. `StartupProbe.BuildArchiveServiceProvider` calls them in that order.
-  `AddOpcUaLiveSource()` registers `OpcUaLiveSource` as the singleton `ILiveSource`, and a logging filter
-  that raises `Opc.Ua.Bindings.UaSCUaBinaryClientChannel` to `Critical`: that category writes one `Error`
-  per failed connect attempt while the server is down, and the source's own state line already says it.
-  A data-source project names its own
+  `SemiPlot.DataSource.Postgres`, `AddUi()` in `SemiPlot.UI`. A data-source project names its own
   source rather than a bare `AddData()`, so a composition root referencing several
   `SemiPlot.DataSource.*` projects names the one it registers. Core registers nothing.
 - Avoid mutable static state.
@@ -290,10 +270,7 @@ No abbreviations in names.
   `MainWindow/TrendWindow.Build` and disposed by `TrendWindow.Dispose`: never registered, never
   replaced. `MainWindowViewModel` disposes only its own commands and subjects
   (`docs/architecture/overview.md#one-window-per-process`).
-- `AddPostgresData()` registers the bare data `IScheduler` (`DefaultScheduler.Instance`).
-  `AddOpcUaLiveSource()` does not read that registration and passes the source no scheduler: the source
-  reads `DefaultScheduler.Instance` itself for its grace, settle and create-retry timers, and the connect
-  loop waits with `Task.Delay`. The UI
+- `AddPostgresData()` registers the bare data `IScheduler` (`DefaultScheduler.Instance`). The UI
   scheduler is not a second container registration: `App` reads the static
   `AvaloniaScheduler.Instance` and passes it explicitly to `TrendWindow.Build`, which hands it to the
   coordinator, `MarkerSync`, the chart, the minimap, `PenCatalogueSync` and the `CsvExportViewModel`
@@ -395,30 +372,19 @@ No abbreviations in names.
   only; no caller builds a `HistoryRequest` of its own
   (`docs/architecture/data-integration.md#what-one-history-query-covers`).
   `git grep -n "new HistoryRequest(" -- SemiPlot/SemiPlot.UI` prints only `ChartHistoryPlanner.cs` lines.
-- `Chart/TrendPenState` alone writes `BreakKind.Ahead` and a line's hold end
-  (`docs/architecture/charting.md#the-hold-to-the-live-edge`):
-  `git grep -n "BreakKind.Ahead" -- SemiPlot/SemiPlot.UI` prints only `Chart/TrendPenState.cs` and
-  `Chart/EnvelopePath.cs` (the one reader) lines, and `git grep -n "SetHoldEnd(" -- SemiPlot/SemiPlot.UI`
-  prints the declaration in `Chart/EnvelopeLine.cs` and the one call, in `TrendPenState.ApplyHold`.
 - A pen's reading is rendered through `SemiPlot.Core.Trends.PenValueFormat` and nowhere else: it owns
   the stored mask's character-and-section rule and the `0.###` fallback, and the sidebar row, the
   chart's hover readout, the major labels of a log10 axis (`Chart/LogTickGenerator`) and the delta
   readout's Δy (`FormatDifference`) all go through it (`docs/architecture/ui-text.md`).
 - Every failure the operator should see goes to `Messages/MessagePanelViewModel` through
   `Messages/ArchiveFailureMapper.Map`, which assigns the severity in its own per-kind switch — never
-  at the call site. The two messages with no error behind them are
-  `AppStatusBarViewModel.ConnectionRestored`, the archive indicator's recovery entry, and
-  `AppStatusBarViewModel.LiveConnectionRestored`, the OPC UA indicator's recovery entry; each builds its
-  own `Info` view because the mapper maps errors. A `catch`, or an Rx `onError`, that only logs is a defect
+  at the call site. The one message with no error behind it is
+  `AppStatusBarViewModel.ConnectionRestored`, which builds its own `Info` view because the mapper maps
+  errors. A `catch`, or an Rx `onError`, that only logs is a defect
   (`docs/architecture/data-integration.md#no-failure-stops-at-the-log`). A failure for lack of a
-  connection (`ArchiveFault.Unreachable`) in the catalogue loop or the marker loop is
+  connection (`ArchiveFault.Unreachable`) in the catalogue loop, the marker loop or the live-edge poll is
   logged by that reader and reaches the panel through the status bar's one `ConnectionLost` entry, which
-  the catalogue reads raise; the cases that reach only the log are listed in that same section. The
-  OPC UA live source has an indicator of its own: `AppStatusBarViewModel` follows
-  `TrendCoordinator.LiveSourceStates`, and each `LiveSourceState` fault becomes one panel entry through
-  `ArchiveFailureMapper`. A pen fault (`LiveSourceFault.PensUnserved`) reaches the panel from
-  `TrendCoordinator.LivePenFaults` through `ResultReporting.TryReportFailure`
-  (`docs/architecture/data-integration.md#the-session-state-the-live-source-reports`).
+  the catalogue reads raise; the three cases that reach only the log are listed in that same section.
   Code-behind reaches the
   panel through its view model (`TrendChartViewModel.ReportFailure`, `MainWindowViewModel.ReportFailure`,
   `PenEditorViewModel.ReportFailure`, `StartupFailureViewModel.ReportFailure`,
@@ -428,20 +394,10 @@ No abbreviations in names.
 ### Data-source projects
 
 - `IDataProvider` + its DTOs stay in `SemiPlot.Core`; every concrete provider lives in its own
-  `SemiPlot.DataSource.*` project (`SemiPlot.DataSource.Postgres` for the archive). Core must not
+  `SemiPlot.DataSource.*` project (`SemiPlot.DataSource.Postgres` is the only one). Core must not
   reference a data-source project; a further provider slots in as a sibling without touching Core.
-- The live edge reads the SCADA's OPC UA server, never the archive `[DEC:opc-live-edge]`. `ILiveSource`
-  lives in `SemiPlot.Core/Data` beside `IDataProvider` with three members: `Subscribe(penIds)`, `States`
-  (an `IObservable<LiveSourceState>`, `SemiPlot.Core/Data`) and `PenFaults` (an
-  `IObservable<LiveSourceError>`, `SemiPlot.Core/Data/Errors`, so `FailureSeverityTests` covers its
-  kinds). `OpcUaLiveSource` in `SemiPlot.DataSource.OpcUa` is the one implementation, one session per
-  process started by the first `Subscribe`, configured from the `opc/` section
-  (`docs/architecture/data-integration.md#realtime`). The source writes a break for a lost session, for
-  a `Bad` notification and for a pen whose value turns non-numeric; the break ahead of a pen's first live
-  sample is the chart's, in `Chart/TrendPenState`, and never the source's
-  (`docs/architecture/data-integration.md#the-break-ahead-of-a-first-live-sample`). Only the
-  coordinator and the window hold the port, and this prints only `Bridge/TrendCoordinator.cs` and
-  `MainWindow/TrendWindow.cs` lines: `git grep -n "ILiveSource" -- SemiPlot/SemiPlot.UI`.
+  `ILiveSource` lives in `SemiPlot.Core/Data` beside `IDataProvider`, and `AddPostgresData()` registers
+  `PostgresLiveSource` over the same `NpgsqlDataSource` (`docs/architecture/data-integration.md#realtime`).
 - Each write path is an interface of its own and `IDataProvider` stays read-only. `IPenCatalogueEditor`,
   `PenCatalogue` and `PenSettingChange` live in `SemiPlot.Core/Data`; `PostgresPenCatalogueEditor` lives
   in `SemiPlot.DataSource.Postgres`, which `AddPostgresData()` registers beside the provider over the
@@ -458,9 +414,6 @@ No abbreviations in names.
   archive's wall-clock time and, with `IDataProvider.QueryArchiveDaysAsync`, is one of the two reads that
   skip `ArchiveTimeConverter` (`docs/architecture/data-integration.md#time-boundary`). Only the export
   window reads it, and this prints nothing: `git grep -l "IArchiveRowReader" -- SemiPlot/SemiPlot.UI/Chart SemiPlot/SemiPlot.UI/Legend`.
-  The live source skips the converter as well: a sample's stamp is the notification's `SourceTimestamp`,
-  true UTC on the SCADA, and the OPC project touches no zone API, so this prints nothing:
-  `git grep -n -E "ArchiveTimeConverter|TimeZoneInfo|ToLocalTime|ToUniversalTime" -- SemiPlot/SemiPlot.DataSource.OpcUa`.
 - No startup code calls `IPenCatalogueEditor`. The container constructs it when `TrendWindow.Build`
   resolves it, and its constructor issues no statement.
   `RegisterNewPensAsync` has one caller, `PenEditorViewModel`:
@@ -487,10 +440,10 @@ No abbreviations in names.
   the configuration tables, the two roles and their grants are SemiBase's; the seeder fills the
   archive table and the catalogue, and creates only the day partitions its rows land in
   (`docs/architecture/bench.md`).
-- The provider runs no cold-path reader: a failed read is mapped by
+- The provider and the live source run no cold-path reader: a failed read is mapped by
   `ArchiveExceptionMapper`, which stays synchronous, pure and unit-testable, and nothing opens a second
   connection to enrich the error. Each read supplies every relation its statement touches, which the
-  detail line names: `trends` for the history read, `semiplot_tags, trends` for the
+  detail line names: one relation for the history and realtime reads, `semiplot_tags, trends` for the
   archive extent and the archive days, all three of `semiplot_tags`, `semiplot_groups` and
   `semiplot_pen_groups` for the pen catalogue, and `semiplot_markers` for every marker read and write.
 

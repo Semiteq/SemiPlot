@@ -14,8 +14,6 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 [Trait("Category", "Unit")]
 public sealed class EnvelopePathTests
 {
-	private const double HoldEndX = 5.0;
-
 	private static readonly PixelRect _bounds = new(0, 10, 10, 0);
 
 	// The last two rows have no overlap: the boundary column stays alone, which draws nothing the viewport can show.
@@ -142,7 +140,7 @@ public sealed class EnvelopePathTests
 		var columns = Lattice(5);
 		var points = new List<EnvelopePoint>();
 
-		EnvelopePath.Build(columns, 1, 3, PenLineStyle.Interpolated, double.NaN, double.NaN, points);
+		EnvelopePath.Build(columns, 1, 3, PenLineStyle.Interpolated, points);
 
 		points.Should().Equal(
 			new EnvelopePoint(1.0, 1.0, true),
@@ -206,201 +204,12 @@ public sealed class EnvelopePathTests
 		distance.Should().BeApproximately(4.0, 1e-9);
 	}
 
-	[Fact]
-	public void Build_AHeldDegenerateLastColumn_RunsAtItsValueToTheHoldEnd()
-	{
-		var points = Build([Flat(0.0, 1.0), Flat(1.0, 4.0)], PenLineStyle.Interpolated, 1.0, HoldEndX);
-
-		points.Should().Equal(
-			new EnvelopePoint(0.0, 1.0, true),
-			new EnvelopePoint(1.0, 4.0, false),
-			new EnvelopePoint(HoldEndX, 4.0, false));
-	}
-
-	[Fact]
-	public void Build_AHeldTallLastColumn_StepsFromItsExitToItsCenterFirst()
-	{
-		var points = Build(
-			[Flat(0.0, 0.0), new EnvelopeColumn(1.0, 5.0, 10.0, 7.0)],
-			PenLineStyle.Interpolated,
-			1.0,
-			HoldEndX);
-
-		points.Should().Equal(
-			new EnvelopePoint(0.0, 0.0, true),
-			new EnvelopePoint(1.0, 5.0, false),
-			new EnvelopePoint(1.0, 10.0, false),
-			new EnvelopePoint(1.0, 7.0, false),
-			new EnvelopePoint(HoldEndX, 7.0, false));
-	}
-
-	[Fact]
-	public void Build_AHeldSteppedPen_StepsToItsLastValueAndHoldsIt()
-	{
-		var points = Build([Flat(0.0, 1.0), Flat(1.0, 5.0)], PenLineStyle.Stepped, 1.0, HoldEndX);
-
-		points.Should().Equal(
-			new EnvelopePoint(0.0, 1.0, true),
-			new EnvelopePoint(1.0, 1.0, false),
-			new EnvelopePoint(1.0, 5.0, false),
-			new EnvelopePoint(HoldEndX, 5.0, false));
-	}
-
-	[Theory]
-	[InlineData(2.0, HoldEndX)]
-	[InlineData(1.0, 1.0)]
-	[InlineData(1.0, 0.5)]
-	[InlineData(1.0, double.NaN)]
-	[InlineData(double.NaN, HoldEndX)]
-	public void Build_WithNoConfirmedLastColumnShortOfTheHoldEnd_HoldsNothing(double confirmedX, double holdEndX)
-	{
-		EnvelopeColumn[] columns = [Flat(0.0, 1.0), Flat(1.0, 4.0)];
-
-		Build(columns, PenLineStyle.Interpolated, confirmedX, holdEndX)
-			.Should().Equal(Build(columns, PenLineStyle.Interpolated));
-	}
-
-	[Fact]
-	public void Build_ALineEndingOnAGap_HoldsNothing()
-	{
-		EnvelopeColumn[] columns = [Flat(0.0, 1.0), Gap(1.0)];
-
-		Build(columns, PenLineStyle.Interpolated, 0.0, HoldEndX).Should().Equal(new EnvelopePoint(0.0, 1.0, true));
-	}
-
-	[Fact]
-	public void Build_ARangeStoppingShortOfTheLastColumn_HoldsNothing()
-	{
-		EnvelopeColumn[] columns = [Flat(0.0, 1.0), Flat(1.0, 4.0)];
-		var points = new List<EnvelopePoint>();
-
-		EnvelopePath.Build(columns, 0, 1, PenLineStyle.Interpolated, 1.0, HoldEndX, points);
-
-		points.Should().Equal(new EnvelopePoint(0.0, 1.0, true));
-	}
-
-	[Fact]
-	public void Build_ALastColumnLeftOfTheWindow_IsStillHeldAcrossIt()
-	{
-		EnvelopeColumn[] columns = [Flat(0.0, 1.0), Flat(1.0, 4.0)];
-		var (first, lastExclusive) = EnvelopePath.VisibleRange(columns, 5.0, 10.0);
-		var points = new List<EnvelopePoint>();
-
-		EnvelopePath.Build(columns, first, lastExclusive, PenLineStyle.Interpolated, 1.0, 12.0, points);
-
-		points.Should().Equal(
-			new EnvelopePoint(1.0, 4.0, true),
-			new EnvelopePoint(12.0, 4.0, false));
-	}
-
-	[Fact]
-	public void Hold_AConfirmedLastValue_GivesItsXTheHoldEndAndItsCenter()
-	{
-		EnvelopeColumn[] columns = [Flat(0.0, 1.0), new EnvelopeColumn(1.0, 5.0, 10.0, 7.0)];
-
-		EnvelopePath.Hold(columns, 0.5, HoldEndX).Should().Be(new HeldSpan(1.0, HoldEndX, 7.0));
-	}
-
-	[Fact]
-	public void AheadBreakSpans_RunFromTheLastValueBeforeToTheFirstValueAfter()
-	{
-		var spans = Spans([Flat(0.0, 1.0), Flat(1.0, 2.0), AheadGap(4.999), Flat(5.0, 3.0), Flat(6.0, 4.0)]);
-
-		spans.Should().Equal(new AheadBreakSpan(1.0, 5.0));
-	}
-
-	[Fact]
-	public void AheadBreakSpans_AnAnchorGapBeforeAKeptAheadBreak_StaysInOneSpan()
-	{
-		var spans = Spans([Flat(0.0, 1.0), Gap(1.0), AheadGap(4.999), Flat(5.0, 3.0)]);
-
-		spans.Should().Equal(new AheadBreakSpan(0.0, 5.0));
-	}
-
-	[Fact]
-	public void AheadBreakSpans_OnAnEmptyLine_OpenAtNegativeInfinity()
-	{
-		var spans = Spans([AheadGap(4.999), Flat(5.0, 3.0)]);
-
-		spans.Should().Equal(new AheadBreakSpan(double.NegativeInfinity, 5.0));
-	}
-
-	[Fact]
-	public void AheadBreakSpans_WithNoValueAfterTheAheadBreak_EndAtItsOwnX()
-	{
-		var spans = Spans([Flat(0.0, 1.0), AheadGap(4.999)]);
-
-		spans.Should().Equal(new AheadBreakSpan(0.0, 4.999));
-	}
-
-	[Fact]
-	public void AheadBreakSpans_AnOrdinaryGap_GivesNone()
-	{
-		Spans([Flat(0.0, 1.0), Gap(1.0), Flat(2.0, 1.0)]).Should().BeEmpty();
-	}
-
-	[Fact]
-	public void AheadBreakSpans_TwoAheadBreaks_GiveOneSpanEachAndReplaceWhatTheDestinationHeld()
-	{
-		EnvelopeColumn[] columns =
-		[
-			Flat(0.0, 1.0), AheadGap(1.999), Flat(2.0, 2.0), Gap(3.0), Flat(4.0, 2.0), AheadGap(5.999), Flat(6.0, 3.0)
-		];
-		List<AheadBreakSpan> spans = [new AheadBreakSpan(-1.0, -1.0)];
-
-		EnvelopePath.AheadBreakSpans(columns, 0, columns.Length, spans);
-
-		spans.Should().Equal(new AheadBreakSpan(0.0, 2.0), new AheadBreakSpan(4.0, 6.0));
-	}
-
-	[Fact]
-	public void AheadBreakSpans_AWindowLyingInsideASpan_StillYieldsIt()
-	{
-		EnvelopeColumn[] columns = [Flat(0.0, 1.0), AheadGap(1.0), Gap(2.0), Gap(9.0), Flat(10.0, 3.0)];
-		var (first, lastExclusive) = EnvelopePath.VisibleRange(columns, 3.0, 5.0);
-		var spans = new List<AheadBreakSpan>();
-
-		EnvelopePath.AheadBreakSpans(columns, first, lastExclusive, spans);
-
-		columns[first..lastExclusive].Should().NotContain(
-			column => column.Break == BreakKind.Ahead,
-			"the window meets only the ordinary gaps of the run");
-		spans.Should().Equal(new AheadBreakSpan(0.0, 10.0));
-	}
-
-	private static List<AheadBreakSpan> Spans(IReadOnlyList<EnvelopeColumn> columns)
-	{
-		var spans = new List<AheadBreakSpan>();
-		EnvelopePath.AheadBreakSpans(columns, 0, columns.Count, spans);
-
-		return spans;
-	}
-
-	private static List<EnvelopePoint> Build(
-		IReadOnlyList<EnvelopeColumn> columns,
-		PenLineStyle lineStyle,
-		double confirmedX = double.NaN,
-		double holdEndX = double.NaN)
+	private static List<EnvelopePoint> Build(IReadOnlyList<EnvelopeColumn> columns, PenLineStyle lineStyle)
 	{
 		var points = new List<EnvelopePoint>();
-		EnvelopePath.Build(columns, 0, columns.Count, lineStyle, confirmedX, holdEndX, points);
+		EnvelopePath.Build(columns, 0, columns.Count, lineStyle, points);
 
 		return points;
-	}
-
-	private static EnvelopeColumn Flat(double x, double y)
-	{
-		return new EnvelopeColumn(x, y, y, y);
-	}
-
-	private static EnvelopeColumn Gap(double x)
-	{
-		return new EnvelopeColumn(x, double.NaN, double.NaN, double.NaN);
-	}
-
-	private static EnvelopeColumn AheadGap(double x)
-	{
-		return new EnvelopeColumn(x, double.NaN, double.NaN, double.NaN, BreakKind.Ahead);
 	}
 
 	// One column per integer X, each spanning [index, index + 1] so no column is degenerate.

@@ -19,6 +19,7 @@ public static class ConnectionFileWriter
 		string database,
 		string user,
 		string password,
+		TimeSpan pollInterval,
 		CancellationToken cancellationToken = default)
 	{
 		var path = PathFor(configDirectory);
@@ -32,6 +33,7 @@ public static class ConnectionFileWriter
 			database: {database}
 			user: {user}
 			password: "{password}"
+			poll_interval_ms: {(int)pollInterval.TotalMilliseconds}
 			""" + Environment.NewLine;
 
 		await File.WriteAllTextAsync(path, content, cancellationToken);

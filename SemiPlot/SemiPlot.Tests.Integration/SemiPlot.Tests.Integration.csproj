@@ -11,7 +11,6 @@
     <PackageReference Include="Microsoft.Extensions.Logging"/>
     <PackageReference Include="Microsoft.NET.Test.Sdk"/>
     <PackageReference Include="Npgsql"/>
-    <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Client"/>
     <PackageReference Include="Testcontainers.PostgreSql"/>
     <PackageReference Include="xunit.v3"/>
     <PackageReference Include="xunit.runner.visualstudio">
@@ -29,7 +28,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SemiPlot.Core\SemiPlot.Core.csproj"/>
-    <ProjectReference Include="..\SemiPlot.DataSource.OpcUa\SemiPlot.DataSource.OpcUa.csproj"/>
     <ProjectReference Include="..\SemiPlot.DataSource.Postgres\SemiPlot.DataSource.Postgres.csproj"/>
     <ProjectReference Include="..\SemiPlot.Tools.ArchiveSeeder\SemiPlot.Tools.ArchiveSeeder.csproj"/>
     <ProjectReference Include="..\SemiPlot.UI\SemiPlot.UI.csproj"/>

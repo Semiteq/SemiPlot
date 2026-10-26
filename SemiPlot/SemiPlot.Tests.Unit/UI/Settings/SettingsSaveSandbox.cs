@@ -5,7 +5,6 @@ using FluentResults;
 using Microsoft.Extensions.Logging.Abstractions;
 
 using SemiPlot.Core.Configuration;
-using SemiPlot.DataSource.OpcUa.Configuration;
 using SemiPlot.DataSource.Postgres.Configuration;
 using SemiPlot.UI.Settings;
 using SemiPlot.UI.Startup;
@@ -26,7 +25,6 @@ internal sealed class SettingsSaveSandbox : IDisposable
 		ConfigDirectory = _temporary.Path;
 		AppDirectory = Path.Combine(ConfigDirectory, StartupSequence.SettingsDirectoryName);
 		ConnectionDirectory = Path.Combine(ConfigDirectory, StartupProbe.ConnectionDirectoryName);
-		OpcDirectory = Path.Combine(ConfigDirectory, StartupProbe.OpcDirectoryName);
 		ShippedConfiguration.CopyTo(ConfigDirectory, "secret");
 	}
 
@@ -35,8 +33,6 @@ internal sealed class SettingsSaveSandbox : IDisposable
 	public string AppDirectory { get; }
 
 	public string ConnectionDirectory { get; }
-
-	public string OpcDirectory { get; }
 
 	public string ConnectionFile => Path.Combine(ConnectionDirectory, ConnectionFileName);
 
@@ -65,13 +61,7 @@ internal sealed class SettingsSaveSandbox : IDisposable
 
 	public string DirectoryOf(ConfigurationSectionName section)
 	{
-		return section switch
-		{
-			ConfigurationSectionName.App => AppDirectory,
-			ConfigurationSectionName.Connection => ConnectionDirectory,
-			ConfigurationSectionName.Opc => OpcDirectory,
-			_ => throw new ArgumentOutOfRangeException(nameof(section), section, null)
-		};
+		return section == ConfigurationSectionName.App ? AppDirectory : ConnectionDirectory;
 	}
 
 	public Result Save(IReadOnlyDictionary<ConfigurationSectionName, IReadOnlyDictionary<string, string>> edits)
@@ -82,15 +72,6 @@ internal sealed class SettingsSaveSandbox : IDisposable
 	public PostgresConnectionSettings LoadConnection()
 	{
 		var loaded = PostgresConnectionLoader.Load(ConnectionDirectory);
-
-		loaded.IsSuccess.Should().BeTrue(Describe(loaded));
-
-		return loaded.Value;
-	}
-
-	public OpcUaConnectionSettings LoadOpc()
-	{
-		var loaded = OpcUaConnectionLoader.Load(OpcDirectory);
 
 		loaded.IsSuccess.Should().BeTrue(Describe(loaded));
 

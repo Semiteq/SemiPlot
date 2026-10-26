@@ -25,6 +25,10 @@ public sealed class ArchiveStatementTextTests
 	// arrive from a GROUP BY whose output order is the planner's business.
 	[InlineData(ArchiveStatements.BucketedHistoryWindow, "ORDER BY id, t;")]
 	[InlineData(ArchiveStatements.ExportSeedRow, "ORDER BY t DESC\nLIMIT 1;")]
+	// A poll returns every subscribed pen in one result. The index scan behind it happens to yield
+	// ascending time per identifier, so the loss of this ordering shows up only once the planner picks
+	// another path.
+	[InlineData(ArchiveStatements.RealtimePoll, "ORDER BY t;")]
 	// The export writes the slice rows in the order they arrive, so the ascending order is the statement's,
 	// with the checklist order breaking a tie.
 	[InlineData(ArchiveStatements.ExportSliceRows, "ORDER BY t, array_position(@ids, id);")]
@@ -100,6 +104,18 @@ public sealed class ArchiveStatementTextTests
 	// The backwards seek is bounded by the wider of the requested window and one partition width. Drop
 	// the floor and a pen quiet for days vanishes from the window instead of drawing at its last value.
 	[InlineData(ArchiveStatements.BucketedHistoryWindow, new[] { "greatest(@to - @from, interval '1 day')" })]
+	// A poll feeds the live edge, which draws raw samples. Without the layer filter the same tick also
+	// returns the coarse rows LayerThinner writes for the same instants, and the fold reads them as
+	// further samples of the same pen.
+	[InlineData(ArchiveStatements.RealtimePoll, new[] { "AND l = 0" })]
+	// The baseline is the instant the first poll starts from, so it has to be the newest *raw* row. Read
+	// across every layer it would answer with a coarse timestamp, and the poll's strict `t > @lastSeen`
+	// would then skip the raw samples already written under it.
+	[InlineData(ArchiveStatements.RealtimeBaseline, new[] { "AND l = 0" })]
+	// A caller may hand the same identifier twice, since nothing upstream deduplicates a pen list.
+	// Without DISTINCT the lateral join runs once per copy and the baseline carries one row per copy,
+	// which the fold reads as a second pen.
+	[InlineData(ArchiveStatements.RealtimeBaseline, new[] { "DISTINCT unnest(@ids)" })]
 	[InlineData(ArchiveStatements.ExportSeedRow, new[] { "t < @from" })]
 	[InlineData(ArchiveStatements.ExportRowCount, new[] { "prior.t < @from" })]
 	[InlineData(ArchiveStatements.ExportSeedRow, new[] { "t >= @from - interval '1 day'" })]
@@ -178,6 +194,42 @@ public sealed class ArchiveStatementTextTests
 		var from = new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Unspecified);
 
 		PostgresDataProvider.BucketFor(from, from.AddHours(1), 60).Should().Be(TimeSpan.FromMinutes(1));
+	}
+
+	[Fact]
+	public void ThePollBinderNamesExactlyTheStatementsOwnParameters()
+	{
+		using var command = new NpgsqlCommand(ArchiveStatements.RealtimePoll);
+
+		RealtimePoll.BindPoll(command, [1, 2], new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Unspecified));
+
+		AssertBinderNamesTheStatementsOwnParameters(command, ArchiveStatements.RealtimePoll);
+	}
+
+	[Fact]
+	public void TheBaselineBinderNamesExactlyTheStatementsOwnParameters()
+	{
+		using var command = new NpgsqlCommand(ArchiveStatements.RealtimeBaseline);
+
+		RealtimePoll.BindBaseline(command, [1, 2]);
+
+		AssertBinderNamesTheStatementsOwnParameters(command, ArchiveStatements.RealtimeBaseline);
+	}
+
+	// A tick must not inherit the connection string's five-minute backstop, or a server that accepts and
+	// then answers nothing would hold the live edge for minutes.
+	[Theory]
+	[InlineData(ArchiveStatements.RealtimeBaseline)]
+	[InlineData(ArchiveStatements.RealtimePoll)]
+	public void ATicksStatementCarriesItsOwnBoundAndNotTheDataSourceBackstop(string statementText)
+	{
+		const int TickBoundSeconds = 10;
+
+		using var connection = new NpgsqlConnection();
+
+		using var command = RealtimePoll.CreateTickCommand(statementText, connection);
+
+		command.CommandTimeout.Should().Be(TickBoundSeconds);
 	}
 
 	// Three failed catalogue reads raise the archive fault, so each must fail at its own bound rather than at

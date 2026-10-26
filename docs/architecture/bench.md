@@ -12,7 +12,6 @@ is remains in `scada-archive.md`; what SemiPlot reads from it remains in `data-i
 | The daily partitions and the rows | `SemiPlot.Tools.ArchiveSeeder`, connected as `scada_writer` |
 | The catalogue rows in `semiplot_tags`, `semiplot_groups` and `semiplot_pen_groups` | `SemiPlot.Tools.ArchiveSeeder` over the admin connection, written once when the stand comes up |
 | The moving live edge of a demo archive | `SemiPlot.Tools.ArchiveSeeder --follow`, connected as `scada_writer` |
-| The OPC UA demo server on `127.0.0.1`, the port `--opc-port` names | `SemiPlot.Tools.ArchiveSeeder --follow`, through `DemoScadaServer` (`#the-opc-ua-demo-server`) |
 | Template build, the clones, teardown | `SemiPlot.Tests.Integration` |
 
 The archive table is the provisioner's, not this repository's: nothing here transcribes the vendor's
@@ -31,7 +30,8 @@ the row-pair shape — and the waveform itself is not. The raw layer is about 27
 three layers about 315 000, landing in one day partition. Pens are taken round-robin across the
 catalogue's groups, so a slice spans more than one group and more than one value range.
 
-The size has a floor:
+The size has a floor: `ExplainPlanTests` loses the poll statement's index plan to a sequential scan
+under about 500 rows, and
 `PostgresHistoryReadTests.TheMinuteLayerReturnsFewerColumnsThanRawOverTheSameWindow` needs the raw
 layer denser than the minute layer inside its window.
 
@@ -77,62 +77,35 @@ run.
 ## The demo writer
 
 `--follow <seconds>` runs the seeder as a demo writer: it appends to an archive somebody else seeded,
-so it plants no break and fills no tag catalogue, and it serves the lattice over OPC UA
-(`#the-opc-ua-demo-server`). `--end`, `--days` and `--admin-connection` are rejected in this mode.
-`--archive-lag` belongs to it alone, and `--opc-port` to it and to `converge`: a seeding run that names
-either fails naming it, and `converge` does not know `--archive-lag`. `--pens`, `--seed` and
-`--change-seconds` mean what they mean in a
-seeding run. `--follow` and `--change-seconds` each take a finite number of seconds above 0 and at most
-one day, `FollowOptions.MaximumSeconds` (86 400), in every run. `--archive-lag` takes the same range
-with 0 included, and 0 is its default.
+so it plants no break and fills no tag catalogue. `--end`, `--days` and `--admin-connection` are
+rejected in this mode. `--pens`, `--seed` and `--change-seconds` mean what they mean in a seeding run.
+`--follow` and `--change-seconds` each take a finite number of seconds above 0 and at most one day,
+`FollowOptions.MaximumSeconds` (86 400), in every run.
 
 ```powershell
 dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.ArchiveSeeder.csproj -- `
   --connection "Host=127.0.0.1;Port=55432;Database=semiplot_app;Username=scada_writer;Password=<writer>" `
-  --follow 1 --change-seconds 0.5 --opc-port 55875
+  --follow 1 --change-seconds 0.5
 ```
 
-The run reads the archive's edge, starts the OPC UA server, and only then prints its plan, which ends
-with the `archive lag` line and the `opc` line naming the endpoint and the variable count. Every tick
-first checks the server's publishing loop: a loop that faulted rethrows its fault, and a loop that
-ended without one is an `InvalidOperationException`, so the writer never appends beside a dead server.
-The tick then appends the raw rows of the window the archive clock has passed since the previous tick,
-thins them into the coarse layers and prints both counts. `Ctrl+C` stops the loop where it waits,
-never inside an append; the run then writes the held-back span, stops the server, which takes about
-5 s when a client session is attached, and prints `stopped`. A tick that fails stops the server too,
-and the run exits on the tick's own failure: a server that also fails to stop only logs that second
-failure.
+Every tick appends the raw rows of the window since the previous tick, thins them into the coarse
+layers and prints both counts; `Ctrl+C` stops the loop where it waits, never inside an append.
 
-The viewer's live edge reads this OPC UA server, not the archive
-(`data-integration.md#the-opc-ua-live-source`). To see a live break on the stand, stop the writer: the
-OPC UA session is lost, and every pen's line ends 1 ms past its newest live sample
-(`data-integration.md#the-breaks-the-source-writes`). A `q = 32` row inserted into the archive reaches
-the chart only through a history read that covers it.
+To see a live break on the stand, insert one raw row for a pen in view as `scada_writer`, with `l = 0`,
+`q = 32` and `t` past the newest row: the line ends at its value and resumes at the writer's next row
+(`data-integration.md#realtime`).
 
-- **The window is `after < t <= to`.** `LiveTailGenerator.Generate(options, after, to)` runs over the
-  window `FollowEdge.Advance(archive clock)` returns. `FollowEdge` holds the archive's edge, seeded
-  with the archive's newest row: for an end past the edge it returns `(edge, end]` and moves the edge
-  to that end, and while the end has not passed the edge it returns nothing and keeps the edge. The
-  edge never moves back, because a window behind it would regenerate rows the archive already holds.
-  Every window opens at an instant the archive already accounts for, so consecutive windows partition the
-  lattice: a restart writes no row twice — a `COPY` has no conflict handling, and the edge sits on a
-  lattice point — and leaves no hole, since the next lattice point is inside one change interval.
-  `FollowRestartTests` performs the restart against a database; `SharedLatticeTests` performs it in
-  memory; `FollowEdgeTests` pins the windows.
-- **`--archive-lag` holds the archive back.** The archive clock is the local clock less
-  `--archive-lag`, so the archive trails the OPC UA stream by the lag, the way the SCADA's buffered
-  archive trails the plant. The OPC UA server is not lagged. `CoarseFlush` runs over the same window
-  as the append, because its opening-row insert reads the raw rows just written. A graceful stop
-  writes the held-back span: after `Ctrl+C` the run advances the edge once to the unlagged clock and
-  appends and thins that window, as the SCADA flushes its buffer on a project stop. A killed writer
-  loses the span, as a killed SCADA does.
+- **The window is `after < t <= to`.** `LiveTailGenerator.Generate(options, after, to)` takes the
+  archive's edge on the first tick and the previous tick's own instant after that. Both are instants
+  the archive already accounts for, so consecutive windows partition the lattice: a restart writes no
+  row twice — a `COPY` has no conflict handling, and the edge sits on a lattice point — and leaves
+  no hole, since the next lattice point is inside one change interval. `FollowRestartTests` performs
+  the restart against a database; `SharedLatticeTests` performs it in memory.
 - **`StaleArchiveGuard` bounds the first tick.** It reads `max(t)` once and refuses an archive more
-  than `MaximumAge` (five minutes) behind the archive clock: the first tick writes everything between
-  the edge and that clock, and against an archive filled weeks ago that would be weeks of rows and a
-  partition per day. The guard reads the lagged clock, so a lag longer than five minutes passes it. A
-  restart that drops the lag the previous run used meets an archive behind the unlagged clock, and the
-  refusal names both ways out: refill with `converge`, or pass the previous run's `--archive-lag`. An
-  empty archive is accepted, and the edge starts at the archive clock.
+  than `MaximumAge` (five minutes) behind the clock, naming `converge` as the refill:
+  the first tick writes everything between the edge and now, and against an archive filled weeks ago
+  that would be weeks of rows and a partition per day. An empty archive is accepted and the loop
+  starts at the clock.
 - **Every layer moves, each on its own cadence.** `CoarseFlush` works one layer at a time on a
   connection of its own: for every period the tick leaves behind it reads the finer layer's rows,
   runs `LayerThinner.Thin` over them and inserts the result, and an opening-row `INSERT` writes the
@@ -143,129 +116,7 @@ the chart only through a history read that covers it.
   start and the distance to the live edge peaks at exactly one period, which the non-strict
   comparison keeps.
 - **The clock is the machine's local wall clock with its `Kind` stripped**, because the archive
-  column holds the SCADA host's naive local time. The archive clock subtracts the lag from it. The
-  OPC UA server reads its own clock through `ArchiveTimeConverter` over `TimeZoneInfo.Local`
-  (`#the-opc-ua-demo-server`).
-
-### The OPC UA demo server
-
-`DemoScadaServer` in `SemiPlot.Tools.ArchiveSeeder` is a Simple-Scada-shaped OPC UA server on the OPC
-Foundation stack 2.0.1, with `DemoScadaNodeManager` as its address space. The follow run starts it
-after the guard read and before the first tick, over the pens it archives,
-`RawLayerGenerator.SelectPens(--pens)`, and disposes it after the last write. Every value it serves is
-a row `LiveTailGenerator` emits, so no second source of values exists.
-
-**The address space.** Namespace `http://simple-scada.com/UA` sits at index 3, where the real server
-has it and where the vendor calls `ns=3;s=<project ID><variable ID>` stable. The manager's factory
-registers `http://opcfoundation.org/UA/Diagnostics` first, which takes index 2 and leaves 3 to the
-manager. The project ID is `5E4D0C1A0B`: ten hex characters, the shape of a real project ID, and
-different from the one measured on the real server, so a client that hard-codes that ID fails here. Every browse name carries namespace index 3.
-`Objects` organizes, in this order:
-
-| Node | Browse name | Organizes |
-| --- | --- | --- |
-| `ns=3;s=5E4D0C1A0Broot_2` | `root` | every served pen |
-| `ns=3;s=5E4D0C1A0B<group>_<n>`, `n` from 3 | the group name | the pens whose `PrimaryGroup` it is |
-
-The group folders follow the first appearance of each non-empty `PrimaryGroup` in the selection. A
-pen's variable is `ns=3;s=5E4D0C1A0B<PenId>`, its browse and display name `SyntheticPen.Name`, of
-`DataType` Double, scalar, current-read access, status `Good`; a group folder references the same
-variable node `root` holds. The ungrouped pen, `UncommissionedPenId` 5001, sits under `root` only, and
-a pen's later groups get no folder: `TwoGroupPenId` appears under `Heaters` and never under
-`Watchlist`. The real server gives `_1` to its system-variables folder, which the demo does not serve.
-A client finds `root` by browse name, never by position or by a fixed node id.
-
-**The start stamp.** `StartAsync` reads the UTC clock once, ahead of the stack's start. Every variable
-starts at the value of the newest lattice change at or before that instant, stamped with the instant
-itself, so a client's first notification after a start carries the start instant, as on the real
-server after a project start. The stamp holds until the loop's first write, the next lattice change.
-The stack takes 1.5 to 4.3 s to start, and a change that falls inside the start is written as soon as
-the loop runs. A client therefore sees the start stamp only when it subscribes before the first change
-after the start: at the stand's 0.5 s lattice it never does, and a test that restarts the server to
-observe the start stamp needs a change interval longer than the start and the subscribe together.
-
-**The publishing rule.** One loop wakes at each lattice instant. It reads the clock as
-`ArchiveTimeConverter.ToArchiveLocal(DateTime.UtcNow)`, takes the newest lattice instant at or before
-it (`RawLayerGenerator.LatestChangeTicks`), and, when that instant is newer than the last one served,
-writes `LiveTailGenerator.ChangesAt` there into the variables: the value, `SourceTimestamp =
-ArchiveTimeConverter.ToUtc(row.Timestamp)`, then `ClearChangeMasks`. `ChangesAt` runs `Generate` over a
-window one tick wide, so `AppendWindow` stays the one emitter and the server writes the change row and
-never its pre-anchor: the anchor repeats the previous value one poll interval early, which is the
-archive's shape, not a change the plant made. `SharedLatticeTests` pins the served change to the
-follow window's change row at every instant of an hour. Each variable holds one value, so a stall that
-skips instants publishes the newest one only; the archive still receives every row. A live value and
-the archive row that later replaces it map to one UTC instant through the converter the viewer runs.
-Outside the two DST transitions the stream and the archive's change rows agree row for row. At the
-autumn fall-back the local clock repeats an hour: its first pass stamps resolve to standard time, an
-hour later than true UTC, as the archive rows of that hour do in the viewer, and during the second pass
-the newest instant stays behind the last one served, so the server publishes nothing new for that
-hour. At the spring jump the archive tick writes lattice rows at local instants that never existed,
-while the server publishes only the instant after the jump.
-
-**Endpoints and the anonymous token.** The server binds and advertises `opc.tcp://127.0.0.1:<port>`
-and listens on `127.0.0.1` only. It offers three endpoints: `None`, and `Sign` and `SignAndEncrypt`
-under `Basic256Sha256`, one of the three secured policies the real server offers. No client
-certificate is trusted, so only `None` admits a session; the secured endpoints exist so a client that
-picks one fails here as it would on the real server. Each endpoint carries one anonymous token policy,
-the stack's stock `UserTokenPolicy(Anonymous)`, with no override of any kind. The stock stack
-advertises it with `SecurityPolicyUri = http://opcfoundation.org/UA/SecurityPolicy#None` on the `None`
-endpoint only, and with an empty URI on `Sign` and `SignAndEncrypt`; the real server shows `#None` on
-all seven of its endpoints (both measured 2026-10-20, `[MEAS:opc-probe-20261020]`). A client takes the anonymous token policy from
-the `None` endpoint's own `UserIdentityTokens`, which works against both servers; a client that builds
-one with a null policy URI fails `BadSecurityChecksFailed` against the demo.
-`MaxRegistrationInterval = 0` keeps the stack from registering with a discovery server at
-`opc.tcp://localhost:4840`.
-
-**The certificate directory.** The stack runs no server without an application certificate, not even
-one that offers only `None`. `StartAsync` keeps the certificate in the directory stores `own`,
-`issuer`, `trusted` and `rejected` under the directory its caller names;
-`CheckApplicationInstanceCertificatesAsync` creates a self-signed one on the first start and reuses it
-after that, and a certificate it reports unusable is a `SeederException` that names the directory and
-asks to delete it. The follow run passes the fixed `%TEMP%\SemiPlot\OpcDemoServer`, so every run,
-stopped or killed, reuses one certificate. Nothing removes that directory: it holds the server's
-certificate and private key, and `rejected/certs` collects the certificate of every client refused on
-a secured endpoint. `DemoDirectories` sweeps only `ConfigFiles` and `Logs` beside it
-(`#the-demos-directories`). Whether the check replaces an expired certificate is not verified.
-
-**The console log.** The stack logs through a `LoggerFactory` built with `LoggerFactory.Create` and no
-configuration source: the console provider, `Warning` and above, one line per record, all of it on
-standard error. A rejected session therefore leaves a line on the stand, and the console-formatter
-variables the AppHost injects stay inert. The factory is disposed after the server, so the server's
-last lines reach the console. One error line is expected on every session: `Opc.Ua.CertificateValidationCore`
-logs "The domain 'opc.tcp://127.0.0.1:<port>/' is not listed in the server certificate" at `Error`, not
-`Warning`, so the console prints it, and nothing suppresses it (measured 2026-10-20,
-`[MEAS:opc-probe-20261020]`). The line comes from the demo server's own stack, not from the viewer's
-client, so the viewer filters nothing for it.
-
-**The port.** `--opc-port` takes a whole number from 1 to 65535 and is required for a follow run and
-for `converge` (`#the-converge-verb`), with no default: the real Simple-Scada listens on 49875 on the
-operator's machine, and a writer that took a default port would either fail beside it or take the port
-from it. A follow run without it fails with
-"Option '--opc-port' is required for a follow run: a running Simple-Scada holds 49875 by default, so
-the demo server takes no port of its own choosing." Port 0 is refused at the command line, because
-the stack asked for port 0 binds 4840, the OPC UA default, rather than a free port. A busy port fails
-the start, and the run exits 1 with one line, "OPC UA port <port> is in use on 127.0.0.1; a running
-Simple-Scada holds 49875 by default. Pass a free --opc-port.", a `SeederException` that carries the
-stack's `BadNoCommunication` `ServiceResultException` as its inner exception.
-
-**The lifetime.** `DemoScadaServer.Completion` is the publishing loop: it completes successfully only
-when `DisposeAsync` cancels it, and a fault in the loop faults it. `DisposeAsync` cancels the loop, stops the stack and
-disposes it, attempts all three, rethrows only a real fault, aggregated when more than one failed, and
-does nothing on a second call. The stack starts in 1.5 to 4.3 s and stops in under 0.4 s with no session attached
-(measured 2026-10-20, `[MEAS:opc-probe-20261020]`).
-
-**Not reproduced.**
-
-- The system-variables folder `_1` beside `root`: its node and browse name were not recorded.
-- Four of the real server's seven endpoints: the demo offers one secured policy, not three.
-- `Float`, `Int64` and `Byte` variables: the lattice yields doubles and the archive stores them, and a
-  rounded integer variable would differ from its archive row.
-- `Bad` statuses.
-- An advertised host name that differs from the dialled address: the real server advertises its
-  machine name, the demo binds and advertises `127.0.0.1`.
-- The empty first notification under a monitored-item queue above 1: the stock stack delivers the
-  real value at any queue size.
-- An abrupt server kill: the server offers `DisposeAsync`, a graceful stop, only.
+  column holds the SCADA host's naive local time.
 
 ## Thinning into the coarse layers
 
@@ -307,21 +158,6 @@ image `semiplot-bench:test` with the session; the container, its volume and ever
 it. The images the run *pulled* — `ghcr.io/semiteq/semibase:latest` and the base image — stay,
 because re-pulling every run would put the registry on the critical path.
 
-**The OPC UA demo server's tests need no container.** `DemoScadaServerLifecycleTests` and
-`DemoScadaServerTests`, under `DemoScada/`, run in `DemoScadaCollection`, outside
-`ArchiveDatabaseCollection`. The collection carries no fixture: it only keeps two servers from starting
-side by side, and a test or a class owns its own server. The live source's classes under `OpcUa/` and
-`Journeys/OpcUaLiveEdgeJourneyTests` join the same collection and take their servers from the same host
-(`testing-strategy.md#integration-tests`). The tests never dial 49875. `DemoScadaHost`
-starts each server on a free port, read from a `TcpListener` on `127.0.0.1` port 0 and closed again,
-because the stack asked for port 0 binds 4840; it skips 4840 and 49875, and retries up to three
-attempts when another process takes the port first, recognised by the `BadNoCommunication` inner
-exception, so a certificate failure surfaces on the first attempt. The host owns a temporary
-certificate directory, which it deletes, and a `FakeLogCollector` of the server's `Warning`-and-above
-records, which the assertion messages carry. It fixes `Asia/Tokyo` as the archive zone: no DST, and
-nine hours off the UTC Linux runner, so a stamp that treats local time as UTC fails there. The busy-port
-test holds its port with a `TcpListener` on `127.0.0.1`, the address the stack binds.
-
 ## Where the provisioning comes from
 
 The provisioner is a layer of the bench image, not a binary on the machine.
@@ -346,7 +182,7 @@ through, so a remote `DOCKER_HOST` that reports a hostname is not a supported se
 loader accepts only an IPv4 host.
 
 A missing container runtime is never a pass and never a skip: `InitializeAsync` lets the exception
-through, and xunit fails every test of `ArchiveDatabaseCollection` with `TestPipelineException`.
+through, and xunit fails every test of the collection with `TestPipelineException`.
 
 **`latest` is a moving tag on purpose.** Delivered installations update only the provisioner, so the
 pair worth testing is the newest `semibase` with the current reader. The image build pulls a `FROM`
@@ -381,28 +217,9 @@ when the stand deletes `%TEMP%\SemiPlot\ConfigFiles` and then tries to open the 
 against the missing folder, which is harmless (`overview.md#the-live-theme`). The JetBrains Aspire plugin
 (`me.rafaelldi.aspire`) is optional; it adds per-resource debugging (attaching to the converge job or the
 writer individually) on top of what the Aspire dashboard already shows. The AppHost injects the standard
-OpenTelemetry and console-formatter environment variables into every project resource. Neither the
-seeder nor the viewer carries an OpenTelemetry SDK, and the viewer carries no
-`Microsoft.Extensions.Logging` console provider. The seeder carries one for the OPC UA server's log,
-built with `LoggerFactory.Create` and no configuration source, so the variables are inert in both
-(`#the-opc-ua-demo-server`).
-
-The writer runs `--follow 1 --change-seconds 0.5 --opc-port 55875 --archive-lag 60`, so the stand serves
-OPC UA at `opc.tcp://127.0.0.1:55875`. `AppHost.cs` holds the port once, the `OpcPort` constant, and
-passes it to `converge` and to the writer, so the `opc/opc.yaml` that `converge` writes names the port the
-writer serves. The viewer's live edge reads that server (`data-integration.md#the-opc-ua-live-source`).
-The operator's machine runs Simple-Scada on 49875; a stand writer there
-would refuse to start whenever the SCADA runs and stop the archive tail with it, which is the reason
-the stand's Postgres sits on 55432 rather than 5432. Windows hands out outbound ports up to 65535
-(`netsh int ipv4 show dynamicport tcp`), so 55875, like 55432, can meet an outbound socket; a collision
-fails the writer at once with the busy-port line.
-
-The writer's `--archive-lag 60`, the `ArchiveLagSeconds` constant, holds the archive a minute behind the
-OPC UA stream, inside the 1 to 3 minutes a fast pen lags on the real SCADA. At the window's open each pen
-therefore draws its history, a gap of about a minute behind the chart's break ahead of the first live
-sample (`data-integration.md#the-break-ahead-of-a-first-live-sample`), then the live line; a gesture a
-minute later reads history that covers the gap and closes it. `converge` drops the database at every
-stand start, so the lagged restart guard never meets an old archive.
+OpenTelemetry and console-formatter environment variables into every project resource; neither the seeder
+nor the viewer carries an OpenTelemetry SDK or the `Microsoft.Extensions.Logging` console provider, so
+the variables are inert.
 
 There is no volume: `converge` recreates the archive on every start regardless of what a previous
 session left, so a volume would carry nothing across runs. Every stand start pays `initdb`,
@@ -412,8 +229,7 @@ session left, so a volume would carry nothing across runs. Every stand start pay
 
 `converge` is the seeder's own bench-only verb, and it is what the AppHost runs to bring the stand's
 archive up before the writer and the viewer start. Run by hand it needs a `--config-dir` that already
-holds a copy of the tracked set, because it writes one file of the connection section and one of the
-OPC UA section and nothing else. The copy
+holds a copy of the tracked set, because it writes the connection section and nothing else. The copy
 goes to the developer's own directory, not to the stand's `%TEMP%\SemiPlot\ConfigFiles`, which the
 next stand start sweeps:
 
@@ -424,7 +240,7 @@ Copy-Item ConfigFiles\* SemiPlot\Artifacts\dev-config -Recurse -Force
 dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder -- converge `
   --connection "Host=127.0.0.1;Port=55432;Database=semiplot_app;Username=scada_writer;Password=<writer>" `
   --admin-connection "Host=127.0.0.1;Port=55432;Database=postgres;Username=postgres;Password=<super>" `
-  --config-dir SemiPlot\Artifacts\dev-config --opc-port 55875
+  --config-dir SemiPlot\Artifacts\dev-config
 ```
 
 It first refuses a database `--connection` names unless the name starts with `semiplot_` and is not
@@ -434,12 +250,8 @@ waits for the admin connection up to 60 s, runs `DROP DATABASE IF EXISTS ... WIT
 the change interval; the AppHost passes the writer's 0.5 s so the seeded day and the live tail share
 one density) up to `--end` or this machine's
 clock, fills the catalogue through `--admin-connection` re-pointed at the stand database, and
-writes two files under `--config-dir`: `connection/connection.yaml` with the bench `semiplot` role's
-fixed password, then `opc/opc.yaml` through `OpcFileWriter`, with `host` set to `DemoScadaServer.Host`
-(`127.0.0.1`, the address the demo server binds) and `port` set to `--opc-port`. `--opc-port` is required
-here, with the follow run's range and parser; a run without it fails with "Option '--opc-port' is
-required for converge: it names the port the stand's demo server serves in opc/opc.yaml, and a running
-Simple-Scada holds 49875 by default." Its summary prints the path of both files.
+writes `connection/connection.yaml` under `--config-dir` with the bench `semiplot` role's fixed
+password and a `poll_interval_ms` of 1000.
 
 The catalogue is written once, here. `TagCatalogWriter` upserts `semiplot_tags`, inserts the group
 names into `semiplot_groups` and replaces each pen's rows in `semiplot_pen_groups`, all three in one
@@ -460,12 +272,10 @@ mask `0.0E+0` with `log_scale_on_start = true`, so the demo stand opens it on a 
 `UncommissionedPenId` has no group, no unit, no mask and no stored pair, so it opens autoscaled.
 `TagCatalogWriter` writes `log_scale_on_start` with the other settings columns.
 
-Those two files are all it writes. It overwrites the delivered `connection/connection.yaml` and
-`opc/opc.yaml` by name rather than adding a second file beside either, because two files of one section
-folder carrying the same keys is exactly what the section rule rejects (`overview.md`).
-`DeliveredConfigurationTests.TheSeederWritesOverTheShippedConnectionFile` and
-`TheSeederWritesOverTheShippedOpcFile` pin both names against the tracked set. The `app/` section it
-leaves alone: `locale: ru` and `theme: light` come from the tracked set the AppHost copied in.
+That one file is all it writes. It overwrites the delivered `connection/connection.yaml` by name
+rather than adding a second file beside it, because two files of one section folder carrying the
+same keys is exactly what the section rule rejects (`overview.md`). The `app/` section it leaves
+alone: `locale: ru` and `theme: light` come from the tracked set the AppHost copied in.
 
 `BenchRoles` in the seeder is the one place the bench's role names and
 passwords live; the container fixture reads them from there, and the AppHost repeats the same fixed
@@ -481,18 +291,17 @@ construction, on a fixed host port with `isProxied: false` and one database name
 
 | Path | Holds | Lifecycle |
 | --- | --- | --- |
-| `%TEMP%\SemiPlot\ConfigFiles` | A copy of the repository's `ConfigFiles/`, `converge`'s rewritten `connection/connection.yaml` and `opc/opc.yaml` (`port: 55875`) included | Swept and recreated at start, removed on `ApplicationStopping` |
+| `%TEMP%\SemiPlot\ConfigFiles` | A copy of the repository's `ConfigFiles/`, `converge`'s rewritten `connection/connection.yaml` included | Swept and recreated at start, removed on `ApplicationStopping` |
 | `%TEMP%\SemiPlot\Logs` | `semiplot.log`, and the `semiplot_NNN.log` files it rolls into at 5 MB | Swept and recreated at start, kept after the stand stops |
 
 `AppHost.cs` resolves the tracked set two levels above `builder.AppHostDirectory`, and
 `DemoDirectories.Prepare` throws `DirectoryNotFoundException` when it is absent, so a missing source fails the AppHost at once
 rather than producing an empty copy the viewer reports later. The AppHost passes
-`%TEMP%\SemiPlot\ConfigFiles` as `--config-dir` to both `converge` and the viewer, the log path
-plus `--logging-level information` to the viewer, which needs all three keys, and `--opc-port 55875` to
-both `converge` and the writer.
+`%TEMP%\SemiPlot\ConfigFiles` as `--config-dir` to both `converge` and the viewer, and the log path
+plus `--logging-level information` to the viewer, which needs all three keys.
 
 A value saved through Edit -> Settings during a stand run does not survive it: `converge` rewrites
-`connection/connection.yaml` and `opc/opc.yaml` on every run (`SemiPlot.Tools.ArchiveSeeder/Converge.cs`) and the stand
+`connection/connection.yaml` on every run (`SemiPlot.Tools.ArchiveSeeder/Converge.cs`) and the stand
 removes the configuration copy when it stops (`DemoDirectories.cs`).
 
 `Logs` is swept at the next start rather than on stop: the viewer holds `semiplot.log` open through a
@@ -514,14 +323,14 @@ What the server can be asked afterwards, which needs no screen:
 | Did it read history from the seeded span? | `idx_tup_fetch` on the partitions the fill landed in, `tp<YYYY>m<MM>d<DD>` |
 | Did any read fall back to a sequential scan? | `seq_scan` on the same partitions, which `ExplainPlanTests` forbids |
 | Which failure did the operator get? | `%TEMP%\SemiPlot\Logs\semiplot.log` on the stand, `C:\DISTR\Logs\SemiPlot\semiplot.log` on an installation. A startup failure writes its error and a `[FTL]` line, except the two that happen before the logger exists: a bad launch argument and an unusable `--log-file` are reported in the failure window alone (`SemiPlot/SemiPlot.UI/Program.cs`) |
-| Did the live edge reach the chart? | The stand's writer already runs `--follow 1 --opc-port 55875`; outside the stand, run `--follow 1 --opc-port <port>` against the same database, with the viewer's `opc/opc.yaml` naming that port. The status bar's OPC UA indicator reads connected. Watch the chart with **Sticky** on; at `--logging-level debug` the log carries one `Live batch applied: <n> values, <ms> ms after the newest` line per applied batch, the lag from the newest value's stamp to the apply |
+| Did the live edge reach the chart? | Run `--follow 1` against the same database and watch the chart with **Sticky** on; at `--logging-level debug` the log carries one realtime line per tick |
 
 The failure states are forced from outside the application: stop the container for an unreachable
 server, rename `semiplot_tags` for an unfinished provisioning, change the password in the connection
 file for a refused login, delete the catalogue rows for an empty catalogue.
 
 Nothing machine-dependent lives in `AppHost.cs`: the role passwords are `BenchRoles`' public
-constants, the ports are 55432 for Postgres and 55875 for OPC UA, the configuration and log paths come from `DemoDirectories`, and the
+constants, the port is 55432, the configuration and log paths come from `DemoDirectories`, and the
 seeder and the viewer both take the machine's own time zone. The
 `Live demo` run configuration at the repository root's `.run/` is an `AspireHostConfiguration` over
 `SemiPlot.AppHost`'s `http` launch profile.

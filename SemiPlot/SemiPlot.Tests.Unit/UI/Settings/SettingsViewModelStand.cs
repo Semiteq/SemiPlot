@@ -13,9 +13,12 @@ internal static class SettingsViewModelStand
 		MessagePanelViewModel messagePanel,
 		Action? restartApplication = null)
 	{
+		var (app, connection) = SettingsSave.ReadOwned(configDirectory);
+
 		return new SettingsViewModel(
 			configDirectory,
-			SettingsSave.ReadOwned(configDirectory),
+			app,
+			connection,
 			messagePanel,
 			NullLogger<SettingsViewModel>.Instance,
 			restartApplication ?? (() => { }));

@@ -6,15 +6,10 @@ using Microsoft.Extensions.Logging;
 
 using SemiPlot.Core.Configuration;
 using SemiPlot.Core.Data.Errors;
-using SemiPlot.DataSource.OpcUa.Configuration;
 using SemiPlot.DataSource.Postgres.Configuration;
 using SemiPlot.UI.Startup;
 
 namespace SemiPlot.UI.Settings;
-
-internal sealed record SectionRead(ConfigurationSectionName Section, Result<OwnedSection> Owned);
-
-internal sealed record AbsentKey(ConfigurationSectionName Section, string Key);
 
 /// <summary>
 /// Reads the section folders the settings window shows, and writes the operator's edits back once the production
@@ -39,32 +34,32 @@ public static class SettingsSave
 		new(
 			ConfigurationSectionName.Connection,
 			StartupProbe.ConnectionDirectoryName,
-			directory => PostgresConnectionLoader.Load(directory).ToResult()),
-		new(
-			ConfigurationSectionName.Opc,
-			StartupProbe.OpcDirectoryName,
-			directory => OpcUaConnectionLoader.Load(directory).ToResult())
+			directory => PostgresConnectionLoader.Load(directory).ToResult())
 	];
 
-	/// <summary>Each section the dialog edits in form order, as its files carry it, not through the typed loaders.</summary>
-	internal static IReadOnlyList<SectionRead> ReadOwned(string configDirectory)
+	/// <summary>Both sections as the files carry them, never through the typed loaders.</summary>
+	internal static (Result<OwnedSection> App, Result<OwnedSection> Connection) ReadOwned(string configDirectory)
 	{
-		return
-		[
-			.. _sections.Select(loader => new SectionRead(
-				loader.Section,
-				ConfigurationSection.ReadOwned(Path.Combine(configDirectory, loader.DirectoryName), loader.Section)))
-		];
+		return (Read(ConfigurationSectionName.App), Read(ConfigurationSectionName.Connection));
+
+		Result<OwnedSection> Read(ConfigurationSectionName section)
+		{
+			return ConfigurationSection.ReadOwned(SectionDirectory(configDirectory, section), section);
+		}
 	}
 
-	internal static AbsentKey? FirstAbsentKey(IReadOnlyList<SectionRead> sections)
+	/// <summary>The first key the dialog edits that no file of its section carries, else null.</summary>
+	internal static string? FirstAbsentKey(OwnedSection app, OwnedSection connection)
 	{
-		return sections
-			.Where(read => read.Owned.IsSuccess)
-			.SelectMany(read => SettingsViewModel.KeysOf(read.Section)
-				.Where(edited => !read.Owned.Value.Owners.ContainsKey(edited.Key))
-				.Select(edited => new AbsentKey(read.Section, edited.Key)))
-			.FirstOrDefault();
+		var appKey = SettingsViewModel.AppKeys.FirstOrDefault(edited => !app.Owners.ContainsKey(edited.Key))?.Key;
+
+		return appKey
+			?? SettingsViewModel.ConnectionKeys.FirstOrDefault(edited => !connection.Owners.ContainsKey(edited.Key))?.Key;
+	}
+
+	private static string SectionDirectory(string configDirectory, ConfigurationSectionName section)
+	{
+		return Path.Combine(configDirectory, _sections.Single(loader => loader.Section == section).DirectoryName);
 	}
 
 	public static Result Save(
@@ -165,8 +160,7 @@ public static class SettingsSave
 				section.Section, sectionDirectory, section.Problem, section.Key, section.FileNames),
 			AppSettingsError settings => new AppSettingsError(
 				sectionDirectory, settings.Kind, settings.Key, settings.AcceptedValues),
-			ConnectionFileError file => new ConnectionFileError(
-				file.Section, sectionDirectory, file.Kind, file.Fields),
+			ConnectionFileError file => new ConnectionFileError(sectionDirectory, file.Kind, file.Fields),
 			_ => throw new UnreachableException($"A section loader returned {error.GetType().Name}.")
 		};
 

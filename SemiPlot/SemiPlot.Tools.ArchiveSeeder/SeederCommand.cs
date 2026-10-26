@@ -2,7 +2,6 @@ using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.CommandLine.Parsing;
 using System.Globalization;
-using System.Net;
 
 namespace SemiPlot.Tools.ArchiveSeeder;
 
@@ -57,8 +56,7 @@ public static class SeederCommand
 	{
 		Description = "Interval between value changes, in seconds.",
 		DefaultValueFactory = _ => SeederOptions.DefaultChangeSeconds,
-		CustomParser = result =>
-			ParseSeconds(result, "--change-seconds", acceptsZero: false) ?? SeederOptions.DefaultChangeSeconds
+		CustomParser = result => ParseSeconds(result, "--change-seconds") ?? SeederOptions.DefaultChangeSeconds
 	};
 
 	private static readonly Option<double?> _follow = new("--follow")
@@ -66,23 +64,7 @@ public static class SeederCommand
 		Description = "Seconds between ticks, and the switch that selects the demo writer: each tick appends "
 					  + "the raw rows of the wall-clock span since the previous one and thins them into the coarse "
 					  + "layers. It seeds nothing.",
-		CustomParser = result => ParseSeconds(result, "--follow", acceptsZero: false)
-	};
-
-	private static readonly Option<double> _archiveLag = new("--archive-lag")
-	{
-		Description = "Seconds the archive inserts trail the clock, the way a SCADA's buffered archive trails the "
-					  + "plant. The OPC UA server is not held back. Follow only.",
-		DefaultValueFactory = _ => 0.0,
-		CustomParser = result => ParseSeconds(result, "--archive-lag", acceptsZero: true) ?? 0.0
-	};
-
-	private static readonly Option<int?> _opcPort = new("--opc-port")
-	{
-		Description = $"Port the OPC UA demo server listens on, on {DemoScadaServer.Host}. Required for a follow run "
-					  + "and for converge, which writes it into opc/opc.yaml; a running Simple-Scada holds "
-					  + $"{FollowOptions.SimpleScadaPort} by default.",
-		CustomParser = result => ParseWholeNumber(result, "--opc-port", 1, IPEndPoint.MaxPort)
+		CustomParser = result => ParseSeconds(result, "--follow")
 	};
 
 	private static readonly (Option Option, string Name)[] _seedingOnly =
@@ -90,12 +72,6 @@ public static class SeederCommand
 		(_end, "--end"),
 		(_days, "--days"),
 		(_adminConnection, "--admin-connection")
-	];
-
-	private static readonly (Option Option, string Name)[] _followOnly =
-	[
-		(_archiveLag, "--archive-lag"),
-		(_opcPort, "--opc-port")
 	];
 
 	private static readonly Option<string> _convergeAdminConnection = new("--admin-connection")
@@ -106,8 +82,7 @@ public static class SeederCommand
 
 	private static readonly Option<string> _configDir = new("--config-dir")
 	{
-		Description = "Configuration root. The archive connection is written into its connection/ folder and the "
-					  + "OPC UA endpoint into its opc/ folder.",
+		Description = "Configuration root. The archive connection is written into its connection/ folder.",
 		Required = true
 	};
 
@@ -149,8 +124,7 @@ public static class SeederCommand
 
 		foreach (var option in new Option[]
 				 {
-					 _connection, _end, _adminConnection, _days, _pens, _seed, _changeSeconds, _follow, _archiveLag,
-					 _opcPort
+					 _connection, _end, _adminConnection, _days, _pens, _seed, _changeSeconds, _follow
 				 })
 		{
 			root.Options.Add(option);
@@ -167,20 +141,16 @@ public static class SeederCommand
 		return root;
 	}
 
-	// Shares --connection, --end and --opc-port with the root command: converge accepts the same connection
-	// string shape, the same optional end bound and the same port range, and System.CommandLine allows one
-	// Option under several commands.
+	// Shares --connection and --end with the root command: converge accepts the same connection string
+	// shape and the same optional end bound, and System.CommandLine allows one Option under several commands.
 	private static Command BuildConverge()
 	{
 		var converge = new Command(
 			"converge",
 			"Recreates the stand database from semiplot_provisioned, seeds it, fills the tag catalogue and "
-			+ "writes the connection and OPC UA files. Bench only.");
+			+ "writes the connection file. Bench only.");
 
-		foreach (var option in new Option[]
-				 {
-					 _connection, _convergeAdminConnection, _configDir, _end, _changeSeconds, _opcPort
-				 })
+		foreach (var option in new Option[] { _connection, _convergeAdminConnection, _configDir, _end, _changeSeconds })
 		{
 			converge.Options.Add(option);
 		}
@@ -243,8 +213,8 @@ public static class SeederCommand
 	}
 
 	// NaN fails every comparison, so a bare `<= 0` check lets it through, and Infinity survives it too and
-	// overflows the interval arithmetic. The refusal quotes the token, which no culture renders differently.
-	private static double? ParseSeconds(ArgumentResult result, string name, bool acceptsZero)
+	// overflows the interval arithmetic.
+	private static double? ParseSeconds(ArgumentResult result, string name)
 	{
 		var text = result.Tokens[^1].Value;
 
@@ -255,15 +225,11 @@ public static class SeederCommand
 			return null;
 		}
 
-		var belowFloor = acceptsZero ? seconds < 0.0 : seconds <= 0.0;
-
-		if (!double.IsFinite(seconds) || belowFloor || seconds > FollowOptions.MaximumSeconds)
+		if (!double.IsFinite(seconds) || seconds <= 0.0 || seconds > FollowOptions.MaximumSeconds)
 		{
-			var floor = acceptsZero ? "at least 0" : "greater than 0";
-
 			result.AddError(
-				$"Option '{name}' must be a finite number {floor} and at most "
-				+ $"{FollowOptions.MaximumSeconds:0}, got '{text}'.");
+				$"Option '{name}' must be a finite number greater than 0 and at most "
+				+ $"{FollowOptions.MaximumSeconds:0}, got {seconds}.");
 
 			return null;
 		}
@@ -313,21 +279,12 @@ public static class SeederCommand
 			return Report(errors);
 		}
 
-		if (parsed.GetValue(_opcPort) is not { } opcPort)
-		{
-			return Report([
-				"Option '--opc-port' is required for converge: it names the port the stand's demo server serves "
-				+ $"in opc/opc.yaml, and a running Simple-Scada holds {FollowOptions.SimpleScadaPort} by default."
-			]);
-		}
-
 		return converge(new ConvergeOptions(
 			parsed.GetValue(_connection)!,
 			parsed.GetValue(_convergeAdminConnection)!,
 			parsed.GetValue(_configDir)!,
 			parsed.GetValue(_end),
-			parsed.GetValue(_changeSeconds),
-			opcPort));
+			parsed.GetValue(_changeSeconds)));
 	}
 
 	// Both modes are decided here, after the parse, so no value is read off an option that failed to parse.
@@ -343,45 +300,27 @@ public static class SeederCommand
 			return Report(errors);
 		}
 
-		return parsed.GetValue(_follow) is { } seconds
-			? InterpretFollow(parsed, seconds, follow)
-			: InterpretSeeding(parsed, seed);
-	}
+		var connection = parsed.GetValue(_connection)!;
+		var pens = parsed.GetValue(_pens);
+		var seedValue = parsed.GetValue(_seed);
+		var changeSeconds = parsed.GetValue(_changeSeconds);
 
-	private static Task<int> InterpretFollow(ParseResult parsed, double seconds, Func<FollowOptions, Task<int>> follow)
-	{
-		var errors = ExplicitlyGiven(parsed, _seedingOnly)
-			.Select(name => $"Option '{name}' belongs to a seeding run: --follow appends to an archive somebody "
-							+ "else seeded, so it states no span and fills no tag catalogue.")
-			.ToList();
-
-		if (parsed.GetValue(_opcPort) is not { } opcPort)
+		if (parsed.GetValue(_follow) is { } seconds)
 		{
-			errors.Add(
-				"Option '--opc-port' is required for a follow run: a running Simple-Scada holds "
-				+ $"{FollowOptions.SimpleScadaPort} by default, so the demo server takes no port of its own choosing.");
+			foreach (var (option, name) in _seedingOnly)
+			{
+				if (parsed.GetResult(option) is { Implicit: false })
+				{
+					errors.Add(
+						$"Option '{name}' belongs to a seeding run: --follow appends to an archive somebody else "
+						+ "seeded, so it states no span and fills no tag catalogue.");
+				}
+			}
 
-			return Report(errors);
+			return errors.Count > 0
+				? Report(errors)
+				: follow(new FollowOptions(connection, TimeSpan.FromSeconds(seconds), pens, seedValue, changeSeconds));
 		}
-
-		return errors.Count > 0
-			? Report(errors)
-			: follow(new FollowOptions(
-				parsed.GetValue(_connection)!,
-				TimeSpan.FromSeconds(seconds),
-				parsed.GetValue(_pens),
-				parsed.GetValue(_seed),
-				parsed.GetValue(_changeSeconds),
-				TimeSpan.FromSeconds(parsed.GetValue(_archiveLag)),
-				opcPort));
-	}
-
-	private static Task<int> InterpretSeeding(ParseResult parsed, Func<SeederOptions, Task<int>> seed)
-	{
-		var errors = ExplicitlyGiven(parsed, _followOnly)
-			.Select(name => $"Option '{name}' belongs to a follow run: a seeding run writes a closed span and "
-							+ "serves nothing live.")
-			.ToList();
 
 		if (parsed.GetValue(_end) is not { } end)
 		{
@@ -392,7 +331,6 @@ public static class SeederCommand
 
 		var days = parsed.GetValue(_days);
 		var span = TimeSpan.FromDays(days);
-		var changeSeconds = parsed.GetValue(_changeSeconds);
 
 		if (changeSeconds > span.TotalSeconds)
 		{
@@ -403,21 +341,14 @@ public static class SeederCommand
 		return errors.Count > 0
 			? Report(errors)
 			: seed(new SeederOptions(
-				parsed.GetValue(_connection)!,
+				connection,
 				end,
 				days,
-				parsed.GetValue(_pens),
-				parsed.GetValue(_seed),
+				pens,
+				seedValue,
 				changeSeconds,
 				SeederOptions.DefaultBreakCount,
 				parsed.GetValue(_adminConnection)));
-	}
-
-	private static IEnumerable<string> ExplicitlyGiven(ParseResult parsed, (Option Option, string Name)[] options)
-	{
-		return options
-			.Where(entry => parsed.GetResult(entry.Option) is { Implicit: false })
-			.Select(entry => entry.Name);
 	}
 
 	private static Task<int> Report(IReadOnlyList<string> errors)

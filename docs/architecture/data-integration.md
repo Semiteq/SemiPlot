@@ -1,15 +1,12 @@
-# Data integration: the boundary between SemiPlot and the SCADA
+# Data integration — the boundary between SemiPlot and the archive
 
-This document defines the contract: who owns what, what SemiPlot asks the database and the SCADA's
-OPC UA server, and what it does with the answers. The archive itself is described in
-`scada-archive.md`; the instance SemiPlot reads is in `postgres-instance.md`; the OPC UA server as
-measured is in `scada-archive-observed.md#the-opc-ua-server`. Requirement identifiers (`DA-`, `RT-`)
-refer to `trend-feature-spec.md`. Claim provenance follows `sources.md`.
+This document defines the contract: who owns what, what SemiPlot asks the database, and what it
+does with the answers. The archive itself is described in `scada-archive.md`; the instance SemiPlot
+reads is in `postgres-instance.md`. Requirement identifiers (`DA-`, `RT-`) refer to
+`trend-feature-spec.md`. Claim provenance follows `sources.md`.
 
-There is no application server. The desktop client connects to PostgreSQL for history, the extent,
-the catalogue, the markers and the export, and to the SCADA's built-in OPC UA server for the live
-edge `[DEC:opc-live-edge]`. This document and the code of the two data-source projects are the entire
-integration surface.
+There is no application server. The desktop client connects to PostgreSQL directly, so this
+document and the provider code are the entire integration surface.
 
 ## Responsibility zones
 
@@ -22,7 +19,7 @@ integration surface.
 | Variable number to name mapping | absent | | `semiplot_tags` `[DEC:semiplot-tags]` |
 | Knowledge of the archive's time zone | not stored anywhere | takes the machine's zone `[DEC:machine-time-zone]` | |
 | Layer choice, decimation, gap rendering, envelope assembly | | owns | |
-| Realtime freshness | the OPC UA server's sampling and publishing; the archive's write and flush cadence | the subscription plan: 100 ms publishing and sampling, queue 1 | |
+| Realtime freshness | write and flush cadence | poll cadence | |
 
 Two rules follow and are not negotiable: SemiPlot never writes to vendor objects
 `[DEC:read-only-consumer]`, and every additive object is prefixed `semiplot_`
@@ -127,29 +124,18 @@ for 16 pens and 450 000 for 50, which the reader holds as one list. Measured on 
 range is 96 slice statements plus one seed probe per pen.
 
 The live edge reads through a port of its own, `ILiveSource` (`SemiPlot.Core/Data/ILiveSource.cs`), with
-three members. `OpcUaLiveSource` in `SemiPlot.DataSource.OpcUa` implements it over one OPC UA session to the
-SCADA's built-in server, and `AddOpcUaLiveSource` registers it as the singleton `ILiveSource`. It reads no
-database, so `SemiPlot.DataSource.OpcUa` references Core only, never the Postgres project. Its one consumer
-in the UI is `TrendCoordinator`, which `TrendWindow.Build` hands both interfaces. The contract, the source,
-and what the coordinator does with a source that breaks it are under Realtime, below.
+one member. `PostgresLiveSource` in `SemiPlot.DataSource.Postgres` implements it by polling the archive, and
+`AddPostgresData` registers it beside the provider over the same `NpgsqlDataSource`, with the operator's
+`poll_interval_ms` and the bare data `IScheduler`. Its one consumer is `TrendCoordinator`, which
+`TrendWindow.Build` hands both interfaces. The contract, and what the coordinator does with a source that
+breaks it, are under Realtime, below.
 
 ```csharp
 public interface ILiveSource
 {
     IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<int> penIds);
-
-    // Hot, replays the current state to each subscriber, never faults or completes before disposal.
-    IObservable<LiveSourceState> States { get; }
-
-    // Hot, one error per pen fault, never faults or completes before disposal.
-    IObservable<LiveSourceError> PenFaults { get; }
 }
 ```
-
-| Type | Shape | Notes |
-| --- | --- | --- |
-| `LiveSourceState` | `IsConnected`, `Fault` | `SemiPlot.Core/Data`. `Connecting` (not connected, no fault) is the state before the first session; `Connected` while a session is up; `FaultedBy(error)` while no session is up and the source knows why. |
-| `LiveSourceError` | `Kind` (`LiveSourceFault`), `Endpoint`, `UnknownPenIds`, `NotNumericPenIds` | `SemiPlot.Core/Data/Errors`. `Unreachable`, `EndpointRefused` and `ProjectMissing` ride on `States`; `PensUnserved` rides on `PenFaults`. The stack's status reaches the log only, on the source's own state line. |
 
 ## The pen catalogue editor
 
@@ -333,7 +319,7 @@ of the repeated autumn hour.
 
 ## Operation to statement
 
-Every statement the provider, the editor, the row reader and the marker store issue is
+Every statement the provider, the live source, the editor, the row reader and the marker store issue is
 a constant in `SemiPlot.DataSource.Postgres/ArchiveStatements.cs`; parameters are always bound. The
 bench seeder and the test harness own SQL of their own (`bench.md`). `ArchiveStatementTextTests` pins
 each constant below clause by clause except `PenCatalog` and `ArchiveExtent`; `ExplainPlanTests`
@@ -346,6 +332,8 @@ marker store's statements are in their own tables above.
 | Archive extent | `ArchiveExtent` | Rooted at `semiplot_tags`, one `min(t)`/`max(t)` subquery pair per configured `id` at `l = 0`. A bare `min(t)` over `trends` cannot use `PRIMARY KEY (id, l, t)` and scans the archive. Nulls map to `ArchiveExtent.Empty`; an empty catalogue over a full archive is also `Empty`, since no pen could draw it. |
 | Archive days | `ArchiveDays` | `generate_series(@firstDay, @lastDay, interval '1 day')` filtered by `EXISTS` over `semiplot_tags` with the extent's lateral probe per `id`: `l = 0 AND t >= day.start AND t < day.start + interval '1 day' ORDER BY t LIMIT 1`, then `ORDER BY 1`. The probe stops at the first row of each pen's day, and the `ORDER BY t` keeps it one index edge rather than a `Bitmap Heap Scan` over the pen's whole day ("Read cost"). Both days bind as `Timestamp` values of kind `Unspecified` at midnight, unconverted. An empty catalogue returns no day; a failure maps with `TagCatalogAndTrendsRelations`, `semiplot_tags, trends`. |
 | History | `BucketedHistoryWindow` | Two branches at `l = @layer` under one outer `ORDER BY id, t`. The seed branch reads per pen one row strictly before `@from`, bounded to the wider of the window and one day: the bound prunes older partitions from the seed's `Merge Append`, and the seed keeps a steady variable on the chart as a horizontal line. The server reduces the window branch to one row per column: `GROUP BY id, segment, date_bin(@bucket, t, @from)`. `segment` counts the `q = 32` markers strictly before each row, so a marker closes its own bucket and no bucket straddles a break. Each bucket carries `min(v)`, `max(v)`, whether it ends in a gap, and the bucket's newest non-null sample as the column's timestamp and value, which is what the legend reads at the cursor. A `q = 32` marker and a null `v` both end the bucket in a gap. `BucketedRowFold` groups by consecutive identifier, so the single total ordering keeps each pen one run. Every layer takes this statement: a coarse row is a verbatim raw row and the markers are copied into the coarse layers (`scada-archive.md#layers`), so the buckets and the break split hold at `Minute` and `Hour` as at `Raw`. `@bucket` is `(to - from) / targetColumnCount`, never below one millisecond, the column's own resolution, and truncated down to whole microseconds (`PostgresDataProvider.BucketFor`). |
+| Realtime poll | `RealtimePoll` | `id = ANY(@ids) AND l = 0 AND t > @lastSeen ORDER BY t`. The variable list is mandatory or the read scans the day's partition; the bound is strict so the row that set `@lastSeen` is never returned twice. |
+| Realtime baseline | `RealtimeBaseline` | The extent's lateral shape over `DISTINCT unnest(@ids)`: one index probe per variable. `NULL` means no row yet — a state, not a failure. |
 | Export, seed row | `ExportSeedRow` | One pen's last `l = 0` row strictly before `@from` and not older than one day: `t < @from AND t >= @from - interval '1 day'`, `ORDER BY t DESC LIMIT 1`. The strict bound keeps a boundary row from returning on both export statements; the one-day bound is the history statement's seed bound for a window of a day or less, which the export range always is. A pen last written earlier has no seed. |
 | Export, slice | `ExportSliceRows` | The `l = 0` rows of every requested pen with `id = ANY(@ids) AND l = 0 AND t >= @from AND t < @to`, columns `id, t, v`, `ORDER BY t, array_position(@ids, id)`: time first, equal times in the order of `@ids`, which is the checklist order. No `date_bin`, no `q` column and no `q` filter: a break marker row comes out as a row. |
 | Export, count | `ExportRowCount` | `count(*)` of `id = ANY(@ids) AND l = 0 AND t >= @from AND t < @to`, plus the number of pens that have a seed, counted through a lateral `LIMIT 1` probe per distinct id. One statement over the whole range. Measured on 2026-10-14 over a day of 50 pens at 100 ms: 5.5 s cold and 5.1 s warm for 43.2 million rows, 2.1 s and 1.6 s for 16 pens, so the count stays one statement and no per-slice count exists. |
@@ -360,9 +348,9 @@ that an index or bitmap reaches the rows and that one day partition is read.
 `ExplainPlanTests.ArchiveDays_ReadsThroughTheIndex` asserts that the per-pen probe reaches `trends` by an
 index scan, and that no day partition is read by a sequential scan or a `Bitmap Heap Scan`.
 
-Five statements bind parameters through a binder of their own, each pinned against its statement's
-parameter names: `PostgresDataProvider.BindLocalBucketedWindow` and `BindArchiveDays`, and
-`PostgresArchiveRowReader.BindSeed` and `BindPensRange`, which binds
+Seven statements bind parameters through a binder of their own, each pinned against its statement's
+parameter names: `PostgresDataProvider.BindLocalBucketedWindow` and `BindArchiveDays`, `RealtimePoll.BindPoll`,
+`RealtimePoll.BindBaseline`, and `PostgresArchiveRowReader.BindSeed` and `BindPensRange`, which binds
 `ids`, `from` and `to` for both `ExportRowCount` and `ExportSliceRows`. A gap explanation over `messages` is
 designed but not shipped; nothing issues it.
 
@@ -420,9 +408,9 @@ The chart reads only the pens it draws. `ChartHistoryPlanner.Next` (`SemiPlot.UI
 makes the one request decision, over the range in hand and the pens read for it, which the planner keeps.
 `TrendChartViewModel` asks it from `OnNavigationWindowChanged`, `RequestWindowInForce`, `SetPenVisibility`
 and `ApplyHistory`. A request names the visible pens in catalogue order. A hidden pen is never
-read and keeps its last envelope (`charting.md#applying-a-catalogue-read`); the live source still
-subscribes every pen of the catalogue, hidden ones included, because a monitored item per pen costs the
-server one sample every 100 ms whatever is drawn (Realtime, below). The decision answers, in this order:
+read and keeps its last envelope (`charting.md#applying-a-catalogue-read`); the realtime poll still
+covers every pen of the catalogue, because a poll costs one indexed read per pen whatever is drawn. The
+decision answers, in this order:
 
 1. Nothing, when no pen is visible.
 2. The visible window, when the range in hand does not cover the window in view.
@@ -436,7 +424,7 @@ change or a jump, reads the visible window first. `HistoryPrefetch.Visible`
 (`SemiPlot.UI/Chart/HistoryPrefetch.cs`) reads the window in view at the column target. A sticky window, a window whose end reaches the newest
 sample, and a chart that has seen no sample yet keep the right margin in that first read, at twice the
 column target (`ChartHistoryPlanner.ReachesTheNewestSample`): nothing lies past the live edge, so the
-margin costs no rows, and the live samples the live source appends during the read survive its apply (below).
+margin costs no rows, and the live samples the poll appends during the read survive its apply (below).
 When that result lands, the decision asks for `HistoryPrefetch.Expand`. Every read therefore bins at one
 column per pixel. The decision asks nothing instead when `Expand` spans the same times as the first read,
 which happens when its left edge clamps at the first sample and the first read carried the right margin.
@@ -465,7 +453,7 @@ Each pen's time is kept apart from the range in hand. The range in hand is the g
 while a read is applied, on a fold over Raw columns (below), when a read lands without every visible pen,
 and on a catalogue change. None of these changes what an envelope in hand was read over, so a read that
 lands with the gate shut still keeps the columns past it. That is the state of a zoom out across the
-Raw ceiling: the live samples fold into the Raw columns while the first coarse read runs, and the Raw columns
+Raw ceiling: the poll folds into the Raw columns while the first coarse read runs, and the Raw columns
 still fill the strips the next notch widens past that read. The pens of one apply can hold envelopes of
 two ranges: a pen switched on while the range in hand still held it keeps the envelope of that range,
 while the read in flight brings the other pens a new one. Each pen's read is therefore matched against
@@ -501,9 +489,8 @@ The range travels on the request so the result alone says which band the envelop
 only when the pens read for that range include every visible pen. A read issued before the catalogue
 added a pen holds no row of it, so its result leaves the gate shut and the window in view is asked for
 again with every visible pen. That request is the one the catalogue read already pushed, so it leaves
-that read running: across the live-edge switch of a catalogue change a kept pen receives only its
-newest value (Realtime, below), and only a read of every visible pen fills the changes in between
-(`charting.md#applying-a-catalogue-read`).
+that read running: the live-edge switch of a catalogue change leaves a hole in the pens that stay, which
+only a read of every visible pen fills (`charting.md#applying-a-catalogue-read`).
 
 The pen set travels beside the range. `ChartHistoryPlanner` keeps the pens read for the range in hand
 beside it: `ChartHistoryPlanner.Land` adds a result's pens to the set when the result is for the same
@@ -549,12 +536,9 @@ over a coarse range clears nothing: it widens a coarse column and leaves nothing
 inside a coarse band still reads nothing.
 
 An apply keeps the live tail past its snapshot. A history read reads the archive as of its statement's
-snapshot, and the live source keeps appending live columns while the read runs; it only moves forward,
-so it never delivers those samples again. The archive also trails the OPC UA stream by its own write and
-flush lag (`scada-archive-observed.md#the-opc-ua-server`), so the live tail is often the only data past
-the archive's newest row. A replace that dropped it would leave a hole up to that lag wide, drawn as
-one straight segment until a gesture re-reads the window. The archive replaces a live point only where
-a history read covers it `[DEC:opc-live-edge]`, and nothing re-reads history when the archive catches up.
+snapshot, and the realtime poll keeps appending live columns while the read runs; the poll only moves
+forward, so it never delivers those samples again. A replace that dropped them would leave a hole as
+wide as the read's latency, drawn as one straight segment until a gesture re-reads the window.
 `EnvelopeLine.ReplaceColumns` therefore keeps the columns past the last X the previous replace wrote
 that lie after the new last column and at or before the right edge of the range the read asked for, at
 every layer: after a coarse envelope a kept column is a live sample the coarse read did not hold, and the
@@ -566,12 +550,9 @@ phase's tail, so the apply drops that tail and the band just read keeps the whol
 kept there would hold up to 100 000 columns and push the band out of the buffer within a few appends.
 The history columns a margin-less side keeps (above) are not live appends, and the tail past them goes
 the same way.
-Samples arriving after such a pan still append far right of the band, as they did before. A drop past
-the requested end also unjoins the pen's line from the live stream, so its next live value opens behind
-a break (Realtime, The break ahead of a first live sample): `ReplaceColumns` returns whether it dropped a
-column there. A first read at the live edge keeps its right margin for this rule: its range ends one
-window width past the window, so the columns the live source appends while it runs lie inside that range
-and survive the replace, and a sticky window never takes the drop.
+Samples arriving after such a pan still append far right of the band, as they did before. A first read
+at the live edge keeps its right margin for this rule: its range ends one window width past the
+window, so the columns the poll appends while it runs lie inside that range and survive the replace.
 
 One query runs at a time, and the newest request that arrived while it ran runs when it lands. No
 request waits when the newest push needs no read, and the window waiting behind a query is dropped
@@ -650,8 +631,7 @@ window, and the margin read three visible windows.
 counts and timing are what say what it costs; "Read cost", under Layer ladder, measures every layer.
 
 Every history read writes one `Debug` entry when it ends, at the same
-level as the chart's latency line per live batch (Realtime, below), so a run at `--logging-level Debug`
-interleaves both. The
+level as the realtime poll's entry per tick, so a run at `--logging-level Debug` interleaves both. The
 entry carries the layer, the UTC range, the column target, the count of distinct pens read, the pen group count, the outcome (`Read`,
 `Failed` or `Cancelled`), the envelope count of a `Read` and the milliseconds since the read started.
 `PostgresDataProvider.QueryHistoryAsync` writes the entry from one `finally`: the outcome starts as
@@ -895,8 +875,7 @@ SemiPlot reads that is not naive local is `semiplot_markers.t`, a `timestamptz` 
 - Query bounds: UTC window edges are converted back to naive local (`ToArchiveLocal`) before binding.
 - The conversion happens only at the provider edge. Display-local rendering is a separate, later
   conversion in `LocalTimeAxis`.
-- Four paths skip `ArchiveTimeConverter`: the export path, the archive days read, the marker store and
-  the live source.
+- Three paths skip `ArchiveTimeConverter`: the export path, the archive days read and the marker store.
 - The export path: `PostgresArchiveRowReader` takes no `ArchiveTimeConverter`. It
   binds the range bounds as `Timestamp` values as typed, reads `t` with `GetDateTime`
   (`DateTimeKind.Unspecified`) and returns it in `StoredArchiveRow.Time` unconverted. The export window
@@ -923,13 +902,6 @@ SemiPlot reads that is not naive local is `semiplot_markers.t`, a `timestamptz` 
   clock, and `LocalTimeAxis.FromAxis` turns a pixel of the repeated hour into one instant only, so the chart
   places a marker in that half alone, and a marker another client stored in the other half draws but takes
   no hover, drag or menu (`trend-interaction.md#the-time-markers`).
-- The live source: a notification's `SourceTimestamp` is true UTC on the SCADA
-  (`scada-archive-observed.md#the-opc-ua-server`), so `LiveValue` turns it into `Sample.TimestampUtc` with
-  `Kind = Utc` and no conversion, and falls back to the `ServerTimestamp` the same way. `OpcUaLiveSource`
-  takes no zone, and `git grep -n -E "ArchiveTimeConverter|TimeZoneInfo|ToLocalTime|ToUniversalTime" --
-  SemiPlot/SemiPlot.DataSource.OpcUa` prints nothing. `OpcUaLiveSourceTests` runs the demo server in
-  `Asia/Tokyo` and checks every stamp against the wall clock in UTC, because the CI Linux leg runs in UTC,
-  where a stamp read as local passes unnoticed.
 
 The database does not record the zone. The SCADA, its archive and the viewer share one machine, so
 the provider converts in that machine's zone `[DEC:machine-time-zone]`: `PostgresConnectionLoader`
@@ -950,7 +922,7 @@ The provider maps the archive's quality marks onto the envelope's gap representa
 | Archive | Envelope |
 | --- | --- |
 | `q = 0` | ordinary point |
-| `q = 32` (last sample before a break) | point kept, then a `NaN` anchor inserted after it; it reaches the live edge only through a history read that covers it ("Realtime") |
+| `q = 32` (last sample before a break) | point kept, then a `NaN` anchor inserted after it; at the live edge, a break 1 ms later ("Realtime") |
 | `q = 16` (first sample after a break) | point kept; the line resumes here |
 | absence of rows without a preceding `q = 32` | no anchor — the value simply did not change |
 
@@ -966,9 +938,8 @@ takes no branch: the next bucket resumes the line. A seed row carries its own `q
 `32` opens the window inside a gap. The coarse layers hold the markers too (`scada-archive.md#layers`),
 so a break splits a `Minute` or `Hour` bucket as it splits a `Raw` one. No decimator runs on the
 client. `RealArchiveGapTests` drives the fold with rows lifted from the customer dump, one row per
-bucket, including a 4 min 18 s absence carrying no marker. This route and its one tick are the only
-place a `q = 32` row becomes a break: the live source reads no archive row, and its own breaks come from
-the OPC UA session and the item status ("Realtime").
+bucket, including a 4 min 18 s absence carrying no marker. This route and its one tick are the history
+read's; the poll maps the same mark to a break 1 ms past the row ("Realtime").
 
 A null `v` sets the same flag, because a bucket is the finest resolution a read has: `min(v)`,
 `max(v)` and the newest-value aggregate all skip a null, so without the flag a bucket holding data
@@ -981,25 +952,20 @@ nulls either, and `ArchiveStatementTextTests` plus `BucketedRowFoldTests` pin th
 
 ## Realtime
 
-The live edge reads through `ILiveSource` (The provider surface, above). Every live source keeps this
-contract:
+The live edge reads through `ILiveSource.Subscribe(penIds)` (The provider surface, above). Every live
+source keeps this contract:
 
 - **Cold per call.** No sample flows until a subscription opens. Each subscription does its own work, and
   disposing it stops that work.
-- **The sample stream never completes and never faults.** A failure inside a source is the source's to log
-  or to report out of band, on `States` or `PenFaults`, and it emits nothing on the stream.
-  `OpcUaLiveSourceTests` and `OpcUaLiveSourceRestartTests` assert that every subscription they open,
-  through a server restart and a cut transport, ends with no `OnCompleted` and no `OnError`
-  (`SampleRecorder.Terminations`).
+- **The stream never completes and never faults.** A failure inside a source is the source's to log or
+  to report out of band, and it emits nothing.
+  `RealtimePollTests.ASubscriptionThatOnlyFailsNeitherCompletesNorFaults` pins it for `PostgresLiveSource`.
 - **A break is a `Sample` whose `Value` is null,** at a moment the source itself observes: the pen has no
   data from that moment until its next sample.
 - **Timestamps are UTC.**
-- **An identifier the source does not serve emits no sample** and leaves the stream running. The source
-  reports it once on `PenFaults` (The pen subscriptions, below).
-  `OpcUaLiveSourceTests.TwoUnknownPens_RaiseOneFaultNamingBoth_AndASecondSubscriptionOfTheSameSetRaisesNone`
-  pins it.
-- **`States` replays the current state to each subscriber,** `Connecting` before the first session. It and
-  `PenFaults` are hot, never fault, and complete only when the source is disposed.
+- **An identifier the source does not serve emits nothing** and leaves the stream running.
+  `RealtimeSubscriptionTests.AnIdentifierTheSourceDoesNotServeLeavesTheStreamRunning` pins it for
+  `PostgresLiveSource`.
 
 Ordering is not part of the port: the chart appends a pen's sample only past that pen's last column
 (`DA-7`) and drops any other.
@@ -1013,36 +979,29 @@ completed inner stream, so the live edge goes silent with no entry until the nex
 subscription. `TrendCoordinatorTests.ALiveSourceThatCompletes_LeavesTheLiveEdgeSilentUntilTheNextSetPens`
 pins the second case.
 
-Batching, the union timeline and the hand-off to the UI scheduler happen above the live source, in
-`TrendCoordinator` (`charting.md`). The coordinator also republishes `States` as `LiveSourceStates` and
-`PenFaults` as `LivePenFaults`, each built once in its constructor with `ObserveOn` the UI scheduler. It is
-the one holder of `ILiveSource` in the UI besides `TrendWindow`: `git grep -n "ILiveSource" --
-SemiPlot/SemiPlot.UI` prints `Bridge/TrendCoordinator.cs` and `MainWindow/TrendWindow.cs` lines only. The
-status bar follows `LiveSourceStates` (The session state the live source reports, below).
-`TrendChartViewModel` reports each `LivePenFaults` error through
-`ResultReporting.TryReportFailure(MessagePanelViewModel, IError, ILogger)`, which maps it with
-`ArchiveFailureMapper` and so keeps the `Warning` of its kind; the `ReportFailure(Exception)` path would
-wrap it as an `ExceptionalError` and show it as an `Error`.
+A break travels through the port when the source can decide it from its own input, as the archive poll
+does from a `q = 32` row. The port carries no chart state, so a source cannot know a pen's last column,
+and no rule covers a break ahead of a pen's first live sample. A subscription restarts on every
+`SetPens` (`Switch`), so a break that each subscription wrote ahead of its first sample would land past
+the pen's last live column after every pen-set change, and the chart would draw it:
+`EnvelopeLine.AppendColumn` rejects a column at or before the last one only when columns exist, and
+`EnvelopeLine.ReplaceColumns` keeps the appended tail past the history end.
 
-The pen set can change while the viewer runs. `TrendCoordinator` holds it in a
-`BehaviorSubject<IReadOnlyList<int>>` seeded from its constructor's pens and subscribes through
-`Select(_liveSource.Subscribe)` and `Switch()`, ahead of the `Buffer`. `SetPens` pushes the list it
-is handed, which the chart builds fresh for each call, and the chart calls it only when the id set it
-shows differs from `PenIds`, the subject's current set, so the coordinator carries no change check of its
-own. The chart hands it every pen it shows, hidden ones included.
-`RealtimeBatches` stays one published stream: the chart's one subscription, which lives as long as
-the window, sees no change. A switch disposes the old subscription, which deletes its OPC UA
-subscription, and opens a new one on the same session; measured, the delete takes 33 ms and the new
-subscription is created in 2 ms. The new subscription's first notification of each pen carries the
-newest stamp already delivered and that value again, which the chart drops under `DA-7`. A change made
-inside the switch's gap arrives as the pen's newest value at its own stamp, and the changes before it in
-that gap are lost, as a queue of 1 loses them anywhere. The switch writes no break:
-`OpcUaLiveSourceTests.ASecondSubscriptionOfTheSameSet_OnTheLiveSession_WritesNoBreak_AndStartsAtEachPensNewestStamp`
-pins it. Every set the chart pushes holds only pens of the provider's own catalogue. `Dispose` completes
-the subject.
+`PostgresLiveSource` is the one implementation, and it polls the archive. Each subscription runs a poll
+loop of its own on the injected data scheduler, at the operator's `poll_interval_ms`, holding a baseline
+of its own and carrying the variable list in every query (`RT-1`). Disposing the subscription cancels
+the loop's query and its wait. Batching, the union timeline and the hand-off to the UI scheduler happen
+above the live source, in `TrendCoordinator` (`charting.md`). The poll's log lines carry the source
+context `SemiPlot.DataSource.Postgres.PostgresLiveSource`; the history reads keep
+`PostgresDataProvider`'s. `RealtimePollTests` pins the source context and the wait of the configured
+`poll_interval_ms` after a tick.
 
-One read clamps at the viewer's own clock: the fresh tail of a coarse history read ("Layer ladder").
-That holds because the SCADA, its archive and the viewer share one machine
+The first tick reads the baseline and emits nothing; every later tick reads the rows past
+`lastSeen`, converts them to UTC and emits them. `lastSeen` is the archive's own naive clock, not
+the local machine's, so a clock difference between the two hosts drops or repeats nothing.
+
+The fresh tail of a coarse history read is the one exception: it clamps at the viewer's own clock
+("Layer ladder"). That holds because the SCADA, its archive and the viewer share one machine
 `[DEC:machine-time-zone]`. Reading the archive's `now()` on the open connection would remove even that
 dependency, at the cost of one round trip per coarse read and a clock no test can set. A skew larger
 than the coarse layer's own lag skips the tail, which draws no wrong row: the series stops at the
@@ -1050,379 +1009,43 @@ coarse newest, as it did before the tail existed.
 `PostgresHistoryReadTests.TheRangeTheChartAsksForReachesTheRawLayersNewest` and
 `AClockBehindTheFreshSeamReadsNoTailRow` pin the clamp under a fixed clock. A test fixes the provider's
 clock by passing a `TimeProvider` to `ArchiveProviderFactory.Build`, which registers it ahead of
-`AddPostgresData`'s `TryAddSingleton(TimeProvider.System)`. The live source reads no clock of the
-viewer's: every stamp and every break it writes comes from the server's `SourceTimestamp`.
+`AddPostgresData`'s `TryAddSingleton(TimeProvider.System)`.
 
-`TrendChartViewModel.ApplyRealtimeBatch` writes one `Debug` line per batch it applies, "Live batch
-applied: {ValueCount} values, {LagMilliseconds} ms after the newest", where the lag is the apply moment
-minus the newest value's `TimestampUtc`. Breaks are left out of the count and of the newest stamp, and a
-batch of breaks only writes no line. The 1 s acceptance figure of the live edge is read from this line
-on the SCADA, not asserted. `TrendChartViewModelTests.ALiveBatch_LogsOneLagLineFromItsNewestValueNotFromABreak`
-pins the line.
+The pen set can change while the viewer runs. `TrendCoordinator` holds it in a
+`BehaviorSubject<IReadOnlyList<int>>` seeded from its constructor's pens and subscribes through
+`Select(_liveSource.Subscribe)` and `Switch()`, ahead of the `Buffer`. `SetPens` pushes the list it
+is handed, which the chart builds fresh for each call, and the chart calls it only when the id set it
+shows differs from `PenIds`, the subject's current set, so the coordinator carries no change check of its
+own.
+`RealtimeBatches` stays one published stream: the chart's one subscription, which lives as long as
+the window, sees no change. A switch disposes the old subscription and starts a new poll, whose first
+tick reads the baseline and emits nothing. The rows written between the old poll's last tick and the
+new baseline, at most one poll interval, are not delivered live; the history query the chart issues on
+every set change covers them. Every set the chart pushes holds only pens of the provider's own
+catalogue, and the live source drops any identifier it does not serve. `Dispose` completes the subject.
 
-### The break ahead of a first live sample
+`PostgresLiveSource` keeps the contract, and the poll adds rules of its own:
 
-The chart writes this break, in `TrendPenState`, and only the chart. The source cannot: it carries no
-chart state, and `Switch` restarts its subscription on every pen-set change, so a break it wrote ahead
-of each subscription's first sample would land past every kept pen's last live column and draw a gap
-after each catalogue change. The chart knows each pen's last column and whether the pen's line is
-already joined to the live stream. A chart-side break also carries a meaning of its own: the chart marks
-it `BreakKind.Ahead` and shades its span grey on the drawn pen (`charting.md#the-ahead-break-shade`), and
-a source's break, a lost session or a `Bad` status, keeps the ordinary look.
-
-The rule, per pen (`TrendPenState`'s `LiveJoin`; the full table is in
-`charting.md#per-pen-plottable-envelopeline`):
-
-- A pen's line is **joined** to the live stream once a live value has reached it, taken or not, except
-  for a rejected value after a source break (below). A new `TrendPenState` starts `Unjoined`, so the
-  window's first live sample of every pen, and the first sample of a pen a catalogue read adds, are first
-  samples.
-- A live value that reaches an unjoined line at or before the line's last column (the line already
-  covers that moment, as when the archive already holds a slow pen's last change) is rejected at `Raw`
-  and folded at a coarse layer, as for a joined line, and the line joins.
-- A live value that reaches an unjoined line past its last column, or an empty line, goes through
-  `EnvelopeLine.AppendAfterBreak`: a `NaN` column 1 ms ahead of the value, then the value, and the line
-  joins. No `NaN` column is written when the line already ends on a gap, or when 1 ms ahead of the value
-  is not past the last column. At a coarse layer the value opens a new column past the break, and the
-  values after it fold into that column, which keeps its opening X (`EnvelopeLine.FoldIntoLastColumn`),
-  so the live line resumes from the start of its first live bucket (`charting.md`).
-- A break from the source appends its `NaN` column and unjoins the line (`UnjoinedBySourceBreak`),
-  whether the line takes the column or rejects it. A rejected break is the case of a pen whose live
-  samples all lay inside the archive's span, a constant pen whose archive holds a later row: without the
-  unjoin, the first sample of the next session would draw a straight line across the outage. A value
-  the line then rejects, such as a recreated session's replay (The breaks the source writes, below),
-  re-confirms the line (`ReconfirmedAfterSourceBreak`), which holds it to the live edge again while it
-  ends on a value (`charting.md#the-hold-to-the-live-edge`), but does not join it: the next value past the
-  last column still opens behind a `NaN` column, and that column is `BreakKind.Ordinary`, because it
-  stands in for the outage. This holds at every layer: while the line is unjoined by a source break, a
-  coarse layer rejects a value at or before the last column too, rather than fold it into the bucket the
-  outage cut.
-- A history apply that drops live columns past the read's requested end unjoins the line (`Unjoined`),
-  because the live run it held is gone and the read does not reach past its end. At a coarse layer the
-  same holds for a read that replaces the bucket the newest live value folded into, the live bucket or an
-  archive bucket a joined pen's values fold into, while that value lies past both the read's requested end
-  and its last row: the value is gone with the bucket. `EnvelopeLine.ReplaceColumns` returns whether it
-  lost a live value either way. The latest unjoin
-  wins, so after a source break and then such an apply the next value past the last column opens behind an
-  ahead-break. A sticky window's read keeps its right margin past the live edge (What one history query
-  covers, above), so following the edge never takes this branch. A pan into
-  the past does take it: its read ends before the live tail, and between the archive's newest row and
-  the clock (the archive lag) those dropped columns were the only copy of the OPC UA points. A return to
-  the edge within the archive lag therefore shows a gap there, behind a new ahead-break, until a later
-  history read covers that span from the archive.
-- A pen-set change touches no `TrendPenState`, so a kept pen stays joined.
-- `CurrentValue` takes a live value only when the line took it, and stays the last real value.
-
-The ahead-break is a live append like any other: `ReplaceColumns` keeps it while it lies past the new
-history end and drops it once a read covers it, so the gap closes only when a history read reaches the
-first live sample, and nothing closes it on its own `[DEC:opc-live-edge]`.
-
-The step is 1 ms because the chart's X axis keeps milliseconds only (`LocalTimeAxis.ToAxis` is
-`ToOADate`): a break one tick ahead maps onto the sample's own X, and `EnvelopeLine` rejects an append
-at or before the last X (`DA-7`).
-`TrendPenStateTests.Realtime_BreakOneTickAfterTheValue_IsRejectedAndOneMillisecondAfterIt_AddsANaNColumn`
-pins that step for a break after a value, and the `Realtime_AFirstValue...`, `Realtime_OnAnEmptyLine_...`,
-`Realtime_ARejectedBreak_...`, `Realtime_ARejectedReplayAfterARejectedBreak_...`,
-`Realtime_ASourceBreakThenADroppingHistoryApply_...`, `Realtime_AfterAHistoryApply_...`,
-`FoldRealtime_AFirstValue...` and `FoldRealtime_AReplayAfterARejectedBreak_...` cases of
-`TrendPenStateTests` pin the rule.
-`TrendChartViewModelTests.ACatalogueThatAddsAPen_BreaksOnlyTheAddedPensFirstLiveValue` pins the pen-set
-change, and
-`OpcUaLiveEdgeJourneyTests.AServedValue_ReachesTheChartBehindABreak_AndMovesTheStickyWindowToTheNewestStamp`
-drives a value served over OPC UA by the demo server to a live column 1 ms behind its `NaN` column, a
-`BreakKind.Ahead` one.
-
-### The OPC UA live source
-
-`OpcUaLiveSource` in `SemiPlot.DataSource.OpcUa` serves the live edge from the SCADA's built-in OPC UA
-server over the OPC Foundation client stack (`OPCFoundation.NetStandard.Opc.Ua.Client` 2.0.1). Its
-endpoint is `opc.tcp://<host>:<port>` from the `opc/` section (Configuration, The OPC UA section, below).
-The server, as measured, is in `scada-archive-observed.md#the-opc-ua-server`.
-
-| Type | Holds |
-| --- | --- |
-| `OpcUaLiveSource` | The port: `Subscribe`, `States`, `PenFaults`, the lazy start, `Dispose` and `DisposeAsync` |
-| `OpcUaSession` | The connect loop, the session's events, the browse on every new session id, the published state |
-| `ServerCalls` | The stack calls: discovery, connect, browse, subscription create and delete, close |
-| `SerialLoop` | The one reader every state input and every notification runs on; a work item that throws is logged and the next one runs |
-| `ConnectBackoff` | The waits between passes of the connect loop |
-| `LiveSessionStates` | The state as a pure function of the stack's transitions, the connect loop's outcomes and the grace |
-| `PenSubscriptionSet`, `PenSubscription` | The open subscriptions, the project they are built under, and each subscription's samples and breaks |
-| `SubscriptionPlan`, `ProjectFolder`, `EndpointChoice`, `LiveValue` | The subscription shape, the project folder and pen nodes, the endpoint pick, the value mapping |
-| `DeliveredStamps`, `UnservedPens` | The newest stamp per pen and the breaks placed after it; the pens a subscription cannot serve |
-| `ClientApplicationConfiguration`, `StackTelemetry` | The validated client configuration; the stack's telemetry over the container's `ILoggerFactory` |
-
-**One session per process, started by the first `Subscribe`.** The container builds the source when
-`TrendWindow.Build` resolves it, and its constructor opens nothing:
-`OpcUaCompositionTests.ResolvingAndDisposingWithNoSubscription_ReturnsAtOnce_AndTheSourceNeverLeftConnecting`
-pins that. The first subscription starts the connect loop, which lives until the container disposes the
-source. The source takes `DefaultScheduler.Instance` for its timers itself, not the `IScheduler`
-`AddPostgresData` registers.
-
-**The connect loop owns discovery; `ManagedSession` owns reconnection.** One pass:
-
-1. `GetEndpointsAsync` on the configured URL under a 10 s bound. A listener that accepts and never answers
-   holds it 90 s.
-2. `EndpointChoice.Pick` takes the endpoint with `SecurityMode None`, policy `#None` and an anonymous user
-   token. It overwrites the endpoint's `EndpointUrl` with the configured one and keeps its token policies
-   as the server advertised them, so the `PolicyId` the client presents is always the one that server
-   issued (`Anonymous` on Simple-Scada, `1` on the stock 2.0.1 server). Discovery stays for that reason
-   even though the URL is pinned. No such endpoint is the setup fault `EndpointRefused`.
-3. A `ConfiguredEndpoint` with `UpdateBeforeConnect = false`, so neither the first connect nor a
-   reconnect dials the address the server advertises; with the default `true` the session moved to the
-   server's own URL (measured). `ManagedSession` connects with session name `SemiPlot`, a 60 s session
-   timeout, an anonymous identity and `MaxTotalReconnectTime = Timeout.InfiniteTimeSpan`; at a finite
-   bound the session passes through `Failover` to `Disconnected` (measured). `ConnectAsync` retries
-   inside the call until a server answers.
-4. A browse of `Objects` for the project folder under a 10 s bound, because it runs on the source's loop:
-   the one child whose browse name is `root` in the namespace `http://simple-scada.com/UA` and whose
-   string identifier matches `<projectId>root_<n>` (`ProjectFolder.ProjectIdOf`). None, or more than one,
-   is the setup fault `ProjectMissing`, and the source closes the session. A browse that fails or passes
-   its bound ends the pass as one no server answered.
-5. Every open subscription is created, and the state turns `Connected`.
-6. The pass waits until the session reaches `Closed` without the source closing it, or the source is
-   disposed, then closes and disposes the session.
-
-A pass that throws is logged at `Error` and counts as one no server answered, so no failure ends the
-connect loop; the configuration is validated again on the next pass if its validation was what threw. A
-pass that still held its session when it threw lets the session go as lost first.
-
-`ConnectBackoff` sets the wait before the next pass: 1 s doubling to a cap of 5 s while no server
-answers, 30 s after a setup fault, 1 s after a session that ended. A viewer started while the project is
-stopped therefore sees the server within about 5 s of its start, plus the 2 s a refused attempt costs on
-Windows. A setup fault is one the operator fixes in the SCADA or in `opc/`; the source reports it once and
-keeps trying, so a fix, or a project folder that appears after the server first answers, reaches the
-chart without a restart. `ConnectBackoffTests.ASetupFault_IsReportedOnce_AndRetriedAfterThirtySeconds`
-pins both setup faults over `LiveSessionStates` and `ConnectBackoff`, because the demo server always has a
-`None` endpoint and a project folder.
-
-Once connected, the stack recreates the session and its subscriptions in place after a server restart,
-a killed server process or a transport outage longer than the session timeout, and the same
-`MonitoredItem` handlers fire again (measured). Each `Connected` whose session id differs from the last
-one, a first connect or a recreation, browses `Objects` again (`LiveSessionStates.IsNewSession`); a
-reactivated session keeps its id and is not browsed. `ProjectFolder.Next` decides what the browse means:
-the same project ID keeps the subscriptions and reads every item's status, a changed one deletes and
-recreates every open subscription, because the recreated items still name the old nodes, and none is
-`ProjectMissing`. The project-ID change is pinned by unit tests only (`ProjectFolderTests.Next_...`),
-because the demo server's project ID is a constant.
-
-**The configuration is validated, and its stores stay empty.**
-`ClientApplicationConfiguration.CreateValidatedAsync` builds an `ApplicationConfiguration` of type `Client`,
-application name `SemiPlot`, URI `urn:localhost:SemiPlot`, four directory stores under
-`<config-dir>/opc/pki/{own,issuer,trusted,rejected}` (`own` with subject `CN=SemiPlot`),
-`TransportQuotas.OperationTimeout = 15000` and `DefaultSessionTimeout = 60000`, runs `ValidateAsync`, and
-loads no application certificate. An unvalidated configuration makes `ManagedSession.ConnectAsync` retry
-forever. Validation and every session create no file or folder
-(`ClientApplicationConfigurationTests.ValidationCreatesNoFileOrFolder`), and a section folder is read
-top-level only, so the store paths never reach the `opc/` loader.
-
-**One loop serializes the source.** The stack raises `ConnectionStateChanged`, `KeepAlive` and every
-notification on its own threads; each handler only queues the work onto `SerialLoop`, which runs every
-state change, every subscription creation and delete, and every emission in order. `LiveSessionStates`,
-`PenSubscriptionSet`, `DeliveredStamps`, `UnservedPens` and `ReportedUnservedSets` therefore hold no lock.
-A work item that throws is logged at `Error` and the loop runs the next one, so one failure stops no
-state change and no notification after it. An event whose sender is not the current session reports
-nothing. `States` is a `BehaviorSubject` seeded `Connecting` and `PenFaults` a `Subject`, each behind
-`Subject.Synchronize` and exposed through `AsObservable()`.
-
-**A close the source issues is not a loss.** Before the source closes a session of its own (a setup
-fault, a failed browse) it lets go of it (`OpcUaSession.EndSession`), and an event whose sender is not
-the session the source holds reports nothing, so the `Closing` and `Closed` that follow publish no
-`Unreachable` and write no break. Disposal stops the loops first, and a stopped loop publishes nothing.
-`DisposeAsync` cancels both loops; the pass that holds a session closes it under a 2 s bound, because a
-`CloseSession` to a peer that never answers would wait the 15 s operation timeout, then disposes it;
-then both subjects complete, in a `finally`, so a failed close leaves neither open. `Dispose` runs that
-close on the pool and waits at most 3 s (`Task.Run(...).Wait`): the container is disposed synchronously
-when `Main` returns, and no continuation may need `Main`'s thread. An abandoned close finishes on the
-pool, and a fault it ends in is still logged. `OpcUaSessionTests.DisposeOnAConnectedSource_UnderAContextThatDropsEveryPost_ReturnsWithinItsBound`
-and `DisposingTheSourceWhileItReconnects_ReturnsWithinItsBound_PublishesNothing_AndDialsNoMore` pin it.
-
-**Logging.** The stack logs through the container's `ILoggerFactory`. While the server is down its client
-channel logs one `Error` per failed connect attempt, 3 to 33 s apart (measured), which says nothing the
-source's own state line does not, so `AddOpcUaLiveSource` adds a filter that raises
-`Opc.Ua.Bindings.UaSCUaBinaryClientChannel` to `Critical`; no other category of the stack is filtered
-(`OpcUaCompositionTests.TheStackChannelLogsOnlyCriticalLines_AndEveryOtherCategoryKeepsItsLevel`). The
-`Error` "RepublishAsync is only supported when the session uses the classic subscription engine", which
-the stack writes after a reactivated session, stays: it is rare and names a stack defect. The source's
-own lines: one `Information` per published state, "OPC UA session to {Endpoint}: {State}, status
-{Status}", carrying the status of the event or of the last failed keep-alive (the event that leaves
-`Connected` carries none, measured); `Information` with the exception for a failed browse; one `Warning`
-per pen fault, per item the server did not create for another reason, per failed subscription create or
-delete and per session dispose that threw; one `Debug` per break it writes; `Debug` for a failed
-discovery or connect and for a close that gave up at its bound; `Error` for a connect pass that threw and
-for a loop work item that threw.
-
-### The session state the live source reports
-
-`LiveSessionStates` decides every state the source publishes on `States`:
-
-- `Connecting` at start.
-- `Connected` on every connect, the first included, which the loop reports itself because the stack
-  raises no event before `ConnectAsync` returns.
-- Leaving `Connected` without the source closing the session publishes `FaultedBy(Unreachable)` and a
-  loss, on which every open subscription writes its loss breaks (The breaks the source writes, below).
-- The grace: `OpcUaLiveSource.Grace`, 30 s after the loop starts, publishes `FaultedBy(Unreachable)`
-  once when nothing was published before it; after a first session or a setup fault it publishes nothing.
-- A setup fault publishes `FaultedBy(EndpointRefused)` or `FaultedBy(ProjectMissing)`.
-- A pass that ends with no session publishes `FaultedBy(Unreachable)` once the grace no longer owns the
-  state, so a server that goes down after a setup fault reads as unreachable rather than as the fault it
-  answered with; within the grace it publishes nothing.
-- A state is published only when `IsConnected` or the fault's kind changes, so a setup fault retried
-  every 30 s and the stack's repeated `Reconnecting` events publish nothing new.
-
-The grace exists because the stand starts the viewer and the OPC UA server side by side, and the demo
-server takes 1.5 to 3.5 s to start warm and 14 to 17 s cold: without it a stand start would write a
-fault entry and a recovery entry. `Connecting` is neutral on the bar, so the grace hides nothing; a viewer
-beside a stopped project shows `Connecting` for 30 s and then the fault. A session that is lost reports
-the fault as soon as the stack leaves `Connected`: 4 to 5 s after the loss with the 5 s keep-alive, and
-14.7 s for a peer that stalls with its socket open. It returns 0.4 to 4.7 s after the server answers
-again (measured, `scada-archive-observed.md#the-opc-ua-server`).
-
-`MainWindow/AppStatusBarViewModel` renders the state as the bar's second indicator, after the archive's
-and in the same shape: `IsLiveConnected`, `IsLiveFaulted` and `LiveConnectionText`, "OPC UA connecting",
-"OPC UA connected" or "OPC UA not answering". `Connecting` carries neither palette class, so the
-indicator keeps the bar's ordinary text colour during the grace. A fault is mapped by
-`ArchiveFailureMapper.Map` into one panel entry, `Warning` for `Unreachable` and `Error` for
-`EndpointRefused` and `ProjectMissing`; the first `Connected` after a fault writes one `Info` entry,
-`LiveConnectionRestored`. `TrendWindow.Build` hands the bar `coordinator.LiveSourceStates`, and the bar is
-the indicator's single writer. The chart's live hold reads the same `States`, through the same
-`LiveSourceStates`, for "the session is up": `TrendChartViewModel` hands `IsConnected` to
-`Chart/ChartLiveHold`, and only `Connected` holds a pen (`charting.md#the-hold-to-the-live-edge`).
-`LiveSessionStatesTests` pins the decisions, `AppStatusBarViewModelTests` the indicator, and
-`OpcUaSessionTests` the sequences against the demo server: `ARunningServer_TakesConnectingThenConnected`,
-`NoServer_TakesUnreachableAfterTheGrace_ThenConnectedOnceAServerStartsOnThePort`,
-`AServerRestartedOnItsPort_TakesConnectedUnreachableConnected`,
-`AListenerThatAcceptsAndCloses_KeepsTheSourceInDiscoveryWithNoSetupFault` and
-`AListenerThatAcceptsAndNeverAnswers_IsDialledAgainAfterTheDiscoveryBound`, which pins the 10 s discovery
-bound.
-
-### The pen subscriptions
-
-`Subscribe(penIds)` is an `Observable.Create` that registers one `PenSubscription` with the source,
-starting the loop on the first call, and returns a disposable that unregisters it. Registered while the
-session is `Connected`, its OPC UA subscription is created at once; otherwise at the next `Connected`. A
-pen set registered while the session is down emits the loss breaks of its pens at once, as a set open
-over the loss would have (The breaks the source writes, below). A creation runs under a 10 s bound, so a
-session that drops in the middle does not hold the loop; a failed creation logs a `Warning`, its
-subscription is deleted, and the creation is tried again 10 s later while the session stays connected,
-and at the next `Connected`. Disposal deletes the OPC UA subscription at once while the session is
-connected. One disposed while the session is down, or whose delete failed, goes to a stale list and gets
-one more delete at the next `Connected`, because `ManagedSession`'s delete waits for the session to
-return and would hold the loop; it emits nothing in the meantime. A failed delete logs a `Warning`, and
-every delete is bounded at 2 s and ends when the source is disposed.
-
-`SubscriptionPlan` shapes every subscription: publishing interval 100 ms, `KeepAliveCount` 10,
-`LifetimeCount` 600 (the stack's default of 100 logs "A smaller minLifetimeInterval 10000ms than session
-timeout 60000ms"), `TimestampsToReturn.Both`. Each pen is one monitored item: sampling interval 100 ms,
-`QueueSize = 1`, the oldest value discarded, node `ns=<index of http://simple-scada.com/UA>;s=<projectId><penId>`
-(`ProjectFolder.NodeOf`), and the pen id as its `Handle`. The queue is 1 because Simple-Scada answers a
-queue above 1 with an empty `Good` first value stamped `MinValue`, so a static variable never gets its
-value; the demo server does not reproduce it, so
-`SubscriptionPlanTests.AMonitoredItemsQueueIsOne_BecauseSimpleScadaSendsAnEmptyFirstValueAboveIt` pins
-the 1 and its name carries the reason. With a queue of 1, the changes between two publishes reach the
-source as the newest one only.
-
-`LiveValue` maps each notification, which the handler queues onto the loop; each one emits one list,
-and the coordinator buffers them:
-
-- A scalar of a numeric built-in type (`SByte`, `Byte`, `Int16`, `UInt16`, `Int32`, `UInt32`, `Int64`,
-  `UInt64`, `Float`, `Double`) converts to `double`. The measured SCADA serves a bool as `Byte`.
-- `Good`, with or without info bits (the measured `0x00000010`), and `Uncertain` draw the value. `Bad` is
-  a break (The breaks the source writes, below), and so is a `NaN` or an infinity, which the chart would
-  otherwise draw as a value and show as the pen's current reading.
-- The stamp is the `SourceTimestamp`, else the `ServerTimestamp`; a value with neither is dropped with a
-  `Debug` line.
-- Anything else, `Boolean`, `String`, `DateTime`, an array or a null, is not numeric: the pen joins its
-  subscription's unserved pens, and a pen with a delivered value also emits one break at the
-  notification's stamp, raised to the pen's newest delivered stamp (The breaks the source writes, below).
-
-**One entry per subscription for the pens the source cannot serve.** `UnservedPens` collects a
-subscription's unknown pens, whose item reads `BadNodeIdUnknown` (the real server answers an unknown node
-with `Created = false` and that status), and its non-numeric pens. It reports them as one
-`LiveSourceError` of kind `PensUnserved` that lists both groups, once every item has answered (a value,
-a `Bad` or an unstamped value counts as an answer) or 5 s after the subscription is created, whichever
-comes first, and again when the set grows later: a value that turns non-numeric, an item unknown after a
-recreated session, whose item statuses the source reads again. A pen the server serves again, a created
-item or a numeric value, leaves the set, so a later report names only the pens unserved then; a set
-that only shrinks writes no entry. `ReportedUnservedSets` keeps every set the
-process has reported, so a pen-set change or a recreated session that meets the same set writes nothing;
-a site with retired variables would otherwise get one entry per pen set at every catalogue change, since
-the panel coalesces only an entry equal to its newest one. An item the server refuses for any other
-status logs a `Warning` and is not waited for. A pen unserved from its first notification draws the
-archive's values only; a pen that turns non-numeric keeps the live run it drew up to its break.
-`PenSubscriptionTests` routes a `Bad`, a non-numeric, a numeric-then-non-numeric and an unstamped
-notification through one subscription, raised by the stack's own `MonitoredItem.SaveValueInCache`, with no
-session.
-
-### The breaks the source writes
-
-**A lost session writes one break per pen the source has delivered, at once.** When the session leaves
-`Connected` without the source closing it, every open subscription emits, for each of its pens with a
-delivered value, a break 1 ms after that pen's newest delivered `SourceTimestamp`
-(`DeliveredStamps.LossBreaks`), as one list. The stamp is the server's clock, so a skew between the
-SCADA's machine and the viewer's cannot push the break past the next session's samples, and 1 ms is the
-axis' smallest step (The break ahead of a first live sample, above). `DeliveredStamps` keeps the newest
-stamp per pen for the process, across subscriptions, so a session lost in the moment after a pen-set
-change still breaks the kept pens: a subscription its subscriber already let go of emits nothing and
-marks no pen, and the new pen set, registered behind the loss, emits the breaks itself
-(`PenSubscriptionSetTests.ALossQueuedAheadOfAPenSetChange_BreaksTheKeptPensOnTheNewSet`). A pen with no
-delivered value gets none: its line is unjoined or its last column is not live. A pen whose last
-emission is already a break gets no second one.
-
-Every first notification of a restarted server carries the server's start instant, later than any
-break, so after a project stop, a restart or a kill the break never lands at or after the next
-session's first sample. A server that kept running is the one case where it lands after. A session the
-stack reactivates, after an outage shorter than the 60 s session timeout, delivers nothing for an
-unchanged pen. A session it recreates (a 70 s outage, measured) delivers an unchanged pen's value again
-with its original `SourceTimestamp`, which lies before the break, and the chart drops it (`DA-7`); a pen
-that changed during the outage arrives with the stamp of its newest change. So an unchanged pen keeps its
-gap until its next change, which is honest about the outage and costs a constant pen its line past the
-gap until a history read covers it. Waiting for the next session to place the break exactly would leave
-the outage without a break while it lasts.
-
-The chart's live hold follows the same two cases (`charting.md#the-hold-to-the-live-edge`). A loss ends
-every hold, because the session leaves `Connected`. A recreated session's replay re-confirms an unchanged
-pen: when the pen's loss break was rejected, because the archive holds a later row, the line still ends on
-that row and is held from it to the edge again, and the pen's next change still opens behind an ordinary
-`NaN` column, so no line crosses the outage. When the loss break was appended, the line ends on the gap and
-holds nothing until the next change. A reactivated session re-delivers nothing for an unchanged pen, so
-the pen stays unheld until its next change; a read of the current values after a reactivation would
-close that, and it is a backlog entry (`docs/plans/backlog.md`). A value that turns non-numeric ends the
-pen's hold through its break, below, so the chart never holds a value the server no longer states.
-
-**`Bad` writes a break.** Its stamp is the notification's `SourceTimestamp`, else its `ServerTimestamp`,
-raised to at least 1 ms past the pen's newest delivered stamp (`DeliveredStamps.BadBreak`). A `Bad` with
-neither stamp and no delivered value writes nothing, and a pen whose last emission is a break takes no
-second one, whether or not it has a delivered value.
-
-**A value that turns non-numeric writes a break.** A pen with a delivered value whose notification is no
-longer a number emits one break at that notification's `SourceTimestamp`, else its `ServerTimestamp`,
-raised to the pen's newest delivered stamp when it lies behind it (`DeliveredStamps.NotNumericBreak`). The
-raise stops at that stamp: a break placed where no sample lies, such as 1 ms past it, would move the
-chart's newest sample, the hold's edge, to a moment the server never stated. It still reaches that stamp,
-because the coordinator orders one pen's samples in a 100 ms batch by stamp: a break behind the newest
-value in the same batch would reach the chart ahead of the value, and the value would rejoin the line and
-hold it. At the newest value's stamp the stable sort keeps the value first, and the chart rejects the break
-as at or before the line's last column; a rejected break still unjoins the line, which ends its hold
-(`TrendChartLiveHoldTests.ABreakAtTheStampOfTheValueAheadOfItInOneBatch_EndsTheHold`). A pen with no
-delivered value or a notification with neither stamp writes nothing, and a pen whose last emission is a
-break takes no second one.
-
-`DeliveredStampsTests` pins the rules.
-`OpcUaLiveSourceRestartTests.AServerRestartedOnItsPort_BreaksEachPenOnceAtItsNewestStamp_BeforeTheNewSessionsSamples`
-restarts the demo server on its port and finds exactly one break per pen at its newest stamp plus 1 ms,
-all before the first sample of the new session, which is stamped at or after the restart.
-`ACutTransport_BreaksEachPenOnce_ResumesPastTheBreaks_AndASubscriptionDisposedInTheCutStaysQuiet`
-cuts a `LoopbackRelay` between the source and the server for 8 s, longer than the detection and shorter
-than the session timeout: one break per pen, and samples resuming past the breaks. It cannot tell a
-reactivated session from a recreated one, which the measurement does (a 5 s cut keeps the session id,
-`scada-archive-observed.md#the-opc-ua-server`). What a closed subscription emits is pinned without a
-session by `PenSubscriptionTests`; that its OPC UA subscription is deleted at the next `Connected` has no
-test, because the demo server exposes no subscription count (`testing-strategy.md`).
+- **A query error logs, drops that tick's rows and leaves the observable running.**
+- **No timestamp is emitted at or before the last one already delivered** (`DA-7`).
+- **A row whose `v` is null is dropped, and `lastSeen` still advances past it.** The history path flags
+  such a bucket as a gap instead ("Quality and gaps"), so a null run the poll reads draws as a held line
+  until the next history read covers it. `v` was never null in the measured archive
+  (`scada-archive.md#quality-and-gaps`), so the poll writes a live break for a `q = 32` row only.
+- **A `q = 32` row emits its value and then a break 1 ms later.** The break is a `Sample` with a null
+  `Value` at the row's UTC timestamp plus `RealtimePoll._breakAnchorStep`, added on the UTC side as
+  `BucketedRowFold` adds its tick. A `q = 32` row whose `v` is null emits the break alone. The step is
+  1 ms because the chart's X axis keeps milliseconds only (`LocalTimeAxis.ToAxis` is `ToOADate`): one
+  tick, the history path's anchor, maps to the marker's own X, and `EnvelopeLine` rejects an append at or
+  before the last X (`DA-7`), so the break would be dropped. The archive's `t` is `timestamp(3)` and a
+  change pair is about 100 ms apart (`scada-archive.md#write-behavior`), so no real row lands on the
+  break's millisecond. `RealtimePollReadTests` pins both row shapes, and
+  `TrendPenStateTests.Realtime_BreakOneTickAfterTheValue_IsRejectedAndOneMillisecondAfterIt_AddsANaNColumn`
+  pins the step.
 
 ### The connection state the catalogue read reports
 
-The provider reports no connection state. `Bridge/PenCatalogueSync` derives
+The provider reports no connection state, and the poll keeps none. `Bridge/PenCatalogueSync` derives
 the state from its own catalogue reads and exposes it as `ConnectionStates`, an
 `IObservable<ArchiveConnectionState>` on the UI thread that its `Dispose` completes. `Bridge/ArchiveReadLoop`
 decides each state and emits it through the sink `PenCatalogueSync` hands it. `MarkerSync` hands no sink,
@@ -1460,22 +1083,24 @@ its own 5 s bound (Configuration, below), and the loop waits 5 s after each read
 fault lands with the third failed read of that sequence; how long that takes depends on where in the
 wait the outage begins and on which bound ends each read.
 
-One rule covers the two readers of the shared `NpgsqlDataSource` that repeat on their own: the
-catalogue loop and the marker loop. A connection-class failure is logged by the reader that meets it
-and reaches the operator through this state and the bar's one `ConnectionLost` entry. Any other kind
-reaches the panel through the two loops' own route, from the third failure in a row, coalescing repeats
-into the newest entry (`overview.md#a-failed-read`). A `TableMissing`, an `AccessDenied` or a role
-`statement_timeout` on `trends` reaches the panel through the minimap's band reads, every 2 to 60 s and
-the first failure of each outage (`trend-interaction.md#archive-overview-minimap`), and through the
-chart's history read on the next gesture. The band reads run only while the minimap has an extent and a
-drawn pen. So an outage makes one entry from the catalogue state, and the minimap's first failed band
-read of the outage adds an `Unreachable` entry of its own. One case reaches only the log: a stalled
-marker statement (No failure stops at the log, below). The OPC UA session is no reader of this data
-source; its state is the bar's second indicator (Realtime, The session state the live source reports).
+One rule covers the three readers of the shared `NpgsqlDataSource` that repeat on their own: the
+catalogue loop, the marker loop and the live-edge poll. A connection-class failure is logged by the
+reader that meets it and reaches the operator through this state and the bar's one `ConnectionLost`
+entry. Any other kind reaches the panel through the two loops' own route, from the third failure in a
+row, coalescing repeats into the newest entry (`overview.md#a-failed-read`). The poll has no route of
+its own: it logs every failed tick with its run (`ConsecutiveFailures`) and emits no sample. A
+`TableMissing`, an `AccessDenied` or a role `statement_timeout` on `trends` reaches the panel through
+the minimap's band reads, every 2 to 60 s and the first failure of each outage
+(`trend-interaction.md#archive-overview-minimap`), and through the chart's history read on the next
+gesture. The band reads run only while the minimap has an extent and a drawn pen. So an outage makes one
+entry from the catalogue state, and the minimap's first failed band read of the outage adds an
+`Unreachable` entry of its own. Three cases reach only the log: a stalled marker statement, a poll tick
+that keeps exceeding its bound, and a poll failure on `trends` that no band read or gesture repeats
+(No failure stops at the log, below).
 
-`MainWindow/AppStatusBarViewModel` renders the state: the archive indicator reads connected or not, and a
+`MainWindow/AppStatusBarViewModel` renders the state: the indicator reads connected or not, and a
 fault is mapped by `Messages/ArchiveFailureMapper.Map` into one `Warning` entry in the message panel.
-The archive indicator has a single writer, `PenCatalogueSync.ConnectionStates`, which `TrendWindow.Build` hands its
+The bar has a single writer, `PenCatalogueSync.ConnectionStates`, which `TrendWindow.Build` hands its
 constructor before it starts the sync, so no state precedes the subscription. The first catalogue read
 reports `Connected` too, so the recovery entry is written only once a fault has been seen; otherwise
 every launch would announce a connection it never lost. The handler is wrapped: the sync raises the
@@ -1487,11 +1112,7 @@ that read's apply.
 | Situation | Provider result | What the operator sees |
 | --- | --- | --- |
 | Connection refused or DNS failure at startup | failed `Result` | The startup-failure window opens, titled "No connection to the archive", naming the host and port, with a remedy |
-| Connection lost mid-session | failed `Result` on the query | Chart keeps the data it has |
-| No OPC UA session: the server does not answer within the 30 s grace, or a session is lost | `LiveSourceFault.Unreachable` on `ILiveSource.States`; the source keeps connecting; a lost session writes one break per delivered pen | The OPC UA indicator turns to the fault state and one `Warning` entry appears; the chart keeps the archive and its live points; the first session after it restores the indicator and adds one `Info` entry |
-| The OPC UA server offers no `None` endpoint with anonymous access, or holds no project folder | `LiveSourceFault.EndpointRefused` or `ProjectMissing` on `States`; retried every 30 s | One `Error` entry; the chart draws the archive only |
-| The OPC UA server does not know a pen, or serves a value that is not a number | `LiveSourceFault.PensUnserved` on `ILiveSource.PenFaults`, once per pen set | One `Warning` entry naming the unknown and the non-numeric pen ids; those pens draw the archive only, and a pen that turns non-numeric breaks at that notification's stamp, raised to its newest delivered stamp |
-| An `opc/` section that is missing, unreadable, unparseable or carries a bad value | the loader's failed `Result` | The startup-failure window, as for `connection/`; an unreachable OPC UA server never fails the start |
+| Connection lost mid-session | failed `Result` on the query; realtime tick dropped | Chart keeps the data it has |
 | Three consecutive catalogue reads fail for lack of a connection | `ArchiveFault.ConnectionLost` on `PenCatalogueSync.ConnectionStates`; the loop keeps reading | The status indicator turns to the fault state and one `Warning` entry appears; the first catalogue read that succeeds restores the indicator and adds one `Info` entry |
 | A column the read needs is absent (`42703`) | `ArchiveFault.ShapeUnexpected` with the server's detail | "The archive has an unexpected shape" — run `semibase site`, then find what altered the table |
 | Query timeout (`57014`) | `ArchiveFault.QueryTimedOut` | "The archive ended the statement"; `statement_timeout` is the `semiplot` role's own setting |
@@ -1509,12 +1130,9 @@ that read's apply.
 
 ### Two error planes
 
-Inside a data source a failure is whatever Npgsql, the OPC UA stack, the file system or the YAML parser
-produced. At the boundary it is mapped onto one of the sealed public types in `SemiPlot.Core/Data/Errors/`,
-with the original riding `.CausedBy(...)` for the log. The live source's type lives in Core too, not in
-`SemiPlot.DataSource.OpcUa`, because `FailureSeverityTests` scans only the Core and UI assemblies for
-error types: one declared in a data-source project would fall into `MapUnknown` as an `Error` with every
-test green. The contract is the type and its fields; messages
+Inside the provider a failure is whatever Npgsql, the file system or the YAML parser produced. At
+the boundary it is mapped onto one of two sealed public types in `SemiPlot.Core/Data/Errors/`, with
+the original riding `.CausedBy(...)` for the log. The contract is the type and its fields; messages
 are built in the base constructor and reach no operator, so tests assert on type and fields, never
 on message text.
 
@@ -1524,27 +1142,23 @@ empty window, an empty `semiplot_tags` — travel in the success channel.
 
 | Type | Fields |
 | --- | --- |
-| `ConnectionFileError` | section (`Connection` \| `Opc`), path, kind (`Unparseable` \| `MissingField` \| `OutOfRange` \| `HostNotIPv4`), field names |
-| `ConfigurationSectionError` | section (`App` \| `Connection` \| `Opc`), directory, problem (`DirectoryMissing` \| `NoFiles` \| `Unlistable` \| `Unreadable` \| `DuplicateKey` \| `KeyConflict` \| `Unwritable` \| `KeyAbsent`), key, file names |
+| `ConnectionFileError` | path, kind (`Unparseable` \| `MissingField` \| `OutOfRange` \| `HostNotIPv4`), field names |
+| `ConfigurationSectionError` | section (`App` \| `Connection`), directory, problem (`DirectoryMissing` \| `NoFiles` \| `Unlistable` \| `Unreadable` \| `DuplicateKey` \| `KeyConflict` \| `Unwritable` \| `KeyAbsent`), key, file names |
 | `ArchiveError` | kind (`ArchiveFault`), host, port, database, detail |
-| `LiveSourceError` | kind (`LiveSourceFault`: `Unreachable` \| `EndpointRefused` \| `ProjectMissing` \| `PensUnserved`), endpoint, unknown pen ids, non-numeric pen ids |
 
 `ConfigurationSectionError` lives in `SemiPlot.Core/Configuration/` and is raised by the section
 reader, ahead of any typed deserialize, so reaching the archive at all is not a precondition for it,
 and by the settings save: `Unwritable` for a target or staging folder it cannot write, `KeyAbsent` for
 an edited key no file carries (`overview.md#the-settings-window`).
 Reading a section folder is the only file access on the connection path, so `ConnectionFileError`
-carries no file-access kind. Both connection sections, `connection/` and `opc/`, raise it, and its
-`Section` picks the operator's title; its message reads "The {Section} configuration folder '{path}' is
-invalid ({kind})". The host rule and the port bounds both sections share are `NetworkAddress.IsIPv4`,
-`LowestPort` and `HighestPort` in `SemiPlot.Core/Configuration`.
+carries no file-access kind.
 
 | `ArchiveFault` | Raised by | Detail |
 | --- | --- | --- |
 | `Unreachable` | a socket failure, a client bound firing, any `NpgsqlException` without a SQLSTATE, a session the server refuses or ends: SQLSTATE class `08`, `57P01`, `57P02`, `57P03`, `53300` | empty |
 | `AccessDenied` | `28P01`, `28000`, `42501` | the username |
 | `DatabaseMissing` | `3D000` | empty |
-| `TableMissing` | `42P01`, `42883` | every relation the failing statement touches: `trends` for the history read, `semiplot_tags, trends` for the archive extent and the archive days, all three catalogue tables for the pen catalogue and every editor write, `semiplot_markers` for every marker statement; `semiplot_register_new_pens()` for the registration |
+| `TableMissing` | `42P01`, `42883` | every relation the failing statement touches: `trends` for the history and realtime reads, `semiplot_tags, trends` for the archive extent and the archive days, all three catalogue tables for the pen catalogue and every editor write, `semiplot_markers` for every marker statement; `semiplot_register_new_pens()` for the registration |
 | `ShapeUnexpected` | `42703` | the server's own message |
 | `QueryTimedOut` | `57014` | empty |
 | `ConnectionLost` | three consecutive catalogue reads that fail as `Unreachable` | the number of failures that raised it |
@@ -1589,25 +1203,16 @@ drops the marker, and the operator adds it again if it is still needed.
 `FailureSeverityTests.EveryArchiveFault_CarriesTheSeverityTheTableNames` pins that split. `ConnectionLost` never opens the startup-failure window; it is an entry in the message panel
 under a chart that works.
 
-The live source's arm, `MapLiveSource`, splits the same way. `Unreachable` and `PensUnserved` are
-`Warning`: the chart keeps drawing the archive and the source keeps trying. `EndpointRefused` and
-`ProjectMissing` are `Error`: nothing recovers until the operator changes the SCADA's OPC UA server or
-the `opc/` section, and their remedies name the 30 s retry as a literal. Each detail names the endpoint;
-the `PensUnserved` detail lists the unknown and the non-numeric pen ids, each group named and an empty
-one left out. `FailureSeverityTests.EveryLiveSourceFault_CarriesTheSeverityTheTableNames` and
-`LiveSourceFaultTable_CoversEveryMemberOfTheEnum` pin it, beside the `ArchiveFault` table.
-
-The twelve rows above are the `ArchiveError` arm alone. `Map` has eleven further arms: the startup
-arguments, the log file, the configuration section, the app settings, the connection file, the live
-source, the startup read timeout, the unknown instance host, the export file, an `IExceptionalError` and
-the `_` fallback. Every one of them but the live source's is `Error`. The startup arguments, the log file and the startup read timeout
+The twelve rows above are the `ArchiveError` arm alone. `Map` has ten further arms: the startup
+arguments, the log file, the configuration section, the app settings, the connection file, the
+startup read timeout, the unknown instance host, the export file, an `IExceptionalError` and the `_`
+fallback. Every one of them is `Error`. The startup arguments, the log file and the startup read timeout
 are reachable only at startup, where nothing recovers until the operator edits something. The app
 settings, the configuration section and the connection file arms are also reachable later, from the live
 theme's reload and the settings save, and the same holds there (`overview.md#the-live-theme`). The
 unknown instance host comes from `New window` and `Restart` (`overview.md#another-instance`), the export
-file from an export, and the last two arms from any point of a session. `MessageSeverity.Info` has two
-writers in the whole tree, both in `AppStatusBarViewModel`: the archive indicator's recovery entry
-`ConnectionRestored` and the OPC UA indicator's `LiveConnectionRestored`. `SemiPlot.Tests.Unit/UI/Messages/FailureSeverityTests.cs`
+file from an export, and the last two arms from any point of a session. `MessageSeverity.Info` has exactly one writer in the whole tree, the connection-restored
+entry `AppStatusBarViewModel` writes. `SemiPlot.Tests.Unit/UI/Messages/FailureSeverityTests.cs`
 holds the `ArchiveFault` severity table and asserts it covers `Enum.GetValues<ArchiveFault>()`; the
 app-settings severities are pinned in `ArchiveFailureMapperTests`, and `EveryEnumMapperArm_AnswersForEveryMemberOfItsEnum`
 calls every other enum-switching arm with every member, so a new member that reaches the throw turns red.
@@ -1627,26 +1232,21 @@ first two log a warning (`overview.md#a-failed-read`). The minimap's band and ex
 the first failure of an outage and log every repeat at Warning
 (`trend-interaction.md#archive-overview-minimap`).
 
-A failure for lack of a connection follows one rule in the two readers that repeat on their own, the
-catalogue loop and the marker loop: the reader logs it, and it reaches the operator through the
-catalogue read's state and the status bar's one `ConnectionLost` entry (The connection state the
-catalogue read reports, above). One case stays in the log, written at every failure: a marker statement
-that stalls while the catalogue answers. The marker read has no bound of its own and runs to the
-connection string's 300 s backstop, so after a stall the marker loop can sit on a dead pooled connection
-for up to 300 s after the bar has written the recovery entry.
+A failure for lack of a connection follows one rule in the three readers that repeat on their own, the
+catalogue loop, the marker loop and the live-edge poll: the reader logs it, and it reaches the operator
+through the catalogue read's state and the status bar's one `ConnectionLost` entry (The connection state
+the catalogue read reports, above). The poll's other failures on `trends` reach the panel through the
+minimap's band reads and the chart's history reads over the same relation. Three cases stay in the log,
+written at every failure:
 
-The live source follows the same rule on its own indicator. A lost or absent OPC UA session is one
-`Unreachable` state on `ILiveSource.States`, which the bar turns into one panel entry. The source logs each
-state it publishes at `Information` and every failed discovery or connect at `Debug`, and writes no
-entry of its own. A connect pass that throws is logged at `Error` and reaches the operator the same way,
-as a pass that reached no server. A pen
-the server cannot serve is one `PensUnserved` entry per pen set, which `TrendChartViewModel` reports from
-`TrendCoordinator.LivePenFaults` through the guarded `ResultReporting.TryReportFailure`. Two cases reach
-only the log. A failed subscription create or delete is logged at `Warning`; a create is tried again
-10 s later and at the next `Connected`, a delete once more at the next `Connected`. The subscription's
-pens draw no live value meanwhile, and the indicator still reads connected. A work item of the source's
-`SerialLoop` that throws is logged at `Error`: the source has no operator channel but its state and its
-pen faults, and the loop runs on, so the states and samples after it still arrive.
+- A marker statement stalls while the catalogue answers. The marker read has no bound of its own and
+  runs to the connection string's 300 s backstop, so after a stall the marker loop can sit on a dead
+  pooled connection for up to 300 s after the bar has written the recovery entry.
+- A poll tick's incremental read exceeds its 10 s bound at every tick. A failed tick does not advance
+  `lastSeen`, so the next tick repeats the same read, and the live edge stays frozen while the catalogue
+  answers and the indicator reads connected.
+- A poll tick fails with another kind on `trends` while no band read runs, because the archive has no
+  extent or the minimap draws no pen, and the operator makes no gesture.
 
 `Messages/ResultReporting` treats the log and the panel as two independent sinks: the panel edit runs
 first and the log line from a `finally`, so whichever of the two refuses the failure, the other still
@@ -1661,8 +1261,8 @@ that report from a thread of their own.
 
 A handler that runs detached — an Rx `onNext`, an Rx `onError`, a job posted to the UI scheduler — wraps
 its whole body, not its report alone, and hands the throw to `TryReportFailure`:
-`TrendChartViewModel.OnHistoryQueryFailed`, `MainWindow/AppStatusBarViewModel.ApplyConnectionState` and
-`ApplyLiveSourceState`, `Bridge/ArchiveReadLoop.RunAsync`, the loop of both the catalogue and the marker sync, whose guard
+`TrendChartViewModel.OnHistoryQueryFailed`, `MainWindow/AppStatusBarViewModel.ApplyConnectionState`,
+`Bridge/ArchiveReadLoop.RunAsync`, the loop of both the catalogue and the marker sync, whose guard
 covers each read and its apply but not the wait between reads, and lets the cancellation of its own stop
 end the loop unreported, since the marker read honours that token,
 `MainWindow/PenCatalogueApplier.ApplyAsync`, the last through
@@ -1687,9 +1287,9 @@ ten-second drag produces roughly twenty-five identical failures, and they become
 repeat count and a moving last-seen time. Coalescing is against the newest entry only, so a
 different failure in between starts a new one, and the key is the whole mapped view rather than its
 title. The list is capped at `MessagePanelViewModel.MaximumEntries` (200) with the oldest dropped:
-this viewer runs for weeks. The operator's shortest way to it is either of the status bar's two
-connection indicators, each a `Button` bound to the panel's own `ToggleCommand`, the same command the
-View menu invokes. `overview.md` holds the panel's place in the window and the reach of the ReactiveUI
+this viewer runs for weeks. The operator's shortest way to it is the status bar's connection
+indicator, a `Button` bound to the panel's own `ToggleCommand` — the same command the View menu
+invokes. `overview.md` holds the panel's place in the window and the reach of the ReactiveUI
 exception observer under it.
 
 `TrendCoordinator.RealtimeBatches` needs a guard of its own. Its
@@ -1699,8 +1299,8 @@ skips the window and publishes the exception on `TrendCoordinator.RealtimeFailur
 failure out of the live source takes the same channel: a `Catch` ahead of the `Publish` turns it into
 one `RealtimeFailures` message and completes the batch stream, so `RealtimeBatches` never faults and
 the one failure is not counted once per subscriber of it. `TrendChartViewModel` is the only reader of
-that channel and of `LivePenFaults`, and it reports both through the guarded
-`ResultReporting.TryReportFailure` because an escape would end the subscription that feeds it. `TrendChartView`'s own six subscriptions, the two
+that channel, and it reports through the guarded `ResultReporting.TryReportFailure` because an escape
+would end the subscription that feeds the live edge. `TrendChartView`'s own six subscriptions, the two
 panels' `CloseRequests`, `IsDeltaModeEnabled`, `ScalesRevision`, `RedrawRequested` and the marker layer's
 `Changed`, take `ReportFailureOf` as their `onError`: it writes a `Log.Error` line naming the pipeline,
 then reports through `TrendChartViewModel.ReportFailure`, because a pipeline that ends stops repainting
@@ -1751,19 +1351,16 @@ port: 5432
 database: semiplot_dev
 user: semiplot
 password: "change me"
+poll_interval_ms: 1000
 ```
 
 The set that ships is `ConfigFiles/connection/connection.yaml` in the repository, with an empty
 `password` so it cannot start unedited, and `SemiPlot.Tests.Unit/DeliveredConfigurationTests` runs
-this loader over it. An installed file that still carries the retired `poll_interval_ms` key loads, since
-an unknown key is ignored (`PostgresConnectionLoaderTests.ALeftoverPollIntervalKeyIsIgnored`): the
-installer keeps a site's own `connection.yaml` on upgrade.
+this loader over it.
 
 `host` is an IPv4 address of exactly four decimal numbers from 0 to 255, such as `127.0.0.1`.
-`NetworkAddress.IsIPv4` (`SemiPlot.Core/Configuration`) is the one rule: the loader refuses anything else
-with `HostNotIPv4`, the `opc/` loader does the same, and the settings window disables its save on the same
-predicate. `port` is a whole number from `NetworkAddress.LowestPort` to `HighestPort`, 1 to 65535, in both
-sections. A host name,
+`PostgresConnectionLoader.IsIPv4Address` is the one rule: the loader refuses anything else with
+`HostNotIPv4`, and the settings window disables its save on the same predicate. A host name,
 `localhost` included, an IPv6 address, a shortened form such as `127.1`, and an octet with a leading
 zero, which some resolvers read as octal, are all refused at startup rather than at the first connect.
 `IPAddress.TryParse` is not the rule, because it accepts `1` and `127.1`.
@@ -1775,50 +1372,19 @@ zones, and no key overrides the zone `[DEC:machine-time-zone]`.
 
 The file states no query bound: `statement_timeout` belongs to the `semiplot` role and SemiBase owns
 it (`postgres-instance.md`). The connection
-string carries `Command Timeout=300` as a client backstop. One read overrides it with a bound of its
-own: the catalogue read (5 s, `PostgresDataProvider.CreateCatalogueCommand`), whose failures raise the
-connection fault. Loading returns a `Result`; a malformed file is reported at startup, not at
+string carries `Command Timeout=300` as a client backstop. Two reads override it with a bound of their
+own: the live-edge poll's tick (10 s, `RealtimePoll.CreateTickCommand`) and the catalogue read (5 s,
+`PostgresDataProvider.CreateCatalogueCommand`), whose failures raise the connection fault. Loading returns a `Result`; a malformed file is reported at startup, not at
 first query. The password is stored in plain text; the mitigation is a role that cannot write the
 archive.
 
 The connection string carries `Options=-c jit=off`, so every session of the one `NpgsqlDataSource`
-(extent, history, catalogue, the pen catalogue editor, the marker store and the row reader) runs without
-JIT, because JIT
+(poll, extent, history, catalogue and the pen catalogue editor) runs without JIT, because JIT
 compilation takes 1 506 ms of the 2 054 ms the chart's Hour read at the window cap executes in under
 `jit = on`, against 542 ms under `jit = off`, measured 2026-10-12 ("Read cost", under Layer ladder);
 `jit` is a session setting, and no vendor object or role default changes `[DEC:read-only-consumer]`. A
 psql session against the same server runs under the server default, so a coarse read timed by hand
 there can take over a second longer than the viewer's.
-
-### The OPC UA section
-
-The `opc/` section folder under `--config-dir` names the SCADA's OPC UA server for the live edge
-(Realtime, above). `ConfigurationSection.Read` merges its `*.yaml` files as it merges `connection/`'s,
-and `OpcUaConnectionLoader` (`SemiPlot.DataSource.OpcUa/Configuration`) deserializes the mapping into
-`OpcUaConnectionSettings(Host, Port, CertificateStoreRoot)`, whose `EndpointUrl` is
-`opc.tcp://<host>:<port>`. Both keys are required; an unknown key is ignored:
-
-```yaml
-host: 127.0.0.1
-port: 49875
-```
-
-Both loaders parse and check through `SemiPlot.Core/Configuration/ConnectionFile`, so `host` follows the
-`connection/` rule, `NetworkAddress.IsIPv4`, and `port` its bounds, 1 to 65535. An
-absent key, a bare `key:` with no value and a `host` of blanks are `MissingField`, a port out of range
-`OutOfRange`, a host that is no IPv4 address `HostNotIPv4` and a port that is not a number, `port: ""`
-included, `Unparseable`, each a `ConnectionFileError` of section
-`Opc`, whose title reads "SemiPlot cannot read the OPC UA connection settings". The shipped set is
-`ConfigFiles/opc/opc.yaml`, `127.0.0.1` and the real Simple-Scada's port 49875, and
-`DeliveredConfigurationTests.TheShippedOpcSectionLoads` runs this loader over it. The installer copies
-`ConfigFiles` with `onlyifdoesntexist`, so an upgraded site gains `opc/opc.yaml` and keeps its own
-`connection.yaml`.
-
-The certificate store root is `<config-dir>/opc/pki`, the folder the four directory stores of the client
-configuration sit under (Realtime, The OPC UA live source). The section is read top-level only, so a
-`.yaml` file under `pki` is never parsed (`OpcUaConnectionLoaderTests.AYamlFileUnderThePkiFolderIsNotRead`).
-The settings window edits `host` and `port` of `opc/` under the rules it applies to every section
-(`overview.md#the-settings-window`), and a saved change takes effect at the next start.
 
 ## Startup
 
@@ -1847,24 +1413,13 @@ until the first failure.
 2. Load the `<ConfigDir>/app` section and apply its `locale`. A failure here short-circuits with null
    settings, before the connection section is touched, so a broken archive cannot mask a broken
    configuration (`ui-text.md`, `ui-theme.md`).
-3. `StartupProbe.Run`: load the `<ConfigDir>/connection` section, then the `<ConfigDir>/opc` section
-   (`StartupProbe.OpcDirectoryName`), and register `AddPostgresData(settings)`,
-   `AddOpcUaLiveSource(opcSettings)` and `AddUi()`. An `opc/` folder that is missing, unreadable,
-   unparseable or carries a bad value fails the start with the section's own entry, and no container is
-   built.
+3. `StartupProbe.Run`: load the `<ConfigDir>/connection` section and register
+   `AddPostgresData(settings)`.
 4. Resolve `IDataProvider`, read the pen catalogue, then the archive extent.
-
-Nothing on the startup path connects to the OPC UA server. The container constructs `OpcUaLiveSource`
-when `TrendWindow.Build` resolves it, and the first live subscription starts its session in the
-background, so an unreachable OPC UA server never fails the start: the window opens, the OPC UA
-indicator reads connecting, and after the 30 s grace it reads not answering
-(`StartupProbeOpcSectionTests.AValidOpcSection_PassesTheStartToTheArchiveReadAndOpensNoOpcSocket` holds a
-listener on the `opc/` port and finds no connection). `StartupProbeTests.Run_WithNoOpcSection_FailsOnThatSectionBeforeAnyRead`
-and `Run_WithAnOpcPortOfZero_FailsOnThatSectionBeforeAnyRead` pin the failing starts.
 
 The container, the pens and the extent cross the boundary in a `StartupData` record, so `TrendWindow.Build` awaits nothing. `Program.Main` passes the settings, the `StartupData` or the first `IError`, and the parsed `StartupOptions` to `App.RunStarted(AppSettings?, StartupData, StartupOptions)` on
 success and to `App.RunFailed(AppSettings?, IError, StartupOptions?)` on failure, the configuration
-directory reaching the settings window and the keys reaching `InstanceLauncher` on both paths (the failure window offers Settings only when all three sections read and every
+directory reaching the settings window and the keys reaching `InstanceLauncher` on both paths (the failure window offers Settings only when both sections read and every
 key the dialog edits is present; `overview.md#another-instance`): on success `App` builds one
 `TrendWindow` (`overview.md#one-window-per-process`); on failure `App` maps the error through
 `ArchiveFailureMapper` and opens `Startup/StartupFailureWindow`, which names what broke and what to do
@@ -1924,22 +1479,7 @@ When a chart is empty, check in this order. Each step distinguishes a different 
    start, so run the check before 02:00. Such rows are not a cause of an empty chart, because every read
    still returns them, but partition elimination is lost for reads that cannot skip that partition.
 
-When the chart draws history but no live edge, check the OPC UA side in this order:
-
-1. Does the OPC UA indicator read connected? Not answering means no session to the `opc/` endpoint: is
-   the SCADA project running, and do `host` and `port` in `opc/` name its server? The log's
-   `OPC UA session to ...` lines carry each state and the stack's status. An `Error` entry means the
-   server refuses the `None` endpoint with anonymous access, or holds no project folder.
-2. Is there a `PensUnserved` entry? Its pens are unknown to the server or serve no number, and draw the
-   archive only.
-3. Run the viewer at `--logging-level Debug`: each applied live batch writes "Live batch applied: ...
-   values, ... ms after the newest". No line means no value arrives; a large lag means the values arrive
-   late, from the server or across the clocks of the two machines.
-
 When the chart draws a straight segment across a span the archive holds, or fills slowly, run the
 viewer at `--logging-level Debug` and match the segment's timestamps against the history-read entries
-and the live batch lines around them: each history read logs its layer, range, outcome and duration
-(`#what-one-history-query-covers`). A gap past the archive's newest row that does not close is the
-ahead-break, shaded grey on the drawn pen, or a loss break waiting for a history read to cover it
-(Realtime, above); a gesture that
-re-reads the window closes it where the archive now holds rows.
+and the realtime poll's entries around them: each history read logs its layer, range, outcome and
+duration (`#what-one-history-query-covers`).

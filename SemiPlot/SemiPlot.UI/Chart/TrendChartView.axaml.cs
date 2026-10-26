@@ -99,9 +99,6 @@ public partial class TrendChartView : UserControl
 	/// <summary>The active pen's readings at the markers on the bound plot; null while no view model is bound.</summary>
 	internal ChartMarkerReadings? MarkerReadings { get; private set; }
 
-	/// <summary>The drawn pen's ahead-break shade on the bound plot; null while no view model is bound.</summary>
-	internal ChartAheadBreakShade? AheadBreakShade { get; private set; }
-
 	protected override void OnLoaded(RoutedEventArgs e)
 	{
 		base.OnLoaded(e);
@@ -170,15 +167,12 @@ public partial class TrendChartView : UserControl
 
 		ChartPalette.Apply(PlotControl.Plot, application, application.ActualThemeVariant);
 		_paintedAxisCount = _viewModel?.AxisCount ?? -1;
-		PaintChartOverlays();
+		PaintMarkerLines();
 	}
 
-	private void PaintChartOverlays()
+	private void PaintMarkerLines()
 	{
-		if (MarkerLines is null
-			|| MarkerReadings is null
-			|| AheadBreakShade is null
-			|| Application.Current is not { } application)
+		if (MarkerLines is null || MarkerReadings is null || Application.Current is not { } application)
 		{
 			return;
 		}
@@ -186,7 +180,6 @@ public partial class TrendChartView : UserControl
 		var palette = ChartPalette.MarkerColors(application, application.ActualThemeVariant);
 		MarkerLines.ApplyPalette(palette);
 		MarkerReadings.ApplyPalette(palette);
-		AheadBreakShade.ApplyPalette(ChartPalette.AheadBreakColors(application, application.ActualThemeVariant));
 	}
 
 	// docs/architecture/charting.md#module-layout-avalonia-views--view-models--core-models
@@ -228,7 +221,6 @@ public partial class TrendChartView : UserControl
 		_disposables.Clear();
 		MarkerLines = null;
 		MarkerReadings = null;
-		AheadBreakShade = null;
 		ClearPendingFrame();
 		_paintedAxisCount = -1;
 		_viewModel = DataContext as TrendChartViewModel;
@@ -264,7 +256,7 @@ public partial class TrendChartView : UserControl
 		_viewModel.Plot.Axes.Bottom.TickGenerator = new DateTimeAutomatic();
 		CreateDeltaCursorLines(_viewModel.Plot);
 		ApplyWindow(_viewModel.Navigation.From, _viewModel.Navigation.To);
-		CreateChartOverlays(_viewModel);
+		CreateMarkerLines(_viewModel);
 
 		_viewModel.Navigation.WindowChanged += OnNavigationWindowChanged;
 		_disposables.Add(Disposable.Create(() =>
@@ -321,15 +313,9 @@ public partial class TrendChartView : UserControl
 		}
 
 		UpdateMarkerReadings(_viewModel);
-		AheadBreakShade?.ShowFor(DrawnLineOf(_viewModel));
 		PlotControl.InvalidateVisual();
 		RepositionCursorOverlay();
 		ServedFrameCount++;
-	}
-
-	private static EnvelopeLine? DrawnLineOf(TrendChartViewModel viewModel)
-	{
-		return viewModel.DrawnPenId is { } drawnPenId ? viewModel.FindPen(drawnPenId)?.Line : null;
 	}
 
 	private void ClearPendingFrame()
@@ -361,20 +347,15 @@ public partial class TrendChartView : UserControl
 		ProjectMarkerLines(eventArgs.NewSize.Width);
 	}
 
-	private void CreateChartOverlays(TrendChartViewModel viewModel)
+	private void CreateMarkerLines(TrendChartViewModel viewModel)
 	{
 		MarkerLines = new ChartMarkerLines(viewModel.Plot);
 		_disposables.Add(Disposable.Create(MarkerLines.RemoveLines));
 		var markerReadings = new ChartMarkerReadings();
 		MarkerReadings = markerReadings;
-		var aheadBreakShade = new ChartAheadBreakShade();
-		aheadBreakShade.Axes.XAxis = viewModel.Plot.Axes.Bottom;
-		AheadBreakShade = aheadBreakShade;
 		lock (viewModel.Plot.Sync)
 		{
 			viewModel.Plot.Add.Plottable(markerReadings);
-			viewModel.Plot.Add.Plottable(aheadBreakShade);
-			viewModel.Plot.MoveToBottom(aheadBreakShade);
 		}
 
 		_disposables.Add(Disposable.Create(() =>
@@ -382,12 +363,9 @@ public partial class TrendChartView : UserControl
 			lock (viewModel.Plot.Sync)
 			{
 				viewModel.Plot.Remove(markerReadings);
-				viewModel.Plot.Remove(aheadBreakShade);
 			}
-
-			aheadBreakShade.Dispose();
 		}));
-		PaintChartOverlays();
+		PaintMarkerLines();
 		SyncMarkerLines(viewModel);
 
 		_disposables.Add(viewModel.Markers.Changed

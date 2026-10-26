@@ -21,7 +21,6 @@ public static class ConfigurationSectionFailureMapper
 		{
 			ConfigurationSectionName.App => Resources.FailureConfigurationSectionAppTitle,
 			ConfigurationSectionName.Connection => Resources.FailureConfigurationSectionConnectionTitle,
-			ConfigurationSectionName.Opc => Resources.FailureConfigurationSectionOpcTitle,
 			_ => throw new ArgumentOutOfRangeException(nameof(section), section, null)
 		};
 	}
@@ -68,11 +67,17 @@ public static class ConfigurationSectionFailureMapper
 
 	private static string SectionRemedy(ConfigurationSectionError error)
 	{
+		var app = error.Section is ConfigurationSectionName.App;
+
 		return error.Problem switch
 		{
-			SectionProblem.DirectoryMissing => DirectoryMissingRemedy(error.Section),
+			SectionProblem.DirectoryMissing => app
+				? Resources.FailureConfigurationSectionAppDirectoryMissingRemedy
+				: Resources.FailureConfigurationSectionConnectionDirectoryMissingRemedy,
 
-			SectionProblem.NoFiles => NoFilesRemedy(error.Section),
+			SectionProblem.NoFiles => app
+				? Resources.FailureConfigurationSectionAppNoFilesRemedy
+				: Resources.FailureConfigurationSectionConnectionNoFilesRemedy,
 
 			SectionProblem.DuplicateKey => Resources.FailureConfigurationSectionDuplicateKeyRemedy,
 
@@ -86,29 +91,6 @@ public static class ConfigurationSectionFailureMapper
 			SectionProblem.KeyAbsent => Resources.FailureConfigurationSectionKeyAbsentRemedy,
 
 			_ => throw new ArgumentOutOfRangeException(nameof(error), error.Problem, null)
-		};
-	}
-
-	private static string DirectoryMissingRemedy(ConfigurationSectionName section)
-	{
-		return section switch
-		{
-			ConfigurationSectionName.App => Resources.FailureConfigurationSectionAppDirectoryMissingRemedy,
-			ConfigurationSectionName.Connection =>
-				Resources.FailureConfigurationSectionConnectionDirectoryMissingRemedy,
-			ConfigurationSectionName.Opc => Resources.FailureConfigurationSectionOpcDirectoryMissingRemedy,
-			_ => throw new ArgumentOutOfRangeException(nameof(section), section, null)
-		};
-	}
-
-	private static string NoFilesRemedy(ConfigurationSectionName section)
-	{
-		return section switch
-		{
-			ConfigurationSectionName.App => Resources.FailureConfigurationSectionAppNoFilesRemedy,
-			ConfigurationSectionName.Connection => Resources.FailureConfigurationSectionConnectionNoFilesRemedy,
-			ConfigurationSectionName.Opc => Resources.FailureConfigurationSectionOpcNoFilesRemedy,
-			_ => throw new ArgumentOutOfRangeException(nameof(section), section, null)
 		};
 	}
 }

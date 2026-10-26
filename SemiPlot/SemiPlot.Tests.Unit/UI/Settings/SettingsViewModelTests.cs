@@ -7,8 +7,6 @@ using AwesomeAssertions;
 
 using ReactiveUI;
 
-using SemiPlot.Core.Configuration;
-using SemiPlot.DataSource.OpcUa.Configuration;
 using SemiPlot.DataSource.Postgres.Configuration;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.Messages;
@@ -31,15 +29,12 @@ public sealed class SettingsViewModelTests : IDisposable
 
 	private readonly string _connectionDirectory;
 
-	private readonly string _opcDirectory;
-
 	private readonly MessagePanelViewModel _messagePanel = new();
 
 	public SettingsViewModelTests()
 	{
 		_appDirectory = Path.Combine(_configDirectory, StartupSequence.SettingsDirectoryName);
 		_connectionDirectory = Path.Combine(_configDirectory, StartupProbe.ConnectionDirectoryName);
-		_opcDirectory = Path.Combine(_configDirectory, StartupProbe.OpcDirectoryName);
 		ShippedConfiguration.CopyTo(_configDirectory);
 	}
 
@@ -56,8 +51,8 @@ public sealed class SettingsViewModelTests : IDisposable
 		WriteFile(
 			_connectionDirectory,
 			"connection.yaml",
-			"host: 10.20.30.40\nport: 5433\ndatabase: archive\nuser: viewer\npassword: secret\n");
-		WriteFile(_opcDirectory, "opc.yaml", "host: 10.20.30.50\nport: 55875\n");
+			"host: 10.20.30.40\nport: 5433\ndatabase: archive\nuser: viewer\npassword: secret\n"
+			+ "poll_interval_ms: 250\n");
 
 		using var viewModel = Build();
 
@@ -68,8 +63,7 @@ public sealed class SettingsViewModelTests : IDisposable
 		viewModel.Database.Should().Be("archive");
 		viewModel.User.Should().Be("viewer");
 		viewModel.Password.Should().Be("secret");
-		viewModel.OpcHost.Should().Be("10.20.30.50");
-		viewModel.OpcPort.Should().Be(55875);
+		viewModel.PollInterval.Should().Be(250);
 		_messagePanel.Entries.Should().BeEmpty();
 	}
 
@@ -85,8 +79,7 @@ public sealed class SettingsViewModelTests : IDisposable
 		viewModel.Database.Should().Be("semiplot");
 		viewModel.User.Should().Be("semiplot");
 		viewModel.Password.Should().BeEmpty();
-		viewModel.OpcHost.Should().Be("127.0.0.1");
-		viewModel.OpcPort.Should().Be(49875);
+		viewModel.PollInterval.Should().Be(1000);
 		_messagePanel.Entries.Should().BeEmpty();
 	}
 
@@ -152,37 +145,28 @@ public sealed class SettingsViewModelTests : IDisposable
 			Resources.FormatSettingsSectionUnreadable(Resources.SettingsInterfaceHeader));
 	}
 
-	[AvaloniaFact]
-	public void AnUnreadableOpcSectionIsReportedOnceAndBlocksTheSave()
-	{
-		WriteFile(_opcDirectory, "opc.yaml", "host: [unclosed\n");
-
-		using var viewModel = Build();
-		viewModel.Password = "secret";
-
-		_messagePanel.Entries.Should().ContainSingle().Which.View.Detail.Should().Contain(_opcDirectory);
-		viewModel.OpcHost.Should().BeEmpty();
-		viewModel.OpcPort.Should().BeNull();
-		viewModel.Host.Should().Be("127.0.0.1");
-		CanSave(viewModel).Should().BeFalse();
-		viewModel.ValidationMessage.Should().Be(Resources.FormatSettingsSectionUnreadable(Resources.SettingsOpcHeader));
-	}
-
 	[AvaloniaTheory]
-	[InlineData(ConfigurationSectionName.App)]
-	[InlineData(ConfigurationSectionName.Connection)]
-	[InlineData(ConfigurationSectionName.Opc)]
-	public void AMissingSectionFolderIsReportedAndBlocksTheSaveWithAStatedReason(ConfigurationSectionName section)
+	[InlineData(true, false)]
+	[InlineData(false, true)]
+	public void AMissingSectionFolderIsReportedAndBlocksTheSaveWithAStatedReason(bool appAbsent, bool connectionAbsent)
 	{
-		var (directory, _, header) = SectionOf(section);
-		Directory.Delete(directory, recursive: true);
+		if (appAbsent)
+		{
+			Directory.Delete(_appDirectory, recursive: true);
+		}
+
+		if (connectionAbsent)
+		{
+			Directory.Delete(_connectionDirectory, recursive: true);
+		}
 
 		using var viewModel = Build();
 		viewModel.Password = "secret";
 
 		_messagePanel.Entries.Should().ContainSingle();
 		CanSave(viewModel).Should().BeFalse();
-		viewModel.ValidationMessage.Should().Be(Resources.FormatSettingsSectionUnreadable(header));
+		viewModel.ValidationMessage.Should().Be(Resources.FormatSettingsSectionUnreadable(
+			appAbsent ? Resources.SettingsInterfaceHeader : Resources.SettingsConnectionHeader));
 	}
 
 	[AvaloniaFact]
@@ -195,8 +179,7 @@ public sealed class SettingsViewModelTests : IDisposable
 		viewModel.Password = "secret";
 
 		CanSave(viewModel).Should().BeFalse();
-		viewModel.ValidationMessage.Should().Be(
-			Resources.FormatSettingsKeyAbsent(Resources.SettingsInterfaceHeader, AppSettingsLoader.LocaleKey));
+		viewModel.ValidationMessage.Should().Be(Resources.FormatSettingsKeyAbsent(AppSettingsLoader.LocaleKey));
 	}
 
 	[AvaloniaFact]
@@ -205,69 +188,13 @@ public sealed class SettingsViewModelTests : IDisposable
 		WriteFile(
 			_connectionDirectory,
 			"connection.yaml",
-			"host: 127.0.0.1\ndatabase: semiplot\nuser: semiplot\npassword: secret\n");
+			"host: 127.0.0.1\ndatabase: semiplot\nuser: semiplot\npassword: secret\npoll_interval_ms: 1000\n");
 
 		using var viewModel = Build();
 		viewModel.Port = 5432;
 
 		CanSave(viewModel).Should().BeFalse();
-		viewModel.ValidationMessage.Should().Be(
-			Resources.FormatSettingsKeyAbsent(Resources.SettingsConnectionHeader, PostgresConnectionLoader.PortKey));
-	}
-
-	[AvaloniaFact]
-	public void AnOpcFileWithoutAHostRefusesTheSaveAndNamesTheSectionAndTheKey()
-	{
-		WriteFile(_opcDirectory, "opc.yaml", "port: 49875\n");
-
-		using var viewModel = Build();
-		viewModel.Password = "secret";
-
-		CanSave(viewModel).Should().BeFalse();
-		viewModel.ValidationMessage.Should().Be(
-			Resources.FormatSettingsKeyAbsent(Resources.SettingsOpcHeader, OpcUaConnectionLoader.HostKey));
-		_messagePanel.Entries.Should().BeEmpty();
-	}
-
-	[AvaloniaTheory]
-	[InlineData(ConfigurationSectionName.App, ConfigurationSectionName.Connection)]
-	[InlineData(ConfigurationSectionName.Connection, ConfigurationSectionName.Opc)]
-	public void OfTwoUnreadableSectionsTheMessageNamesTheEarlier(
-		ConfigurationSectionName earlier, ConfigurationSectionName later)
-	{
-		var (earlierDirectory, earlierFile, header) = SectionOf(earlier);
-		var (laterDirectory, laterFile, _) = SectionOf(later);
-		WriteFile(earlierDirectory, earlierFile, "host: [unclosed\n");
-		WriteFile(laterDirectory, laterFile, "host: [unclosed\n");
-
-		using var viewModel = Build();
-
-		viewModel.ValidationMessage.Should().Be(Resources.FormatSettingsSectionUnreadable(header));
-	}
-
-	[AvaloniaTheory]
-	[InlineData(ConfigurationSectionName.App, ConfigurationSectionName.Connection)]
-	[InlineData(ConfigurationSectionName.Connection, ConfigurationSectionName.Opc)]
-	public void OfTwoSectionsLackingAKeyTheMessageNamesTheEarlier(
-		ConfigurationSectionName earlier, ConfigurationSectionName later)
-	{
-		var (header, key) = RewriteWithoutOneEditedKey(earlier);
-		RewriteWithoutOneEditedKey(later);
-
-		using var viewModel = Build();
-
-		viewModel.ValidationMessage.Should().Be(Resources.FormatSettingsKeyAbsent(header, key));
-	}
-
-	[AvaloniaFact]
-	public void AnUnreadableSectionIsNamedBeforeAKeyAnEarlierSectionLacks()
-	{
-		RewriteWithoutOneEditedKey(ConfigurationSectionName.Connection);
-		WriteFile(_opcDirectory, "opc.yaml", "host: [unclosed\n");
-
-		using var viewModel = Build();
-
-		viewModel.ValidationMessage.Should().Be(Resources.FormatSettingsSectionUnreadable(Resources.SettingsOpcHeader));
+		viewModel.ValidationMessage.Should().Be(Resources.FormatSettingsKeyAbsent(PostgresConnectionLoader.PortKey));
 	}
 
 	[AvaloniaFact]
@@ -290,7 +217,6 @@ public sealed class SettingsViewModelTests : IDisposable
 	{
 		ShippedConfiguration.FillPassword(_configDirectory, "secret");
 		var before = File.ReadAllBytes(Path.Combine(_connectionDirectory, "connection.yaml"));
-		var opcBefore = File.ReadAllBytes(Path.Combine(_opcDirectory, "opc.yaml"));
 		using var viewModel = Build();
 		viewModel.SelectedTheme = viewModel.Themes.Single(choice => choice.Token == "dark");
 
@@ -300,7 +226,6 @@ public sealed class SettingsViewModelTests : IDisposable
 		viewModel.IsRestartPending.Should().BeFalse("every process applies a saved theme live");
 		AppSettingsLoader.Load(_appDirectory).Value.Theme.Should().Be(AppThemeVariant.Dark);
 		File.ReadAllBytes(Path.Combine(_connectionDirectory, "connection.yaml")).Should().Equal(before);
-		File.ReadAllBytes(Path.Combine(_opcDirectory, "opc.yaml")).Should().Equal(opcBefore);
 	}
 
 	[AvaloniaFact]
@@ -341,23 +266,6 @@ public sealed class SettingsViewModelTests : IDisposable
 		await viewModel.SaveCommand.Execute();
 
 		viewModel.IsRestartPending.Should().BeTrue();
-	}
-
-	[AvaloniaFact]
-	public async Task AnOpcSaveSetsTheRestartNotice()
-	{
-		ShippedConfiguration.FillPassword(_configDirectory, "secret");
-		var connectionBefore = File.ReadAllBytes(Path.Combine(_connectionDirectory, "connection.yaml"));
-		using var viewModel = Build();
-		viewModel.OpcPort = 55875;
-
-		await viewModel.SaveCommand.Execute();
-
-		_messagePanel.Entries.Should().BeEmpty();
-		viewModel.IsRestartPending.Should().BeTrue("the OPC UA session reads its address at the start");
-		viewModel.RestartNotice.Should().Be(Resources.SettingsRestartNotice);
-		OpcUaConnectionLoader.Load(_opcDirectory).Value.Port.Should().Be(55875);
-		File.ReadAllBytes(Path.Combine(_connectionDirectory, "connection.yaml")).Should().Equal(connectionBefore);
 	}
 
 	[AvaloniaFact]
@@ -402,8 +310,7 @@ public sealed class SettingsViewModelTests : IDisposable
 		viewModel.Database = "archive";
 		viewModel.User = "viewer";
 		viewModel.Password = "secret";
-		viewModel.OpcHost = "10.20.30.50";
-		viewModel.OpcPort = 55875;
+		viewModel.PollInterval = 250;
 
 		await viewModel.SaveCommand.Execute();
 
@@ -417,9 +324,7 @@ public sealed class SettingsViewModelTests : IDisposable
 		connection.Database.Should().Be("archive");
 		connection.Username.Should().Be("viewer");
 		connection.Password.Should().Be("secret");
-		var opc = OpcUaConnectionLoader.Load(_opcDirectory).Value;
-		opc.Host.Should().Be("10.20.30.50");
-		opc.Port.Should().Be(55875);
+		connection.PollInterval.Should().Be(TimeSpan.FromMilliseconds(250));
 	}
 
 	[AvaloniaFact]
@@ -460,7 +365,6 @@ public sealed class SettingsViewModelTests : IDisposable
 	[InlineData(nameof(SettingsViewModel.Database), nameof(SettingsViewModel.IsDatabaseValid))]
 	[InlineData(nameof(SettingsViewModel.User), nameof(SettingsViewModel.IsUserValid))]
 	[InlineData(nameof(SettingsViewModel.Password), nameof(SettingsViewModel.IsPasswordValid))]
-	[InlineData(nameof(SettingsViewModel.OpcHost), nameof(SettingsViewModel.IsOpcHostValid))]
 	public void TheSaveCannotExecuteWhileATextFieldIsBlank(string field, string validity)
 	{
 		using var viewModel = Build();
@@ -492,34 +396,32 @@ public sealed class SettingsViewModelTests : IDisposable
 	[AvaloniaTheory]
 	[InlineData(null)]
 	[InlineData(0d)]
-	[InlineData(65536d)]
-	[InlineData(49875.5)]
-	public void TheSaveCannotExecuteWhileTheOpcPortIsNotAWholeNumberInRange(double? port)
+	public void TheSaveCannotExecuteWhileThePollIntervalIsNotAPositiveWholeNumber(double? pollInterval)
 	{
 		using var viewModel = Build();
 		viewModel.Password = "secret";
-		CanSave(viewModel).Should().BeTrue();
 
-		viewModel.OpcPort = (decimal?)port;
+		viewModel.PollInterval = (decimal?)pollInterval;
 
-		viewModel.IsOpcPortValid.Should().BeFalse();
-		viewModel.IsPortValid.Should().BeTrue("the archive port is a field of its own");
+		viewModel.IsPollIntervalValid.Should().BeFalse();
 		CanSave(viewModel).Should().BeFalse();
 	}
 
 	[AvaloniaTheory]
-	[InlineData("port: not-a-number")]
-	[InlineData("port: 70000")]
-	public void APortTheRuleRejectsLoadsAsAnEmptyField(string port)
+	[InlineData("port: not-a-number", "poll_interval_ms: 1000", nameof(SettingsViewModel.Port))]
+	[InlineData("port: 70000", "poll_interval_ms: 1000", nameof(SettingsViewModel.Port))]
+	[InlineData("port: 5432", "poll_interval_ms: -5", nameof(SettingsViewModel.PollInterval))]
+	public void ANumberTheRuleRejectsLoadsAsAnEmptyField(string port, string pollInterval, string field)
 	{
 		WriteFile(
 			_connectionDirectory,
 			"connection.yaml",
-			$"host: 127.0.0.1\n{port}\ndatabase: archive\nuser: viewer\npassword: secret\n");
+			$"host: 127.0.0.1\n{port}\ndatabase: archive\nuser: viewer\npassword: secret\n"
+			+ $"{pollInterval}\n");
 
 		using var viewModel = Build();
 
-		viewModel.Port.Should().BeNull();
+		typeof(SettingsViewModel).GetProperty(field)!.GetValue(viewModel).Should().BeNull();
 		CanSave(viewModel).Should().BeFalse();
 		viewModel.Host.Should().Be("127.0.0.1");
 	}
@@ -530,45 +432,14 @@ public sealed class SettingsViewModelTests : IDisposable
 		WriteFile(
 			_connectionDirectory,
 			"connection.yaml",
-			"host: scada-01\nport: 5432\ndatabase: archive\nuser: viewer\npassword: secret\n");
+			"host: scada-01\nport: 5432\ndatabase: archive\nuser: viewer\npassword: secret\n"
+			+ "poll_interval_ms: 1000\n");
 
 		using var viewModel = Build();
 
 		viewModel.Host.Should().Be("scada-01");
 		viewModel.IsHostValid.Should().BeFalse();
 		CanSave(viewModel).Should().BeFalse();
-		_messagePanel.Entries.Should().BeEmpty();
-	}
-
-	[AvaloniaTheory]
-	[InlineData("port: not-a-number")]
-	[InlineData("port: 70000")]
-	public void AnOpcPortTheRuleRejectsLoadsAsAnEmptyField(string port)
-	{
-		WriteFile(_opcDirectory, "opc.yaml", $"host: 127.0.0.1\n{port}\n");
-
-		using var viewModel = Build();
-		viewModel.Password = "secret";
-
-		viewModel.OpcPort.Should().BeNull();
-		viewModel.IsOpcPortValid.Should().BeFalse();
-		CanSave(viewModel).Should().BeFalse();
-		viewModel.OpcHost.Should().Be("127.0.0.1");
-		_messagePanel.Entries.Should().BeEmpty();
-	}
-
-	[AvaloniaFact]
-	public void AHostNameInTheOpcFileLoadsIntoAnInvalidOpcHostField()
-	{
-		WriteFile(_opcDirectory, "opc.yaml", "host: scada-01\nport: 49875\n");
-
-		using var viewModel = Build();
-		viewModel.Password = "secret";
-
-		viewModel.OpcHost.Should().Be("scada-01");
-		viewModel.IsOpcHostValid.Should().BeFalse();
-		CanSave(viewModel).Should().BeFalse();
-		viewModel.IsHostValid.Should().BeTrue("the archive host is a field of its own");
 		_messagePanel.Entries.Should().BeEmpty();
 	}
 
@@ -623,12 +494,7 @@ public sealed class SettingsViewModelTests : IDisposable
 		viewModel.ValidationMessage.Should().Be(
 			Resources.FormatSettingsFieldRequired(Resources.SettingsPasswordLabel), "the shipped password is empty");
 
-		viewModel.OpcHost = "scada-01";
-		viewModel.OpcPort = null;
-
-		viewModel.ValidationMessage.Should().Be(
-			Resources.FormatSettingsFieldRequired(Resources.SettingsPasswordLabel), "the OPC UA block follows the archive");
-
+		viewModel.PollInterval = null;
 		viewModel.Database = string.Empty;
 		viewModel.Host = "scada-01";
 
@@ -639,36 +505,26 @@ public sealed class SettingsViewModelTests : IDisposable
 		viewModel.ValidationMessage.Should().Be(Resources.FormatSettingsFieldRequired(Resources.SettingsDatabaseLabel));
 
 		viewModel.Database = "archive";
-
-		viewModel.ValidationMessage.Should().Be(Resources.FormatSettingsFieldRequired(Resources.SettingsPasswordLabel));
-
 		viewModel.Password = "secret";
 
-		viewModel.ValidationMessage.Should().Be(Resources.SettingsOpcHostInvalid);
+		viewModel.ValidationMessage.Should().Be(Resources.SettingsPollIntervalInvalid);
 
-		viewModel.OpcHost = "127.0.0.1";
-
-		viewModel.ValidationMessage.Should().Be(Resources.SettingsOpcPortInvalid);
-
-		viewModel.OpcPort = 49875;
+		viewModel.PollInterval = 1000;
 
 		viewModel.ValidationMessage.Should().BeEmpty();
 	}
 
-	[AvaloniaTheory]
-	[InlineData(nameof(SettingsViewModel.Port), nameof(Resources.SettingsPortInvalid))]
-	[InlineData(nameof(SettingsViewModel.OpcPort), nameof(Resources.SettingsOpcPortInvalid))]
-	public void TheValidationMessageNotifiesWithTheFieldItReads(string field, string message)
+	[AvaloniaFact]
+	public void TheValidationMessageNotifiesWithTheFieldItReads()
 	{
 		using var viewModel = Build();
-		viewModel.Password = "secret";
 		var notified = new List<string?>();
 		viewModel.PropertyChanged += (_, e) => notified.Add(e.PropertyName);
 
-		typeof(SettingsViewModel).GetProperty(field)!.SetValue(viewModel, null);
+		viewModel.Port = null;
 
 		notified.Should().Contain(nameof(SettingsViewModel.ValidationMessage));
-		viewModel.ValidationMessage.Should().Be(Resources.ResourceManager.GetString(message, Resources.Culture));
+		viewModel.ValidationMessage.Should().Be(Resources.SettingsPortInvalid);
 	}
 
 	private SettingsViewModel Build(Action? restartApplication = null)
@@ -694,35 +550,6 @@ public sealed class SettingsViewModelTests : IDisposable
 		{
 			return latest ?? throw new InvalidOperationException("The command replayed no execute state.");
 		}
-	}
-
-	private (string Directory, string File, string Header) SectionOf(ConfigurationSectionName section)
-	{
-		return section switch
-		{
-			ConfigurationSectionName.App => (_appDirectory, "app.yaml", Resources.SettingsInterfaceHeader),
-			ConfigurationSectionName.Connection =>
-				(_connectionDirectory, "connection.yaml", Resources.SettingsConnectionHeader),
-			ConfigurationSectionName.Opc => (_opcDirectory, "opc.yaml", Resources.SettingsOpcHeader),
-			_ => throw new ArgumentOutOfRangeException(nameof(section), section, null)
-		};
-	}
-
-	private (string Header, string Key) RewriteWithoutOneEditedKey(ConfigurationSectionName section)
-	{
-		var (directory, file, header) = SectionOf(section);
-		var (content, key) = section switch
-		{
-			ConfigurationSectionName.App => ("theme: light\n", AppSettingsLoader.LocaleKey),
-			ConfigurationSectionName.Connection => (
-				"host: 127.0.0.1\ndatabase: semiplot\nuser: semiplot\npassword: secret\n",
-				PostgresConnectionLoader.PortKey),
-			ConfigurationSectionName.Opc => ("port: 49875\n", OpcUaConnectionLoader.HostKey),
-			_ => throw new ArgumentOutOfRangeException(nameof(section), section, null)
-		};
-		WriteFile(directory, file, content);
-
-		return (header, key);
 	}
 
 	private static void WriteFile(string directory, string name, string content)

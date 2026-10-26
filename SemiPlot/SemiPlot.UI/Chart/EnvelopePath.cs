@@ -7,12 +7,6 @@ namespace SemiPlot.UI.Chart;
 /// <summary>One vertex of the polyline a pen's envelope columns are drawn as.</summary>
 public readonly record struct EnvelopePoint(double X, double Y, bool StartsSegment);
 
-/// <summary>The span a pen is held across past its last column, and the value it is held at.</summary>
-public readonly record struct HeldSpan(double FromX, double ToX, double Value);
-
-/// <summary>The span an ahead-break covers; FromX is -Infinity when no value column precedes it.</summary>
-public readonly record struct AheadBreakSpan(double FromX, double ToX);
-
 // The geometry EnvelopeLine strokes, kept free of Skia so the culling window, the gap break and the step
 // shape are unit-testable. docs/architecture/charting.md#per-pen-plottable-envelopeline
 public static class EnvelopePath
@@ -39,8 +33,6 @@ public static class EnvelopePath
 		int first,
 		int lastExclusive,
 		PenLineStyle lineStyle,
-		double confirmedX,
-		double holdEndX,
 		List<EnvelopePoint> destination)
 	{
 		destination.Clear();
@@ -51,7 +43,7 @@ public static class EnvelopePath
 		for (var index = first; index < lastExclusive; index++)
 		{
 			var column = columns[index];
-			if (IsGap(column))
+			if (double.IsNaN(column.Min) || double.IsNaN(column.Max))
 			{
 				previousY = double.NaN;
 				continue;
@@ -81,92 +73,6 @@ public static class EnvelopePath
 			destination.Add(new EnvelopePoint(column.X, exit, false));
 			previousY = exit;
 		}
-
-		var reachesTheLastColumn = lastExclusive == columns.Count && destination.Count > 0;
-		if (reachesTheLastColumn && Hold(columns, confirmedX, holdEndX) is { } held)
-		{
-			if (!destination[^1].Y.Equals(held.Value))
-			{
-				destination.Add(new EnvelopePoint(held.FromX, held.Value, false));
-			}
-
-			destination.Add(new EnvelopePoint(held.ToX, held.Value, false));
-		}
-	}
-
-	/// <summary>The held span when the last column is a confirmed value short of the hold end; else null.</summary>
-	public static HeldSpan? Hold(IReadOnlyList<EnvelopeColumn> columns, double confirmedX, double holdEndX)
-	{
-		if (columns.Count == 0)
-		{
-			return null;
-		}
-
-		var last = columns[^1];
-		var isValue = !IsGap(last) && !double.IsNaN(last.Center);
-		var isHeld = isValue && last.X >= confirmedX && holdEndX > last.X;
-
-		return isHeld ? new HeldSpan(last.X, holdEndX, last.Center) : null;
-	}
-
-	/// <summary>Every run of gap columns that holds an ahead-break and meets the range, as one span each.</summary>
-	public static void AheadBreakSpans(
-		IReadOnlyList<EnvelopeColumn> columns,
-		int first,
-		int lastExclusive,
-		List<AheadBreakSpan> destination)
-	{
-		destination.Clear();
-
-		var index = first;
-		while (index < lastExclusive)
-		{
-			if (!IsGap(columns[index]))
-			{
-				index++;
-				continue;
-			}
-
-			var runStart = index;
-			while (runStart > 0 && IsGap(columns[runStart - 1]))
-			{
-				runStart--;
-			}
-
-			var runEnd = index;
-			while (runEnd + 1 < columns.Count && IsGap(columns[runEnd + 1]))
-			{
-				runEnd++;
-			}
-
-			var lastAheadX = LastAheadBreakX(columns, runStart, runEnd);
-			if (!double.IsNaN(lastAheadX))
-			{
-				var fromX = runStart > 0 ? columns[runStart - 1].X : double.NegativeInfinity;
-				var toX = runEnd + 1 < columns.Count ? columns[runEnd + 1].X : lastAheadX;
-				destination.Add(new AheadBreakSpan(fromX, toX));
-			}
-
-			index = runEnd + 1;
-		}
-	}
-
-	private static double LastAheadBreakX(IReadOnlyList<EnvelopeColumn> columns, int runStart, int runEnd)
-	{
-		for (var index = runEnd; index >= runStart; index--)
-		{
-			if (columns[index].Break == BreakKind.Ahead)
-			{
-				return columns[index].X;
-			}
-		}
-
-		return double.NaN;
-	}
-
-	internal static bool IsGap(EnvelopeColumn column)
-	{
-		return double.IsNaN(column.Min) || double.IsNaN(column.Max);
 	}
 
 	// docs/architecture/charting.md#per-pen-plottable-envelopeline

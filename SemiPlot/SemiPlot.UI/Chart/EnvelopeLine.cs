@@ -22,17 +22,12 @@ public sealed class EnvelopeLine : IPlottable
 	private readonly LineStyle _stroke = new();
 	private readonly List<EnvelopePoint> _pathPoints = [];
 
-	// The UI thread writes the columns, the history end, the hold and the style, and reads the columns to pick a pen;
-	// the render thread reads them in Render and GetAxisLimits. Every access runs under the lock.
+	// The UI thread writes the columns, the history end and the style, and reads the columns to pick a pen; the
+	// render thread reads the columns and the style in Render and GetAxisLimits. Every access runs under the lock.
 	private readonly List<EnvelopeColumn> _columns = [];
 	private readonly Lock _renderStateLock = new();
 	// The last X the last ReplaceColumns wrote: every column past it is a live append.
 	private double _historyEndX = double.NegativeInfinity;
-	// The newest live value's X, capped at the last column's X when it landed; the hold needs a column at or past it.
-	private double _confirmedX = double.NaN;
-	// The same value's own X, uncapped: a coarse bucket keeps its opening X while later values fold into it.
-	private double _confirmingValueX = double.NaN;
-	private double _holdEndX = double.NaN;
 	private Color _color = Colors.Black;
 	private PenLineStyle _penLineStyle = PenLineStyle.Interpolated;
 	private float _lineWidth = DefaultLineWidth;
@@ -69,7 +64,7 @@ public sealed class EnvelopeLine : IPlottable
 
 			foreach (var column in _columns)
 			{
-				if (EnvelopePath.IsGap(column))
+				if (double.IsNaN(column.Min) || double.IsNaN(column.Max))
 				{
 					continue;
 				}
@@ -94,7 +89,7 @@ public sealed class EnvelopeLine : IPlottable
 			_stroke.Color = _color;
 			_stroke.Width = _lineWidth;
 			var (first, lastExclusive) = EnvelopePath.VisibleRange(_columns, Axes.XAxis.Min, Axes.XAxis.Max);
-			EnvelopePath.Build(_columns, first, lastExclusive, _penLineStyle, _confirmedX, _holdEndX, _pathPoints);
+			EnvelopePath.Build(_columns, first, lastExclusive, _penLineStyle, _pathPoints);
 		}
 
 		if (_pathPoints.Count < 2)
@@ -133,7 +128,7 @@ public sealed class EnvelopeLine : IPlottable
 		lock (_renderStateLock)
 		{
 			var (first, lastExclusive) = EnvelopePath.VisibleRange(_columns, Axes.XAxis.Min, Axes.XAxis.Max);
-			EnvelopePath.Build(_columns, first, lastExclusive, _penLineStyle, _confirmedX, _holdEndX, vertices);
+			EnvelopePath.Build(_columns, first, lastExclusive, _penLineStyle, vertices);
 		}
 
 		var logFloor = LogFloorOf(dataRect);
@@ -197,20 +192,13 @@ public sealed class EnvelopeLine : IPlottable
 	}
 
 	// docs/architecture/data-integration.md#what-one-history-query-covers
-	// docs/architecture/charting.md#the-hold-to-the-live-edge
-	/// <summary>True when a live value past <paramref name="requestedEndX"/> was lost.</summary>
-	internal bool ReplaceColumns(IReadOnlyList<EnvelopeColumn> columns, double requestedEndX)
+	internal void ReplaceColumns(IReadOnlyList<EnvelopeColumn> columns, double requestedEndX)
 	{
 		lock (_renderStateLock)
 		{
 			var newHistoryEndX = columns.Count > 0 ? columns[^1].X : double.NegativeInfinity;
 			var keptTailStart = EnvelopePath.FirstAfter(_columns, Math.Max(_historyEndX, newHistoryEndX));
 			var keptTailEnd = Math.Max(keptTailStart, EnvelopePath.FirstAfter(_columns, requestedEndX));
-			var droppedPastRequestedEnd = keptTailEnd < _columns.Count;
-			var confirmingValueLiesPastItsBucket = _confirmingValueX > _confirmedX;
-			var coveredAValuePastRequestedEnd = confirmingValueLiesPastItsBucket
-				&& keptTailStart == _columns.Count
-				&& _confirmingValueX > Math.Max(requestedEndX, newHistoryEndX);
 
 			_columns.RemoveRange(keptTailEnd, _columns.Count - keptTailEnd);
 			_columns.RemoveRange(0, keptTailStart);
@@ -222,27 +210,6 @@ public sealed class EnvelopeLine : IPlottable
 			{
 				_columns.RemoveRange(0, overflow);
 			}
-
-			return droppedPastRequestedEnd || coveredAValuePastRequestedEnd;
-		}
-	}
-
-	/// <summary>Appends the sample behind the gap; the gap only where the line does not already end on one.</summary>
-	internal bool AppendAfterBreak(EnvelopeColumn gap, EnvelopeColumn sample)
-	{
-		lock (_renderStateLock)
-		{
-			if (_columns.Count > 0 && sample.X <= _columns[^1].X)
-			{
-				return false;
-			}
-
-			if (_columns.Count == 0 || (!EnvelopePath.IsGap(_columns[^1]) && gap.X > _columns[^1].X))
-			{
-				AppendAfterLastColumn(gap);
-			}
-
-			return AppendAfterLastColumn(sample);
 		}
 	}
 
@@ -267,7 +234,8 @@ public sealed class EnvelopeLine : IPlottable
 
 			var index = _columns.Count - 1;
 			var column = _columns[index];
-			if (EnvelopePath.IsGap(column))
+			var endsOnGap = double.IsNaN(column.Min) || double.IsNaN(column.Max);
+			if (endsOnGap)
 			{
 				return AppendAfterLastColumn(sample);
 			}
@@ -280,43 +248,6 @@ public sealed class EnvelopeLine : IPlottable
 			};
 
 			return true;
-		}
-	}
-
-	/// <summary>Records a live value at <paramref name="valueX"/> as confirming the line to its last column.</summary>
-	internal void ConfirmLive(double valueX)
-	{
-		lock (_renderStateLock)
-		{
-			_confirmedX = _columns.Count > 0 ? Math.Min(valueX, _columns[^1].X) : valueX;
-			_confirmingValueX = valueX;
-		}
-	}
-
-	/// <summary>The axis X the last column is held to; NaN holds nothing.</summary>
-	internal void SetHoldEnd(double holdEndX)
-	{
-		lock (_renderStateLock)
-		{
-			_holdEndX = holdEndX;
-		}
-	}
-
-	internal HeldSpan? ReadHeldSpan()
-	{
-		lock (_renderStateLock)
-		{
-			return EnvelopePath.Hold(_columns, _confirmedX, _holdEndX);
-		}
-	}
-
-	/// <summary>Refills <paramref name="destination"/> with the ahead-break spans the visible range meets.</summary>
-	internal void CollectAheadBreakSpans(List<AheadBreakSpan> destination)
-	{
-		lock (_renderStateLock)
-		{
-			var (first, lastExclusive) = EnvelopePath.VisibleRange(_columns, Axes.XAxis.Min, Axes.XAxis.Max);
-			EnvelopePath.AheadBreakSpans(_columns, first, lastExclusive, destination);
 		}
 	}
 

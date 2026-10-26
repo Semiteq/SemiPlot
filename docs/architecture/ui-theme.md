@@ -148,26 +148,25 @@ and the picker's flyout keep Semi's 6 px, as the menu flyout does.
 
 ## The application's own surfaces
 
-Semi owns the controls; these sixteen keys are ours, and each exists in both variants.
+Semi owns the controls; these fifteen keys are ours, and each exists in both variants.
 
 | Key | Consumers | Light | Dark |
 | --- | --- | --- | --- |
 | `AppPanelBackgroundBrush` | Navigation bar, legend panel, message panel, status bar, startup-failure window's message panel, minimap frame, chart hover readout, the plot's figure background | `#F7F8FA` | `#2B2D30` |
 | `AppContentBackgroundBrush` | Chart area and the plot's data background, minimap strip canvas, the sidebar's resize handle, the ground of the active pen's reading at each marker | `#FFFFFF` | `#1E1F22` |
 | `AppBorderBrush` | The border of the navigation bar, legend panel, message panel and status bar, of the startup-failure window's message panel, of the minimap frame, of the chart hover readout and of the export window's pen list | `#EBECF0` | `#393B40` |
-| `AppSubtleLineBrush` | Plot grid, the line above every sidebar group header but the first, the status bar's separators after each connection indicator, the navigation bar's group separator | `#EBECF0` | `#393B40` |
+| `AppSubtleLineBrush` | Plot grid, the line above every sidebar group header but the first, the status bar's separator after the connection indicator, the navigation bar's group separator | `#EBECF0` | `#393B40` |
 | `AppMinorGridLineBrush` | The plot's minor gridlines, drawn on a log10 axis only | `#F4F5F7` | `#2B2D30` |
-| `AppSecondaryForegroundBrush` | Minimap end labels, hover line and hover time, chart crosshair, plot axis furniture, the chart's empty-catalogue message, the ahead-break shade's label, the sidebar group header caption and a row's unit, the axis scale panel's unit, the message panel's empty text and an entry's remedy, repeat count and time | `#818594` | `#6F737A` |
+| `AppSecondaryForegroundBrush` | Minimap end labels, hover line and hover time, chart crosshair, plot axis furniture, the chart's empty-catalogue message, the sidebar group header caption and a row's unit, the axis scale panel's unit, the message panel's empty text and an entry's remedy, repeat count and time | `#818594` | `#6F737A` |
 | `AppAccentBrush` | Minimap window highlight border, the active sidebar row's left bar | `#3574F0` | `#3574F0` |
 | `AppAccentFillBrush` | Minimap window highlight fill, the active sidebar row's background | `#3574F0` at 0.25 opacity | `#3574F0` at 0.25 opacity |
 | `AppSeverityErrorBrush` | The message panel's dot on an `Error` entry; a form's invalid field border and its message line | `#DB3B4B` | `#E55765` |
 | `AppSeverityWarningBrush` | The same dot on a `Warning` entry | `#E3AE4D` | `#F2C55C` |
 | `AppSeverityInfoBrush` | The same dot on an `Info` entry | `#3574F0` | `#3574F0` |
-| `AppConnectionOkBrush` | Both of the status bar's connection indicators, the archive's and the OPC UA one, `connection-ok` | `#208A3C` | `#5FAD65` |
-| `AppConnectionFaultBrush` | The same two indicators, `connection-fault`. The OPC UA indicator carries neither class while it reads connecting, so it draws in the bar's own text colour then | `#DB3B4B` | `#E55765` |
+| `AppConnectionOkBrush` | The status bar's connection indicator, `connection-ok` | `#208A3C` | `#5FAD65` |
+| `AppConnectionFaultBrush` | The same indicator, `connection-fault` | `#DB3B4B` | `#E55765` |
 | `AppMarkerLineBrush` | Every time marker line on the plot (`#the-plot`) and its tick on the minimap strip | `#6F737A` | `#A8ADBD` |
 | `AppMarkerLabelBrush` | Every time marker label on the plot | `#000000` | `#DFE1E5` |
-| `AppAheadBreakFillBrush` | The grey band over the drawn pen's ahead-break spans on the plot (`#the-plot`) | `#33818594`, the secondary grey at 20 % alpha | `#406F737A`, the secondary grey at 25 % alpha |
 
 Pen colours are not theme keys. They come from the archive with the pen and stay per pen under both
 variants. The pen editor's colour swatch is the pen's own colour through `LegendConverters.HexToBrush`,
@@ -191,8 +190,7 @@ colour and text, never size:
   order, and is empty while every field is valid. A notice that is not an error, such as the settings
   dialog's restart notice with its Restart now button in the same cell, shares the same line and gives
   way to an error, the button with it.
-- Each field-rule message is one short line in both languages; `SettingsKeyAbsent`, which opens with a
-  section header, may use the second reserved line (`ui-text.md#the-settings-windows-text`).
+- Each message is one short line in both languages, `ui-text.md#the-settings-windows-text`.
 
 The invalid style targets the template part, not the control. Semi paints a `TextBox` border on
 `Border#PART_ContentPresenterBorder` from its own state styles: `Transparent` at rest and
@@ -237,23 +235,6 @@ same way on 2026-10-01 in the realised 640 px dialog, with the notice showing be
 line in English, in a 334 px cell, and 420 px in Russian, which wraps in its 241 x 40 px cell into
 "Сохранено. Тема применена," at 208.6 px and "остальное после перезапуска." at 210.5 px, two lines with
 nothing trimmed.
-
-The OPC UA block and its messages were measured on 2026-10-21 in the realised 640 px dialog, at 14 px with
-20 px lines, on the headless platform with real drawing over Skia and HarfBuzz. That run reproduced the
-2026-09-30 message cells and Save and Close buttons above; the theme's font resolved to Microsoft YaHei, as
-Inter is not installed on the measuring machine. Each message is its single-line width against the message
-cell:
-
-| | English | Russian |
-| --- | --- | --- |
-| Dialog, every field valid and with each message below | 640 x 575 px | 640 x 575 px |
-| `SettingsOpcHostInvalid` | 365.2 px, one line | 354.3 px, one line |
-| `SettingsOpcPortInvalid` | 263.8 px, one line | 248.8 px, one line |
-| `SettingsKeyAbsent` with `SettingsOpcHeader` and `port` | 487.0 px, two lines, the first 445.6 px | 727.0 px, two lines, 344.5 and 370.1 px |
-
-Nothing is trimmed: the 457 px English cell holds 914 px in its two lines and the 388 px Russian cell
-776 px. `SettingsViewTests.TheDialog_KeepsItsSizeAndItsButtonsWhenAnOpcFieldTurnsInvalid` gates the block's
-effect on the dialog's and the Save button's `Bounds`.
 
 The export window (`Export/CsvExportWindow`) is 390 px wide with `SizeToContent="Height"` and
 `CanResize="False"`, a 20 px margin and 12 px between its three rows: the form grid, the message line and the
@@ -489,17 +470,6 @@ opacity so the number stays legible over the pen lines; the reading's dot takes 
 `ChartPaletteTests.MarkerColors_ResolveBothMarkerKeysUnderTheVariant` resolves both keys under both
 variants, and `ChartMarkerViewTests.AfterAThemeVariantSwitch_EveryMarkerDrawsInTheNewVariant` reads an
 existing line and a later one after a switch.
-
-The ahead-break shade takes two colours (`charting.md#the-ahead-break-shade`). `ChartPalette.AheadBreakColors`
-resolves `AppAheadBreakFillBrush` for the band and `AppSecondaryForegroundBrush` for its label under the
-variant into an `AheadBreakPalette`, and `PaintChartOverlays`, which `ApplyChartPalette` calls, hands it to
-the shade beside the marker palette, so a variant switch repaints the band. The band is translucent, so the
-gridlines stay readable inside it. `Resolve` copies the brush's ARGB value and ignores `Opacity`, so the
-fill key carries its alpha in its colour: the variant's secondary grey at 20 % under Light and at 25 %
-under Dark. It is the one key whose colour carries an alpha below `FF`. The two values are chosen, not
-measured; the stand check judges them.
-`ChartPaletteTests.AheadBreakColors_ResolveTheFillWithItsAlphaUnderTheVariant` resolves both keys under
-both variants and asserts the fill's alpha is below 255.
 
 The minor gridlines take their colour on every axis but draw only on a log10 axis: `ChartAxisBinder` sets
 their width to 1 px when the drawn axis is logarithmic and to 0 otherwise (`charting.md#log10-y-axis`).

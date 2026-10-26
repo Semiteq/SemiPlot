@@ -72,13 +72,11 @@ internal static class MainWindowTestBuilder
 	public static AppStatusBarViewModel NewStatusBar(
 		MessagePanelViewModel panel,
 		IObservable<ArchiveConnectionState>? connectionStates = null,
-		IObservable<LiveSourceState>? liveSourceStates = null,
 		ChartNavigationController? navigation = null)
 	{
 		return new AppStatusBarViewModel(
 			panel,
 			connectionStates ?? Observable.Never<ArchiveConnectionState>(),
-			liveSourceStates ?? Observable.Never<LiveSourceState>(),
 			navigation ?? NavigationAtRawLayer(),
 			NullLogger<AppStatusBarViewModel>.Instance);
 	}

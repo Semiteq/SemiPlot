@@ -1,7 +1,6 @@
 using System.Collections;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
-using System.Reactive.Subjects;
 
 using AwesomeAssertions;
 
@@ -34,10 +33,6 @@ internal sealed class FakeDataProvider(
 	private readonly List<HistoryQuery> _historyQueries = [];
 
 	private int? _penToBreakOnNextTick;
-
-	private readonly BehaviorSubject<LiveSourceState> _liveStates = new(LiveSourceState.Connected);
-	private readonly Subject<LiveSourceError> _penFaults = new();
-	private readonly Subject<IReadOnlyList<Sample>> _pushedSamples = new();
 
 	public DateTime ArchiveFirstUtc { get; set; } = new(2025, 12, 25, 0, 0, 0, DateTimeKind.Utc);
 
@@ -150,10 +145,6 @@ internal sealed class FakeDataProvider(
 	// Runs on the thread that opens or closes a live edge subscription, as it opens or closes it.
 	public Action? LiveSubscriptionChanging { get; set; }
 
-	public IObservable<LiveSourceState> States => _liveStates.AsObservable();
-
-	public IObservable<LiveSourceError> PenFaults => _penFaults.AsObservable();
-
 	public IReadOnlyList<Pen> Pens { get; set; } = pens ?? [FirstPen, SecondPen];
 
 	// Off by default: every pen shares one timestamp per tick. Set, each pen's sample offsets by its own
@@ -166,31 +157,15 @@ internal sealed class FakeDataProvider(
 	public bool PoisonRealtimeWindow { get; set; }
 
 	// A live source that ends the live edge with OnError, the terminal message TrendCoordinator.RealtimeBatches
-	// has to survive. OpcUaLiveSource never calls OnError, so only this fake reaches it.
+	// has to survive. The real live source catches everything inside its poll, so only this fake reaches it.
 	public Exception? RealtimeStreamFailure { get; set; }
 
 	public bool RealtimeStreamCompletes { get; set; }
 
-	/// <summary>The next tick follows the pen's value with a break 1 ms later, as a lost session breaks it.</summary>
+	/// <summary>The next tick follows the pen's value with a break 1 ms later, as the poll's q = 32 row.</summary>
 	public void BreakRealtimePenOnce(int penId)
 	{
 		_penToBreakOnNextTick = penId;
-	}
-
-	public void PushLiveState(LiveSourceState state)
-	{
-		_liveStates.OnNext(state);
-	}
-
-	public void RaisePenFault(LiveSourceError fault)
-	{
-		_penFaults.OnNext(fault);
-	}
-
-	/// <summary>One list on every open live edge, beside the ticks, stamped as the test chooses.</summary>
-	public void PushLiveSamples(IReadOnlyList<Sample> samples)
-	{
-		_pushedSamples.OnNext(samples);
 	}
 
 	/// <summary>The pen's one break across the batches, and the value its tick carried 1 ms ahead of it.</summary>
@@ -252,8 +227,7 @@ internal sealed class FakeDataProvider(
 			.Interval(_realtimeInterval, _scheduler)
 			.Select(tick => PoisonRealtimeWindow
 				? new PoisonedSampleList()
-				: TickSamples(subscribed, tick))
-			.Merge(_pushedSamples);
+				: TickSamples(subscribed, tick));
 	}
 
 	private IReadOnlyList<Sample> TickSamples(IReadOnlyList<int> subscribed, long tick)

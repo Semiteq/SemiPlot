@@ -132,6 +132,7 @@ public sealed class ConfigurationSectionWriterTests : IDisposable
 		loaded.Value.Port.Should().Be(5432);
 		loaded.Value.Database.Should().Be("semiplot");
 		loaded.Value.Username.Should().Be("semiplot");
+		loaded.Value.PollInterval.Should().Be(TimeSpan.FromSeconds(1));
 		loaded.Value.Schema.Should().Be("archive");
 	}
 

@@ -6,8 +6,7 @@ namespace SemiPlot.Core.Configuration;
 public enum ConfigurationSectionName
 {
 	App,
-	Connection,
-	Opc
+	Connection
 }
 
 public enum SectionProblem

@@ -1,7 +1,6 @@
 <Solution>
     <Project Path="SemiPlot/SemiPlot.AppHost/SemiPlot.AppHost.csproj"/>
     <Project Path="SemiPlot/SemiPlot.Core/SemiPlot.Core.csproj"/>
-    <Project Path="SemiPlot/SemiPlot.DataSource.OpcUa/SemiPlot.DataSource.OpcUa.csproj"/>
     <Project Path="SemiPlot/SemiPlot.DataSource.Postgres/SemiPlot.DataSource.Postgres.csproj"/>
     <Project Path="SemiPlot/SemiPlot.Tests.Integration/SemiPlot.Tests.Integration.csproj"/>
     <Project Path="SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj"/>

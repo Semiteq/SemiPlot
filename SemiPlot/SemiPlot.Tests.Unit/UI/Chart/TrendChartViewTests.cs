@@ -288,67 +288,6 @@ public sealed class TrendChartViewTests
 		shown.PlotControl.CacheMode.Should().BeNull();
 	}
 
-	[AvaloniaFact]
-	public void TheAheadBreakShade_IsThePlotsFirstPlottableAfterTheViewBinds()
-	{
-		using var viewModel = CreateLoadedViewModel();
-		using var shown = ShowChart(viewModel);
-
-		shown.View.AheadBreakShade.Should().NotBeNull();
-		viewModel.Plot.GetPlottables().First().Should().BeSameAs(
-			shown.View.AheadBreakShade,
-			"the shade lies under every pen line");
-	}
-
-	[AvaloniaFact]
-	public void TheAheadBreakShade_FollowsTheDrawnPenAfterAnActivePenSwitch()
-	{
-		using var viewModel = CreateLoadedViewModel();
-		using var shown = ShowChart(viewModel);
-		DriveOneFrame();
-		var shade = shown.View.AheadBreakShade!;
-		var otherPenId = viewModel.Pens.First(state => state.Pen.PenId != viewModel.ActivePenId).Pen.PenId;
-
-		shade.ShownLine.Should().BeSameAs(viewModel.FindPen(viewModel.ActivePenId)!.Line);
-
-		viewModel.SetActivePen(otherPenId).Should().BeTrue();
-		DriveOneFrame();
-
-		shade.ShownLine.Should().BeSameAs(viewModel.FindPen(otherPenId)!.Line);
-	}
-
-	[AvaloniaFact]
-	public void TheAheadBreakShade_ShowsNoLineOnceNoPenIsDrawn()
-	{
-		using var viewModel = CreateLoadedViewModel();
-		using var shown = ShowChart(viewModel);
-		DriveOneFrame();
-		var shade = shown.View.AheadBreakShade!;
-		shade.ShownLine.Should().NotBeNull();
-
-		foreach (var state in viewModel.Pens.ToList())
-		{
-			viewModel.SetPenVisibility(state.Pen.PenId, false);
-		}
-
-		DriveOneFrame();
-
-		viewModel.DrawnPenId.Should().BeNull();
-		shade.ShownLine.Should().BeNull();
-	}
-
-	[AvaloniaFact]
-	public void TheAheadBreakShade_IsGoneAfterTheDataContextChanges()
-	{
-		using var viewModel = CreateLoadedViewModel();
-		using var shown = ShowChart(viewModel);
-
-		shown.View.DataContext = null;
-
-		shown.View.AheadBreakShade.Should().BeNull();
-		viewModel.Plot.GetPlottables<ChartAheadBreakShade>().Should().BeEmpty();
-	}
-
 	private static ScottPlot.Color FigureBackgroundUnder(ThemeVariant variant)
 	{
 		return ThemeProbe.PlotColour("AppPanelBackgroundBrush", variant);

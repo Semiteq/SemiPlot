@@ -28,7 +28,6 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	private readonly ILogger<TrendChartViewModel> _logger;
 	private readonly ChartAxisBinder _axisBinder;
 	private readonly ChartPenSet _penSet;
-	private readonly ChartLiveHold _liveHold;
 	private readonly ChartCursorReader _cursorReader;
 	private readonly ChartDeltaCursorReader _deltaCursorReader;
 	private readonly ChartRealtimeApplier _realtimeApplier;
@@ -60,7 +59,6 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_logger = logger;
 		_axisBinder = new ChartAxisBinder(Plot);
 		_penSet = new ChartPenSet(Plot, _axisBinder);
-		_liveHold = new ChartLiveHold(_penSet, Navigation);
 		_cursorReader = new ChartCursorReader(_penSet.ById, _envelopesById);
 		_deltaCursorReader = new ChartDeltaCursorReader(_envelopesById);
 		_realtimeApplier = new ChartRealtimeApplier(_penSet.ById, Navigation);
@@ -84,10 +82,6 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			.Subscribe(ApplyRealtimeBatch));
 		_disposables.Add(_coordinator.RealtimeFailures
 			.Subscribe(ReportFailure));
-		_disposables.Add(_coordinator.LivePenFaults
-			.Subscribe(fault => _messagePanel.TryReportFailure(fault, _logger)));
-		_disposables.Add(_coordinator.LiveSourceStates
-			.Subscribe(OnLiveSourceState, ReportFailure));
 
 		Plot.HideLegend();
 	}
@@ -193,7 +187,6 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		Markers.Dispose();
 		TimeWindow.Dispose();
 		_disposables.Dispose();
-		_liveHold.Dispose();
 		_redrawRequests.OnCompleted();
 		Plot.Dispose();
 	}
@@ -262,7 +255,6 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			}
 		}
 
-		_liveHold.Apply();
 		Navigation.SetVisiblePenCount(VisiblePenIds().Count);
 		MoveTheLiveEdgeOntoThePensShown();
 		this.RaisePropertyChanged(nameof(Pens));
@@ -812,63 +804,10 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 			_realtimeApplier.Apply(batch, foldIntoColumn);
 			RequestRedraw();
-			LogLiveLag(batch);
 		}
 		catch (Exception applyFailure)
 		{
 			ReportFailure(applyFailure);
-		}
-	}
-
-	private void LogLiveLag(RealtimeBatch batch)
-	{
-		if (!_logger.IsEnabled(LogLevel.Debug))
-		{
-			return;
-		}
-
-		var valueCount = 0;
-		var newestValueUtc = DateTime.MinValue;
-
-		foreach (var pen in batch.Pens)
-		{
-			for (var index = 0; index < pen.Values.Count; index++)
-			{
-				if (pen.Values[index] is null)
-				{
-					continue;
-				}
-
-				valueCount++;
-
-				if (pen.TimestampsUtc[index] > newestValueUtc)
-				{
-					newestValueUtc = pen.TimestampsUtc[index];
-				}
-			}
-		}
-
-		if (valueCount == 0)
-		{
-			return;
-		}
-
-		_logger.LogDebug(
-			"Live batch applied: {ValueCount} values, {LagMilliseconds} ms after the newest",
-			valueCount,
-			(DateTime.UtcNow - newestValueUtc).TotalMilliseconds);
-	}
-
-	private void OnLiveSourceState(LiveSourceState state)
-	{
-		try
-		{
-			_liveHold.SetSessionUp(state.IsConnected);
-			RequestRedraw();
-		}
-		catch (Exception holdFailure)
-		{
-			ReportFailure(holdFailure);
 		}
 	}
 

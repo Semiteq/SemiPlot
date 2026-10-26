@@ -62,15 +62,6 @@ public sealed class ChartPenSet(Plot plot, ChartAxisBinder axisBinder)
 		return true;
 	}
 
-	/// <summary>Hands <paramref name="edgeX"/> to every pen; NaN holds none.</summary>
-	public void HoldLinesTo(double edgeX)
-	{
-		foreach (var state in _pensById.Values)
-		{
-			state.HoldTo(edgeX);
-		}
-	}
-
 	public int? PenNearest(Pixel click, PixelRect dataRect, int activePenId)
 	{
 		var candidates = Ordered

@@ -4,6 +4,7 @@ using Npgsql;
 
 namespace SemiPlot.Tools.ArchiveSeeder;
 
+// Bounds the first tick of Program.FollowAsync: an archive further behind the clock than MaximumAge is refused.
 // docs/architecture/bench.md#the-demo-writer
 public static class StaleArchiveGuard
 {
@@ -46,10 +47,9 @@ public static class StaleArchiveGuard
 	{
 		var behind = age.TotalMinutes.ToString("0.#", CultureInfo.InvariantCulture);
 
-		return $"public.trends ends at {newest:O}, {behind} minutes behind this machine's clock less "
-			   + "--archive-lag, and a follow run continues from that edge: the first tick would write the "
-			   + "whole span at once, and a day partition for each day it covers. Refill the archive up to now "
-			   + "with `converge`, pass the --archive-lag the previous run used, or point --connection at an "
-			   + "archive a writer is already keeping live.";
+		return $"public.trends ends at {newest:O}, {behind} minutes behind this machine's clock, and a "
+			   + "follow run continues from that edge: the first tick would write the whole span at once, "
+			   + "and a day partition for each day it covers. Refill the archive up to now with "
+			   + "`converge`, or point --connection at an archive a writer is already keeping live.";
 	}
 }

@@ -2,6 +2,7 @@ using FluentResults;
 
 using SemiPlot.Core.Configuration;
 using SemiPlot.Core.Data.Errors;
+using SemiPlot.DataSource.Postgres.Configuration;
 using SemiPlot.UI.Export;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.Startup;
@@ -24,7 +25,6 @@ public static class ArchiveFailureMapper
 			AppSettingsError settings => MapAppSettings(settings),
 			ConnectionFileError file => MapConnectionFile(file),
 			ArchiveError archive => MapArchive(archive),
-			LiveSourceError liveSource => MapLiveSource(liveSource),
 			StartupReadTimedOutError startupTimeout => MapStartupReadTimedOut(startupTimeout),
 			InstanceHostUnknownError => MapInstanceHostUnknown(),
 			ExportFileError exportFile => MapExportFile(exportFile),
@@ -107,46 +107,37 @@ public static class ArchiveFailureMapper
 	private static ArchiveFailureView MapConnectionFile(ConnectionFileError error)
 	{
 		var fields = string.Join(", ", error.Fields);
-		var title = ConnectionFileTitle(error.Section);
 
 		return error.Kind switch
 		{
 			ConnectionFileProblem.Unparseable => new ArchiveFailureView(
-				title,
+				Resources.FailureConnectionFileRejectedTitle,
 				Resources.FormatFailureConnectionFileUnparseableDetail(error.Path),
 				Resources.FailureConnectionFileUnparseableRemedy,
 				MessageSeverity.Error),
 
 			ConnectionFileProblem.MissingField => new ArchiveFailureView(
-				title,
+				Resources.FailureConnectionFileRejectedTitle,
 				Resources.FormatFailureConnectionFileMissingFieldDetail(error.Path, fields),
 				Resources.FailureConnectionFileMissingFieldRemedy,
 				MessageSeverity.Error),
 
 			ConnectionFileProblem.OutOfRange => new ArchiveFailureView(
-				title,
+				Resources.FailureConnectionFileRejectedTitle,
 				Resources.FormatFailureConnectionFileOutOfRangeDetail(error.Path, fields),
 				Resources.FormatFailureConnectionFileOutOfRangeRemedy(
-					NetworkAddress.LowestPort, NetworkAddress.HighestPort),
+					PostgresConnectionLoader.LowestPort,
+					PostgresConnectionLoader.HighestPort,
+					PostgresConnectionLoader.LowestPollIntervalMs),
 				MessageSeverity.Error),
 
 			ConnectionFileProblem.HostNotIPv4 => new ArchiveFailureView(
-				title,
+				Resources.FailureConnectionFileRejectedTitle,
 				Resources.FormatFailureConnectionFileHostNotIPv4Detail(error.Path, fields),
 				Resources.FailureConnectionFileHostNotIPv4Remedy,
 				MessageSeverity.Error),
 
 			_ => throw new ArgumentOutOfRangeException(nameof(error), error.Kind, null)
-		};
-	}
-
-	private static string ConnectionFileTitle(ConfigurationSectionName section)
-	{
-		return section switch
-		{
-			ConfigurationSectionName.Connection => Resources.FailureConnectionFileRejectedTitle,
-			ConfigurationSectionName.Opc => Resources.FailureOpcFileRejectedTitle,
-			_ => throw new ArgumentOutOfRangeException(nameof(section), section, null)
 		};
 	}
 
@@ -250,56 +241,6 @@ public static class ArchiveFailureMapper
 			Resources.FormatFailureArchiveReadFailedDetail(archive, error.Detail),
 			Resources.FormatFailureArchiveReadFailedRemedy(error.Detail),
 			MessageSeverity.Warning);
-	}
-
-	// docs/architecture/data-integration.md#two-error-planes
-	private static ArchiveFailureView MapLiveSource(LiveSourceError error)
-	{
-		return error.Kind switch
-		{
-			LiveSourceFault.Unreachable => new ArchiveFailureView(
-				Resources.FailureLiveSourceUnreachableTitle,
-				Resources.FormatFailureLiveSourceUnreachableDetail(error.Endpoint),
-				Resources.FailureLiveSourceUnreachableRemedy,
-				MessageSeverity.Warning),
-
-			LiveSourceFault.EndpointRefused => new ArchiveFailureView(
-				Resources.FailureLiveSourceEndpointRefusedTitle,
-				Resources.FormatFailureLiveSourceEndpointRefusedDetail(error.Endpoint),
-				Resources.FailureLiveSourceEndpointRefusedRemedy,
-				MessageSeverity.Error),
-
-			LiveSourceFault.ProjectMissing => new ArchiveFailureView(
-				Resources.FailureLiveSourceProjectMissingTitle,
-				Resources.FormatFailureLiveSourceProjectMissingDetail(error.Endpoint),
-				Resources.FailureLiveSourceProjectMissingRemedy,
-				MessageSeverity.Error),
-
-			LiveSourceFault.PensUnserved => new ArchiveFailureView(
-				Resources.FailureLiveSourcePensUnservedTitle,
-				Resources.FormatFailureLiveSourcePensUnservedDetail(error.Endpoint, UnservedPenGroups(error)),
-				Resources.FailureLiveSourcePensUnservedRemedy,
-				MessageSeverity.Warning),
-
-			_ => throw new ArgumentOutOfRangeException(nameof(error), error.Kind, null)
-		};
-	}
-
-	private static string UnservedPenGroups(LiveSourceError error)
-	{
-		var groups = new List<string>(2);
-
-		if (error.UnknownPenIds.Count > 0)
-		{
-			groups.Add(Resources.FormatFailureLiveSourceUnknownPens(string.Join(", ", error.UnknownPenIds)));
-		}
-
-		if (error.NotNumericPenIds.Count > 0)
-		{
-			groups.Add(Resources.FormatFailureLiveSourceNotNumericPens(string.Join(", ", error.NotNumericPenIds)));
-		}
-
-		return string.Join(" ", groups);
 	}
 
 	private static ArchiveFailureView MapStartupReadTimedOut(StartupReadTimedOutError error)

@@ -7,8 +7,7 @@ layers are selected and when they arrive, what retention does, what a database o
 how much disk a year takes. Every fact below was read from the PostgreSQL statement log, from the
 server's own log file, or from the archive table itself during that run, marker
 `[MEAS:capture-20261006]` in `sources.md`. Where a sentence is an inference rather than an
-observation, it says so. [The OPC UA server](#the-opc-ua-server) is the one exception: it records
-separate runs against the SCADA's built-in OPC UA server, marker `[MEAS:opc-probe-20261020]`.
+observation, it says so.
 
 `scada-archive.md` is the reference built earlier from the manual, the forum and a two-hour customer
 dump. Where the two disagree, this document is the measured one; the differences are listed in
@@ -518,83 +517,6 @@ show:
 
 The server writes through four insert threads.
 
-## The OPC UA server
-
-The SCADA's built-in OPC UA server is the channel the live edge reads
-(`data-integration.md#the-opc-ua-live-source`). It was measured apart from the 48-hour run above, marker
-`[MEAS:opc-probe-20261020]` in `sources.md`, in two scratch runs that are not committed:
-
-- 2026-10-19, against the demo SCADA on this machine: a Python `asyncua` client, and a .NET spike with the OPC
-  Foundation client at `1.5.378.182` and `2.0.1`.
-- 2026-10-20, a probe of the client shape `OpcUaLiveSource` takes: a validated configuration with directory
-  stores, `GetEndpoints`, the `None` endpoint with its URL overwritten by the configured one, `ManagedSession`,
-  publishing 100 ms, sampling 100 ms, queue size 1. It ran against the seeder's demo server
-  (`bench.md#the-opc-ua-demo-server`) in process, in a child process and behind a loopback TCP relay, on Windows
-  and in `mcr.microsoft.com/dotnet/sdk:10.0` on Linux, and read only against the real Simple-Scada on 49875.
-
-### What the server serves
-
-| Behaviour | Observation |
-| --- | --- |
-| Endpoint | `opc.tcp://WORKING-PC:49875`. The server advertises its host name, not the address dialled. 49875 is the port the SCADA offers by default. Seven endpoints: `None` + Anonymous beside `Sign` and `SignAndEncrypt`, and every one carries one anonymous token, `PolicyId = Anonymous` on `#None` |
-| Endpoints dialled on `127.0.0.1` | `GetEndpoints` returns the seven with `EndpointUrl = opc.tcp://127.0.0.1:49875/`: the 2.0.1 discovery client puts the dialled host into an advertised URL whose scheme and port match |
-| Namespaces | `[UA, urn:WORKING-PC:SimpleScada:UAServer, http://www.simple-scada.com/UA/Namespace, http://simple-scada.com/UA]`; namespace 3 is `http://simple-scada.com/UA` |
-| Address space | `Objects` holds `Server`, `FD34514A35<system folder>_1`, `FD34514A35root_2` and `FD34514A35group1_3`. The project folder is `ns=3;s=<project ID>root_<n>`, browse name `root`, and holds one variable per SCADA variable: browse name = variable name, node `ns=3;s=<project ID><trends.id>`. A sibling folder holds the `Sys*` variables |
-| Groups | A SCADA group is a folder beside `root` at the top of `Objects`, `ns=3;s=<project ID><name>_<n>`; a variable inside keeps the address `ns=3;s=<project ID><trends.id>` |
-| Value types | `Double` for the analog pens, `Int64` for the stepped ones (a stepped integer whose DataType attribute reads `Int32`), `Float` for `am_i_seen` with status `Good [0x00000010]`, `Byte` for a bool and for a fresh `Int64` array variable |
-| Timestamps | `SourceTimestamp` is true UTC: a constant pen's stamp 11:57:36.718 UTC equals the server log's local `UA server started` at 14:57:36.718 MSK, and the source-to-client latency against the real UTC clock has a median of 3.1 ms. The 2.0.1 client converts it to a `DateTime` with `Kind = Utc`. A `DateTime` variable's value (`SysProjectStartTimestamp`) is local time labelled UTC; no pen reads one |
-| Initial value | Delivered at once on subscribe, with the stamp of the last change (a constant pen: the project start) |
-| Rate | Every change, whatever the archive mode: `Time1h` sent 32 notifications in 30 s while it archives once an hour. Read only on 49875 on 2026-10-20: 17 variables under `root`, 21 notifications in 20 s for each changing one |
-| Deadband filter | An absolute `DataChangeFilter` was accepted and apparently ignored. Not confirmed |
-| Several clients | 8 concurrent sessions over all 17 variables, all `Good`, no refusal |
-| Unknown node | `BadNodeIdUnknown` when the monitored item is created, with `Created = false`; the other items work |
-| Project stop, restart, server kill | The UA server lives with the project: each closes the port, and no per-variable bad status precedes it. A graceful stop flushes every buffer to the database before the UA server stops; a kill flushes nothing, so the archive loses the unflushed span the OPC client already received. After a start every variable's first notification carries the UA server's start instant. The client reconnected 1-2 s after `UA server started` |
-
-**The queue size.** With a monitored item's `QueueSize` above 1 the server's first notification is an empty
-`Good` value with `MinValue` stamps, so a static variable never gets its value; a `QueueSize` of 0 or 1 delivers
-the real one. The demo server does not reproduce it: a queue of 1 and a queue of 10 both deliver a real first
-value. `SubscriptionPlanTests.AMonitoredItemsQueueIsOne_BecauseSimpleScadaSendsAnEmptyFirstValueAboveIt` pins
-the 1.
-
-**The .NET client, 2026-10-19.** Both `1.5.378.182` and `2.0.1` connect with `None` + Anonymous and no
-application certificate, and dial the address given, never the advertised `WORKING-PC`.
-`ApplicationConfiguration.ValidateAsync` demands store paths but creates no file or folder anywhere, and an
-unvalidated configuration makes `ManagedSession.ConnectAsync` retry forever. 2.0.1's `ManagedSession` recreates
-a destroyed session in place after a server restart, recreates the subscriptions with fresh initial values, backs
-off 1-30 s, and closes in 31 ms. 1.5's `SessionReconnectHandler` builds a new session with cloned subscriptions the
-caller must swap in, and its classic close waits 5 s.
-
-**The stock 2.0.1 server.** The demo server is built on it. It needs an application certificate, binds 4840 when
-asked for port 0, binds 127.0.0.1 only, dials a discovery server unless `MaxRegistrationInterval = 0`, fails a busy
-port with `BadNoCommunication`, and starts in 1.5-4.3 s; in the 2026-10-20 runs it started in 1.5-3.5 s warm, and
-in 16.9 s and 14.3 s for the first two runs on this machine. It advertises three endpoints: `PolicyId '1'` on
-`#None` at `None`, and `'2'` on `''` at `Sign` and `SignAndEncrypt`.
-
-### The client against the demo server and the real one
-
-Measured 2026-10-20 with the client shape above:
-
-| Question | Answer |
-| --- | --- |
-| Does the stack keep the configured address? | Not by default. `ConfiguredEndpoint.UpdateBeforeConnect` defaults to true: `ConnectAsync` re-reads the endpoints, and the session ends on the server's own advertised URL. Behind a relay on port N+1 the session's `Endpoint.EndpointUrl` read port N, and a cut of the relay never reached it. With `UpdateBeforeConnect = false` the session keeps the configured URL, and every reconnect dials it |
-| Does the client connect to both servers? | Yes, with the token policies as advertised: the real server's `ConnectAsync` took 928 ms, the demo server's 146-233 ms. `KeepAliveInterval` 5000 ms, `SessionTimeout` 60000 ms |
-| A server restarted in place (disposed, a new server on the port after 0 s, 5 s, 70 s) | The `ManagedSession` object, its `Subscription` object and its `MonitoredItem` objects stay the same; the session id and the subscription id change, because the session is recreated. The same `Notification` handlers fire again with no call by the client. No pen ever gets a stamp at or before its newest one before the outage. The unknown node stays `BadNodeIdUnknown`. The old server's dispose takes 5.1 s with a session attached. The state leaves `Connected` 3.9-4.3 s after the dispose ends (keep-alive `BadConnectionClosed`), returns 0.4-4.7 s after the new server is up, and the first notification follows 1.0-6.1 s after the server is up |
-| A server process killed (`Kill(entireProcessTree)`) and restarted after 5 s | The state leaves `Connected` 4957 ms after the kill (keep-alive `BadConnectionClosed`), retries with `BadServerHalted`, and returns 1.5 s after the new process is ready. The first notification comes 4.5 s after that. No stamp regresses |
-| A transport cut with the server alive (the relay closes its sockets), pinned endpoint | A 5 s cut: the state leaves `Connected` 4.7 s after the cut, returns on the same session id, and no notification for the cut span arrives. A 70 s cut, past the 60 s session timeout: the session is recreated, and values resume with current stamps. A relay that stalls with its sockets open is noticed after 14.7 s (`BadNoCommunication`, the keep-alive read timed out) |
-| No server at start | `GetEndpointsAsync` fails after 2.1 s (`SocketException`). `ManagedSession.ConnectAsync` on a hand-built endpoint keeps retrying inside the call and returns 7.1 s after a server appears. Cancelling a pending `ConnectAsync` returns within 5 ms |
-| The port held by a listener that is not OPC UA | A listener that accepts and stays silent holds `GetEndpointsAsync` for 90 s (`BadRequestInterrupted`); one that accepts and closes fails it in 135 ms (`BadConnectionClosed`). `ConnectAsync` retries against either until cancelled |
-| `ReconnectPolicyOptions.MaxTotalReconnectTime` | At 20 s the session goes `Reconnecting`, `Failover`, `Disconnected` (`BadNothingToDo`) 20 s into the outage and enters `Reconnecting` again 30 s later. At `Timeout.InfiniteTimeSpan` it stays `Reconnecting` and recovers when the server returns |
-| Close | `CloseAsync` takes 11-134 ms when connected and 11 ms while reconnecting; nothing reconnects afterwards |
-| A pen-set change on a live session | `RemoveSubscriptionAsync` takes 33 ms, and a new subscription over the same nodes is created in 2 ms. Its first notifications carry current stamps |
-| Files | `ValidateAsync` and every session created no file or folder under the configured store root |
-| What a restart delivers again | On a 30 s lattice the first notification after a restart carries the new server's start instant and the value held before the outage. On a pen-set change the new subscription's first notification of every pen carries a stamp equal to the newest one already received, and that value again |
-| What a surviving session delivers again | After a 5 s cut the session is reactivated, and an unchanged pen gets no notification until its next change. A change made inside the cut never arrives |
-| What a recreated session delivers again, the server kept running (a 70 s pinned cut) | With no pen changed during the cut (600 s lattice), every pen's first notification after the recreation carries the value and the `SourceTimestamp` it had before the cut, and a `ServerTimestamp` equal to the recreation instant; it arrived 0.3 s after the recreation. With two changes inside the cut (30 s lattice), the first notification carries the newest change and its own stamp, 4.9 s after the recreation |
-| From `Connected` again to the first notification | 0.6-3.0 s on Windows, 4.4 s on Linux after a kill. With a queue of 1 the changes inside that window arrive as the newest one only |
-| The event that reports a loss | `ConnectionStateChanged` from `Connected` to `Reconnecting` carries `Error = null`. The status comes on the `KeepAlive` event (`BadConnectionClosed`, `BadNoCommunication`) and on the later `Reconnecting` to `Reconnecting` events (`BadNotConnected`, `BadServerHalted`). Before `ConnectAsync` returns no session object exists, so no event reports the retries inside it |
-| Linux, restart in place and kill | The same shape: the state leaves `Connected` 3.8-4.8 s after the loss and returns 3.9-4.8 s after the server is up. A refused loopback connect costs about 1 ms there, against 2.0 s on Windows |
-| The stack's log lines | The client logs one `Error` from `Opc.Ua.Bindings.UaSCUaBinaryClientChannel` ("CLIENTCHANNEL CONNECT FAILED") per failed connect attempt, 3-33 s apart while a server is down, and one `Warning` "A smaller minLifetimeInterval 10000ms than session timeout 60000ms" per subscription at the stack's default lifetime count. The `Error` "The domain ... is not listed in the server certificate" comes from the demo server's own stack, not the client. After a reactivated session the client logs one `Error` from `Opc.Ua.Client.MonitoredItem`: "RepublishAsync is only supported when the session uses the classic subscription engine" |
-
 ## The variables table
 
 The editor's database action «создать таблицу переменных» ("create the variables table") issues:
@@ -664,16 +586,14 @@ For SemiPlot:
 1. **Live data cannot come from the archive.** The newest point of a pen lags the plant by
    minutes, by hours for a rarely changing pen. A live edge needs a channel that bypasses the
    archive buffer: the server's built-in OPC UA server (manual, section 6.13.6) or a project script
-   that writes current values to a table of ours (scripts manual, section 2.10.6). Addressed: the live
-   edge takes the OPC UA server ([The OPC UA server](#the-opc-ua-server), `[DEC:opc-live-edge]`), and
-   history stays on the archive.
+   that writes current values to a table of ours (scripts manual, section 2.10.6).
 2. **Layer 3 can be empty.** Addressed: SemiPlot reads no layer above the hour layer, which every
    build writes (`data-integration.md#layer-ladder`).
 3. **The layer spacings are half the density assumed.** Addressed: `AggregationLayer.ToPointSpacing`
    takes two rows per period, half the real spacing (`data-integration.md#layer-ladder`).
 4. **Unbounded reads of layers 1 and 2 meet 1899-12-30.** Every read of layers 1 and 2 is bounded by
-   time, and it has to stay so. The one read with no time bound, `ArchiveExtent`, reads `l = 0`
-   only, where these rows do not land.
+   time, and it has to stay so. The two reads with no time bound, `ArchiveExtent` and
+   `RealtimeBaseline`, read `l = 0` only, where these rows do not land.
 5. **A pen that does not change has one point per day, and its newest point can be a day old.**
    Holding the last value as a step is what draws it correctly.
 6. **A silent hole looks like a straight line.** Nothing in the archive distinguishes it from a

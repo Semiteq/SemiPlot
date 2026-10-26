@@ -110,7 +110,6 @@ internal sealed class TrendWindow : IDisposable
 		var statusBar = new AppStatusBarViewModel(
 			messagePanel,
 			catalogueSync.ConnectionStates,
-			coordinator.LiveSourceStates,
 			chart.Navigation,
 			loggerFactory.CreateLogger<AppStatusBarViewModel>());
 		var navigationBar = new NavigationBarViewModel(chart);

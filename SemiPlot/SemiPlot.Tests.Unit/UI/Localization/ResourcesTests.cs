@@ -79,7 +79,6 @@ public sealed class ResourcesTests
 	{
 		Resources.StatusLayerFormat.Should().Contain("{0}");
 		Resources.SettingsFieldRequired.Should().Contain("{0}");
-		Resources.SettingsKeyAbsent.Should().Contain("{0}").And.Contain("{1}");
 		Resources.ExportMessageStartUnreadable.Should().Contain("{0}");
 		Resources.ExportMessageEndUnreadable.Should().Contain("{0}");
 		Resources.ExportPensHeader.Should().Contain("{0}").And.Contain("{1}");

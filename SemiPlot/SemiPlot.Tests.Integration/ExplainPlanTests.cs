@@ -76,6 +76,10 @@ public sealed class ExplainPlanTests(
 	// almost whole.
 	private static readonly TimeSpan _explainedWindow = TimeSpan.FromMinutes(2);
 
+	// How far back from the archive's end the explained poll's bound sits. A tick reads what was written
+	// since the previous one, so its span is the poll interval and never a slice of the archive.
+	private static readonly TimeSpan _polledTail = TimeSpan.FromMinutes(1);
+
 	// Far enough into the archive that every explained pen has a row before the window opens, so the seed
 	// branch has something to find.
 	private static readonly TimeSpan _seedProbeOffset = TimeSpan.FromMinutes(5);
@@ -165,6 +169,52 @@ public sealed class ExplainPlanTests(
 				+ $"markers now costs a read of rows outside the window.{Environment.NewLine}{plan}");
 
 		AssertSeedWalkStaysWithinItsBound(plan, "history window");
+	}
+
+	// The poll's own index plan.
+	[Fact]
+	public async Task ThePollPlanReachesItsRowsThroughAnIndex()
+	{
+		var database = analysedArchive.Database;
+
+		var plan = await ExplainAsync(
+			database.PlotConnectionString,
+			ArchiveStatements.RealtimePoll,
+			command => RealtimePoll.BindPoll(command, ExplainedPenIds(), PolledFrom()),
+			TestContext.Current.CancellationToken);
+
+		_sequentialScanOverRows.IsMatch(plan).Should().BeFalse(
+			"The realtime poll no longer narrows on the primary key: the plan reads a row-holding trends "
+				+ "partition sequentially, so every tick walks the current day instead of stepping into an "
+				+ $"index.{Environment.NewLine}{plan}");
+
+		_indexReachedRows.IsMatch(plan).Should().BeTrue(
+			"The realtime poll plan reaches no row-holding trends partition through an index, neither "
+				+ "directly nor through a bitmap, so a tick finds its rows by reading rows it does not "
+				+ $"want.{Environment.NewLine}{plan}");
+	}
+
+	// The baseline is held to the strict index-edge form, the same one the extent statement is held to.
+	[Fact]
+	public async Task TheBaselinePlanReachesEachBoundByAnIndexEdge()
+	{
+		var database = analysedArchive.Database;
+
+		var plan = await ExplainAsync(
+			database.PlotConnectionString,
+			ArchiveStatements.RealtimeBaseline,
+			command => RealtimePoll.BindBaseline(command, ExplainedPenIds()),
+			TestContext.Current.CancellationToken);
+
+		_sequentialScanOverRows.IsMatch(plan).Should().BeFalse(
+			"The baseline statement's per-variable bounded subquery has been lost: the plan reads a "
+				+ "row-holding trends partition sequentially, so establishing a subscription's starting "
+				+ $"point walks the archive.{Environment.NewLine}{plan}");
+
+		_indexEdgeReachedRows.IsMatch(plan).Should().BeTrue(
+			"The baseline plan reaches no row-holding trends partition through an index scan. The lateral "
+				+ "subquery must step to one index edge per variable; a bitmap or a plan without it reads "
+				+ $"rows the bound does not need.{Environment.NewLine}{plan}");
 	}
 
 	[Fact]
@@ -280,6 +330,13 @@ public sealed class ExplainPlanTests(
 		(_dayPartitionRead.Count(plan) <= maximumPartitionReads).Should().BeTrue(
 			$"The {statement} statement's seed seek has lost its lower bound: the plan reads more day partitions "
 				+ $"than a look-back of one partition width can reach.{Environment.NewLine}{plan}");
+	}
+
+	// Near the archive's end, which is where a live subscription's bound always sits: the poll reads the
+	// tail written since the previous tick, never a span of the archive.
+	private static DateTime PolledFrom()
+	{
+		return ArchiveTemplate.Slice.End - _polledTail;
 	}
 
 	// The seeder's timestamps are the archive's own wall clock already.

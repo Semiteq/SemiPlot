@@ -119,22 +119,6 @@ public sealed class TrendWindowTests
 	}
 
 	[AvaloniaFact]
-	public void ALostLiveSource_TurnsTheLiveIndicatorToFault_WithOneWarningEntry()
-	{
-		using var panel = new MessagePanelViewModel();
-		using var stand = NewWindowStand(panel: panel);
-		var lost = new LiveSourceError(LiveSourceFault.Unreachable, "opc.tcp://127.0.0.1:4841");
-
-		stand.Provider.PushLiveState(LiveSourceState.FaultedBy(lost));
-		stand.Scheduler.AdvanceBy(1);
-
-		stand.ViewModel.StatusBar.IsLiveFaulted.Should().BeTrue();
-		var entry = panel.Entries.Should().ContainSingle().Which;
-		entry.View.Should().Be(ArchiveFailureMapper.Map(lost));
-		entry.View.Severity.Should().Be(MessageSeverity.Warning);
-	}
-
-	[AvaloniaFact]
 	public void TheStatusBar_FollowsTheChartsLayer()
 	{
 		using var stand = NewWindowStand();

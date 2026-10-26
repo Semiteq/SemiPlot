@@ -7,10 +7,9 @@ each is a scoped future task.
 ## Functional / integration
 
 - **Real data provider (accuracy).** The viewer reads the PostgreSQL archive through
-  `PostgresDataProvider`, one read-only Npgsql data source (a connection pool) serving the catalogue,
-  the extent and the history window; a history read holds up to four pooled connections at once,
-  specified in `docs/architecture/data-integration.md`. The live edge reads the SCADA's OPC UA server,
-  not the archive (`data-integration.md#the-opc-ua-live-source`). What is still
+  `PostgresDataProvider` — one read-only Npgsql data source (a connection pool) serving the catalogue,
+  the extent, the history window and the live-edge poll; a history read holds up to four pooled
+  connections at once, specified in `docs/architecture/data-integration.md`. What is still
   missing is a real archive: the decimation and extent paths have been exercised against the seeded
   bench and against a customer dump, not against production volumes on a running tool.
 
@@ -30,42 +29,6 @@ each is a scoped future task.
   back, the pen reads no tail, and the right edge of an Hour chart can stop up to about two hours short
   of the raw newest (`data-integration.md#layer-ladder`, Fresh tail). The fix widens the clamp to two
   periods plus the lag measured on a plant archive and re-checks the tail's row count at that width.
-
-- **The readouts read the history envelope, not the drawn line.** `ChartCursorReader` reads a pen's
-  history envelope and, past it, only the held span (`SemiPlot.UI/Chart/ChartCursorReader.cs:44-62`); the
-  delta readout reads the envelope alone through Core's `DeltaCursorModel`
-  (`SemiPlot.UI/Chart/ChartDeltaCursorReader.cs:30-36`); and only `ApplyHistory` writes that envelope
-  (`SemiPlot.UI/Chart/TrendChartViewModel.cs:696`). So the live run between the envelope's end and the held
-  span reads a dash in the hover readout, and a delta cursor in the held span reads no Δy while the hover
-  at the same X prints a value (`docs/architecture/charting.md#the-hold-to-the-live-edge`). Both have one
-  root, a readout source that is not the drawn line, and one fix: the readouts read the line's columns and
-  its held span. Deferred out of `20261021-live-hold-to-edge.md`.
-
-- **A reactivated OPC UA session leaves an unchanged pen unheld.** A session the stack reactivates, after
-  an outage shorter than the 60 s session timeout, re-delivers nothing for an unchanged pen
-  (`docs/architecture/data-integration.md#the-breaks-the-source-writes`), so the pen stays unheld until its
-  next change; a hold there could draw a stale value, because a change made inside a short cut never
-  arrives. A read of the current values after a reactivation would close it; it is a change in
-  `SemiPlot.DataSource.OpcUa`, deferred out of `20261021-live-hold-to-edge.md`.
-
-- **At a coarse layer an archive that lags can replace the newest live value.** A coarse read that covers
-  the bucket the newest live value folded into, the live bucket or an archive bucket, replaces it with the
-  archive's bucket, whose `Center` is the archive's newest sample in that bucket. When the read reaches past
-  the newest live value but the archive has not written it yet (the stand's writer lags 60 s), the line,
-  `CurrentValue` and the hold show the archive's older value until the pen's next change
-  (`docs/architecture/charting.md#the-hold-to-the-live-edge`). A read whose requested end and last row both
-  lie before that value unjoins the line instead (`EnvelopeLine.ReplaceColumns`). The fix needs the
-  newest sample's stamp per bucket from the server, or a fold of the lost live value over the covering
-  bucket. Deferred out of the review of `20261021-live-hold-to-edge.md`.
-
-- **A dropping history apply ends a live-confirmed pen's hold until its next change.** A rarely changing
-  pen whose last change was a live column loses its hold after any pan left of that column, and gets it
-  back only at its next change, even after a later read brings the archive row of that change back; a pen
-  confirmed by a rejected value keeps its hold through the same cut
-  (`docs/architecture/charting.md#the-hold-to-the-live-edge`,
-  `TrendPenStateTests.Hold_ADroppingHistoryApply_EndsItUntilTheNextValue`). Keeping the confirmation
-  across the unjoin, and holding again once a read reaches the confirmed stamp, would close it. Deferred
-  out of the review of `20261021-live-hold-to-edge.md`.
 
 - **Minimap — further work.** The strip draws the drawn pen's min/max band under the window marker. Still
   wanted: clearer window handles, and possibly a per-pen presence row. Treat as its own task.
@@ -97,13 +60,6 @@ each is a scoped future task.
   median at or under 816 ms. The 1 446 ms and 1 617 ms of 2026-10-12 timed the three-width margin read
   of 8 pens under the server defaults. Under the site's `work_mem` of 64 MB no sort spills to disk.
 
-- **The marker readings allocate on every frame.** `ChartMarkerReadings.Render` draws each reading's number
-  through ScottPlot 5.1.59 `LabelStyle.Render` (`Chart/ChartMarkerReadings.cs:114`), which splits the text,
-  measures it through LINQ and allocates a `MeasuredText` and a `CanvasState` on every call. The ahead-break
-  shade draws its fixed label from a cached `SKTextBlob` instead
-  (`docs/architecture/charting.md#the-ahead-break-shade`); a reading's text changes with its value, so the
-  fix caches one blob per reading text and rebuilds it only when the text changes.
-
 - **GPU render backend (engine) — consider, not now.** Smoothness is acceptable after the pixel-width
   history target + the culled `EnvelopeLine` polyline + single redraw path. The remaining ceiling is CPU
   SkiaSharp projecting/rasterising one plottable per pen for 50 pens. If higher pen counts or larger
@@ -116,23 +72,6 @@ each is a scoped future task.
   latest-wins request in `ChartHistoryRequestDebouncer`. Extract the cursor + delta + drag clusters into a
   nested interaction sub-VM (mirror the existing `Navigation` sub-VM pattern). Deferred during the fix pass
   as risky public-surface churn with no net saving; do it as a focused refactor.
-
-- **`EnvelopeLine` past the class size.** `Chart/EnvelopeLine.cs` is 358 lines, past the 300-line
-  preference. The growth over the 314 lines before the live hold is the hold state: `_confirmedX`,
-  `_confirmingValueX` and `_holdEndX`, `ConfirmLive`, `SetHoldEnd`, `ReadHeldSpan`, `CollectAheadBreakSpans`
-  and the lost-value rule in `ReplaceColumns`. Each reads or writes under the column lock beside the
-  columns, so no split is demanded; the geometry already lives in `EnvelopePath`. A cut moves the
-  lost-value rule into a pure `EnvelopePath` helper beside `Hold`, which saves a few lines and leaves the class
-  still past the preference.
-
-- **Splitting the settings view model.** `Settings/SettingsViewModel` is 512 lines, past the 300-line
-  preference. The seams that cut the size are the edit tracking (`_loaded*`, `Current`, `SpelledAsInTheFile`,
-  `EditsOf`) and the validation (`FirstBrokenRule`, 49 lines, at the method cap, with the `Is*Valid` rules).
-  A host-and-port child view model is a separate change for the duplicate, not for the size: the archive and
-  OPC UA blocks repeat one shape (`Host`/`OpcHost` and `Port`/`OpcPort` carry the same setter, each raising
-  its `Is*Valid` flag and `ValidationMessage`, over the same `NetworkAddress` rule). It removes about 25
-  lines, needs `ValidationMessage` to follow a child's change, and moves the dialog's bindings and about forty
-  test references. Both were deferred out of `20261021-opc-settings.md` as focused refactors.
 
 - **~~Latent: coordinator history sequence frozen at 1.~~ Resolved (20260618-post-review-fixes, Task 4).**
   The standalone coordinator history path (`RequestHistory`/`SetLayer`/`HistoryResults`) was removed.
@@ -153,17 +92,15 @@ Paths are under `SemiPlot/SemiPlot.UI/` unless they name another project.
   `AutoscalePen` (`:375`), `RestoreInitialScale(int)` (`:382`) and `WidenToArchiveExtent` (`:259`) carry no
   guard. Decide the guard set per member against `csharp.md`'s rule: guard only where a late call corrupts
   state or leaks.
-- **~~`ChartCursorReader` has one caller.~~ Resolved (`20261021-live-hold-to-edge.md`, Task 4).** It
-  wraps no Core per-pen loop: `ReadAt` and `ReadPenAt` share its own read, the envelope through the static
-  `CursorReadoutModel.ReadPenAt` and then `TrendPenState.HeldValueAt` (`Chart/ChartCursorReader.cs:44-49`),
-  for `MoveCursor` and `ActivePenReadingAt` (`Chart/TrendChartViewModel.cs:419`, `:425`).
+- **`ChartCursorReader` has one caller.** It wraps `CursorReadoutModel.ReadAt` for
+  `TrendChartViewModel.MoveCursor` alone (`Chart/TrendChartViewModel.cs:63`, `:329`).
 - **Hand-rolled log-level switch.** `StartupOptions.ParseLogLevel` (`StartupOptions.cs:105-117`) restates
   `Enum.TryParse<LogEventLevel>(ignoreCase: true)` plus the `info` alias. `Enum.TryParse` alone also
   accepts a numeric string (`"42"` parses to an undefined level) and a comma list, which would widen the
   closed list in `LoggingLevelValues` and `readme.md`; a replacement checks `Enum.IsDefined` and rejects
   numeric input.
 - **`ThrowIfNull` on repository-internal APIs.** `SemiPlot.Core/Trends/PenHistoryEnvelope.cs:12-15`,
-  `ArchiveTimeConverter.cs:13` in `SemiPlot.DataSource.Postgres`, and the two
+  `ArchiveTimeConverter.cs:13` and `RealtimePoll.cs:64-69` in `SemiPlot.DataSource.Postgres`, and the two
   `PostgresDataProvider` entry points at `:80` and `:127`.
 - **Two copies of the empty-reading format.** `TrendLegendRowViewModel.FormatReading`
   (`Legend/TrendLegendRowViewModel.cs:65-68`) and `ChartHoverReadout.FormatValue` (`Chart/ChartHoverReadout.cs:43-48`)
@@ -179,8 +116,9 @@ Paths are under `SemiPlot/SemiPlot.UI/` unless they name another project.
   on, then posts `ApplyExtent` to the UI scheduler again (`Minimap/MinimapViewModel.cs:94-95`). Under a
   `TestScheduler` no `SynchronizationContext` exists, and the `Observable.Start` at `:95` is the one route
   that brings `ApplyExtent` back, so dropping `:95` is no fix: keep one of the two marshalling routes.
-- **Allocation per pointer move.** Every `MoveCursor` (`Chart/TrendChartView.axaml.cs:678`) builds one
-  dictionary in `ChartCursorReader.ReadAt` (`Chart/ChartCursorReader.cs:12`).
+- **Allocation per pointer move.** Every `MoveCursor` (`Chart/TrendChartView.axaml.cs:305`) builds an array
+  in `ChartCursorReader.ReadAt` (`Chart/ChartCursorReader.cs:13-16`) and a dictionary in
+  `CursorReadoutModel.ReadAt` (`SemiPlot.Core/Trends/CursorReadoutModel.cs:9`).
 - **An idle chart keeps a 400 ms timer.** The debouncer's `Sample` runs on the data scheduler for the chart's
   lifetime, idle or not (`Chart/ChartHistoryRequestDebouncer.cs:55-57`, `Chart/TrendChartViewModel.cs:25`).
 

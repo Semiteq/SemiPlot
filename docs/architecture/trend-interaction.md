@@ -69,26 +69,20 @@ operator interaction.
   (see Renderer).
   *As-built note:* realtime is `double?` on each pen's own timestamps, not on a shared column:
   `PenRealtimeValues` carries no entry at a timestamp the pen did not report, and a null is a break the
-  live source reported. `OpcUaLiveSource` writes one per delivered pen when its session is lost and one
-  for a `Bad` notification (data-integration.md#the-breaks-the-source-writes), and the chart writes its
-  own ahead of a pen's first live value (data-integration.md#the-break-ahead-of-a-first-live-sample);
-  every other gap the chart draws comes from the history path (charting.md, "Gaps via NaN").
+  live source reported. The poll writes one 1 ms after a `q = 32` row (data-integration.md#realtime); every
+  other gap the chart draws comes from the history path (charting.md, "Gaps via NaN").
 - **Δ cursors:** Δy is reported only for the **active/selected pen** (pens share X but have independent Y
   scales, so a global Δy is meaningless).
 - **Bad quality → gap:** OPC bad-quality is mapped to `null` at the `IDataProvider` boundary, reusing the
   null = gap path; a distinct value-present-but-bad-quality flag is deferred.
-  *As-built note:* the live edge crosses `ILiveSource`, not `IDataProvider`, so that port is the
-  boundary an OPC status maps at. `OpcUaLiveSource` reads each notification through `LiveValue`: `Bad`
-  maps to a null `Sample`, a break, stamped at the notification's `SourceTimestamp`, else its
-  `ServerTimestamp`, and held at least 1 ms past the pen's newest delivered stamp when it has one;
-  `Uncertain` and `Good`,
-  with or without info bits such as `0x00000010`, draw the value
-  (data-integration.md#the-breaks-the-source-writes). The chart appends the break as a `NaN` column at
-  every layer. The archive marks the last sample before a break with `q = 32`, and that mark maps to a
-  break on the history path only: the server closes the bucket there, and `BucketedRowFold` writes a
-  `NaN` column one tick after it (data-integration.md#quality-and-gaps). The live edge reads no archive
-  row, so a `q = 32` row reaches the chart only through a history read.
-  `q = 16` takes no branch: the next bucket resumes the line.
+  *As-built note:* no OPC quality exists yet, so no bad-quality status maps to `null`. The live edge
+  crosses `ILiveSource`, not `IDataProvider`, so that port is the boundary an OPC status maps at. The
+  archive marks the last sample before a break with `q = 32`, and that mark maps to a break. On the
+  history path the server closes the bucket there, and `BucketedRowFold` writes a `NaN` column one tick
+  after it (data-integration.md#quality-and-gaps). At the live edge the poll emits the row's value and
+  then a null `Sample` 1 ms after it, which the chart appends as a `NaN` column
+  (data-integration.md#realtime).
+  `q = 16` takes no branch: the next bucket or sample resumes the line.
 - **Real-time return:** "jump to real-time" re-attaches sticky immediately; now-marker at the
   **right edge** (centering is at most a transient transition animation).
 - **Many-axes management:** **single active Y axis + per-pen autoscale** (legacy SCADA model);
@@ -312,10 +306,7 @@ pointer, so a second finger neither moves, pans nor ends the first finger's drag
   crosshair endpoints in DIP space; the readout hangs from the line's top end). A cursor X outside the
   data rect's X range hides the crosshair and the readout. The readout text is the pure
   `Chart/ChartHoverReadout.BuildContent` string: the local timestamp plus every *visible* pen's value
-  at the cursor X (one line per pen; gap or missing pen → dash). Inside a pen's held span, from its last
-  column to the newest sample (`charting.md#the-hold-to-the-live-edge`), the pen reads its `CurrentValue`,
-  the value the held segment is drawn at and the sidebar shows; past the hold end, and over the live run
-  between the history envelope's end and the held span, it reads a dash. With the pointer on a time marker the
+  at the cursor X (one line per pen; gap or missing pen → dash). With the pointer on a time marker the
   cursor X is the marker's moment, so the readout lists every visible pen's value there
   (`#the-time-markers`). The overlay is suppressed while a drag
   is in progress or delta mode is active (`IsDragging || IsDeltaModeEnabled`) and is repositioned from
@@ -547,8 +538,7 @@ window.
   `PenValueFormat` with no unit, as the hover readout shows it. The other pens show no value at a marker,
   so many pens do not crowd it; picking another pen moves every reading to that pen, and the hover readout
   still lists every visible pen. The value is the one the cursor reads (`ChartCursorReader.ReadPenAt`), so
-  a hidden active pen, a gap or a marker outside the pen's data draws no reading, and a marker inside the
-  pen's held span reads its `CurrentValue`. The layer is one
+  a hidden active pen, a gap or a marker outside the pen's data draws no reading. The layer is one
   plottable with no axis limits; the view refreshes it in `ServeFrame` before every redraw, because a
   history result, a live sample, a pick, a visibility change, a marker change and a pan all reach the
   chart as a frame request. It projects through the pen's own `EnvelopeLine.PixelOf`, so a log10 axis
@@ -631,10 +621,9 @@ and the render budget (§RT-4). The as-built rationale and mechanics:
   when a value changes, so a span with no row is no gap by itself. A history read anchors a `NaN` column
   by one route at every layer: the server closes a bucket at a `q = 32` marker, and `BucketedRowFold`
   writes the `NaN` column one tick after that bucket, so the line breaks there instead of bridging the
-  missing span with a straight line (see `data-integration.md`, Quality and gaps). At the live edge an
-  OPC UA `Bad` notification and a lost session each emit a null sample, which the chart appends as a
-  `NaN` column at every layer (`data-integration.md#the-breaks-the-source-writes`). No decimator runs on
-  the client.
+  missing span with a straight line (see `data-integration.md`, Quality and gaps). At the live edge the
+  poll emits a `q = 32` row's value and then a null sample 1 ms later, which the chart appends as a `NaN`
+  column at every layer (`data-integration.md#realtime`). No decimator runs on the client.
 - **Use a min/max-per-pixel envelope, not plain sampling.** Plain decimation aliases away spikes
   (AVEVA warns of exactly this). Retain min AND max per pixel column so spikes survive (M4:
   min/max/first/last per column → visually lossless; MinMaxLTTB for speed; Power Chart "MinMax").

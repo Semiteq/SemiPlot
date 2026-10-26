@@ -2,12 +2,13 @@ using System.Globalization;
 using System.Reactive;
 using System.Reactive.Linq;
 
+using FluentResults;
+
 using Microsoft.Extensions.Logging;
 
 using ReactiveUI;
 
 using SemiPlot.Core.Configuration;
-using SemiPlot.DataSource.OpcUa.Configuration;
 using SemiPlot.DataSource.Postgres.Configuration;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.Messages;
@@ -33,11 +34,11 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 	private readonly string _sectionRefusal;
 	private Dictionary<string, string> _loadedApp;
 	private Dictionary<string, string> _loadedConnection;
-	private Dictionary<string, string> _loadedOpc;
 
-	internal SettingsViewModel(
+	public SettingsViewModel(
 		string configDirectory,
-		IReadOnlyList<SectionRead> sections,
+		Result<OwnedSection> app,
+		Result<OwnedSection> connection,
 		MessagePanelViewModel messagePanel,
 		ILogger<SettingsViewModel> logger,
 		Action restartApplication)
@@ -49,27 +50,44 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 		Languages = [.. SettingsVocabulary.Languages.Select(ChoiceOf)];
 		Themes = [.. SettingsVocabulary.Themes.Select(ChoiceOf)];
 
-		var appValues = ValuesOf(sections, ConfigurationSectionName.App);
-		var connectionValues = ValuesOf(sections, ConfigurationSectionName.Connection);
-		var opcValues = ValuesOf(sections, ConfigurationSectionName.Opc);
-		_sectionRefusal = RefusalOf(sections);
+		var appValues = ValuesOf(app);
+		var connectionValues = ValuesOf(connection);
+		_sectionRefusal = RefusalOf(app, connection);
 
 		SelectedLanguage = Match(Languages, appValues.GetValueOrDefault(AppSettingsLoader.LocaleKey));
 		SelectedTheme = Match(Themes, appValues.GetValueOrDefault(AppSettingsLoader.ThemeKey));
 		Host = connectionValues.GetValueOrDefault(PostgresConnectionLoader.HostKey, string.Empty);
-		Port = PortOf(connectionValues.GetValueOrDefault(PostgresConnectionLoader.PortKey));
+		Port = NumberOf(connectionValues, PostgresConnectionLoader.PortKey, LowestPort, HighestPort);
 		Database = connectionValues.GetValueOrDefault(PostgresConnectionLoader.DatabaseKey, string.Empty);
 		User = connectionValues.GetValueOrDefault(PostgresConnectionLoader.UserKey, string.Empty);
 		Password = connectionValues.GetValueOrDefault(PostgresConnectionLoader.PasswordKey, string.Empty);
-		OpcHost = opcValues.GetValueOrDefault(OpcUaConnectionLoader.HostKey, string.Empty);
-		OpcPort = PortOf(opcValues.GetValueOrDefault(OpcUaConnectionLoader.PortKey));
+		PollInterval = NumberOf(
+			connectionValues, PostgresConnectionLoader.PollIntervalKey, LowestPollInterval, HighestPollInterval);
 
-		_loadedApp = SpelledAsInTheFile(Current(AppKeys), appValues);
-		_loadedConnection = SpelledAsInTheFile(Current(ConnectionKeys), connectionValues);
-		_loadedOpc = SpelledAsInTheFile(Current(OpcKeys), opcValues);
+		_loadedApp = SpelledAsInTheFile(CurrentApp(), appValues);
+		_loadedConnection = SpelledAsInTheFile(CurrentConnection(), connectionValues);
 
-		var canSave = this.WhenAnyValue(vm => vm.ValidationMessage)
-			.Select(message => message.Length == 0);
+		var canWriteSections = _sectionRefusal.Length == 0;
+		var canSave = this.WhenAnyValue(
+			vm => vm.SelectedLanguage,
+			vm => vm.SelectedTheme,
+			vm => vm.IsHostValid,
+			vm => vm.IsPortValid,
+			vm => vm.IsDatabaseValid,
+			vm => vm.IsUserValid,
+			vm => vm.IsPasswordValid,
+			vm => vm.IsPollIntervalValid,
+			(language, theme, host, port, database, user, password, pollInterval) =>
+				canWriteSections
+				&& language is not null
+				&& theme is not null
+				&& host
+				&& port
+				&& database
+				&& user
+				&& password
+				&& pollInterval);
+
 		SaveCommand = ReactiveCommand.CreateFromTask(SaveAsync, canSave);
 		var canRestartNow = this.WhenAnyValue(vm => vm.IsRestartPending)
 			.CombineLatest(SaveCommand.IsExecuting, (pending, saving) => pending && !saving);
@@ -90,18 +108,17 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 		new(PostgresConnectionLoader.PortKey, vm => TextOf(vm.Port)),
 		new(PostgresConnectionLoader.DatabaseKey, vm => vm.Database),
 		new(PostgresConnectionLoader.UserKey, vm => vm.User),
-		new(PostgresConnectionLoader.PasswordKey, vm => vm.Password)
+		new(PostgresConnectionLoader.PasswordKey, vm => vm.Password),
+		new(PostgresConnectionLoader.PollIntervalKey, vm => TextOf(vm.PollInterval))
 	];
 
-	internal static IReadOnlyList<EditedKey> OpcKeys { get; } =
-	[
-		new(OpcUaConnectionLoader.HostKey, vm => vm.OpcHost),
-		new(OpcUaConnectionLoader.PortKey, vm => TextOf(vm.OpcPort))
-	];
+	public static decimal LowestPort => PostgresConnectionLoader.LowestPort;
 
-	public static decimal LowestPort => NetworkAddress.LowestPort;
+	public static decimal HighestPort => PostgresConnectionLoader.HighestPort;
 
-	public static decimal HighestPort => NetworkAddress.HighestPort;
+	public static decimal LowestPollInterval => PostgresConnectionLoader.LowestPollIntervalMs;
+
+	public static decimal HighestPollInterval => int.MaxValue;
 
 	public IReadOnlyList<SettingsChoice> Languages { get; }
 
@@ -184,32 +201,20 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 		}
 	}
 
-	public string OpcHost
+	public decimal? PollInterval
 	{
 		get;
 		set
 		{
 			this.RaiseAndSetIfChanged(ref field, value);
-			this.RaisePropertyChanged(nameof(IsOpcHostValid));
+			this.RaisePropertyChanged(nameof(IsPollIntervalValid));
 			this.RaisePropertyChanged(nameof(ValidationMessage));
 		}
 	}
 
-	/// <summary>Null while the field holds no whole number in range, which keeps the save disabled.</summary>
-	public decimal? OpcPort
-	{
-		get;
-		set
-		{
-			this.RaiseAndSetIfChanged(ref field, value);
-			this.RaisePropertyChanged(nameof(IsOpcPortValid));
-			this.RaisePropertyChanged(nameof(ValidationMessage));
-		}
-	}
+	public bool IsHostValid => PostgresConnectionLoader.IsIPv4Address(Host);
 
-	public bool IsHostValid => NetworkAddress.IsIPv4(Host);
-
-	public bool IsPortValid => IsPort(Port);
+	public bool IsPortValid => IsWholeNumberIn(Port, LowestPort, HighestPort);
 
 	public bool IsDatabaseValid => !string.IsNullOrWhiteSpace(Database);
 
@@ -217,9 +222,7 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 
 	public bool IsPasswordValid => !string.IsNullOrWhiteSpace(Password);
 
-	public bool IsOpcHostValid => NetworkAddress.IsIPv4(OpcHost);
-
-	public bool IsOpcPortValid => IsPort(OpcPort);
+	public bool IsPollIntervalValid => IsWholeNumberIn(PollInterval, LowestPollInterval, HighestPollInterval);
 
 	/// <summary>
 	/// The section a file cannot be read from or a key it lacks, else the rule the first invalid field breaks in form
@@ -252,11 +255,12 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 		ILoggerFactory loggerFactory,
 		Action restartApplication)
 	{
-		var sections = await Task.Run(() => SettingsSave.ReadOwned(configDirectory));
+		var (app, connection) = await Task.Run(() => SettingsSave.ReadOwned(configDirectory));
 
 		return new SettingsViewModel(
 			configDirectory,
-			sections,
+			app,
+			connection,
 			messagePanel,
 			loggerFactory.CreateLogger<SettingsViewModel>(),
 			restartApplication);
@@ -288,17 +292,14 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 
 	private async Task SaveAsync()
 	{
-		var app = Current(AppKeys);
-		var connection = Current(ConnectionKeys);
-		var opc = Current(OpcKeys);
+		var app = CurrentApp();
+		var connection = CurrentConnection();
 		var appEdits = EditsOf(app, _loadedApp);
 		var connectionEdits = EditsOf(connection, _loadedConnection);
-		var opcEdits = EditsOf(opc, _loadedOpc);
 		var edits = new Dictionary<ConfigurationSectionName, IReadOnlyDictionary<string, string>>
 		{
 			[ConfigurationSectionName.App] = appEdits,
-			[ConfigurationSectionName.Connection] = connectionEdits,
-			[ConfigurationSectionName.Opc] = opcEdits
+			[ConfigurationSectionName.Connection] = connectionEdits
 		};
 
 		var saved = await Task.Run(() => SettingsSave.Save(_configDirectory, edits, _logger));
@@ -312,11 +313,8 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 
 		_loadedApp = app;
 		_loadedConnection = connection;
-		_loadedOpc = opc;
 
-		if (appEdits.Keys.Any(key => key != AppSettingsLoader.ThemeKey)
-			|| connectionEdits.Count > 0
-			|| opcEdits.Count > 0)
+		if (appEdits.Keys.Any(key => key != AppSettingsLoader.ThemeKey) || connectionEdits.Count > 0)
 		{
 			IsRestartPending = true;
 		}
@@ -368,12 +366,17 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 			return Resources.FormatSettingsFieldRequired(Resources.SettingsPasswordLabel);
 		}
 
-		if (!IsOpcHostValid)
-		{
-			return Resources.SettingsOpcHostInvalid;
-		}
+		return IsPollIntervalValid ? string.Empty : Resources.SettingsPollIntervalInvalid;
+	}
 
-		return IsOpcPortValid ? string.Empty : Resources.SettingsOpcPortInvalid;
+	private Dictionary<string, string> CurrentApp()
+	{
+		return Current(AppKeys);
+	}
+
+	private Dictionary<string, string> CurrentConnection()
+	{
+		return Current(ConnectionKeys);
 	}
 
 	private Dictionary<string, string> Current(IReadOnlyList<EditedKey> keys)
@@ -408,72 +411,47 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 			.ToDictionary(StringComparer.Ordinal);
 	}
 
-	private static string RefusalOf(IReadOnlyList<SectionRead> sections)
+	private static string RefusalOf(Result<OwnedSection> app, Result<OwnedSection> connection)
 	{
-		if (sections.FirstOrDefault(read => read.Owned.IsFailed) is { } unreadable)
+		if (app.IsFailed)
 		{
-			return Resources.FormatSettingsSectionUnreadable(HeaderOf(unreadable.Section));
+			return Resources.FormatSettingsSectionUnreadable(Resources.SettingsInterfaceHeader);
 		}
 
-		return SettingsSave.FirstAbsentKey(sections) is { } absent
-			? Resources.FormatSettingsKeyAbsent(HeaderOf(absent.Section), absent.Key)
-			: string.Empty;
+		if (connection.IsFailed)
+		{
+			return Resources.FormatSettingsSectionUnreadable(Resources.SettingsConnectionHeader);
+		}
+
+		var absentKey = SettingsSave.FirstAbsentKey(app.Value, connection.Value);
+
+		return absentKey is null ? string.Empty : Resources.FormatSettingsKeyAbsent(absentKey);
 	}
 
-	private static string HeaderOf(ConfigurationSectionName section)
+	private IReadOnlyDictionary<string, string> ValuesOf(Result<OwnedSection> section)
 	{
-		return section switch
+		if (section.IsFailed)
 		{
-			ConfigurationSectionName.App => Resources.SettingsInterfaceHeader,
-			ConfigurationSectionName.Connection => Resources.SettingsConnectionHeader,
-			ConfigurationSectionName.Opc => Resources.SettingsOpcHeader,
-			_ => throw new ArgumentOutOfRangeException(nameof(section), section, null)
-		};
-	}
-
-	internal static IReadOnlyList<EditedKey> KeysOf(ConfigurationSectionName section)
-	{
-		return section switch
-		{
-			ConfigurationSectionName.App => AppKeys,
-			ConfigurationSectionName.Connection => ConnectionKeys,
-			ConfigurationSectionName.Opc => OpcKeys,
-			_ => throw new ArgumentOutOfRangeException(nameof(section), section, null)
-		};
-	}
-
-	private IReadOnlyDictionary<string, string> ValuesOf(
-		IReadOnlyList<SectionRead> sections, ConfigurationSectionName section)
-	{
-		var owned = sections.Single(read => read.Section == section).Owned;
-
-		if (owned.IsFailed)
-		{
-			_messagePanel.ReportFailure(owned, _logger);
+			_messagePanel.ReportFailure(section, _logger);
 
 			return new Dictionary<string, string>();
 		}
 
-		return owned.Value.Values;
+		return section.Value.Values;
 	}
 
-	private static decimal? PortOf(string? text)
+	private static decimal? NumberOf(
+		IReadOnlyDictionary<string, string> values, string key, decimal lowest, decimal highest)
 	{
 		var parsed = int.TryParse(
-			text,
-			NumberStyles.None,
-			CultureInfo.InvariantCulture,
-			out var number);
+			values.GetValueOrDefault(key), NumberStyles.None, CultureInfo.InvariantCulture, out var number);
 
-		return parsed && IsPort(number) ? number : null;
+		return parsed && IsWholeNumberIn(number, lowest, highest) ? number : null;
 	}
 
-	private static bool IsPort(decimal? value)
+	private static bool IsWholeNumberIn(decimal? value, decimal lowest, decimal highest)
 	{
-		return value is { } number
-			&& number == decimal.Truncate(number)
-			&& number >= LowestPort
-			&& number <= HighestPort;
+		return value is { } number && number == decimal.Truncate(number) && number >= lowest && number <= highest;
 	}
 
 	private static string TextOf(decimal? value)

@@ -19,10 +19,6 @@ const ushort HostPort = 55432;
 const ushort ContainerPort = 5432;
 // One density for the seeded day and the live tail, so the chart shows no seam between them.
 const string ChangeSeconds = "0.5";
-// A running Simple-Scada holds 49875, so the stand serves OPC UA on a port of its own.
-const string OpcPort = "55875";
-// The archive trails the OPC UA stream as the SCADA's buffered archive does, so the stand shows that span.
-const string ArchiveLagSeconds = "60";
 
 // AppHostDirectory is SemiPlot/SemiPlot.AppHost, so the tracked set sits two levels above it.
 var trackedConfiguration = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "..", "..", "ConfigFiles"));
@@ -48,17 +44,11 @@ var converge = builder.AddProject<Projects.SemiPlot_Tools_ArchiveSeeder>("conver
 		"--connection", writerConnection,
 		"--admin-connection", adminConnection,
 		"--config-dir", configDirectory,
-		"--change-seconds", ChangeSeconds,
-		"--opc-port", OpcPort)
+		"--change-seconds", ChangeSeconds)
 	.WaitFor(bench);
 
 builder.AddProject<Projects.SemiPlot_Tools_ArchiveSeeder>("writer")
-	.WithArgs(
-		"--connection", writerConnection,
-		"--follow", "1",
-		"--change-seconds", ChangeSeconds,
-		"--opc-port", OpcPort,
-		"--archive-lag", ArchiveLagSeconds)
+	.WithArgs("--connection", writerConnection, "--follow", "1", "--change-seconds", ChangeSeconds)
 	.WaitForCompletion(converge);
 
 builder.AddProject<Projects.SemiPlot_UI>("viewer")

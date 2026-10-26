@@ -5,7 +5,6 @@ using System.Reactive.Subjects;
 using FluentResults;
 
 using SemiPlot.Core.Data;
-using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
 
 namespace SemiPlot.UI.Bridge;
@@ -40,8 +39,6 @@ public sealed class TrendCoordinator : IDisposable
 		_penIds = new BehaviorSubject<IReadOnlyList<int>>([.. pens.Select(pen => pen.PenId)]);
 		RealtimeBatches = BuildRealtimeBatches();
 		RealtimeFailures = _realtimeFailures.ObserveOn(_uiScheduler);
-		LiveSourceStates = _liveSource.States.ObserveOn(_uiScheduler);
-		LivePenFaults = _liveSource.PenFaults.ObserveOn(_uiScheduler);
 	}
 
 	/// <summary>
@@ -55,12 +52,6 @@ public sealed class TrendCoordinator : IDisposable
 	/// live source that faults. Republished on the UI scheduler, like <see cref="RealtimeBatches"/>.
 	/// </summary>
 	public IObservable<Exception> RealtimeFailures { get; }
-
-	/// <summary>The live source's session state, the current one first, on the UI scheduler.</summary>
-	public IObservable<LiveSourceState> LiveSourceStates { get; }
-
-	/// <summary>The live source's pen faults, on the UI scheduler.</summary>
-	public IObservable<LiveSourceError> LivePenFaults { get; }
 
 	/// <summary>The pen set the live edge follows: the constructor's, or the last one handed to SetPens.</summary>
 	public IReadOnlyList<int> PenIds => _penIds.Value;

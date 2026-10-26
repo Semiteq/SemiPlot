@@ -19,9 +19,10 @@ public sealed class StaleArchiveGuardTests(PostgresContainerFixture postgresCont
 
 	private static readonly DateTime _now = new(2026, 1, 2, 12, 0, 0, DateTimeKind.Unspecified);
 
-	// The state the operator reached: a fill from the previous day under a writer started today.
+	// The state the operator reached: a fill from the previous day under a writer started today. The
+	// refusal names the verb that refills, because that is the whole remedy.
 	[Fact]
-	public async Task AnArchiveOlderThanTheBoundIsRefusedNamingConvergeAndTheArchiveLag()
+	public async Task AnArchiveOlderThanTheBoundIsRefusedAndNamesConverge()
 	{
 		var newest = _now.AddMinutes(-793.7);
 
@@ -32,7 +33,7 @@ public sealed class StaleArchiveGuardTests(PostgresContainerFixture postgresCont
 
 		var refused = (await act.Should().ThrowAsync<SeederException>()).Which;
 
-		refused.Message.Should().Contain("converge").And.Contain("--archive-lag");
+		refused.Message.Should().Contain("converge");
 	}
 
 	// The caller reads the absent timestamp as "start at the clock".

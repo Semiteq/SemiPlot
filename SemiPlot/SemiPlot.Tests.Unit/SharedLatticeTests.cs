@@ -30,9 +30,7 @@ public sealed class SharedLatticeTests
 		TimeSpan.FromSeconds(1),
 		PenCount,
 		SeederOptions.DefaultSeed,
-		ChangeSeconds,
-		TimeSpan.Zero,
-		55875);
+		ChangeSeconds);
 
 	// A restart by hand, inside StaleArchiveGuard.MaximumAge of the edge the seeding run left.
 	private static readonly DateTime _restartClock = BenchOptions.End.AddMinutes(3);
@@ -90,27 +88,5 @@ public sealed class SharedLatticeTests
 
 			seam.Should().BeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(1.0)).And.BeLessThanOrEqualTo(_changeInterval);
 		}
-	}
-
-	// The third path: the OPC UA demo server serves ChangesAt.
-	[Fact]
-	public void TheServedChangeAtEveryLatticeInstantIsTheFollowWindowsChangeRow()
-	{
-		var options = _following with { ChangeSeconds = 0.5 };
-		var interval = TimeSpan.FromSeconds(options.ChangeSeconds).Ticks;
-		var start = BenchOptions.End;
-
-		var followed = LiveTailGenerator.Generate(options, start, start.AddHours(1));
-
-		var changes = followed
-			.Where(row => row.Timestamp.Ticks % interval == 0L)
-			.GroupBy(row => row.Timestamp)
-			.ToArray();
-
-		changes.Should().HaveCount(7200);
-
-		var served = changes.SelectMany(change => LiveTailGenerator.ChangesAt(options, change.Key));
-
-		served.Should().Equal(changes.SelectMany(change => change));
 	}
 }

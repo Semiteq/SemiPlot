@@ -131,7 +131,7 @@ internal static class ChartViewTestBuilder
 				[1.0, 3.0],
 				[5.0, 9.0],
 				[2.0, 6.0]),
-			ChartTestBuilder.To);
+			ChartTestBuilder.To, null);
 		viewModel.AddPen(FakeDataProvider.SecondPen).LoadHistory(
 			new PenHistoryEnvelope(
 				2,
@@ -139,7 +139,7 @@ internal static class ChartViewTestBuilder
 				[50.0, 50.0],
 				[50.0, 50.0],
 				[50.0, 50.0]),
-			ChartTestBuilder.To);
+			ChartTestBuilder.To, null);
 		viewModel.Navigation.TrackDataExtents(ChartTestBuilder.From, ChartTestBuilder.To);
 
 		return viewModel;

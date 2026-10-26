@@ -72,7 +72,7 @@ public sealed class TrendChartRenderThreadTests
 				[0.0, 1e-3, 10.0],
 				[1e-6, 1.0, 100.0],
 				[1e-3, 0.1, 50.0]),
-			_historyStart.AddMinutes(2.0));
+			_historyStart.AddMinutes(2.0), null);
 		chart.Plot.Axes.SetLimitsX(
 			LocalTimeAxis.ToAxis(_historyStart),
 			LocalTimeAxis.ToAxis(_historyStart.AddMinutes(2.0)));

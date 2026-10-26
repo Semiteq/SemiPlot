@@ -28,6 +28,9 @@ public sealed class EnvelopeLine : IPlottable
 	private readonly Lock _renderStateLock = new();
 	// The last X the last ReplaceColumns wrote: every column past it is a live append.
 	private double _historyEndX = double.NegativeInfinity;
+	// docs/architecture/charting.md#per-pen-plottable-envelopeline
+	private double _unreadFromX = double.NaN;
+	private double _unreadGapX = double.NaN;
 	private Color _color = Colors.Black;
 	private PenLineStyle _penLineStyle = PenLineStyle.Interpolated;
 	private float _lineWidth = DefaultLineWidth;
@@ -192,10 +195,12 @@ public sealed class EnvelopeLine : IPlottable
 	}
 
 	// docs/architecture/data-integration.md#what-one-history-query-covers
-	internal void ReplaceColumns(IReadOnlyList<EnvelopeColumn> columns, double requestedEndX)
+	internal void ReplaceColumns(IReadOnlyList<EnvelopeColumn> columns, double requestedEndX, bool isUnreadPastEnd)
 	{
 		lock (_renderStateLock)
 		{
+			RemoveCoveredUnreadGap(requestedEndX);
+
 			var newHistoryEndX = columns.Count > 0 ? columns[^1].X : double.NegativeInfinity;
 			var keptTailStart = EnvelopePath.FirstAfter(_columns, Math.Max(_historyEndX, newHistoryEndX));
 			var keptTailEnd = Math.Max(keptTailStart, EnvelopePath.FirstAfter(_columns, requestedEndX));
@@ -204,6 +209,7 @@ public sealed class EnvelopeLine : IPlottable
 			_columns.RemoveRange(0, keptTailStart);
 			_columns.InsertRange(0, columns);
 			_historyEndX = newHistoryEndX;
+			_unreadFromX = isUnreadPastEnd ? requestedEndX : double.NaN;
 
 			var overflow = _columns.Count - MaxColumns;
 			if (overflow > 0)
@@ -234,8 +240,7 @@ public sealed class EnvelopeLine : IPlottable
 
 			var index = _columns.Count - 1;
 			var column = _columns[index];
-			var endsOnGap = double.IsNaN(column.Min) || double.IsNaN(column.Max);
-			if (endsOnGap)
+			if (IsGap(column) || CrossesUnreadSpan(sample.X))
 			{
 				return AppendAfterLastColumn(sample);
 			}
@@ -275,6 +280,18 @@ public sealed class EnvelopeLine : IPlottable
 			return false;
 		}
 
+		if (CrossesUnreadSpan(column.X))
+		{
+			var lastX = _columns[^1].X;
+			_unreadGapX = _unreadFromX > lastX ? _unreadFromX : lastX + ((column.X - lastX) / 2);
+			_columns.Add(new EnvelopeColumn(_unreadGapX, double.NaN, double.NaN, double.NaN));
+		}
+
+		if (column.X > _unreadFromX)
+		{
+			_unreadFromX = double.NaN;
+		}
+
 		_columns.Add(column);
 
 		if (_columns.Count > MaxColumns)
@@ -283,5 +300,36 @@ public sealed class EnvelopeLine : IPlottable
 		}
 
 		return true;
+	}
+
+	private bool CrossesUnreadSpan(double x)
+	{
+		return !double.IsNaN(_unreadFromX)
+			&& _columns.Count > 0
+			&& !IsGap(_columns[^1])
+			&& _columns[^1].X <= _unreadFromX
+			&& x > _unreadFromX;
+	}
+
+	// A read that reached the gap covered the span it stood for.
+	private void RemoveCoveredUnreadGap(double requestedEndX)
+	{
+		if (double.IsNaN(_unreadGapX) || _unreadGapX > requestedEndX)
+		{
+			return;
+		}
+
+		var index = EnvelopePath.FirstAfter(_columns, _unreadGapX) - 1;
+		if (index >= 0 && _columns[index].X == _unreadGapX && IsGap(_columns[index]))
+		{
+			_columns.RemoveAt(index);
+		}
+
+		_unreadGapX = double.NaN;
+	}
+
+	private static bool IsGap(EnvelopeColumn column)
+	{
+		return double.IsNaN(column.Min) || double.IsNaN(column.Max);
 	}
 }

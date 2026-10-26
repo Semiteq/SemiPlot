@@ -1666,6 +1666,40 @@ public sealed class TrendChartViewModelTests
 		viewModel.EndDrag();
 	}
 
+	// A margin-less read inside the span in hand draws past its own edge, so the unread mark sits at the span's end.
+	[AvaloniaFact]
+	public async Task ALiveSampleAfterAMarginlessReadInThePast_DoesNotJoinTheSplicedBand()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel(RealtimeInterval);
+		var state = viewModel.AddPen(FakeDataProvider.FirstPen);
+		viewModel.Navigation.TrackDataExtents(
+			FakeDataProvider.RealtimeEpoch.AddDays(-30.0), FakeDataProvider.RealtimeEpoch);
+		viewModel.RequestInitialHistory();
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(5.0).Ticks);
+		viewModel.Navigation.PanBy(TimeSpan.FromDays(-1.0));
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(5.0).Ticks);
+		var spanInHand = provider.ChartHistoryQueries[^1];
+		var width = viewModel.Navigation.To - viewModel.Navigation.From;
+		provider.GatedLayer = viewModel.Navigation.ActiveLayer;
+
+		viewModel.Navigation.PanBy(0.6 * width);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+		var visibleRead = provider.ChartHistoryQueries[^1];
+		var visibleGate = provider.HistoryGate;
+		provider.HistoryGate = new();
+		await ReleaseAndAwait(viewModel, 1, () => visibleGate.SetResult(
+			Result.Ok<IReadOnlyList<PenHistoryEnvelope>>(
+				[new PenHistoryEnvelope(1, [visibleRead.FromUtc, visibleRead.ToUtc], [7.0, 7.0], [7.0, 7.0], [7.0, 7.0])])));
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks * 3);
+
+		visibleRead.ToUtc.Should().BeBefore(spanInHand.ToUtc, "the read ends inside the span in hand");
+		var columns = state.Line.SnapshotColumns();
+		var firstLive = columns.ToList().FindIndex(column =>
+			column.X > LocalTimeAxis.ToAxis(spanInHand.ToUtc) && !double.IsNaN(column.Center));
+		firstLive.Should().BePositive();
+		double.IsNaN(columns[firstLive - 1].Center).Should().BeTrue("the span past the spliced band is unread");
+	}
+
 	// The read of the first wheel notch lands after the second: it spans the window of the first notch alone,
 	// and the columns in hand past both its sides still draw, and read, the wider window in view.
 	[AvaloniaFact]
@@ -2161,7 +2195,7 @@ public sealed class TrendChartViewModelTests
 		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
 
 		var lateState = viewModel.AddPen(FakeDataProvider.SecondPen);
-		lateState.LoadHistory(new PenHistoryEnvelope(2, [From, To], [4.0, 4.0], [4.0, 4.0], [4.0, 4.0]), To);
+		lateState.LoadHistory(new PenHistoryEnvelope(2, [From, To], [4.0, 4.0], [4.0, 4.0], [4.0, 4.0]), To, null);
 
 		await ReleaseAndAwait(viewModel, 2, () => provider.HistoryGate.SetResult(
 			Result.Ok<IReadOnlyList<PenHistoryEnvelope>>(

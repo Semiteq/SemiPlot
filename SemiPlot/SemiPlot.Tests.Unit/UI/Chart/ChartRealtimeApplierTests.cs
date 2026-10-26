@@ -35,7 +35,7 @@ public sealed class ChartRealtimeApplierTests
 	public void AtACoarseLayer_TheValueFoldsAndTheBreakAppendsPastTheFoldedColumn()
 	{
 		var state = NewState();
-		state.LoadHistory(new PenHistoryEnvelope(1, [_start], [1.0], [5.0], [2.0]), _start);
+		state.LoadHistory(new PenHistoryEnvelope(1, [_start], [1.0], [5.0], [2.0]), _start, null);
 
 		Apply(
 			state,

@@ -1,5 +1,8 @@
 # OPC UA live edge roadmap
 
+**Status: abandoned on 2026-10-26.** All seven slices merged; #144 to #147 were reverted by #149
+(`[DEC:archive-live-edge]`). #141, #142 and #143 stay.
+
 **Issues:** #116 (Live data: show a value within 1 s of its change). One issue, sliced into seven pull
 requests; the slice that switches the live edge to OPC UA closes it.
 

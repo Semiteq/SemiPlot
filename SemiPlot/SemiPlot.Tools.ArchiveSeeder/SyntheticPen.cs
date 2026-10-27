@@ -14,8 +14,15 @@ public sealed record SyntheticPen(
 	bool EnabledOnStart = true,
 	bool StoresScale = true,
 	bool LogScaleOnStart = false,
-	PenLineStyle LineStyle = PenLineStyle.Interpolated)
+	PenLineStyle LineStyle = PenLineStyle.Interpolated,
+	TimeSpan? ChangePeriod = null)
 {
+	/// <summary>Lattice steps per value change: one, or the change period's whole number of intervals.</summary>
+	public long ChangeStride(long intervalTicks)
+	{
+		return ChangePeriod is { } period ? Math.Max(1L, period.Ticks / intervalTicks) : 1L;
+	}
+
 	/// <summary>The round-robin key: the first group, and the empty string for an ungrouped pen.</summary>
 	public string PrimaryGroup => Groups.Count > 0 ? Groups[0] : string.Empty;
 

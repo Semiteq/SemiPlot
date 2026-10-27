@@ -62,6 +62,7 @@ public static class RawLayerGenerator
 		bool breakFollows)
 	{
 		var anchorOffset = PollInterval.Ticks;
+		var stride = pen.ChangeStride(intervalTicks);
 
 		var carriesAnchor = intervalTicks > anchorOffset;
 
@@ -81,14 +82,20 @@ public static class RawLayerGenerator
 				return;
 			}
 
-			if (carriesAnchor && !dropsAnchor && anchorTicks >= fromTicks)
+			var isChange = index % stride == 0;
+
+			if (isChange && carriesAnchor && !dropsAnchor && anchorTicks >= fromTicks)
 			{
-				rows.Add(Row(pen, anchorTicks, ValueAt(seed, pen, index - 1)));
+				rows.Add(Row(pen, anchorTicks, HeldValue(seed, pen, stride, index - 1)));
 			}
 
-			if (changeTicks >= fromTicks && changeTicks < toExclusiveTicks)
+			// The project start and stop write every pen, so a pen holding its value still gets the row a
+			// break marker goes on: docs/architecture/bench.md#breaks.
+			var marksBoundary = dropsAnchor || (breakFollows && changeTicks + intervalTicks >= toExclusiveTicks);
+
+			if (changeTicks >= fromTicks && changeTicks < toExclusiveTicks && (isChange || marksBoundary))
 			{
-				rows.Add(Row(pen, changeTicks, ValueAt(seed, pen, index)));
+				rows.Add(Row(pen, changeTicks, HeldValue(seed, pen, stride, index)));
 
 				dropsAnchor = false;
 			}
@@ -132,7 +139,7 @@ public static class RawLayerGenerator
 		}
 	}
 
-	// Both markers land on real change rows: the run's first for q = 16 and its last for q = 32, and
+	// Both markers land on lattice rows: the run's first for q = 16 and its last for q = 32, and
 	// RequireTwoChangesPerRun has made sure a run bounded by a break holds two distinct ones.
 	private static void MarkRunBoundaries(List<ArchiveRow> rows, int firstIndex, bool resumed, bool breakFollows)
 	{
@@ -176,6 +183,13 @@ public static class RawLayerGenerator
 	private static long FirstIndex(long fromTicks, long intervalTicks)
 	{
 		return Math.Max(1L, (fromTicks + intervalTicks - 1) / intervalTicks);
+	}
+
+	// A slow pen holds the value of its last change, the nearest index at or below that is a multiple of
+	// its stride.
+	private static double HeldValue(long seed, SyntheticPen pen, long stride, long index)
+	{
+		return ValueAt(seed, pen, index - (index % stride));
 	}
 
 	private static double ValueAt(long seed, SyntheticPen pen, long index)

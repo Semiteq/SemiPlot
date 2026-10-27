@@ -160,7 +160,7 @@ public sealed class SeederCommandTests
 	[InlineData("--days", "0")]
 	[InlineData("--days", "-1")]
 	[InlineData("--pens", "0")]
-	[InlineData("--pens", "51")]
+	[InlineData("--pens", "53")]
 	[InlineData("--change-seconds", "0")]
 	[InlineData("--change-seconds", "-1")]
 	[InlineData("--change-seconds", "NaN")]

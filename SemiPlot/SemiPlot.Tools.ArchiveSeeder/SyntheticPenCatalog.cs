@@ -20,11 +20,12 @@ public static class SyntheticPenCatalog
 	private const string GasLinesGroup = "Gas lines";
 	private const string PressuresGroup = "Pressures";
 	private const string PowersGroup = "Powers";
+	private const string SetpointsGroup = "Setpoints";
 
 	// The second group of the two-group pen; it keeps whatever group Build already gave that pen.
 	private const string WatchlistGroup = "Watchlist";
 
-	// Twelve keeps the standard slice's eight round-robin pens on distinct colours.
+	// Twelve keeps the standard slice's ten round-robin pens on distinct colours.
 	private static readonly string[] _palette =
 	[
 		"#4E79A7", "#F28E2B", "#E15759", "#76B7B2", "#59A14F", "#EDC948",
@@ -82,6 +83,19 @@ public static class SyntheticPenCatalog
 			unit: "kW",
 			format: "0.0");
 
+		// Two pens that hold a value for minutes, so the stand shows a line held to the live edge.
+		AddGroup(
+			pens: pens,
+			group: SetpointsGroup,
+			count: 2,
+			idBase: 6000,
+			namePrefix: "Setpoint",
+			range: _ => (100.0, 600.0),
+			unit: "degC",
+			format: "0",
+			lineStyle: PenLineStyle.Stepped,
+			changePeriod: index => index == 0 ? TimeSpan.FromMinutes(5) : TimeSpan.FromMinutes(30));
+
 		return [.. pens.Select(Commission)];
 	}
 
@@ -113,7 +127,8 @@ public static class SyntheticPenCatalog
 		Func<int, (double Min, double Max)> range,
 		string unit,
 		string format,
-		PenLineStyle lineStyle = PenLineStyle.Interpolated)
+		PenLineStyle lineStyle = PenLineStyle.Interpolated,
+		Func<int, TimeSpan>? changePeriod = null)
 	{
 		for (var index = 0; index < count; index++)
 		{
@@ -131,7 +146,8 @@ public static class SyntheticPenCatalog
 				maxValue,
 				unit,
 				format,
-				LineStyle: lineStyle));
+				LineStyle: lineStyle,
+				ChangePeriod: changePeriod?.Invoke(index)));
 		}
 	}
 

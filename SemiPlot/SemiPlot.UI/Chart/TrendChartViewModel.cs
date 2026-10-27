@@ -797,12 +797,21 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			var foldIntoColumn = Navigation.ActiveLayer != AggregationLayer.Raw;
 
 			// docs/architecture/data-integration.md#what-one-history-query-covers
-			if (foldIntoColumn && _historyPlanner.RangeInHand is { Layer: AggregationLayer.Raw })
+			if (foldIntoColumn
+				&& batch.Timestamps.Count > 0
+				&& _historyPlanner.RangeInHand is { Layer: AggregationLayer.Raw })
 			{
 				_historyPlanner.Forget();
 			}
 
-			_realtimeApplier.Apply(batch, foldIntoColumn);
+			var endsAVisibleOutage = _realtimeApplier.Apply(batch, foldIntoColumn);
+
+			// docs/architecture/charting.md#per-pen-plottable-envelopeline
+			if (endsAVisibleOutage && _isHistoryStarted)
+			{
+				RequeryAllPens();
+			}
+
 			RequestRedraw();
 		}
 		catch (Exception applyFailure)

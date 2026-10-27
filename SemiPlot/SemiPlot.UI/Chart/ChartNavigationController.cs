@@ -50,6 +50,9 @@ public sealed class ChartNavigationController
 	// as the value passed to SetTargetColumnCount.
 	public int TargetColumnCount { get; private set; } = HistoryColumnTarget.MaxColumns;
 
+	/// <summary>The time one drawn column of the window covers.</summary>
+	public TimeSpan ColumnWidth => _navigation.Width / TargetColumnCount;
+
 	public event EventHandler<NavigationWindow>? WindowChanged;
 
 	/// <summary>
@@ -127,9 +130,7 @@ public sealed class ChartNavigationController
 		// go through ApplyWindowChange and do re-query.
 		ActiveLayer = LayerForCurrentWidth();
 		RecordNewestSample(lastSample);
-		WindowChanged?.Invoke(
-			this,
-			new NavigationWindow(_navigation.From, _navigation.To, ActiveLayer, RequiresHistoryRequery: false));
+		RaiseWindowChangedWithoutRequery();
 	}
 
 	public void ZoomAt(double factor, DateTime anchorUtc)
@@ -176,24 +177,38 @@ public sealed class ChartNavigationController
 		ApplyWindowChange();
 	}
 
-	public void OnLiveEdge(DateTime now)
+	/// <summary>
+	/// Moves the live edge to a poll answer, or to its newest sample where that is later, and records the sample.
+	/// </summary>
+	public void OnLiveEdge(DateTime answeredAtUtc, DateTime? newestSampleUtc)
 	{
-		if (now > _liveEdge)
+		var edge = newestSampleUtc > answeredAtUtc ? newestSampleUtc.Value : answeredAtUtc;
+		if (edge > _liveEdge)
 		{
-			_liveEdge = now;
+			_liveEdge = edge;
 		}
 
-		if (!_navigation.IsSticky)
-		{
-			RecordNewestSample(now);
-
-			return;
-		}
-
+		var toBefore = _navigation.To;
 		_navigation.OnLiveEdge(_liveEdge);
+		var windowMoved = _navigation.To != toBefore;
+		if (windowMoved)
+		{
+			ActiveLayer = LayerForCurrentWidth();
+		}
 
-		ActiveLayer = LayerForCurrentWidth();
-		RecordNewestSample(now);
+		if (newestSampleUtc is { } newestSample)
+		{
+			RecordNewestSample(newestSample);
+		}
+
+		if (windowMoved)
+		{
+			RaiseWindowChangedWithoutRequery();
+		}
+	}
+
+	private void RaiseWindowChangedWithoutRequery()
+	{
 		WindowChanged?.Invoke(
 			this,
 			new NavigationWindow(_navigation.From, _navigation.To, ActiveLayer, RequiresHistoryRequery: false));

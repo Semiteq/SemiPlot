@@ -8,7 +8,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Testing;
 
 using SemiPlot.Core.Data;
-using SemiPlot.Core.Trends;
 using SemiPlot.DataSource.Postgres;
 using SemiPlot.DataSource.Postgres.Configuration;
 
@@ -39,7 +38,7 @@ public sealed class RealtimePollTests
 
 		var samples = await NewPoll(services).ReadOnceAsync(TestContext.Current.CancellationToken);
 
-		samples.Should().BeEmpty();
+		samples.Should().BeNull();
 	}
 
 	[Fact]
@@ -73,7 +72,7 @@ public sealed class RealtimePollTests
 
 		var liveSource = services.GetRequiredService<ILiveSource>();
 
-		using var notifications = new BatchCollector<Notification<IReadOnlyList<Sample>>>(
+		using var notifications = new BatchCollector<Notification<LivePoll>>(
 			liveSource.Subscribe([1]).Materialize());
 
 		await gate.FailuresReached(FailedTicksBeforeAssert)

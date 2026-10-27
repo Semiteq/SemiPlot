@@ -40,7 +40,7 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 
 		var samples = await NewPoll(services).ReadOnceAsync(TestContext.Current.CancellationToken);
 
-		samples.Should().BeEmpty();
+		samples.Should().NotBeNull().And.BeEmpty();
 	}
 
 	[Fact]
@@ -213,18 +213,18 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 
 		var poll = NewPoll(services);
 
-		await HideTrendsAsync(cancellationToken);
+		await HideTrendsAsync(Database, cancellationToken);
 
 		try
 		{
 			for (var tick = 0; tick < FailedTickCount; tick++)
 			{
-				(await poll.ReadOnceAsync(cancellationToken)).Should().BeEmpty();
+				(await poll.ReadOnceAsync(cancellationToken)).Should().BeNull();
 			}
 		}
 		finally
 		{
-			await RestoreTrendsAsync(cancellationToken);
+			await RestoreTrendsAsync(Database, cancellationToken);
 		}
 
 		// The recovering tick is an ordinary baseline read, taken at the newest row then present: row A, so
@@ -258,24 +258,6 @@ public sealed class RealtimePollReadTests(PostgresContainerFixture postgresConta
 
 		delivered.PenId.Should().Be(SubscribedPenIds[1]);
 		delivered.TimestampUtc.Should().Be(ArchiveProviderFactory.TimeConverter.ToUtc(appendedSecond));
-	}
-
-	// Renamed rather than dropped: the rows and the day partitions come back with it, so the recovering
-	// tick reads the archive this class seeded rather than an empty one.
-	private Task HideTrendsAsync(CancellationToken cancellationToken)
-	{
-		return ArchiveDatabase.ExecuteAsync(
-			Database.AdminConnectionString,
-			"ALTER TABLE public.trends RENAME TO trends_hidden_by_test;",
-			cancellationToken);
-	}
-
-	private Task RestoreTrendsAsync(CancellationToken cancellationToken)
-	{
-		return ArchiveDatabase.ExecuteAsync(
-			Database.AdminConnectionString,
-			"ALTER TABLE public.trends_hidden_by_test RENAME TO trends;",
-			cancellationToken);
 	}
 
 	// The baseline entry carries no RowCount.

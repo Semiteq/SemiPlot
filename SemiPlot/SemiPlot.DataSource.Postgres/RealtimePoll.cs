@@ -38,9 +38,9 @@ internal sealed class RealtimePoll(
 
 	/// <summary>
 	/// One tick. The first one establishes the baseline and emits no sample; every later one emits the
-	/// rows written since the previous tick, converted to UTC. A failed tick emits no sample.
+	/// rows written since the previous tick, converted to UTC. A failed tick answers null.
 	/// </summary>
-	public async Task<IReadOnlyList<Sample>> ReadOnceAsync(CancellationToken cancellationToken)
+	public async Task<IReadOnlyList<Sample>?> ReadOnceAsync(CancellationToken cancellationToken)
 	{
 		try
 		{
@@ -65,7 +65,7 @@ internal sealed class RealtimePoll(
 		{
 			LogFailure(exception);
 
-			return _noSamples;
+			return null;
 		}
 	}
 

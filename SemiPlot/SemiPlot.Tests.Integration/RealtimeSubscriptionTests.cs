@@ -6,6 +6,8 @@ using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Testing;
 
+using Npgsql;
+
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
 
@@ -46,7 +48,8 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 
 		var liveSource = services.GetRequiredService<ILiveSource>();
 
-		using var subscription = new BatchCollector<IReadOnlyList<Sample>>(liveSource.Subscribe(SubscribedPenIds));
+		using var subscription = new BatchCollector<IReadOnlyList<Sample>>(
+			liveSource.Subscribe(SubscribedPenIds).SampleBatches());
 
 		await armed.Armed(1).WaitAsync(GateBound, cancellationToken);
 
@@ -87,7 +90,8 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 
 		var liveSource = services.GetRequiredService<ILiveSource>();
 
-		using var first = new BatchCollector<IReadOnlyList<Sample>>(liveSource.Subscribe(SubscribedPenIds));
+		using var first = new BatchCollector<IReadOnlyList<Sample>>(
+			liveSource.Subscribe(SubscribedPenIds).SampleBatches());
 
 		await armed.Armed(1).WaitAsync(GateBound, cancellationToken);
 
@@ -97,7 +101,8 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 			Database, SubscribedPenIds[0], beforeTheSecondSubscription, 1, cancellationToken: cancellationToken);
 		await firstSeesTheEarlyRow.WaitAsync(GateBound, cancellationToken);
 
-		using var second = new BatchCollector<IReadOnlyList<Sample>>(liveSource.Subscribe(SubscribedPenIds));
+		using var second = new BatchCollector<IReadOnlyList<Sample>>(
+			liveSource.Subscribe(SubscribedPenIds).SampleBatches());
 
 		await armed.Armed(2).WaitAsync(GateBound, cancellationToken);
 
@@ -134,7 +139,7 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 		var liveSource = services.GetRequiredService<ILiveSource>();
 
 		using var notifications = new BatchCollector<Notification<IReadOnlyList<Sample>>>(
-			liveSource.Subscribe([SubscribedPenIds[0], UnservedPenId]).Materialize());
+			liveSource.Subscribe([SubscribedPenIds[0], UnservedPenId]).SampleBatches().Materialize());
 
 		await armed.Armed(1).WaitAsync(GateBound, cancellationToken);
 
@@ -158,9 +163,166 @@ public sealed class RealtimeSubscriptionTests(PostgresContainerFixture postgresC
 			.Should().Equal(SubscribedPenIds[0], SubscribedPenIds[0]);
 	}
 
+	// Each answered poll writes its log line once its statement has answered, so an answer taken before the
+	// statement lies after the previous poll's line and no later than its own. The test reads that order from
+	// RealtimePoll.ReadOnceAsync logging after the statement; a line moved ahead of it voids the check.
+	[Fact]
+	public async Task APollWithNoNewRowEmitsItsAnswerTakenBeforeItsStatement()
+	{
+		const int PollCount = 3;
+		var cancellationToken = TestContext.Current.CancellationToken;
+
+		using var logs = new FakeLoggerProvider();
+		using var armed = new ArmedGate(logs);
+		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString, armed);
+
+		using var polls = new BatchCollector<LivePoll>(
+			services.GetRequiredService<ILiveSource>().Subscribe(SubscribedPenIds));
+
+		await polls.Reached(PollCount).WaitAsync(GateBound, cancellationToken);
+
+		var answered = polls.Batches.Take(PollCount).ToArray();
+		var lines = AnsweredPollEntries(logs).Take(PollCount).Select(entry => entry.Timestamp.UtcDateTime).ToArray();
+
+		answered.Should().AllSatisfy(poll =>
+		{
+			poll.Samples.Should().BeEmpty();
+			poll.ResumesAfterFailure.Should().BeFalse();
+			poll.AnsweredAtUtc.Kind.Should().Be(DateTimeKind.Utc);
+		});
+		answered.Select(poll => poll.AnsweredAtUtc).Should().BeInAscendingOrder().And.OnlyHaveUniqueItems();
+		lines.Should().HaveCount(PollCount);
+
+		for (var index = 0; index < PollCount; index++)
+		{
+			answered[index].AnsweredAtUtc.Should().BeOnOrBefore(lines[index]);
+
+			if (index > 0)
+			{
+				answered[index].AnsweredAtUtc.Should().BeOnOrAfter(lines[index - 1]);
+			}
+		}
+	}
+
+	// No answered poll can land while the table is hidden, so the gate taken before it returns opens on the
+	// first answer after the failed run.
+	[Fact]
+	public async Task TheFirstAnswerAfterAFailedPollResumesAfterFailure()
+	{
+		var cancellationToken = TestContext.Current.CancellationToken;
+
+		using var armed = new ArmedGate();
+		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString, armed);
+
+		using var polls = new BatchCollector<LivePoll>(
+			services.GetRequiredService<ILiveSource>().Subscribe(SubscribedPenIds));
+
+		await armed.Armed(1).WaitAsync(GateBound, cancellationToken);
+		await HideTrendsAsync(Database, cancellationToken);
+
+		Task resumed;
+
+		try
+		{
+			await armed.FailuresReached(1).WaitAsync(GateBound, cancellationToken);
+
+			resumed = polls.NextBatch();
+		}
+		finally
+		{
+			await RestoreTrendsAsync(Database, cancellationToken);
+		}
+
+		await resumed.WaitAsync(GateBound, cancellationToken);
+
+		var resumptions = polls.Batches.Select(poll => poll.ResumesAfterFailure).ToArray();
+
+		resumptions[0].Should().BeFalse("the baseline poll follows no failure");
+		resumptions.Should().ContainSingle(resumes => resumes);
+		resumptions.SkipWhile(resumes => !resumes).Skip(1).Should().NotContain(true);
+	}
+
+	// The pen set moves to a new subscription while the archive is unreachable, as a catalogue edit can.
+	[Fact]
+	public async Task ASubscriptionTakingOverAfterAFailedPollResumesAfterFailure()
+	{
+		var cancellationToken = TestContext.Current.CancellationToken;
+
+		using var armed = new ArmedGate();
+		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString, armed);
+		var liveSource = services.GetRequiredService<ILiveSource>();
+
+		using (new BatchCollector<LivePoll>(liveSource.Subscribe(SubscribedPenIds)))
+		{
+			await armed.Armed(1).WaitAsync(GateBound, cancellationToken);
+			await HideTrendsAsync(Database, cancellationToken);
+
+			try
+			{
+				await armed.FailuresReached(1).WaitAsync(GateBound, cancellationToken);
+			}
+			finally
+			{
+				await RestoreTrendsAsync(Database, cancellationToken);
+			}
+		}
+
+		using var takenOver = new BatchCollector<LivePoll>(liveSource.Subscribe([SubscribedPenIds[0]]));
+
+		await takenOver.Reached(1).WaitAsync(GateBound, cancellationToken);
+
+		takenOver.Batches[0].ResumesAfterFailure.Should().BeTrue();
+	}
+
+	// The lock holds the poll's statement waiting on the server, as an unanswering archive does, until the
+	// pen-set switch cancels it; the read neither answered nor failed on its own.
+	[Fact]
+	public async Task ASubscriptionTakingOverFromAReadCancelledInFlightResumesAfterFailure()
+	{
+		var cancellationToken = TestContext.Current.CancellationToken;
+
+		using var armed = new ArmedGate();
+		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString, armed);
+		var liveSource = services.GetRequiredService<ILiveSource>();
+
+		await using (var locker = new NpgsqlConnection(Database.AdminConnectionString))
+		{
+			await locker.OpenAsync(cancellationToken);
+			await using var transaction = await locker.BeginTransactionAsync(cancellationToken);
+
+			using (new BatchCollector<LivePoll>(liveSource.Subscribe(SubscribedPenIds)))
+			{
+				await armed.Armed(1).WaitAsync(GateBound, cancellationToken);
+
+				await using var lockTrends = new NpgsqlCommand(
+					PostgresHistoryReadTests.LockTrendsCommand, locker, transaction);
+				await lockTrends.ExecuteNonQueryAsync(cancellationToken);
+
+				(await PostgresHistoryReadTests.AwaitALockWaitOnTrendsAsync(locker, transaction))
+					.Should().BeTrue("the poll's statement has to be waiting on the server when the switch cancels it");
+			}
+
+			await transaction.RollbackAsync(cancellationToken);
+		}
+
+		using var takenOver = new BatchCollector<LivePoll>(liveSource.Subscribe([SubscribedPenIds[0]]));
+
+		await takenOver.Reached(1).WaitAsync(GateBound, cancellationToken);
+
+		takenOver.Batches[0].ResumesAfterFailure.Should().BeTrue();
+	}
+
 	private static IReadOnlyList<FakeLogRecord> PollEntries(FakeLoggerProvider logs)
 	{
 		return [.. logs.Collector.GetSnapshot().Where(entry => entry.GetStructuredStateValue("RowCount") is not null)];
+	}
+
+	// The baseline poll writes its line under the baseline key, every later one under its row count.
+	private static IEnumerable<FakeLogRecord> AnsweredPollEntries(FakeLoggerProvider logs)
+	{
+		return logs.Collector.GetSnapshot().Where(entry =>
+			entry.GetStructuredStateValue("RowCount") is not null
+			|| entry.GetStructuredStateValue(ArmedGate.BaselineKey) is not null);
 	}
 
 	private static DateTime[] Delivered(BatchCollector<IReadOnlyList<Sample>> collector)

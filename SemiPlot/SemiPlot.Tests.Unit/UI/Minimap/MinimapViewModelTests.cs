@@ -151,7 +151,7 @@ public sealed class MinimapViewModelTests
 		navigation.SetSticky(isSticky);
 		var newest = _extentLast + TimeSpan.FromMinutes(5.0);
 
-		navigation.OnLiveEdge(newest);
+		navigation.OnLiveEdge(newest, newest);
 
 		stand.ViewModel.ExtentLast.Should().Be(newest);
 		stand.ViewModel.ExtentLastLabel.Should().Be(Label(newest));
@@ -165,10 +165,10 @@ public sealed class MinimapViewModelTests
 	{
 		using var stand = new MinimapStand();
 		var navigation = stand.Navigation;
-		navigation.OnLiveEdge(_extentLast - TimeSpan.FromDays(1.0));
+		navigation.OnLiveEdge(_extentLast - TimeSpan.FromDays(1.0), _extentLast - TimeSpan.FromDays(1.0));
 
 		await stand.LoadExtentAsync();
-		navigation.OnLiveEdge(_extentLast - TimeSpan.FromHours(1.0));
+		navigation.OnLiveEdge(_extentLast - TimeSpan.FromHours(1.0), _extentLast - TimeSpan.FromHours(1.0));
 
 		stand.ViewModel.ExtentLast.Should().Be(_extentLast);
 		stand.ViewModel.ExtentLastLabel.Should().Be(Label(_extentLast));
@@ -179,7 +179,7 @@ public sealed class MinimapViewModelTests
 	{
 		using var stand = new MinimapStand();
 		var newest = _extentLast + TimeSpan.FromMinutes(5.0);
-		stand.Navigation.OnLiveEdge(newest);
+		stand.Navigation.OnLiveEdge(newest, newest);
 
 		await stand.LoadExtentAsync();
 
@@ -192,7 +192,7 @@ public sealed class MinimapViewModelTests
 	{
 		using var stand = new MinimapStand();
 
-		stand.Navigation.OnLiveEdge(_extentLast + TimeSpan.FromMinutes(5.0));
+		stand.Navigation.OnLiveEdge(_extentLast + TimeSpan.FromMinutes(5.0), _extentLast + TimeSpan.FromMinutes(5.0));
 
 		stand.ViewModel.HasExtent.Should().BeFalse();
 		stand.ViewModel.ExtentLast.Should().Be(default);
@@ -217,8 +217,8 @@ public sealed class MinimapViewModelTests
 		provider.GateExtent = true;
 		var newest = _extentLast + TimeSpan.FromMinutes(5.0);
 
-		stand.Navigation.OnLiveEdge(newest - TimeSpan.FromMinutes(1.0));
-		stand.Navigation.OnLiveEdge(newest);
+		stand.Navigation.OnLiveEdge(newest - TimeSpan.FromMinutes(1.0), newest - TimeSpan.FromMinutes(1.0));
+		stand.Navigation.OnLiveEdge(newest, newest);
 
 		provider.ExtentQueryCount.Should().Be(2, "one read at start and one more, not one per sample");
 		provider.ExtentGate.SetResult(Result.Ok(new ArchiveExtent(_extentFirst, _extentLast)));
@@ -246,7 +246,8 @@ public sealed class MinimapViewModelTests
 		for (var second = 1; second <= 170; second++)
 		{
 			stand.Scheduler.AdvanceBy(TimeSpan.FromSeconds(1.0).Ticks);
-			stand.Navigation.OnLiveEdge(_extentLast + TimeSpan.FromSeconds(second));
+			var advanced = _extentLast + TimeSpan.FromSeconds(second);
+			stand.Navigation.OnLiveEdge(advanced, advanced);
 		}
 
 		stand.Scheduler.AdvanceBy(1);
@@ -257,7 +258,7 @@ public sealed class MinimapViewModelTests
 
 		provider.FailExtent = false;
 		stand.Scheduler.AdvanceBy(TimeSpan.FromMinutes(1.0).Ticks);
-		stand.Navigation.OnLiveEdge(_extentLast + TimeSpan.FromMinutes(5.0));
+		stand.Navigation.OnLiveEdge(_extentLast + TimeSpan.FromMinutes(5.0), _extentLast + TimeSpan.FromMinutes(5.0));
 		stand.Scheduler.AdvanceBy(1);
 		stand.ViewModel.HasExtent.Should().BeTrue();
 		provider.FailExtent = true;
@@ -306,7 +307,7 @@ public sealed class MinimapViewModelTests
 			.Subscribe(labels.Add);
 		var newest = _extentLast + TimeSpan.FromMinutes(5.0);
 
-		stand.Navigation.OnLiveEdge(newest);
+		stand.Navigation.OnLiveEdge(newest, newest);
 
 		labels.Should().Equal(Label(_extentLast), Label(newest));
 	}

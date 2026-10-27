@@ -3,7 +3,6 @@ using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 
 using SemiPlot.Core.Data;
-using SemiPlot.Core.Trends;
 
 using Xunit;
 
@@ -31,7 +30,7 @@ public sealed class RealtimeSubscriptionDisposalTests
 		var dropped = droppedServices.GetRequiredService<ILiveSource>();
 		var running = runningServices.GetRequiredService<ILiveSource>();
 
-		using var droppedBatches = new BatchCollector<IReadOnlyList<Sample>>(dropped.Subscribe([1]));
+		using var droppedBatches = new BatchCollector<LivePoll>(dropped.Subscribe([1]));
 
 		droppedBatches.Dispose();
 

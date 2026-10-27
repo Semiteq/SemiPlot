@@ -32,6 +32,8 @@ public sealed class EnvelopeLineTests
 	private const double LogAxisBottomDecade = -6.0;
 	private const double LogAxisTopDecade = -2.0;
 	private const double UnboundedRequestedEndX = double.PositiveInfinity;
+	// A column width no sample reaches past, so every fold widens the last column.
+	private const double UnboundedColumnWidthX = double.PositiveInfinity;
 	private const double TenByTenSpan = 10.0;
 	private const double HitTolerance = 1e-3;
 	private const double MissDistance = 10.0;
@@ -81,7 +83,7 @@ public sealed class EnvelopeLineTests
 
 				realtime = realtime.AddSeconds(1);
 				state.AppendRealtime(realtime, 1.0);
-				state.FoldRealtime(realtime, 0.5);
+				state.FoldRealtime(realtime, 0.5, TimeSpan.FromHours(1.0));
 
 				state.ClearHistory(requestedTo, null);
 
@@ -259,13 +261,49 @@ public sealed class EnvelopeLineTests
 		var line = new EnvelopeLine();
 		line.ReplaceColumns([Column(0.0), new EnvelopeColumn(1.0, double.NaN, double.NaN, double.NaN)], 1.0, false);
 
-		line.FoldIntoLastColumn(new EnvelopeColumn(1.0, 7.0, 7.0, 7.0)).Should().BeFalse("it would run backwards");
-		line.FoldIntoLastColumn(new EnvelopeColumn(2.0, 7.0, 7.0, 7.0)).Should().BeTrue();
-		line.FoldIntoLastColumn(new EnvelopeColumn(3.0, 9.0, 9.0, 9.0)).Should().BeTrue();
+		line.FoldIntoLastColumn(new EnvelopeColumn(1.0, 7.0, 7.0, 7.0), UnboundedColumnWidthX)
+			.Should().BeFalse("it would run backwards");
+		line.FoldIntoLastColumn(new EnvelopeColumn(2.0, 7.0, 7.0, 7.0), UnboundedColumnWidthX).Should().BeTrue();
+		line.FoldIntoLastColumn(new EnvelopeColumn(3.0, 9.0, 9.0, 9.0), UnboundedColumnWidthX).Should().BeTrue();
 
 		line.SnapshotColumns().Select(column => column.X).Should().Equal(0.0, 1.0, 2.0);
 		double.IsNaN(line.SnapshotColumns()[1].Center).Should().BeTrue("the gap still breaks the line");
 		line.SnapshotColumns()[^1].Should().Be(new EnvelopeColumn(2.0, 7.0, 9.0, 9.0));
+	}
+
+	[Fact]
+	public void AFoldWithinOneColumnWidth_WidensTheLastColumn()
+	{
+		var line = new EnvelopeLine();
+		line.ReplaceColumns([Flat(1.0, 2.0)], UnboundedRequestedEndX, false);
+
+		line.FoldIntoLastColumn(Flat(1.5, 9.0), columnWidthX: 1.0).Should().BeTrue();
+
+		line.SnapshotColumns().Should().Equal(new EnvelopeColumn(1.0, 2.0, 9.0, 9.0));
+	}
+
+	[Fact]
+	public void AFoldOneColumnWidthOrMorePastTheLastColumn_OpensAColumnThatTheNextFoldWidens()
+	{
+		var line = new EnvelopeLine();
+		line.ReplaceColumns([Flat(1.0, 2.0)], UnboundedRequestedEndX, false);
+
+		line.FoldIntoLastColumn(Flat(2.0, 9.0), columnWidthX: 1.0).Should().BeTrue();
+		line.FoldIntoLastColumn(Flat(2.5, 3.0), columnWidthX: 1.0).Should().BeTrue();
+
+		line.SnapshotColumns().Should().Equal(Flat(1.0, 2.0), new EnvelopeColumn(2.0, 3.0, 9.0, 3.0));
+	}
+
+	[Fact]
+	public void AHoldAfterAFoldPastTheColumnWidth_StartsAtTheNewColumn()
+	{
+		var line = new EnvelopeLine();
+		line.ReplaceColumns([Flat(1.0, 2.0)], UnboundedRequestedEndX, false);
+
+		line.FoldIntoLastColumn(Flat(30.0, 9.0), columnWidthX: 1.0).Should().BeTrue();
+		line.SetHoldEnd(40.0);
+
+		line.ReadHeldSpan().Should().Be(new HeldSpan(30.0, 40.0, 9.0));
 	}
 
 	[Fact]
@@ -287,8 +325,8 @@ public sealed class EnvelopeLineTests
 		var band = ColumnsFrom(0.0, 3);
 		line.ReplaceColumns(band, requestedEndX: 5.0, isUnreadPastEnd: true);
 
-		line.FoldIntoLastColumn(Flat(100.0, 7.0)).Should().BeTrue();
-		line.FoldIntoLastColumn(Flat(101.0, 9.0)).Should().BeTrue();
+		line.FoldIntoLastColumn(Flat(100.0, 7.0), UnboundedColumnWidthX).Should().BeTrue();
+		line.FoldIntoLastColumn(Flat(101.0, 9.0), UnboundedColumnWidthX).Should().BeTrue();
 
 		var columns = line.SnapshotColumns();
 		columns[2].Should().Be(band[2]);
@@ -333,6 +371,152 @@ public sealed class EnvelopeLineTests
 
 		line.SnapshotColumns().Select(column => column.X).Should().Equal(0.0, 1.0, 2.0, 3.0, 100.0);
 		SegmentStartsOf(line).Should().Equal(0.0);
+	}
+
+	[Fact]
+	public void SetHoldEnd_NeverMovesTheEndBackwards()
+	{
+		var line = new EnvelopeLine();
+		line.ReplaceColumns([Flat(0.0, 1.0), Flat(1.0, 2.0)], UnboundedRequestedEndX, false);
+
+		line.SetHoldEnd(5.0);
+		line.SetHoldEnd(3.0);
+
+		line.ReadHeldSpan().Should().Be(new HeldSpan(1.0, 5.0, 2.0));
+	}
+
+	[Fact]
+	public void BreakAtHoldEnd_AppendsAGapAtTheHoldEnd_AndTheHoldIsGone()
+	{
+		var line = new EnvelopeLine();
+		line.ReplaceColumns([Flat(0.0, 1.0), Flat(1.0, 2.0)], UnboundedRequestedEndX, false);
+		line.SetHoldEnd(5.0);
+
+		line.BreakAtHoldEnd();
+		line.SetHoldEnd(7.0);
+
+		var columns = line.SnapshotColumns();
+		columns.Select(column => column.X).Should().Equal(0.0, 1.0, 5.0);
+		double.IsNaN(columns[^1].Center).Should().BeTrue();
+		line.ReadHeldSpan().Should().BeNull();
+	}
+
+	[Fact]
+	public void BreakAtHoldEnd_WithNoHoldEnd_AppendsNothing()
+	{
+		var line = new EnvelopeLine();
+		line.ReplaceColumns([Flat(0.0, 1.0), Flat(1.0, 2.0)], UnboundedRequestedEndX, false);
+
+		line.BreakAtHoldEnd();
+
+		line.SnapshotColumns().Select(column => column.X).Should().Equal(0.0, 1.0);
+	}
+
+	[Theory]
+	[InlineData(1.0)]
+	[InlineData(0.5)]
+	public void BreakAtHoldEnd_WithTheLastColumnAtOrPastTheHoldEnd_BreaksRightAfterIt(double holdEndX)
+	{
+		var line = new EnvelopeLine();
+		line.ReplaceColumns([Flat(0.0, 1.0), Flat(1.0, 2.0)], UnboundedRequestedEndX, false);
+		line.SetHoldEnd(holdEndX);
+
+		line.BreakAtHoldEnd();
+		line.AppendColumn(Flat(2.0, 3.0)).Should().BeTrue();
+
+		var columns = line.SnapshotColumns();
+		columns.Select(column => column.X).Should().Equal(0.0, 1.0, Math.BitIncrement(1.0), 2.0);
+		double.IsNaN(columns[2].Center).Should().BeTrue("the outage stays visible after the last column");
+	}
+
+	[Fact]
+	public void BreakAtHoldEnd_AfterAGap_AppendsNothing()
+	{
+		var line = new EnvelopeLine();
+		line.ReplaceColumns([Flat(0.0, 1.0), Flat(1.0, 2.0)], UnboundedRequestedEndX, false);
+		line.SetHoldEnd(5.0);
+		line.BreakAtHoldEnd();
+
+		line.BreakAtHoldEnd();
+
+		line.SnapshotColumns().Select(column => column.X).Should().Equal(0.0, 1.0, 5.0);
+	}
+
+	[Fact]
+	public void BreakAtHoldEnd_UnderAPendingUnreadMark_BreaksAtTheMarkAndKeepsIt()
+	{
+		var line = new EnvelopeLine();
+		line.ReplaceColumns([Flat(0.0, 5.0), Flat(2.0, 5.0)], requestedEndX: 6.0, isUnreadPastEnd: true);
+		line.SetHoldEnd(9.0);
+
+		line.BreakAtHoldEnd();
+		line.AppendColumn(Flat(10.0, 7.0)).Should().BeTrue();
+
+		var columns = line.SnapshotColumns();
+		columns.Select(column => column.X).Should().Equal(0.0, 2.0, 6.0, 10.0);
+		double.IsNaN(columns[2].Center).Should().BeTrue("the break stands where the drawn hold ended");
+	}
+
+	[Fact]
+	public void AReadWhoseRequestedEndReachesTheResumeBreak_RemovesItAndTheLineHoldsAgain()
+	{
+		var line = new EnvelopeLine();
+		line.ReplaceColumns([Flat(1.0, 2.0)], requestedEndX: 1.0, isUnreadPastEnd: false);
+		line.SetHoldEnd(5.0);
+		line.BreakAtHoldEnd();
+
+		line.ReplaceColumns([Flat(1.0, 2.0)], requestedEndX: 8.0, isUnreadPastEnd: false);
+		line.SetHoldEnd(9.0);
+
+		line.SnapshotColumns().Select(column => column.X).Should().Equal(1.0);
+		line.ReadHeldSpan().Should().Be(new HeldSpan(1.0, 9.0, 2.0));
+	}
+
+	[Fact]
+	public void AValueStampedAheadOfTheResumeBreak_GoesInAheadOfIt()
+	{
+		var line = new EnvelopeLine();
+		line.ReplaceColumns([Flat(1.0, 2.0)], UnboundedRequestedEndX, false);
+		line.SetHoldEnd(5.0);
+		line.BreakAtHoldEnd();
+
+		line.AppendColumn(Flat(4.0, 3.0)).Should().BeTrue();
+		line.FoldIntoLastColumn(Flat(4.5, 3.5), UnboundedColumnWidthX).Should().BeTrue();
+		line.AppendColumn(Flat(6.0, 7.0)).Should().BeTrue();
+
+		var columns = line.SnapshotColumns();
+		columns.Select(column => column.X).Should().Equal(1.0, 4.0, 4.5, 5.0, 6.0);
+		double.IsNaN(columns[3].Center).Should().BeTrue();
+		line.LastNonGapCenter().Should().Be(7.0);
+	}
+
+	[Fact]
+	public void ALiveBreakStampedAheadOfTheResumeBreak_IsRejected()
+	{
+		var line = new EnvelopeLine();
+		line.ReplaceColumns([Flat(1.0, 2.0)], UnboundedRequestedEndX, false);
+		line.SetHoldEnd(5.0);
+		line.BreakAtHoldEnd();
+
+		line.AppendColumn(new EnvelopeColumn(4.0, double.NaN, double.NaN, double.NaN)).Should().BeFalse();
+		line.AppendColumn(Flat(5.0, 3.0)).Should().BeFalse("a value at the break's own X stays rejected");
+
+		line.SnapshotColumns().Select(column => column.X).Should().Equal(1.0, 5.0);
+	}
+
+	[Fact]
+	public void ReadHeldSpan_MatchesTheHoldTheLineDraws()
+	{
+		using var plot = new Plot();
+		EnvelopeColumn[] columns = [Flat(0.0, 5.0), Flat(2.0, 5.0)];
+		var (line, dataRect) = LineOverTenByTen(plot, columns, PenLineStyle.Interpolated);
+		line.ReplaceColumns(columns, requestedEndX: 6.0, isUnreadPastEnd: true);
+
+		line.SetHoldEnd(9.0);
+
+		line.ReadHeldSpan().Should().Be(new HeldSpan(2.0, 6.0, 5.0), "the unread mark caps the hold");
+		line.DistanceTo(PixelAt(line, dataRect, 4.0, 5.0), dataRect).Should().BeApproximately(0.0, HitTolerance);
+		line.DistanceTo(PixelAt(line, dataRect, 8.0, 5.0), dataRect).Should().BeGreaterThan(MissDistance);
 	}
 
 	[Fact]
@@ -545,7 +729,7 @@ public sealed class EnvelopeLineTests
 	{
 		var columns = line.SnapshotColumns();
 		var points = new List<EnvelopePoint>();
-		EnvelopePath.Build(columns, 0, columns.Count, PenLineStyle.Interpolated, points);
+		EnvelopePath.Build(columns, 0, columns.Count, PenLineStyle.Interpolated, double.NaN, double.NaN, points);
 
 		return [.. points.Where(point => point.StartsSegment).Select(point => point.X)];
 	}

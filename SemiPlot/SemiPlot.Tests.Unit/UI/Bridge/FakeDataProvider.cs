@@ -34,6 +34,8 @@ internal sealed class FakeDataProvider(
 
 	private int? _penToBreakOnNextTick;
 
+	private bool _previousRealtimePollFailed;
+
 	public DateTime ArchiveFirstUtc { get; set; } = new(2025, 12, 25, 0, 0, 0, DateTimeKind.Utc);
 
 	public DateTime ArchiveLastUtc { get; set; } = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -162,6 +164,12 @@ internal sealed class FakeDataProvider(
 
 	public bool RealtimeStreamCompletes { get; set; }
 
+	// Set, every tick answers with no sample, the poll over pens that did not change.
+	public bool AnswerRealtimePollsWithoutSamples { get; set; }
+
+	// Set, every tick fails and reports nothing; the first tick answered after it resumes after the failure.
+	public bool FailRealtimePolls { get; set; }
+
 	/// <summary>The next tick follows the pen's value with a break 1 ms later, as the poll's q = 32 row.</summary>
 	public void BreakRealtimePenOnce(int penId)
 	{
@@ -191,7 +199,7 @@ internal sealed class FakeDataProvider(
 		return (value.GetValueOrDefault(), valueUtc, breakUtc);
 	}
 
-	public IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<int> penIds)
+	public IObservable<LivePoll> Subscribe(IReadOnlyList<int> penIds)
 	{
 		return Observable
 			.Defer(() =>
@@ -209,25 +217,61 @@ internal sealed class FakeDataProvider(
 			});
 	}
 
-	private IObservable<IReadOnlyList<Sample>> BuildLiveEdge(IReadOnlyList<int> penIds)
+	private IObservable<LivePoll> BuildLiveEdge(IReadOnlyList<int> penIds)
 	{
 		if (RealtimeStreamFailure is { } failure)
 		{
-			return Observable.Throw<IReadOnlyList<Sample>>(failure, _scheduler);
+			return Observable.Throw<LivePoll>(failure, _scheduler);
 		}
 
 		if (RealtimeStreamCompletes)
 		{
-			return Observable.Empty<IReadOnlyList<Sample>>(_scheduler);
+			return Observable.Empty<LivePoll>(_scheduler);
 		}
 
 		var subscribed = penIds.Where(id => Pens.Any(pen => pen.PenId == id)).ToArray();
 
 		return Observable
 			.Interval(_realtimeInterval, _scheduler)
-			.Select(tick => PoisonRealtimeWindow
-				? new PoisonedSampleList()
-				: TickSamples(subscribed, tick));
+			.Select(tick => AnswerTick(subscribed, tick))
+			.Where(poll => poll is not null)
+			.Select(poll => poll!);
+	}
+
+	// Answered at the newest value sample's stamp, so the coordinator tests can assert the answer time exactly.
+	private LivePoll? AnswerTick(IReadOnlyList<int> subscribed, long tick)
+	{
+		if (FailRealtimePolls)
+		{
+			_previousRealtimePollFailed = true;
+
+			return null;
+		}
+
+		var resumesAfterFailure = _previousRealtimePollFailed;
+		_previousRealtimePollFailed = false;
+
+		return new LivePoll(
+			TickTimestamp(tick, Math.Max(subscribed.Count - 1, 0)),
+			AnsweredSamples(subscribed, tick),
+			resumesAfterFailure);
+	}
+
+	private IReadOnlyList<Sample> AnsweredSamples(IReadOnlyList<int> subscribed, long tick)
+	{
+		if (PoisonRealtimeWindow)
+		{
+			return new PoisonedSampleList();
+		}
+
+		return AnswerRealtimePollsWithoutSamples ? [] : TickSamples(subscribed, tick);
+	}
+
+	private DateTime TickTimestamp(long tick, int penIndex)
+	{
+		return RealtimeEpoch
+			+ TimeSpan.FromTicks(_realtimeInterval.Ticks * (tick + 1))
+			+ (StaggerRealtimeTimestamps ? TimeSpan.FromMilliseconds(penIndex) : TimeSpan.Zero);
 	}
 
 	private IReadOnlyList<Sample> TickSamples(IReadOnlyList<int> subscribed, long tick)
@@ -237,9 +281,7 @@ internal sealed class FakeDataProvider(
 		for (var index = 0; index < subscribed.Count; index++)
 		{
 			var id = subscribed[index];
-			var timestampUtc = RealtimeEpoch
-				+ TimeSpan.FromTicks(_realtimeInterval.Ticks * (tick + 1))
-				+ (StaggerRealtimeTimestamps ? TimeSpan.FromMilliseconds(index) : TimeSpan.Zero);
+			var timestampUtc = TickTimestamp(tick, index);
 			samples.Add(new Sample(id, timestampUtc, id + tick));
 
 			if (id == _penToBreakOnNextTick)

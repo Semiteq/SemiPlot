@@ -333,12 +333,14 @@ one method: nothing else may resolve a service through a static.
 ## Data flow
 
 - **Realtime:** `PostgresLiveSource`, behind `ILiveSource`, polls the raw layer for the samples
-  written past the last one it saw → `TrendCoordinator` buffers them on the data scheduler into a
-  coalesced `RealtimeBatch` (≤ 10 Hz / 100 ms), crosses to the UI scheduler via `ObserveOn`, and
-  exposes them as `IObservable<RealtimeBatch>`; the chart view model subscribes and appends to the
-  per-pen plottables. Neither the provider nor the live source reports a connection state: the
-  catalogue sync derives it from its reads, and the status bar shows it and the message panel records
-  it (`#a-failed-read`).
+  written past the last one it saw and emits one `LivePoll` per answered poll, empty when no pen
+  changed → `TrendCoordinator` buffers the polls on the data scheduler into a coalesced `RealtimeBatch`
+  carrying the newest answer (≤ 10 Hz / 100 ms), crosses to the UI scheduler via `ObserveOn`, and
+  exposes them as `IObservable<RealtimeBatch>`; the chart view model appends the samples to the
+  per-pen plottables and holds every pen's last value to the answer
+  (`charting.md#per-pen-plottable-envelopeline`). Neither the provider nor the live source reports a
+  connection state: the catalogue sync derives it from its reads, and the status bar shows it and the
+  message panel records it (`#a-failed-read`).
 - **History:** the chart requests a window → `TrendCoordinator.QueryHistoryAsync` (the single history
   query, reached through the debouncer by the initial load and every gesture alike) → provider
   returns one server-reduced `PenHistoryEnvelope` per pen (ascending `Timestamps` + `Min`/`Max`/`Center`) → the view

@@ -14,6 +14,10 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 [Trait("Category", "Unit")]
 public sealed class EnvelopePathTests
 {
+	private const double NoHold = double.NaN;
+	private const double NoUnreadMark = double.NaN;
+	private const double HoldEndX = 5.0;
+
 	private static readonly PixelRect _bounds = new(0, 10, 10, 0);
 
 	// The last two rows have no overlap: the boundary column stays alone, which draws nothing the viewport can show.
@@ -181,7 +185,7 @@ public sealed class EnvelopePathTests
 		var columns = Lattice(5);
 		var points = new List<EnvelopePoint>();
 
-		EnvelopePath.Build(columns, 1, 3, PenLineStyle.Interpolated, points);
+		EnvelopePath.Build(columns, 1, 3, PenLineStyle.Interpolated, NoHold, NoUnreadMark, points);
 
 		points.Should().Equal(
 			new EnvelopePoint(1.0, 1.0, true),
@@ -213,13 +217,101 @@ public sealed class EnvelopePathTests
 			new(5.0, 3.0, 3.0, 3.0)
 		];
 		var fromLater = new List<EnvelopePoint>();
-		EnvelopePath.Build(columns, first, columns.Length, lineStyle, fromLater);
+		EnvelopePath.Build(columns, first, columns.Length, lineStyle, NoHold, NoUnreadMark, fromLater);
 
 		var sharedFromWhole = Build(columns, lineStyle)
 			.Where(point => point.X >= columns[first].X)
 			.Select(point => (point.X, point.Y));
 
 		fromLater.Select(point => (point.X, point.Y)).Should().Equal(sharedFromWhole);
+	}
+
+	[Fact]
+	public void Build_ADegenerateLastColumnHeldPastItsX_AddsOneVertexAtTheHoldEnd()
+	{
+		var points = Build(
+			[new EnvelopeColumn(0.0, 2.0, 2.0, 2.0), new EnvelopeColumn(1.0, 4.0, 4.0, 4.0)],
+			PenLineStyle.Interpolated,
+			HoldEndX);
+
+		points.Should().Equal(
+			new EnvelopePoint(0.0, 2.0, true),
+			new EnvelopePoint(1.0, 4.0, false),
+			new EnvelopePoint(HoldEndX, 4.0, false));
+	}
+
+	[Theory]
+	[InlineData(PenLineStyle.Interpolated)]
+	[InlineData(PenLineStyle.Stepped)]
+	public void Build_ATallLastColumnHeldPastItsX_HoldsItsCenter(PenLineStyle lineStyle)
+	{
+		var points = Build(
+			[new EnvelopeColumn(0.0, 0.0, 0.0, 0.0), new EnvelopeColumn(1.0, 2.0, 6.0, 3.0)],
+			lineStyle,
+			HoldEndX);
+
+		points.TakeLast(2).Should().Equal(
+			new EnvelopePoint(1.0, 3.0, false),
+			new EnvelopePoint(HoldEndX, 3.0, false));
+	}
+
+	[Fact]
+	public void Build_AGapAsTheLastColumn_HoldsNothing()
+	{
+		EnvelopeColumn[] columns =
+		[
+			new EnvelopeColumn(0.0, 2.0, 2.0, 2.0),
+			new EnvelopeColumn(1.0, double.NaN, double.NaN, double.NaN)
+		];
+
+		Build(columns, PenLineStyle.Interpolated, HoldEndX)
+			.Should().Equal(Build(columns, PenLineStyle.Interpolated));
+		EnvelopePath.Hold(columns, HoldEndX, NoUnreadMark).Should().BeNull();
+	}
+
+	[Theory]
+	[InlineData(1.0)]
+	[InlineData(0.5)]
+	public void Build_AHoldEndAtOrBeforeTheLastColumn_HoldsNothing(double holdEndX)
+	{
+		EnvelopeColumn[] columns = [new EnvelopeColumn(0.0, 2.0, 2.0, 2.0), new EnvelopeColumn(1.0, 4.0, 4.0, 4.0)];
+
+		Build(columns, PenLineStyle.Interpolated, holdEndX)
+			.Should().Equal(Build(columns, PenLineStyle.Interpolated));
+		EnvelopePath.Hold(columns, holdEndX, NoUnreadMark).Should().BeNull();
+	}
+
+	[Fact]
+	public void Build_APendingUnreadMark_CapsTheHoldAtTheMark()
+	{
+		const double UnreadFromX = 3.0;
+		EnvelopeColumn[] columns = [new EnvelopeColumn(0.0, 2.0, 2.0, 2.0), new EnvelopeColumn(1.0, 4.0, 4.0, 4.0)];
+
+		var points = Build(columns, PenLineStyle.Interpolated, HoldEndX, UnreadFromX);
+
+		points[^1].Should().Be(new EnvelopePoint(UnreadFromX, 4.0, false));
+		EnvelopePath.Hold(columns, HoldEndX, UnreadFromX).Should().Be(new HeldSpan(1.0, UnreadFromX, 4.0));
+	}
+
+	[Fact]
+	public void Build_ARangeThatStopsShortOfTheLastColumn_HoldsNothing()
+	{
+		var columns = Lattice(5);
+		var held = new List<EnvelopePoint>();
+		var unheld = new List<EnvelopePoint>();
+
+		EnvelopePath.Build(columns, 1, 3, PenLineStyle.Interpolated, HoldEndX + 10.0, NoUnreadMark, held);
+		EnvelopePath.Build(columns, 1, 3, PenLineStyle.Interpolated, NoHold, NoUnreadMark, unheld);
+
+		held.Should().Equal(unheld);
+	}
+
+	[Fact]
+	public void Hold_ALastValueColumnShortOfTheHoldEnd_IsHeldAtItsCenter()
+	{
+		EnvelopeColumn[] columns = [new EnvelopeColumn(0.0, 2.0, 2.0, 2.0), new EnvelopeColumn(1.0, 2.0, 6.0, 3.0)];
+
+		EnvelopePath.Hold(columns, HoldEndX, NoUnreadMark).Should().Be(new HeldSpan(1.0, HoldEndX, 3.0));
 	}
 
 	[Theory]
@@ -277,10 +369,14 @@ public sealed class EnvelopePathTests
 		distance.Should().BeApproximately(4.0, 1e-9);
 	}
 
-	private static List<EnvelopePoint> Build(IReadOnlyList<EnvelopeColumn> columns, PenLineStyle lineStyle)
+	private static List<EnvelopePoint> Build(
+		IReadOnlyList<EnvelopeColumn> columns,
+		PenLineStyle lineStyle,
+		double holdEndX = NoHold,
+		double unreadFromX = NoUnreadMark)
 	{
 		var points = new List<EnvelopePoint>();
-		EnvelopePath.Build(columns, 0, columns.Count, lineStyle, points);
+		EnvelopePath.Build(columns, 0, columns.Count, lineStyle, holdEndX, unreadFromX, points);
 
 		return points;
 	}

@@ -10,10 +10,11 @@ public sealed record PenRealtimeValues(
 	IReadOnlyList<double?> Values);
 
 /// <summary>
-/// One buffer window of the live edge. <paramref name="Timestamps"/> is the ascending union of every pen's own
-/// timestamps, which is what a consumer advances the live edge from; the values themselves hang off
-/// <see cref="PenRealtimeValues"/>, on each pen's own timestamps.
+/// One buffer window of the live edge with at least one answered poll: its newest answer, whether any poll resumed
+/// after a failed one, and the ascending union of every pen's own timestamps, empty when no pen changed.
 /// </summary>
 public sealed record RealtimeBatch(
 	IReadOnlyList<DateTime> Timestamps,
-	IReadOnlyList<PenRealtimeValues> Pens);
+	IReadOnlyList<PenRealtimeValues> Pens,
+	DateTime AnsweredAtUtc,
+	bool ResumesAfterFailure);

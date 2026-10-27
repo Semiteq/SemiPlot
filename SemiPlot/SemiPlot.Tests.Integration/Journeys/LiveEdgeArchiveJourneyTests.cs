@@ -47,7 +47,8 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 		var secondAppendUtc = ArchiveProviderFactory.TimeConverter.ToUtc(secondAppendLocal);
 
 		chart.Navigation.IsSticky.Should().BeTrue("a window that does not follow the edge cannot be moved by it");
-		chart.Navigation.To.Should().Be(seededLastUtc, "the window opens on the archive's own last sample");
+		chart.Navigation.NewestSample.Should().Be(
+			seededLastUtc, "the navigation opens on the archive's own last sample");
 
 		// The gate is taken before the write and awaited after it, so the delivery cannot slip between them.
 		var firstDelivery = batches.NextBatch();
@@ -79,10 +80,11 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 			.SelectMany(batch => batch.Timestamps)
 			.Should().Equal([firstAppendUtc, secondAppendUtc]);
 
-		chart.Navigation.To.Should().Be(
+		chart.Navigation.NewestSample.Should().Be(
 			secondAppendUtc,
 			"ChartRealtimeApplier hands the last timestamp of a batch to ChartNavigationController.OnLiveEdge, "
-			+ "so the whole path down to the axis is covered rather than the pen states alone");
+			+ "so the whole path down to the navigation is covered rather than the pen states alone");
+		chart.Navigation.To.Should().BeOnOrAfter(secondAppendUtc, "a sticky window follows the poll's answer");
 		chart.Pens.Should().AllSatisfy(pen => pen.CurrentValue.Should().Be(ValueFor(pen.Pen.PenId, tick: 2)));
 	}
 
@@ -108,7 +110,7 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 		var penValues = batch.Pens.Should().ContainSingle().Subject;
 		penValues.PenId.Should().Be(pen.PenId);
 		penValues.Values.Should().Equal([value, null]);
-		stand.Chart.Navigation.To.Should().Be(breakUtc, "the break is the batch's last timestamp");
+		stand.Chart.Navigation.NewestSample.Should().Be(breakUtc, "the break is the batch's last timestamp");
 
 		var state = stand.Chart.Pens.Should().ContainSingle(candidate => candidate.Pen.PenId == pen.PenId).Subject;
 		var columns = state.Line.SnapshotColumns();
@@ -189,7 +191,8 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 				TimeZoneInfo.Utc,
 				messagePanel,
 				NullLogger<TrendChartViewModel>.Instance);
-			var batches = new BatchCollector<RealtimeBatch>(coordinator.RealtimeBatches);
+			var batches = new BatchCollector<RealtimeBatch>(
+				coordinator.RealtimeBatches.Where(batch => batch.Timestamps.Count > 0));
 			stand = new LiveEdgeStand(
 				services, coordinator, armed, chart, messagePanel, batches, catalogue.Value, extent.Value);
 

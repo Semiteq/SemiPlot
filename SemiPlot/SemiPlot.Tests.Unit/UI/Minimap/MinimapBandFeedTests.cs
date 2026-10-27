@@ -313,7 +313,7 @@ public sealed class MinimapBandFeedTests
 		stand.LandBandRead();
 		stand.Provider.BandHistoryQueries[^1].Layer.Should().Be(AggregationLayer.Minute);
 
-		stand.Navigation.OnLiveEdge(_extentLast + TimeSpan.FromHours(2.0));
+		stand.Navigation.OnLiveEdge(_extentLast + TimeSpan.FromHours(2.0), _extentLast + TimeSpan.FromHours(2.0));
 		stand.AdvanceToNextBandRead();
 
 		stand.Provider.BandHistoryQueries.Should().HaveCount(2);

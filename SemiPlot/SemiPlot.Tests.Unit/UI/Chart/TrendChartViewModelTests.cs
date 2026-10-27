@@ -937,7 +937,8 @@ public sealed class TrendChartViewModelTests
 		viewModel.Navigation.IsSticky.Should().BeTrue();
 		var queriesBefore = provider.HistoryQueryCount;
 
-		viewModel.Navigation.OnLiveEdge(viewModel.Navigation.To.AddMinutes(1.0));
+		var advanced = viewModel.Navigation.To.AddMinutes(1.0);
+		viewModel.Navigation.OnLiveEdge(advanced, advanced);
 
 		provider.HistoryQueryCount.Should().Be(queriesBefore);
 	}
@@ -951,10 +952,78 @@ public sealed class TrendChartViewModelTests
 		var toBefore = viewModel.Navigation.To;
 		var revisionBefore = viewModel.ScalesRevision;
 
-		viewModel.Navigation.OnLiveEdge(toBefore.AddMinutes(1.0));
+		viewModel.Navigation.OnLiveEdge(toBefore.AddMinutes(1.0), toBefore.AddMinutes(1.0));
 
 		viewModel.Navigation.To.Should().Be(toBefore.AddMinutes(1.0));
 		viewModel.ScalesRevision.Should().BeGreaterThan(revisionBefore);
+	}
+
+	[AvaloniaTheory]
+	[InlineData(true)]
+	[InlineData(false)]
+	public void AnAnswerWithNoSample_MovesOnlyAStickyWindowAndNeverTheNewestSample(bool isSticky)
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel(RealtimeInterval);
+		viewModel.AddPen(FakeDataProvider.FirstPen);
+		viewModel.Navigation.TrackDataExtents(
+			FakeDataProvider.RealtimeEpoch.AddDays(-30.0), FakeDataProvider.RealtimeEpoch);
+		viewModel.Navigation.SetSticky(isSticky);
+		var toBefore = viewModel.Navigation.To;
+		provider.AnswerRealtimePollsWithoutSamples = true;
+
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks * 3);
+
+		if (isSticky)
+		{
+			viewModel.Navigation.To.Should().BeAfter(toBefore);
+		}
+		else
+		{
+			viewModel.Navigation.To.Should().Be(toBefore);
+		}
+
+		viewModel.Navigation.NewestSample.Should().Be(FakeDataProvider.RealtimeEpoch);
+	}
+
+	// docs/architecture/charting.md#per-pen-plottable-envelopeline
+	[AvaloniaFact]
+	public async Task AnAnswerAfterAVisibleOutage_RereadsTheWindow_AndTheReadHoldsTheConstantPenAgain()
+	{
+		var (viewModel, scheduler, coordinator, provider) = CreateViewModel(RealtimeInterval);
+		var state = viewModel.AddPen(FakeDataProvider.FirstPen);
+		var answers = new List<DateTime>();
+		using var batches = coordinator.RealtimeBatches.Subscribe(batch => answers.Add(batch.AnsweredAtUtc));
+		var holdEndBefore = await HoldAConstantPenAndFailThePolls(
+			viewModel, scheduler, provider, ChartRealtimeApplier.ShortestVisibleOutage + TimeSpan.FromSeconds(1.0));
+		var queriesBefore = provider.HistoryQueryCount;
+
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks + HistoryDebounceWindow.Ticks + 2);
+
+		await AwaitQueryCount(provider, queriesBefore + 1);
+		LocalTimeAxis.ToAxis(provider.ChartHistoryQueries[queriesBefore].ToUtc).Should().BeGreaterThan(holdEndBefore);
+		state.Line.SnapshotColumns()[^1].X.Should().Be(holdEndBefore, "the answer broke the hold at its old end");
+		await ReleaseAndAwait(
+			viewModel, 1, () => provider.HistoryGate.SetResult(EnvelopeEndingAtTheRealtimeEpoch()));
+		LandTheMarginReadFromTheReleasedGate(scheduler);
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
+		state.Line.SnapshotColumns().Should().NotContain(
+			column => double.IsNaN(column.Center), "the read covered the outage the break stood for");
+		state.Line.ReadHeldSpan()!.Value.ToX.Should().Be(LocalTimeAxis.ToAxis(answers[^1]));
+	}
+
+	[AvaloniaFact]
+	public async Task AnAnswerAfterAnOutageNoLongerThanTheShortestVisible_ReadsNothingAndBreaksNothing()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel(RealtimeInterval);
+		var state = viewModel.AddPen(FakeDataProvider.FirstPen);
+		await HoldAConstantPenAndFailThePolls(viewModel, scheduler, provider, TimeSpan.FromSeconds(1.0));
+		var queriesBefore = provider.HistoryQueryCount;
+
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks + HistoryDebounceWindow.Ticks + 2);
+
+		provider.HistoryQueryCount.Should().Be(queriesBefore);
+		state.Line.SnapshotColumns().Should().NotContain(column => double.IsNaN(column.Center));
+		state.Line.ReadHeldSpan().Should().NotBeNull();
 	}
 
 	[AvaloniaFact]
@@ -993,6 +1062,37 @@ public sealed class TrendChartViewModelTests
 			failTheCoarseRead: false,
 			land: (viewModel, provider) => ReleaseAndAwait(
 				viewModel, 1, () => provider.HistoryGate.SetResult(EnvelopeEndingAtTheRealtimeEpoch())));
+	}
+
+	// docs/architecture/data-integration.md#what-one-history-query-covers
+	[AvaloniaFact]
+	public async Task AReturnToRawAfterAnswersWithNoSample_KeepsTheRawRangeInHand()
+	{
+		var (viewModel, scheduler, _, provider) = CreateViewModel(RealtimeInterval);
+		viewModel.AddPen(FakeDataProvider.FirstPen);
+		viewModel.AddPen(FakeDataProvider.SecondPen);
+		viewModel.SetPenVisibility(FakeDataProvider.SecondPen.PenId, false);
+		await LoadRawEndingAtTheRealtimeEpoch(viewModel, scheduler, provider);
+		viewModel.RequestInitialHistory();
+		viewModel.Navigation.SetSticky(false);
+		var rawWidth = viewModel.Navigation.To - viewModel.Navigation.From;
+		provider.AnswerRealtimePollsWithoutSamples = true;
+		// A tick sampled ahead of the switch can still be buffered; its window lands at Raw, which forgets nothing.
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
+		await ZoomOutAndIssueTheCoarseRead(viewModel, scheduler, provider);
+		scheduler.AdvanceBy(TimeSpan.FromSeconds(1.0).Ticks);
+		var queriesBefore = provider.HistoryQueryCount;
+		ZoomBackToTheRawWidth(viewModel, scheduler, rawWidth);
+
+		viewModel.SetPenVisibility(FakeDataProvider.SecondPen.PenId, true);
+		scheduler.AdvanceBy(HistoryDebounceWindow.Ticks + 1);
+
+		await AwaitQueryCount(provider, queriesBefore + 1);
+		var read = provider.ChartHistoryQueries[queriesBefore];
+		read.PenIds.Should().Equal(
+			[FakeDataProvider.SecondPen.PenId],
+			"nothing folded into the Raw columns in hand, so only the pen switched on is read");
+		read.Layer.Should().Be(AggregationLayer.Raw);
 	}
 
 	[AvaloniaFact]
@@ -2581,6 +2681,8 @@ public sealed class TrendChartViewModelTests
 		var (viewModel, scheduler, _, _) = CreateViewModelOnOneScheduler(RealtimeInterval, messagePanel);
 		using var chart = viewModel;
 		var state = chart.AddPen(FakeDataProvider.FirstPen);
+		chart.Navigation.TrackDataExtents(
+			FakeDataProvider.RealtimeEpoch.AddDays(-30.0), FakeDataProvider.RealtimeEpoch);
 		var throwsOnNextWindow = true;
 		void FailOnce(object? sender, NavigationWindow window)
 		{
@@ -2830,6 +2932,29 @@ public sealed class TrendChartViewModelTests
 
 		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks * 3);
 		viewModel.Navigation.ActiveLayer.Should().Be(AggregationLayer.Raw);
+	}
+
+	// The pen's history ends at the realtime epoch and no poll carries a sample, so the pen is held from there.
+	// Returns the axis X of the hold end the outage froze, with the polls answering again; a read stays gated.
+	private static async Task<double> HoldAConstantPenAndFailThePolls(
+		TrendChartViewModel viewModel,
+		TestScheduler scheduler,
+		FakeDataProvider provider,
+		TimeSpan outage)
+	{
+		provider.AnswerRealtimePollsWithoutSamples = true;
+		await LoadRawEndingAtTheRealtimeEpoch(viewModel, scheduler, provider);
+		viewModel.RequestInitialHistory();
+		viewModel.Navigation.IsSticky.Should().BeTrue();
+		provider.FailRealtimePolls = true;
+
+		// The window still buffered when the polls start failing lands here and moves the hold end a last time.
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
+		var holdEnd = viewModel.FindPen(FakeDataProvider.FirstPen.PenId)!.Line.ReadHeldSpan()!.Value.ToX;
+		scheduler.AdvanceBy(outage.Ticks - TrendCoordinator.BatchWindow.Ticks);
+		provider.FailRealtimePolls = false;
+
+		return holdEnd;
 	}
 
 	private static IEnumerable<(DateTime FromUtc, DateTime ToUtc, int TargetColumnCount)> ReadsSince(

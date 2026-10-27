@@ -396,8 +396,9 @@ No abbreviations in names.
 - `IDataProvider` + its DTOs stay in `SemiPlot.Core`; every concrete provider lives in its own
   `SemiPlot.DataSource.*` project (`SemiPlot.DataSource.Postgres` is the only one). Core must not
   reference a data-source project; a further provider slots in as a sibling without touching Core.
-  `ILiveSource` lives in `SemiPlot.Core/Data` beside `IDataProvider`, and `AddPostgresData()` registers
-  `PostgresLiveSource` over the same `NpgsqlDataSource` (`docs/architecture/data-integration.md#realtime`).
+  `ILiveSource` and `LivePoll`, which its `Subscribe` emits once per answered poll, live in
+  `SemiPlot.Core/Data` beside `IDataProvider`, and `AddPostgresData()` registers `PostgresLiveSource` over the same
+  `NpgsqlDataSource` (`docs/architecture/data-integration.md#realtime`).
 - Each write path is an interface of its own and `IDataProvider` stays read-only. `IPenCatalogueEditor`,
   `PenCatalogue` and `PenSettingChange` live in `SemiPlot.Core/Data`; `PostgresPenCatalogueEditor` lives
   in `SemiPlot.DataSource.Postgres`, which `AddPostgresData()` registers beside the provider over the

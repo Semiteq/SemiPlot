@@ -90,7 +90,8 @@ public sealed class MinimapPointerInputTests
 		var navigation = stand.Model.Navigation;
 		var highlight = stand.Named<Border>("WindowHighlight");
 
-		navigation.OnLiveEdge(MinimapStand.ExtentLast + TimeSpan.FromDays(1.0));
+		var advanced = MinimapStand.ExtentLast + TimeSpan.FromDays(1.0);
+		navigation.OnLiveEdge(advanced, advanced);
 		Dispatcher.UIThread.RunJobs();
 
 		navigation.From.Should().BeAfter(

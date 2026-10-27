@@ -81,6 +81,24 @@ public sealed class ChartMarkerReadingsTests
 	}
 
 	[AvaloniaFact]
+	public void AMarkerInsideTheHeldSpan_ReadsTheHeldValue()
+	{
+		var (viewModel, scheduler, _, _) = CreateViewModel();
+		var pen = viewModel.AddPen(FakeDataProvider.FirstPen);
+		LoadInitialHistory(viewModel, scheduler, From, To);
+		var holdEnd = To.AddDays(1.0);
+		pen.ApplyHold(holdEnd);
+		var held = pen.Line.ReadHeldSpan();
+		held.Should().NotBeNull("the answer lies past the last column the history drew");
+		var marker = new StoredMarker(1, To.AddHours(12.0), "1");
+
+		_readings.Update([marker], pen, viewModel.ActivePenReadingAt, From, holdEnd);
+
+		_readings.SnapshotReadings().Should().ContainSingle().Which.Value.Should().Be(held!.Value.Value);
+		viewModel.Dispose();
+	}
+
+	[AvaloniaFact]
 	public void AFrame_DrawsTheActivePensReadingAtAMarkerInTheWindow()
 	{
 		var channel = new FakeMarkerChannel();

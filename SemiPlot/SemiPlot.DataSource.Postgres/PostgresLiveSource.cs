@@ -6,7 +6,6 @@ using Microsoft.Extensions.Logging;
 using Npgsql;
 
 using SemiPlot.Core.Data;
-using SemiPlot.Core.Trends;
 
 namespace SemiPlot.DataSource.Postgres;
 
@@ -19,6 +18,10 @@ public sealed class PostgresLiveSource : ILiveSource
 	private readonly IScheduler _scheduler;
 	private readonly ILogger<PostgresLiveSource> _logger;
 	private readonly TimeSpan _pollInterval;
+
+	// Set before each read and cleared by its answer, and kept across subscriptions, so the first answer after a
+	// failed or switch-cancelled read is marked. Written by the poll loop on the injected scheduler.
+	private volatile bool _previousReadFailed;
 
 	internal PostgresLiveSource(
 		NpgsqlDataSource dataSource,
@@ -37,21 +40,21 @@ public sealed class PostgresLiveSource : ILiveSource
 	}
 
 	/// <summary>
-	/// The live edge of the requested variables. Cold: each subscription starts a poll loop of its own, on the
-	/// injected scheduler and at the poll interval, holding its own baseline; disposing it cancels the loop's
-	/// query and its wait, so no further statement is issued.
+	/// The live edge of the requested variables, one poll per answered read. Cold: each subscription starts a
+	/// poll loop of its own, on the injected scheduler and at the poll interval, holding its own baseline;
+	/// disposing it cancels the loop's query and its wait, so no further statement is issued.
 	/// </summary>
-	public IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<int> penIds)
+	public IObservable<LivePoll> Subscribe(IReadOnlyList<int> penIds)
 	{
 		var subscribedIds = penIds.ToArray();
 
-		return Observable.Create<IReadOnlyList<Sample>>(observer =>
+		return Observable.Create<LivePoll>(observer =>
 			_scheduler.ScheduleAsync((_, cancellationToken) => PollAsync(subscribedIds, observer, cancellationToken)));
 	}
 
 	private async Task PollAsync(
 		int[] penIds,
-		IObserver<IReadOnlyList<Sample>> observer,
+		IObserver<LivePoll> observer,
 		CancellationToken cancellationToken)
 	{
 		var poll = new RealtimePoll(
@@ -65,6 +68,10 @@ public sealed class PostgresLiveSource : ILiveSource
 		{
 			while (!cancellationToken.IsCancellationRequested)
 			{
+				// docs/architecture/data-integration.md#realtime
+				var answeredAtUtc = _scheduler.Now.UtcDateTime;
+				var resumesAfterFailure = _previousReadFailed;
+				_previousReadFailed = true;
 				var samples = await poll.ReadOnceAsync(cancellationToken).ConfigureAwait(false);
 
 				// A disposal landing while the query is in flight delivers nothing further.
@@ -73,9 +80,10 @@ public sealed class PostgresLiveSource : ILiveSource
 					return;
 				}
 
-				if (samples.Count > 0)
+				if (samples is not null)
 				{
-					observer.OnNext(samples);
+					observer.OnNext(new LivePoll(answeredAtUtc, samples, resumesAfterFailure));
+					_previousReadFailed = false;
 				}
 
 				await _scheduler.Sleep(_pollInterval, cancellationToken).ConfigureAwait(false);

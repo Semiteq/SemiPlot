@@ -164,7 +164,7 @@ public sealed class TrendPenStateTests
 		var state = NewState();
 		state.LoadHistory(new PenHistoryEnvelope(1, [_start], [1.0], [5.0], [2.0]), _start, null);
 
-		state.FoldRealtime(_start.AddMinutes(1.0), 9.0);
+		state.FoldRealtime(_start.AddMinutes(1.0), 9.0, TimeSpan.FromHours(1.0));
 
 		var columns = state.Line.SnapshotColumns();
 		columns.Should().ContainSingle();
@@ -192,6 +192,39 @@ public sealed class TrendPenStateTests
 		var columns = state.Line.SnapshotColumns();
 		columns.Any(column => double.IsNaN(column.Center)).Should().Be(breaksBeforeTheNextLiveColumn);
 		state.CurrentValue.Should().Be(12.0);
+	}
+
+	[Theory]
+	[InlineData(0.0, 5.0)]
+	[InlineData(5.0, 5.0)]
+	[InlineData(10.0, 5.0)]
+	[InlineData(-1.0, null)]
+	[InlineData(11.0, null)]
+	public void HeldValueAt_ReadsTheLastValueInsideTheHeldSpanAndNothingOutsideIt(
+		double secondsFromStart,
+		double? expected)
+	{
+		var state = NewState();
+		state.AppendRealtime(_start, 5.0);
+
+		state.ApplyHold(_start.AddSeconds(10.0));
+
+		state.HeldValueAt(_start.AddSeconds(secondsFromStart)).Should().Be(expected);
+	}
+
+	[Fact]
+	public void BreakHold_EndsTheLineAtTheHoldEnd_AndHoldsNothingAfterIt()
+	{
+		var state = NewState();
+		state.AppendRealtime(_start, 5.0);
+		state.ApplyHold(_start.AddSeconds(10.0));
+
+		state.BreakHold();
+		state.ApplyHold(_start.AddSeconds(20.0));
+
+		state.Line.SnapshotColumns()[^1].X.Should().Be(LocalTimeAxis.ToAxis(_start.AddSeconds(10.0)));
+		state.HeldValueAt(_start.AddSeconds(5.0)).Should().BeNull();
+		state.CurrentValue.Should().Be(5.0);
 	}
 
 	private static void AppendAtOrBeforeTheLiveColumn(TrendPenState state)

@@ -43,13 +43,14 @@ public sealed class EnvelopePathTests
 	}
 
 	[Fact]
-	public void Build_FirstColumn_EntersAtItsMin()
+	public void Build_FirstColumn_EntersAtItsMinAndEndsOnItsCenter()
 	{
 		var points = Build([new EnvelopeColumn(0.0, 1.0, 2.0, 1.5)], PenLineStyle.Interpolated);
 
 		points.Should().Equal(
 			new EnvelopePoint(0.0, 1.0, true),
-			new EnvelopePoint(0.0, 2.0, false));
+			new EnvelopePoint(0.0, 2.0, false),
+			new EnvelopePoint(0.0, 1.5, false));
 	}
 
 	[Fact]
@@ -65,7 +66,8 @@ public sealed class EnvelopePathTests
 		points.Should().Equal(
 			new EnvelopePoint(0.0, 0.0, true),
 			new EnvelopePoint(1.0, 5.0, false),
-			new EnvelopePoint(1.0, 10.0, false));
+			new EnvelopePoint(1.0, 10.0, false),
+			new EnvelopePoint(1.0, 7.0, false));
 	}
 
 	[Fact]
@@ -81,7 +83,24 @@ public sealed class EnvelopePathTests
 		points.Should().Equal(
 			new EnvelopePoint(0.0, 10.0, true),
 			new EnvelopePoint(1.0, 3.0, false),
-			new EnvelopePoint(1.0, 2.0, false));
+			new EnvelopePoint(1.0, 2.0, false),
+			new EnvelopePoint(1.0, 2.5, false));
+	}
+
+	[Fact]
+	public void Build_ColumnEndingOnItsFarExtreme_AddsNoVertexForItsCenter()
+	{
+		var points = Build(
+			[
+				new EnvelopeColumn(0.0, 0.0, 0.0, 0.0),
+				new EnvelopeColumn(1.0, 5.0, 10.0, 10.0)
+			],
+			PenLineStyle.Interpolated);
+
+		points.Should().Equal(
+			new EnvelopePoint(0.0, 0.0, true),
+			new EnvelopePoint(1.0, 5.0, false),
+			new EnvelopePoint(1.0, 10.0, false));
 	}
 
 	[Fact]
@@ -98,8 +117,10 @@ public sealed class EnvelopePathTests
 		points.Should().Equal(
 			new EnvelopePoint(0.0, 1.0, true),
 			new EnvelopePoint(0.0, 2.0, false),
+			new EnvelopePoint(0.0, 1.5, false),
 			new EnvelopePoint(2.0, 3.0, true),
-			new EnvelopePoint(2.0, 4.0, false));
+			new EnvelopePoint(2.0, 4.0, false),
+			new EnvelopePoint(2.0, 3.5, false));
 	}
 
 	[Fact]
@@ -135,6 +156,26 @@ public sealed class EnvelopePathTests
 	}
 
 	[Fact]
+	public void Build_SteppedPen_AfterAMinMaxColumn_HoldsItsCenter()
+	{
+		var points = Build(
+			[
+				new EnvelopeColumn(0.0, 9.0, 9.0, 9.0),
+				new EnvelopeColumn(1.0, 6.0, 9.0, 6.0),
+				new EnvelopeColumn(2.0, 4.0, 4.0, 4.0)
+			],
+			PenLineStyle.Stepped);
+
+		points.Should().Equal(
+			new EnvelopePoint(0.0, 9.0, true),
+			new EnvelopePoint(1.0, 9.0, false),
+			new EnvelopePoint(1.0, 9.0, false),
+			new EnvelopePoint(1.0, 6.0, false),
+			new EnvelopePoint(2.0, 6.0, false),
+			new EnvelopePoint(2.0, 4.0, false));
+	}
+
+	[Fact]
 	public void Build_WalksOnlyTheGivenRange()
 	{
 		var columns = Lattice(5);
@@ -145,8 +186,40 @@ public sealed class EnvelopePathTests
 		points.Should().Equal(
 			new EnvelopePoint(1.0, 1.0, true),
 			new EnvelopePoint(1.0, 2.0, false),
+			new EnvelopePoint(1.0, 1.5, false),
 			new EnvelopePoint(2.0, 2.0, false),
-			new EnvelopePoint(2.0, 3.0, false));
+			new EnvelopePoint(2.0, 3.0, false),
+			new EnvelopePoint(2.0, 2.5, false));
+	}
+
+	[Theory]
+	[InlineData(PenLineStyle.Interpolated, 1)]
+	[InlineData(PenLineStyle.Interpolated, 2)]
+	[InlineData(PenLineStyle.Interpolated, 4)]
+	[InlineData(PenLineStyle.Stepped, 1)]
+	[InlineData(PenLineStyle.Stepped, 2)]
+	[InlineData(PenLineStyle.Stepped, 4)]
+	public void Build_FromALaterFirstColumn_DrawsTheSharedColumnsAsTheWholeRangeDoes(
+		PenLineStyle lineStyle,
+		int first)
+	{
+		EnvelopeColumn[] columns =
+		[
+			new(0.0, 10.0, 10.0, 10.0),
+			new(1.0, 2.0, 10.0, 2.0),
+			new(2.0, 2.0, 2.0, 2.0),
+			new(3.0, 1.0, 2.0, 1.0),
+			new(4.0, 1.0, 8.0, 3.0),
+			new(5.0, 3.0, 3.0, 3.0)
+		];
+		var fromLater = new List<EnvelopePoint>();
+		EnvelopePath.Build(columns, first, columns.Length, lineStyle, fromLater);
+
+		var sharedFromWhole = Build(columns, lineStyle)
+			.Where(point => point.X >= columns[first].X)
+			.Select(point => (point.X, point.Y));
+
+		fromLater.Select(point => (point.X, point.Y)).Should().Equal(sharedFromWhole);
 	}
 
 	[Theory]

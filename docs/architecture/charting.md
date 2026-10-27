@@ -695,7 +695,9 @@ quoting). `SemiPlot.Core.Export.ArchiveRowSlices` holds the 15 minute slice widt
   of the extent's last sample and the newest sample; `BandFigures` → one outline and centre line per
   run of finite envelope columns, scaled to the pen's own range. The band's next-read delay is the
   read schedule's own, `Minimap/MinimapBandFeed.NextReadDelay`.
-- `CursorReadoutModel` — cursor X → per-pen interpolated `Center` value (gaps → no value).
+- `CursorReadoutModel` — cursor X → per-pen `Center` value read as the pen's line draws it: a `Stepped`
+  pen holds the `Center` of the last column at or before the cursor, an `Interpolated` pen interpolates
+  between the two neighbouring `Center`s (gaps and a cursor outside the columns → no value).
 - `DeltaCursorModel` — two cursor times → `DeltaReadout` (Δt + Δy for the active pen).
 
 ## Applying a catalogue read

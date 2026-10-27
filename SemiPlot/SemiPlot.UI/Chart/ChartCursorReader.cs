@@ -10,12 +10,12 @@ public sealed class ChartCursorReader(
 
 	public IReadOnlyDictionary<int, double?> ReadAt(DateTime cursorTime)
 	{
-		var visibleEnvelopes = pensById.Values
+		var visiblePens = pensById.Values
 			.Where(state => state.IsVisible && envelopesById.ContainsKey(state.Pen.PenId))
-			.Select(state => envelopesById[state.Pen.PenId])
+			.Select(state => (envelopesById[state.Pen.PenId], state.Pen.LineStyle))
 			.ToArray();
 
-		return _cursorReadout.ReadAt(cursorTime, visibleEnvelopes);
+		return _cursorReadout.ReadAt(cursorTime, visiblePens);
 	}
 
 	/// <summary>One visible pen's value at <paramref name="time"/>; null for a hidden pen or a gap.</summary>
@@ -24,7 +24,7 @@ public sealed class ChartCursorReader(
 		return pensById.TryGetValue(penId, out var state)
 			&& state.IsVisible
 			&& envelopesById.TryGetValue(penId, out var envelope)
-				? CursorReadoutModel.ReadPenAt(time, envelope)
+				? CursorReadoutModel.ReadPenAt(time, envelope, state.Pen.LineStyle)
 				: null;
 	}
 }

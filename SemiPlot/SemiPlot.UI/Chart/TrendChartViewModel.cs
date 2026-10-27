@@ -60,7 +60,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		_axisBinder = new ChartAxisBinder(Plot);
 		_penSet = new ChartPenSet(Plot, _axisBinder);
 		_cursorReader = new ChartCursorReader(_penSet.ById, _envelopesById);
-		_deltaCursorReader = new ChartDeltaCursorReader(_envelopesById);
+		_deltaCursorReader = new ChartDeltaCursorReader(_penSet.ById, _envelopesById);
 		_realtimeApplier = new ChartRealtimeApplier(_penSet.ById, Navigation);
 		_historyDebouncer = new ChartHistoryRequestDebouncer(
 			QueryHistoryAsync,

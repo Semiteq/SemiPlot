@@ -4,6 +4,7 @@ using SemiPlot.UI.Localization;
 namespace SemiPlot.UI.Chart;
 
 public sealed class ChartDeltaCursorReader(
+	IReadOnlyDictionary<int, TrendPenState> pensById,
 	IReadOnlyDictionary<int, PenHistoryEnvelope> envelopesById)
 {
 	private static readonly PenHistoryEnvelope _emptyEnvelope = new(0, [], [], [], []);
@@ -32,7 +33,9 @@ public sealed class ChartDeltaCursorReader(
 		var envelope = envelopesById.GetValueOrDefault(activePenId)
 					   ?? _emptyEnvelope with { PenId = activePenId };
 
-		return _deltaCursor.Compute(envelope);
+		var lineStyle = pensById.GetValueOrDefault(activePenId)?.Pen.LineStyle ?? PenLineStyle.Interpolated;
+
+		return _deltaCursor.Compute(envelope, lineStyle);
 	}
 
 	public static string FormatReadout(DeltaReadout? readout, string? penMask)

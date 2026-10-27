@@ -23,11 +23,11 @@ created itself, and `converge`, which recreates the `semiplot_` database `--conn
 
 ## The standard slice
 
-One day, 8 pens, seed 1, change interval 5 s, 4 breaks, exclusive end `2026-01-02T00:00:00`.
+One day, 10 pens, seed 1, change interval 5 s, 4 breaks, exclusive end `2026-01-02T00:00:00`.
 The end is fixed rather than floating, so two runs of the same seed produce the same archive. Its
 shape is pinned by `RawLayerGeneratorTests` — determinism, the absolute lattice, the break holes and
-the row-pair shape — and the waveform itself is not. The raw layer is about 272 000 rows and all
-three layers about 315 000, landing in one day partition. Pens are taken round-robin across the
+the row-pair shape — and the waveform itself is not. The raw layer is about 307 000 rows and all
+three layers about 355 000, landing in one day partition. Pens are taken round-robin across the
 catalogue's groups, so a slice spans more than one group and more than one value range.
 
 The size has a floor: `ExplainPlanTests` loses the poll statement's index plan to a sequential scan
@@ -52,6 +52,15 @@ Layer `0` only; the coarse layers are derived from it.
 - A change carries its pre-anchor: the previous value one poll interval (100 ms) earlier, then the
   new value at the change tick — the vendor's two-rows-per-change shape. A change interval no wider
   than the poll interval carries no anchor.
+- **A slow pen changes on every k-th lattice point and writes nothing between.** A pen whose
+  `ChangePeriod` is set (the `Setpoints` group: 5 and 30 minutes) has the stride
+  `k = max(1, ChangePeriod / intervalTicks)`, whole intervals only: at 0.5 s that is 600 and 3 600, at
+  the standard slice's 5 s 60 and 360, and a period the interval does not divide changes slightly more
+  often than stated. A change sits on an index that is a multiple of `k` and carries the walk's value
+  at that index; its anchor carries the value of the previous change, `k` indices back. The pen writes
+  no row between two changes, so the reader sees an unchanged value, never a gap. Both generators
+  apply the stride inside `AppendWindow`, so a follow run continues a slow pen exactly where the
+  seeding left it.
 - Timestamps carry whole milliseconds only, matching `timestamp(3)`.
 - The lattice carries no per-pen phase, so every pen changes at the same instants. A defect that only
   shows when two pens carry distinct timestamps needs a test that builds its own rows.
@@ -69,10 +78,14 @@ period the thinner has to survive. A span holds at most one break per 20 minutes
 `BreakPlan` refuses a `SeederOptions.BreakCount` above that. The seeder states no option for it:
 `SeederOptions.DefaultBreakCount` breaks fit any span the command line can ask for.
 
-Both markers land on real change rows, so with breaks every archiving run must hold at least two
-changes. The tight run is the first or the last, which `BreakPlan` guarantees only `MinimumRun`;
+Both markers land on lattice rows, so with breaks every archiving run must hold at least two lattice
+points. The tight run is the first or the last, which `BreakPlan` guarantees only `MinimumRun`;
 `RawLayerGenerator.Generate` refuses a `--change-seconds` that leaves a run shorter and names the
-run.
+run. For an ordinary pen every lattice point is a change, so the markers go on change rows. A slow pen
+may hold one value across a whole run, so it writes its held value at the run's last lattice point
+before a break and at the first one after it, and the markers go there: the vendor writes every tag at
+the project stop and start instants (`scada-archive.md#quality-and-gaps`). Those two rows repeat a
+value, so they carry no anchor.
 
 ## The demo writer
 
@@ -262,10 +275,12 @@ what carries it, because `scada_writer` holds no privilege on those tables. Noth
 catalogue afterwards — the demo writer fills none of it, and every test database is a clone of a
 template that was already filled.
 
-`SyntheticPenCatalog.Build` holds 50 pens over six group names, all but one with a unit, a format mask and the
+`SyntheticPenCatalog.Build` holds 52 pens over seven group names, all but one with a unit, a format mask and the
 stored scale pair its waveform walks between. What reaches the table is the slice, not the whole
 catalogue: `SeedFiller` hands the writer `RawLayerGenerator.SelectPens(options.PenCount)`, the
-round-robin slice that is eight pens wide by default. Four pens carry the states that slice would
+round-robin slice that is ten pens wide by default. Ten carries `Setpoint 01`, the 5-minute pen, to the
+stand and the test bench, and still splits into the provider's four pen groups, which nine does not;
+`Setpoint 02`, the 30-minute pen, enters at `--pens 13`. Four pens carry the states that slice would
 otherwise never reach — `TwoGroupPenId` sits in `Heaters` and `Watchlist` at once, `HiddenOnStartPenId`
 has `enabled_on_start = false`, `LogScalePenId` (4000, `Pressure 01`) spans `1e-6..1e-1` mbar under the
 mask `0.0E+0` with `log_scale_on_start = true`, so the demo stand opens it on a log10 axis, and

@@ -16,6 +16,9 @@ public sealed class SharedLatticeTests
 {
 	private const int PenCount = 3;
 
+	// Every pen of the catalogue, so a slow pen's every-k-th step is compared as well.
+	private static readonly int _wholeCatalogue = SyntheticPenCatalog.Build().Count;
+
 	// A minute between changes, not the standard slice's five seconds: the comparison covers a whole day
 	// row for row, and the lattice it asserts on is the same one at any interval.
 	private const double ChangeSeconds = 60.0;
@@ -42,9 +45,10 @@ public sealed class SharedLatticeTests
 	[Fact]
 	public void ASeedingRunAndAFollowTickEmitTheSameRowsOverTheSameSpan()
 	{
-		var seeded = RawLayerGenerator.Generate(_seeding);
+		var seeding = _seeding with { PenCount = _wholeCatalogue };
+		var seeded = RawLayerGenerator.Generate(seeding);
 		var followed = LiveTailGenerator.Generate(
-			_following, _seeding.Start.AddTicks(-1), _seeding.End.AddTicks(-1));
+			_following with { PenCount = _wholeCatalogue }, seeding.Start.AddTicks(-1), seeding.End.AddTicks(-1));
 
 		seeded.Should().NotBeEmpty();
 		followed.Should().Equal(seeded);

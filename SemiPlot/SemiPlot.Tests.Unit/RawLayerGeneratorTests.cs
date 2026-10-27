@@ -56,9 +56,8 @@ public sealed class RawLayerGeneratorTests
 		}
 	}
 
-	// A plan with breaks is the no-break lattice with the break windows cut out and nothing else missing,
-	// beyond two anchors a break costs: one repeating a value with no change behind it, one ahead of the
-	// resume change. Every pen reads the same, because the project stops as a whole.
+	// The no-break lattice minus the break windows and two anchors per break, plus only the marker rows a
+	// slow pen writes off its own lattice (docs/architecture/bench.md#breaks). The project stops as a whole.
 	[Fact]
 	public void BreaksCutTheirWindowsOutOfTheLatticeAndLeaveNoOtherHole()
 	{
@@ -76,7 +75,12 @@ public sealed class RawLayerGeneratorTests
 				.Where(row => !plan.Breaks.Any(window => Removes(window, row, interval)))
 				.Select(row => (row.Timestamp, row.Value));
 
-			broken[pen].Select(row => (row.Timestamp, row.Value)).Should().Equal(expected);
+			var lattice = continuous[pen].Select(row => row.Timestamp).ToHashSet();
+
+			broken[pen]
+				.Where(row => row.Quality == ArchiveRow.OrdinaryQuality || lattice.Contains(row.Timestamp))
+				.Select(row => (row.Timestamp, row.Value))
+				.Should().Equal(expected);
 		}
 	}
 
@@ -157,7 +161,7 @@ public sealed class RawLayerGeneratorTests
 	[Fact]
 	public void EveryValueStaysInsideItsPenRange()
 	{
-		var pens = RawLayerGenerator.SelectPens(8).ToDictionary(pen => pen.PenId);
+		var pens = RawLayerGenerator.SelectPens(SeederOptions.DefaultPenCount).ToDictionary(pen => pen.PenId);
 
 		foreach (var row in RawLayerGenerator.Generate(BenchOptions.For()))
 		{
@@ -176,17 +180,17 @@ public sealed class RawLayerGeneratorTests
 		(pens.Select(pen => (pen.MinValue, pen.MaxValue)).Distinct().Count() > 1).Should().BeTrue();
 	}
 
-	// The ungrouped pen is a bucket of its own and the catalogue declares it last, so the round robin
-	// reaches it once every named group has given up its first pen.
+	// The ungrouped pen is a bucket of its own, declared after Powers and before Setpoints, so the round
+	// robin reaches it once every group declared ahead of it has given up its first pen.
 	[Fact]
 	public void PensAreTakenRoundRobinAcrossTheGroupsRatherThanFirstN()
 	{
-		var pens = RawLayerGenerator.SelectPens(6);
+		var pens = RawLayerGenerator.SelectPens(7);
 
 		pens.Select(pen => pen.PrimaryGroup).Should().Equal(
-			"Heaters", "Dampers", "Gas lines", "Pressures", "Powers", string.Empty);
+			"Heaters", "Dampers", "Gas lines", "Pressures", "Powers", string.Empty, "Setpoints");
 		pens.Select(pen => pen.PenId).Should().Equal(
-			1000, 2000, 3000, 4000, 5000, SyntheticPenCatalog.UncommissionedPenId);
+			1000, 2000, 3000, 4000, 5000, SyntheticPenCatalog.UncommissionedPenId, 6000);
 	}
 
 	[Fact]

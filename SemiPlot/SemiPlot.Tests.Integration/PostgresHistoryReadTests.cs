@@ -91,6 +91,13 @@ public sealed class PostgresHistoryReadTests(
 
 	private static readonly Lazy<IReadOnlyList<int>> _seededPenIds = new(SelectSeededPenIds);
 
+	// The seeded pens that change on every lattice point; a slow pen holds too few rows for a density fact.
+	private static readonly Lazy<IReadOnlySet<int>> _densePenIds = new(() => RawLayerGenerator
+		.SelectPens(ArchiveTemplate.Slice.PenCount)
+		.Where(pen => pen.ChangePeriod is null)
+		.Select(pen => pen.PenId)
+		.ToHashSet());
+
 	// The fresh tail's own archive, written by this class into a clone of the provisioned source. One
 	// calendar day, so the write creates the single partition tp2026m01d01; winter under the source zone,
 	// so every conversion out is an unambiguous fixed offset.
@@ -245,7 +252,7 @@ public sealed class PostgresHistoryReadTests(
 		// read that found the wrong partition of the primary key.
 		minute.Value.Select(envelope => envelope.PenId).Should().Equal(raw.Value.Select(envelope => envelope.PenId));
 
-		minute.Value.Zip(raw.Value).Should().AllSatisfy(
+		minute.Value.Zip(raw.Value).Where(pair => _densePenIds.Value.Contains(pair.First.PenId)).Should().AllSatisfy(
 			pair => (pair.First.Timestamps.Count < pair.Second.Timestamps.Count).Should().BeTrue(
 				$"Pen {pair.First.PenId} returns {pair.First.Timestamps.Count} columns from the minute "
 					+ $"layer and {pair.Second.Timestamps.Count} from raw, so the layer parameter is not "
@@ -352,7 +359,8 @@ public sealed class PostgresHistoryReadTests(
 		var window = DenseWindow();
 		var expected = SeededRowsIn(window);
 
-		expected.Should().AllSatisfy(pen => (pen.Value.Count > BucketedColumnTarget).Should().BeTrue(
+		expected.Where(pen => _densePenIds.Value.Contains(pen.Key)).Should().AllSatisfy(
+			pen => (pen.Value.Count > BucketedColumnTarget).Should().BeTrue(
 			$"Pen {pen.Key} holds {pen.Value.Count} rows in the window, which a target of "
 				+ $"{BucketedColumnTarget} columns would pass through instead of reducing."));
 

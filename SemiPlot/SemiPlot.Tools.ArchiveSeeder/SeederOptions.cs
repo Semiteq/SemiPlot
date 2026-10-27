@@ -11,7 +11,7 @@ public sealed record SeederOptions(
 	string? AdminConnectionString)
 {
 	public const int DefaultDays = 1;
-	public const int DefaultPenCount = 8;
+	public const int DefaultPenCount = 10;
 	public const long DefaultSeed = 1;
 	public const double DefaultChangeSeconds = 5.0;
 	public const int DefaultBreakCount = 4;

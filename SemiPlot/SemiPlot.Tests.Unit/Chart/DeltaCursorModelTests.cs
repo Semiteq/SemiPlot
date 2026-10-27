@@ -21,7 +21,8 @@ public sealed class DeltaCursorModelTests
 		var model = new DeltaCursorModel();
 		model.Place(_origin);
 
-		var readout = model.Compute(Envelope(1, (_origin, 5.0), (_origin.AddHours(2), 9.0)));
+		var readout = model.Compute(
+			Envelope(1, (_origin, 5.0), (_origin.AddHours(2), 9.0)), PenLineStyle.Interpolated);
 
 		readout.Should().BeNull();
 	}
@@ -34,7 +35,7 @@ public sealed class DeltaCursorModelTests
 
 		model.Place(_origin);
 		model.Place(_origin.AddHours(2));
-		var readout = model.Compute(envelope);
+		var readout = model.Compute(envelope, PenLineStyle.Interpolated);
 
 		readout.Should().NotBeNull();
 		readout.DeltaTime.Should().Be(TimeSpan.FromHours(2));
@@ -50,7 +51,7 @@ public sealed class DeltaCursorModelTests
 
 		model.Place(_origin.AddHours(2));
 		model.Place(_origin);
-		var readout = model.Compute(envelope);
+		var readout = model.Compute(envelope, PenLineStyle.Interpolated);
 
 		readout!.DeltaTime.Should().Be(TimeSpan.FromHours(2));
 		readout.DeltaY!.Value.Should().BeApproximately(-4.0, 1e-9);
@@ -68,10 +69,25 @@ public sealed class DeltaCursorModelTests
 
 		model.Place(_origin);
 		model.Place(_origin.AddHours(1));
-		var readout = model.Compute(envelope);
+		var readout = model.Compute(envelope, PenLineStyle.Interpolated);
 
 		readout!.DeltaTime.Should().Be(TimeSpan.FromHours(1));
 		readout.DeltaY.Should().BeNull();
+	}
+
+	[Theory]
+	[InlineData(PenLineStyle.Stepped, -10.0)]
+	[InlineData(PenLineStyle.Interpolated, -15.0)]
+	public void Compute_BetweenColumns_ReadsEachEndAsThePensLineStyleDraws(PenLineStyle lineStyle, double expectedDeltaY)
+	{
+		var model = new DeltaCursorModel();
+		var envelope = Envelope(1, (_origin, 30.0), (_origin.AddHours(2), 20.0), (_origin.AddHours(4), 0.0));
+
+		model.Place(_origin.AddHours(1));
+		model.Place(_origin.AddHours(3));
+		var readout = model.Compute(envelope, lineStyle);
+
+		readout!.DeltaY!.Value.Should().BeApproximately(expectedDeltaY, 1e-9);
 	}
 
 	[Fact]
@@ -85,7 +101,7 @@ public sealed class DeltaCursorModelTests
 
 		model.FirstCursor.Should().BeNull();
 		model.SecondCursor.Should().BeNull();
-		model.Compute(Envelope(1, (_origin, 5.0))).Should().BeNull();
+		model.Compute(Envelope(1, (_origin, 5.0)), PenLineStyle.Interpolated).Should().BeNull();
 	}
 
 	[Fact]

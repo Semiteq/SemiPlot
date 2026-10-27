@@ -3,8 +3,6 @@ namespace SemiPlot.Core.Trends;
 // Delta y is measured for the active pen only, since pens share X but not Y.
 public sealed class DeltaCursorModel
 {
-	private readonly CursorReadoutModel _cursorReadout = new();
-
 	public DateTime? FirstCursor { get; private set; }
 
 	public DateTime? SecondCursor { get; private set; }
@@ -29,7 +27,7 @@ public sealed class DeltaCursorModel
 		SecondCursor = null;
 	}
 
-	public DeltaReadout? Compute(PenHistoryEnvelope activePenEnvelope)
+	public DeltaReadout? Compute(PenHistoryEnvelope activePenEnvelope, PenLineStyle lineStyle)
 	{
 		if (FirstCursor is not { } first || SecondCursor is not { } second)
 		{
@@ -37,15 +35,19 @@ public sealed class DeltaCursorModel
 		}
 
 		var deltaTime = (second - first).Duration();
-		var deltaY = ComputeDeltaY(first, second, activePenEnvelope);
+		var deltaY = ComputeDeltaY(first, second, activePenEnvelope, lineStyle);
 
 		return new DeltaReadout(deltaTime, deltaY);
 	}
 
-	private double? ComputeDeltaY(DateTime first, DateTime second, PenHistoryEnvelope activePenEnvelope)
+	private static double? ComputeDeltaY(
+		DateTime first,
+		DateTime second,
+		PenHistoryEnvelope activePenEnvelope,
+		PenLineStyle lineStyle)
 	{
-		var firstValue = _cursorReadout.ReadAt(first, [activePenEnvelope])[activePenEnvelope.PenId];
-		var secondValue = _cursorReadout.ReadAt(second, [activePenEnvelope])[activePenEnvelope.PenId];
+		var firstValue = CursorReadoutModel.ReadPenAt(first, activePenEnvelope, lineStyle);
+		var secondValue = CursorReadoutModel.ReadPenAt(second, activePenEnvelope, lineStyle);
 
 		if (firstValue is not { } start || secondValue is not { } end)
 		{

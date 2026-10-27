@@ -6,6 +6,8 @@ using SemiPlot.UI.Localization;
 
 using Xunit;
 
+using static SemiPlot.Tests.Unit.Chart.PenEnvelopes;
+
 namespace SemiPlot.Tests.Unit.UI.Chart;
 
 [Collection(ProcessGlobalStateCollection.Name)]
@@ -14,6 +16,31 @@ namespace SemiPlot.Tests.Unit.UI.Chart;
 [Trait("Category", "Unit")]
 public sealed class ChartDeltaCursorReaderTests
 {
+	private const int PenId = 1;
+
+	private static readonly DateTime _origin = new(2026, 6, 16, 12, 0, 0, DateTimeKind.Utc);
+
+	[Theory]
+	[InlineData(PenLineStyle.Stepped, -21.0)]
+	[InlineData(PenLineStyle.Interpolated, -16.8)]
+	public void Measure_ReadsTheActivePenAsItsLineStyleDraws(PenLineStyle lineStyle, double expectedDeltaY)
+	{
+		var pensById = new Dictionary<int, TrendPenState>
+		{
+			[PenId] = new(new Pen(PenId, "Pen 1", ["Group A"], "#ff0000", LineStyle: lineStyle), new EnvelopeLine())
+		};
+		var envelopesById = new Dictionary<int, PenHistoryEnvelope>
+		{
+			[PenId] = Envelope(PenId, (_origin, 226.0), (_origin.AddMinutes(5), 205.0), (_origin.AddMinutes(10), 205.0))
+		};
+		var reader = new ChartDeltaCursorReader(pensById, envelopesById);
+
+		reader.Place(_origin.AddMinutes(1));
+		reader.Place(_origin.AddMinutes(9));
+
+		reader.Measure(PenId)!.DeltaY!.Value.Should().BeApproximately(expectedDeltaY, 1e-9);
+	}
+
 	[Fact]
 	public void FormatReadout_WithoutADeltaY_RendersTheNoValuePlaceholder()
 	{

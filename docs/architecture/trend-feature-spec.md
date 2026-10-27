@@ -137,16 +137,16 @@ through `TrendChartViewModel.SetActivePen`; the picked line is drawn 2 px wide a
 ## 4. Cursors and measurement
 
 ### CU-1 — Vertical cursor / hover readout (MUST)
-**Definition.** A vertical line that follows the mouse; shows the local time and the value of every visible pen at the X point. Implemented as an Avalonia overlay (does not trigger a plot redraw); value reading is a binary search + linear interpolation over `Center`, with gap/out-of-range → empty.
-**Acceptance.** Core/test: `CursorReadoutModel` — interpolation between points, null on a gap and out of range. UI: pointer-move does not trigger a ScottPlot redraw; the readout shows the time and the values of the visible pens.
+**Definition.** A vertical line that follows the mouse; shows the local time and the value of every visible pen at the X point. Implemented as an Avalonia overlay (does not trigger a plot redraw); value reading is a binary search over `Center`: a Stepped pen reads the held value of the last point at or before X, an Interpolated pen interpolates linearly between the two neighbouring points; gap/out-of-range → empty.
+**Acceptance.** Core/test: `CursorReadoutModel` — the held value for a Stepped pen and interpolation for an Interpolated pen between points, null on a gap and out of range. UI: pointer-move does not trigger a ScottPlot redraw; the readout shows the time and the values of the visible pens.
 
 ### CU-2 — Read a pen's value at a point (MUST)
-**Definition.** At any point of the window the operator sees the numeric value of the selected/all visible pens (see CU-1), including the value interpolated between samples.
+**Definition.** At any point of the window the operator sees the numeric value of the selected/all visible pens (see CU-1), including the value between samples: held for a Stepped pen, interpolated for an Interpolated pen.
 **Acceptance.** UI: hovering over an arbitrary X gives the pen's value; on a gap — a "no data" marker.
 
 ### CU-3 — T1/T2 markers and delta measurement (MUST)
-**Definition.** The operator places two time points T1 and T2 (delta mode: two clicks place the vertical lines, a third click starts a new measurement). The system shows Δt = T2−T1 and Δy for the active pen (the values at T1 and T2 are interpolated; a gap → null). In delta mode a drag does not pan.
-**Acceptance.** Core/test: `DeltaCursorModel.Compute` returns `DeltaReadout(Δt, Δy)`; Δy is computed for the active pen with interpolation. UI: two clicks give a "Δt h/m/s, Δy" label; a third click resets.
+**Definition.** The operator places two time points T1 and T2 (delta mode: two clicks place the vertical lines, a third click starts a new measurement). The system shows Δt = T2−T1 and Δy for the active pen (the values at T1 and T2 are read as at the cursor: held for a Stepped pen, interpolated for an Interpolated pen; a gap → null). In delta mode a drag does not pan.
+**Acceptance.** Core/test: `DeltaCursorModel.Compute` returns `DeltaReadout(Δt, Δy)`; Δy is computed for the active pen under its line style. UI: two clicks give a "Δt h/m/s, Δy" label; a third click resets.
 **Note.** This is a direct user requirement: "place markers T1, T2 … and look at the value". The MasterSCADA reference has no ready-made delta readout — here it is mandatory.
 
 ### CU-4 — Multiple named bookmarks (SHOULD)

@@ -306,7 +306,9 @@ pointer, so a second finger neither moves, pans nor ends the first finger's drag
   crosshair endpoints in DIP space; the readout hangs from the line's top end). A cursor X outside the
   data rect's X range hides the crosshair and the readout. The readout text is the pure
   `Chart/ChartHoverReadout.BuildContent` string: the local timestamp plus every *visible* pen's value
-  at the cursor X (one line per pen; gap or missing pen → dash). With the pointer on a time marker the
+  at the cursor X (one line per pen; gap or missing pen → dash). A `Stepped` pen reads the value of the last
+  point at or before the cursor X, the level its line holds there, and an `Interpolated` pen interpolates
+  between its two neighbouring points (`Core/Trends/CursorReadoutModel`). With the pointer on a time marker the
   cursor X is the marker's moment, so the readout lists every visible pen's value there
   (`#the-time-markers`). The overlay is suppressed while a drag
   is in progress or delta mode is active (`IsDragging || IsDeltaModeEnabled`) and is repositioned from
@@ -315,7 +317,8 @@ pointer, so a second finger neither moves, pans nor ends the first finger's drag
 - **Delta cursors (Δt / Δy) via an explicit navigation-bar mode.** The bar's "Delta" toggle
   (`NavigationBarViewModel.IsDeltaModeEnabled`) sets the chart into `DeltaPlacement`: two left clicks
   place the cursors and drag does NOT pan; toggling off clears the placed cursors and hides the
-  lines. Δt and the **active-pen** Δy (`Core/Trends/DeltaCursorModel` → `DeltaReadout`, Δy under the
+  lines. Δt and the **active-pen** Δy (`Core/Trends/DeltaCursorModel` → `DeltaReadout`, each end read under the
+  pen's line style as the hover readout reads it, Δy under the
   positive section of the pen's mask, `charting.md`) are shown in an inline readout next to the toggle.
 - **Y-axis click-region scale edit.** A press on the active pen's Y-axis panel band
   (`Chart/ChartAxisRegion`, computed from the last render layout) is handled before Ctrl, the time axis,

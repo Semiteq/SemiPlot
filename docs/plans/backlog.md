@@ -30,6 +30,30 @@ each is a scoped future task.
   of the raw newest (`data-integration.md#layer-ladder`, Fresh tail). The fix widens the clamp to two
   periods plus the lag measured on a plant archive and re-checks the tail's row count at that width.
 
+- **The poll keeps one `lastSeen` for every pen.** `RealtimePoll` reads the rows stamped past one
+  `_lastSeen` across the subscription's pens, so a row committed after a row with a later stamp is never
+  delivered live, and the pen's hold shows the old value until a history read covers it
+  (`charting.md#per-pen-plottable-envelopeline`, The hold to the poll answer). The fix keeps `lastSeen`
+  per pen. Deferred from the hold to the poll answer (#152).
+
+- **A pen unchanged for longer than a day draws no hold.** The history seed reads one row per pen before
+  the window, bounded to the wider of the window and one day (`data-integration.md#operation-to-statement`,
+  History). A pen last written before that bound has no column in a window of a day or less, so it draws
+  neither a line nor a hold until it changes. The fix widens the seed bound and measures the seed walk at
+  the new width. Deferred from the hold to the poll answer (#152).
+
+- **The delta cursor's Δy ignores the hold.** `DeltaCursorModel.ComputeDeltaY` reads the active pen's
+  envelope alone (`SemiPlot.Core/Trends/DeltaCursorModel.cs:47-48`), so a delta cursor inside the held span
+  shows no Δy while the hover readout there shows the held value through `ChartCursorReader`. Deferred from
+  the hold to the poll answer (#152).
+
+- **A window opened on no archive extent jumps once when the first history lands.** With no extent seeded
+  at startup, the first poll answers move the live edge and a sticky window to the viewer clock; the first
+  envelope then snaps both back to its last sample through `ChartNavigationController.TrackDataExtents`, and
+  the next answer moves them forward again. The fix lets `TrackDataExtents` keep a live edge an answer has
+  already moved, without losing the snap from the constructor's wall clock that a normal start relies on.
+  Deferred from the review of the hold to the poll answer (#152).
+
 - **Minimap — further work.** The strip draws the drawn pen's min/max band under the window marker. Still
   wanted: clearer window handles, and possibly a per-pen presence row. Treat as its own task.
 
@@ -92,8 +116,8 @@ Paths are under `SemiPlot/SemiPlot.UI/` unless they name another project.
   `AutoscalePen` (`:375`), `RestoreInitialScale(int)` (`:382`) and `WidenToArchiveExtent` (`:259`) carry no
   guard. Decide the guard set per member against `csharp.md`'s rule: guard only where a late call corrupts
   state or leaks.
-- **`ChartCursorReader` has one caller.** It wraps `CursorReadoutModel.ReadAt` for
-  `TrendChartViewModel.MoveCursor` alone (`Chart/TrendChartViewModel.cs:63`, `:329`).
+- **`ChartCursorReader` has one caller.** `TrendChartViewModel` alone reads it, in `MoveCursor` and
+  `ActivePenReadingAt` (`Chart/TrendChartViewModel.cs:62`, `:411`, `:417`).
 - **Hand-rolled log-level switch.** `StartupOptions.ParseLogLevel` (`StartupOptions.cs:105-117`) restates
   `Enum.TryParse<LogEventLevel>(ignoreCase: true)` plus the `info` alias. `Enum.TryParse` alone also
   accepts a numeric string (`"42"` parses to an undefined level) and a comma list, which would widen the
@@ -116,9 +140,8 @@ Paths are under `SemiPlot/SemiPlot.UI/` unless they name another project.
   on, then posts `ApplyExtent` to the UI scheduler again (`Minimap/MinimapViewModel.cs:94-95`). Under a
   `TestScheduler` no `SynchronizationContext` exists, and the `Observable.Start` at `:95` is the one route
   that brings `ApplyExtent` back, so dropping `:95` is no fix: keep one of the two marshalling routes.
-- **Allocation per pointer move.** Every `MoveCursor` (`Chart/TrendChartView.axaml.cs:305`) builds an array
-  in `ChartCursorReader.ReadAt` (`Chart/ChartCursorReader.cs:13-16`) and a dictionary in
-  `CursorReadoutModel.ReadAt` (`SemiPlot.Core/Trends/CursorReadoutModel.cs:9`).
+- **Allocation per pointer move.** Every `MoveCursor` (`Chart/TrendChartView.axaml.cs:656`) builds a
+  dictionary in `ChartCursorReader.ReadAt` (`Chart/ChartCursorReader.cs:12`).
 - **An idle chart keeps a 400 ms timer.** The debouncer's `Sample` runs on the data scheduler for the chart's
   lifetime, idle or not (`Chart/ChartHistoryRequestDebouncer.cs:55-57`, `Chart/TrendChartViewModel.cs:25`).
 

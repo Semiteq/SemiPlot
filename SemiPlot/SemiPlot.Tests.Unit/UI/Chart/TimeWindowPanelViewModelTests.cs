@@ -176,7 +176,7 @@ public sealed class TimeWindowPanelViewModelTests
 		var liveEdge = To.AddSeconds(20.4);
 
 		chart.TimeWindow.Form.StartTimeText = "08:30:00";
-		chart.Navigation.OnLiveEdge(liveEdge);
+		chart.Navigation.OnLiveEdge(liveEdge, liveEdge);
 		chart.TimeWindow.CommitCommand.Execute().Subscribe();
 
 		chart.Navigation.From.Should().Be(From.AddMinutes(30));
@@ -190,7 +190,7 @@ public sealed class TimeWindowPanelViewModelTests
 		var liveEdge = To.AddSeconds(20.4);
 
 		chart.TimeWindow.Form.EndTimeText = "08:45:00";
-		chart.Navigation.OnLiveEdge(liveEdge);
+		chart.Navigation.OnLiveEdge(liveEdge, liveEdge);
 		chart.TimeWindow.CommitCommand.Execute().Subscribe();
 
 		chart.Navigation.From.Should().Be(From.AddSeconds(20.4));
@@ -203,7 +203,7 @@ public sealed class TimeWindowPanelViewModelTests
 		var (chart, _, _, _) = OpenedStand();
 
 		chart.TimeWindow.Form.EndTimeText = "08:00:10";
-		chart.Navigation.OnLiveEdge(To.AddSeconds(20.4));
+		chart.Navigation.OnLiveEdge(To.AddSeconds(20.4), To.AddSeconds(20.4));
 		chart.TimeWindow.CommitCommand.Execute().Subscribe();
 
 		chart.Navigation.From.Should().Be(From, "the live left edge lies after the typed end, so the seeded one holds");

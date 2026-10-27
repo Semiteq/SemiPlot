@@ -1,3 +1,5 @@
+using System.Reactive.Linq;
+
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -6,6 +8,8 @@ using Npgsql;
 
 using NpgsqlTypes;
 
+using SemiPlot.Core.Data;
+using SemiPlot.Core.Trends;
 using SemiPlot.DataSource.Postgres;
 using SemiPlot.Tools.ArchiveSeeder;
 
@@ -39,6 +43,31 @@ internal static class RealtimeArchive
 			services.GetRequiredService<ArchiveExceptionMapper>(),
 			SubscribedPenIds,
 			logger ?? NullLogger.Instance);
+	}
+
+	// An answered poll with no change emits every interval and would open a gate meant for a delivered row.
+	public static IObservable<IReadOnlyList<Sample>> SampleBatches(this IObservable<LivePoll> polls)
+	{
+		return polls
+			.Where(poll => poll.Samples.Count > 0)
+			.Select(poll => poll.Samples);
+	}
+
+	// The rename keeps the rows and the day partitions, so the recovering poll reads the archive the class seeded.
+	public static Task HideTrendsAsync(ArchiveDatabase database, CancellationToken cancellationToken)
+	{
+		return ArchiveDatabase.ExecuteAsync(
+			database.AdminConnectionString,
+			"ALTER TABLE public.trends RENAME TO trends_hidden_by_test;",
+			cancellationToken);
+	}
+
+	public static Task RestoreTrendsAsync(ArchiveDatabase database, CancellationToken cancellationToken)
+	{
+		return ArchiveDatabase.ExecuteAsync(
+			database.AdminConnectionString,
+			"ALTER TABLE public.trends_hidden_by_test RENAME TO trends;",
+			cancellationToken);
 	}
 
 	// Two rows per subscribed variable, the second of them the baseline every subscription starts from.

@@ -6,18 +6,43 @@ public sealed class ChartRealtimeApplier(
 	IReadOnlyDictionary<int, TrendPenState> pensById,
 	ChartNavigationController navigation)
 {
-	public void Apply(RealtimeBatch batch, bool foldIntoColumn)
+	// docs/architecture/charting.md#per-pen-plottable-envelopeline
+	internal static readonly TimeSpan ShortestVisibleOutage = TimeSpan.FromSeconds(5);
+
+	private DateTime? _lastAnsweredAtUtc;
+
+	/// <summary>Applies the batch; true when it ends an outage the chart shows, so the window re-reads.</summary>
+	public bool Apply(RealtimeBatch batch, bool foldIntoColumn)
 	{
+		var endsAVisibleOutage = batch.ResumesAfterFailure
+			&& _lastAnsweredAtUtc is { } lastAnsweredAtUtc
+			&& batch.AnsweredAtUtc - lastAnsweredAtUtc > ShortestVisibleOutage;
+		_lastAnsweredAtUtc = batch.AnsweredAtUtc;
+
+		if (endsAVisibleOutage)
+		{
+			foreach (var state in pensById.Values)
+			{
+				state.BreakHold();
+			}
+		}
+
 		ApplyBatch(batch, foldIntoColumn);
 
-		if (batch.Timestamps.Count > 0)
+		foreach (var state in pensById.Values)
 		{
-			navigation.OnLiveEdge(batch.Timestamps[^1]);
+			state.ApplyHold(batch.AnsweredAtUtc);
 		}
+
+		navigation.OnLiveEdge(batch.AnsweredAtUtc, batch.Timestamps.Count > 0 ? batch.Timestamps[^1] : null);
+
+		return endsAVisibleOutage;
 	}
 
 	private void ApplyBatch(RealtimeBatch batch, bool foldIntoColumn)
 	{
+		var columnWidth = navigation.ColumnWidth;
+
 		foreach (var penValues in batch.Pens)
 		{
 			if (!pensById.TryGetValue(penValues.PenId, out var state))
@@ -37,7 +62,7 @@ public sealed class ChartRealtimeApplier(
 				}
 				else if (foldIntoColumn)
 				{
-					state.FoldRealtime(timestampUtc, value.Value);
+					state.FoldRealtime(timestampUtc, value.Value, columnWidth);
 				}
 				else
 				{

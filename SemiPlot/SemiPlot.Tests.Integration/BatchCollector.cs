@@ -11,6 +11,8 @@ internal sealed class BatchCollector<T> : IDisposable
 
 	private TaskCompletionSource? _nextBatch;
 
+	private (int Count, TaskCompletionSource Reached)? _countWaiter;
+
 	public BatchCollector(IObservable<T> batches)
 	{
 		_subscription = batches.Subscribe(Collect);
@@ -39,6 +41,28 @@ internal sealed class BatchCollector<T> : IDisposable
 		}
 	}
 
+	public Task Reached(int count)
+	{
+		lock (_guard)
+		{
+			if (_batches.Count >= count)
+			{
+				return Task.CompletedTask;
+			}
+
+			if (_countWaiter is not null)
+			{
+				throw new InvalidOperationException("A second Reached waiter would replace the pending one.");
+			}
+
+			var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+			_countWaiter = (count, gate);
+
+			return gate.Task;
+		}
+	}
+
 	public void Dispose()
 	{
 		_subscription.Dispose();
@@ -51,6 +75,12 @@ internal sealed class BatchCollector<T> : IDisposable
 			_batches.Add(batch);
 
 			_nextBatch?.TrySetResult();
+
+			if (_countWaiter is { } waiter && _batches.Count >= waiter.Count)
+			{
+				waiter.Reached.TrySetResult();
+				_countWaiter = null;
+			}
 		}
 	}
 }

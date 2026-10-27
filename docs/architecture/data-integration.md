@@ -133,8 +133,10 @@ breaks it, are under Realtime, below.
 ```csharp
 public interface ILiveSource
 {
-    IObservable<IReadOnlyList<Sample>> Subscribe(IReadOnlyList<int> penIds);
+    IObservable<LivePoll> Subscribe(IReadOnlyList<int> penIds);
 }
+
+public sealed record LivePoll(DateTime AnsweredAtUtc, IReadOnlyList<Sample> Samples, bool ResumesAfterFailure);
 ```
 
 ## The pen catalogue editor
@@ -531,7 +533,8 @@ column, and while the coarse read is in flight, failed or never applied, the col
 Raw: every sample of that phase folds into one Raw column. `TrendChartViewModel.ApplyRealtimeBatch`
 therefore clears the fetched range when it folds and that range is Raw, so a zoom back to the same Raw
 width reads the window again instead of drawing one straight segment across the folded span. It clears
-the gate only, so the columns kept past a margin-less read stay (above). A fold
+the gate only, so the columns kept past a margin-less read stay (above). A batch with no sample folds
+nothing and clears nothing. A fold
 over a coarse range clears nothing: it widens a coarse column and leaves nothing to re-read, so a pan
 inside a coarse band still reads nothing.
 
@@ -955,15 +958,25 @@ nulls either, and `ArchiveStatementTextTests` plus `BucketedRowFoldTests` pin th
 The live edge reads through `ILiveSource.Subscribe(penIds)` (The provider surface, above). Every live
 source keeps this contract:
 
-- **Cold per call.** No sample flows until a subscription opens. Each subscription does its own work, and
+- **Cold per call.** No poll flows until a subscription opens. Each subscription does its own work, and
   disposing it stops that work.
+- **Every answered poll emits one `LivePoll`, with an empty `Samples` when nothing changed.**
+  `AnsweredAtUtc` is the moment the poll read the archive, and the chart holds each pen's last value up to
+  it (`charting.md#per-pen-plottable-envelopeline`, "The hold to the poll answer"). The first answer after one
+  or more failed polls carries `ResumesAfterFailure`, also when the pen set moved to a new subscription in
+  between. The flag reports the failure only; the chart decides whether the outage was long enough to draw a
+  break and re-read the window (`ChartRealtimeApplier.ShortestVisibleOutage`, 5 s,
+  `charting.md#per-pen-plottable-envelopeline`).
+  `RealtimeSubscriptionTests.APollWithNoNewRowEmitsItsAnswerTakenBeforeItsStatement`,
+  `TheFirstAnswerAfterAFailedPollResumesAfterFailure` and
+  `ASubscriptionTakingOverAfterAFailedPollResumesAfterFailure` pin them for `PostgresLiveSource`.
 - **The stream never completes and never faults.** A failure inside a source is the source's to log or
-  to report out of band, and it emits nothing.
+  to report out of band, and the failed poll emits nothing.
   `RealtimePollTests.ASubscriptionThatOnlyFailsNeitherCompletesNorFaults` pins it for `PostgresLiveSource`.
 - **A break is a `Sample` whose `Value` is null,** at a moment the source itself observes: the pen has no
   data from that moment until its next sample.
 - **Timestamps are UTC.**
-- **An identifier the source does not serve emits nothing** and leaves the stream running.
+- **An identifier the source does not serve emits no sample** and leaves the stream running.
   `RealtimeSubscriptionTests.AnIdentifierTheSourceDoesNotServeLeavesTheStreamRunning` pins it for
   `PostgresLiveSource`.
 
@@ -996,20 +1009,28 @@ context `SemiPlot.DataSource.Postgres.PostgresLiveSource`; the history reads kee
 `PostgresDataProvider`'s. `RealtimePollTests` pins the source context and the wait of the configured
 `poll_interval_ms` after a tick.
 
-The first tick reads the baseline and emits nothing; every later tick reads the rows past
-`lastSeen`, converts them to UTC and emits them. `lastSeen` is the archive's own naive clock, not
-the local machine's, so a clock difference between the two hosts drops or repeats nothing.
+The first tick reads the baseline and answers with no sample; every later tick reads the rows past
+`lastSeen`, converts them to UTC and answers with them. `lastSeen` is the archive's own naive clock, not
+the local machine's, so a clock difference between the two hosts drops or repeats nothing. A failed tick
+answers nothing: `RealtimePoll.ReadOnceAsync` returns null, and `PostgresLiveSource.PollAsync` emits no
+`LivePoll` for it and marks the next answer `ResumesAfterFailure`. The source sets the mark before each read
+and clears it only with an answer, and keeps it across subscriptions, so the loop a `SetPens` switch starts
+during an outage marks its first answer, also when the switch cancelled a read the unanswering archive held in
+flight. A read the switch cancels while the archive answers marks the next answer too; the chart breaks only
+after an outage longer than `ChartRealtimeApplier.ShortestVisibleOutage`, so that mark draws nothing. The
+answer's `AnsweredAtUtc` is the data scheduler's `Now`, taken before the tick's statement runs, because the
+statement reads the snapshot of its own start.
 
-The fresh tail of a coarse history read is the one exception: it clamps at the viewer's own clock
-("Layer ladder"). That holds because the SCADA, its archive and the viewer share one machine
-`[DEC:machine-time-zone]`. Reading the archive's `now()` on the open connection would remove even that
-dependency, at the cost of one round trip per coarse read and a clock no test can set. A skew larger
-than the coarse layer's own lag skips the tail, which draws no wrong row: the series stops at the
-coarse newest, as it did before the tail existed.
+The fresh tail of a coarse history read and the answer time are the two exceptions: the tail clamps at
+the viewer's own clock ("Layer ladder"), and the answer time is read from it. That holds because the
+SCADA, its archive and the viewer share one machine `[DEC:machine-time-zone]`. Reading the archive's `now()`
+on the open connection would remove even that dependency, at the cost of one round trip per coarse read and a
+clock no test can set. A skew larger than the coarse layer's own lag skips the tail, which draws no wrong row:
+the series stops at the coarse newest, as it did before the tail existed.
 `PostgresHistoryReadTests.TheRangeTheChartAsksForReachesTheRawLayersNewest` and
-`AClockBehindTheFreshSeamReadsNoTailRow` pin the clamp under a fixed clock. A test fixes the provider's
-clock by passing a `TimeProvider` to `ArchiveProviderFactory.Build`, which registers it ahead of
-`AddPostgresData`'s `TryAddSingleton(TimeProvider.System)`.
+`AClockBehindTheFreshSeamReadsNoTailRow` pin the clamp under a fixed clock. A test fixes the provider's clock
+by passing a `TimeProvider` to `ArchiveProviderFactory.Build`, which registers it ahead of `AddPostgresData`'s
+`TryAddSingleton(TimeProvider.System)`.
 
 The pen set can change while the viewer runs. `TrendCoordinator` holds it in a
 `BehaviorSubject<IReadOnlyList<int>>` seeded from its constructor's pens and subscribes through
@@ -1019,14 +1040,16 @@ shows differs from `PenIds`, the subject's current set, so the coordinator carri
 own.
 `RealtimeBatches` stays one published stream: the chart's one subscription, which lives as long as
 the window, sees no change. A switch disposes the old subscription and starts a new poll, whose first
-tick reads the baseline and emits nothing. The rows written between the old poll's last tick and the
-new baseline, at most one poll interval, are not delivered live; the history query the chart issues on
-every set change covers them. Every set the chart pushes holds only pens of the provider's own
+tick reads the baseline and answers with no sample. The rows written between the old poll's last tick
+and the new baseline, at most one poll interval, are not delivered live; the history query the chart
+issues on every set change covers them. Every set the chart pushes holds only pens of the provider's own
 catalogue, and the live source drops any identifier it does not serve. `Dispose` completes the subject.
 
 `PostgresLiveSource` keeps the contract, and the poll adds rules of its own:
 
-- **A query error logs, drops that tick's rows and leaves the observable running.**
+- **A query error logs, emits no poll for that tick and leaves the observable running.** The next
+  answered tick carries `ResumesAfterFailure`, whatever the outage's length; the chart applies the 5 s
+  threshold.
 - **No timestamp is emitted at or before the last one already delivered** (`DA-7`).
 - **A row whose `v` is null is dropped, and `lastSeen` still advances past it.** The history path flags
   such a bucket as a gap instead ("Quality and gaps"), so a null run the poll reads draws as a held line
@@ -1088,15 +1111,15 @@ catalogue loop, the marker loop and the live-edge poll. A connection-class failu
 reader that meets it and reaches the operator through this state and the bar's one `ConnectionLost`
 entry. Any other kind reaches the panel through the two loops' own route, from the third failure in a
 row, coalescing repeats into the newest entry (`overview.md#a-failed-read`). The poll has no route of
-its own: it logs every failed tick with its run (`ConsecutiveFailures`) and emits no sample. A
-`TableMissing`, an `AccessDenied` or a role `statement_timeout` on `trends` reaches the panel through
-the minimap's band reads, every 2 to 60 s and the first failure of each outage
-(`trend-interaction.md#archive-overview-minimap`), and through the chart's history read on the next
-gesture. The band reads run only while the minimap has an extent and a drawn pen. So an outage makes one
-entry from the catalogue state, and the minimap's first failed band read of the outage adds an
-`Unreachable` entry of its own. Three cases reach only the log: a stalled marker statement, a poll tick
-that keeps exceeding its bound, and a poll failure on `trends` that no band read or gesture repeats
-(No failure stops at the log, below).
+its own: it logs every failed tick with its run (`ConsecutiveFailures`) and emits no poll, so every
+pen's hold stops at the last answer. A `TableMissing`, an `AccessDenied` or a role `statement_timeout` on
+`trends` reaches the panel through the minimap's band reads, every 2 to 60 s and the first failure of each
+outage (`trend-interaction.md#archive-overview-minimap`), and through the chart's history read on the next
+gesture. The band reads run only while the minimap has an extent and a drawn pen. So an outage makes one entry
+from the catalogue state, and the minimap's first failed band read of the outage adds an `Unreachable` entry
+of its own. Three cases reach only the log: a stalled marker statement, a poll tick that keeps exceeding its
+bound, and a poll failure on `trends` that no band read or gesture repeats (No failure stops at the log,
+below).
 
 `MainWindow/AppStatusBarViewModel` renders the state: the indicator reads connected or not, and a
 fault is mapped by `Messages/ArchiveFailureMapper.Map` into one `Warning` entry in the message panel.
@@ -1243,8 +1266,8 @@ written at every failure:
   runs to the connection string's 300 s backstop, so after a stall the marker loop can sit on a dead
   pooled connection for up to 300 s after the bar has written the recovery entry.
 - A poll tick's incremental read exceeds its 10 s bound at every tick. A failed tick does not advance
-  `lastSeen`, so the next tick repeats the same read, and the live edge stays frozen while the catalogue
-  answers and the indicator reads connected.
+  `lastSeen`, so the next tick repeats the same read, and the live edge and every pen's hold stay frozen
+  while the catalogue answers and the indicator reads connected.
 - A poll tick fails with another kind on `trends` while no band read runs, because the archive has no
   extent or the minimap draws no pen, and the operator makes no gesture.
 

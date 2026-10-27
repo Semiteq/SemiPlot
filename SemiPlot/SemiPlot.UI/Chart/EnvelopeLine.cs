@@ -22,8 +22,8 @@ public sealed class EnvelopeLine : IPlottable
 	private readonly LineStyle _stroke = new();
 	private readonly List<EnvelopePoint> _pathPoints = [];
 
-	// The UI thread writes the columns, the history end and the style, and reads the columns to pick a pen; the
-	// render thread reads the columns and the style in Render and GetAxisLimits. Every access runs under the lock.
+	// The UI thread writes the columns, the history end, the hold end and the style, and reads the columns to pick a
+	// pen; the render thread reads them in Render and GetAxisLimits. Every access runs under the lock.
 	private readonly List<EnvelopeColumn> _columns = [];
 	private readonly Lock _renderStateLock = new();
 	// The last X the last ReplaceColumns wrote: every column past it is a live append.
@@ -31,6 +31,9 @@ public sealed class EnvelopeLine : IPlottable
 	// docs/architecture/charting.md#per-pen-plottable-envelopeline
 	private double _unreadFromX = double.NaN;
 	private double _unreadGapX = double.NaN;
+	private double _holdEndX = double.NaN;
+	// The break written at the hold end when a visible outage ended; a read that reaches it covered the outage.
+	private double _resumeGapX = double.NaN;
 	private Color _color = Colors.Black;
 	private PenLineStyle _penLineStyle = PenLineStyle.Interpolated;
 	private float _lineWidth = DefaultLineWidth;
@@ -67,7 +70,7 @@ public sealed class EnvelopeLine : IPlottable
 
 			foreach (var column in _columns)
 			{
-				if (double.IsNaN(column.Min) || double.IsNaN(column.Max))
+				if (EnvelopePath.IsGap(column))
 				{
 					continue;
 				}
@@ -92,7 +95,8 @@ public sealed class EnvelopeLine : IPlottable
 			_stroke.Color = _color;
 			_stroke.Width = _lineWidth;
 			var (first, lastExclusive) = EnvelopePath.VisibleRange(_columns, Axes.XAxis.Min, Axes.XAxis.Max);
-			EnvelopePath.Build(_columns, first, lastExclusive, _penLineStyle, _pathPoints);
+			EnvelopePath.Build(
+				_columns, first, lastExclusive, _penLineStyle, _holdEndX, _unreadFromX, _pathPoints);
 		}
 
 		if (_pathPoints.Count < 2)
@@ -131,7 +135,7 @@ public sealed class EnvelopeLine : IPlottable
 		lock (_renderStateLock)
 		{
 			var (first, lastExclusive) = EnvelopePath.VisibleRange(_columns, Axes.XAxis.Min, Axes.XAxis.Max);
-			EnvelopePath.Build(_columns, first, lastExclusive, _penLineStyle, vertices);
+			EnvelopePath.Build(_columns, first, lastExclusive, _penLineStyle, _holdEndX, _unreadFromX, vertices);
 		}
 
 		var logFloor = LogFloorOf(dataRect);
@@ -199,7 +203,8 @@ public sealed class EnvelopeLine : IPlottable
 	{
 		lock (_renderStateLock)
 		{
-			RemoveCoveredUnreadGap(requestedEndX);
+			RemoveCoveredGap(ref _unreadGapX, requestedEndX);
+			RemoveCoveredGap(ref _resumeGapX, requestedEndX);
 
 			var newHistoryEndX = columns.Count > 0 ? columns[^1].X : double.NegativeInfinity;
 			var keptTailStart = EnvelopePath.FirstAfter(_columns, Math.Max(_historyEndX, newHistoryEndX));
@@ -229,7 +234,7 @@ public sealed class EnvelopeLine : IPlottable
 	}
 
 	// docs/architecture/charting.md#per-pen-plottable-envelopeline
-	internal bool FoldIntoLastColumn(EnvelopeColumn sample)
+	internal bool FoldIntoLastColumn(EnvelopeColumn sample, double columnWidthX)
 	{
 		lock (_renderStateLock)
 		{
@@ -240,7 +245,8 @@ public sealed class EnvelopeLine : IPlottable
 
 			var index = _columns.Count - 1;
 			var column = _columns[index];
-			if (IsGap(column) || CrossesUnreadSpan(sample.X))
+			var liesPastTheColumn = sample.X - column.X >= columnWidthX;
+			if (EnvelopePath.IsGap(column) || CrossesUnreadSpan(sample.X) || liesPastTheColumn)
 			{
 				return AppendAfterLastColumn(sample);
 			}
@@ -253,6 +259,40 @@ public sealed class EnvelopeLine : IPlottable
 			};
 
 			return true;
+		}
+	}
+
+	/// <summary>Moves the X the last column is held to; an end before the current one is ignored.</summary>
+	internal void SetHoldEnd(double holdEndX)
+	{
+		lock (_renderStateLock)
+		{
+			if (double.IsNaN(_holdEndX) || holdEndX > _holdEndX)
+			{
+				_holdEndX = holdEndX;
+			}
+		}
+	}
+
+	/// <summary>Ends the line with a gap at its drawn hold end, or right after a last value past it.</summary>
+	internal void BreakAtHoldEnd()
+	{
+		lock (_renderStateLock)
+		{
+			var breakX = EnvelopePath.BreakAfterHold(_columns, _holdEndX, _unreadFromX);
+			if (!double.IsNaN(breakX)
+				&& AppendAfterLastColumn(new EnvelopeColumn(breakX, double.NaN, double.NaN, double.NaN)))
+			{
+				_resumeGapX = breakX;
+			}
+		}
+	}
+
+	internal HeldSpan? ReadHeldSpan()
+	{
+		lock (_renderStateLock)
+		{
+			return EnvelopePath.Hold(_columns, _holdEndX, _unreadFromX);
 		}
 	}
 
@@ -275,6 +315,13 @@ public sealed class EnvelopeLine : IPlottable
 
 	private bool AppendAfterLastColumn(EnvelopeColumn column)
 	{
+		if (IsAheadOfTheResumeGap(column))
+		{
+			_columns.Insert(_columns.Count - 1, column);
+
+			return true;
+		}
+
 		if (_columns.Count > 0 && column.X <= _columns[^1].X)
 		{
 			return false;
@@ -306,30 +353,36 @@ public sealed class EnvelopeLine : IPlottable
 	{
 		return !double.IsNaN(_unreadFromX)
 			&& _columns.Count > 0
-			&& !IsGap(_columns[^1])
+			&& !EnvelopePath.IsGap(_columns[^1])
 			&& _columns[^1].X <= _unreadFromX
 			&& x > _unreadFromX;
 	}
 
-	// A read that reached the gap covered the span it stood for.
-	private void RemoveCoveredUnreadGap(double requestedEndX)
+	// A value the archive committed before the outage arrives with the first answer after it, behind the break.
+	private bool IsAheadOfTheResumeGap(EnvelopeColumn column)
 	{
-		if (double.IsNaN(_unreadGapX) || _unreadGapX > requestedEndX)
+		return _columns.Count > 1
+			&& _columns[^1].X == _resumeGapX
+			&& EnvelopePath.IsGap(_columns[^1])
+			&& !EnvelopePath.IsGap(column)
+			&& column.X > _columns[^2].X
+			&& column.X < _resumeGapX;
+	}
+
+	// A read that reached the gap covered the span it stood for.
+	private void RemoveCoveredGap(ref double gapX, double requestedEndX)
+	{
+		if (double.IsNaN(gapX) || gapX > requestedEndX)
 		{
 			return;
 		}
 
-		var index = EnvelopePath.FirstAfter(_columns, _unreadGapX) - 1;
-		if (index >= 0 && _columns[index].X == _unreadGapX && IsGap(_columns[index]))
+		var index = EnvelopePath.FirstAfter(_columns, gapX) - 1;
+		if (index >= 0 && _columns[index].X == gapX && EnvelopePath.IsGap(_columns[index]))
 		{
 			_columns.RemoveAt(index);
 		}
 
-		_unreadGapX = double.NaN;
-	}
-
-	private static bool IsGap(EnvelopeColumn column)
-	{
-		return double.IsNaN(column.Min) || double.IsNaN(column.Max);
+		gapX = double.NaN;
 	}
 }

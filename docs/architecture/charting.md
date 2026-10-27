@@ -68,10 +68,11 @@ later read seats starts thin, as in a new window.
 
 **Gaps via NaN.** A column carrying `NaN` in `Min`/`Max` is the envelope's gap marker: `Build` breaks the
 path there and the next real column opens a new segment with a `MoveTo`. A `NaN` column comes from one of
-two routes. The history path writes one after a bucket whose `breaks` flag a `q = 32` marker or a null
+three routes. The history path writes one after a bucket whose `breaks` flag a `q = 32` marker or a null
 `v` sets (`data-integration.md#quality-and-gaps`). The live edge writes one for a break the live source
 reported: `TrendPenState.AppendRealtime` encodes a null value as a `NaN` column and keeps `CurrentValue` at
-the last real value.
+the last real value. The first poll answer after an outage longer than 5 s writes one at each pen's hold end
+(The hold to the poll answer, below).
 
 **Per-pen stepping.** The line carries the Core `PenLineStyle` — `Stepped` for discrete/digital tags,
 `Interpolated` for analog. `Chart/TrendPenState` sets it and the colour from the pen through
@@ -84,21 +85,20 @@ change, the previous value at the last poll tick and the new value about 100 ms 
 pair.
 
 **Column buffer and its two threads.** The plottable owns the column list and the `Lock` that guards it,
-both private. Every mutation goes through `ReplaceColumns`, `AppendColumn` or `FoldIntoLastColumn`,
-each of which takes the lock, so no caller can reach the list without it.
-`Chart/TrendPenState` is the only caller of those three and calls them on the UI thread; `Render` and
+both private. Every mutation goes through `ReplaceColumns`, `AppendColumn`, `FoldIntoLastColumn` or
+`BreakAtHoldEnd`, each of which takes the lock, so no caller can reach the list without it.
+`Chart/TrendPenState` is the only caller of those four and calls them on the UI thread; `Render` and
 `GetAxisLimits` read on Avalonia's render thread under the same lock. `Render` holds it for the
 visible-column read alone (`EnvelopePath.VisibleRange` plus `EnvelopePath.Build`) and strokes the resulting
 points outside it, so a frame that meets a history load waits for the one merge that swaps the buffer, not
 for the conversion ahead of it: `LoadHistory` converts into a list local to the call and hands it over in
 one `ReplaceColumns`, which merges it with the live tail the list already holds. The last X the previous
-replace wrote, the colour, the line style and the line width sit under the same lock, and `DistanceTo`
-reads the columns under it on the UI thread: a catalogue read can change the
-colour and the line style after the first frame, so `Restyle` writes them on the UI thread and `Render`
-reads them under the lock. The list is capped at 100 000 columns, and the cap trims in chunks of one
-tenth: the append that passes it removes the oldest 10 000 columns in one `RemoveRange`. The list then
-lives between 90 000 and 100 000 columns, and the shift under the lock runs once per 10 000 appends
-instead of on every append.
+replace wrote, the hold end, the colour, the line style and the line width sit under the same lock, and
+`DistanceTo` reads the columns under it on the UI thread: a catalogue read can change the colour and the line
+style after the first frame, so `Restyle` writes them on the UI thread and `Render` reads them under the lock.
+The list is capped at 100 000 columns, and the cap trims in chunks of one tenth: the append that passes it
+removes the oldest 10 000 columns in one `RemoveRange`. The list then lives between 90 000 and 100 000
+columns, and the shift under the lock runs once per 10 000 appends instead of on every append.
 
 **The plot's own lists and the render thread.** ScottPlot's `Plot.Render` holds `Plot.Sync` for the
 whole frame, and the plottable and axis lists it walks are ScottPlot's own, so the column lock cannot
@@ -116,7 +116,11 @@ meets the edit throws "Collection was modified" on the render thread, the crash 
 plottable's column list, which every render re-reads, so appends are live and nothing is re-set. The realtime
 tail appends one degenerate column (`Min == Max == Center == value`) at the live edge. At coarse layers
 (minute/hour) a realtime sample does **not** append; it folds into the current decimation column
-(`FoldRealtime` widens that column's `Min`/`Max` and moves its `Center`). A live break is always appended,
+(`FoldRealtime` widens that column's `Min`/`Max` and moves its `Center`). A column covers one column width,
+`ChartNavigationController.ColumnWidth` (the window width over `TargetColumnCount`): a sample one width or more
+past the last column's X opens a column at its own X, and the folds after it widen that one. Without the bound a
+long follow span would fold into one column, and the hold would draw that column's newest value flat from the
+column's X across the whole span. A live break is always appended,
 at every layer: `ChartRealtimeApplier` hands a null value to `AppendRealtime` ahead of the fold-or-append
 choice, because `Math.Min`/`Math.Max` with a `NaN` would turn the folded column into a gap and erase its
 extremes. A gap column takes no fold: when the last column is a `NaN` gap, as after a history envelope
@@ -162,6 +166,58 @@ halfway to the new column when the last column sits on the mark, and the mark th
 reaches that gap removes it, because that read covered the span. In follow mode a read's span ends one window
 width past the window end, so no mark is set unless the read lands more than one width after it was issued; the
 short break that case draws stands where the kept-tail rule already dropped the live columns.
+
+**The hold to the poll answer.** The archive stores changes only, so a constant pen's last column can be hours
+old. Each pen's line therefore holds its last value from its last column to the last poll answer,
+`RealtimeBatch.AnsweredAtUtc` (`data-integration.md#realtime`). `ChartRealtimeApplier.Apply` runs a batch in
+this order: on a batch that ends a visible outage (below), `TrendPenState.BreakHold` on every pen; then the
+samples; then `TrendPenState.ApplyHold(AnsweredAtUtc)` on every pen of the subscription, hidden ones included;
+then one `OnLiveEdge` with the answer and the batch's last timestamp, when it has one, so a sticky window moves
+once per batch. A batch with samples appends first, so the hold starts from the new last column.
+
+The hold end is a render mark, not a column. `EnvelopeLine.SetHoldEnd` keeps it under the column lock and
+ignores an end before the current one. `EnvelopePath.Hold` returns a `HeldSpan` from the last column to the
+end, at the column's `Center`, when the last column is a value and the end lies past it; when the last column
+sits at or before the unread mark, the end is capped at the mark. A `NaN` last column holds nothing. When the
+visible range reaches the last column, `Build` adds a vertex at the `Center` where the exit vertex differs
+from it, then one at the end. The next sample joins the held vertex by the pen's line style, so an
+`Interpolated` pen's held segment turns into a slope, and a sample stamped before the hold end draws the line
+back to it; both are accepted.
+
+While polls fail, the hold end stays at the last answer. A batch ends a visible outage when it
+`ResumesAfterFailure` and its answer lies more than `ChartRealtimeApplier.ShortestVisibleOutage` (5 s) after
+the answer of the batch before it; the first batch of a chart ends none. A shorter outage draws nothing and the
+hold bridges it: a failed 250 ms poll loses no data, and a break would erase every constant pen's hold until
+the pen next changes, because a following window issues no history read.
+
+A visible outage breaks every pen at the old hold end: `EnvelopeLine.BreakAtHoldEnd` appends a `NaN` column
+where the drawn hold ends, the hold end or the unread mark that caps it. A last value at or past the hold end
+holds nothing and breaks at the next double after its own X: the answer time is taken before the poll's
+statement runs, so an answer can carry a row stamped after it (`data-integration.md#realtime`). A pen with no
+hold end, or whose last column is already a gap, takes no break. A value the archive committed before the
+break arrives with that first answer: it goes in ahead of the break, while the break is still the last column,
+and moves `CurrentValue`.
+
+`Apply` then returns true, and `TrendChartViewModel` re-reads the window through `RequeryAllPens`, which asks
+`ChartHistoryPlanner.Next` as every read does. It runs after the batch moved a following window to the answer,
+and only once a history read has started. The SCADA keeps its rows through a database outage and sends them on
+reconnect (`scada-archive.md`), so the read draws the outage from the archive. The break is a live append under
+the kept-tail rule; a read whose requested end reaches it removes it, as one reaching the unread gap does,
+whatever rows the read found, so the pen holds again to the next answer (`EnvelopeLineTests`,
+`TrendChartViewModelTests.AnAnswerAfterAVisibleOutage_RereadsTheWindow_AndTheReadHoldsTheConstantPenAgain`). A
+break stays only where the archive itself carries one, a project stop row. When the read lands before the SCADA
+has sent its backlog, a backlog row stamped before the poll's `lastSeen` reaches the chart only through a later
+read.
+
+In the repeated autumn hour `LocalTimeAxis.ToAxis` runs backwards, so `SetHoldEnd` ignores each answer of that
+hour and the hold end stays put for it, as live appends are rejected there.
+
+The readouts read the hold too. `ChartCursorReader` reads the envelope and, where that read is null, falls
+back to `TrendPenState.HeldValueAt`, the held value inside the held span, ends included. A pen with no
+envelope takes the same fallback, and `ReadAt` lists it only while it holds a value at the cursor. The hover
+readout and the marker readings read through it; the delta readout's Δy reads the envelope alone.
+`EnvelopePathTests`, `EnvelopeLineTests`, `ChartRealtimeApplierTests` and `ChartCursorReaderTests` pin the
+rules.
 
 **Axes / shared-X invariant.** Each pen gets its own `IYAxis`, keyed on the pen id; no two pens ever
 share one, whatever their unit or group. Every axis is a left axis — `Axes.Left` for the first pen,
@@ -438,6 +494,10 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   guarded by a 10% hysteresis band; `ReferencePenCount` is 16 (`data-integration.md#layer-ladder`).
   `SetVisiblePenCount`, which `TrendChartViewModel` calls after every catalogue apply and every
   visibility change, stores the count and raises `WindowChanged` when the layer moves.
+  `OnLiveEdge` takes a poll answer and the batch's newest sample stamp, null for a batch with no sample. It
+  advances the live edge to the later of the two, also while detached, moves only a sticky window and raises
+  `WindowChanged` once, and only when the window moved. It records only the sample as `NewestSample`, which
+  the unread mark, the history planner and the minimap read as a sample stamp.
   `TargetColumnCount` is the canvas width in columns, clamped to 256…2048 and quantised to a power of
   two with its own 10% deadband; it selects the layer only, never the query resolution. **Single
   writer:** `TrendChartViewModel.ReportDataAreaWidth`, called from `TrendChartView`'s
@@ -490,11 +550,14 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   caller.
 - `Chart/ChartRealtimeApplier` — the append-vs-fold rule per layer for incoming `RealtimeBatch`es.
   It walks each `PenRealtimeValues` on that pen's own timestamps, never on the batch's union, and
-  hands the union's last timestamp to `ChartNavigationController.OnLiveEdge`. A null value is a break:
-  it goes to `TrendPenState.AppendRealtime` ahead of the fold-or-append choice, so it appends a `NaN`
-  column at every layer and never folds.
+  hands the answer and the union's last timestamp to `ChartNavigationController.OnLiveEdge`. A null value is a
+  break: it goes to `TrendPenState.AppendRealtime` ahead of the fold-or-append choice, so it appends a `NaN`
+  column at every layer and never folds. Around the samples it breaks and holds every pen
+  (`#per-pen-plottable-envelopeline`, The hold to the poll answer).
 - `Chart/ChartCursorReader` / `ChartDeltaCursorReader` — view-side state wrapping the Core cursor
   models, resolving the visible / active pens (`ChartDeltaCursorReader.FormatReadout` formats Δt/Δy).
+  `ChartCursorReader` falls back to the held value past the envelope (`#per-pen-plottable-envelopeline`,
+  The hold to the poll answer).
 - `Chart/ChartHoverReadout` — pure static `BuildContent`: builds the readout string (local timestamp +
   every visible pen's value at the cursor X; gap or missing pen → dash) that feeds the Avalonia overlay
   `TextBlock`. No plottable; unit-tested as plain `[Fact]`.
@@ -798,18 +861,19 @@ the Rx hub between the two and the view model:
   `ChartHistoryRequestDebouncer`, which runs one query at a time and lets the newest window asked
   for run last. The minimap band is a second reader outside the debouncer: one pen at 250 columns
   every 2-60 s (`trend-interaction.md#archive-overview-minimap`).
-- **Realtime:** the live edge comes through `ILiveSource` as lists of `Sample`, and the coordinator
-  republishes it as `IObservable<RealtimeBatch>` — an ascending union timeline the live edge advances
-  from, plus one `PenRealtimeValues` per pen carrying that pen's **own** timestamps and `double?`
-  values; buffered on the data scheduler and observed on the UI scheduler. The values are per pen
-  rather than a column over the union because the archive is per-variable and change-based with a
-  deadband, so one buffer window routinely spans timestamps only one pen sampled. A pen carries no
-  entry, null or real, at a timestamp it did not report, and a consumer leaves it alone there. A null
-  is a break the live source reported, a `Sample` whose `Value` is null: the pen has no data from that
-  moment until its next sample, and the chart appends a `NaN` column there. `RealtimePoll` writes one
-  1 ms after a `q = 32` row (`data-integration.md#realtime`). The pen
-  set the stream carries follows the catalogue: `TrendCoordinator.SetPens` switches the live-source
-  subscription and `RealtimeBatches` stays one published stream (`data-integration.md#realtime`).
+- **Realtime:** the live edge comes through `ILiveSource` as one `LivePoll` per answered poll, and the
+  coordinator republishes it as `IObservable<RealtimeBatch>`, one per buffer window that holds a poll: the
+  window's newest `AnsweredAtUtc`, whether any poll in it `ResumesAfterFailure`, an ascending union timeline
+  the live edge advances from, empty when no pen changed, and one `PenRealtimeValues` per pen carrying that
+  pen's **own** timestamps and `double?` values; buffered on the data scheduler and observed on the UI
+  scheduler. The values are per pen rather than a column over the union because the archive is per-variable
+  and change-based with a deadband, so one buffer window routinely spans timestamps only one pen sampled. A
+  pen carries no entry, null or real, at a timestamp it did not report, and a consumer leaves it alone there.
+  A null is a break the live source reported, a `Sample` whose `Value` is null: the pen has no data from that
+  moment until its next sample, and the chart appends a `NaN` column there. `RealtimePoll` writes one 1 ms
+  after a `q = 32` row (`data-integration.md#realtime`). The pen set the stream carries follows the catalogue:
+  `TrendCoordinator.SetPens` switches the live-source subscription and `RealtimeBatches` stays one published
+  stream (`data-integration.md#realtime`).
 - **Archive extent:** `QueryArchiveExtentAsync()` returns an `ArchiveExtent(FirstUtc, LastUtc)` —
   the full stored time span. `TrendCoordinator.QueryArchiveExtentAsync()` is a pass-through to the
   provider (mirroring `QueryHistoryAsync`); the minimap consumes it (see trend-interaction.md).

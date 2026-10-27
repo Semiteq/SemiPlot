@@ -100,8 +100,9 @@ public sealed class TrendCoordinator : IDisposable
 			.Select(_liveSource.Subscribe)
 			.Switch()
 			.Buffer(BatchWindow, _dataScheduler)
+			.Where(window => window.Count > 0)
 			.Select(TryBuildRealtimeBatch)
-			.Where(batch => batch is { Timestamps.Count: > 0 })
+			.Where(batch => batch is not null)
 			.Select(batch => batch!)
 			.Catch<RealtimeBatch, Exception>(ReportTerminalFailure)
 			.ObserveOn(_uiScheduler)
@@ -116,7 +117,7 @@ public sealed class TrendCoordinator : IDisposable
 		return Observable.Empty<RealtimeBatch>();
 	}
 
-	private RealtimeBatch? TryBuildRealtimeBatch(IList<IReadOnlyList<Sample>> window)
+	private RealtimeBatch? TryBuildRealtimeBatch(IList<LivePoll> window)
 	{
 		try
 		{
@@ -130,9 +131,9 @@ public sealed class TrendCoordinator : IDisposable
 		}
 	}
 
-	private static RealtimeBatch BuildRealtimeBatch(IList<IReadOnlyList<Sample>> window)
+	private static RealtimeBatch BuildRealtimeBatch(IList<LivePoll> window)
 	{
-		var samples = window.SelectMany(batch => batch).ToArray();
+		var samples = window.SelectMany(poll => poll.Samples).ToArray();
 
 		var timestamps = samples.Select(sample => sample.TimestampUtc).Distinct().OrderBy(time => time).ToArray();
 
@@ -141,7 +142,11 @@ public sealed class TrendCoordinator : IDisposable
 			.Select(BuildPenValues)
 			.ToArray();
 
-		return new RealtimeBatch(timestamps, pens);
+		return new RealtimeBatch(
+			timestamps,
+			pens,
+			window.Max(poll => poll.AnsweredAtUtc),
+			window.Any(poll => poll.ResumesAfterFailure));
 	}
 
 	// A pen carries only its own samples, no filler at another pen's timestamp.

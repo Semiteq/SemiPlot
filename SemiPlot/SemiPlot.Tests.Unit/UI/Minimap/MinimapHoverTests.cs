@@ -124,7 +124,8 @@ public sealed class MinimapHoverTests
 		stand.MovePointer(new Point(strip.Bounds.Width - 1.0, strip.Bounds.Height / 2.0));
 		var timeBefore = hoverTime.Text;
 
-		stand.Model.Navigation.OnLiveEdge(MinimapStand.ExtentLast + TimeSpan.FromDays(1.0));
+		var advanced = MinimapStand.ExtentLast + TimeSpan.FromDays(1.0);
+		stand.Model.Navigation.OnLiveEdge(advanced, advanced);
 		Dispatcher.UIThread.RunJobs();
 
 		hoverTime.Text.Should().NotBe(timeBefore, "a later right bound moves the time under the pointer")

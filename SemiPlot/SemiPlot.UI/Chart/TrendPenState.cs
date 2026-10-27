@@ -83,12 +83,32 @@ public sealed class TrendPenState : ReactiveObject
 	}
 
 	// docs/architecture/charting.md#per-pen-plottable-envelopeline
-	public void FoldRealtime(DateTime timestampUtc, double value)
+	public void FoldRealtime(DateTime timestampUtc, double value, TimeSpan columnWidth)
 	{
-		if (Line.FoldIntoLastColumn(LiveColumn(timestampUtc, value)))
+		if (Line.FoldIntoLastColumn(LiveColumn(timestampUtc, value), columnWidth.TotalDays))
 		{
 			CurrentValue = value;
 		}
+	}
+
+	/// <summary>Holds the last column to the moment the archive last answered.</summary>
+	public void ApplyHold(DateTime answeredAtUtc)
+	{
+		Line.SetHoldEnd(LocalTimeAxis.ToAxis(answeredAtUtc));
+	}
+
+	/// <summary>Ends the line where its hold ends, after a visible outage.</summary>
+	public void BreakHold()
+	{
+		Line.BreakAtHoldEnd();
+	}
+
+	/// <summary>The held value at <paramref name="timeUtc"/>; null outside the held span.</summary>
+	public double? HeldValueAt(DateTime timeUtc)
+	{
+		var x = LocalTimeAxis.ToAxis(timeUtc);
+
+		return Line.ReadHeldSpan() is { } span && x >= span.FromX && x <= span.ToX ? span.Value : null;
 	}
 
 	private static EnvelopeColumn LiveColumn(DateTime timestampUtc, double value)

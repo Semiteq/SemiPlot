@@ -175,7 +175,7 @@ public sealed class PostgresHistoryReadTests(
 
 	private const short HourLayer = (short)AggregationLayer.Hour;
 
-	private const string LockTrendsCommand = "LOCK TABLE public.trends IN ACCESS EXCLUSIVE MODE;";
+	internal const string LockTrendsCommand = "LOCK TABLE public.trends IN ACCESS EXCLUSIVE MODE;";
 
 	private const string LockWaitOnTrendsQuery =
 		"SELECT count(*) FROM pg_locks WHERE NOT granted AND relation = 'public.trends'::regclass;";
@@ -1024,7 +1024,7 @@ public sealed class PostgresHistoryReadTests(
 		return (result.Value, HistoryReadEntries(logs).Should().ContainSingle().Subject);
 	}
 
-	private static async Task<bool> AwaitALockWaitOnTrendsAsync(
+	internal static async Task<bool> AwaitALockWaitOnTrendsAsync(
 		NpgsqlConnection locker,
 		NpgsqlTransaction transaction,
 		long waitingStatementCount = 1)

@@ -105,8 +105,8 @@ public sealed class BreakRenderArchiveJourneyTests(
 			ArchiveProviderFactory.TimeConverter.ToUtc(stopped.End));
 	}
 
-	// Opens the navigation controller on the break, not the startup window (App.axaml.cs:137's last hour,
-	// which holds no break), keeping its constructed width. No zoom or pan: a gesture would re-query history
+	// Opens the navigation controller on the break (the startup window holds none), keeping its width, and
+	// detached, so the live source's answers leave it there. No zoom or pan: a gesture would re-query history
 	// through the debouncer and land pen states while this thread renders them.
 	private static void OpenWindowOn(
 		ChartNavigationController navigation,
@@ -116,6 +116,7 @@ public sealed class BreakRenderArchiveJourneyTests(
 		var margin = (navigation.To - navigation.From - (stopped.EndUtc - stopped.StartUtc)) / 2;
 
 		navigation.TrackDataExtents(firstSampleUtc, stopped.EndUtc + margin);
+		navigation.SetSticky(false);
 	}
 
 	// TrendChartView.ApplyWindow is the X limits' only writer; this journey builds no view, so it stands in

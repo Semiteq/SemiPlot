@@ -118,7 +118,7 @@ public sealed class ChartNavigationControllerTests
 		var controller = Loaded();
 		var advanced = _last.AddMinutes(2.0);
 
-		controller.OnLiveEdge(advanced);
+		controller.OnLiveEdge(advanced, advanced);
 
 		controller.To.Should().Be(advanced);
 	}
@@ -130,7 +130,7 @@ public sealed class ChartNavigationControllerTests
 		controller.SetSticky(false);
 		var toBefore = controller.To;
 
-		controller.OnLiveEdge(_last.AddMinutes(2.0));
+		controller.OnLiveEdge(_last.AddMinutes(2.0), _last.AddMinutes(2.0));
 
 		controller.To.Should().Be(toBefore);
 	}
@@ -165,9 +165,9 @@ public sealed class ChartNavigationControllerTests
 		var whileSticky = _last.AddMinutes(1.0);
 		var whileDetached = _last.AddMinutes(2.0);
 
-		controller.OnLiveEdge(whileSticky);
+		controller.OnLiveEdge(whileSticky, whileSticky);
 		controller.SetSticky(false);
-		controller.OnLiveEdge(whileDetached);
+		controller.OnLiveEdge(whileDetached, whileDetached);
 
 		controller.NewestSample.Should().Be(whileDetached);
 		moves.Should().Equal(whileSticky, whileDetached);
@@ -183,7 +183,7 @@ public sealed class ChartNavigationControllerTests
 		var advanced = _last.AddMinutes(2.0);
 
 		controller.TrackDataExtents(_first, _last);
-		controller.OnLiveEdge(advanced);
+		controller.OnLiveEdge(advanced, advanced);
 
 		raised.Should().Equal(
 			(nameof(controller.NewestSampleMoved), _last),
@@ -199,10 +199,76 @@ public sealed class ChartNavigationControllerTests
 		var moves = 0;
 		controller.NewestSampleMoved += (_, _) => moves++;
 
-		controller.OnLiveEdge(_last.AddMinutes(-1.0));
+		controller.OnLiveEdge(_last.AddMinutes(-1.0), _last.AddMinutes(-1.0));
 
 		controller.NewestSample.Should().Be(_last);
 		moves.Should().Be(0);
+	}
+
+	[Fact]
+	public void OnLiveEdge_WithASampleBehindItsAnswer_MovesTheWindowOnceToTheAnswer()
+	{
+		var controller = Loaded();
+		var windows = new List<NavigationWindow>();
+		controller.WindowChanged += (_, window) => windows.Add(window);
+		var sampledAt = _last.AddSeconds(1.0);
+		var answeredAt = _last.AddSeconds(2.0);
+
+		controller.OnLiveEdge(answeredAt, sampledAt);
+
+		windows.Should().ContainSingle().Which.To.Should().Be(answeredAt);
+		controller.NewestSample.Should().Be(sampledAt);
+	}
+
+	[Fact]
+	public void OnLiveEdge_WithASampleAheadOfItsAnswer_MovesTheWindowToTheSample()
+	{
+		var controller = Loaded();
+		var sampledAt = _last.AddSeconds(2.0);
+
+		controller.OnLiveEdge(_last.AddSeconds(1.0), sampledAt);
+
+		controller.To.Should().Be(sampledAt);
+	}
+
+	[Fact]
+	public void OnLiveEdge_WithAnAnswerAtOrBeforeTheLiveEdge_RaisesNothing()
+	{
+		var controller = Loaded();
+		var raised = 0;
+		controller.WindowChanged += (_, _) => raised++;
+
+		controller.OnLiveEdge(_last, null);
+		controller.OnLiveEdge(_last.AddMinutes(-1.0), null);
+
+		raised.Should().Be(0);
+		controller.To.Should().Be(_last);
+	}
+
+	[Fact]
+	public void OnLiveEdge_WithAnAnswerAlone_LeavesTheNewestSample()
+	{
+		var controller = Loaded();
+
+		controller.OnLiveEdge(_last.AddMinutes(1.0), null);
+
+		controller.NewestSample.Should().Be(_last);
+	}
+
+	[Fact]
+	public void OnLiveEdge_WhileDetached_RaisesNothingAndAReStickLandsOnTheAnswer()
+	{
+		var controller = Loaded();
+		controller.SetSticky(false);
+		var raised = 0;
+		controller.WindowChanged += (_, _) => raised++;
+		var answeredAt = _last.AddMinutes(1.0);
+
+		controller.OnLiveEdge(answeredAt, null);
+
+		raised.Should().Be(0);
+		controller.SetSticky(true);
+		controller.To.Should().Be(answeredAt);
 	}
 
 	// Half a layer's ceiling sits well inside it, clear of the 25% zoom quantisation step and the 10%
@@ -355,7 +421,7 @@ public sealed class ChartNavigationControllerTests
 		NavigationWindow? raised = null;
 		controller.WindowChanged += (_, window) => raised = window;
 
-		controller.OnLiveEdge(_last.AddMinutes(2.0));
+		controller.OnLiveEdge(_last.AddMinutes(2.0), _last.AddMinutes(2.0));
 
 		raised.Should().NotBeNull();
 		raised!.RequiresHistoryRequery.Should().BeFalse();

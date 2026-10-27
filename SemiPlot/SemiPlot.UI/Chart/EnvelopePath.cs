@@ -7,6 +7,9 @@ namespace SemiPlot.UI.Chart;
 /// <summary>One vertex of the polyline a pen's envelope columns are drawn as.</summary>
 public readonly record struct EnvelopePoint(double X, double Y, bool StartsSegment);
 
+/// <summary>The span a pen is held across past its last column, and the value it is held at.</summary>
+public readonly record struct HeldSpan(double FromX, double ToX, double Value);
+
 // The geometry EnvelopeLine strokes, kept free of Skia so the culling window, the gap break and the step
 // shape are unit-testable. docs/architecture/charting.md#per-pen-plottable-envelopeline
 public static class EnvelopePath
@@ -33,6 +36,8 @@ public static class EnvelopePath
 		int first,
 		int lastExclusive,
 		PenLineStyle lineStyle,
+		double holdEndX,
+		double unreadFromX,
 		List<EnvelopePoint> destination)
 	{
 		destination.Clear();
@@ -44,7 +49,7 @@ public static class EnvelopePath
 		for (var index = first; index < lastExclusive; index++)
 		{
 			var column = columns[index];
-			if (double.IsNaN(column.Min) || double.IsNaN(column.Max))
+			if (IsGap(column))
 			{
 				previousY = double.NaN;
 				segmentIsOpen = false;
@@ -86,6 +91,66 @@ public static class EnvelopePath
 			destination.Add(new EnvelopePoint(x, y, !segmentIsOpen));
 			segmentIsOpen = true;
 		}
+
+		var reachesTheLastColumn = lastExclusive == columns.Count && destination.Count > 0;
+		if (reachesTheLastColumn && Hold(columns, holdEndX, unreadFromX) is { } held)
+		{
+			if (!destination[^1].Y.Equals(held.Value))
+			{
+				destination.Add(new EnvelopePoint(held.FromX, held.Value, false));
+			}
+
+			destination.Add(new EnvelopePoint(held.ToX, held.Value, false));
+		}
+	}
+
+	/// <summary>
+	/// The held span when the last column is a value short of the hold end, capped at a pending unread mark; else
+	/// null.
+	/// </summary>
+	public static HeldSpan? Hold(IReadOnlyList<EnvelopeColumn> columns, double holdEndX, double unreadFromX)
+	{
+		if (columns.Count == 0)
+		{
+			return null;
+		}
+
+		var last = columns[^1];
+		var endsBeforeTheUnreadMark = last.X <= unreadFromX;
+		var endX = endsBeforeTheUnreadMark ? Math.Min(holdEndX, unreadFromX) : holdEndX;
+		var isHeld = IsValue(last) && endX > last.X;
+
+		return isHeld ? new HeldSpan(last.X, endX, last.Center) : null;
+	}
+
+	/// <summary>The X a line breaks at after its hold: the drawn hold end, or just past a later last value.</summary>
+	// docs/architecture/charting.md#per-pen-plottable-envelopeline
+	internal static double BreakAfterHold(IReadOnlyList<EnvelopeColumn> columns, double holdEndX, double unreadFromX)
+	{
+		if (Hold(columns, holdEndX, unreadFromX) is { } held)
+		{
+			return held.ToX;
+		}
+
+		if (columns.Count == 0 || double.IsNaN(holdEndX))
+		{
+			return double.NaN;
+		}
+
+		var last = columns[^1];
+
+		return IsValue(last) && last.X >= holdEndX ? Math.BitIncrement(last.X) : double.NaN;
+	}
+
+	internal static bool IsGap(EnvelopeColumn column)
+	{
+		return double.IsNaN(column.Min) || double.IsNaN(column.Max);
+	}
+
+	/// <summary>A column a line can be held at: no gap, and a drawable last value.</summary>
+	internal static bool IsValue(EnvelopeColumn column)
+	{
+		return !IsGap(column) && !double.IsNaN(column.Center);
 	}
 
 	// docs/architecture/charting.md#per-pen-plottable-envelopeline

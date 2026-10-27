@@ -90,7 +90,81 @@ public sealed class TrendCoordinatorTests
 	}
 
 	[Fact]
-	public void RealtimeBatches_WithAnEmptyCatalog_EmitNothing()
+	public void AWindowOfAnsweredPollsWithNoSample_CarriesTheNewestAnswer()
+	{
+		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: ChartTestBuilder.RealtimeInterval);
+		using var ownedCoordinator = coordinator;
+		provider.AnswerRealtimePollsWithoutSamples = true;
+		var batches = new List<RealtimeBatch>();
+		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
+
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks * 2);
+
+		batches.Should().HaveCount(2);
+		batches.Should().AllSatisfy(batch =>
+		{
+			batch.Timestamps.Should().BeEmpty();
+			batch.Pens.Should().BeEmpty();
+			batch.ResumesAfterFailure.Should().BeFalse();
+		});
+		batches[0].AnsweredAtUtc.Should().Be(
+			FakeDataProvider.RealtimeEpoch + TrendCoordinator.BatchWindow - ChartTestBuilder.RealtimeInterval,
+			"the window's last tick, not its first, carries the answer");
+		(batches[1].AnsweredAtUtc - batches[0].AnsweredAtUtc).Should().Be(TrendCoordinator.BatchWindow);
+	}
+
+	[Fact]
+	public void AWindowWithSamples_CarriesTheNewestAnswer()
+	{
+		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: ChartTestBuilder.RealtimeInterval);
+		using var ownedCoordinator = coordinator;
+		provider.StaggerRealtimeTimestamps = true;
+		var batches = new List<RealtimeBatch>();
+		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
+
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
+
+		var batch = batches.Single();
+		batch.Timestamps.Should().NotBeEmpty();
+		batch.AnsweredAtUtc.Should().Be(batch.Timestamps[^1]);
+		batch.ResumesAfterFailure.Should().BeFalse();
+	}
+
+	[Fact]
+	public void AWindowWithAPollResumedAfterAFailure_CarriesTheResumption()
+	{
+		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: ChartTestBuilder.RealtimeInterval);
+		using var ownedCoordinator = coordinator;
+		var batches = new List<RealtimeBatch>();
+		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
+		provider.FailRealtimePolls = true;
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks);
+
+		provider.FailRealtimePolls = false;
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks * 2);
+
+		batches.Should().ContainSingle(batch => batch.ResumesAfterFailure);
+		batches[0].ResumesAfterFailure.Should().BeFalse();
+		batches[^1].ResumesAfterFailure.Should().BeFalse();
+	}
+
+	[Fact]
+	public void AWindowWithNoPoll_YieldsNoBatch()
+	{
+		var (coordinator, scheduler, provider) = CreateCoordinator(realtimeInterval: ChartTestBuilder.RealtimeInterval);
+		using var ownedCoordinator = coordinator;
+		provider.FailRealtimePolls = true;
+		var batches = new List<RealtimeBatch>();
+		using var subscription = coordinator.RealtimeBatches.Subscribe(batches.Add);
+
+		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks * 3);
+
+		batches.Should().BeEmpty();
+	}
+
+	[Fact]
+	public void RealtimeBatches_WithAnEmptyCatalog_CarryNoSample()
 	{
 		var scheduler = new TestScheduler();
 		var provider = new FakeDataProvider(scheduler, ChartTestBuilder.RealtimeInterval);
@@ -105,7 +179,12 @@ public sealed class TrendCoordinatorTests
 
 		scheduler.AdvanceBy(TrendCoordinator.BatchWindow.Ticks * 5);
 
-		batches.Should().BeEmpty();
+		batches.Should().NotBeEmpty();
+		batches.Should().AllSatisfy(batch =>
+		{
+			batch.Timestamps.Should().BeEmpty();
+			batch.Pens.Should().BeEmpty();
+		});
 	}
 
 	// A live source that faults reaches every batch observer: with no onError Rx rethrows the fault out of the

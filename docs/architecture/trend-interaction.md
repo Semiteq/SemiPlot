@@ -69,8 +69,9 @@ operator interaction.
   (see Renderer).
   *As-built note:* realtime is `double?` on each pen's own timestamps, not on a shared column:
   `PenRealtimeValues` carries no entry at a timestamp the pen did not report, and a null is a break the
-  live source reported. The poll writes one 1 ms after a `q = 32` row (data-integration.md#realtime); every
-  other gap the chart draws comes from the history path (charting.md, "Gaps via NaN").
+  live source reported. The poll writes one 1 ms after a `q = 32` row (data-integration.md#realtime), and
+  the first poll answer after an outage longer than 5 s writes one at each pen's hold end; every other gap
+  the chart draws comes from the history path (charting.md, "Gaps via NaN").
 - **Δ cursors:** Δy is reported only for the **active/selected pen** (pens share X but have independent Y
   scales, so a global Δy is meaningless).
 - **Bad quality → gap:** OPC bad-quality is mapped to `null` at the `IDataProvider` boundary, reusing the
@@ -541,11 +542,12 @@ window.
   `PenValueFormat` with no unit, as the hover readout shows it. The other pens show no value at a marker,
   so many pens do not crowd it; picking another pen moves every reading to that pen, and the hover readout
   still lists every visible pen. The value is the one the cursor reads (`ChartCursorReader.ReadPenAt`), so
-  a hidden active pen, a gap or a marker outside the pen's data draws no reading. The layer is one
-  plottable with no axis limits; the view refreshes it in `ServeFrame` before every redraw, because a
-  history result, a live sample, a pick, a visibility change, a marker change and a pan all reach the
-  chart as a frame request. It projects through the pen's own `EnvelopeLine.PixelOf`, so a log10 axis
-  places the dot on the drawn line.
+  a hidden active pen, a gap or a marker outside the pen's data draws no reading, and a marker inside the
+  held span past the last column reads the held value (`charting.md#per-pen-plottable-envelopeline`). The
+  layer is one plottable with no axis limits; the view refreshes it in `ServeFrame` before every redraw,
+  because a history result, a live batch with or without a sample, a pick, a visibility change, a marker
+  change and a pan all reach the chart as a frame request. It projects through the pen's own
+  `EnvelopeLine.PixelOf`, so a log10 axis places the dot on the drawn line.
 - **The hit test.** A pointer inside the data rect is on a marker when `MarkerSet.NearestWithin` finds one
   within `AnchorAt(x + 4) - AnchorAt(x)`, 4 px at the pointer in the time scale of the window shown. The
   bound is inclusive, and the lower id wins a tie. Before the first render the data rect has no width:

@@ -32,10 +32,15 @@ the `Axes.XAxis` range plus one column beyond each edge, so a segment entering t
 the buffer outside it is never walked.
 
 **Path shape.** `EnvelopePath.Build` turns the visible columns into the point sequence `Render` strokes: a
-column is entered at whichever of `Min`/`Max` is nearer the previous point's Y and left at the other, which
-keeps the crossing between two columns short; a column whose `Min` equals its `Max` is one point; a stepped
-pen holds the previous Y to the new column's X before the vertical move. It touches no Skia, so the culling
-window, the gap break and the step shape are unit-tested (`EnvelopePathTests`).
+column is entered at whichever of `Min`/`Max` is nearer the previous column's `Center`, runs to the other
+extreme and ends on its own `Center`, the value the line holds after it; the last vertex is skipped when
+`Center` is that far extreme. Entering at the nearer extreme keeps the crossing between two columns short,
+and ending on `Center` keeps a column that carries a step from leaving the line at the old level. A column
+whose `Min` equals its `Max` is one point; a stepped pen holds the previous `Center` to the new column's X
+before the vertical move. The column just before the range seeds the previous `Center`, so a column draws
+the same vertices whichever column the range opens at, and a step does not jump as it scrolls to the left
+edge. A gap column clears it, and the column after a gap enters at its `Min`. It touches no Skia, so the
+culling window, the gap break and the step shape are unit-tested (`EnvelopePathTests`).
 
 **Hit distance.** `EnvelopeLine.DistanceTo(click, dataRect)` is the pixel distance from a point to the
 nearest stroked segment. It reads the same `VisibleRange` and `Build` vertices as `Render`, under the same

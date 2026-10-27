@@ -37,8 +37,9 @@ public static class EnvelopePath
 	{
 		destination.Clear();
 
-		// NaN doubles as "no point yet", which a gap column restores; a drawn Y is never NaN.
-		var previousY = double.NaN;
+		// NaN doubles as "no Y yet", which a gap column restores; a drawn Y is never NaN.
+		var previousY = first > 0 ? columns[first - 1].Center : double.NaN;
+		var segmentIsOpen = false;
 
 		for (var index = first; index < lastExclusive; index++)
 		{
@@ -46,32 +47,44 @@ public static class EnvelopePath
 			if (double.IsNaN(column.Min) || double.IsNaN(column.Max))
 			{
 				previousY = double.NaN;
+				segmentIsOpen = false;
 				continue;
 			}
 
-			var startsSegment = double.IsNaN(previousY);
-			if (!startsSegment && lineStyle == PenLineStyle.Stepped)
+			if (lineStyle == PenLineStyle.Stepped && !double.IsNaN(previousY))
 			{
-				destination.Add(new EnvelopePoint(column.X, previousY, false));
+				AddVertex(column.X, previousY);
 			}
 
 			if (column.Min.Equals(column.Max))
 			{
-				destination.Add(new EnvelopePoint(column.X, column.Min, startsSegment));
+				AddVertex(column.X, column.Min);
 				previousY = column.Min;
 
 				continue;
 			}
 
 			// Entering at the edge nearer the previous Y keeps the crossing between two columns short.
-			var entersAtMin = startsSegment
+			var entersAtMin = double.IsNaN(previousY)
 				|| Math.Abs(column.Min - previousY) <= Math.Abs(column.Max - previousY);
 			var entry = entersAtMin ? column.Min : column.Max;
-			var exit = entersAtMin ? column.Max : column.Min;
+			var farExtreme = entersAtMin ? column.Max : column.Min;
+			var heldY = double.IsNaN(column.Center) ? farExtreme : column.Center;
 
-			destination.Add(new EnvelopePoint(column.X, entry, startsSegment));
-			destination.Add(new EnvelopePoint(column.X, exit, false));
-			previousY = exit;
+			AddVertex(column.X, entry);
+			AddVertex(column.X, farExtreme);
+			if (!heldY.Equals(farExtreme))
+			{
+				AddVertex(column.X, heldY);
+			}
+
+			previousY = heldY;
+		}
+
+		void AddVertex(double x, double y)
+		{
+			destination.Add(new EnvelopePoint(x, y, !segmentIsOpen));
+			segmentIsOpen = true;
 		}
 	}
 

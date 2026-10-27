@@ -403,6 +403,22 @@ public sealed class EnvelopeLineTests
 		line.DistanceTo(PixelAt(line, dataRect, 5.0, 8.0), dataRect).Should().BeApproximately(0.0, HitTolerance);
 	}
 
+	// The view opening at 11 leaves the column at 10, which carries the step from 9 to 6, first in the visible range.
+	[Theory]
+	[InlineData(5.0)]
+	[InlineData(11.0)]
+	public void DistanceTo_ASteppedHoldAfterAStepColumn_StaysAtTheNewLevelWhereverTheViewOpens(double viewStart)
+	{
+		using var plot = new Plot();
+		var (line, dataRect) = LineOverTenByTen(
+			plot,
+			[Flat(0.0, 9.0), new EnvelopeColumn(10.0, 6.0, 9.0, 6.0), new EnvelopeColumn(20.0, 4.0, 6.0, 4.0)],
+			PenLineStyle.Stepped,
+			xMin: viewStart);
+
+		line.DistanceTo(PixelAt(line, dataRect, 15.0, 6.0), dataRect).Should().BeApproximately(0.0, HitTolerance);
+	}
+
 	[Fact]
 	public void DistanceTo_AClickInTheMiddleOfAGap_IsTheDistanceToTheNearerStrokedVertex()
 	{
@@ -498,7 +514,8 @@ public sealed class EnvelopeLineTests
 		PenLineStyle lineStyle,
 		ITickGenerator? yTickGenerator = null,
 		double yMin = 0.0,
-		double yMax = TenByTenSpan)
+		double yMax = TenByTenSpan,
+		double xMin = 0.0)
 	{
 		var line = new EnvelopeLine();
 		line.Axes.XAxis = plot.Axes.Bottom;
@@ -511,7 +528,7 @@ public sealed class EnvelopeLineTests
 		plot.Add.Plottable(line);
 		line.Restyle(new Color(PenColorHex), lineStyle);
 		line.ReplaceColumns(columns, UnboundedRequestedEndX, false);
-		plot.Axes.SetLimitsX(0.0, TenByTenSpan);
+		plot.Axes.SetLimitsX(xMin, xMin + TenByTenSpan);
 		plot.Axes.SetLimitsY(yMin, yMax);
 
 		using var image = plot.GetImage(PlotWidth, PlotHeight);

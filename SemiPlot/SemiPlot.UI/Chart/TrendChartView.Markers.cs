@@ -6,6 +6,8 @@ using SemiPlot.Core.Data;
 
 using Serilog;
 
+using LocalizedText = SemiPlot.UI.Localization.Resources;
+
 namespace SemiPlot.UI.Chart;
 
 /// <summary>The chart's right-click menus and the marker label editor the rename opens.</summary>
@@ -25,7 +27,14 @@ public partial class TrendChartView
 
 		_menuMoment = AnchorAt(position);
 		_menuMarker = MarkerAt(position);
-		(_menuMarker is null ? _chartMenuFlyout : _markerMenuFlyout).ShowAt(PlotControl, true);
+		if (_menuMarker is null)
+		{
+			_chartMenuFlyout.ShowAt(PlotControl, true);
+			return;
+		}
+
+		MarkerMenuLock.Header = _menuMarker.IsLocked ? LocalizedText.MarkerMenuUnlock : LocalizedText.MarkerMenuLock;
+		_markerMenuFlyout.ShowAt(PlotControl, true);
 	}
 
 	private async void OnAddMarkerClick(object? sender, RoutedEventArgs eventArgs)
@@ -54,6 +63,24 @@ public partial class TrendChartView
 		}
 
 		OpenMarkerLabelEditor(marker.Label ?? string.Empty, label => viewModel.Markers.RenameAsync(marker, label));
+	}
+
+	private async void OnLockMarkerClick(object? sender, RoutedEventArgs eventArgs)
+	{
+		if (_viewModel is not { } viewModel || _menuMarker is not { } marker)
+		{
+			return;
+		}
+
+		try
+		{
+			await viewModel.Markers.ToggleLockAsync(marker);
+		}
+		catch (Exception failure)
+		{
+			Log.Error(failure, "The chart view failed to store a marker lock");
+			viewModel.ReportFailure(failure);
+		}
 	}
 
 	private async void OnDeleteMarkerClick(object? sender, RoutedEventArgs eventArgs)

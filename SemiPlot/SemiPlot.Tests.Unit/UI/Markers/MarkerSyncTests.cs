@@ -143,15 +143,22 @@ public sealed class MarkerSyncTests : IDisposable
 			new FakeMarkerWrite.Move(_etchStart, _etchStart.TimeUtc));
 	}
 
-	[Fact]
-	public async Task AFailedWrite_ReachesThePanelOnce_AndReturnsItsFailure()
+	[Theory]
+	[InlineData("Rename")]
+	[InlineData("Unlock")]
+	public async Task AFailedWrite_ReachesThePanelOnce_AndReturnsItsFailure(string write)
 	{
 		var gone = FakeDataProvider.BenchArchiveError(ArchiveFault.MarkerGone, "Etch start");
 		_store.WriteResult = Result.Fail(gone);
 
-		var renamed = await _sync.RenameAsync(_etchStart, "Etch end");
+		var written = write switch
+		{
+			"Rename" => await _sync.RenameAsync(_etchStart, "Etch end"),
+			"Unlock" => await _sync.SetLockedAsync(_etchStart with { IsLocked = true }, false),
+			_ => throw new ArgumentOutOfRangeException(nameof(write), write, "Unknown write.")
+		};
 
-		renamed.Errors.Should().ContainSingle().Which.Should().Be(gone);
+		written.Errors.Should().ContainSingle().Which.Should().Be(gone);
 		_messagePanel.Entries.Should().ContainSingle()
 			.Which.View.Should().Be(ArchiveFailureMapper.Map(gone));
 	}
@@ -170,8 +177,29 @@ public sealed class MarkerSyncTests : IDisposable
 
 		await _sync.MoveAsync(_etchStart, _etchEnd.TimeUtc);
 		await _sync.RenameAsync(_etchStart, null);
+		await _sync.SetLockedAsync(_etchStart, true);
 		await _sync.DeleteAsync(_etchStart);
-		_store.ReadCount.Should().Be(5);
+		_store.ReadCount.Should().Be(6);
+	}
+
+	[Fact]
+	public async Task ALockWrite_WaitsForTheWriteAheadOfIt_AndReadsAfterItLands()
+	{
+		StartAndEnterTheWait();
+		var heldRename = _store.HoldNextWrite();
+		var renaming = _sync.RenameAsync(_etchStart, "Etch end");
+		var locking = _sync.SetLockedAsync(_etchStart, true);
+
+		_store.Writes.Should().ContainSingle("the lock queues behind the rename");
+
+		heldRename.SetResult();
+		await renaming;
+		(await locking).IsSuccess.Should().BeTrue();
+
+		_store.Writes.Should().Equal(
+			new FakeMarkerWrite.Rename(_etchStart, "Etch end"),
+			new FakeMarkerWrite.Lock(_etchStart, true));
+		_store.ReadCount.Should().Be(2, "each landed write asks for a read");
 	}
 
 	[Fact]

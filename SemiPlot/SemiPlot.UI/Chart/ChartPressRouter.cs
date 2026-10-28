@@ -20,7 +20,8 @@ public enum ChartPressRegion
 	DataArea,
 	ActivePenAxis,
 	TimeAxis,
-	Marker
+	Marker,
+	LockedMarker
 }
 
 public static class ChartPressRouter
@@ -51,6 +52,11 @@ public static class ChartPressRouter
 		if (activeTool == LeftButtonTool.DeltaPlacement)
 		{
 			return ChartPressAction.PlaceDeltaCursor;
+		}
+
+		if (region == ChartPressRegion.LockedMarker)
+		{
+			return ChartPressAction.PanOrPickPen;
 		}
 
 		var isDoubleClick = clickCount == 2;

@@ -277,6 +277,18 @@ public sealed class ArchiveExceptionMapperTests
 		AssertEndpoint(error);
 	}
 
+	[Fact]
+	public void ShapeUnexpectedCarriesTheDetailAndTheEndpoint()
+	{
+		const string Detail = "semiplot_markers.kind holds 7, which MarkerKind does not define.";
+
+		var error = Mapper().ShapeUnexpected(Detail);
+
+		error.Kind.Should().Be(ArchiveFault.ShapeUnexpected);
+		error.Detail.Should().Be(Detail);
+		AssertEndpoint(error);
+	}
+
 	private static PostgresException Postgres(string sqlState)
 	{
 		return new PostgresException("the server said so", "ERROR", "ERROR", sqlState);

@@ -234,6 +234,26 @@ public sealed class MainWindowViewModelTests
 		canExecute.Should().Equal(false, true);
 	}
 
+	[AvaloniaFact]
+	public async Task ToggleRecipeMarkers_FlipsTheChartsFlagAndTheMirroredProperty()
+	{
+		using var stand = NewWindowStand();
+		var viewModel = stand.ViewModel;
+		var markers = viewModel.ChartViewModel.Markers;
+
+		viewModel.ShowsRecipeMarkers.Should().BeTrue("a new window starts with recipe markers shown");
+
+		await viewModel.ToggleRecipeMarkersCommand.Execute();
+
+		markers.ShowsRecipeMarkers.Should().BeFalse();
+		viewModel.ShowsRecipeMarkers.Should().BeFalse();
+
+		await viewModel.ToggleRecipeMarkersCommand.Execute();
+
+		markers.ShowsRecipeMarkers.Should().BeTrue();
+		viewModel.ShowsRecipeMarkers.Should().BeTrue();
+	}
+
 	private static async Task<PenEditorViewModel> OpenPenEditorAsync(MainWindowViewModel viewModel)
 	{
 		var requests = new List<PenEditorViewModel>();

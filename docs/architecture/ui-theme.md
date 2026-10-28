@@ -148,7 +148,7 @@ and the picker's flyout keep Semi's 6 px, as the menu flyout does.
 
 ## The application's own surfaces
 
-Semi owns the controls; these fifteen keys are ours, and each exists in both variants.
+Semi owns the controls; these sixteen keys are ours, and each exists in both variants.
 
 | Key | Consumers | Light | Dark |
 | --- | --- | --- | --- |
@@ -165,7 +165,8 @@ Semi owns the controls; these fifteen keys are ours, and each exists in both var
 | `AppSeverityInfoBrush` | The same dot on an `Info` entry | `#3574F0` | `#3574F0` |
 | `AppConnectionOkBrush` | The status bar's connection indicator, `connection-ok` | `#208A3C` | `#5FAD65` |
 | `AppConnectionFaultBrush` | The same indicator, `connection-fault` | `#DB3B4B` | `#E55765` |
-| `AppMarkerLineBrush` | Every time marker line on the plot (`#the-plot`) and its tick on the minimap strip | `#6F737A` | `#A8ADBD` |
+| `AppMarkerLineBrush` | The operator's time marker lines on the plot (`#the-plot`), and the tick of every shown marker on the minimap strip | `#6F737A` | `#A8ADBD` |
+| `AppRecipeMarkerLineBrush` | The recipe marker lines on the plot | `#834DF0` | `#A571E6` |
 | `AppMarkerLabelBrush` | Every time marker label on the plot | `#000000` | `#DFE1E5` |
 
 Pen colours are not theme keys. They come from the archive with the pen and stay per pen under both
@@ -458,18 +459,22 @@ of the last paint and does nothing when the axis set did not grow, and it never 
 because every site that bumps `ScalesRevision` already follows with
 `RequestRedraw()`, which the view joins into the next display frame.
 
-The time markers take two keys of their own, outside the five surfaces. `ChartPalette.MarkerColors`
-resolves `AppMarkerLineBrush` and `AppMarkerLabelBrush` under the variant into a `MarkerPalette`, and
-`ApplyChartPalette` hands it to the marker layer after every `Apply`, so a variant switch repaints every
-marker line. `ChartMarkerLines.ApplyPalette` keeps the palette, and a line the layer adds later takes the
-same colours. The line is a neutral grey, so it does not compete with the pens' colours, and the label is
-the variant's default text colour; all four values are tones the palette already carries. Every marker
-draws in these two colours, and a marker carries no colour of its own. The palette also carries
-`AppContentBackgroundBrush` as the background of the active pen's reading at each marker, drawn at 85 %
-opacity so the number stays legible over the pen lines; the reading's dot takes the active pen's colour.
-`ChartPaletteTests.MarkerColors_ResolveBothMarkerKeysUnderTheVariant` resolves both keys under both
+The time markers take three keys of their own, outside the five surfaces. `ChartPalette.MarkerColors`
+resolves `AppMarkerLineBrush`, `AppRecipeMarkerLineBrush` and `AppMarkerLabelBrush` under the variant into
+a `MarkerPalette`, and `ApplyChartPalette` hands it to the marker layer after every `Apply`, so a variant
+switch repaints every marker line. `ChartMarkerLines.ApplyPalette` keeps the palette and recolours each
+line by its marker's kind, and a line the layer adds later takes the same colours. The operator's line is
+a neutral grey, so it does not compete with the pens' colours, and the label is the variant's default
+text colour; those four values are tones the palette already carries. The recipe line is a purple apart
+from the accent blue, the severity red and amber and the connection green. A marker's kind picks its line
+colour, every label draws in the one label colour, and a marker carries no colour of its own. The palette
+also carries `AppContentBackgroundBrush` as the background of the active pen's reading at each marker,
+drawn at 85 % opacity so the number stays legible over the pen lines; the reading's dot takes the active
+pen's colour.
+`ChartPaletteTests.MarkerColors_ResolveEveryMarkerKeyUnderTheVariant` resolves every marker key under both
 variants, and `ChartMarkerViewTests.AfterAThemeVariantSwitch_EveryMarkerDrawsInTheNewVariant` reads an
-existing line and a later one after a switch.
+existing line and a later one after a switch; `AfterAThemeVariantSwitch_ARecipeLineKeepsTheRecipeColour`
+reads a recipe line.
 
 The minor gridlines take their colour on every axis but draw only on a log10 axis: `ChartAxisBinder` sets
 their width to 1 px when the drawn axis is logarithmic and to 0 otherwise (`charting.md#log10-y-axis`).

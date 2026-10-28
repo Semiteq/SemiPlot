@@ -279,6 +279,10 @@ two plain commands, Autoscale and Restore initial scale. They act on the active 
 Each flag has one writer, the command the menu item invokes, and the item reads back that same flag
 `Mode=OneWay` — a `MenuItem` whose `IsChecked` were two-way would have the control as a second writer, and one
 reading back a property the command does not write would let a click move nothing on screen.
+`Recipe markers` writes no row: `ToggleRecipeMarkersCommand` flips the chart's own flag through
+`ChartMarkers.ToggleRecipeMarkers`, and the item reads `MainWindowViewModel.ShowsRecipeMarkers`, a mirror of that flag
+over `ChartMarkers.Changed`, because `ChartMarkers` raises no property notification
+(`trend-interaction.md#the-time-markers`).
 
 Row 4 is the one whose flag the operator is not the only source of. `MessagePanel.IsVisible` starts
 closed, so a session that never fails is never given the row, and `MessagePanelViewModel.Report`
@@ -748,9 +752,9 @@ no other route. Nothing is pushed between windows, for the reasons
 | Part | Holds |
 | --- | --- |
 | `Markers/MarkerSync` | The read loop and the write queue over `IMarkerStore`. It implements `Chart/IMarkerChannel` and reports every failure but a lost connection to the message panel; a lost connection reaches it through the catalogue read's state (`#a-failed-read`). `TrendWindow` builds and disposes it. |
-| `Chart/IMarkerChannel` | The chart's port: `Reads`, every read no write overtook, on the UI thread, and the four writes, each returning a `Result`. |
-| `Chart/ChartMarkers` | `TrendChartViewModel.Markers`, created and disposed by the chart view model. It reconciles each read into a `MarkerSet`, runs the gestures' writes and raises `Changed` once per change. |
-| `Core/Trends/MarkerSet` | The markers sorted by moment, then id, the hold counts and the hit test `NearestWithin`, a binary search. |
+| `Chart/IMarkerChannel` | The chart's port: `Reads`, every read no write overtook, on the UI thread, and the five writes, each returning a `Result`. |
+| `Chart/ChartMarkers` | `TrendChartViewModel.Markers`, created and disposed by the chart view model. It reconciles each read into a `MarkerSet`, runs the gestures' writes and raises `Changed` once per change, a flip of the recipe flag included. |
+| `Core/Trends/MarkerSet` | Every marker in `All`, sorted by moment, then id; the shown ones in `ShownMarkers`, an array rebuilt only when the set or the `ShowsRecipeMarkers` flag changes; the hold counts; and the hit test `NearestWithin`, a binary search over `ShownMarkers`. |
 | `Chart/ChartMarkerLines` | One line per marker on the view's plot (`trend-interaction.md#the-time-markers`). |
 
 `Markers/` uses `Chart/` and `Bridge/`, and neither uses `Markers/`. `MarkerSync` implements
@@ -768,12 +772,12 @@ failed read emits nothing and the chart keeps the markers it shows. A failure fo
 only logs a warning, and the bar's `ConnectionLost` entry, which the catalogue read raises, stands for
 it. Any other failure logs a warning for the first two in a row and goes to the panel from the third
 (`#a-failed-read`). Against a database
-provisioned before SemiBase v0.6.0, which has no `semiplot_markers`, that is a `TableMissing` Error about
-10 s after the window opens, and the chart works without markers.
+provisioned before SemiBase v0.7.0 that is an Error about 10 s after the window opens
+(`postgres-instance.md#what-semiplot-may-assume-about-the-server`), and the chart works without markers.
 
 #### The marker writes
 
-The four writes, add, move, rename and delete, run through one `Bridge/ArchiveCallQueue` per window, one
+The five writes, add, move, rename, lock and delete, run through one `Bridge/ArchiveCallQueue` per window, one
 at a time in the order issued, so two quick drags of one marker cannot commit out of order. A failed write
 goes to the panel through `ResultReporting.ReportFailure` and returns to its caller. Every write ends with
 `ReadNow()`, whatever its outcome, so the window that wrote reads again at once and every other window
@@ -795,11 +799,12 @@ A write's own result updates the window at once, and the read after it confirms:
 | Add | Nothing until the id lands, then the marker; a read that brought the id first leaves one marker | Nothing is placed |
 | Move | The marker follows the pointer from the first move past the slop; the one write goes at the drop | The moment the drag began at |
 | Rename | The new label at once | The label the marker had |
+| Lock, Unlock | The new state at once | The state the marker had |
 | Delete | The marker leaves once the delete lands | The marker stays |
 
 A marker with a write in flight, or under a drag, is held: a read does not move, relabel or remove it,
 and it stays when a read omits it. `MarkerSet` counts holds, so two overlapping writes on one marker keep
-it held until both land. A failed move or rename restores the stored value only when its release brings
+it held until both land. A failed move, rename or lock restores the stored value only when its release brings
 the count to zero, and a marker still held keeps the newer local state. `MarkerGone` removes the marker
 whatever the count.
 
@@ -912,9 +917,9 @@ the archive extent, the archive days read and the windowed history read. `Postgr
 implements `ILiveSource` with the live-edge poll over the same archive. The chart draws history and
 follows the archive as it grows. The pen editor writes the catalogue through `IPenCatalogueEditor`,
 and every running chart follows what it writes within 5 s (`#the-live-catalogue`), except the start
-values, which change nothing on screen (`#what-a-read-changes`). The chart places, drags, renames and
-deletes time markers stored in `semiplot_markers`, and every window follows them within 5 s
-(`#the-live-markers`). The export window writes the stored rows
+values, which change nothing on screen (`#what-a-read-changes`). The chart places, drags, renames,
+locks and deletes time markers stored in `semiplot_markers`, draws the SCADA's recipe markers and hides
+them per window, and every window follows them within 5 s (`#the-live-markers`). The export window writes the stored rows
 of a range of at most 24 hours to a CSV file (`#the-export-window`). See
 [data-integration.md](./data-integration.md)
 for the contract and `docs/plans/` for the remaining work.

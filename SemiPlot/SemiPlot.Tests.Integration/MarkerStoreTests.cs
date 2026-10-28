@@ -24,6 +24,33 @@ public sealed class MarkerStoreTests(PostgresContainerFixture postgresContainerF
 {
 	private const string DropMarkersCommand = "DROP TABLE public.semiplot_markers;";
 
+	private const string InsertRecipeStartCommand = """
+	                                                INSERT INTO public.semiplot_markers (t, label, kind, locked)
+	                                                VALUES ('2026-03-02 08:15:00+00', 'Etch.csv', 1, true);
+	                                                """;
+
+	private const string DropKindCheckCommand = """
+	                                            DO $$
+	                                            DECLARE check_name text;
+	                                            BEGIN
+	                                                FOR check_name IN
+	                                                    SELECT conname FROM pg_constraint
+	                                                    WHERE conrelid = 'public.semiplot_markers'::regclass
+	                                                      AND contype = 'c'
+	                                                      AND pg_get_constraintdef(oid) LIKE '%kind%'
+	                                                LOOP
+	                                                    EXECUTE format(
+	                                                        'ALTER TABLE public.semiplot_markers DROP CONSTRAINT %I',
+	                                                        check_name);
+	                                                END LOOP;
+	                                            END $$;
+	                                            """;
+
+	private const string InsertKindSevenCommand = """
+	                                              INSERT INTO public.semiplot_markers (t, label, kind, locked)
+	                                              VALUES ('2026-03-02 08:15:00+00', 'Etch.csv', 7, true);
+	                                              """;
+
 	private const int MaxLabelLength = 80;
 
 	private static readonly DateTime _etchStart = new(2026, 3, 2, 8, 15, 0, DateTimeKind.Utc);
@@ -91,9 +118,80 @@ public sealed class MarkerStoreTests(PostgresContainerFixture postgresContainerF
 		(await ReadAsync(store)).Should().Equal(renamed with { Label = label }, kept);
 	}
 
+	[Fact]
+	public async Task ARowTheScadaInsertedReadsBackWithItsKindAndLock()
+	{
+		await AdminAsync(InsertRecipeStartCommand);
+
+		using var services = Build();
+
+		var marker = (await ReadAsync(Store(services))).Should().ContainSingle().Which;
+
+		marker.Should().Be(new StoredMarker(marker.Id, _etchStart, "Etch.csv", MarkerKind.RecipeStart, IsLocked: true));
+	}
+
+	[Fact]
+	public async Task AnAddedMarkerReadsAsAnUnlockedUserMarker()
+	{
+		using var services = Build();
+
+		var store = Store(services);
+
+		await AddAsync(store, _etchStart, "Etch start");
+
+		var marker = (await ReadAsync(store)).Should().ContainSingle().Which;
+
+		marker.Kind.Should().Be(MarkerKind.User);
+		marker.IsLocked.Should().BeFalse();
+	}
+
+	[Theory]
+	[InlineData(true)]
+	[InlineData(false)]
+	public async Task ALockWritesThatMarkerOnly(bool isLocked)
+	{
+		await AdminAsync(InsertRecipeStartCommand);
+
+		using var services = Build();
+
+		var store = Store(services);
+		var recipe = (await ReadAsync(store)).Should().ContainSingle().Which;
+		var written = await AddMarkerAsync(store, _etchStart.AddHours(1), "Etch end");
+		var kept = await AddMarkerAsync(store, _etchStart.AddHours(2), "Purge") with { IsLocked = !isLocked };
+		await AdminAsync(string.Create(
+			CultureInfo.InvariantCulture,
+			$"UPDATE public.semiplot_markers SET locked = {kept.IsLocked} WHERE id = {kept.Id};"));
+
+		var first = await store.SetLockedAsync(written, isLocked);
+		var second = await store.SetLockedAsync(recipe, isLocked);
+
+		first.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(first));
+		second.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(second));
+		(await ReadAsync(store)).Should().Equal(
+			recipe with { IsLocked = isLocked },
+			written with { IsLocked = isLocked },
+			kept);
+	}
+
+	[Fact]
+	public async Task AKindOutsideTheEnumIsShapeUnexpectedNamingTheValue()
+	{
+		await AdminAsync(DropKindCheckCommand);
+		await AdminAsync(InsertKindSevenCommand);
+
+		using var services = Build();
+
+		var result = await Store(services).ReadAsync(TestContext.Current.CancellationToken);
+
+		var (kind, detail) = FailureOf(result);
+		kind.Should().Be(ArchiveFault.ShapeUnexpected);
+		detail.Should().Contain("7");
+	}
+
 	[Theory]
 	[InlineData("Move")]
 	[InlineData("Rename")]
+	[InlineData("Lock")]
 	public async Task AWriteToADeletedMarkerIsMarkerGoneNamingIt(string write)
 	{
 		using var services = Build();
@@ -107,6 +205,7 @@ public sealed class MarkerStoreTests(PostgresContainerFixture postgresContainerF
 		{
 			"Move" => await store.MoveAsync(marker, _etchStart.AddMinutes(10)),
 			"Rename" => await store.RenameAsync(marker, "Etch end"),
+			"Lock" => await store.SetLockedAsync(marker, true),
 			_ => throw new ArgumentOutOfRangeException(nameof(write), write, "Unknown write.")
 		};
 
@@ -198,6 +297,7 @@ public sealed class MarkerStoreTests(PostgresContainerFixture postgresContainerF
 	[InlineData("Add")]
 	[InlineData("Move")]
 	[InlineData("Rename")]
+	[InlineData("Lock")]
 	[InlineData("Delete")]
 	public async Task AStatementAgainstADroppedTableIsTableMissingNamingTheMarkers(string statement)
 	{
@@ -214,6 +314,7 @@ public sealed class MarkerStoreTests(PostgresContainerFixture postgresContainerF
 			"Add" => await store.AddAsync(_etchStart, "Etch start"),
 			"Move" => await store.MoveAsync(marker, _etchStart.AddMinutes(10)),
 			"Rename" => await store.RenameAsync(marker, "Etch end"),
+			"Lock" => await store.SetLockedAsync(marker, true),
 			"Delete" => await store.DeleteAsync(marker),
 			_ => throw new ArgumentOutOfRangeException(nameof(statement), statement, "Unknown statement.")
 		};

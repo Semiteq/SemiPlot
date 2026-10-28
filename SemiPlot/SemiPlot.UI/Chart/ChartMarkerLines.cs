@@ -8,7 +8,7 @@ using SemiPlot.UI.Localization;
 
 namespace SemiPlot.UI.Chart;
 
-/// <summary>One dashed vertical line per marker on the time axis, labelled inside the data area's top edge.</summary>
+/// <summary>One vertical line per marker on the time axis, labelled inside the data area's top edge.</summary>
 internal sealed class ChartMarkerLines(Plot plot)
 {
 	private const float LineWidth = 1.5f;
@@ -44,6 +44,11 @@ internal sealed class ChartMarkerLines(Plot plot)
 
 				line.X = LocalTimeAxis.ToAxis(marker.TimeUtc);
 				line.LabelText = LabelTextOf(marker);
+				line.LinePattern = marker.IsLocked ? LinePattern.Solid : LinePattern.Dashed;
+				if (_palette is { } palette)
+				{
+					Paint(line, marker, palette);
+				}
 			}
 
 			var hasGoneLines = _lines.Count > markers.Count;
@@ -85,15 +90,15 @@ internal sealed class ChartMarkerLines(Plot plot)
 		}
 	}
 
-	/// <summary>Recolours every line; a line added later takes the same colours.</summary>
+	/// <summary>Recolours every line by its marker's kind; a line added later takes the same colours.</summary>
 	public void ApplyPalette(MarkerPalette palette)
 	{
 		_palette = palette;
 		lock (_plot.Sync)
 		{
-			foreach (var line in _lines.Values)
+			foreach (var marker in _markers)
 			{
-				Paint(line, palette);
+				Paint(_lines[marker.Id], marker, palette);
 			}
 		}
 	}
@@ -151,9 +156,9 @@ internal sealed class ChartMarkerLines(Plot plot)
 		return LabelOffsetX + (line.LabelText.Length * line.LabelFontSize * LabelCharacterWidth);
 	}
 
-	private static void Paint(VerticalLine line, MarkerPalette palette)
+	private static void Paint(VerticalLine line, StoredMarker marker, MarkerPalette palette)
 	{
-		line.LineColor = palette.Line;
+		line.LineColor = marker.Kind == MarkerKind.User ? palette.Line : palette.RecipeLine;
 		line.LabelFontColor = palette.Label;
 	}
 
@@ -163,16 +168,11 @@ internal sealed class ChartMarkerLines(Plot plot)
 		line.Axes.XAxis = _plot.Axes.Bottom;
 		line.EnableAutoscale = false;
 		line.LineWidth = LineWidth;
-		line.LinePattern = LinePattern.Dashed;
 		line.LabelOppositeAxis = true;
 		line.ManualLabelAlignment = Alignment.UpperLeft;
 		line.LabelOffsetX = LabelOffsetX;
 		line.LabelOffsetY = LabelOffsetY;
 		line.LabelBackgroundColor = Colors.Transparent;
-		if (_palette is { } palette)
-		{
-			Paint(line, palette);
-		}
 
 		return line;
 	}

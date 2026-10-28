@@ -14,8 +14,8 @@ using SemiPlot.Core.Data.Errors;
 namespace SemiPlot.DataSource.Postgres;
 
 /// <summary>
-/// Reads and writes <c>semiplot_markers</c> over the provider's <see cref="NpgsqlDataSource"/> and role. A move or
-/// rename touching no row is <see cref="ArchiveFault.MarkerGone"/>; a delete touching none succeeds.
+/// Reads and writes <c>semiplot_markers</c> over the provider's <see cref="NpgsqlDataSource"/> and role. A move,
+/// rename or lock touching no row is <see cref="ArchiveFault.MarkerGone"/>; a delete touching none succeeds.
 /// </summary>
 public sealed class PostgresMarkerStore : IMarkerStore
 {
@@ -46,10 +46,20 @@ public sealed class PostgresMarkerStore : IMarkerStore
 
 			while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
 			{
+				var kind = (MarkerKind)reader.GetInt16(StoredMarkerColumn.Kind);
+
+				if (!Enum.IsDefined(kind))
+				{
+					return Result.Fail<IReadOnlyList<StoredMarker>>(_exceptionMapper.ShapeUnexpected(
+						FormattableString.Invariant($"semiplot_markers.kind holds {(int)kind}, which MarkerKind does not define.")));
+				}
+
 				markers.Add(new StoredMarker(
 					reader.GetInt64(StoredMarkerColumn.Id),
 					reader.GetFieldValue<DateTime>(StoredMarkerColumn.Time),
-					reader.IsDBNull(StoredMarkerColumn.Label) ? null : reader.GetString(StoredMarkerColumn.Label)));
+					reader.IsDBNull(StoredMarkerColumn.Label) ? null : reader.GetString(StoredMarkerColumn.Label),
+					kind,
+					reader.GetBoolean(StoredMarkerColumn.Locked)));
 			}
 
 			return Result.Ok<IReadOnlyList<StoredMarker>>(markers);
@@ -104,6 +114,17 @@ public sealed class PostgresMarkerStore : IMarkerStore
 			[IdParameter(marker.Id), LabelParameter(label)],
 			refusedSubject: SubjectOf(marker.TimeUtc, label),
 			goneSubject: SubjectOf(marker.TimeUtc, marker.Label));
+	}
+
+	public Task<Result> SetLockedAsync(StoredMarker marker, bool isLocked)
+	{
+		var subject = SubjectOf(marker.TimeUtc, marker.Label);
+
+		return UpdateOneRowAsync(
+			ArchiveStatements.SetMarkerLocked,
+			[IdParameter(marker.Id), new NpgsqlParameter("locked", NpgsqlDbType.Boolean) { Value = isLocked }],
+			refusedSubject: subject,
+			goneSubject: subject);
 	}
 
 	/// <summary>Idempotent: deleting a marker another window already removed succeeds.</summary>

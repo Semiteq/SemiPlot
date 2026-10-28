@@ -19,6 +19,7 @@ public static class ChartPalette
 	private const string MinorGridLineKey = "AppMinorGridLineBrush";
 	private const string AxisKey = "AppSecondaryForegroundBrush";
 	private const string MarkerLineKey = "AppMarkerLineBrush";
+	private const string RecipeMarkerLineKey = "AppRecipeMarkerLineBrush";
 	private const string MarkerLabelKey = "AppMarkerLabelBrush";
 
 	public static void Apply(Plot plot, IResourceHost resources, ThemeVariant variant)
@@ -48,6 +49,7 @@ public static class ChartPalette
 	{
 		return new MarkerPalette(
 			Resolve(resources, variant, MarkerLineKey),
+			Resolve(resources, variant, RecipeMarkerLineKey),
 			Resolve(resources, variant, MarkerLabelKey),
 			Resolve(resources, variant, DataBackgroundKey));
 	}

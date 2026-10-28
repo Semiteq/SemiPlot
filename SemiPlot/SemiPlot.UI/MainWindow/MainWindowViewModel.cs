@@ -39,6 +39,7 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 	private readonly Action _readCatalogueNow;
 	private readonly InstanceLauncher _instanceLauncher;
 	private readonly ObservableAsPropertyHelper<string> _penScaleHeader;
+	private readonly ObservableAsPropertyHelper<bool> _showsRecipeMarkers;
 
 	/// <summary>
 	/// The window's parts are built and disposed by <see cref="TrendWindow"/>; this view model holds them for the
@@ -73,6 +74,10 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 		_disposables.Add(_penScaleHeader = ChartViewModel
 			.WhenAnyValue(chart => chart.DrawnPenId, chart => chart.Pens, (penId, _) => PenScaleHeaderFor(penId))
 			.ToProperty(this, viewModel => viewModel.PenScaleHeader));
+		var markers = ChartViewModel.Markers;
+		_disposables.Add(_showsRecipeMarkers = markers.Changed
+			.Select(_ => markers.ShowsRecipeMarkers)
+			.ToProperty(this, viewModel => viewModel.ShowsRecipeMarkers, initialValue: markers.ShowsRecipeMarkers));
 
 		_disposables.Add(_aboutRequests);
 		_disposables.Add(_exitRequests);
@@ -86,6 +91,8 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 			() => { IsLegendVisible = !IsLegendVisible; }));
 		_disposables.Add(ToggleMinimapCommand = ReactiveCommand.Create(
 			() => { IsMinimapVisible = !IsMinimapVisible; }));
+		_disposables.Add(ToggleRecipeMarkersCommand = ReactiveCommand.Create(
+			markers.ToggleRecipeMarkers));
 		_disposables.Add(AutoscaleCommand = ReactiveCommand.Create(
 			() => ChartViewModel.AutoscaleActivePen()));
 		_disposables.Add(InitialScaleCommand = ReactiveCommand.Create(
@@ -150,11 +157,16 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 	/// <summary>The View menu's scale submenu header; it names the pen whose axis the chart draws.</summary>
 	public string PenScaleHeader => _penScaleHeader.Value;
 
+	/// <summary>Mirrors the chart's flag, which raises no property notification of its own.</summary>
+	public bool ShowsRecipeMarkers => _showsRecipeMarkers.Value;
+
 	public ReactiveCommand<Unit, Unit> ToggleNavigationBarCommand { get; }
 
 	public ReactiveCommand<Unit, Unit> ToggleLegendCommand { get; }
 
 	public ReactiveCommand<Unit, Unit> ToggleMinimapCommand { get; }
+
+	public ReactiveCommand<Unit, Unit> ToggleRecipeMarkersCommand { get; }
 
 	public ReactiveCommand<Unit, Unit> AutoscaleCommand { get; }
 

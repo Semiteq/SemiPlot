@@ -219,10 +219,11 @@ handler is then the only writer of `Handled` for the wheel. Each event kind has 
 point, and the handlers carry no modifier test of their own: the wheel goes through
 `Chart/ChartWheelRouter.Route(isAxisRegionHit, modifiers, delta)`, the left press through
 `Chart/ChartPressRouter.Route(region, modifiers, activeTool, clickCount)`. The view names the one
-`ChartPressRegion` the press lands on (`ActivePenAxis`, `TimeAxis`, `Marker` or `DataArea`; the two bands
-do not overlap, and `Marker` is a press inside the data rect within 4 px of a time marker), and the press
-router checks the active pen's axis first, then Ctrl, then the time axis band, then the tool, then the
-marker, then the click count (`#the-time-markers`, Add and delete). The left
+`ChartPressRegion` the press lands on (`ActivePenAxis`, `TimeAxis`, `LockedMarker`, `Marker` or
+`DataArea`; the two bands do not overlap, `LockedMarker` is a press inside the data rect within 4 px of a
+locked time marker, and `Marker` the same press near an unlocked one), and the press router checks the
+active pen's axis first, then Ctrl, then the time axis band, then the tool, then a locked marker (always
+`PanOrPickPen`), then any other marker, then the click count (`#the-time-markers`, Add and delete). The left
 button is a single tool with an explicit state (`Chart/LeftButtonTool` = `Pan` | `DeltaPlacement`); the active
 tool is sourced from the navigation bar's delta-mode toggle (`TrendChartViewModel.ActiveLeftButtonTool`),
 so there is one left-button gesture, not overlapping hidden branches. Ctrl is a held key, not a tool.
@@ -512,21 +513,24 @@ under sticky is now.
 A time marker is a stored vertical line at a moment, with an optional label of at most 80 characters: the
 operator marks an event worth returning to, the start of a process for one, and finds it again after a
 restart and in every other window (`overview.md#the-live-markers`, `data-integration.md#the-marker-store`).
-The count has no cap: every window reads every marker and draws every one inside its time window. A marker
+The count has no cap: every window reads every marker and draws every shown one inside its time window.
+The SCADA adds recipe markers of its own, locked, at the start, the end and the interruption of a recipe. A marker
 list and bookmark navigation are not built (`trend-feature-spec.md` §CU-4); the minimap strip marks every
 marker of the archive with a tick (`#archive-overview-minimap`), and a press there brings it into the
 window.
 
 - **Drawing.** `Chart/ChartMarkerLines` owns one ScottPlot `VerticalLine` per marker, pinned to
-  `plot.Axes.Bottom` with `EnableAutoscale = false`: dashed, 1.5 px wide, in one theme colour for every
-  marker (`ui-theme.md#the-plot`). The label is the line's own label with `LabelOppositeAxis`,
+  `plot.Axes.Bottom` with `EnableAutoscale = false`, 1.5 px wide. A locked line is solid and an unlocked
+  one dashed; an operator's marker (`MarkerKind.User`) draws in the marker colour and a recipe marker in
+  the recipe colour (`ui-theme.md#the-plot`). The label is the line's own label with `LabelOppositeAxis`,
   `ManualLabelAlignment = UpperLeft`, offsets of 4 px and 12 px and a transparent background, so it hangs
   inside the data area under its top edge, right of the line, and draws no box. The default label covers
   the time axis ticks, and the strip above the data area is too narrow for it. The label text is the
   marker's label, a middle dot and the marker's local time as `HH:mm:ss`, or the time alone for an
   unlabelled marker. The time carries no date, which the hover readout shows.
   `Sync(markers)` is the one diff on the view side: it adds the line of a new id, removes the line of a
-  gone one, and sets the moment and the label text of every other line. The view calls it when it binds a view
+  gone one, and sets the moment, the label text, the pattern and the colour of every other line, since a
+  read can change the lock and the kind. The view calls it when it binds a view
   model and on every `Changed`, then requests a frame. `RemoveLines()` takes every line off the plot when
   the view binds again, so a rebind leaves one line per marker.
 - **Labels that do not fit.** `Project(from, to, dataAreaWidth)` hides a line outside the window, and a
@@ -557,9 +561,10 @@ window.
   drop there lands in the one half (`data-integration.md#time-boundary`).
 - **Hover.** On a marker the cursor snaps to the marker's moment: `MoveCursor` receives that moment, and
   the hover readout lists every visible pen's value there. The pointer shows `SizeWestEast` only when a
-  press would drag the marker, so not with Ctrl held or in delta mode, and the hand elsewhere. While a
+  press would drag the marker, so not with Ctrl held, in delta mode or on a locked marker, and the hand
+  elsewhere. While a
   marker drags no readout follows it, and in delta mode the overlay stays hidden, as for every drag.
-- **Drag.** A press on a marker routes to `ChartPressAction.DragMarker` after the axis region, Ctrl, the
+- **Drag.** A press on an unlocked marker routes to `ChartPressAction.DragMarker` after the axis region, Ctrl, the
   time axis band and the tool. Ctrl therefore shifts the active pen over a marker, the time axis band
   opens its panel under one and never moves it, and delta mode places its cursor on top of one. The press
   captures the pointer and shows `SizeWestEast`. Past the 4 px slop the first move calls
@@ -570,14 +575,21 @@ window.
   reaches it through the capture loss it raises, and a capture lost for another reason ends there too,
   as a pan keeps the window it reached. `EndMoveAsync` writes the moment of the last move, once. A release
   inside the slop is a click: it picks a pen, as a pan press does, and writes nothing.
+- **The lock.** A locked marker ignores the two gestures that change a marker by accident, the drag and
+  the double click that deletes. `PressRegionAt` returns `ChartPressRegion.LockedMarker` for it, and the
+  router reads that region after the tool and maps it to `PanOrPickPen` for any click count: a drag on it
+  pans, and a double click on it neither deletes it nor adds a marker. The menu still finds it, so
+  `Rename`, `Delete` and `Unlock` act on it. The lock guards the gestures of the window that shows it,
+  not the stored row (`data-integration.md#the-marker-store`).
 - **Add and delete.** A double click adds a marker at the pointer's moment, and a double click on a marker
-  deletes it. A new marker is labelled `#N`, N one past the highest number among the shown labels of the
-  form `#` and decimal digits, or `#1` when there is none; the label is stored and `Rename` changes it
+  deletes it. A new marker is labelled `#N`, N one past the highest number among the labels of the form
+  `#` and decimal digits that the operator's markers carry, shown or hidden, or `#1` when there is none;
+  a recipe marker's label does not count; the label is stored and `Rename` changes it
   like any other. Two windows that add at once, or two quick double clicks in one window before the first
   add's id lands, can store the same number. The router reads the press's `ClickCount`: a second click routes to
   `ChartPressAction.AddMarker` where a single one would be `PanOrPickPen`, and to `DeleteMarker` where a
-  single one would be `DragMarker`, so only in the pan tool and without Ctrl. In delta mode a double click
-  places the delta cursors, and on an axis it opens that axis's panel. A third click is a single one again,
+  single one would be `DragMarker`, so only in the pan tool, without Ctrl and off a locked marker. In
+  delta mode a double click places the delta cursors, and on an axis it opens that axis's panel. A third click is a single one again,
   so a quick second double click on a new marker drags it rather than deleting it. The first click of the
   pair is an ordinary click and picks a pen. The marker shows once the add's id lands, and a failed add
   places nothing. The delete asks for no confirmation: a double click puts a lost marker back, and
@@ -585,8 +597,9 @@ window.
 - **The right-click menu.** The tunnel release handler checks for the right button ahead of its
   left-button guard. A right release inside the data rect with no drag under way opens a `MenuFlyout` at
   the pointer through `ShowAt(PlotControl, true)`, as the two panels open: `MarkerMenuFlyout` (`Rename`,
-  `Delete`) on a marker, `ChartMenuFlyout` (`Add marker here`) elsewhere. The view keeps the clicked moment
-  and the marker hit. `Add marker here` adds a numbered marker at once, as a double click does. No `ContextFlyout` is declared, because `ContextRequested` may never fire on
+  `Lock` or `Unlock`, `Delete`) on a marker, `ChartMenuFlyout` (`Add marker here`) elsewhere. The view
+  keeps the clicked moment and the marker hit. `Add marker here` adds a numbered marker at once, as a
+  double click does. No `ContextFlyout` is declared, because `ContextRequested` may never fire on
   `AvaPlot`. With no pens `EmptyCatalogueMessage` covers the centre of the plot and takes the click there;
   a marker without pens has no use.
 - **The label editor.** One keyed flyout, `MarkerLabelFlyout`, opened by `Rename` only: a focused
@@ -599,6 +612,15 @@ window.
   or a move carries the moment rounded to the microseconds `timestamptz` keeps, so the marker set changes
   once more by under a microsecond, which redraws nothing visible.
 - **Delete.** `Delete` removes the marker once the store answers, and a failed delete keeps it.
+- **Lock and Unlock.** One item, `MarkerMenuLock`, whose header `OpenChartMenu` sets from the marker's
+  lock before the flyout shows. It writes the opposite of that header state through
+  `ChartMarkers.ToggleLockAsync`, which starts from the marker as the set holds it at the click: the line
+  changes its pattern at once, and a failed write restores the lock that read stored.
+- **Hiding the recipe markers.** `View` -> `Recipe markers` hides the recipe markers in one window. The
+  flag is `MarkerSet.ShowsRecipeMarkers`, flipped through `ChartMarkers.ToggleRecipeMarkers`, which
+  raises `Changed`. It is not stored, and a new window starts with the recipe markers shown. A hidden
+  marker leaves `ShownMarkers`, so it loses its line, its reading, its hit and its minimap tick, and stays in
+  `MarkerSet.All`, so a revert or a `MarkerGone` of a write that began before the hiding still lands.
 
 ## Decimation & performance (architectural core)
 
@@ -723,11 +745,11 @@ fraction → `NavigateToFraction`, which recenters the window via the **same**
 `ChartNavigationController` the chart navigates with. The highlight tracks every `WindowChanged` (pan /
 zoom and the sticky live-edge advance) and every move of the right bound.
 
-**The time markers.** The strip draws one full-height 1 px tick per time marker inside the extent, in
-`AppMarkerLineBrush`, over the highlight and under the hover line (`#the-time-markers`). The ticks show
-where the markers outside the window are; a press on one navigates as a press anywhere on the strip does,
+**The time markers.** The strip draws one full-height 1 px tick per shown time marker inside the extent,
+recipe markers included, in `AppMarkerLineBrush`, over the highlight and under the hover line
+(`#the-time-markers`). The ticks show where the markers outside the window are; a press on one navigates as a press anywhere on the strip does,
 so the ticks take no pointer. `MinimapViewModel.TimeMarkerFractions` comes from
-`MinimapGeometry.FractionAt` over the chart's `Markers`, which drops a marker outside the extent, and is
+`MinimapGeometry.FractionAt` over the chart's `ShownMarkers`, which drops a marker outside the extent, and is
 recomputed on every `ChartMarkers.Changed`, on the extent read and on every move of the right bound.
 The view draws the fractions as one `Path` of `LineGeometry` children, `TimeMarkerTicks`.
 

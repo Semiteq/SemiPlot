@@ -334,11 +334,13 @@ No abbreviations in names.
   (`ChartPressAction.ShiftActivePen`), and Ctrl is a held key, not a `LeftButtonTool` value. A press on
   the time axis band is the last pre-branch, after Ctrl and ahead of the tool
   (`ChartPressAction.PanOrEditTimeWindow`): a drag pans, and a release inside the slop opens the time
-  window panel (`docs/architecture/trend-interaction.md#the-time-window-panel`). A press on a time
-  marker is the last branch, read after the tool (`ChartPressAction.DragMarker`). A second click where
-  a single one would pan or pick adds a marker (`ChartPressAction.AddMarker`), and one where it would
-  drag a marker deletes it (`ChartPressAction.DeleteMarker`,
-  `docs/architecture/trend-interaction.md#the-time-markers`). The bar's `IsSticky` has a single writer
+  window panel (`docs/architecture/trend-interaction.md#the-time-window-panel`). A press on a locked
+  marker (`ChartPressRegion.LockedMarker`) is read after the tool and pans or picks for any click
+  count (`ChartPressAction.PanOrPickPen`). A press on any other time marker is the last branch, read
+  after it (`ChartPressAction.DragMarker`). A second click in the data area away from any marker adds a
+  marker (`ChartPressAction.AddMarker`); on an unlocked marker it deletes it
+  (`ChartPressAction.DeleteMarker`); on a locked marker it pans or picks like one click
+  (`docs/architecture/trend-interaction.md#the-time-markers`). The bar's `IsSticky` has a single writer
   after the constructor seeds it (the `WindowChanged` handler refreshing from `Navigation.IsSticky`) — do
   not reintroduce imperative `IsSticky =` assignments.
 - A checkable menu item reads its flag `Mode=OneWay` and writes it only through the command it

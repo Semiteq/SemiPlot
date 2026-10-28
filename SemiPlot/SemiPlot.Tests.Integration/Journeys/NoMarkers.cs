@@ -26,6 +26,11 @@ internal sealed class NoMarkers : IMarkerChannel
 		throw new NotSupportedException();
 	}
 
+	public Task<Result> SetLockedAsync(StoredMarker marker, bool isLocked)
+	{
+		throw new NotSupportedException();
+	}
+
 	public Task<Result> DeleteAsync(StoredMarker marker)
 	{
 		throw new NotSupportedException();

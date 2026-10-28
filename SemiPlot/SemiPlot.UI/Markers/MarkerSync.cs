@@ -72,6 +72,11 @@ public sealed class MarkerSync : IMarkerChannel, IDisposable
 		return WriteAsync(() => _markerStore.RenameAsync(marker, label));
 	}
 
+	public Task<Result> SetLockedAsync(StoredMarker marker, bool isLocked)
+	{
+		return WriteAsync(() => _markerStore.SetLockedAsync(marker, isLocked));
+	}
+
 	public Task<Result> DeleteAsync(StoredMarker marker)
 	{
 		return WriteAsync(() => _markerStore.DeleteAsync(marker));

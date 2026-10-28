@@ -354,4 +354,23 @@ public sealed class MinimapViewModelTests
 
 		stand.ViewModel.TimeMarkerFractions.Should().Equal([0.5], "a marker read gone leaves the strip");
 	}
+
+	[AvaloniaFact]
+	public async Task TimeMarkerFractions_LeaveOutHiddenRecipeMarkers_AndTakeThemBackWhenShown()
+	{
+		using var stand = new MinimapStand();
+		var span = _extentLast - _extentFirst;
+		stand.MarkerChannel.Push(
+			new StoredMarker(1, _extentFirst + (span / 4.0), "Etch.csv", MarkerKind.RecipeStart, IsLocked: true),
+			new StoredMarker(2, _extentFirst + (span / 2.0), "#1"));
+		await stand.LoadExtentAsync();
+
+		stand.Chart.Markers.ToggleRecipeMarkers();
+
+		stand.ViewModel.TimeMarkerFractions.Should().Equal(0.5);
+
+		stand.Chart.Markers.ToggleRecipeMarkers();
+
+		stand.ViewModel.TimeMarkerFractions.Should().Equal(0.25, 0.5);
+	}
 }

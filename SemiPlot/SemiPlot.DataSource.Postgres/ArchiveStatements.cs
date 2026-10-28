@@ -35,6 +35,8 @@ internal static class StoredMarkerColumn
 	public const int Id = 0;
 	public const int Time = 1;
 	public const int Label = 2;
+	public const int Kind = 3;
+	public const int Locked = 4;
 }
 
 /// <summary>Every statement this project issues; parameters are bound, never interpolated.</summary>
@@ -140,13 +142,15 @@ internal static class ArchiveStatements
 	                                       WHERE pen_id = @pen_id AND group_id = @group_id;
 	                                       """;
 
-	public const string StoredMarkers = "SELECT id, t, label FROM semiplot_markers ORDER BY t, id;";
+	public const string StoredMarkers = "SELECT id, t, label, kind, locked FROM semiplot_markers ORDER BY t, id;";
 
 	public const string AddMarker = "INSERT INTO semiplot_markers (t, label) VALUES (@t, @label) RETURNING id;";
 
 	public const string MoveMarker = "UPDATE semiplot_markers SET t = @t WHERE id = @id;";
 
 	public const string RenameMarker = "UPDATE semiplot_markers SET label = @label WHERE id = @id;";
+
+	public const string SetMarkerLocked = "UPDATE semiplot_markers SET locked = @locked WHERE id = @id;";
 
 	public const string DeleteMarker = "DELETE FROM semiplot_markers WHERE id = @id;";
 

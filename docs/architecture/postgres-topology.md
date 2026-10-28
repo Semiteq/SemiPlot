@@ -35,6 +35,7 @@ flowchart TB
 
     scada -- "writes rows" --> trends
     scada -- "creates and writes" --> msgs
+    scada -- "INSERT recipe markers<br/>semiplot_markers" --> config
     prov -- "creates, never writes rows" --> trends
     prov -- "creates, never writes rows" --> config
     prov -- "creates" --> roles

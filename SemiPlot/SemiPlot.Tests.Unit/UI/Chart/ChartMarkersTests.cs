@@ -53,7 +53,7 @@ public sealed class ChartMarkersTests : IDisposable
 		await Markers.AddAtAsync(_nine);
 
 		_channel.Writes.Should().Equal(new FakeMarkerWrite.Add(_nine, "#1"));
-		Markers.Markers.Should().Equal(new StoredMarker(7, _nine, "#1"));
+		Markers.ShownMarkers.Should().Equal(new StoredMarker(7, _nine, "#1"));
 	}
 
 	[AvaloniaTheory]
@@ -69,6 +69,19 @@ public sealed class ChartMarkersTests : IDisposable
 		await Markers.AddAtAsync(_nine);
 
 		_channel.Writes.Should().Equal(new FakeMarkerWrite.Add(_nine, expected));
+	}
+
+	[AvaloniaFact]
+	public async Task AnAdd_NumbersPastTheUserMarkers_NotPastARecipeMarker()
+	{
+		_channel.Push(
+			new StoredMarker(1, _eight, "#3"),
+			new StoredMarker(2, _nine, "#9", MarkerKind.RecipeStart, IsLocked: true));
+		_channel.AddResult = Result.Ok(3L);
+
+		await Markers.AddAtAsync(_ten);
+
+		_channel.Writes.Should().Equal(new FakeMarkerWrite.Add(_ten, "#4"));
 	}
 
 	[AvaloniaFact]
@@ -92,7 +105,7 @@ public sealed class ChartMarkersTests : IDisposable
 
 		await Markers.AddAtAsync(_nine);
 
-		Markers.Markers.Should().BeEmpty();
+		Markers.ShownMarkers.Should().BeEmpty();
 		changes().Should().Be(0);
 	}
 
@@ -104,12 +117,12 @@ public sealed class ChartMarkersTests : IDisposable
 		var added = new StoredMarker(7, _nine, "#1");
 
 		var adding = Markers.AddAtAsync(_nine);
-		Markers.Markers.Should().BeEmpty("a pending add draws nothing until its id lands");
+		Markers.ShownMarkers.Should().BeEmpty("a pending add draws nothing until its id lands");
 		_channel.Push(added);
 		heldAdd.SetResult();
 		await adding;
 
-		Markers.Markers.Should().Equal(added);
+		Markers.ShownMarkers.Should().Equal(added);
 	}
 
 	[AvaloniaFact]
@@ -120,11 +133,11 @@ public sealed class ChartMarkersTests : IDisposable
 
 		Markers.BeginMove(_etchStart);
 		Markers.Move(_nine);
-		Markers.Markers.Should().Equal([_etchStart with { TimeUtc = _nine }], "the line follows the pointer");
+		Markers.ShownMarkers.Should().Equal([_etchStart with { TimeUtc = _nine }], "the line follows the pointer");
 		await Markers.EndMoveAsync();
 
 		_channel.Writes.Should().Equal(new FakeMarkerWrite.Move(_etchStart, _nine));
-		Markers.Markers.Should().Equal(_etchStart);
+		Markers.ShownMarkers.Should().Equal(_etchStart);
 	}
 
 	[AvaloniaFact]
@@ -137,12 +150,12 @@ public sealed class ChartMarkersTests : IDisposable
 		Markers.BeginMove(_etchStart);
 		Markers.Move(_nine);
 		var firstMove = Markers.EndMoveAsync();
-		Markers.BeginMove(Markers.Markers[0]);
+		Markers.BeginMove(Markers.ShownMarkers[0]);
 		Markers.Move(_ten);
 		heldMove.SetResult();
 		await firstMove;
 
-		Markers.Markers.Should().Equal(_etchStart with { TimeUtc = _ten });
+		Markers.ShownMarkers.Should().Equal(_etchStart with { TimeUtc = _ten });
 	}
 
 	[AvaloniaFact]
@@ -155,7 +168,7 @@ public sealed class ChartMarkersTests : IDisposable
 		Markers.Move(_nine);
 		await Markers.EndMoveAsync();
 
-		Markers.Markers.Should().Equal(_etchEnd);
+		Markers.ShownMarkers.Should().Equal(_etchEnd);
 	}
 
 	[AvaloniaFact]
@@ -166,7 +179,7 @@ public sealed class ChartMarkersTests : IDisposable
 
 		await Markers.RenameAsync(_etchStart, "Etch end");
 
-		Markers.Markers.Should().Equal(_etchEnd);
+		Markers.ShownMarkers.Should().Equal(_etchEnd);
 	}
 
 	[AvaloniaFact]
@@ -179,7 +192,7 @@ public sealed class ChartMarkersTests : IDisposable
 
 		_channel.Push(_etchStart with { TimeUtc = _ten });
 
-		Markers.Markers.Should().Equal([_etchStart with { TimeUtc = _ten }], "the landed move released its hold");
+		Markers.ShownMarkers.Should().Equal([_etchStart with { TimeUtc = _ten }], "the landed move released its hold");
 	}
 
 	[AvaloniaFact]
@@ -190,7 +203,7 @@ public sealed class ChartMarkersTests : IDisposable
 
 		_channel.Push(_etchStart with { Label = "Purge" });
 
-		Markers.Markers.Should().Equal([_etchStart with { Label = "Purge" }], "the landed rename released its hold");
+		Markers.ShownMarkers.Should().Equal([_etchStart with { Label = "Purge" }], "the landed rename released its hold");
 	}
 
 	[AvaloniaFact]
@@ -201,7 +214,7 @@ public sealed class ChartMarkersTests : IDisposable
 		await Markers.RenameAsync(_etchStart, "Etch end");
 
 		_channel.Writes.Should().Equal(new FakeMarkerWrite.Rename(_etchStart, "Etch end"));
-		Markers.Markers.Should().Equal(_etchStart with { Label = "Etch end" });
+		Markers.ShownMarkers.Should().Equal(_etchStart with { Label = "Etch end" });
 	}
 
 	[AvaloniaTheory]
@@ -214,7 +227,7 @@ public sealed class ChartMarkersTests : IDisposable
 		await Markers.RenameAsync(_etchStart, typed);
 
 		_channel.Writes.Should().Equal(new FakeMarkerWrite.Rename(_etchStart, stored));
-		Markers.Markers.Should().Equal(_etchStart with { Label = stored });
+		Markers.ShownMarkers.Should().Equal(_etchStart with { Label = stored });
 	}
 
 	[AvaloniaFact]
@@ -225,7 +238,71 @@ public sealed class ChartMarkersTests : IDisposable
 
 		await Markers.RenameAsync(_etchStart, "Etch end");
 
-		Markers.Markers.Should().Equal(_etchStart);
+		Markers.ShownMarkers.Should().Equal(_etchStart);
+	}
+
+	[AvaloniaFact]
+	public async Task ALock_ShowsAtOnce_BeforeTheWriteLands()
+	{
+		_channel.Push(_etchStart);
+		var heldLock = _channel.HoldNextWrite();
+
+		var locking = Markers.ToggleLockAsync(_etchStart);
+		Markers.ShownMarkers.Should().Equal(_etchStart with { IsLocked = true });
+		heldLock.SetResult();
+		await locking;
+
+		_channel.Writes.Should().Equal(new FakeMarkerWrite.Lock(_etchStart, true));
+		Markers.ShownMarkers.Should().Equal(_etchStart with { IsLocked = true });
+	}
+
+	[AvaloniaFact]
+	public async Task AReadDuringALock_DoesNotUndoTheShownLock()
+	{
+		_channel.Push(_etchStart);
+		var heldLock = _channel.HoldNextWrite();
+
+		var locking = Markers.ToggleLockAsync(_etchStart);
+		_channel.Push(_etchStart);
+		Markers.ShownMarkers.Should().Equal(_etchStart with { IsLocked = true });
+		heldLock.SetResult();
+		await locking;
+	}
+
+	[AvaloniaFact]
+	public async Task AFailedUnlock_RestoresTheLock()
+	{
+		var locked = _etchStart with { IsLocked = true };
+		_channel.Push(locked);
+		_channel.WriteResult = Result.Fail(FakeDataProvider.UnreachableArchive());
+
+		await Markers.ToggleLockAsync(locked);
+
+		_channel.Writes.Should().Equal(new FakeMarkerWrite.Lock(locked, false));
+		Markers.ShownMarkers.Should().Equal(locked);
+	}
+
+	[AvaloniaFact]
+	public async Task ALockOfAGoneMarker_RemovesIt()
+	{
+		_channel.Push(_etchStart, _etchEnd);
+		_channel.WriteResult = Result.Fail(FakeDataProvider.BenchArchiveError(ArchiveFault.MarkerGone, "Etch start"));
+
+		await Markers.ToggleLockAsync(_etchStart);
+
+		Markers.ShownMarkers.Should().Equal(_etchEnd);
+	}
+
+	[AvaloniaFact]
+	public async Task ALock_StartsFromTheMarkerTheSetHolds_NotTheOneTheMenuSaw()
+	{
+		var renamedMeanwhile = _etchStart with { Label = "Purge" };
+		_channel.Push(renamedMeanwhile);
+
+		await Markers.ToggleLockAsync(_etchStart);
+
+		_channel.Writes.Should().Equal(new FakeMarkerWrite.Lock(renamedMeanwhile, true));
+		Markers.ShownMarkers.Should().Equal(renamedMeanwhile with { IsLocked = true });
 	}
 
 	[AvaloniaFact]
@@ -236,7 +313,7 @@ public sealed class ChartMarkersTests : IDisposable
 		await Markers.DeleteAsync(_etchStart);
 
 		_channel.Writes.Should().Equal(new FakeMarkerWrite.Delete(_etchStart));
-		Markers.Markers.Should().Equal(_etchEnd);
+		Markers.ShownMarkers.Should().Equal(_etchEnd);
 	}
 
 	[AvaloniaFact]
@@ -247,7 +324,7 @@ public sealed class ChartMarkersTests : IDisposable
 
 		await Markers.DeleteAsync(_etchStart);
 
-		Markers.Markers.Should().Equal(_etchStart);
+		Markers.ShownMarkers.Should().Equal(_etchStart);
 	}
 
 	[AvaloniaFact]
@@ -259,7 +336,7 @@ public sealed class ChartMarkersTests : IDisposable
 		Markers.Move(_nine);
 		_channel.Push(_etchStart, _etchEnd);
 
-		Markers.Markers.Should().Equal(_etchStart with { TimeUtc = _nine }, _etchEnd);
+		Markers.ShownMarkers.Should().Equal(_etchStart with { TimeUtc = _nine }, _etchEnd);
 	}
 
 	[AvaloniaFact]
@@ -276,14 +353,52 @@ public sealed class ChartMarkersTests : IDisposable
 		_channel.Push(_etchStart with { TimeUtc = _nine });
 		changes().Should().Be(2);
 
-		await Markers.RenameAsync(Markers.Markers[0], "Etch end");
+		await Markers.RenameAsync(Markers.ShownMarkers[0], "Etch end");
 		changes().Should().Be(3, "the rename shows at once, and its success changes nothing more");
 
-		Markers.BeginMove(Markers.Markers[0]);
+		Markers.BeginMove(Markers.ShownMarkers[0]);
 		Markers.Move(_ten);
 		Markers.Move(_ten);
 		await Markers.EndMoveAsync();
 		changes().Should().Be(4, "a pointer move to the same moment changes nothing");
+	}
+
+	[AvaloniaFact]
+	public void HidingRecipeMarkers_LeavesOnlyUserMarkersShown_WithOneChange()
+	{
+		var recipeStart = new StoredMarker(3, _nine, "Etch.csv", MarkerKind.RecipeStart, IsLocked: true);
+		_channel.Push(_etchStart, recipeStart, _etchEnd);
+		var changes = CountChanges();
+
+		Markers.ToggleRecipeMarkers();
+
+		changes().Should().Be(1);
+		Markers.ShowsRecipeMarkers.Should().BeFalse();
+		Markers.ShownMarkers.Should().Equal(_etchStart, _etchEnd);
+		Markers.NearestWithin(_nine, TimeSpan.FromMinutes(1)).Should().BeNull();
+
+		Markers.ToggleRecipeMarkers();
+
+		changes().Should().Be(2);
+		Markers.ShownMarkers.Should().Equal(_etchStart, recipeStart, _etchEnd);
+		Markers.NearestWithin(_nine, TimeSpan.FromMinutes(1)).Should().Be(recipeStart);
+	}
+
+	[AvaloniaFact]
+	public async Task AFailedRenameOfARecipeMarkerHiddenMeanwhile_RestoresItsLabel()
+	{
+		var recipeStart = new StoredMarker(3, _nine, "Etch.csv", MarkerKind.RecipeStart, IsLocked: true);
+		_channel.Push(_etchStart, recipeStart);
+		_channel.WriteResult = Result.Fail(FakeDataProvider.UnreachableArchive());
+		var heldRename = _channel.HoldNextWrite();
+
+		var renaming = Markers.RenameAsync(recipeStart, "Purge.csv");
+		Markers.ToggleRecipeMarkers();
+		heldRename.SetResult();
+		await renaming;
+		Markers.ToggleRecipeMarkers();
+
+		Markers.ShownMarkers.Should().Equal(_etchStart, recipeStart);
 	}
 
 	[AvaloniaFact]

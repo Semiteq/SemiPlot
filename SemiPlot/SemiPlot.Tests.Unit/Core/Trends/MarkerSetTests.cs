@@ -28,7 +28,7 @@ public sealed class MarkerSetTests
 		var changed = set.Apply([_etchStart with { }, _unlabelled with { }]);
 
 		changed.Should().BeFalse();
-		set.Markers.Should().Equal(_etchStart, _unlabelled);
+		set.ShownMarkers.Should().Equal(_etchStart, _unlabelled);
 	}
 
 	[Fact]
@@ -40,7 +40,7 @@ public sealed class MarkerSetTests
 		var changed = set.Apply([moved, _unlabelled]);
 
 		changed.Should().BeTrue();
-		set.Markers.Should().Equal(_unlabelled, moved);
+		set.ShownMarkers.Should().Equal(_unlabelled, moved);
 	}
 
 	[Fact]
@@ -51,7 +51,7 @@ public sealed class MarkerSetTests
 
 		set.Apply([relabelled]).Should().BeTrue();
 
-		set.Markers.Should().Equal(relabelled);
+		set.ShownMarkers.Should().Equal(relabelled);
 	}
 
 	[Fact]
@@ -61,7 +61,7 @@ public sealed class MarkerSetTests
 
 		set.Apply([_etchEnd, _unlabelled, _etchStart]).Should().BeTrue();
 
-		set.Markers.Should().Equal(_etchStart, _unlabelled, _etchEnd);
+		set.ShownMarkers.Should().Equal(_etchStart, _unlabelled, _etchEnd);
 	}
 
 	[Fact]
@@ -71,7 +71,7 @@ public sealed class MarkerSetTests
 
 		set.Apply([_unlabelled]).Should().BeTrue();
 
-		set.Markers.Should().Equal(_unlabelled);
+		set.ShownMarkers.Should().Equal(_unlabelled);
 	}
 
 	[Fact]
@@ -82,7 +82,7 @@ public sealed class MarkerSetTests
 
 		set.Apply([later, _etchStart]);
 
-		set.Markers.Should().Equal(_etchStart, later);
+		set.ShownMarkers.Should().Equal(_etchStart, later);
 	}
 
 	[Fact]
@@ -95,7 +95,7 @@ public sealed class MarkerSetTests
 
 		set.Apply([_etchStart, _etchEnd]).Should().BeTrue();
 
-		set.Markers.Should().Equal(dragged, _etchEnd);
+		set.ShownMarkers.Should().Equal(dragged, _etchEnd);
 	}
 
 	[Fact]
@@ -106,7 +106,7 @@ public sealed class MarkerSetTests
 
 		set.Apply([_unlabelled]).Should().BeFalse();
 
-		set.Markers.Should().Equal(_etchStart, _unlabelled);
+		set.ShownMarkers.Should().Equal(_etchStart, _unlabelled);
 	}
 
 	[Fact]
@@ -119,7 +119,7 @@ public sealed class MarkerSetTests
 		set.Release(_etchStart.Id).Should().BeFalse();
 		set.Apply([]);
 
-		set.Markers.Should().Equal(_etchStart);
+		set.ShownMarkers.Should().Equal(_etchStart);
 	}
 
 	[Fact]
@@ -133,7 +133,7 @@ public sealed class MarkerSetTests
 		set.Release(_etchStart.Id).Should().BeTrue();
 		set.Apply([]).Should().BeTrue();
 
-		set.Markers.Should().BeEmpty();
+		set.ShownMarkers.Should().BeEmpty();
 	}
 
 	[Fact]
@@ -143,7 +143,7 @@ public sealed class MarkerSetTests
 
 		set.Place(_unlabelled);
 
-		set.Markers.Should().Equal(_etchStart, _unlabelled);
+		set.ShownMarkers.Should().Equal(_etchStart, _unlabelled);
 	}
 
 	[Fact]
@@ -154,7 +154,7 @@ public sealed class MarkerSetTests
 
 		set.Place(moved);
 
-		set.Markers.Should().Equal(_unlabelled, _etchEnd, moved);
+		set.ShownMarkers.Should().Equal(_unlabelled, _etchEnd, moved);
 	}
 
 	[Fact]
@@ -167,7 +167,7 @@ public sealed class MarkerSetTests
 		set.Place(lowerId);
 		set.Place(higherId);
 
-		set.Markers.Should().Equal(_etchStart, higherId, lowerId, _etchEnd);
+		set.ShownMarkers.Should().Equal(_etchStart, higherId, lowerId, _etchEnd);
 	}
 
 	[Fact]
@@ -177,14 +177,14 @@ public sealed class MarkerSetTests
 
 		set.Remove(_etchStart.Id);
 
-		set.Markers.Should().Equal(_unlabelled);
+		set.ShownMarkers.Should().Equal(_unlabelled);
 	}
 
 	[Fact]
-	public void Markers_IsASnapshotThatAChangeDoesNotMutate()
+	public void ShownMarkers_IsASnapshotThatAChangeDoesNotMutate()
 	{
 		var set = SetOf(_etchStart);
-		var snapshot = set.Markers;
+		var snapshot = set.ShownMarkers;
 
 		set.Place(_etchEnd);
 
@@ -242,6 +242,74 @@ public sealed class MarkerSetTests
 	public void NearestWithin_OfAnEmptySet_ReturnsNothing()
 	{
 		new MarkerSet().NearestWithin(_origin, TimeSpan.FromHours(1)).Should().BeNull();
+	}
+
+	[Fact]
+	public void HiddenRecipeMarkers_LeaveTheShownMarkersAndTheHitTest_AndStayInAll()
+	{
+		var recipeStart = new StoredMarker(4, _origin.AddMinutes(5), "Etch.csv", MarkerKind.RecipeStart, true);
+		var recipeEnd = new StoredMarker(5, _origin.AddMinutes(25), "Etch.csv", MarkerKind.RecipeEnd, true);
+		var set = SetOf(_etchStart, recipeStart, _etchEnd, recipeEnd);
+
+		set.ToggleRecipeMarkers();
+
+		set.ShowsRecipeMarkers.Should().BeFalse();
+		set.ShownMarkers.Should().Equal(_etchStart, _etchEnd);
+		set.All.Should().Equal(_etchStart, recipeStart, _etchEnd, recipeEnd);
+		set.NearestWithin(recipeStart.TimeUtc, TimeSpan.FromMinutes(1)).Should().BeNull();
+		set.NearestWithin(recipeEnd.TimeUtc, TimeSpan.FromMinutes(6)).Should().Be(_etchEnd);
+	}
+
+	[Fact]
+	public void ShowingRecipeMarkersAgain_BringsThemBack()
+	{
+		var recipeStart = new StoredMarker(4, _origin.AddMinutes(5), "Etch.csv", MarkerKind.RecipeStart, true);
+		var set = SetOf(_etchStart, recipeStart);
+		set.ToggleRecipeMarkers();
+
+		set.ToggleRecipeMarkers();
+
+		set.ShownMarkers.Should().Equal(_etchStart, recipeStart);
+		set.NearestWithin(recipeStart.TimeUtc, TimeSpan.FromMinutes(1)).Should().Be(recipeStart);
+	}
+
+	[Fact]
+	public void WhileRecipeMarkersAreHidden_AReadAndAPlaceKeepThemOutOfTheShownMarkers()
+	{
+		var recipeStart = new StoredMarker(4, _origin.AddMinutes(5), "Etch.csv", MarkerKind.RecipeStart, true);
+		var recipeEnd = new StoredMarker(5, _origin.AddMinutes(25), "Etch.csv", MarkerKind.RecipeEnd, true);
+		var set = SetOf(_etchStart);
+		set.ToggleRecipeMarkers();
+
+		set.Apply([_etchStart, recipeStart]).Should().BeTrue();
+		set.Place(recipeEnd);
+
+		set.ShownMarkers.Should().Equal(_etchStart);
+		set.All.Should().Equal(_etchStart, recipeStart, recipeEnd);
+	}
+
+	[Fact]
+	public void WhileRecipeMarkersAreHidden_APlaceOfAUserMarker_MovesItAmongTheShownMarkers()
+	{
+		var recipeStart = new StoredMarker(4, _origin.AddMinutes(5), "Etch.csv", MarkerKind.RecipeStart, true);
+		var set = SetOf(_etchStart, recipeStart, _etchEnd);
+		set.ToggleRecipeMarkers();
+		var moved = _etchStart with { TimeUtc = _origin.AddMinutes(30) };
+
+		set.Place(moved);
+
+		set.ShownMarkers.Should().Equal(_etchEnd, moved);
+		set.All.Should().Equal(recipeStart, _etchEnd, moved);
+	}
+
+	[Fact]
+	public void ShownMarkers_ReturnsTheSameArrayBetweenTwoChanges()
+	{
+		var recipeStart = new StoredMarker(4, _origin.AddMinutes(5), "Etch.csv", MarkerKind.RecipeStart, true);
+		var set = SetOf(_etchStart, recipeStart);
+		set.ToggleRecipeMarkers();
+
+		set.ShownMarkers.Should().BeSameAs(set.ShownMarkers);
 	}
 
 	private static MarkerSet SetOf(params StoredMarker[] markers)

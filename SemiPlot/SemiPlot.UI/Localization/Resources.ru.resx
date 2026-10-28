@@ -99,6 +99,9 @@
   <data name="MenuViewMinimap" xml:space="preserve">
     <value>Обзорная полоса</value>
   </data>
+  <data name="MenuViewRecipeMarkers" xml:space="preserve">
+    <value>Метки рецептов</value>
+  </data>
   <data name="MenuViewAutoscale" xml:space="preserve">
     <value>Автомасштаб</value>
   </data>
@@ -815,6 +818,12 @@
   </data>
   <data name="MarkerMenuRename" xml:space="preserve">
     <value>Переименовать</value>
+  </data>
+  <data name="MarkerMenuLock" xml:space="preserve">
+    <value>Закрепить</value>
+  </data>
+  <data name="MarkerMenuUnlock" xml:space="preserve">
+    <value>Открепить</value>
   </data>
   <data name="MarkerMenuDelete" xml:space="preserve">
     <value>Удалить</value>

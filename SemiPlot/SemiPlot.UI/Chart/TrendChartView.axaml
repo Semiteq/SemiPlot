@@ -22,6 +22,8 @@
         <MenuFlyout x:Key="MarkerMenuFlyout" Placement="Pointer">
             <MenuItem Header="{x:Static text:Resources.MarkerMenuRename}"
                       Click="OnRenameMarkerClick" />
+            <MenuItem Name="MarkerMenuLock"
+                      Click="OnLockMarkerClick" />
             <MenuItem Header="{x:Static text:Resources.MarkerMenuDelete}"
                       Click="OnDeleteMarkerClick" />
         </MenuFlyout>

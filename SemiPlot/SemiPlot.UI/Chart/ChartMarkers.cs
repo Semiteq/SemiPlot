@@ -34,17 +34,26 @@ public sealed class ChartMarkers : IDisposable
 		_disposables.Add(_markerChannel.Reads.Subscribe(ApplyRead, chart.ReportFailure));
 	}
 
-	/// <summary>The markers in time order, then by id; a new list per change.</summary>
-	public IReadOnlyList<StoredMarker> Markers => _markerSet.Markers;
+	/// <summary>The shown markers in time order, then by id; a new list per change.</summary>
+	public IReadOnlyList<StoredMarker> ShownMarkers => _markerSet.ShownMarkers;
+
+	/// <summary>The window's own flag, not stored; a new window starts with recipe markers shown.</summary>
+	public bool ShowsRecipeMarkers => _markerSet.ShowsRecipeMarkers;
 
 	/// <summary>
-	/// One signal per change of <see cref="Markers"/>, raised on the UI thread; completes on dispose.
+	/// One signal per change of <see cref="ShownMarkers"/>, raised on the UI thread; completes on dispose.
 	/// </summary>
 	public IObservable<Unit> Changed => _changed.AsObservable();
 
 	public StoredMarker? NearestWithin(DateTime timeUtc, TimeSpan tolerance)
 	{
 		return _markerSet.NearestWithin(timeUtc, tolerance);
+	}
+
+	public void ToggleRecipeMarkers()
+	{
+		_markerSet.ToggleRecipeMarkers();
+		RaiseChanged();
 	}
 
 	/// <summary>
@@ -61,7 +70,7 @@ public sealed class ChartMarkers : IDisposable
 		}
 
 		var placed = new StoredMarker(added.Value, timeUtc, label);
-		if (!Markers.Contains(placed))
+		if (!_markerSet.All.Contains(placed))
 		{
 			_markerSet.Place(placed);
 			RaiseChanged();
@@ -117,6 +126,23 @@ public sealed class ChartMarkers : IDisposable
 			current => current with { Label = marker.Label });
 	}
 
+	/// <summary>
+	/// Stores the opposite of the lock <paramref name="seen"/> carried and shows it at once; a failure restores the
+	/// lock the set held.
+	/// </summary>
+	public async Task ToggleLockAsync(StoredMarker seen)
+	{
+		var isLocked = !seen.IsLocked;
+		var marker = FindMarker(seen.Id) ?? seen;
+		_markerSet.Hold(marker.Id);
+		ReplaceHeld(marker.Id, current => current with { IsLocked = isLocked });
+
+		await WriteHeldAsync(
+			marker,
+			() => _markerChannel.SetLockedAsync(marker, isLocked),
+			current => current with { IsLocked = marker.IsLocked });
+	}
+
 	/// <summary>Removes the marker once the delete lands; a failed delete keeps it.</summary>
 	public async Task DeleteAsync(StoredMarker marker)
 	{
@@ -153,9 +179,9 @@ public sealed class ChartMarkers : IDisposable
 	private int NextNumber()
 	{
 		var highest = 0;
-		foreach (var marker in Markers)
+		foreach (var marker in _markerSet.All)
 		{
-			if (NumberOf(marker.Label) is { } number)
+			if (marker.Kind == MarkerKind.User && NumberOf(marker.Label) is { } number)
 			{
 				highest = Math.Max(highest, number);
 			}
@@ -238,7 +264,7 @@ public sealed class ChartMarkers : IDisposable
 
 	private StoredMarker? FindMarker(long id)
 	{
-		return Markers.FirstOrDefault(marker => marker.Id == id);
+		return _markerSet.All.FirstOrDefault(marker => marker.Id == id);
 	}
 
 	private void RaiseChanged()

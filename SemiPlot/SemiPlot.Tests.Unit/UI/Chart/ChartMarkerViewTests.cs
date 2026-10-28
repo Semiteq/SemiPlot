@@ -12,10 +12,13 @@ using Avalonia.VisualTree;
 
 using AwesomeAssertions;
 
+using FluentResults;
+
 using ScottPlot;
 using ScottPlot.Plottables;
 
 using SemiPlot.Core.Data;
+using SemiPlot.Tests.Unit.UI.Bridge;
 using SemiPlot.Tests.Unit.UI.Markers;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.Localization;
@@ -197,6 +200,61 @@ public sealed class ChartMarkerViewTests : IDisposable
 	}
 
 	[AvaloniaFact]
+	public void ARecipeMarker_DrawsInTheRecipeColourAndAUserMarkerInTheMarkerColour()
+	{
+		using var scope = ThemeProbe.ApplyVariant(ThemeVariant.Light);
+		Dispatcher.UIThread.RunJobs();
+
+		_channel.Push(
+			new StoredMarker(1, MomentAt(0.25), "Etch.csv", MarkerKind.RecipeStart, IsLocked: true),
+			new StoredMarker(2, MomentAt(0.75), "#1"));
+
+		Layer.Lines[1].LineColor.Should().Be(ThemeProbe.PlotColour("AppRecipeMarkerLineBrush", ThemeVariant.Light));
+		Layer.Lines[2].LineColor.Should().Be(ThemeProbe.PlotColour("AppMarkerLineBrush", ThemeVariant.Light));
+	}
+
+	[AvaloniaFact]
+	public void ALockedMarker_DrawsSolidAndAnUnlockedOneDashed()
+	{
+		_channel.Push(
+			new StoredMarker(1, MomentAt(0.25), "Etch.csv", MarkerKind.RecipeEnd, IsLocked: true),
+			new StoredMarker(2, MomentAt(0.75), "#1"));
+
+		Layer.Lines[1].LinePattern.Should().Be(LinePattern.Solid);
+		Layer.Lines[2].LinePattern.Should().Be(LinePattern.Dashed);
+	}
+
+	[AvaloniaFact]
+	public void ALockChangeBetweenTwoReads_ChangesTheLinePattern()
+	{
+		var marker = new StoredMarker(1, MomentAt(0.25), "#1");
+		_channel.Push(marker);
+		Layer.Lines[1].LinePattern.Should().Be(LinePattern.Dashed);
+
+		_channel.Push(marker with { IsLocked = true });
+		Layer.Lines[1].LinePattern.Should().Be(LinePattern.Solid);
+
+		_channel.Push(marker);
+		Layer.Lines[1].LinePattern.Should().Be(LinePattern.Dashed);
+	}
+
+	[AvaloniaFact]
+	public void AfterAThemeVariantSwitch_ARecipeLineKeepsTheRecipeColour()
+	{
+		using var scope = ThemeProbe.ApplyVariant(ThemeVariant.Light);
+		Dispatcher.UIThread.RunJobs();
+		_channel.Push(
+			new StoredMarker(1, MomentAt(0.25), "Etch.csv", MarkerKind.RecipeInterrupted, IsLocked: true),
+			new StoredMarker(2, MomentAt(0.75), "#1"));
+
+		Application.Current!.RequestedThemeVariant = ThemeVariant.Dark;
+		Dispatcher.UIThread.RunJobs();
+
+		Layer.Lines[1].LineColor.Should().Be(ThemeProbe.PlotColour("AppRecipeMarkerLineBrush", ThemeVariant.Dark));
+		Layer.Lines[2].LineColor.Should().Be(ThemeProbe.PlotColour("AppMarkerLineBrush", ThemeVariant.Dark));
+	}
+
+	[AvaloniaFact]
 	public void ADragPastTheSlop_IssuesOneMoveWithTheDroppedMoment()
 	{
 		var marker = new StoredMarker(1, MomentAt(0.25), "Etch start");
@@ -216,7 +274,7 @@ public sealed class ChartMarkerViewTests : IDisposable
 			.Which.Should().BeOfType<FakeMarkerWrite.Move>().Subject;
 		move.TimeUtc.Should().BeCloseTo(droppedMoment, _pixelMomentTolerance);
 		move.TimeUtc.Kind.Should().Be(DateTimeKind.Utc, "Npgsql binds only a UTC moment to timestamptz");
-		_viewModel.Markers.Markers.Should().ContainSingle()
+		_viewModel.Markers.ShownMarkers.Should().ContainSingle()
 			.Which.TimeUtc.Should().BeCloseTo(
 				droppedMoment,
 				_pixelMomentTolerance,
@@ -366,7 +424,7 @@ public sealed class ChartMarkerViewTests : IDisposable
 			.Which.TimeUtc.Should().BeCloseTo(droppedMoment, _pixelMomentTolerance);
 		_viewModel.IsDragging.Should().BeFalse();
 		_channel.Push(marker);
-		_viewModel.Markers.Markers.Should().Equal([marker], "the landed move released its hold");
+		_viewModel.Markers.ShownMarkers.Should().Equal([marker], "the landed move released its hold");
 	}
 
 	[AvaloniaFact]
@@ -420,7 +478,7 @@ public sealed class ChartMarkerViewTests : IDisposable
 		_viewModel.IsDragging.Should().BeFalse();
 		var movedElsewhere = marker with { TimeUtc = MomentAt(0.75) };
 		_channel.Push(movedElsewhere);
-		_viewModel.Markers.Markers.Should().Equal([movedElsewhere], "the drag released its hold on the marker");
+		_viewModel.Markers.ShownMarkers.Should().Equal([movedElsewhere], "the drag released its hold on the marker");
 	}
 
 	[AvaloniaFact]
@@ -454,7 +512,7 @@ public sealed class ChartMarkerViewTests : IDisposable
 		_viewModel.IsDragging.Should().BeFalse();
 		var movedElsewhere = marker with { TimeUtc = MomentAt(0.75) };
 		_channel.Push(movedElsewhere);
-		_viewModel.Markers.Markers.Should().Equal([movedElsewhere], "the drag released its hold on the marker");
+		_viewModel.Markers.ShownMarkers.Should().Equal([movedElsewhere], "the drag released its hold on the marker");
 	}
 
 	[AvaloniaFact]
@@ -515,7 +573,7 @@ public sealed class ChartMarkerViewTests : IDisposable
 		add.Label.Should().Be("#1", "a new marker is numbered");
 		add.TimeUtc.Should().BeCloseTo(MomentAtPixel(clickedAt), _pixelMomentTolerance);
 		add.TimeUtc.Kind.Should().Be(DateTimeKind.Utc, "Npgsql binds only a UTC moment to timestamptz");
-		_viewModel.Markers.Markers.Should().ContainSingle().Which.Label.Should().Be("#1");
+		_viewModel.Markers.ShownMarkers.Should().ContainSingle().Which.Label.Should().Be("#1");
 		Layer.Lines.Should().ContainSingle();
 		LabelEditor.IsOpen.Should().BeFalse("a double click opens no editor");
 		_viewModel.IsDragging.Should().BeFalse();
@@ -533,9 +591,58 @@ public sealed class ChartMarkerViewTests : IDisposable
 		_channel.Writes.Should().ContainSingle()
 			.Which.Should().BeOfType<FakeMarkerWrite.Delete>()
 			.Which.Marker.Should().Be(marker);
-		_viewModel.Markers.Markers.Should().BeEmpty();
+		_viewModel.Markers.ShownMarkers.Should().BeEmpty();
 		Layer.Lines.Should().BeEmpty();
 		_viewModel.IsDragging.Should().BeFalse();
+	}
+
+	[AvaloniaFact]
+	public void ADoubleClickOnALockedMarker_LeavesItStored()
+	{
+		var marker = new StoredMarker(1, MomentAt(0.5), "Etch.csv", MarkerKind.RecipeStart, IsLocked: true);
+		_channel.Push(marker);
+
+		HeadlessInput.Click(_shown.Window, _shown.PlotControl, MarkerPoint(marker));
+		HeadlessInput.Click(_shown.Window, _shown.PlotControl, MarkerPoint(marker));
+
+		_channel.Writes.Should().BeEmpty("a double click on a locked marker neither deletes it nor adds one");
+		_viewModel.Markers.ShownMarkers.Should().Equal([marker]);
+		Layer.Lines.Should().ContainSingle();
+		_viewModel.IsDragging.Should().BeFalse();
+	}
+
+	[AvaloniaFact]
+	public void ADragOnALockedMarker_PansAndLeavesTheMarkerWhereItIs()
+	{
+		var marker = new StoredMarker(1, MomentAt(0.5), "Etch.csv", MarkerKind.RecipeStart, IsLocked: true);
+		_channel.Push(marker);
+		var fromBefore = _viewModel.Navigation.From;
+		var pressAt = MarkerPoint(marker);
+		var dropAt = new Point(pressAt.X - DragDistancePixels, pressAt.Y);
+
+		_shown.Window.MouseDown(ToWindow(pressAt), MouseButton.Left);
+		_shown.Window.MouseMove(ToWindow(new Point(pressAt.X - (DragDistancePixels / 2.0), pressAt.Y)));
+		_shown.Window.MouseMove(ToWindow(dropAt));
+		_shown.Window.MouseUp(ToWindow(dropAt), MouseButton.Left);
+		Dispatcher.UIThread.RunJobs();
+
+		_channel.Writes.Should().BeEmpty();
+		_viewModel.Markers.ShownMarkers.Should().Equal([marker]);
+		_viewModel.Navigation.From.Should().BeAfter(fromBefore, "a drag to the left on a locked marker pans");
+		_viewModel.IsDragging.Should().BeFalse();
+	}
+
+	[AvaloniaFact]
+	public void HoveringALockedMarker_KeepsTheHandAndSnapsTheCursorToItsMoment()
+	{
+		var marker = new StoredMarker(1, MomentAt(0.5), "Etch.csv", MarkerKind.RecipeStart, IsLocked: true);
+		_channel.Push(marker);
+		var handCursor = _shown.PlotControl.Cursor;
+
+		_shown.Window.MouseMove(ToWindow(new Point(MarkerPoint(marker).X + WithinHitPixels, MarkerPoint(marker).Y)));
+
+		_shown.PlotControl.Cursor.Should().BeSameAs(handCursor, "a press on a locked marker pans");
+		_viewModel.CursorTime.Should().Be(marker.TimeUtc);
 	}
 
 	[AvaloniaFact]
@@ -550,7 +657,7 @@ public sealed class ChartMarkerViewTests : IDisposable
 			.Which.Should().BeOfType<FakeMarkerWrite.Add>().Subject;
 		add.Label.Should().Be("#1");
 		add.TimeUtc.Should().BeCloseTo(MomentAtPixel(clickedAt), _pixelMomentTolerance);
-		_viewModel.Markers.Markers.Should().ContainSingle();
+		_viewModel.Markers.ShownMarkers.Should().ContainSingle();
 		LabelEditor.IsOpen.Should().BeFalse();
 	}
 
@@ -600,8 +707,116 @@ public sealed class ChartMarkerViewTests : IDisposable
 		_channel.Writes.Should().ContainSingle()
 			.Which.Should().BeOfType<FakeMarkerWrite.Delete>()
 			.Which.Marker.Should().Be(marker);
-		_viewModel.Markers.Markers.Should().BeEmpty();
+		_viewModel.Markers.ShownMarkers.Should().BeEmpty();
 		Layer.Lines.Should().BeEmpty();
+	}
+
+	[AvaloniaFact]
+	public void LockOnAnUnlockedMarker_ReadsLockAndLocksIt()
+	{
+		var marker = new StoredMarker(1, MomentAt(0.25), "Etch start");
+		_channel.Push(marker);
+
+		RightClick(MarkerPoint(marker));
+		PickMenuItem("MarkerMenuFlyout", Resources.MarkerMenuLock);
+
+		_channel.Writes.Should().ContainSingle()
+			.Which.Should().Be(new FakeMarkerWrite.Lock(marker, true));
+		_viewModel.Markers.ShownMarkers.Should().ContainSingle().Which.IsLocked.Should().BeTrue();
+	}
+
+	[AvaloniaFact]
+	public void UnlockOnALockedMarker_ReadsUnlockAndUnlocksIt()
+	{
+		var marker = new StoredMarker(1, MomentAt(0.25), "Etch.csv", MarkerKind.RecipeStart, IsLocked: true);
+		_channel.Push(marker);
+
+		RightClick(MarkerPoint(marker));
+		PickMenuItem("MarkerMenuFlyout", Resources.MarkerMenuUnlock);
+
+		_channel.Writes.Should().ContainSingle()
+			.Which.Should().Be(new FakeMarkerWrite.Lock(marker, false));
+		_viewModel.Markers.ShownMarkers.Should().ContainSingle().Which.IsLocked.Should().BeFalse();
+	}
+
+	[AvaloniaFact]
+	public void AFailedLock_AfterAReadLockedTheMarkerWhileTheMenuWasOpen_KeepsTheStoredLock()
+	{
+		var marker = new StoredMarker(1, MomentAt(0.25), "Etch start");
+		_channel.Push(marker);
+		var lockedMeanwhile = marker with { IsLocked = true };
+		_channel.WriteResult = Result.Fail(FakeDataProvider.UnreachableArchive());
+
+		RightClick(MarkerPoint(marker));
+		_channel.Push(lockedMeanwhile);
+		PickMenuItem("MarkerMenuFlyout", Resources.MarkerMenuLock);
+
+		_channel.Writes.Should().ContainSingle()
+			.Which.Should().Be(new FakeMarkerWrite.Lock(lockedMeanwhile, true));
+		_viewModel.Markers.ShownMarkers.Should().Equal([lockedMeanwhile], "the failure restores the lock the read stored");
+	}
+
+	[AvaloniaFact]
+	public void DeleteOnALockedMarker_RemovesIt()
+	{
+		var marker = new StoredMarker(1, MomentAt(0.25), "Etch.csv", MarkerKind.RecipeStart, IsLocked: true);
+		_channel.Push(marker);
+
+		RightClick(MarkerPoint(marker));
+		PickMenuItem("MarkerMenuFlyout", Resources.MarkerMenuDelete);
+
+		_channel.Writes.Should().ContainSingle()
+			.Which.Should().Be(new FakeMarkerWrite.Delete(marker));
+		Layer.Lines.Should().BeEmpty();
+	}
+
+	[AvaloniaFact]
+	public void RenameOnALockedMarker_RelabelsIt()
+	{
+		var marker = new StoredMarker(1, MomentAt(0.25), "Etch.csv", MarkerKind.RecipeStart, IsLocked: true);
+		_channel.Push(marker);
+
+		OpenLabelEditorToRename(marker);
+		HeadlessInput.Clear(LabelEditorTopLevel, LabelBox);
+		HeadlessInput.Type(LabelEditorTopLevel, LabelBox, "Purge.csv");
+		HeadlessInput.Click(LabelEditorTopLevel, LabelEditorButton("MarkerLabelOk"));
+
+		_channel.Writes.Should().ContainSingle()
+			.Which.Should().Be(new FakeMarkerWrite.Rename(marker, "Purge.csv"));
+		Layer.Lines[1].LabelText.Should().StartWith("Purge.csv \u00B7 ");
+	}
+
+	[AvaloniaFact]
+	public void AKindChangeBetweenTwoReads_RecoloursTheLine()
+	{
+		using var scope = ThemeProbe.ApplyVariant(ThemeVariant.Light);
+		Dispatcher.UIThread.RunJobs();
+		var marker = new StoredMarker(1, MomentAt(0.25), "Etch.csv");
+		_channel.Push(marker);
+		Layer.Lines[1].LineColor.Should().Be(ThemeProbe.PlotColour("AppMarkerLineBrush", ThemeVariant.Light));
+
+		_channel.Push(marker with { Kind = MarkerKind.RecipeEnd });
+
+		Layer.Lines[1].LineColor.Should().Be(ThemeProbe.PlotColour("AppRecipeMarkerLineBrush", ThemeVariant.Light));
+	}
+
+	[AvaloniaFact]
+	public void HidingRecipeMarkers_TakesTheirLinesOff_AndShowingThemBringsTheLinesBack()
+	{
+		var recipeStart = new StoredMarker(1, MomentAt(0.25), "Etch.csv", MarkerKind.RecipeStart, IsLocked: true);
+		var user = new StoredMarker(2, MomentAt(0.75), "#1");
+		_channel.Push(recipeStart, user);
+		var recipeLine = Layer.Lines[1];
+
+		_viewModel.Markers.ToggleRecipeMarkers();
+
+		Layer.Lines.Keys.Should().Equal(2L);
+		_viewModel.Plot.GetPlottables<VerticalLine>().Should().NotContain(recipeLine);
+
+		_viewModel.Markers.ToggleRecipeMarkers();
+
+		Layer.Lines.Keys.Should().BeEquivalentTo([1L, 2L]);
+		Layer.Lines[1].X.Should().Be(LocalTimeAxis.ToAxis(recipeStart.TimeUtc));
 	}
 
 	[AvaloniaFact]
@@ -642,7 +857,7 @@ public sealed class ChartMarkerViewTests : IDisposable
 		_channel.Writes.Should().ContainSingle()
 			.Which.Should().BeOfType<FakeMarkerWrite.Rename>()
 			.Which.Label.Should().BeNull();
-		_viewModel.Markers.Markers.Should().ContainSingle().Which.Label.Should().BeNull();
+		_viewModel.Markers.ShownMarkers.Should().ContainSingle().Which.Label.Should().BeNull();
 	}
 
 	[AvaloniaFact]

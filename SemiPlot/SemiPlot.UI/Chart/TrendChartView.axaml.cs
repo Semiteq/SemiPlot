@@ -380,7 +380,7 @@ public partial class TrendChartView : UserControl
 
 	private void SyncMarkerLines(TrendChartViewModel viewModel)
 	{
-		MarkerLines?.Sync(viewModel.Markers.Markers);
+		MarkerLines?.Sync(viewModel.Markers.ShownMarkers);
 		ProjectMarkerLines(PlotControl.Bounds.Width);
 	}
 
@@ -389,7 +389,7 @@ public partial class TrendChartView : UserControl
 	{
 		var navigation = viewModel.Navigation;
 		MarkerReadings?.Update(
-			viewModel.Markers.Markers,
+			viewModel.Markers.ShownMarkers,
 			viewModel.FindPen(viewModel.ActivePenId),
 			viewModel.ActivePenReadingAt,
 			navigation.From,
@@ -558,7 +558,12 @@ public partial class TrendChartView : UserControl
 			return ChartPressRegion.TimeAxis;
 		}
 
-		return marker is null ? ChartPressRegion.DataArea : ChartPressRegion.Marker;
+		return marker is null ? ChartPressRegion.DataArea : MarkerRegion(marker);
+	}
+
+	private static ChartPressRegion MarkerRegion(StoredMarker marker)
+	{
+		return marker.IsLocked ? ChartPressRegion.LockedMarker : ChartPressRegion.Marker;
 	}
 
 	private StoredMarker? MarkerAt(Point position)
@@ -647,7 +652,7 @@ public partial class TrendChartView : UserControl
 		var marker = MarkerAt(current);
 		var wouldDragMarker = marker is not null
 			&& ChartPressRouter.Route(
-				ChartPressRegion.Marker,
+				MarkerRegion(marker),
 				modifiers,
 				_viewModel!.ActiveLeftButtonTool,
 				clickCount: 1) == ChartPressAction.DragMarker;

@@ -95,6 +95,7 @@ public sealed class AppMenuBarTests
 	[InlineData("ViewNavigationBar")]
 	[InlineData("ViewLegend")]
 	[InlineData("ViewMinimap")]
+	[InlineData("ViewRecipeMarkers")]
 	public void ToggleItem_TakesItsCheckStateFromTheCommandAndWritesNothingBack(string itemName)
 	{
 		using var stand = NewWindowStand();
@@ -104,6 +105,8 @@ public sealed class AppMenuBarTests
 		{
 			"ViewNavigationBar" => (viewModel.ToggleNavigationBarCommand, () => viewModel.IsNavigationBarVisible),
 			"ViewLegend" => (viewModel.ToggleLegendCommand, () => viewModel.IsLegendVisible),
+			"ViewRecipeMarkers" => (
+				viewModel.ToggleRecipeMarkersCommand, () => viewModel.ChartViewModel.Markers.ShowsRecipeMarkers),
 			_ => (viewModel.ToggleMinimapCommand, () => viewModel.IsMinimapVisible)
 		};
 
@@ -235,7 +238,8 @@ public sealed class AppMenuBarTests
 			.Select(item => item is Separator ? "-" : item.Name)
 			.Should()
 			.Equal(
-				"ViewNavigationBar", "ViewLegend", "ViewMinimap", "-", "ViewPenScale", "-", "ViewMessagePanel");
+				"ViewNavigationBar", "ViewLegend", "ViewMinimap", "ViewRecipeMarkers", "-", "ViewPenScale", "-",
+				"ViewMessagePanel");
 		viewMenu.Items.OfType<MenuItem>().Single(item => item.Name == "ViewPenScale").Items.OfType<MenuItem>()
 			.Select(item => item.Name)
 			.Should()

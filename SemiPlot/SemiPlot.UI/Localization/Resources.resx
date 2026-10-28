@@ -99,6 +99,9 @@
   <data name="MenuViewMinimap" xml:space="preserve">
     <value>Minimap</value>
   </data>
+  <data name="MenuViewRecipeMarkers" xml:space="preserve">
+    <value>Recipe markers</value>
+  </data>
   <data name="MenuViewAutoscale" xml:space="preserve">
     <value>Autoscale</value>
   </data>
@@ -815,6 +818,12 @@
   </data>
   <data name="MarkerMenuRename" xml:space="preserve">
     <value>Rename</value>
+  </data>
+  <data name="MarkerMenuLock" xml:space="preserve">
+    <value>Lock</value>
+  </data>
+  <data name="MarkerMenuUnlock" xml:space="preserve">
+    <value>Unlock</value>
   </data>
   <data name="MarkerMenuDelete" xml:space="preserve">
     <value>Delete</value>

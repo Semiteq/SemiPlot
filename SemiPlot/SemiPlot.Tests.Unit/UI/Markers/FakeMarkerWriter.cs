@@ -17,6 +17,8 @@ internal abstract record FakeMarkerWrite
 
 	public sealed record Rename(StoredMarker Marker, string? Label) : FakeMarkerWrite;
 
+	public sealed record Lock(StoredMarker Marker, bool IsLocked) : FakeMarkerWrite;
+
 	public sealed record Delete(StoredMarker Marker) : FakeMarkerWrite;
 }
 
@@ -32,7 +34,7 @@ internal abstract class FakeMarkerWriter
 
 	public Result<long> AddResult { get; set; } = Result.Ok(1L);
 
-	/// <summary>The answer to a move, a rename and a delete.</summary>
+	/// <summary>The answer to a move, a rename, a lock and a delete.</summary>
 	public Result WriteResult { get; set; } = Result.Ok();
 
 	/// <summary>Holds the next write until the test completes the gate.</summary>
@@ -57,6 +59,11 @@ internal abstract class FakeMarkerWriter
 	public Task<Result> RenameAsync(StoredMarker marker, string? label)
 	{
 		return AnswerAsync(new FakeMarkerWrite.Rename(marker, label), () => WriteResult);
+	}
+
+	public Task<Result> SetLockedAsync(StoredMarker marker, bool isLocked)
+	{
+		return AnswerAsync(new FakeMarkerWrite.Lock(marker, isLocked), () => WriteResult);
 	}
 
 	public Task<Result> DeleteAsync(StoredMarker marker)

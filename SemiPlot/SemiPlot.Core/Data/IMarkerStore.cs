@@ -13,8 +13,24 @@ public interface IMarkerStore
 
 	Task<Result> RenameAsync(StoredMarker marker, string? label);
 
+	Task<Result> SetLockedAsync(StoredMarker marker, bool isLocked);
+
 	Task<Result> DeleteAsync(StoredMarker marker);
 }
 
 /// <summary>One <c>semiplot_markers</c> row as stored; a null label is a stored <c>NULL</c>.</summary>
-public sealed record StoredMarker(long Id, DateTime TimeUtc, string? Label);
+public sealed record StoredMarker(
+	long Id,
+	DateTime TimeUtc,
+	string? Label,
+	MarkerKind Kind = MarkerKind.User,
+	bool IsLocked = false);
+
+/// <summary>The <c>semiplot_markers.kind</c> values; the SCADA writes the recipe kinds.</summary>
+public enum MarkerKind
+{
+	User = 0,
+	RecipeStart = 1,
+	RecipeEnd = 2,
+	RecipeInterrupted = 3
+}

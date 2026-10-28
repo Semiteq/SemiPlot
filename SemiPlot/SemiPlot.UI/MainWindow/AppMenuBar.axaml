@@ -52,6 +52,11 @@
                       Command="{Binding ToggleMinimapCommand}"
                       ToggleType="CheckBox"
                       IsChecked="{Binding IsMinimapVisible, Mode=OneWay}" />
+            <MenuItem Name="ViewRecipeMarkers"
+                      Header="{x:Static text:Resources.MenuViewRecipeMarkers}"
+                      Command="{Binding ToggleRecipeMarkersCommand}"
+                      ToggleType="CheckBox"
+                      IsChecked="{Binding ShowsRecipeMarkers, Mode=OneWay}" />
             <Separator />
             <MenuItem Name="ViewPenScale"
                       Header="{Binding PenScaleHeader}">

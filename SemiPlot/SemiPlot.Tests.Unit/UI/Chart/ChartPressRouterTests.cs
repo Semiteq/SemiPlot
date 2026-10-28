@@ -134,6 +134,24 @@ public sealed class ChartPressRouterTests
 	}
 
 	[Theory]
+	[InlineData(KeyModifiers.None, LeftButtonTool.Pan, 1, ChartPressAction.PanOrPickPen)]
+	[InlineData(KeyModifiers.None, LeftButtonTool.Pan, 2, ChartPressAction.PanOrPickPen)]
+	[InlineData(KeyModifiers.Shift, LeftButtonTool.Pan, 2, ChartPressAction.PanOrPickPen)]
+	[InlineData(KeyModifiers.None, LeftButtonTool.Pan, 3, ChartPressAction.PanOrPickPen)]
+	[InlineData(KeyModifiers.Control, LeftButtonTool.Pan, 1, ChartPressAction.ShiftActivePen)]
+	[InlineData(KeyModifiers.Control, LeftButtonTool.Pan, 2, ChartPressAction.ShiftActivePen)]
+	[InlineData(KeyModifiers.None, LeftButtonTool.DeltaPlacement, 1, ChartPressAction.PlaceDeltaCursor)]
+	[InlineData(KeyModifiers.None, LeftButtonTool.DeltaPlacement, 2, ChartPressAction.PlaceDeltaCursor)]
+	public void Route_SendsALockedMarkerPressToAPanForEveryClickCount(
+		KeyModifiers modifiers,
+		LeftButtonTool tool,
+		int clickCount,
+		ChartPressAction expected)
+	{
+		ChartPressRouter.Route(ChartPressRegion.LockedMarker, modifiers, tool, clickCount).Should().Be(expected);
+	}
+
+	[Theory]
 	[InlineData(0.0, 0.0, false)]
 	[InlineData(4.0, 0.0, false)]
 	[InlineData(0.0, -4.0, false)]

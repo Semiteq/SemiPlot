@@ -29,10 +29,11 @@ commissioning day and the copy that has drifted.
 - Provisioned by SemiBase v0.5.0 or newer. Both catalogue reads name `scale_min_on_start`,
   `scale_max_on_start` and `log_scale_on_start`, which v0.5.0 introduced; against an older schema
   every catalogue read fails with `42703`, `ArchiveFault.ShapeUnexpected` (`data-integration.md`).
-- Provisioned by SemiBase v0.6.0 or newer for the time markers, because v0.6.0 introduced
-  `semiplot_markers`. Against an older schema every marker read fails with `42P01`,
-  `ArchiveFault.TableMissing` naming `semiplot_markers`, which the message panel shows from the third read
-  in a row; the rest of the viewer runs (`data-integration.md#the-marker-store`).
+- Provisioned by SemiBase v0.7.0 or newer for the time markers, because v0.6.0 introduced
+  `semiplot_markers` and v0.7.0 its `kind` and `locked` columns. Against a v0.6.0 schema every marker
+  read fails with `42703`, `ArchiveFault.ShapeUnexpected`; against an older one with `42P01`,
+  `ArchiveFault.TableMissing` naming `semiplot_markers`. The message panel shows either from the third
+  read in a row, and the rest of the viewer runs (`data-integration.md#the-marker-store`).
 - The archive database holds `trends`, which the SCADA writes and SemiBase creates, the five
   configuration tables `semiplot_tags`, `semiplot_groups`, `semiplot_pen_groups`, `semiplot_markers` and `semiplot_meta`,
   which are SemiBase's outright, and `messages`, which is the SCADA's outright. Nothing of ours runs
@@ -96,9 +97,10 @@ groups and adds and removes memberships; deleting a group removes its membership
 `ON DELETE CASCADE` and leaves the pens.
 
 `semiplot_markers` holds the chart's time markers, one row per marker: an identity `id`, a `timestamptz`
-moment and an optional label of 1 to 80 characters. Every window reads all of it when it opens and every
-5 s, and the chart writes it from its right-click menu and a marker drag
-(`data-integration.md#the-marker-store`).
+moment, an optional label of 1 to 80 characters, a `kind` and a `locked` flag. Every window reads all of it
+when it opens and every 5 s, and the chart writes it from its right-click menu, a marker drag and a double
+click (`data-integration.md#the-marker-store`). The SCADA inserts the recipe markers as `scada_writer`,
+which holds `INSERT` on the table and nothing else on it: no `SELECT`, `UPDATE`, `DELETE` or `TRUNCATE`.
 
 An absent table and an empty catalogue are both normal states with their own message, and neither is
 ever a crash — but they travel in different channels. An empty catalogue is a successful read of zero

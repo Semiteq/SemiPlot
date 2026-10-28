@@ -313,7 +313,7 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 		}
 
 		var fractions = new List<double>();
-		foreach (var marker in _chart.Markers.Markers)
+		foreach (var marker in _chart.Markers.ShownMarkers)
 		{
 			if (MinimapGeometry.FractionAt(ExtentFirst, ExtentLast, marker.TimeUtc) is { } fraction)
 			{

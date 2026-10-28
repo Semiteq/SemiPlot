@@ -72,7 +72,7 @@ public sealed class TrendWindowTests
 		var markers = stand.ViewModel.ChartViewModel.Markers;
 
 		stand.Scheduler.AdvanceBy(ArchiveReadLoop.ReadInterval.Ticks);
-		markers.Markers.Should().Equal(marker);
+		markers.ShownMarkers.Should().Equal(marker);
 
 		await markers.DeleteAsync(marker);
 

@@ -402,13 +402,16 @@ reaches the message panel, not this line.
 
 ## The marker menu and label editor's text
 
-`Chart/TrendChartView.axaml` reads every string of the time markers but the line label, which
-`Chart/ChartMarkerLines` formats (`trend-interaction.md#the-time-markers`):
+`Chart/TrendChartView.axaml` reads every string of the time markers but three. `Chart/ChartMarkerLines`
+formats the line label, `TrendChartView.Markers.cs` sets the lock item's header from the marker's lock,
+and `MainWindow/AppMenuBar.axaml` reads the `View` item (`trend-interaction.md#the-time-markers`):
 
 | Key | English / Russian | Where |
 | --- | --- | --- |
 | `MarkerMenuAdd` | "Add marker here" / "Добавить метку здесь" | The chart menu, off a marker |
 | `MarkerMenuRename`, `MarkerMenuDelete` | "Rename" / "Переименовать", "Delete" / "Удалить" | The marker menu |
+| `MarkerMenuLock`, `MarkerMenuUnlock` | "Lock" / "Закрепить", "Unlock" / "Открепить" | The marker menu, over an unlocked and a locked marker |
+| `MenuViewRecipeMarkers` | "Recipe markers" / "Метки рецептов" | The `View` item that hides the recipe markers |
 | `MarkerLabelPlaceholder` | "Label (optional)" / "Подпись (необязательно)" | The label box's watermark |
 | `MarkerLabelOk`, `MarkerLabelCancel` | "OK" / "ОК", "Cancel" / "Отмена" | The editor's buttons |
 | `MarkerLineLabelFormat` | "{0} · {1}" in both sets | A labelled marker's line: the label, then its local time |

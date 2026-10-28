@@ -51,13 +51,14 @@ public sealed class ChartPaletteTests
 	[AvaloniaTheory]
 	[InlineData(AppThemeVariant.Light)]
 	[InlineData(AppThemeVariant.Dark)]
-	public void MarkerColors_ResolveBothMarkerKeysUnderTheVariant(AppThemeVariant theme)
+	public void MarkerColors_ResolveEveryMarkerKeyUnderTheVariant(AppThemeVariant theme)
 	{
 		var variant = App.VariantFor(theme);
 
 		var palette = ChartPalette.MarkerColors(Application.Current!, variant);
 
 		palette.Line.Should().Be(Resolve("AppMarkerLineBrush", variant));
+		palette.RecipeLine.Should().Be(Resolve("AppRecipeMarkerLineBrush", variant));
 		palette.Label.Should().Be(Resolve("AppMarkerLabelBrush", variant));
 		palette.ReadingBackground.Should().Be(Resolve("AppContentBackgroundBrush", variant));
 	}

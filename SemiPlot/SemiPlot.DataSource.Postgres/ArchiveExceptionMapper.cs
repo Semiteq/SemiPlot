@@ -52,10 +52,16 @@ internal sealed class ArchiveExceptionMapper(PostgresConnectionSettings settings
 		return Fault(ArchiveFault.RowGone, subject);
 	}
 
-	/// <summary>A move or rename that touched no row: the marker it names is gone.</summary>
+	/// <summary>A move, rename or lock that touched no row: the marker it names is gone.</summary>
 	public ArchiveError MarkerGone(string subject)
 	{
 		return Fault(ArchiveFault.MarkerGone, subject);
+	}
+
+	/// <summary>A value read back that this code cannot represent; <paramref name="detail"/> names it.</summary>
+	public ArchiveError ShapeUnexpected(string detail)
+	{
+		return Fault(ArchiveFault.ShapeUnexpected, detail);
 	}
 
 	private static ArchiveFault? WriteFaultOf(string sqlState)

@@ -270,10 +270,13 @@ A time marker is a vertical line the operator places on the chart at a moment
 | `id` | `bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY` | The marker's key; the server assigns it |
 | `t` | `timestamptz NOT NULL` | The marker's moment, an exact instant (Time boundary, below) |
 | `label` | `text CHECK (char_length(label) BETWEEN 1 AND 80)` | Optional: no label is `NULL`, and the check refuses `''` |
+| `kind` | `smallint NOT NULL DEFAULT 0 CHECK (kind BETWEEN 0 AND 3)` | 0 is the operator's own marker; 1, 2 and 3 are the start, the end and the interruption of a recipe, which the SCADA inserts |
+| `locked` | `boolean NOT NULL DEFAULT false` | A locked marker ignores the drag and the double click (`trend-interaction.md#the-time-markers`); the SCADA inserts its recipe markers locked |
 
 The table has no index, because every read takes all of it. It is not partitioned and is outside any
-retention, so a marker outlives the day partition it points into. SemiBase v0.6.0 provisions it and grants
-`semiplot` `SELECT, INSERT, UPDATE, DELETE` on it (`postgres-instance.md#the-semiplot-role`).
+retention, so a marker outlives the day partition it points into. SemiBase v0.6.0 created it and v0.7.0
+added `kind` and `locked`. SemiBase grants `semiplot` `SELECT, INSERT, UPDATE, DELETE` on it
+(`postgres-instance.md#the-semiplot-role`).
 
 ```csharp
 public interface IMarkerStore
@@ -282,14 +285,27 @@ public interface IMarkerStore
     Task<Result<long>> AddAsync(DateTime timeUtc, string? label);
     Task<Result> MoveAsync(StoredMarker marker, DateTime timeUtc);
     Task<Result> RenameAsync(StoredMarker marker, string? label);
+    Task<Result> SetLockedAsync(StoredMarker marker, bool isLocked);
     Task<Result> DeleteAsync(StoredMarker marker);
 }
 
-public sealed record StoredMarker(long Id, DateTime TimeUtc, string? Label);
+public sealed record StoredMarker(
+    long Id,
+    DateTime TimeUtc,
+    string? Label,
+    MarkerKind Kind = MarkerKind.User,
+    bool IsLocked = false);
+
+public enum MarkerKind { User = 0, RecipeStart = 1, RecipeEnd = 2, RecipeInterrupted = 3 }
 ```
 
 `StoredMarker` is one row as stored: `TimeUtc` has `DateTimeKind.Utc`, and a null `Label` is a stored
-`NULL`. `PostgresMarkerStore` in `SemiPlot.DataSource.Postgres` is the only implementation.
+`NULL`. The defaults of `Kind` and `IsLocked` are the column defaults, so a marker the viewer adds is the
+row the add stores. The database does not enforce `locked`: the viewer's gestures honour it, and the
+move and delete statements do not check it. A guarded statement that touched no row would read as
+`MarkerGone` and remove a live marker from the window. A lock another window stores while this window
+drags the marker is held off by the drag, and the drop overwrites the moment. `PostgresMarkerStore` in
+`SemiPlot.DataSource.Postgres` is the only implementation.
 `AddPostgresData()` registers it by factory as a singleton beside the editor, over the same
 `NpgsqlDataSource`, so the one `semiplot` role and connection string serve it too. Its one consumer is
 `Markers/MarkerSync` (`overview.md#the-live-markers`). The chart names no Core interface for markers: it
@@ -297,13 +313,14 @@ reads and writes through `Chart/IMarkerChannel`, its own port, which `MarkerSync
 
 | Operation | Constant | What the statement keeps |
 | --- | --- | --- |
-| `ReadAsync` | `StoredMarkers` | `SELECT id, t, label FROM semiplot_markers ORDER BY t, id`: the whole table, in the order the chart keeps. |
-| `AddAsync` | `AddMarker` | `INSERT ... RETURNING id`; the result is the new marker's id. |
+| `ReadAsync` | `StoredMarkers` | `SELECT id, t, label, kind, locked FROM semiplot_markers ORDER BY t, id`: the whole table, in the order the chart keeps. A `kind` outside `MarkerKind` fails the read with `ShapeUnexpected` (Error semantics, below). |
+| `AddAsync` | `AddMarker` | `INSERT INTO semiplot_markers (t, label) ... RETURNING id`; the result is the new marker's id, and `kind` and `locked` take their defaults. |
 | `MoveAsync` | `MoveMarker` | `UPDATE semiplot_markers SET t = @t WHERE id = @id`. |
 | `RenameAsync` | `RenameMarker` | `UPDATE semiplot_markers SET label = @label WHERE id = @id`; a null label binds `NULL`. |
+| `SetLockedAsync` | `SetMarkerLocked` | `UPDATE semiplot_markers SET locked = @locked WHERE id = @id`. |
 | `DeleteAsync` | `DeleteMarker` | One row by id. Idempotent: a delete that touches no row succeeds, because the operator wanted the marker gone, as `RemoveMembership` does. |
 
-A move or a rename must touch exactly one row. None touched means another window or an administrator
+A move, a rename or a lock must touch exactly one row. None touched means another window or an administrator
 removed the marker, and the store returns `ArchiveFault.MarkerGone`, never success. `t` binds as
 `NpgsqlDbType.TimestampTz` with `DateTimeKind.Utc` and reads back with `Kind = Utc`; no
 `ArchiveTimeConverter` runs on the path. Every relation-naming failure carries `MarkersRelation`,
@@ -314,7 +331,7 @@ editor trims the text and caps it at 80 characters, so the chart never reaches t
 that does gets `ValueRejected`.
 
 `ReadAsync` takes the read loop's stop token and rethrows `OperationCanceledException` ahead of the
-mapper; the four writes take no token. `ArchiveStatementTextTests` does not pin these constants.
+mapper; the five writes take no token. `ArchiveStatementTextTests` does not pin these constants.
 `MarkerStoreTests` (`SemiPlot.Tests.Integration`) runs every one of them as `semiplot` against a
 `CloneSource.Provisioned` clone, which also proves the grant, and pins the round trip of both UTC instants
 of the repeated autumn hour.
@@ -1137,19 +1154,19 @@ that read's apply.
 | Connection refused or DNS failure at startup | failed `Result` | The startup-failure window opens, titled "No connection to the archive", naming the host and port, with a remedy |
 | Connection lost mid-session | failed `Result` on the query; realtime tick dropped | Chart keeps the data it has |
 | Three consecutive catalogue reads fail for lack of a connection | `ArchiveFault.ConnectionLost` on `PenCatalogueSync.ConnectionStates`; the loop keeps reading | The status indicator turns to the fault state and one `Warning` entry appears; the first catalogue read that succeeds restores the indicator and adds one `Info` entry |
-| A column the read needs is absent (`42703`) | `ArchiveFault.ShapeUnexpected` with the server's detail | "The archive has an unexpected shape" — run `semibase site`, then find what altered the table |
+| A column the read needs is absent (`42703`), or a marker read brings a `kind` `MarkerKind` does not define | `ArchiveFault.ShapeUnexpected` with the server's detail, or the value read | "The archive has an unexpected shape" — run `semibase site`, then find what altered the table |
 | Query timeout (`57014`) | `ArchiveFault.QueryTimedOut` | "The archive ended the statement"; `statement_timeout` is the `semiplot` role's own setting |
 | The database does not exist (`3D000`) | `ArchiveFault.DatabaseMissing` | "The archive is not provisioned" — run `semibase site` |
 | Credentials refused or a grant missing (`28P01`, `28000`, `42501`) | `ArchiveFault.AccessDenied` | "The archive refused access" — the user, password or grants |
 | A relation or function a statement needs does not exist (`42P01`, `42883`) | `ArchiveFault.TableMissing` whose detail names every relation that statement touches, or `semiplot_register_new_pens()` | "The archive is not provisioned" — run `semibase site`, which creates them all |
 | The catalogue re-read fails mid-session | failed `Result`; `PenCatalogueSync` keeps its snapshot | A connection-class failure logs one warning and goes to the bar's `ConnectionLost` entry, never to an entry of its own. Any other kind: nothing for the first two failures in a row, one log warning each; from the third one panel entry, coalesced with the ones after it. The next success applies everything stored since the last success |
-| The marker re-read fails mid-session | failed `Result`; `MarkerSync` emits nothing and the chart keeps the markers it shows | As for the catalogue: a connection-class failure logs one warning and goes to the bar's entry, which the catalogue read raises; any other kind writes two log warnings, then one panel entry from the third failure in a row. Against a database without `semiplot_markers` that entry is a `TableMissing` Error about 10 s after the window opens, and the chart works without markers |
+| The marker re-read fails mid-session | failed `Result`; `MarkerSync` emits nothing and the chart keeps the markers it shows | As for the catalogue: a connection-class failure logs one warning and goes to the bar's entry, which the catalogue read raises; any other kind writes two log warnings, then one panel entry from the third failure in a row. Against a database provisioned before SemiBase v0.7.0 that entry is an Error about 10 s after the window opens (`postgres-instance.md#what-semiplot-may-assume-about-the-server`), and the chart works without markers |
 | `semiplot_tags` present but empty | empty pen list, success | The chart area's own empty state, naming `Edit` -> `Pens and groups` -> `Refresh pen list`: no key has been registered as a pen yet. Not a message-panel entry: an empty catalogue is a state, not something that happened |
 | Archive present but no rows in the window | success, empty envelope list | Empty chart, no error |
 | A check constraint refuses a written value (`23514`) | `ArchiveFault.ValueRejected` | "The archive refused the value"; the field reverts, and the message line says why |
 | A group name another group already carries (`23505`) | `ArchiveFault.NameTaken` | "The name is already taken" |
 | A write names a pen or group that is gone (`23503`, or no row touched) | `ArchiveFault.RowGone` | "The entry no longer exists"; a refresh shows what the catalogue holds now |
-| A move or rename names a time marker that is gone (no row touched) | `ArchiveFault.MarkerGone` | "The marker no longer exists"; the chart drops the marker |
+| A move, rename or lock names a time marker that is gone (no row touched) | `ArchiveFault.MarkerGone` | "The marker no longer exists"; the chart drops the marker |
 
 ### Two error planes
 
@@ -1182,13 +1199,13 @@ carries no file-access kind.
 | `AccessDenied` | `28P01`, `28000`, `42501` | the username |
 | `DatabaseMissing` | `3D000` | empty |
 | `TableMissing` | `42P01`, `42883` | every relation the failing statement touches: `trends` for the history and realtime reads, `semiplot_tags, trends` for the archive extent and the archive days, all three catalogue tables for the pen catalogue and every editor write, `semiplot_markers` for every marker statement; `semiplot_register_new_pens()` for the registration |
-| `ShapeUnexpected` | `42703` | the server's own message |
+| `ShapeUnexpected` | `42703`, or a marker read whose `kind` `MarkerKind` does not define | the server's own message, or `semiplot_markers.kind holds N, which MarkerKind does not define.` |
 | `QueryTimedOut` | `57014` | empty |
 | `ConnectionLost` | three consecutive catalogue reads that fail as `Unreachable` | the number of failures that raised it |
 | `ValueRejected` | `23514` on an editor or marker write | the pen's name, or the marker's label or local moment |
 | `NameTaken` | `23505` on an editor write | the group name asked for |
 | `RowGone` | `23503` on an editor write, or an update, rename or delete that touched no row | the pen or group name |
-| `MarkerGone` | a marker move or rename that touched no row | the marker's label, or its local moment |
+| `MarkerGone` | a marker move, rename or lock that touched no row | the marker's label, or its local moment |
 | `ReadFailed` | any other SQLSTATE, or a client-side throw, on a read or a write | the SQLSTATE, or empty |
 
 The write kinds come from `ArchiveExceptionMapper.MapWrite(exception, subject, relation)`. It maps
@@ -1198,7 +1215,9 @@ caller's statement touches. The pen editor passes `PenCatalogRelations`: every e
 those three relations, and one provisioning run creates all three. The marker store passes
 `MarkersRelation`, so a marker write against a missing table names `semiplot_markers` and no pen table.
 `RowGone(subject)` is the form for an editor update that touched no row, and `MarkerGone(subject)` the
-form for a marker move or rename that touched none; a marker's subject is in The marker store, above.
+form for a marker move, rename or lock that touched none; a marker's subject is in The marker store, above.
+`ShapeUnexpected(detail)` is the form for a value read back that the code cannot represent, the marker
+read's `kind` guard.
 The subject is the pen's committed name for a pen
 change, including a `Name` change; for a rename it is the new name when the server refuses it and the
 stored name when the group is gone; a delete names the group; a membership names the pen when the

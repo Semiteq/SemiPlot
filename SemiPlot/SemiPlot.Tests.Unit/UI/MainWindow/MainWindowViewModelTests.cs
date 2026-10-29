@@ -12,6 +12,7 @@ using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.PenEditor;
+using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Export;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
@@ -218,6 +219,32 @@ public sealed class MainWindowViewModelTests
 		var windowEnd = TimeZoneInfo.ConvertTimeFromUtc(chart.Navigation.To, TimeZoneInfo.Utc);
 		request.Form.From.Should().BeOnOrBefore(windowStart).And.BeAfter(windowStart.AddSeconds(-1));
 		request.Form.To.Should().BeOnOrAfter(windowEnd).And.BeBefore(windowEnd.AddSeconds(1));
+	}
+
+	[AvaloniaFact]
+	public async Task Export_CarriesEveryStoredMarker_HiddenRecipeMarkersIncluded()
+	{
+		using var stand = NewWindowStand([new Pen(1, "Pen 1", [], "#ff0000")]);
+		var user = new StoredMarker(1, new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc), "#1");
+		var recipeStart = new StoredMarker(
+			2, new DateTime(2026, 1, 1, 9, 0, 0, DateTimeKind.Utc), "Etch.csv", MarkerKind.RecipeStart);
+		var recipeEnd = new StoredMarker(
+			3, new DateTime(2026, 1, 1, 10, 0, 0, DateTimeKind.Utc), null, MarkerKind.RecipeEnd);
+		stand.MarkerStore.ReadResult = Result.Ok<IReadOnlyList<StoredMarker>>([recipeEnd, user, recipeStart]);
+		stand.Scheduler.AdvanceBy(ArchiveReadLoop.ReadInterval.Ticks);
+		await stand.ViewModel.ToggleRecipeMarkersCommand.Execute();
+		stand.ViewModel.ChartViewModel.Markers.ShownMarkers.Should().Equal(user);
+		var requests = new List<CsvExportViewModel>();
+
+		using var subscription = stand.ViewModel.ExportRequests.Subscribe(requests.Add);
+		await stand.ViewModel.ExportCommand.Execute();
+
+		using var request = requests.Should().ContainSingle().Which;
+		request.Form.StartDate = new DateTime(2026, 1, 1);
+		request.Form.StartTimeText = "00:00:00";
+		request.Form.EndDate = new DateTime(2026, 1, 1);
+		request.StartMarkers.Select(choice => choice.Marker).Should().Equal(user, recipeStart);
+		request.EndMarkers.Select(choice => choice.Marker).Should().Equal(user, recipeEnd);
 	}
 
 	[AvaloniaFact]

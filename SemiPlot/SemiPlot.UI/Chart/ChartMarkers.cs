@@ -34,6 +34,12 @@ public sealed class ChartMarkers : IDisposable
 		_disposables.Add(_markerChannel.Reads.Subscribe(ApplyRead, chart.ReportFailure));
 	}
 
+	/// <summary>
+	/// Every marker the window holds, shown or hidden, in time order, then by id; one with a write in flight as the
+	/// window shows it. A new list per change.
+	/// </summary>
+	public IReadOnlyList<StoredMarker> All => _markerSet.All;
+
 	/// <summary>The shown markers in time order, then by id; a new list per change.</summary>
 	public IReadOnlyList<StoredMarker> ShownMarkers => _markerSet.ShownMarkers;
 

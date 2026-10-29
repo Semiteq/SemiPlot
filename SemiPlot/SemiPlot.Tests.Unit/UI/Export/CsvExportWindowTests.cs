@@ -8,6 +8,8 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 
 using AwesomeAssertions;
@@ -16,6 +18,8 @@ using FluentResults;
 
 using Microsoft.Reactive.Testing;
 
+using ReactiveUI.Avalonia;
+
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.UI;
@@ -23,6 +27,8 @@ using SemiPlot.UI.Export;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.Messages;
 using SemiPlot.UI.Startup;
+
+using SkiaSharp;
 
 using Xunit;
 
@@ -552,26 +558,51 @@ public sealed class CsvExportWindowTests : IDisposable
 		}
 	}
 
-	[AvaloniaFact]
-	public void EachRangeRow_PutsTheTimeBoxLeftOfTheDatePicker_AndTheTabOrderFollows()
+	[AvaloniaTheory]
+	[InlineData("ru")]
+	[InlineData("en")]
+	public void EachEdge_PutsTheDateOverTheTimeAndTheMarkerBox_AndTheTabOrderFollows(string culture)
 	{
-		using var viewModel = Build();
+		using var cultureScope = new CultureScope(culture);
+		using var viewModel = BuildWithMarkers();
 		var window = Realise(new CsvExportWindow { DataContext = viewModel });
 		try
 		{
-			foreach (var (time, date) in new[] { ("ExportStartTime", "ExportStartDate"), ("ExportEndTime", "ExportEndDate") })
+			foreach (var (label, date, time, marker) in new[]
+				{
+					(Resources.ExportStartLabel, "ExportStartDate", "ExportStartTime", "ExportStartMarker"),
+					(Resources.ExportEndLabel, "ExportEndDate", "ExportEndTime", "ExportEndMarker")
+				})
 			{
-				var timeBox = Named<TextBox>(window, time);
+				var labelBlock = window.GetVisualDescendants().OfType<TextBlock>().Single(block => block.Text == label);
 				var datePicker = Named<CalendarDatePicker>(window, date);
+				var timeBox = Named<TextBox>(window, time);
+				var markerBox = Named<ComboBox>(window, marker);
 
-				RightOf(window, timeBox).Should().BeLessThan(LeftOf(window, datePicker), time);
-				timeBox.Bounds.Top.Should().Be(datePicker.Bounds.Top, "one row holds both");
+				LeftOf(window, timeBox).Should().Be(LeftOf(window, datePicker), time);
+				timeBox.Bounds.Width.Should().Be(110, time);
+				(LeftOf(window, markerBox) - RightOf(window, timeBox)).Should().Be(8, marker);
+				RightOf(window, markerBox).Should().Be(RightOf(window, datePicker), marker);
+				(TopOf(window, timeBox) - BottomOf(window, datePicker)).Should().Be(10, "the second line is 10 px under");
+				TopOf(window, markerBox).Should().Be(TopOf(window, timeBox), "one line holds both");
+				CentreOf(window, labelBlock).Should().Be(CentreOf(window, datePicker), "the label is centred on the date");
+				new Control[] { datePicker, timeBox, markerBox }
+					.Should().OnlyContain(control => control.Bounds.Height == 32, "the controls keep Semi's height");
 			}
 
+			(TopOf(window, Named<CalendarDatePicker>(window, "ExportEndDate"))
+					- BottomOf(window, Named<ComboBox>(window, "ExportStartMarker")))
+				.Should().Be(20, "the edges stand 20 px apart");
+
+			string[] edgeControls =
+			[
+				"ExportStartDate", "ExportStartTime", "ExportStartMarker",
+				"ExportEndDate", "ExportEndTime", "ExportEndMarker"
+			];
 			var order = window.GetVisualDescendants().OfType<Control>()
 				.Select(control => control.Name)
-				.Where(name => name is "ExportStartTime" or "ExportStartDate" or "ExportEndTime" or "ExportEndDate");
-			order.Should().Equal("ExportStartTime", "ExportStartDate", "ExportEndTime", "ExportEndDate");
+				.Where(name => edgeControls.Contains(name));
+			order.Should().Equal(edgeControls);
 		}
 		finally
 		{
@@ -579,18 +610,24 @@ public sealed class CsvExportWindowTests : IDisposable
 		}
 	}
 
-	[AvaloniaFact]
-	public void TheListAndTheMessage_EndAtTheRightEdgeOfTheDatePickers()
+	[AvaloniaTheory]
+	[InlineData("ru")]
+	[InlineData("en")]
+	public void TheDatesTheMarkerBoxesTheListAndTheMessage_EndAtOneRightEdge(string culture)
 	{
-		using var viewModel = Build();
+		using var cultureScope = new CultureScope(culture);
+		using var viewModel = BuildWithMarkers();
 		var window = Realise(new CsvExportWindow { DataContext = viewModel });
 		try
 		{
 			var edge = RightOf(window, Named<CalendarDatePicker>(window, "ExportStartDate"));
 
 			RightOf(window, Named<CalendarDatePicker>(window, "ExportEndDate")).Should().Be(edge);
+			RightOf(window, Named<ComboBox>(window, "ExportStartMarker")).Should().Be(edge);
+			RightOf(window, Named<ComboBox>(window, "ExportEndMarker")).Should().Be(edge);
 			RightOf(window, Named<ListBox>(window, "ExportPens")).Should().Be(edge);
 			RightOf(window, Named<TextBlock>(window, "ExportMessage")).Should().Be(edge);
+			edge.Should().Be(370);
 			window.Width.Should().Be(edge + 20, "the margin is the only space right of the form");
 		}
 		finally
@@ -666,7 +703,7 @@ public sealed class CsvExportWindowTests : IDisposable
 				return Result.Ok<IReadOnlyList<StoredArchiveRow>>([]);
 			}
 		};
-		using var viewModel = Build(reader);
+		using var viewModel = BuildWithMarkers(reader);
 		var window = Realise(new CsvExportWindow { DataContext = viewModel });
 		try
 		{
@@ -682,7 +719,9 @@ public sealed class CsvExportWindowTests : IDisposable
 			{
 				Named<CalendarDatePicker>(window, "ExportStartDate"),
 				Named<TextBox>(window, "ExportEndTime"),
-				Named<ListBox>(window, "ExportPens")
+				Named<ListBox>(window, "ExportPens"),
+				Named<ComboBox>(window, "ExportStartMarker"),
+				Named<ComboBox>(window, "ExportEndMarker")
 			};
 			formControls.Should().OnlyContain(
 				control => !control.IsEffectivelyEnabled, "the form is frozen while it exports");
@@ -746,17 +785,452 @@ public sealed class CsvExportWindowTests : IDisposable
 		}
 	}
 
+	[AvaloniaFact]
+	public async Task ChoosingAStartAndAnEndMarker_FillsBothEdges_AndTheCountAndTheExportReadThatSpan()
+	{
+		using var directory = new TemporaryDirectory("csv-export-markers");
+		var reader = new FakeArchiveRowReader();
+		using var viewModel = BuildWithMarkers(reader);
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			var startBox = Named<ComboBox>(window, "ExportStartMarker");
+			var endBox = Named<ComboBox>(window, "ExportEndMarker");
+
+			HeadlessInput.Pick(window, startBox, viewModel.StartMarkers.Single());
+			HeadlessInput.Pick(window, endBox, viewModel.EndMarkers.Single());
+
+			Named<TextBox>(window, "ExportStartTime").Text.Should().Be("08:15:00");
+			Named<TextBox>(window, "ExportEndTime").Text
+				.Should().Be("08:45:01", "the end keeps every row of its second");
+			Named<CalendarDatePicker>(window, "ExportStartDate").SelectedDate.Should().Be(_startDay);
+			Named<CalendarDatePicker>(window, "ExportEndDate").SelectedDate.Should().Be(_startDay);
+			ShownText(startBox).Should().Be("Etch.csv", "the time box beside it shows the time");
+			ShownText(endBox).Should().Be("Etch.csv");
+			viewModel.Form.IsValid.Should().BeTrue();
+			Named<Button>(window, "ExportSaveAs").IsEffectivelyEnabled.Should().BeTrue();
+
+			_scheduler.AdvanceBy(CsvExportViewModel.CountThrottle.Ticks);
+
+			var start = _startDay.AddHours(8.25);
+			var end = _startDay.AddHours(8.75).AddSeconds(1);
+			var count = reader.CountCalls.Should().ContainSingle().Subject;
+			count.From.Should().Be(start);
+			count.To.Should().Be(end);
+
+			await viewModel.ExportCommand.Execute(Path.Combine(directory.Path, "out.csv")).ToTask();
+
+			reader.SeedCalls.Should().ContainSingle().Which.From.Should().Be(start);
+			reader.SliceCalls.Should().NotBeEmpty();
+			reader.SliceCalls[0].From.Should().Be(start);
+			reader.SliceCalls[^1].To.Should().Be(end);
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
 	[AvaloniaTheory]
 	[InlineData("ru")]
 	[InlineData("en")]
-	[InlineData("th-TH")]
-	[InlineData("fa-IR")]
-	public void TheSuggestedFileName_UsesInvariantDigitsUnderEveryInterfaceCulture(string culture)
+	public void TheClosedBox_ShowsTheLabelAlone_AndTheOpenListTheTimeAndTheLabel(string culture)
 	{
 		using var cultureScope = new CultureScope(culture);
+		StoredMarker[] markers =
+		[
+			new(1, CsvExportStand.ToUtc(_startDay.AddHours(8.25)), "Etch.csv", MarkerKind.RecipeStart),
+			new(2, CsvExportStand.ToUtc(_startDay.AddHours(8.5)), null, MarkerKind.User)
+		];
+		using var viewModel = CsvExportStand.Build(
+			new FakeArchiveRowReader(),
+			_messagePanel,
+			_scheduler,
+			[new ExportPenChoice(CsvExportStand.Pressure, true)],
+			markers: markers);
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			var startBox = Named<ComboBox>(window, "ExportStartMarker");
 
-		CsvFileExporter.SuggestedFileName(new DateTime(2026, 10, 13, 8, 5, 9), new DateTime(2026, 10, 14, 7, 0, 0))
-			.Should().Be("semiplot_20261013_080509-20261014_070000.csv");
+			HeadlessInput.Click(window, startBox);
+
+			viewModel.StartChoices.Select(choice => ListedText(startBox, choice))
+				.Should().Equal(Resources.ExportNoMarker, "08:15:00 Etch.csv", $"08:30:00 {Resources.ExportMarkerUnnamed}");
+
+			HeadlessInput.Press(window, PhysicalKey.Escape);
+			HeadlessInput.Pick(window, startBox, viewModel.StartMarkers[0]);
+
+			ShownText(startBox).Should().Be("Etch.csv");
+
+			HeadlessInput.Pick(window, startBox, viewModel.StartMarkers[1]);
+
+			ShownText(startBox).Should().Be(Resources.ExportMarkerUnnamed);
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void AHandTimeEdit_ReturnsTheBoxToNoMarker_AndChoosingTheMarkerAgainRefillsTheTime()
+	{
+		using var viewModel = BuildWithMarkers();
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			var startTime = Named<TextBox>(window, "ExportStartTime");
+			var startBox = Named<ComboBox>(window, "ExportStartMarker");
+			var marker = viewModel.StartMarkers.Single();
+			HeadlessInput.Pick(window, startBox, marker);
+
+			HeadlessInput.Clear(window, startTime);
+			HeadlessInput.Type(window, startTime, "08:20:00");
+
+			startTime.Text.Should().Be("08:20:00");
+			startBox.SelectedItem.Should().Be(viewModel.StartChoices[0]);
+			ShownText(startBox).Should().Be(Resources.ExportNoMarker);
+
+			HeadlessInput.Pick(window, startBox, marker);
+
+			startTime.Text.Should().Be("08:15:00");
+			startBox.SelectedItem.Should().Be(marker);
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void ADateChange_ReturnsThatEdgesBoxToNoMarker()
+	{
+		using var viewModel = BuildWithMarkers();
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			var startBox = Named<ComboBox>(window, "ExportStartMarker");
+			var endBox = Named<ComboBox>(window, "ExportEndMarker");
+			HeadlessInput.Pick(window, startBox, viewModel.StartMarkers.Single());
+			HeadlessInput.Pick(window, endBox, viewModel.EndMarkers.Single());
+
+			SetDate(window, Named<CalendarDatePicker>(window, "ExportStartDate"), _startDay.AddDays(-1));
+
+			startBox.SelectedItem.Should().Be(viewModel.StartChoices[0], "the box shows no marker, not an empty box");
+			ShownText(startBox).Should().Be(Resources.ExportNoMarker);
+			endBox.SelectedItem.Should().Be(viewModel.EndMarkers.Single(), "the end edge keeps its marker");
+			Named<TextBox>(window, "ExportStartTime").Text.Should().Be("08:15:00");
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
+	[AvaloniaTheory]
+	[InlineData("ru")]
+	[InlineData("en")]
+	public void ChoosingAStartMarker_LeavesTheEndBoxOnNoMarker(string culture)
+	{
+		using var cultureScope = new CultureScope(culture);
+		using var viewModel = BuildWithMarkers();
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			var endBox = Named<ComboBox>(window, "ExportEndMarker");
+
+			HeadlessInput.Pick(window, Named<ComboBox>(window, "ExportStartMarker"), viewModel.StartMarkers.Single());
+
+			endBox.SelectedItem.Should().Be(viewModel.EndChoices[0], "the updated end list leaves the box on no marker");
+			endBox.SelectionBoxItem.Should().Be(viewModel.EndChoices[0]);
+			ShownTextOrNull(endBox).Should().Be(Resources.ExportNoMarker);
+			HeadlessInput.Click(window, endBox);
+			endBox.ContainerFromIndex(0).Should().BeOfType<ComboBoxItem>().Which.IsSelected.Should().BeTrue();
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
+	[AvaloniaTheory]
+	[InlineData("ru")]
+	[InlineData("en")]
+	public void ChoosingAnEndMarker_LeavesTheStartBoxOnNoMarker(string culture)
+	{
+		using var cultureScope = new CultureScope(culture);
+		using var viewModel = BuildWithMarkers();
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			var startBox = Named<ComboBox>(window, "ExportStartMarker");
+
+			HeadlessInput.Pick(window, Named<ComboBox>(window, "ExportEndMarker"), viewModel.EndMarkers.Single());
+
+			startBox.SelectedItem.Should().Be(viewModel.StartChoices[0]);
+			startBox.SelectionBoxItem.Should().Be(viewModel.StartChoices[0]);
+			ShownTextOrNull(startBox).Should().Be(Resources.ExportNoMarker);
+			HeadlessInput.Click(window, startBox);
+			startBox.ContainerFromIndex(0).Should().BeOfType<ComboBoxItem>().Which.IsSelected.Should().BeTrue();
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void AnEndMarkerHeld_StaysInItsBox_WhenAStartMarkerIsChosen()
+	{
+		using var viewModel = BuildWithMarkers();
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			var endBox = Named<ComboBox>(window, "ExportEndMarker");
+			var endMarker = viewModel.EndMarkers.Single();
+			HeadlessInput.Pick(window, endBox, endMarker);
+
+			HeadlessInput.Pick(window, Named<ComboBox>(window, "ExportStartMarker"), viewModel.StartMarkers.Single());
+
+			viewModel.SelectedEndMarker.Should().Be(endMarker, "the end still reads the marker's value and it is listed");
+			endBox.SelectedItem.Should().Be(endMarker);
+			endBox.SelectionBoxItem.Should().Be(endMarker);
+			ShownText(endBox).Should().Be(endMarker.Label);
+			Named<TextBox>(window, "ExportEndTime").Text.Should().Be("08:45:01");
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void AnEndMarkerChosenBeforeTheWindowBinds_StaysInItsBox_WhenAStartMarkerIsChosen()
+	{
+		using var viewModel = BuildWithMarkers();
+		var endMarker = viewModel.EndMarkers.Single();
+		viewModel.SelectedEndMarker = endMarker;
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			var endBox = Named<ComboBox>(window, "ExportEndMarker");
+
+			HeadlessInput.Pick(window, Named<ComboBox>(window, "ExportStartMarker"), viewModel.StartMarkers.Single());
+
+			viewModel.SelectedEndMarker.Should().Be(endMarker);
+			endBox.SelectedItem.Should().Be(endMarker);
+			endBox.SelectionBoxItem.Should().Be(endMarker);
+			ShownText(endBox).Should().Be(endMarker.Label);
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void AnEndMarkerInTheDaysLastSecond_MovesTheEndOntoTheNextDate_AndTheBoxShowsNoMarker()
+	{
+		StoredMarker[] markers =
+		[
+			new(3, CsvExportStand.ToUtc(_startDay.AddHours(8.5)), "Etch.csv", MarkerKind.RecipeStart),
+			new(4, CsvExportStand.ToUtc(_startDay.AddDays(1).AddMilliseconds(-500)), "Etch.csv", MarkerKind.RecipeEnd)
+		];
+		using var viewModel = CsvExportStand.Build(
+			new FakeArchiveRowReader(),
+			_messagePanel,
+			_scheduler,
+			[new ExportPenChoice(CsvExportStand.Pressure, true)],
+			markers: markers);
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			var endBox = Named<ComboBox>(window, "ExportEndMarker");
+
+			HeadlessInput.Pick(window, endBox, viewModel.EndMarkers.Single());
+			_scheduler.AdvanceBy(1);
+			Dispatcher.UIThread.RunJobs();
+
+			Named<CalendarDatePicker>(window, "ExportEndDate").SelectedDate.Should().Be(_startDay.AddDays(1));
+			Named<TextBox>(window, "ExportEndTime").Text.Should().Be("00:00:00");
+			endBox.SelectedItem.Should().Be(viewModel.EndChoices[0], "the next date's list does not hold the marker");
+			endBox.SelectionBoxItem.Should().Be(viewModel.EndChoices[0]);
+			ShownText(endBox).Should().Be(Resources.ExportNoMarker);
+			endBox.IsEffectivelyEnabled.Should().BeFalse("the next date holds no end marker");
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public async Task AnEndMarkerInTheDaysLastSecond_LeavesTheClosedBoxOnNoMarker_UnderTheAvaloniaScheduler()
+	{
+		StoredMarker[] markers =
+		[
+			new(3, CsvExportStand.ToUtc(_startDay.AddHours(8.5)), "Etch.csv", MarkerKind.RecipeStart),
+			new(4, CsvExportStand.ToUtc(_startDay.AddDays(1).AddMilliseconds(-500)), "Etch.csv", MarkerKind.RecipeEnd)
+		];
+		using var viewModel = CsvExportStand.Build(
+			new FakeArchiveRowReader(),
+			_messagePanel,
+			AvaloniaScheduler.Instance,
+			[new ExportPenChoice(CsvExportStand.Pressure, true)],
+			markers: markers);
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			var endBox = Named<ComboBox>(window, "ExportEndMarker");
+
+			HeadlessInput.Pick(window, endBox, viewModel.EndMarkers.Single());
+			await HeadlessWait.Until(() => viewModel.SelectedEndMarker.IsNoMarker, "the release after the pick");
+
+			Named<TextBox>(window, "ExportEndTime").Text.Should().Be("00:00:00");
+			endBox.SelectedItem.Should().Be(viewModel.EndChoices[0]);
+			endBox.SelectionBoxItem.Should().Be(viewModel.EndChoices[0]);
+			ShownText(endBox).Should().Be(Resources.ExportNoMarker);
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void AMarkerOnOneEdgeAndATypedTimeOnTheOther_IsAValidRangeWithNoMessage()
+	{
+		using var viewModel = BuildWithMarkers();
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			var endTime = Named<TextBox>(window, "ExportEndTime");
+			HeadlessInput.Pick(window, Named<ComboBox>(window, "ExportStartMarker"), viewModel.StartMarkers.Single());
+
+			HeadlessInput.Clear(window, endTime);
+			HeadlessInput.Type(window, endTime, "08:30:00");
+
+			viewModel.Form.IsValid.Should().BeTrue();
+			Named<TextBlock>(window, "ExportMessage").Text.Should().BeEmpty();
+			Named<ComboBox>(window, "ExportStartMarker").SelectedItem.Should().Be(viewModel.StartMarkers.Single());
+			Named<ComboBox>(window, "ExportEndMarker").SelectedItem.Should().Be(viewModel.EndChoices[0]);
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void ADayWithoutMarkers_DisablesItsBoxOnNoMarker_InTheSecondaryForeground()
+	{
+		var variant = App.VariantFor(AppThemeVariant.Light);
+		using var scope = ThemeProbe.ApplyVariant(variant);
+		var secondary = ThemeProbe.Colour("AppSecondaryForegroundBrush", variant);
+		using var viewModel = BuildWithMarkers();
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			var startBox = Named<ComboBox>(window, "ExportStartMarker");
+			var endBox = Named<ComboBox>(window, "ExportEndMarker");
+			startBox.IsEffectivelyEnabled.Should().BeTrue();
+			endBox.IsEffectivelyEnabled.Should().BeTrue();
+			ShownForeground(startBox).Should().Be(secondary);
+
+			HeadlessInput.Pick(window, startBox, viewModel.StartMarkers.Single());
+
+			ShownForeground(startBox).Should().NotBe(secondary, "a marker reads in the box's own foreground");
+
+			SetDate(window, Named<CalendarDatePicker>(window, "ExportStartDate"), _startDay.AddDays(-1));
+
+			startBox.IsEffectivelyEnabled.Should().BeFalse("the day before holds no marker");
+			ShownText(startBox).Should().Be(Resources.ExportNoMarker);
+			ShownForeground(startBox).Should().Be(secondary);
+			endBox.IsEffectivelyEnabled.Should().BeTrue("the end date still holds its marker");
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void AWindowWithoutMarkers_DisablesBothMarkerBoxes()
+	{
+		using var viewModel = Build();
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			Named<ComboBox>(window, "ExportStartMarker").IsEffectivelyEnabled.Should().BeFalse();
+			Named<ComboBox>(window, "ExportEndMarker").IsEffectivelyEnabled.Should().BeFalse();
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void UnderRussian_TheWidestDateInInter_FitsTheStartPickersTextViewportOnTheStand()
+	{
+		// The headless shaper advances every glyph by the font size, so the texts are measured in Inter through
+		// Skia and the realised layout is corrected by the label column's real width.
+		const double FormWidth = 350;
+		const double FormColumnSpacing = 14;
+		const double CaretAndRoundingAllowance = 2;
+		using var cultureScope = new CultureScope("ru");
+		using var viewModel = BuildWithMarkers();
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			var picker = Named<CalendarDatePicker>(window, "ExportStartDate");
+			var box = TextOf(picker);
+			var label = window.GetVisualDescendants().OfType<TextBlock>()
+				.Single(block => block.Text == Resources.ExportStartLabel);
+			using var typeface = InterTypeface();
+			using var labelFont = InterFont(typeface, label.FontSize);
+			using var dateFont = InterFont(typeface, box.FontSize);
+
+			var headlessLabelColumn = LeftOf(window, picker) - LeftOf(window, label) - FormColumnSpacing;
+			var standLabelColumn = Math.Ceiling(Math.Max(
+				labelFont.MeasureText(Resources.ExportStartLabel), labelFont.MeasureText(Resources.ExportEndLabel)));
+			var labelCorrection = headlessLabelColumn - standLabelColumn;
+			var standDateCell = picker.Bounds.Width + labelCorrection;
+			var standViewport = Descendant<ScrollViewer>(box, "PART_ScrollViewer").Viewport.Width + labelCorrection;
+
+			box.Text.Should().Be("13.10.2026");
+			standDateCell.Should().BeApproximately(
+				FormWidth - FormColumnSpacing - standLabelColumn, 1, "the date takes the whole field column");
+			standViewport.Should().BeGreaterThanOrEqualTo(
+				WidestDateWidth(dateFont, Resources.ExportDateFormat) + CaretAndRoundingAllowance);
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
+	private static SKTypeface InterTypeface()
+	{
+		using var stream = AssetLoader.Open(new Uri("avares://Avalonia.Fonts.Inter/Assets/Inter-Regular.ttf"));
+		using var data = SKData.Create(stream);
+
+		return SKTypeface.FromData(data);
+	}
+
+	private static SKFont InterFont(SKTypeface typeface, double fontSize)
+	{
+		return new SKFont(typeface, (float)fontSize) { LinearMetrics = true, Subpixel = true };
+	}
+
+	// Each digit repeated over the mask bounds every date the mask can show.
+	private static double WidestDateWidth(SKFont font, string format)
+	{
+		return Enumerable.Range(0, 10)
+			.Select(digit => new string(
+				[.. format.Select(character => char.IsLetter(character) ? (char)('0' + digit) : character)]))
+			.Max(text => font.MeasureText(text));
 	}
 
 	private static TextBox TextOf(CalendarDatePicker picker)
@@ -772,6 +1246,21 @@ public sealed class CsvExportWindowTests : IDisposable
 	private static double LeftOf(Visual root, Control control)
 	{
 		return control.TranslatePoint(new Point(0, 0), root)!.Value.X;
+	}
+
+	private static double TopOf(Visual root, Control control)
+	{
+		return control.TranslatePoint(new Point(0, 0), root)!.Value.Y;
+	}
+
+	private static double BottomOf(Visual root, Control control)
+	{
+		return control.TranslatePoint(new Point(0, control.Bounds.Height), root)!.Value.Y;
+	}
+
+	private static double CentreOf(Visual root, Control control)
+	{
+		return control.TranslatePoint(new Point(0, control.Bounds.Height / 2), root)!.Value.Y;
 	}
 
 	private static double RightOf(Visual root, Control control)
@@ -791,6 +1280,35 @@ public sealed class CsvExportWindowTests : IDisposable
 		HeadlessInput.Clear(window, box);
 		HeadlessInput.Type(window, box, DateText(date));
 		HeadlessInput.Press(window, PhysicalKey.Enter);
+	}
+
+	private static TextBlock ShownBlock(ComboBox box)
+	{
+		return box.GetVisualDescendants().OfType<TextBlock>().Single(block => block.DataContext is ExportMarkerChoice);
+	}
+
+	private static string? ShownText(ComboBox box)
+	{
+		return ShownBlock(box).Text;
+	}
+
+	private static string? ListedText(ComboBox box, ExportMarkerChoice choice)
+	{
+		var item = box.ContainerFromItem(choice)
+			?? throw new InvalidOperationException("The open list realised no container for the choice.");
+
+		return item.GetVisualDescendants().OfType<TextBlock>().Single(block => Equals(block.DataContext, choice)).Text;
+	}
+
+	private static string? ShownTextOrNull(ComboBox box)
+	{
+		return box.GetVisualDescendants().OfType<TextBlock>()
+			.SingleOrDefault(block => block.DataContext is ExportMarkerChoice)?.Text;
+	}
+
+	private static Color ShownForeground(ComboBox box)
+	{
+		return ShownBlock(box).Foreground.Should().BeAssignableTo<ISolidColorBrush>().Subject.Color;
 	}
 
 	private static Color BorderColourOf(CalendarDatePicker picker)
@@ -820,6 +1338,23 @@ public sealed class CsvExportWindowTests : IDisposable
 			[new ExportPenChoice(CsvExportStand.Pressure, true)],
 			_newestSampleUtc,
 			(_, _, _) => Task.FromResult(Result.Ok(daysWithRows)));
+	}
+
+	// A recipe start at 08:15 and its end at 08:45 on the prefilled day, in the stand's +3 zone.
+	private CsvExportViewModel BuildWithMarkers(FakeArchiveRowReader? reader = null)
+	{
+		StoredMarker[] markers =
+		[
+			new(1, CsvExportStand.ToUtc(_startDay.AddHours(8.25)), "Etch.csv", MarkerKind.RecipeStart),
+			new(2, CsvExportStand.ToUtc(_startDay.AddHours(8.75)), "Etch.csv", MarkerKind.RecipeEnd)
+		];
+
+		return CsvExportStand.Build(
+			reader ?? new FakeArchiveRowReader(),
+			_messagePanel,
+			_scheduler,
+			[new ExportPenChoice(CsvExportStand.Pressure, true)],
+			markers: markers);
 	}
 
 	private CsvExportViewModel Build(FakeArchiveRowReader? reader = null)

@@ -71,7 +71,8 @@ public partial class CsvExportWindow : Window
 	{
 		try
 		{
-			if (DataContext is not CsvExportViewModel { Form: { From: { } from, To: { } to } } viewModel)
+			if (DataContext is not CsvExportViewModel viewModel
+				|| viewModel.SuggestedFileName() is not { } suggestedName)
 			{
 				return;
 			}
@@ -79,7 +80,7 @@ public partial class CsvExportWindow : Window
 			var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
 			{
 				Title = LocalizedText.ExportWindowTitle,
-				SuggestedFileName = CsvFileExporter.SuggestedFileName(from, to),
+				SuggestedFileName = suggestedName,
 				DefaultExtension = "csv",
 				FileTypeChoices =
 				[

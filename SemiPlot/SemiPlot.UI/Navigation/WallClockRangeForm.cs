@@ -20,45 +20,50 @@ public abstract class WallClockRangeForm : ReactiveObject
 {
 	internal const string TimeFieldFormat = "HH:mm:ss";
 
+	private DateTime? _startDate;
+	private string _startTimeText = string.Empty;
+	private DateTime? _endDate;
+	private string _endTimeText = string.Empty;
+
 	public DateTime? StartDate
 	{
-		get;
+		get => _startDate;
 		set
 		{
-			this.RaiseAndSetIfChanged(ref field, value);
+			this.RaiseAndSetIfChanged(ref _startDate, value);
 			RaiseDerived();
 		}
 	}
 
 	public string StartTimeText
 	{
-		get;
+		get => _startTimeText;
 		set
 		{
-			this.RaiseAndSetIfChanged(ref field, value);
+			this.RaiseAndSetIfChanged(ref _startTimeText, value);
 			RaiseDerived();
 		}
-	} = string.Empty;
+	}
 
 	public DateTime? EndDate
 	{
-		get;
+		get => _endDate;
 		set
 		{
-			this.RaiseAndSetIfChanged(ref field, value);
+			this.RaiseAndSetIfChanged(ref _endDate, value);
 			RaiseDerived();
 		}
 	}
 
 	public string EndTimeText
 	{
-		get;
+		get => _endTimeText;
 		set
 		{
-			this.RaiseAndSetIfChanged(ref field, value);
+			this.RaiseAndSetIfChanged(ref _endTimeText, value);
 			RaiseDerived();
 		}
-	} = string.Empty;
+	}
 
 	protected WallClockRangeProblem RangeProblem
 	{
@@ -91,9 +96,10 @@ public abstract class WallClockRangeForm : ReactiveObject
 	protected (DateTime From, DateTime To)? RangeBounds =>
 		StartBound is { } from && EndBound is { } to && to > from ? (from, to) : null;
 
-	protected DateTime? StartBound => Bound(StartDate, StartTimeText);
+	/// <summary>The typed start even while the range is invalid; null while it is unreadable.</summary>
+	protected internal DateTime? StartBound => Bound(StartDate, StartTimeText);
 
-	protected DateTime? EndBound => Bound(EndDate, EndTimeText);
+	protected internal DateTime? EndBound => Bound(EndDate, EndTimeText);
 
 	protected static TimeOnly? ParseTime(string text)
 	{
@@ -103,7 +109,19 @@ public abstract class WallClockRangeForm : ReactiveObject
 			: null;
 	}
 
-	protected static string FormatTime(DateTime wallClock)
+	/// <summary>Writes the start date and time as one edit: no observer reads a bound with one half written.</summary>
+	internal void PlaceStart(DateTime wallClock)
+	{
+		Place(ref _startDate, ref _startTimeText, wallClock, nameof(StartDate), nameof(StartTimeText));
+	}
+
+	/// <summary>Writes the end date and time as one edit: no observer reads a bound with one half written.</summary>
+	internal void PlaceEnd(DateTime wallClock)
+	{
+		Place(ref _endDate, ref _endTimeText, wallClock, nameof(EndDate), nameof(EndTimeText));
+	}
+
+	internal static string FormatTime(DateTime wallClock)
 	{
 		return wallClock.ToString(TimeFieldFormat, CultureInfo.InvariantCulture);
 	}
@@ -113,12 +131,12 @@ public abstract class WallClockRangeForm : ReactiveObject
 		return DateTime.SpecifyKind(ToWallClock(utc, timeZone).Date, DateTimeKind.Unspecified);
 	}
 
-	protected static DateTime ToWallClock(DateTime utc, TimeZoneInfo timeZone)
+	internal static DateTime ToWallClock(DateTime utc, TimeZoneInfo timeZone)
 	{
 		return TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), timeZone);
 	}
 
-	protected static DateTime FloorToSecond(DateTime value)
+	internal static DateTime FloorToSecond(DateTime value)
 	{
 		return value.AddTicks(-(value.Ticks % TimeSpan.TicksPerSecond));
 	}
@@ -126,6 +144,30 @@ public abstract class WallClockRangeForm : ReactiveObject
 	/// <summary>Raises every property derived from the four fields.</summary>
 	protected virtual void RaiseDerived()
 	{
+	}
+
+	private void Place(
+		ref DateTime? date, ref string timeText, DateTime wallClock, string dateName, string timeTextName)
+	{
+		var placedDate = wallClock.Date;
+		var placedTimeText = FormatTime(wallClock);
+		var isDateChanged = date != placedDate;
+		var isTimeTextChanged = timeText != placedTimeText;
+
+		date = placedDate;
+		timeText = placedTimeText;
+
+		if (isDateChanged)
+		{
+			this.RaisePropertyChanged(dateName);
+		}
+
+		if (isTimeTextChanged)
+		{
+			this.RaisePropertyChanged(timeTextName);
+		}
+
+		RaiseDerived();
 	}
 
 	private static DateTime? Bound(DateTime? date, string timeText)

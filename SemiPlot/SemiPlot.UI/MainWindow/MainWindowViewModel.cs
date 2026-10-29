@@ -23,6 +23,9 @@ using SemiPlot.UI.Startup;
 
 namespace SemiPlot.UI.MainWindow;
 
+public delegate CsvExportViewModel CsvExportViewModelFactory(
+	DateTime fromUtc, DateTime toUtc, IReadOnlyList<ExportPenChoice> pens, IReadOnlyList<StoredMarker> markers);
+
 public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 {
 	private readonly Subject<AboutInfo> _aboutRequests = new();
@@ -35,7 +38,7 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 	private readonly ILoggerFactory _loggerFactory;
 	private readonly ILogger<MainWindowViewModel> _logger;
 	private readonly IPenCatalogueEditor _penCatalogueEditor;
-	private readonly Func<DateTime, DateTime, IReadOnlyList<ExportPenChoice>, CsvExportViewModel> _createExport;
+	private readonly CsvExportViewModelFactory _createExport;
 	private readonly Action _readCatalogueNow;
 	private readonly InstanceLauncher _instanceLauncher;
 	private readonly ObservableAsPropertyHelper<string> _penScaleHeader;
@@ -55,7 +58,7 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 		Action readCatalogueNow,
 		ILoggerFactory loggerFactory,
 		IPenCatalogueEditor penCatalogueEditor,
-		Func<DateTime, DateTime, IReadOnlyList<ExportPenChoice>, CsvExportViewModel> createExport,
+		CsvExportViewModelFactory createExport,
 		InstanceLauncher instanceLauncher)
 	{
 		MessagePanel = messagePanel;
@@ -222,7 +225,8 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 		var pens = ExportPenChoice.Checklist(
 			[.. ChartViewModel.Pens.Select(state => (state.Pen, state.IsVisible))]);
 
-		_exportRequests.OnNext(_createExport(ChartViewModel.Navigation.From, ChartViewModel.Navigation.To, pens));
+		_exportRequests.OnNext(_createExport(
+			ChartViewModel.Navigation.From, ChartViewModel.Navigation.To, pens, ChartViewModel.Markers.All));
 	}
 
 	private async Task RequestSettingsAsync()

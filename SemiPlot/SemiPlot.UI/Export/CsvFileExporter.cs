@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 
 using FluentResults;
@@ -14,15 +13,6 @@ internal sealed class CsvFileExporter(IArchiveRowReader archiveRowReader, CsvDia
 {
 	private const string PartialSuffix = ".partial";
 	private const int BufferSize = 64 * 1024;
-	private const string SuggestedNameStampFormat = "yyyyMMdd_HHmmss";
-
-	public static string SuggestedFileName(DateTime from, DateTime to)
-	{
-		var start = from.ToString(SuggestedNameStampFormat, CultureInfo.InvariantCulture);
-		var end = to.ToString(SuggestedNameStampFormat, CultureInfo.InvariantCulture);
-
-		return $"semiplot_{start}-{end}.csv";
-	}
 
 	public async Task<Result<long>> ExportAsync(
 		string path,

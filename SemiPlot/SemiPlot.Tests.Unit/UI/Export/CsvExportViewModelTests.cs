@@ -729,6 +729,52 @@ public sealed class CsvExportViewModelTests : IDisposable
 			.Which.View.Detail.Should().Contain(partialPath);
 	}
 
+	[AvaloniaFact]
+	public void TheSuggestedName_FollowsTheStartBoxsChoice()
+	{
+		var markerWallClock = _startWallClock.AddMinutes(20).AddSeconds(15).AddMilliseconds(400);
+		var marker = new StoredMarker(
+			1, CsvExportStand.ToUtc(markerWallClock), "RecipeName.csv", MarkerKind.RecipeStart);
+		var unlabelled = new StoredMarker(2, CsvExportStand.ToUtc(markerWallClock), null, MarkerKind.User);
+		using var viewModel = CsvExportStand.Build(
+			_reader,
+			_messagePanel,
+			_scheduler,
+			[new ExportPenChoice(CsvExportStand.Pressure, true)],
+			markers: [marker, unlabelled]);
+
+		viewModel.SuggestedFileName().Should().Be("semiplot_20261013_080000-20261013_090000.csv");
+
+		viewModel.SelectedStartMarker = viewModel.StartMarkers[0];
+
+		viewModel.SuggestedFileName().Should().Be("RecipeName_2026-10-13_08-20.csv");
+
+		viewModel.SelectedStartMarker = viewModel.StartMarkers[1];
+
+		viewModel.SuggestedFileName()
+			.Should().Be("semiplot_20261013_082015-20261013_090000.csv", "an unlabelled marker names nothing");
+
+		viewModel.SelectedStartMarker = viewModel.StartMarkers[0];
+		viewModel.SelectedStartMarker = viewModel.StartChoices[0];
+
+		viewModel.SuggestedFileName()
+			.Should().Be("semiplot_20261013_082015-20261013_090000.csv", "no marker keeps the range name");
+
+		viewModel.SelectedStartMarker = viewModel.StartMarkers[0];
+		viewModel.Form.StartTimeText = "08:20:16";
+
+		viewModel.SuggestedFileName().Should().Be("semiplot_20261013_082016-20261013_090000.csv");
+
+		viewModel.Form.StartTimeText = "08:20:15";
+
+		viewModel.SuggestedFileName()
+			.Should().Be("semiplot_20261013_082015-20261013_090000.csv", "a typed time names nothing, the box does");
+
+		viewModel.Form.StartTimeText = "08:20";
+
+		viewModel.SuggestedFileName().Should().BeNull("an invalid range proposes no name");
+	}
+
 	private CsvExportViewModel BuildNamesakes(bool secondIsTicked)
 	{
 		SetSlices(call => call.From == _startWallClock

@@ -677,7 +677,7 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   row and membership VMs, over `Bridge/ArchiveCallQueue`) - the modal that edits the pen catalogue through
   `IPenCatalogueEditor`, opened from Edit -> Pens and groups (`overview.md#the-pen-and-group-editor`).
   Nothing under `Chart/` or `Legend/` references it.
-- `Export/CsvExportWindow` + `CsvExportViewModel` (+ `ExportRangeForm`, `ExportRangeProblemText`, `ExportMessageLine`, `ExportPenChoice`, `CsvFileExporter`)
+- `Export/CsvExportWindow` + `CsvExportViewModel` (+ `ExportRangeForm`, `ExportRangeProblemText`, `ExportMessageLine`, `ExportPenChoice`, `ExportMarkerChoice`, `ExportFileName`, `CsvFileExporter`)
   is the modal that writes the archive's stored rows of a range and a set of pens into one CSV table ordered by time, opened
   from File -> Export to CSV... (`overview.md#the-export-window`). Nothing under `Chart/` or `Legend/`
   references it.

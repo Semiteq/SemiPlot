@@ -125,7 +125,7 @@ internal sealed class TrendWindow : IDisposable
 			catalogueSync.ReadNow,
 			loggerFactory,
 			penCatalogueEditor,
-			(fromUtc, toUtc, pens) => new CsvExportViewModel(
+			(fromUtc, toUtc, pens, markers) => new CsvExportViewModel(
 				archiveRowReader,
 				coordinator.QueryArchiveDaysAsync,
 				csvDialect,
@@ -137,7 +137,8 @@ internal sealed class TrendWindow : IDisposable
 				toUtc,
 				chart.Navigation.FirstSample,
 				chart.Navigation.NewestSample,
-				pens),
+				pens,
+				markers),
 			launcher);
 
 		catalogueSync.Start();

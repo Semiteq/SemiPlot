@@ -5,6 +5,7 @@ using FluentResults;
 
 using Microsoft.Extensions.Logging.Abstractions;
 
+using SemiPlot.Core.Data;
 using SemiPlot.Core.Export;
 using SemiPlot.Core.Trends;
 using SemiPlot.UI.Export;
@@ -25,13 +26,19 @@ internal static class CsvExportStand
 	public static readonly Pen Argon = new(3, "Argon flow", [], "#FF7F0E", "sccm");
 	public static readonly Pen Power = new(12, "Bias power", [], "#2CA02C");
 
+	public static DateTime ToUtc(DateTime wallClock)
+	{
+		return DateTime.SpecifyKind(wallClock - PlusThree.BaseUtcOffset, DateTimeKind.Utc);
+	}
+
 	public static CsvExportViewModel Build(
 		FakeArchiveRowReader reader,
 		MessagePanelViewModel messagePanel,
 		IScheduler uiScheduler,
 		IReadOnlyList<ExportPenChoice> pens,
 		DateTime? newestSampleUtc = null,
-		Func<DateOnly, DateOnly, CancellationToken, Task<Result<IReadOnlyList<DateOnly>>>>? readArchiveDays = null)
+		Func<DateOnly, DateOnly, CancellationToken, Task<Result<IReadOnlyList<DateOnly>>>>? readArchiveDays = null,
+		IReadOnlyList<StoredMarker>? markers = null)
 	{
 		return new CsvExportViewModel(
 			reader,
@@ -45,6 +52,7 @@ internal static class CsvExportStand
 			StartUtc.AddHours(1),
 			FirstSampleUtc,
 			newestSampleUtc,
-			pens);
+			pens,
+			markers ?? []);
 	}
 }

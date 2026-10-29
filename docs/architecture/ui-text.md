@@ -327,6 +327,13 @@ reads `ExportWindowTitle` and `ExportFileTypeName` for the save dialog's title a
 below the checklist is `ExportCountRows` ("{0} rows" / "Строк: {0}") or `ExportCountUnavailable`.
 `ExportPensHeader` is a format, "Pens ({0} of {1})" / "Перья ({0} из {1})", filled by a `MultiBinding` over the
 ticked and total pen counts; `CsvExportWindowTests` compares it with `Resources.FormatExportPensHeader`.
+Each marker box's first item is `ExportNoMarker` ("No marker" / "Без метки"), painted in
+`AppSecondaryForegroundBrush`; a disabled box has no empty-list text. `Export/ExportMarkerChoice` gives each
+marker item a `Label`, the stored label as it is or `ExportMarkerUnnamed` ("Unnamed" / "Без имени") for a
+label that is missing or blank, and a `Text`, the time in `WallClockRangeForm.TimeFieldFormat`, a space and
+the `Label`. The open list reads `Text`; the closed box reads `Label` alone through its
+`SelectionBoxItemTemplate`, because the time box beside it already shows the time. No item names the
+marker's kind; the box itself says which edge it fills (`overview.md#the-export-window`).
 
 `ExportDateFormat` is `dd.MM.yyyy` in Russian and `yyyy-MM-dd` in English, the date half of the file
 timestamp. Both are digits and literal separators, so the machine's culture decides neither their shape nor
@@ -370,7 +377,8 @@ separator is kept only when it is `;`, `,`, a tab or `|` and differs from the de
 decimal sign is `,` and `,` otherwise, because the timestamp and the value are written unquoted
 (`CsvDialectTests`). A change of the language applies at the next
 start, as every other text does. The save dialog's suggested name is
-`semiplot_yyyyMMdd_HHmmss-yyyyMMdd_HHmmss.csv` with invariant digits in both languages.
+`semiplot_yyyyMMdd_HHmmss-yyyyMMdd_HHmmss.csv`, or `<label>_yyyy-MM-dd_HH-mm.csv` while the start box holds a
+labelled marker (`overview.md#the-export-window`), with invariant digits in both languages.
 
 ## The time window panel's text
 

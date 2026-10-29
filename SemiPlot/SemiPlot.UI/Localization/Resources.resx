@@ -753,6 +753,12 @@
   <data name="ExportFileTypeName" xml:space="preserve">
     <value>CSV files</value>
   </data>
+  <data name="ExportNoMarker" xml:space="preserve">
+    <value>No marker</value>
+  </data>
+  <data name="ExportMarkerUnnamed" xml:space="preserve">
+    <value>Unnamed</value>
+  </data>
   <data name="TimeWindowStartLabel" xml:space="preserve">
     <value>Start</value>
   </data>

@@ -240,42 +240,62 @@ nothing trimmed.
 The export window (`Export/CsvExportWindow`) is 390 px wide with `SizeToContent="Height"` and
 `CanResize="False"`, a 20 px margin and 12 px between its three rows: the form grid, the message line and the
 buttons. The message line is its own full-width row above a right-aligned button row, as in the axis scale
-panel. The form grid has, per bound, the label, a 110 px time `TextBox` and a `CalendarDatePicker`, in that
-order, then the pens header, a bordered pen list and the row count. The label column is `Auto`, the time box
-keeps its width and the picker takes the rest of the row (`HorizontalAlignment="Stretch"`), so the picker's right
-edge, the pen list, the message row and the button row end at one line, 20 px from the window edge. The list
-sizes to its rows up to a `MaxHeight` of 226 px (eight 28 px rows plus the border; a window-scoped
-`ListBoxItem` style zeroes Semi's vertical item padding and `MinHeight`, as in the pen editor, and keeps a 6 px
-horizontal padding, the pen editor's cell margin, so a checkbox stands 6 px off the list border), is bordered with
-`AppBorderBrush` and keeps its vertical scroll bar visible (`AllowAutoHide="False"`). Its horizontal scroll bar
-is disabled: a pen label is a `TextBlock` with `TextTrimming="CharacterEllipsis"` and the full label is the
-row's tooltip. The message line carries the form messages, the progress and success lines and the Excel notice,
-which are longer than the settings dialog's. Measured on 2026-10-14 with Skia and HarfBuzz, the real Win32
-platform, the Semi theme, Inter at 14 px, 50 pens `Damper 01` to `Damper 50`:
+panel. The form grid is `Auto,*` at 14 px and holds two lines per edge, then the pens header, a bordered pen
+list and the row count. The first line is the edge label, centred on the date, and a `CalendarDatePicker`
+stretched over the field column. The second line is a nested grid `110,*` at 8 px under the date: the 110 px
+time `TextBox`, then the marker `ComboBox` stretched to the date's right edge; closed, it shows the marker's
+label alone, and its open list the time and the label (`ui-text.md#the-export-windows-text`). The lines of an edge stand 10 px
+apart; the end label and date carry a 10 px top margin, so 20 px separate the edges, and nothing draws between
+them. Every control keeps Semi's 32 px height, and the picker keeps Semi's text box padding. The dates, the
+marker boxes, the pen list, the message row and the button row end at
+one line, 20 px from the window edge. The list sizes to its rows up to a `MaxHeight` of 226 px (eight 28 px
+rows plus the border; a window-scoped `ListBoxItem` style zeroes Semi's vertical item padding and `MinHeight`,
+as in the pen editor, and keeps a 6 px horizontal padding, the pen editor's cell margin, so a checkbox stands
+6 px off the list border), is bordered with `AppBorderBrush` and keeps its vertical scroll bar visible
+(`AllowAutoHide="False"`). Its horizontal scroll bar is disabled: a pen label is a `TextBlock` with
+`TextTrimming="CharacterEllipsis"` and the full label is the row's tooltip. The message line carries the form
+messages, the progress and success lines and the Excel notice, which are longer than the settings dialog's.
+Measured on 2026-10-14 with Skia and HarfBuzz, the real Win32 platform, the Semi theme, Inter at 14 px, 50
+pens `Damper 01` to `Damper 50`:
 
 | | English | Russian |
 | --- | --- | --- |
-| Window size, every state below | 390 x 515 px | 390 x 515 px |
+| Window size, every state below | 390 x 609 px, an estimate | 390 x 609 px, an estimate |
 | `Save as...`, `Cancel` and `Close` buttons | 90, 73 and 64 px | 145, 82 and 88 px |
-| Message row, list, right edge of the pickers and of the `Close` button | 350 px; 370 px | 350 px; 370 px |
-| Date and time grid: label, time box, picker | 32, 110, 180 px | 52, 110, 160 px |
+| Message row, list, right edge of the dates, the marker boxes and the `Close` button | 350 px; 370 px | 350 px; 370 px |
+| Edge grid: label, date; time box, marker box | 32, 304; 110, 186 px | 52, 284; 110, 166 px |
 | Pens header at "1 of 50" and "50 of 50" | 97 and 106 px | 112 and 121 px |
 | Excel notice on one line, lines in the row | 574 px, 2 | 612 px, 2 |
 | Success line with the 44-character suggested file name, one line, lines in the row | 454 px, 2 | 509 px, 2 |
 | Longest form message on one line (lines in the row) | 253 px, end not after start (1) | 274 px, start time unreadable (1) |
 | A 120-character pen name `W...W` in the list | trimmed to 314 px of a 348 px viewport, no horizontal extent | same |
 
-The window kept 390 x 515 px (50 pens, the list at its `MaxHeight`) with every field valid, with the Excel
-notice (a count of 2 000 000), with each of the seven problems in turn and with the success line. Every
-message fits the two lines of the 350 px row (700 px of capacity), and every form message fits one. The Russian
-Excel notice took three lines at 701 px, so its wording lost the opening "in the range" clause; the English one fit as it was.
+The window keeps one size (50 pens, the list at its `MaxHeight`) with every field valid, with the Excel
+notice (a count of 2 000 000), with each of the seven problems in turn and with the success line. Its height is
+an estimate: 515 px measured with one 32 px line per edge, plus the two second lines of 32 px, their two 10 px
+row gaps and the 10 px top margin of the end edge, 94 px; the stand check of #160 measures it. Every message
+fits the two lines of the 350 px row (700 px of capacity), and every form message fits one. The Russian Excel
+notice took three lines at 701 px, so its wording lost the opening "in the range" clause; the English one fit as it was.
 The floor is the Russian buttons, 145 + 82 + 88 px and two 8 px gaps, 331 px, plus the 40 px margin: 371 px.
-390 px leaves the Russian picker 160 px. The success line names the file and not the path; the full path is the
-line's tooltip. The headless tests measure with the test font, which is about twice as wide, so none asserts
-the wrapping and the button row overflows the window there;
+The label column decides the date's width: 284 px in Russian and 304 px in English. The picker's chrome
+is Semi's 12 px text box padding on each side, the 8 px gap, the 16 px calendar icon and 8 px after it, 56 px,
+which leaves the Russian date 228 px. In Inter at 14 px the widest `dd.MM.yyyy` measures 79.6 px (the widest
+digit repeated over the mask, which bounds every date) and 13.10.2026 72.8 px.
+`UnderRussian_TheWidestDateInInter_FitsTheStartPickersTextViewportOnTheStand` gates the fit: the headless
+shaper advances every glyph by the font size, so the test measures the label and the date masks in the Inter
+font the app ships, through Skia, corrects the realised layout by the label column's real width, requires the
+corrected date to be the 350 px form less the 14 px column gap and that label column, within 1 px, and requires
+the corrected text viewport to hold the widest date plus 2 px. Skia's `MeasureText` sums the advances without
+kerning, an upper bound on the HarfBuzz width of a digit string. The manual stand check of the export by
+markers (#160) checks the whole layout by eye. The success line names the file and not the path; the full path
+is the line's tooltip. The headless tests measure with the test font, which is about twice as wide, so none asserts the
+wrapping and the button row overflows the window there;
 `CsvExportWindowTests.TheWindow_KeepsItsSizeAndItsButtonsWhenAFieldTurnsInvalid` gates the rule on the
-window's and the `Save as...` button's `Bounds`, and `TheListAndTheMessage_EndAtTheRightEdgeOfTheDatePickers`
-gates the alignment. A longer message is measured again in both languages before it ships.
+window's and the `Save as...` button's `Bounds`, and
+`TheDatesTheMarkerBoxesTheListAndTheMessage_EndAtOneRightEdge` gates the alignment and the 20 px right margin
+in both languages, and `EachEdge_PutsTheDateOverTheTimeAndTheMarkerBox_AndTheTabOrderFollows` the two lines,
+the 8, 10 and 20 px gaps, the centred label and the 32 px controls. A longer message is measured again in both
+languages before it ships.
 
 ### The axis scale panel
 
@@ -318,8 +338,8 @@ wide, so the measurement above is the only evidence that nothing is trimmed.
 
 `Chart/TimeWindowPanel` is a `Flyout` form under the same rule, 360 px wide, with four rows that exist in every
 state: Start, End, Width and the reserved message line (`form-message error`, 40 px) across all three columns.
-Its grid follows the export window's date rows: the label column is `Auto`, each time box is a 110 px
-`TextBox`, and the third column, `*`, holds a `CalendarDatePicker` on the Start and End rows and the presets
+Its grid has an `Auto` label column, each time box is a 110 px `TextBox`, and the third column, `*`, holds a
+`CalendarDatePicker` on the Start and End rows and the presets
 `DropDownButton` on the Width row, each stretched to the row's end. The panel has no buttons: Enter, a preset
 and the close commit (`trend-interaction.md#the-time-window-panel`). All five fields bind `Classes.invalid`:
 the two dates, the two times and the width. An end that is not after the start, or a span over 365 days,

@@ -220,7 +220,7 @@ public sealed class ArchiveExceptionMapperTests
 		var error = MapWrite(Postgres("42P01"), "Chamber pressure");
 
 		error.Kind.Should().Be(ArchiveFault.TableMissing);
-		error.Detail.Should().Be(ArchiveStatements.PenCatalogRelations);
+		error.Detail.Should().Be(ArchiveStatements.CatalogueRelations);
 	}
 
 	[Fact]
@@ -306,7 +306,7 @@ public sealed class ArchiveExceptionMapperTests
 
 	private static ArchiveError MapWrite(Exception exception, string subject)
 	{
-		return Mapper().MapWrite(exception, subject, ArchiveStatements.PenCatalogRelations)
+		return Mapper().MapWrite(exception, subject, ArchiveStatements.CatalogueRelations)
 			.Should().BeOfType<ArchiveError>().Which;
 	}
 

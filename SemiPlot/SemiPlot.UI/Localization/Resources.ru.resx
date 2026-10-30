@@ -24,14 +24,38 @@
   <data name="LegendUngroupedHeader" xml:space="preserve">
     <value>Без группы</value>
   </data>
-  <data name="LegendCollapsePanel" xml:space="preserve">
-    <value>Свернуть</value>
+  <data name="LegendHideValues" xml:space="preserve">
+    <value>Скрыть значения</value>
   </data>
-  <data name="LegendExpandPanel" xml:space="preserve">
-    <value>Развернуть</value>
+  <data name="LegendShowValues" xml:space="preserve">
+    <value>Показать значения</value>
+  </data>
+  <data name="LegendHideValuesTip" xml:space="preserve">
+    <value>Скрыть значения и сузить панель</value>
+  </data>
+  <data name="LegendShowValuesTip" xml:space="preserve">
+    <value>Показать значения и расширить панель</value>
+  </data>
+  <data name="LegendFoldAll" xml:space="preserve">
+    <value>Свернуть все</value>
+  </data>
+  <data name="LegendUnfoldAll" xml:space="preserve">
+    <value>Развернуть все</value>
+  </data>
+  <data name="LegendFoldAllGroups" xml:space="preserve">
+    <value>Свернуть все группы</value>
+  </data>
+  <data name="LegendUnfoldAllGroups" xml:space="preserve">
+    <value>Развернуть все группы</value>
   </data>
   <data name="LegendGroupSwitch" xml:space="preserve">
     <value>Показать или скрыть все перья группы {0}</value>
+  </data>
+  <data name="LegendFoldGroup" xml:space="preserve">
+    <value>Свернуть группу {0}</value>
+  </data>
+  <data name="LegendUnfoldGroup" xml:space="preserve">
+    <value>Развернуть группу {0}</value>
   </data>
   <data name="NavigationJumpToNow" xml:space="preserve">
     <value>Перейти к текущему времени</value>
@@ -101,6 +125,15 @@
   </data>
   <data name="MenuViewRecipeMarkers" xml:space="preserve">
     <value>Метки рецептов</value>
+  </data>
+  <data name="MenuViewLegendValues" xml:space="preserve">
+    <value>Значения в панели</value>
+  </data>
+  <data name="MenuViewShowAllPens" xml:space="preserve">
+    <value>Показать все перья</value>
+  </data>
+  <data name="MenuViewHideAllPens" xml:space="preserve">
+    <value>Скрыть все перья</value>
   </data>
   <data name="MenuViewAutoscale" xml:space="preserve">
     <value>Автомасштаб</value>
@@ -659,6 +692,9 @@
   </data>
   <data name="PenGroupsCancel" xml:space="preserve">
     <value>Отмена</value>
+  </data>
+  <data name="PenGroupsFoldedOnStartLabel" xml:space="preserve">
+    <value>Свёрнута при открытии</value>
   </data>
   <data name="PenGroupsMembersHeader" xml:space="preserve">
     <value>Перья выбранной группы</value>

@@ -93,6 +93,98 @@ public sealed class PenGroupsViewTests : IDisposable
 	}
 
 	[AvaloniaFact]
+	public void TheFoldedOnStartBoxClicked_WritesOnceAndTheBoxFollowsTheSelectedGroup()
+	{
+		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			OpenGroupsTab(window);
+			var box = Named<CheckBox>(window, "GroupFoldedOnStartBox");
+			box.Content.Should().Be(Resources.PenGroupsFoldedOnStartLabel);
+			Resources.PenGroupsFoldedOnStartLabel.Should().NotBeNullOrWhiteSpace();
+			HeadlessInput.Click(window, GroupAt(window, 0));
+			box.IsChecked.Should().BeFalse();
+
+			HeadlessInput.Click(window, box);
+
+			_editor.Calls.Should().Equal(new FakeEditorCall.SetFoldedOnStart(Chamber, true));
+			box.IsChecked.Should().BeTrue();
+
+			HeadlessInput.Click(window, GroupAt(window, 1));
+
+			box.IsChecked.Should().BeFalse("the box shows the newly selected group's flag");
+
+			HeadlessInput.Click(window, GroupAt(window, 0));
+
+			box.IsChecked.Should().BeTrue();
+			_editor.Calls.Should().ContainSingle("a selection writes no flag");
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void AFoldedOnStartTheArchiveRefuses_PutsTheBoxBackAndReportsOnce()
+	{
+		_editor.FoldedOnStartResult = Result.Fail(FakePenCatalogueEditor.Refusal(ArchiveFault.RowGone, Chamber.Name));
+		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			OpenGroupsTab(window);
+			HeadlessInput.Click(window, GroupAt(window, 0));
+			var box = Named<CheckBox>(window, "GroupFoldedOnStartBox");
+			var boxBounds = box.Bounds;
+
+			HeadlessInput.Click(window, box);
+
+			_editor.Calls.Should().ContainSingle();
+			box.IsChecked.Should().BeFalse("the refused toggle puts the box back");
+			box.Bounds.Should().Be(boxBounds, "the refusal takes the reserved message line");
+			_messagePanel.Entries.Should().ContainSingle();
+			Named<TextBlock>(window, "GroupsMessage").Text.Should().NotBeEmpty();
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void TheFoldedOnStartBoxSetInCode_WritesNothing_AndTheBoxFollowsTheCommand()
+	{
+		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			OpenGroupsTab(window);
+			HeadlessInput.Click(window, GroupAt(window, 0));
+			var chamber = viewModel.Groups.SelectedGroup!;
+			var box = Named<CheckBox>(window, "GroupFoldedOnStartBox");
+
+			box.IsChecked = true;
+			Dispatcher.UIThread.RunJobs();
+
+			_editor.Calls.Should().BeEmpty("the box is not a writer of the flag");
+			chamber.FoldedOnStart.Should().BeFalse();
+
+			box.IsChecked = false;
+			chamber.ToggleFoldedOnStartCommand.Execute().Subscribe();
+			Dispatcher.UIThread.RunJobs();
+
+			_editor.Calls.Should().Equal(new FakeEditorCall.SetFoldedOnStart(Chamber, true));
+			box.IsChecked.Should().BeTrue();
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
 	public void DeleteClicked_AsksNamingTheMemberCountAndCancelWritesNothing()
 	{
 		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);

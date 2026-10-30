@@ -1,6 +1,4 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Globalization;
 
 using FluentResults;
 
@@ -16,9 +14,9 @@ using SemiPlot.Core.Trends;
 namespace SemiPlot.DataSource.Postgres;
 
 /// <summary>
-/// Reads the archive over the pooled <see cref="NpgsqlDataSource"/>: <see cref="QueryPensAsync"/> answers the
-/// configured variables, <see cref="QueryArchiveExtentAsync"/> the span they cover and
-/// <see cref="QueryHistoryAsync"/> a window of one layer, all crossing the boundary in UTC.
+/// Reads the archive over the pooled <see cref="NpgsqlDataSource"/>: <see cref="QueryCatalogueAsync"/> answers
+/// the stored catalogue and the configured variables, <see cref="QueryArchiveExtentAsync"/> the span they cover
+/// and <see cref="QueryHistoryAsync"/> a window of one layer, all crossing the boundary in UTC.
 /// </summary>
 public sealed class PostgresDataProvider : IDataProvider
 {
@@ -28,10 +26,6 @@ public sealed class PostgresDataProvider : IDataProvider
 	/// </summary>
 	internal const int HistoryReadConcurrency = 4;
 
-	// docs/architecture/data-integration.md#configuration
-	private const int CatalogueCommandTimeoutSeconds = 5;
-
-	private const string UncommissionedPenColor = "#808080";
 	private const string HistoryReadRequestTemplate =
 		"History read at {Layer} from {FromUtc:O} to {ToUtc:O}, {TargetColumnCount} columns for {PenCount} pens "
 			+ "in {GroupCount} groups: ";
@@ -42,11 +36,7 @@ public sealed class PostgresDataProvider : IDataProvider
 	private readonly TimeProvider _timeProvider;
 	private readonly ILogger<PostgresDataProvider> _logger;
 	private readonly int _historyReadConcurrency;
-
-	// docs/architecture/data-integration.md#the-catalogue-while-the-viewer-runs
-	// Written from whichever pool thread a catalogue read resumes on.
-	private readonly ConcurrentDictionary<(int PenId, int Column, string? StoredValue), byte> _warnedNormalisations =
-		new();
+	private readonly CatalogueNormaliser _catalogueNormaliser;
 
 	internal PostgresDataProvider(
 		NpgsqlDataSource dataSource,
@@ -62,31 +52,23 @@ public sealed class PostgresDataProvider : IDataProvider
 		_timeProvider = timeProvider;
 		_logger = logger;
 		_historyReadConcurrency = historyReadConcurrency;
+		_catalogueNormaliser = new CatalogueNormaliser(logger);
 	}
 
-	/// <summary>
-	/// Every configured variable, ordered by name and then by id.
-	/// </summary>
-	public async Task<Result<IReadOnlyList<Pen>>> QueryPensAsync()
+	/// <summary>Reads both projections of the catalogue on one connection.</summary>
+	public async Task<Result<CatalogueRead>> QueryCatalogueAsync()
 	{
 		try
 		{
 			await using var connection = await _dataSource.OpenConnectionAsync().ConfigureAwait(false);
-			await using var command = CreateCatalogueCommand(connection);
-			await using var reader = await command.ExecuteReaderAsync().ConfigureAwait(false);
 
-			var pens = new List<Pen>();
+			var (pens, groups) = await CatalogueRowReader.ReadAsync(connection, isBounded: true).ConfigureAwait(false);
 
-			while (await reader.ReadAsync().ConfigureAwait(false))
-			{
-				pens.Add(ReadPen(reader));
-			}
-
-			return Result.Ok<IReadOnlyList<Pen>>(pens);
+			return Result.Ok(_catalogueNormaliser.Project(pens, groups));
 		}
 		catch (Exception exception)
 		{
-			return Result.Fail<IReadOnlyList<Pen>>(Map(exception, ArchiveStatements.PenCatalogRelations));
+			return Result.Fail<CatalogueRead>(Map(exception, ArchiveStatements.CatalogueRelations));
 		}
 	}
 
@@ -315,14 +297,6 @@ public sealed class PostgresDataProvider : IDataProvider
 			stopwatch.ElapsedMilliseconds);
 	}
 
-	internal static NpgsqlCommand CreateCatalogueCommand(NpgsqlConnection connection)
-	{
-		return new NpgsqlCommand(ArchiveStatements.PenCatalog, connection)
-		{
-			CommandTimeout = CatalogueCommandTimeoutSeconds
-		};
-	}
-
 	// Bound on the archive's own wall clock: a UTC round trip is not injective across DST.
 	internal static void BindLocalBucketedWindow(
 		NpgsqlCommand command,
@@ -444,99 +418,6 @@ public sealed class PostgresDataProvider : IDataProvider
 	private static double ReadValueOrGap(NpgsqlDataReader reader, int ordinal)
 	{
 		return reader.IsDBNull(ordinal) ? double.NaN : reader.GetDouble(ordinal);
-	}
-
-	private Pen ReadPen(NpgsqlDataReader reader)
-	{
-		var penId = reader.GetInt32(PenCatalogColumn.Id);
-		var (scaleMin, scaleMax) = ReadScalePair(reader);
-
-		return new Pen(
-			penId,
-			reader.GetString(PenCatalogColumn.Name),
-			reader.GetFieldValue<string[]>(PenCatalogColumn.Groups),
-			ReadColor(reader, penId),
-			reader.IsDBNull(PenCatalogColumn.Unit) ? null : reader.GetString(PenCatalogColumn.Unit),
-			ReadFormat(reader, penId),
-			reader.GetBoolean(PenCatalogColumn.EnabledOnStart),
-			scaleMin,
-			scaleMax,
-			reader.GetBoolean(PenCatalogColumn.LogScaleOnStart),
-			ReadLineStyle(reader, penId));
-	}
-
-	// semiplot_tags_scale_paired forbids a half-set pair, so one reaching here is a hand-edited row on an
-	// installation without the constraint: it autoscales rather than opening on a bound with no partner.
-	private static (double? Min, double? Max) ReadScalePair(NpgsqlDataReader reader)
-	{
-		if (reader.IsDBNull(PenCatalogColumn.ScaleMinOnStart) || reader.IsDBNull(PenCatalogColumn.ScaleMaxOnStart))
-		{
-			return (null, null);
-		}
-
-		return (reader.GetDouble(PenCatalogColumn.ScaleMinOnStart), reader.GetDouble(PenCatalogColumn.ScaleMaxOnStart));
-	}
-
-	// The server validates a stored colour against the hex pattern, so only its absence is handled here.
-	private string ReadColor(NpgsqlDataReader reader, int penId)
-	{
-		if (!reader.IsDBNull(PenCatalogColumn.Color))
-		{
-			return reader.GetString(PenCatalogColumn.Color);
-		}
-
-		_logger.Log(
-			NormalisationLevel(penId, PenCatalogColumn.Color, null),
-			"Pen {PenId} carries no colour; it is drawn in {FallbackColor} until one is commissioned.",
-			penId,
-			UncommissionedPenColor);
-
-		return UncommissionedPenColor;
-	}
-
-	// No server-side check can parse a .NET mask, so the character rule runs here and an unusable mask
-	// leaves the record with none.
-	private string? ReadFormat(NpgsqlDataReader reader, int penId)
-	{
-		if (reader.IsDBNull(PenCatalogColumn.Format))
-		{
-			return null;
-		}
-
-		var storedMask = reader.GetString(PenCatalogColumn.Format);
-
-		if (PenValueFormat.IsAcceptable(storedMask))
-		{
-			return storedMask;
-		}
-
-		_logger.Log(
-			NormalisationLevel(penId, PenCatalogColumn.Format, storedMask),
-			"Pen {PenId} carries format {StoredMask}, which cannot render a reading; it is drawn under {FallbackMask}.",
-			penId,
-			storedMask,
-			PenValueFormat.FallbackMask);
-
-		return null;
-	}
-
-	private PenLineStyle ReadLineStyle(NpgsqlDataReader reader, int penId)
-	{
-		var storedValue = reader.GetInt16(PenCatalogColumn.LineStyle);
-
-		return StoredLineStyle.Read(
-			storedValue,
-			penId,
-			_logger,
-			() => NormalisationLevel(
-				penId,
-				PenCatalogColumn.LineStyle,
-				storedValue.ToString(CultureInfo.InvariantCulture)));
-	}
-
-	private LogLevel NormalisationLevel(int penId, int column, string? storedValue)
-	{
-		return _warnedNormalisations.TryAdd((penId, column, storedValue), 0) ? LogLevel.Warning : LogLevel.Debug;
 	}
 
 	private async Task<ArchiveExtent> ReadExtentAsync(NpgsqlDataReader reader)

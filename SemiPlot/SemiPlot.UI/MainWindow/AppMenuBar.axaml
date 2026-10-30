@@ -58,6 +58,22 @@
                       ToggleType="CheckBox"
                       IsChecked="{Binding ShowsRecipeMarkers, Mode=OneWay}" />
             <Separator />
+            <MenuItem Name="ViewLegendValues"
+                      Header="{x:Static text:Resources.MenuViewLegendValues}"
+                      Command="{Binding LegendViewModel.ToggleExpandedCommand}"
+                      ToggleType="CheckBox"
+                      IsChecked="{Binding LegendViewModel.IsExpanded, Mode=OneWay}" />
+            <MenuItem Name="ViewFoldAllGroups"
+                      Header="{Binding LegendViewModel.FoldAllGroupsText}"
+                      Command="{Binding LegendViewModel.ToggleAllFoldsCommand}" />
+            <Separator />
+            <MenuItem Name="ViewShowAllPens"
+                      Header="{x:Static text:Resources.MenuViewShowAllPens}"
+                      Command="{Binding ChartViewModel.ShowAllPensCommand}" />
+            <MenuItem Name="ViewHideAllPens"
+                      Header="{x:Static text:Resources.MenuViewHideAllPens}"
+                      Command="{Binding ChartViewModel.HideAllPensCommand}" />
+            <Separator />
             <MenuItem Name="ViewPenScale"
                       Header="{Binding PenScaleHeader}">
                 <MenuItem Name="ViewAutoscale"

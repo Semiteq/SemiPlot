@@ -22,7 +22,7 @@ public sealed class CatalogueReadUnreachableTests
 	{
 		await using var services = UnreachableArchive.Services(_settings);
 
-		var read = await services.GetRequiredService<IDataProvider>().QueryPensAsync();
+		var read = await services.GetRequiredService<IDataProvider>().QueryCatalogueAsync();
 
 		read.IsFailed.Should().BeTrue();
 		var error = read.Errors.Should().ContainSingle().Which.Should().BeOfType<ArchiveError>().Which;

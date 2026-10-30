@@ -473,9 +473,9 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   history-load / realtime-append / fold logic that drives those mutators. `Revise(Pen)` replaces the
   pen, which raises `Pen` like `IsVisible` and `CurrentValue`, and restyles the line; `IsVisible` and the
   loaded history stay. `IsVisible` is seeded from `Pen.EnabledOnStart` at construction and has a private
-  setter; the internal `SetVisibility`, which `TrendChartViewModel.SetPenVisibility` alone calls, is its
-  one writer, and a method is what no binding can reach. The hover readout reads `Pen` per pointer move;
-  the sidebar row binds through it.
+  setter; the internal `SetVisibility`, which only `TrendChartViewModel.SetPenVisibility` and
+  `SetAllPensVisibility` call, is its one writer, and a method is what no binding can reach. The hover
+  readout reads `Pen` per pointer move; the sidebar row binds through it.
 - `Chart/ChartAxisBinder` — applies the `PenScaleModel` output to ScottPlot Y axes (one left axis per
   pen, `SetLimitsY`, shared-X pinning) and switches an axis between linear and log10: its limits in
   decades, its tick generator and the minor gridline width (`#log10-y-axis`); writes each generator's
@@ -622,33 +622,39 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   `TrendLegendGroupViewModel.SwitchState` is derived from its rows' pen states (all on true, all off
   false, mixed null) and stored nowhere, the box reads it `Mode=OneWay`, and `SwitchGroupCommand`, its
   one writer, switches every row on unless all are on, then off. A pen's visibility is
-  `TrendPenState.IsVisible` alone, and the chart's `SetPenVisibility` is its one writer: the row keeps no
-  flag, exposes the chart's state as `PenState`, and its box reads `PenState.IsVisible` `Mode=OneWay` and
-  writes through `ToggleVisibilityCommand`, the pattern of a checkable menu item. The box command and the
-  header switch both reach the chart through the row's `SetVisibility`, one row at a time, so every other
-  header a shared pen sits under re-derives. `BuildGroups` keys every row by its groups, an ungrouped row
-  by the ungrouped header, in one ordinal `GroupBy`, so a group named like the ungrouped header takes the
-  ungrouped rows; headers sort alphabetically in the current culture, the ungrouped one last. It
-  constructs every group view model once per build, because a replaced group would keep its subscriptions
-  on the rows. `Rebuild()`, called after every catalogue read that changed something, builds new rows and
-  groups from the chart's `Pens`, assigns `Groups`, which raises `PropertyChanged`, and only then
-  disposes the rows and groups it replaced, so no binding reads a disposed row. A row binds its pen's
-  name, colour and unit through `PenState.Pen`, which a revision replaces, so they follow a revision
-  without a rebuild; it formats each reading under the mask `PenState.Pen` carries when that reading
-  arrives, so a revised mask shows from the next reading or the next rebuild. Its box reads the pen
-  state the chart keeps, so every pen keeps its visibility. `IsExpanded` is the panel's one state flag: collapsed, the row drops
-  the value and the unit. The panel keeps two session width slots, expanded (starts at 280) and collapsed
-  (starts at 168), and `PanelWidth` shows the slot of the current state, clamped to at least
-  `PanelMinWidth` (120) and to the room that leaves the chart at least `ChartMinWidth` (320). `FitPanel`
-  is the one writer of that room: `MainWindow.axaml.cs` calls it in `OnLoaded` and on every `SizeChanged`
-  of the content grid, so the chart floor holds from the first frame, and a shrink narrows the shown
-  width without writing a slot, so growing the window back restores it. The widths and `IsExpanded` are
-  the panel's own fields, so a `Rebuild()` keeps them. A `Thumb` between the chart and the panel is the
-  drag handle: its `DragDelta` handler calls `ResizePanel`, the only writer of the shown slot, which
-  applies the same clamp. Semi ships no `Thumb` theme, so the handle carries its own template, a `Border`
-  painting its `Background`; without one it draws nothing and a press never reaches it. The handle shows
-  only while `IsLegendVisible` holds. Nothing persists the state or the widths — every start opens
-  expanded at 280.
+  `TrendPenState.IsVisible` alone, and the chart's `SetPenVisibility` is the one writer the sidebar
+  reaches: the row keeps no flag, exposes the chart's state as `PenState`, and its box reads
+  `PenState.IsVisible` `Mode=OneWay` and writes through `ToggleVisibilityCommand`, the pattern of a
+  checkable menu item. The box command and the header switch both reach the chart through the row's
+  `SetVisibility`, one row at a time, so every other header a shared pen sits under re-derives.
+  `BuildGroups` keys every row by its stored groups, the memberships the catalogue read carries rather
+  than the pen's own group-name strings, and an ungrouped row by the ungrouped header, in one ordinal
+  `GroupBy`: a group named like the ungrouped header takes the ungrouped rows, two stored groups sharing
+  a name share one header, and a stored group holding no shown pen draws no header. Headers sort
+  alphabetically in the current culture, the ungrouped one last. It constructs every group view model
+  once per build, because a replaced group would keep its subscriptions on the rows.
+  `Rebuild(IReadOnlyList<StoredGroup>)`, called after every catalogue read that changed something, builds
+  new rows from the chart's `Pens` and new groups from the stored groups the applier hands it, assigns
+  `Groups`, which raises `PropertyChanged`, and only then disposes the rows and groups it replaced, so no
+  binding reads a disposed row. A row binds its pen's name, colour and unit through `PenState.Pen`, which
+  a revision replaces, so they follow a revision without a rebuild; it formats each reading under the
+  mask `PenState.Pen` carries when that reading arrives, so a revised mask shows from the next reading or
+  the next rebuild. Its box reads the pen state the chart keeps, so every pen keeps its visibility.
+  `IsExpanded` is the panel's one state flag: cleared, the row drops the value and the unit.
+  `ToggleExpandedCommand` is its one writer, invoked by the values button of the panel's top row and the
+  `View` -> Values in the panel item (`overview.md#the-sidebar-fold`). The panel keeps two session width
+  slots, expanded (starts at 280) and collapsed (starts at 168), and `PanelWidth` shows the slot of the
+  current state, clamped to at least `PanelMinWidth` (120) and to the room that leaves the chart at least
+  `ChartMinWidth` (320). `FitPanel` is the one writer of that room: `MainWindow.axaml.cs` calls it in
+  `OnLoaded` and on every `SizeChanged` of the content grid, so the chart floor holds from the first
+  frame, and a shrink narrows the shown width without writing a slot, so growing the window back restores
+  it. The widths, `IsExpanded` and the session folds are the panel's own fields, so a
+  `Rebuild(IReadOnlyList<StoredGroup>)` keeps them (`overview.md#the-sidebar-fold`). A `Thumb` between
+  the chart and the panel is the drag handle: its `DragDelta` handler calls `ResizePanel`, the only
+  writer of the shown slot, which applies the same clamp. Semi ships no `Thumb` theme, so the handle
+  carries its own template, a `Border` painting its `Background`; without one it draws nothing and a
+  press never reaches it. The handle shows only while `IsLegendVisible` holds. Nothing persists the state
+  or the widths — every start opens expanded at 280.
 - `Minimap/MinimapView` + `MinimapViewModel` — Canvas-based archive-overview strip with no baseline,
   and a label row under it that holds the two end labels and, under the pointer, the time at the strip's
   1 px hover line (`HoverAt`, `ClearHover`, `HoverFraction`, `HoverLabel`); navigates via the shared
@@ -746,8 +752,8 @@ quoting). `SemiPlot.Core.Export.ArchiveRowSlices` holds the 15 minute slice widt
   of a log axis. The delta readout's Δy goes through `FormatDifference`, which keeps only the mask's
   positive section without its sign literals: a difference is often negative and often zero, a reading's
   negative or zero section (a sign left out, a dash for no reading) would misstate it, and a literal `+`
-  or parenthesis would print after the minus .NET puts ahead of a negative value. The rule runs once, in `PostgresDataProvider.ReadPen`,
-  which is where the logger is; a rejected mask reaches the record as `null`, so `Pen.Format` in the
+  or parenthesis would print after the minus .NET puts ahead of a negative value. The rule runs once,
+  in `CatalogueNormaliser`, which is where the logger is; a rejected mask reaches the record as `null`, so `Pen.Format` in the
   row is always usable and the row neither validates nor logs. The rule is a character set rather than
   a `try`/`catch` because .NET throws on almost no bad mask: `qqq` prints literally and `%0.0`
   multiplies the reading by 100.
@@ -766,12 +772,15 @@ quoting). `SemiPlot.Core.Export.ArchiveRowSlices` holds the 15 minute slice widt
 ## Applying a catalogue read
 
 A running chart follows the stored catalogue (`overview.md#the-live-catalogue`).
-`Core/Trends/PenListDelta.Between` compares two reads: `Added`, `RemovedPenIds`, `Revised` (the new record of
-each pen whose stored settings differ) and `Current`, the new read. `IsEmpty` is true when nothing was
-added, removed or revised, so a new order alone is no change.
+`Core/Trends/PenListDelta.Between` compares two pen lists: `Added`, `RemovedPenIds`, `Revised` (the new
+record of each pen whose stored settings differ) and `Current`, the newer list. `IsEmpty` is true when
+nothing was added, removed or revised, so a new order alone is no change. `ChartPenSet.Apply` compares
+the pens the chart shows with a read's pens, `MainWindow/PenCatalogueApplier` compares the pens of the
+last read it applied with a new read's pens to learn whether pens were added, and
+`CatalogueRead.Matches` compares the pens of two reads.
 
-`TrendChartViewModel.ApplyCatalogue(catalogue)` takes the read itself, `delta.Current`, and compares it
-with the pens the chart shows, not with the read before it. `ChartPenSet.Apply` computes that
+`TrendChartViewModel.ApplyCatalogue(catalogue)` takes the read's pens, `read.Pens`, and
+compares them with the pens the chart shows, not with the read before it. `ChartPenSet.Apply` computes that
 comparison with `PenListDelta.Between` and applies it, so the chart ends up showing exactly the read
 whatever baseline the loop compared it with (`overview.md#what-a-read-changes`). In this order, under
 `lock (Plot.Sync)` (`#per-pen-plottable-envelopeline`, the plot's own lists):
@@ -811,7 +820,7 @@ read was delivered, and the debouncer reads every such push. A result for a read
 change sets no fetch either, since it holds no row of an added pen, and the window in view is asked for
 again (`data-integration.md#what-one-history-query-covers`).
 
-A history result that lands after a delta removed a pen carries an envelope for it, because the query
+A history result that lands after a read removed a pen carries an envelope for it, because the query
 was issued before the removal. `ApplyHistory` skips every envelope whose pen the chart no longer
 holds, so a removed pen's rows never outlive it and a pen that comes back reads its history afresh.
 
@@ -840,14 +849,27 @@ read of a pen switched on leaves it cleared and unread for the range in hand, so
 change asks for it again.
 
 A chart that started empty takes its first pens through the same path. `PenCatalogueApplier` reads the
-archive extent first and seeds `Navigation.SeedFromArchiveExtent` with it before the delta applies, as a
+archive extent first and seeds `Navigation.SeedFromArchiveExtent` with it before the read applies, as a
 start with pens does, then hands it to `WidenToArchiveExtent`: a chart that lost every pen latched its
-first sample at start, so only the widen moves it. A delta that adds a pen to a chart that already had
+first sample at start, so only the widen moves it. A read that adds a pen to a chart that already had
 some reloads the minimap's extent after it, and `WidenToArchiveExtent` moves the pan floor back to an
 earlier first sample that extent carries, without moving the window. When the floor moved and history
 has started, the chart asks for the window in force through the same `Covers` gate as any request: a
 range clamped at the old floor no longer reaches the first sample, so a window starting before the old
 floor is read again, while a window far from either floor reads nothing (`overview.md#what-a-read-changes`).
+
+### Switching every pen at once
+
+`TrendChartViewModel.SetAllPensVisibility(bool)` backs the `View` items Show all pens and Hide all pens
+through `ShowAllPensCommand` and `HideAllPensCommand`; no panel control calls it. It sets every pen's flag,
+clears the unread curve of each pen it switched on as step 1 does, and then runs steps 2 to 4 once for the
+whole set (`SettleVisibilityChange`, the tail `SetPenVisibility` shares). A loop over `SetPenVisibility`
+would move the active pen from pen to pen and plan the history once per pen.
+
+Hide all leaves no visible pen and no drawn axis and reads nothing, unless the count of zero moves the
+layer. The active pen settles only on a visible pen, so with none visible `ActivePenId` keeps the
+operator's pick, and Show all brings every pen back with that pick still active. Show all asks for at most
+one history read and one redraw.
 
 ## Data contract (UI ↔ provider)
 

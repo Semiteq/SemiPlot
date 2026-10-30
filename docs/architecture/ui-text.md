@@ -161,13 +161,21 @@ come from the mapper (`#what-the-mappers-two-consumers-read`):
 ## The sidebar's text
 
 `Legend/TrendLegendView.axaml` reads the sidebar's strings through `TrendLegendViewModel` and
-`TrendLegendGroupViewModel`. Pen and group names are data and pass through no resource.
+`TrendLegendGroupViewModel`, and `MainWindow/AppMenuBar.axaml` reads the `View` items that act on the
+sidebar and on every pen. Pen and group names are data and pass through no resource. Each label and
+tooltip of the top row names what the next press does (`overview.md#the-sidebar-fold`).
 
 | Key | English / Russian | Where |
 | --- | --- | --- |
-| `LegendCollapsePanel`, `LegendExpandPanel` | "Collapse" / "Свернуть", "Expand" / "Развернуть" | The panel's toggle button, its text and accessible name (`TrendLegendViewModel.ToggleText`) |
+| `LegendHideValues`, `LegendShowValues` | "Hide values" / "Скрыть значения", "Show values" / "Показать значения" | The values button's label while the values show and while they are hidden (`TrendLegendViewModel.ToggleText`) |
+| `LegendHideValuesTip`, `LegendShowValuesTip` | "Hide values and narrow the panel" / "Скрыть значения и сузить панель", "Show values and widen the panel" / "Показать значения и расширить панель" | The values button's tooltip and accessible name (`TrendLegendViewModel.ToggleTip`) |
+| `LegendFoldAll`, `LegendUnfoldAll` | "Fold all" / "Свернуть все", "Unfold all" / "Развернуть все" | The fold-all button's label while some header is unfolded and while every header is folded (`TrendLegendViewModel.FoldAllText`) |
+| `LegendFoldAllGroups`, `LegendUnfoldAllGroups` | "Fold all groups" / "Свернуть все группы", "Unfold all groups" / "Развернуть все группы" | The fold-all button's tooltip and accessible name and the `View` fold-all item's header, one property for the three (`TrendLegendViewModel.FoldAllGroupsText`); the menu binds it rather than reading a key through `x:Static` |
+| `MenuViewLegendValues` | "Values in the panel" / "Значения в панели" | The checkable `View` item over `TrendLegendViewModel.IsExpanded` |
+| `MenuViewShowAllPens`, `MenuViewHideAllPens` | "Show all pens" / "Показать все перья", "Hide all pens" / "Скрыть все перья" | The two `View` items over `TrendChartViewModel.SetAllPensVisibility` (`charting.md#switching-every-pen-at-once`) |
 | `LegendUngroupedHeader` | "Ungrouped" / "Без группы" | The last group's header, over the pens that belong to no group, in capitals through `LegendConverters.ToCapitals`; absent while no pen has a group |
 | `LegendGroupSwitch` | "Show or hide every pen of group {0}" / "Показать или скрыть все перья группы {0}" | The accessible name of a group header's check box, `{0}` the group name (`TrendLegendGroupViewModel.SwitchName`) |
+| `LegendFoldGroup`, `LegendUnfoldGroup` | "Fold group {0}" / "Свернуть группу {0}", "Unfold group {0}" / "Развернуть группу {0}" | The tooltip and accessible name of a group header's fold toggle, `{0}` the group name; each names what the next press does, `LegendFoldGroup` on an unfolded header and `LegendUnfoldGroup` on a folded one (`TrendLegendGroupViewModel.FoldName`, `overview.md#the-sidebar-fold`) |
 
 ## The settings window's text
 
@@ -240,7 +248,10 @@ scale flag, which change no pen already shown (`overview.md#what-a-read-changes`
 wait for. The `Groups` tab reads `PenGroupsNewNamePlaceholder`, one of the tree's two watermarks beside
 the marker label editor's `MarkerLabelPlaceholder` (`#the-marker-menu-and-label-editors-text`),
 `PenGroupsCreate`, `PenGroupsNameLabel`, `PenGroupsDelete`, which is also the confirm button's caption,
-`PenGroupsCancel` and `PenGroupsMembersHeader`. `PenGroupsDeleteConfirmation` takes the group name as
+`PenGroupsCancel` and `PenGroupsMembersHeader`. The selected group's fold checkbox reads
+`PenGroupsFoldedOnStartLabel`, "Folded when the viewer opens" / "Свёрнута при открытии": the stored flag
+is the fold the group's sidebar header starts with, and a change of it folds nothing on a running sidebar
+(`overview.md#the-sidebar-fold`). `PenGroupsDeleteConfirmation` takes the group name as
 `{0}` and its member count as `{1}`, and is a snapshot taken when delete is pressed. The added count and
 the confirmation put the counted noun first in both languages, "Pens in the group: {1}" / "Перьев в
 группе: {1}", so neither needs a plural form.

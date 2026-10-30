@@ -274,8 +274,14 @@ always there.
 | 4 | Message panel (`MessagePanelView`) | `MessagePanel.IsVisible` |
 | 5 | Status bar (`AppStatusBar`) | no |
 
-The `View` menu writes rows 1, 3 and 4; row 2's legend column has its own item. One submenu, Pen scale, holds
-two plain commands, Autoscale and Restore initial scale. They act on the active pen's axis and write no flag.
+The `View` menu writes rows 1, 3 and 4; row 2's legend column has its own item. Its items run in five
+blocks split by separators: the checkable Navigation bar, Legend, Minimap and Recipe markers; the sidebar's
+Values in the panel and fold-all (`#the-sidebar-fold`); Show all pens and Hide all pens; the Pen scale
+submenu; then the checkable Message panel. Values in the panel reads `LegendViewModel.IsExpanded` and invokes
+`ToggleExpandedCommand`, the values button's command, so it writes no row. Show all pens and Hide all pens
+invoke the chart's `ShowAllPensCommand` and `HideAllPensCommand` (`charting.md#switching-every-pen-at-once`).
+The Pen scale submenu holds two plain commands, Autoscale and Restore initial scale. They act on the active
+pen's axis and write no flag.
 Each flag has one writer, the command the menu item invokes, and the item reads back that same flag
 `Mode=OneWay` — a `MenuItem` whose `IsChecked` were two-way would have the control as a second writer, and one
 reading back a property the command does not write would let a click move nothing on screen.
@@ -517,7 +523,7 @@ The window is a `TabControl` of two tabs over a bottom bar that both tabs share:
 | Part | Holds |
 | --- | --- |
 | `Pens` tab | A read-only table of every pen: a click on a column header sorts by that column, a second click reverses. Under it, the form of the selected pen: name, unit, mask with a live preview, colour as a `#RRGGBB` text box beside a `ColorPicker`, line style, "on start", the scale pair and the log scale flag under it. A pen's groups show in the table as text and are not edited there. |
-| `Groups` tab | The group list with a new-name field, a create button, one rename field and a delete button. Beside it, every pen of the catalogue as a checkbox, checked where the pen is a member of the selected group. Membership is edited here only. A delete asks once, in a row the tab always reserves, naming the group and how many pens it holds. |
+| `Groups` tab | The group list with a new-name field, a create button, one rename field, a delete button and, under them, the selected group's fold flag as a checkbox, disabled while no group is selected. Beside it, every pen of the catalogue as a checkbox, checked where the pen is a member of the selected group. Membership is edited here only. A delete asks once, in a row the tab always reserves, naming the group and how many pens it holds. |
 | Bottom bar | The number of pens the last refresh added and `Refresh pen list`, right-aligned. `Refresh pen list` registers the keys the SCADA writes as hidden pens and reads the catalogue again. |
 
 The editor reads fresh from the tables when it opens and after each refresh, and shows the values as
@@ -546,7 +552,8 @@ in `finally`, as it does for the settings dialog. No startup code calls the edit
 #### One queue for every call
 
 `PenEditorViewModel` owns one `Bridge/ArchiveCallQueue`, and every call to `IPenCatalogueEditor` runs through
-it: pen commits, the scale pair, membership toggles, group create, rename and delete, and refresh. The
+it: pen commits, the scale pair, membership toggles, group create, rename, fold flag and delete, and
+refresh. The
 queue is a task chain, first in, first out. Each call starts after the one before it has finished, a
 commit issued while another is in flight waits instead of being dropped, and a refresh reads only after
 every commit issued before it. A refresh reads again while a call waits behind its read, because a write
@@ -595,6 +602,13 @@ There is no save button.
   unchanged, and the binding puts the box back. A group keeps one entry per pen for the life of the
   groups tab, so the box shown after the group is selected again is the entry whose toggle may still
   run: it stays disabled until the toggle lands and then shows it.
+- The group's fold checkbox follows the same rule. It reads `PenGroupViewModel.FoldedOnStart`, the
+  stored `folded_on_start`, one way and writes only through `ToggleFoldedOnStartCommand`, which stores
+  the opposite of the stored flag through `IPenCatalogueEditor.SetFoldedOnStartAsync`. A landed write
+  updates the group's record; a failed one fills the tab's message line, adds one panel entry and raises
+  `PropertyChanged(nameof(FoldedOnStart))` with the value unchanged, and the binding puts the box back.
+  The flag is the fold a sidebar header starts with, so a change of it folds nothing on a running sidebar
+  that already shows the header (`#the-sidebar-fold`).
 
 The routing is input interop in `PenEditorWindow.axaml.cs`; each decision stays in a view model.
 An edit ends when its field loses the focus, and a label or an empty area takes no focus on a click.
@@ -619,9 +633,10 @@ connection it edits is the one every read runs over (`#the-settings-window`).
 
 #### The read
 
-`PenCatalogueSync` reads through `IDataProvider.QueryPensAsync`, the statement the start sequence
-reads, so the read carries the provider's normalisation and nothing repeats it. Its loop waits for
-`ReadInterval`, 5 s, or for a `ReadNow()`, whichever comes first, and then reads:
+`PenCatalogueSync` reads through `IDataProvider.QueryCatalogueAsync`, the read the start sequence
+reads: one statement pair that returns the stored `PenCatalogue` and the normalised pens projection of
+the same rows, so the read carries the provider's normalisation and nothing repeats it. Its
+loop waits for `ReadInterval`, 5 s, or for a `ReadNow()`, whichever comes first, and then reads:
 
 - the first read comes at once: `TrendWindow.Build` calls `ReadNow()` right after `Start()`. The start
   sequence has just read the same catalogue, but this read starts the connection state, so its first
@@ -639,7 +654,7 @@ counts and their warning, and the connection state it emits through the sink `Pe
 each sync keeps its read and what it does with a result.
 The loop runs on the UI scheduler through `ScheduleAsync`. The read is asynchronous I/O and holds no
 thread, and the loop, `ReadNow`, the snapshot and `Dispose` all run on the UI thread, so nothing is
-locked. `TrendWindow.Build` builds the sync from the pens the start sequence read, after the
+locked. `TrendWindow.Build` builds the sync from the catalogue the start sequence read, after the
 minimap, hands its `ConnectionStates` to the status bar and its `ReadNow` to `MainWindowViewModel`, and
 starts it and asks for the first read once the window view model exists.
 `Dispose` cancels the wait, and a read that lands after it emits nothing.
@@ -656,10 +671,16 @@ read, which costs one statement. The startup-failure window has no editor and no
 
 #### What a read changes
 
-A read is compared with the previous successful read through `PenListDelta.Between`, never with the
+A read is compared with the previous successful read through `CatalogueRead.Matches`, never with the
 chart's state, so a read carries only what someone stored. The one exception follows an apply that
-threw, below. `Pen` compares its `Groups` element by
-element, so two reads of one stored pen are equal. A read that changes nothing emits no delta.
+threw, below. The comparison covers the whole catalogue, the stored pens and the stored groups, not the
+normalised pens alone: a change the normalisation hides, an unusable mask replaced by another unusable
+mask or a `NULL` colour replaced by the fallback colour, does not match, and a group's own column is a
+change even when every normalised pen is equal. Pens, stored pens and stored groups are compared by id,
+so a new order alone matches. `Pen` compares its `Groups` element by element, so two reads of one stored
+pen are equal. A read that matches emits nothing; a read that does not is emitted whole on
+`PenCatalogueSync.Changes`, and every consumer reconciles to it: the chart to its `Pens`, the sidebar to
+its `Stored.Groups`.
 
 | The read carries | The running chart |
 | --- | --- |
@@ -670,27 +691,31 @@ element, so two reads of one stored pen are equal. A read that changes nothing e
 | A changed `log_scale_on_start` | Nothing changes on screen: the flag is the axis type a pen starts with, applied when the pen enters the chart and by `RestoreInitialScale`, which reads the flag the latest read stored. |
 | A new pen | It joins with the visibility its `enabled_on_start` gives it, with its history and its live edge. |
 | A pen gone from the catalogue | It leaves the chart. When it was the active pen, the first visible pen in catalogue order takes the slot and keeps the current emphasis: after an empty click it draws 1 px wide. A read that leaves no pen clears the emphasis, so the next pen seated draws 1 px wide, as in a new window (`charting.md`, Active stroke). |
+| A changed group no normalised pen carries, its own column or a rename of a group with no members | The sidebar takes the change; no pen changes on the chart. |
+| A changed `folded_on_start` | Nothing changes on screen: the flag is the fold a header starts with, and a header the sidebar already drew keeps its session fold (`#the-sidebar-fold`). |
 
-A delta also puts the chart's pens in the order of the read, and any change rebuilds the sidebar from
-the chart's pens. The sidebar keeps its width and its expanded state, and every pen keeps its
-visibility.
+An emitted read also puts the chart's pens in the order of the read, and rebuilds the sidebar from
+the chart's pens and the read's stored groups. The sidebar keeps its width, its expanded state and its
+folds, and every pen keeps its visibility.
 
 `TrendWindow.Build` hands the sync, the chart, the minimap and the legend to
-`MainWindow/PenCatalogueApplier`. The applier applies the sync's `Deltas` one at a time, in order,
-through `Select(delta => Observable.FromAsync(..., uiScheduler))` and `Concat()`. The scheduler is
-required: `FromAsync` without one completes an apply that awaited on the thread pool, and the delta
-queued behind it would start there. Each apply takes four steps:
+`MainWindow/PenCatalogueApplier`. The applier applies the reads on the sync's `Changes` one at a time,
+in order, through `Select(read => Observable.FromAsync(..., uiScheduler))` and `Concat()`. The scheduler
+is required: `FromAsync` without one completes an apply that awaited on the thread pool, and the read
+queued behind it would start there. "The read adds pens" means
+`PenListDelta.Between(lastApplied.Pens, read.Pens).Added` is not empty, against the last read the
+applier applied. Each apply takes four steps:
 
-1. When the chart has no pens and the delta adds some, it reads the extent through
+1. When the chart has no pens and the read adds some, it reads the extent through
    `MinimapViewModel.LoadExtentAsync` and, before anything else, hands a successful one to
    `Navigation.SeedFromArchiveExtent` and then to `TrendChartViewModel.WidenToArchiveExtent`. The
    navigation latches on the first data it sees, and a history envelope would otherwise latch the first
    sample of a one-hour window, so the operator could not reach the archive's first day. A chart that
    had pens and lost them all latched long ago, so the seed changes nothing there, and the widen is what
    moves its pan floor back to the new pen's older rows.
-2. `TrendChartViewModel.ApplyCatalogue(delta.Current)` (`charting.md#applying-a-catalogue-read`).
-3. `TrendLegendViewModel.Rebuild()`.
-4. When the delta added a pen to a chart that already had some, `LoadExtentAsync` again, because the
+2. `TrendChartViewModel.ApplyCatalogue(read.Pens)` (`charting.md#applying-a-catalogue-read`).
+3. `TrendLegendViewModel.Rebuild(read.Stored.Groups)`.
+4. When the read added a pen to a chart that already had some, `LoadExtentAsync` again, because the
    extent read at start does not know the new pen. A successful read goes to
    `TrendChartViewModel.WidenToArchiveExtent`. When its first sample is earlier than the navigation's,
    the pan floor moves back and the window stays: the navigation latches its first sample once, so the
@@ -699,14 +724,16 @@ queued behind it would start there. Each apply takes four steps:
    can land before the extent read, clamped at the old floor, and nothing else checks it again.
 
 The body is one `try/catch`, and a throw goes to the message panel through
-`TrendChartViewModel.ReportFailure`, so the next delta still applies. A throw ahead of the end of step 3
-also rebases the sync on the pens the chart showed before the delta (`PenCatalogueSync.Rebase`): the next
-read is compared with those, so it emits again and the chart and the sidebar catch up instead of staying
-diverged for the session. The chart takes a read whatever baseline it was compared with, because
+`TrendChartViewModel.ReportFailure`, so the next read still applies. A throw ahead of the end of step 3
+also rebases the sync on the last read both the chart and the sidebar took
+(`PenCatalogueSync.Rebase`). The applier tracks that read, seeded from the catalogue the start
+sequence read and advanced only after both apply; the next read is compared with it, so it emits
+again and the chart and the sidebar catch up instead of staying diverged for the session. A failed
+group-only change, which no normalised pen carries, is retried by the next read the same way. The chart takes a read whatever baseline it was compared with, because
 `ApplyCatalogue` compares the read with the pens the chart shows: a pen it holds is revised when the read
 differs, a pen it lacks joins, and a pen the read does not name leaves. So the repeat is safe, and so is
-a delta queued behind the one that threw, which was read against a catalogue the chart never took. A
-throw out of step 4 comes after the chart and the sidebar took the delta and rebases nothing. The
+a read queued behind the one that threw, which was compared with a catalogue the chart never took. A
+throw out of step 4 comes after the chart and the sidebar took the read and rebases nothing. The
 subscription's `onError` reports the same way. `Dispose` disposes the applier, which cancels an apply
 still waiting for the extent in step 1, and the sync ahead of the chart; the cancelled apply returns
 without touching the chart.
@@ -726,7 +753,7 @@ failure by its kind (`data-integration.md#the-connection-state-the-catalogue-rea
 A success resets both counts. Three is one constant for both routes
 (`ArchiveConnectionState.ConsecutiveFailuresBeforeFault`), so one reconnect after a server restart
 opens no panel entry and raises no fault. A read that throws instead of answering is a defect, not an
-outage: it adds one panel entry at once and leaves both counts as they were. A `Deltas` subscriber that
+outage: it adds one panel entry at once and leaves both counts as they were. A `Changes` subscriber that
 throws adds one panel entry, and the loop reads on; the read it threw on is the baseline all the same.
 
 #### Why nothing is pushed and nothing is rebuilt whole
@@ -736,10 +763,79 @@ disconnected, so the periodic read would stay as the fallback in that design too
 few hundred rows every 5 s costs less than the live edge's statement per second, and the live edge
 itself arrives 1 to 2 s after the SCADA writes, so 5 s between stations reads as immediate.
 
-The chart applies the delta to the pens it has and is never rebuilt whole. A window's parts are built
+The chart reconciles the read with the pens it has and is never rebuilt whole. A window's parts are built
 once by `TrendWindow.Build` and never replaced. The status bar takes the catalogue sync's
 `ConnectionStates` and the chart's navigation in its constructor, the navigation controller has no way to take a
 window back, and a gesture started on a replaced chart would end on a disposed one.
+
+#### The sidebar fold
+
+Every sidebar header carries a fold toggle at its right edge. A folded group shows its header and hides
+its rows; the chart does not change, and a folded pen keeps its visibility, its trace and its axis. The
+fold is a state of the window's session and is never written. The stored `semiplot_groups.folded_on_start`
+is only the fold a header starts with, and the pen editor edits it (`#a-field-writes-when-its-edit-ends`).
+Each viewer keeps its own folds, so a fold set in one window stays local to it.
+
+`TrendLegendViewModel` keeps one fold per header name for the window's life, in a map no `Rebuild` clears:
+
+- A header name the sidebar draws for the first time takes the `FoldedOnStart` of the stored group of
+  that name, or unfolded when no stored group carries the name. Every later rebuild takes the fold from
+  the map, so a read that changes the stored flag folds no header already drawn, and a header that leaves
+  the sidebar and returns keeps its fold. A rename is a new name and takes the stored flag again.
+- Stored groups that share a name merge into one header, which opens folded when any of them carries
+  the flag. `semiplot_groups` holds one row per name, so a database read never carries two; the rule
+  covers a list built in code.
+- The merged `Ungrouped` header, a real group named like `LegendUngroupedHeader` plus the pens in no group,
+  is one name and one fold, seeded from the real group's flag.
+- A group with no member draws no header, and a catalogue in which no pen has a group draws one
+  headerless list. Neither draws a toggle, so nothing runs `FoldCommand` on the headerless list.
+
+`TrendLegendGroupViewModel.SetFolded` is the one writer of `IsFolded`, and it records the fold in the
+map. It has three callers: `FoldCommand`, which the toggle invokes, fold-all below, and the pick rule below.
+The toggle reads `IsFolded` `Mode=OneWay` and shows `ChevronUpGeometry` while the group is unfolded and
+`ChevronDownGeometry` while it is folded (`SemiPlot.UI/Styles/Icons.axaml`); its tooltip and accessible
+name, `FoldName`, name what the next press does (`ui-text.md#the-sidebars-text`). The toggle is a ghost: it
+paints no fill and no border in either check state, its glyph is `AppSecondaryForegroundBrush`, and only
+under the pointer does the glyph turn `AppAccentBrush`, so the active pen's 3 px bar stays the one accent
+among folded headers. Semi paints the toggle's `PART_ContentPresenter` from triggered state setters that
+beat a plain style, so `TrendLegendView.axaml` sets that part's `Background` and `BorderBrush` to
+`Transparent` in four styles of its own: at rest, `:checked`, `:pointerover` and `:pressed`. The header
+keeps a 16 px right margin, so the toggle clears the vertical scroll bar at
+`TrendLegendViewModel.PanelMinWidth`. A header caption that does not fit trims with an ellipsis and carries
+the group name as stored, not the capitals of the caption, as its tooltip.
+
+Fold-all folds every header unless every header is folded, then unfolds every header, the rule of a
+header's switch box. `TrendLegendViewModel.AreAllFolded` is derived from the headers' `IsFolded`, re-derived
+on every `Rebuild` and stored nowhere; a list with no header is never all folded.
+`ToggleAllFoldsCommand` calls `SetFolded` on each header and can run only while some group has a header.
+Its label `FoldAllText` and its tooltip and `View` item header `FoldAllGroupsText` name what the next press
+does.
+
+The sidebar's top row holds two plain `Button`s over a 1 px `AppSubtleLineBrush` line: `PanelStateToggle`,
+the values button, on the left and `FoldAllButton` on the right. The values button invokes
+`ToggleExpandedCommand`; nothing collapses, the rows drop the value and the unit and the panel takes the
+narrower width slot (`charting.md`, `Legend/TrendLegendView`). Its label and tooltip, `ToggleText` and
+`ToggleTip`, name the next press. The row keeps a fixed 28 px height, so the list under it does not move
+when the buttons change. The buttons show their label while the view is at least 263 px wide, which is a
+272 px `LegendPanel` less its 4 px padding on each side and its 1 px left border; below that each shows a
+12 px `PathIcon` in a 24 x 20 button. An Avalonia `ContainerQuery` on the view's root `DockPanel`
+(`Container.Sizing="Width"`) makes the switch, so it follows a drag of the panel. The tooltips carry the
+full phrase in both forms. The values icon is `ChevronDoubleRightGeometry` (») while the values show and
+`ChevronDoubleLeftGeometry` («) while they are hidden, the way the panel's left edge moves on the next
+press; the fold-all icon is `ChevronDoubleUpGeometry` while some header is unfolded and
+`ChevronDoubleDownGeometry` while every header is folded.
+
+A pick shows a pen whose every row is folded away. `TrendChartViewModel.PenPicked` emits the pen of
+every `SetActivePen` the chart accepts: a click on the chart and a click on a sidebar row alike, the pen
+already active included. A refused pick of a switched-off pen emits nothing, and so does
+`SettleActivePen`, the chart choosing an active pen on its own as it applies a catalogue, the window's
+first pen included. When every header that holds the picked pen is folded, all of them unfold; when one
+of them is unfolded, the pick leaves every fold alone. So a window whose first pen sits only in a
+folded-on-start group opens folded.
+
+A folded header that holds the active pen carries the active row's 3 px accent bar on its left edge
+(`TrendLegendGroupViewModel.ShowsActiveAccent`), so the active pen stays findable while its rows are
+hidden.
 
 ### The live markers
 

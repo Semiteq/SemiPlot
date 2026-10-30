@@ -4,6 +4,7 @@ using AwesomeAssertions;
 
 using Microsoft.Reactive.Testing;
 
+using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
 using SemiPlot.Tests.Unit.UI.Chart;
 using SemiPlot.UI.Chart;
@@ -28,14 +29,16 @@ public sealed class TrendLegendViewModelTests
 	private readonly TestScheduler _scheduler = new();
 
 	[AvaloniaFact]
-	public void Groups_AreKeyedByPenGroup()
+	public void Groups_AreKeyedByStoredGroupMembership()
 	{
 		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
 		chart.AddPen(new Pen(2, "Pen 2", ["Heaters"], "#00ff00"));
 		chart.AddPen(new Pen(3, "Pen 3", ["Pressures"], "#0000ff"));
 
-		using var legend = new TrendLegendViewModel(chart);
+		using var legend = new TrendLegendViewModel(
+			chart,
+			[new StoredGroup(1, "Heaters", [1, 2]), new StoredGroup(2, "Pressures", [3])]);
 
 		legend.Groups.Should().HaveCount(2);
 		legend.Groups.Single(group => group.Name == "Heaters").Rows.Should().HaveCount(2);
@@ -50,7 +53,9 @@ public sealed class TrendLegendViewModelTests
 		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Pen 1", ["Heaters", "Pressures"], "#ff0000"));
 
-		using var legend = new TrendLegendViewModel(chart);
+		using var legend = new TrendLegendViewModel(
+			chart,
+			[new StoredGroup(1, "Heaters", [1]), new StoredGroup(2, "Pressures", [1])]);
 
 		legend.Groups.Select(group => group.Name).Should().Equal("Heaters", "Pressures");
 		var underHeaters = legend.Groups.Single(group => group.Name == "Heaters").Rows.Single();
@@ -64,20 +69,44 @@ public sealed class TrendLegendViewModelTests
 	}
 
 	[AvaloniaFact]
+	public void Headers_FollowStoredMembershipRatherThanThePensGroupStrings()
+	{
+		var chart = CreateChart();
+		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
+
+		using var legend = new TrendLegendViewModel(chart, [new StoredGroup(1, "Dampers", [1])]);
+
+		legend.Groups.Select(group => group.Name).Should().Equal("Dampers");
+	}
+
+	[AvaloniaFact]
+	public void AStoredGroupHoldingNoShownPen_DrawsNoHeader()
+	{
+		var chart = CreateChart();
+		chart.AddPen(new Pen(1, "Pen 1", ["Dampers"], "#ff0000"));
+
+		using var legend = new TrendLegendViewModel(
+			chart,
+			[new StoredGroup(1, "Heaters", []), new StoredGroup(2, "Dampers", [1])]);
+
+		legend.Groups.Select(group => group.Name).Should().Equal("Dampers");
+	}
+
+	[AvaloniaFact]
 	public void AnUngroupedPen_LandsUnderTheUngroupedHeader()
 	{
 		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
 		chart.AddPen(new Pen(2, "Pen 2", [], "#00ff00"));
 
-		using var legend = new TrendLegendViewModel(chart);
+		using var legend = new TrendLegendViewModel(chart, [new StoredGroup(1, "Heaters", [1])]);
 
 		legend.Groups.Select(group => group.Name).Should().Equal("Heaters", Resources.LegendUngroupedHeader);
 		legend.Groups[^1].Rows.Single().PenState.Pen.Name.Should().Be("Pen 2");
 	}
 
 	// The rows arrive ordered by pen name, so first-appearance order and name order only agree by
-	// accident: the pen that sorts first here declares the group that sorts last.
+	// accident: the pen that sorts first here is a member of the group that sorts last.
 	[AvaloniaFact]
 	public void Headers_ReadInNameOrderRatherThanInTheOrderTheRowsDeclareThem()
 	{
@@ -86,7 +115,13 @@ public sealed class TrendLegendViewModelTests
 		chart.AddPen(new Pen(2, "Pen 2", ["Dampers"], "#00ff00"));
 		chart.AddPen(new Pen(3, "Pen 3", ["Heaters"], "#0000ff"));
 
-		using var legend = new TrendLegendViewModel(chart);
+		using var legend = new TrendLegendViewModel(
+			chart,
+			[
+				new StoredGroup(1, "Watchlist", [1]),
+				new StoredGroup(2, "Dampers", [2]),
+				new StoredGroup(3, "Heaters", [3])
+			]);
 
 		legend.Groups.Select(group => group.Name).Should().Equal("Dampers", "Heaters", "Watchlist");
 	}
@@ -103,7 +138,14 @@ public sealed class TrendLegendViewModelTests
 		chart.AddPen(new Pen(3, "Pen 3", [CyrillicCapitalDe], "#0000ff"));
 		chart.AddPen(new Pen(4, "Pen 4", [CyrillicCapitalIo], "#ffff00"));
 
-		using var legend = new TrendLegendViewModel(chart);
+		using var legend = new TrendLegendViewModel(
+			chart,
+			[
+				new StoredGroup(1, CyrillicCapitalEn, [1]),
+				new StoredGroup(2, CyrillicSmallGhe, [2]),
+				new StoredGroup(3, CyrillicCapitalDe, [3]),
+				new StoredGroup(4, CyrillicCapitalIo, [4])
+			]);
 
 		legend.Groups.Select(group => group.Name).Should().Equal(
 			CyrillicSmallGhe,
@@ -121,10 +163,26 @@ public sealed class TrendLegendViewModelTests
 		chart.AddPen(new Pen(1, "Pen 1", [Resources.LegendUngroupedHeader], "#ff0000"));
 		chart.AddPen(new Pen(2, "Pen 2", [], "#00ff00"));
 
-		using var legend = new TrendLegendViewModel(chart);
+		using var legend = new TrendLegendViewModel(chart, [new StoredGroup(1, Resources.LegendUngroupedHeader, [1])]);
 
 		legend.Groups.Should().ContainSingle();
 		legend.Groups.Single().Name.Should().Be(Resources.LegendUngroupedHeader);
+		legend.Groups.Single().Rows.Select(row => row.PenState.Pen.Name).Should().Equal("Pen 1", "Pen 2");
+	}
+
+	[AvaloniaFact]
+	public void TwoStoredGroupsSharingAName_MergeIntoOneHeader()
+	{
+		var chart = CreateChart();
+		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
+		chart.AddPen(new Pen(2, "Pen 2", ["Pressures"], "#00ff00"));
+
+		using var legend = new TrendLegendViewModel(
+			chart,
+			[new StoredGroup(1, "Heaters", [1]), new StoredGroup(2, "Heaters", [2])]);
+
+		legend.Groups.Should().ContainSingle();
+		legend.Groups.Single().Name.Should().Be("Heaters");
 		legend.Groups.Single().Rows.Select(row => row.PenState.Pen.Name).Should().Equal("Pen 1", "Pen 2");
 	}
 
@@ -134,7 +192,9 @@ public sealed class TrendLegendViewModelTests
 		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Pen 1", ["Heaters", "Watchlist"], "#ff0000"));
 		chart.AddPen(new Pen(2, "Pen 2", ["Heaters"], "#00ff00"));
-		var legend = new TrendLegendViewModel(chart);
+		var legend = new TrendLegendViewModel(
+			chart,
+			[new StoredGroup(1, "Heaters", [1, 2]), new StoredGroup(2, "Watchlist", [1])]);
 		var row = SingleRow(legend, 1);
 
 		legend.Dispose();
@@ -150,8 +210,8 @@ public sealed class TrendLegendViewModelTests
 	{
 		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
-		var legend = new TrendLegendViewModel(chart);
-		var heaters = Group(legend, "Heaters");
+		var legend = new TrendLegendViewModel(chart, [new StoredGroup(1, "Heaters", [1])]);
+		var heaters = Header(legend, "Heaters");
 
 		legend.Dispose();
 		chart.SetPenVisibility(1, false);
@@ -165,7 +225,7 @@ public sealed class TrendLegendViewModelTests
 		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Pen 1", [Resources.LegendUngroupedHeader], "#ff0000"));
 		chart.AddPen(new Pen(2, "Pen 2", [], "#00ff00"));
-		using var legend = new TrendLegendViewModel(chart);
+		using var legend = new TrendLegendViewModel(chart, [new StoredGroup(1, Resources.LegendUngroupedHeader, [1])]);
 		var merged = legend.Groups.Single();
 
 		merged.SwitchGroupCommand.Execute().Subscribe();
@@ -181,8 +241,8 @@ public sealed class TrendLegendViewModelTests
 		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
 		chart.AddPen(new Pen(2, "Pen 2", ["Heaters"], "#00ff00"));
-		using var legend = new TrendLegendViewModel(chart);
-		var heaters = Group(legend, "Heaters");
+		using var legend = new TrendLegendViewModel(chart, [new StoredGroup(1, "Heaters", [1, 2])]);
+		var heaters = Header(legend, "Heaters");
 
 		heaters.SwitchState.Should().BeTrue("every pen starts visible");
 
@@ -202,12 +262,14 @@ public sealed class TrendLegendViewModelTests
 		chart.AddPen(new Pen(1, "Pen 1", ["Heaters", "Watchlist"], "#ff0000"));
 		chart.AddPen(new Pen(2, "Pen 2", ["Heaters"], "#00ff00"));
 		chart.AddPen(new Pen(3, "Pen 3", ["Watchlist"], "#0000ff"));
-		using var legend = new TrendLegendViewModel(chart);
+		using var legend = new TrendLegendViewModel(
+			chart,
+			[new StoredGroup(1, "Heaters", [1, 2]), new StoredGroup(2, "Watchlist", [1, 3])]);
 
 		SingleRow(legend, 1).ToggleVisibilityCommand.Execute().Subscribe();
 
-		Group(legend, "Heaters").SwitchState.Should().BeNull();
-		Group(legend, "Watchlist").SwitchState.Should().BeNull();
+		Header(legend, "Heaters").SwitchState.Should().BeNull();
+		Header(legend, "Watchlist").SwitchState.Should().BeNull();
 	}
 
 	[AvaloniaTheory]
@@ -218,8 +280,8 @@ public sealed class TrendLegendViewModelTests
 		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
 		chart.AddPen(new Pen(2, "Pen 2", ["Heaters"], "#00ff00"));
-		using var legend = new TrendLegendViewModel(chart);
-		var heaters = Group(legend, "Heaters");
+		using var legend = new TrendLegendViewModel(chart, [new StoredGroup(1, "Heaters", [1, 2])]);
+		var heaters = Header(legend, "Heaters");
 		chart.SetPenVisibility(1, false);
 		chart.SetPenVisibility(2, !isSecondPenOff);
 
@@ -237,8 +299,10 @@ public sealed class TrendLegendViewModelTests
 		chart.AddPen(new Pen(1, "Pen 1", ["Heaters", "Watchlist"], "#ff0000"));
 		chart.AddPen(new Pen(2, "Pen 2", ["Heaters"], "#00ff00"));
 		chart.AddPen(new Pen(3, "Pen 3", ["Watchlist"], "#0000ff"));
-		using var legend = new TrendLegendViewModel(chart);
-		var heaters = Group(legend, "Heaters");
+		using var legend = new TrendLegendViewModel(
+			chart,
+			[new StoredGroup(1, "Heaters", [1, 2]), new StoredGroup(2, "Watchlist", [1, 3])]);
+		var heaters = Header(legend, "Heaters");
 
 		heaters.SwitchGroupCommand.Execute().Subscribe();
 
@@ -246,7 +310,7 @@ public sealed class TrendLegendViewModelTests
 		chart.FindPen(2)!.IsVisible.Should().BeFalse();
 		chart.FindPen(3)!.IsVisible.Should().BeTrue("the pen sits under Watchlist alone");
 		heaters.SwitchState.Should().BeFalse();
-		Group(legend, "Watchlist").SwitchState.Should().BeNull();
+		Header(legend, "Watchlist").SwitchState.Should().BeNull();
 	}
 
 	[AvaloniaFact]
@@ -255,8 +319,8 @@ public sealed class TrendLegendViewModelTests
 		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
 		chart.AddPen(new Pen(2, "Pen 2", [], "#00ff00"));
-		using var legend = new TrendLegendViewModel(chart);
-		var ungrouped = Group(legend, Resources.LegendUngroupedHeader);
+		using var legend = new TrendLegendViewModel(chart, [new StoredGroup(1, "Heaters", [1])]);
+		var ungrouped = Header(legend, Resources.LegendUngroupedHeader);
 
 		ungrouped.SwitchGroupCommand.Execute().Subscribe();
 
@@ -273,7 +337,7 @@ public sealed class TrendLegendViewModelTests
 		const double MaximumWidth = 900;
 		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
-		using var legend = new TrendLegendViewModel(chart);
+		using var legend = new TrendLegendViewModel(chart, [new StoredGroup(1, "Heaters", [1])]);
 		legend.FitPanel(MaximumWidth);
 
 		legend.ResizePanel(-40);
@@ -303,7 +367,7 @@ public sealed class TrendLegendViewModelTests
 		const double MaximumWidth = 500;
 		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
-		using var legend = new TrendLegendViewModel(chart);
+		using var legend = new TrendLegendViewModel(chart, [new StoredGroup(1, "Heaters", [1])]);
 		legend.FitPanel(MaximumWidth);
 
 		legend.ResizePanel(1000);
@@ -326,7 +390,7 @@ public sealed class TrendLegendViewModelTests
 	{
 		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
-		using var legend = new TrendLegendViewModel(chart);
+		using var legend = new TrendLegendViewModel(chart, [new StoredGroup(1, "Heaters", [1])]);
 		legend.FitPanel(900);
 		legend.ResizePanel(-400);
 
@@ -350,7 +414,7 @@ public sealed class TrendLegendViewModelTests
 		var chart = CreateChart();
 		var pen = new Pen(1, "Pen 1", ["Heaters"], "#ff0000");
 		chart.AddPen(pen);
-		using var legend = new TrendLegendViewModel(chart);
+		using var legend = new TrendLegendViewModel(chart, [new StoredGroup(1, "Heaters", [1])]);
 		var row = SingleRow(legend, 1);
 
 		chart.SetPenVisibility(1, false);
@@ -366,7 +430,9 @@ public sealed class TrendLegendViewModelTests
 		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000"));
 		chart.AddPen(new Pen(2, "Pen 2", ["Pressures"], "#00ff00"));
-		using var legend = new TrendLegendViewModel(chart);
+		using var legend = new TrendLegendViewModel(
+			chart,
+			[new StoredGroup(1, "Heaters", [1]), new StoredGroup(2, "Pressures", [2])]);
 		var secondRow = SingleRow(legend, 2);
 
 		secondRow.Select();
@@ -381,7 +447,7 @@ public sealed class TrendLegendViewModelTests
 	{
 		var chart = CreateChart();
 		chart.AddPen(new Pen(1, "Pen 1", ["Heaters"], "#ff0000", "kPa", "0.000"));
-		using var legend = new TrendLegendViewModel(chart);
+		using var legend = new TrendLegendViewModel(chart, [new StoredGroup(1, "Heaters", [1])]);
 		var row = SingleRow(legend, 1);
 
 		ChartTestBuilder.LoadInitialHistory(chart, _scheduler, ChartTestBuilder.From, ChartTestBuilder.To);
@@ -407,11 +473,11 @@ public sealed class TrendLegendViewModelTests
 		var chart = CreateChart();
 		var pen = new Pen(1, "Pen 1", ["Heaters"], "#ff0000", "kPa", "0.0");
 		chart.AddPen(pen);
-		using var legend = new TrendLegendViewModel(chart);
+		using var legend = new TrendLegendViewModel(chart, [new StoredGroup(1, "Heaters", [1])]);
 		ChartTestBuilder.LoadInitialHistory(chart, _scheduler, ChartTestBuilder.From, ChartTestBuilder.To);
 
 		chart.ApplyCatalogue([pen with { Name = "Heater 01", Color = "#00ff00", Unit = "Pa", Format = "0.000" }]);
-		legend.Rebuild();
+		legend.Rebuild([new StoredGroup(1, "Heaters", [1])]);
 
 		var row = legend.Groups.Single().Rows.Single();
 		row.PenState.Pen.Name.Should().Be("Heater 01");
@@ -427,10 +493,12 @@ public sealed class TrendLegendViewModelTests
 		var kept = new Pen(1, "Pen 1", ["Heaters"], "#ff0000");
 		chart.AddPen(kept);
 		chart.AddPen(new Pen(2, "Pen 2", ["Pressures"], "#00ff00"));
-		using var legend = new TrendLegendViewModel(chart);
+		using var legend = new TrendLegendViewModel(
+			chart,
+			[new StoredGroup(1, "Heaters", [1]), new StoredGroup(2, "Pressures", [2])]);
 
 		chart.ApplyCatalogue([kept, new Pen(3, "Pen 3", ["Dampers"], "#0000ff", EnabledOnStart: false)]);
-		legend.Rebuild();
+		legend.Rebuild([new StoredGroup(1, "Heaters", [1]), new StoredGroup(3, "Dampers", [3])]);
 
 		legend.Groups.Select(group => group.Name).Should().Equal("Dampers", "Heaters");
 		SingleRow(legend, 3).PenState.IsVisible.Should().BeFalse("a pen joins with the visibility it starts with");
@@ -446,7 +514,7 @@ public sealed class TrendLegendViewModelTests
 		chart.AddPen(first);
 		chart.AddPen(second);
 		chart.AddPen(third);
-		using var legend = new TrendLegendViewModel(chart);
+		using var legend = new TrendLegendViewModel(chart, [new StoredGroup(1, "Heaters", [1, 2, 3])]);
 		legend.FitPanel(900);
 		legend.ToggleExpandedCommand.Execute().Subscribe();
 		legend.ResizePanel(-30);
@@ -458,14 +526,14 @@ public sealed class TrendLegendViewModelTests
 			second with { Color = "#0000ff" },
 			third with { EnabledOnStart = true }
 		]);
-		legend.Rebuild();
+		legend.Rebuild([new StoredGroup(1, "Heaters", [1, 2, 3])]);
 
 		legend.IsExpanded.Should().BeFalse();
 		legend.PanelWidth.Should().Be(TrendLegendViewModel.CollapsedWidth + 30);
 		SingleRow(legend, 1).PenState.IsVisible.Should().BeTrue();
 		SingleRow(legend, 2).PenState.IsVisible.Should().BeFalse();
 		SingleRow(legend, 3).PenState.IsVisible.Should().BeFalse("an EnabledOnStart revision switches no pen on");
-		Group(legend, "Heaters").SwitchState.Should().BeNull();
+		Header(legend, "Heaters").SwitchState.Should().BeNull();
 	}
 
 	[AvaloniaFact]
@@ -476,7 +544,7 @@ public sealed class TrendLegendViewModelTests
 		var other = new Pen(2, "Pen 2", ["Heaters"], "#00ff00");
 		chart.AddPen(pen);
 		chart.AddPen(other);
-		using var legend = new TrendLegendViewModel(chart);
+		using var legend = new TrendLegendViewModel(chart, [new StoredGroup(1, "Heaters", [1, 2])]);
 		var replacedRow = SingleRow(legend, 1);
 		var replacedFollowedOnAnnouncement = false;
 		legend.PropertyChanged += (_, e) =>
@@ -489,7 +557,7 @@ public sealed class TrendLegendViewModelTests
 		};
 
 		chart.ApplyCatalogue([pen with { Name = "Heater 01" }, other]);
-		legend.Rebuild();
+		legend.Rebuild([new StoredGroup(1, "Heaters", [1, 2])]);
 
 		replacedFollowedOnAnnouncement.Should().BeTrue();
 		SingleRow(legend, 2).IsActive.Should().BeTrue();
@@ -508,7 +576,7 @@ public sealed class TrendLegendViewModelTests
 			.Single(row => row.PenState.Pen.Name == name);
 	}
 
-	private static TrendLegendGroupViewModel Group(TrendLegendViewModel legend, string name)
+	private static TrendLegendGroupViewModel Header(TrendLegendViewModel legend, string name)
 	{
 		return legend.Groups.Single(group => group.Name == name);
 	}

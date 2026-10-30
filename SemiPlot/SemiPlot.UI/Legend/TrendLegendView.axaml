@@ -25,18 +25,115 @@
         <Style Selector="Border#RowRoot.active">
             <Setter Property="Background" Value="{DynamicResource AppAccentFillBrush}" />
         </Style>
+        <Style Selector="ToggleButton#GroupFoldToggle /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="ToggleButton#GroupFoldToggle:checked /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="ToggleButton#GroupFoldToggle:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="ToggleButton#GroupFoldToggle:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="ToggleButton#GroupFoldToggle PathIcon">
+            <Setter Property="Data" Value="{StaticResource ChevronUpGeometry}" />
+            <Setter Property="Foreground" Value="{DynamicResource AppSecondaryForegroundBrush}" />
+        </Style>
+        <Style Selector="ToggleButton#GroupFoldToggle:checked PathIcon">
+            <Setter Property="Data" Value="{StaticResource ChevronDownGeometry}" />
+        </Style>
+        <Style Selector="ToggleButton#GroupFoldToggle:pointerover PathIcon">
+            <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
+        </Style>
+
+        <Style Selector="Grid#PanelTopRow > Button">
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Width" Value="24" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Grid#PanelTopRow > Button > Panel > TextBlock">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+        <Style Selector="Button#PanelStateToggle PathIcon">
+            <Setter Property="Data" Value="{StaticResource ChevronDoubleLeftGeometry}" />
+        </Style>
+        <Style Selector="Button#PanelStateToggle.expanded PathIcon">
+            <Setter Property="Data" Value="{StaticResource ChevronDoubleRightGeometry}" />
+        </Style>
+        <Style Selector="Button#FoldAllButton PathIcon">
+            <Setter Property="Data" Value="{StaticResource ChevronDoubleUpGeometry}" />
+        </Style>
+        <Style Selector="Button#FoldAllButton.allFolded PathIcon">
+            <Setter Property="Data" Value="{StaticResource ChevronDoubleDownGeometry}" />
+        </Style>
+        <!-- docs/architecture/overview.md#the-sidebar-fold -->
+        <ContainerQuery Name="LegendRoot"
+                        Query="min-width:263">
+            <Style Selector="Grid#PanelTopRow > Button">
+                <Setter Property="Width" Value="NaN" />
+                <Setter Property="Height" Value="24" />
+                <Setter Property="Padding" Value="8,2" />
+            </Style>
+            <Style Selector="Grid#PanelTopRow > Button > Panel > TextBlock">
+                <Setter Property="IsVisible" Value="True" />
+            </Style>
+            <Style Selector="Grid#PanelTopRow > Button > Panel > PathIcon">
+                <Setter Property="IsVisible" Value="False" />
+            </Style>
+        </ContainerQuery>
     </UserControl.Styles>
 
-    <DockPanel LastChildFill="True">
+    <DockPanel Container.Name="LegendRoot"
+               Container.Sizing="Width"
+               LastChildFill="True">
 
-        <Button Name="PanelStateToggle"
+        <Grid Name="PanelTopRow"
+              DockPanel.Dock="Top"
+              ColumnDefinitions="Auto,*,Auto"
+              Height="28">
+
+            <Button Name="PanelStateToggle"
+                    Grid.Column="0"
+                    Classes.expanded="{Binding IsExpanded}"
+                    ToolTip.Tip="{Binding ToggleTip}"
+                    AutomationProperties.Name="{Binding ToggleTip}"
+                    Command="{Binding ToggleExpandedCommand}">
+                <Panel>
+                    <TextBlock Text="{Binding ToggleText}" />
+                    <PathIcon Width="12"
+                              Height="12" />
+                </Panel>
+            </Button>
+
+            <Button Name="FoldAllButton"
+                    Grid.Column="2"
+                    Classes.allFolded="{Binding AreAllFolded}"
+                    ToolTip.Tip="{Binding FoldAllGroupsText}"
+                    AutomationProperties.Name="{Binding FoldAllGroupsText}"
+                    Command="{Binding ToggleAllFoldsCommand}">
+                <Panel>
+                    <TextBlock Text="{Binding FoldAllText}" />
+                    <PathIcon Width="12"
+                              Height="12" />
+                </Panel>
+            </Button>
+
+        </Grid>
+
+        <Border Name="TopRowSeparator"
                 DockPanel.Dock="Top"
-                HorizontalAlignment="Right"
+                Height="1"
                 Margin="0,0,0,4"
-                Padding="8,2"
-                Content="{Binding ToggleText}"
-                AutomationProperties.Name="{Binding ToggleText}"
-                Command="{Binding ToggleExpandedCommand}" />
+                Background="{DynamicResource AppSubtleLineBrush}" />
 
         <ScrollViewer>
             <ItemsControl ItemsSource="{Binding Groups}">
@@ -51,9 +148,17 @@
                                     Background="{DynamicResource AppSubtleLineBrush}" />
 
                             <Grid Name="GroupHeaderRow"
-                                  ColumnDefinitions="Auto,*"
+                                  ColumnDefinitions="Auto,*,Auto"
                                   IsVisible="{Binding HasHeader}"
-                                  Margin="4,4,0,2">
+                                  Margin="0,4,16,2">
+
+                                <Border Name="HeaderActiveBar"
+                                        Grid.Column="0"
+                                        Grid.ColumnSpan="3"
+                                        Width="3"
+                                        HorizontalAlignment="Left"
+                                        Background="{DynamicResource AppAccentBrush}"
+                                        IsVisible="{Binding ShowsActiveAccent}" />
 
                                 <CheckBox Name="GroupSwitch"
                                           Grid.Column="0"
@@ -61,18 +166,36 @@
                                           Command="{Binding SwitchGroupCommand}"
                                           AutomationProperties.Name="{Binding SwitchName}"
                                           VerticalAlignment="Center"
-                                          Margin="0,0,4,0" />
+                                          Margin="4,0,4,0" />
 
                                 <TextBlock Name="GroupHeader"
                                            Grid.Column="1"
                                            Text="{Binding Name, Converter={x:Static legend:LegendConverters.ToCapitals}}"
                                            FontSize="11"
                                            Foreground="{DynamicResource AppSecondaryForegroundBrush}"
+                                           TextTrimming="CharacterEllipsis"
+                                           ToolTip.Tip="{Binding Name}"
                                            VerticalAlignment="Center" />
+
+                                <ToggleButton Name="GroupFoldToggle"
+                                              Grid.Column="2"
+                                              IsChecked="{Binding IsFolded, Mode=OneWay}"
+                                              Command="{Binding FoldCommand}"
+                                              ToolTip.Tip="{Binding FoldName}"
+                                              AutomationProperties.Name="{Binding FoldName}"
+                                              Width="20"
+                                              Height="16"
+                                              MinHeight="0"
+                                              Padding="0"
+                                              VerticalAlignment="Center">
+                                    <PathIcon Width="10"
+                                              Height="10" />
+                                </ToggleButton>
 
                             </Grid>
 
-                            <ItemsControl ItemsSource="{Binding Rows}">
+                            <ItemsControl ItemsSource="{Binding Rows}"
+                                          IsVisible="{Binding !IsFolded}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="legend:TrendLegendRowViewModel">
                                         <Border Name="RowRoot"

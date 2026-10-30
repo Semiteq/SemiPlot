@@ -347,7 +347,9 @@ No abbreviations in names.
   invokes, so the command is the flag's single writer. A two-way `IsChecked` would make the control a
   second writer and the two halves would drift. The sidebar's visibility box follows the same rule: it
   reads `PenState.IsVisible` `Mode=OneWay` and writes through `ToggleVisibilityCommand`, which reaches
-  the chart's `SetPenVisibility`, the flag's one writer.
+  the chart's `SetPenVisibility`. `TrendPenState.SetVisibility` is the flag's one writer, called only by
+  `SetPenVisibility` and by `SetAllPensVisibility`, which the `View` items Show all pens and Hide all pens
+  invoke (`docs/architecture/charting.md#switching-every-pen-at-once`).
 - A menu item without a command, or without children, is not added. A disabled placeholder renders
   and does nothing, and it also forces an exemption into `AppMenuBarTests`, which walks the declared
   `Items` and requires every leaf to carry one or the other. The chart's two marker menus, keyed
@@ -356,13 +358,20 @@ No abbreviations in names.
 - The sidebar row is read-only but for its visibility box, and `TrendLegendViewTests` gates it as an
   allowlist over the realised row template: every control in it is a `Border`, `Grid`, `TextBlock` or
   `CheckBox`, and exactly one `CheckBox` is present. `ThePanel_RealisesNoTextEditor` gates the panel's
-  header the same way. Editing pens belongs to the pen editor (`PenEditor/PenEditorWindow`, `Edit` ->
-  `Pens and groups`, `docs/architecture/overview.md#the-pen-and-group-editor`), so a control
-  added to the row fails the suite rather than quietly shipping a second editor.
-- A stored pen change reaches the running chart through `Bridge/PenCatalogueSync` and no other route: it
-  re-reads `IDataProvider.QueryPensAsync` once when the window opens, every 5 s and on `ReadNow()` after
-  each write the editor lands, and `MainWindow/PenCatalogueApplier` hands each read to the chart, which
-  compares it with the pens it shows, then rebuilds the sidebar. The chart is never rebuilt whole
+  header the same way. The group header is gated as an allowlist too: every control in it is a `Border`,
+  `Grid`, `TextBlock`, `PathIcon`, `CheckBox` or `ToggleButton`, with exactly one `CheckBox`, the group
+  switch, and one other `ToggleButton`, the fold toggle. The toggle reads `IsFolded` `Mode=OneWay` and
+  writes through `FoldCommand`; `TrendLegendGroupViewModel.SetFolded` is the flag's one writer, and the
+  fold lives for the session, keyed by header name (`docs/architecture/overview.md#the-sidebar-fold`).
+  Editing pens belongs to the pen editor (`PenEditor/PenEditorWindow`, `Edit` -> `Pens and groups`,
+  `docs/architecture/overview.md#the-pen-and-group-editor`), so a control added to the row fails the
+  suite rather than quietly shipping a second editor.
+- A stored pen or group change reaches the running chart through `Bridge/PenCatalogueSync` and no other
+  route: it re-reads `IDataProvider.QueryCatalogueAsync` once when the window opens, every 5 s and on
+  `ReadNow()` after each write the editor lands, emits each read that does not `CatalogueRead.Matches` the
+  one before on `Changes`, and `MainWindow/PenCatalogueApplier` hands each emitted read to the chart,
+  which compares the read's pens with the pens it shows, and to the sidebar, which rebuilds from the
+  read's stored groups. The chart is never rebuilt whole
   (`docs/architecture/overview.md#the-live-catalogue`). The same reads are the source of the archive
   connection state the status bar shows, `PenCatalogueSync.ConnectionStates`
   (`docs/architecture/data-integration.md#the-connection-state-the-catalogue-read-reports`).

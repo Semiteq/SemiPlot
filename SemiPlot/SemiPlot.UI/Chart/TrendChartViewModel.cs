@@ -39,6 +39,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	private readonly PenScaleModel _scaleModel = new();
 	private readonly Dictionary<int, PenScale> _scalesByPenId = [];
 	private readonly Subject<Unit> _redrawRequests = new();
+	private readonly Subject<int> _penPicks = new();
 	private bool _isDisposed;
 	private bool _isHistoryStarted;
 	private bool _isActivePenEmphasized;
@@ -82,6 +83,8 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			.Subscribe(ApplyRealtimeBatch));
 		_disposables.Add(_coordinator.RealtimeFailures
 			.Subscribe(ReportFailure));
+		_disposables.Add(ShowAllPensCommand = ReactiveCommand.Create(() => SetAllPensVisibility(true)));
+		_disposables.Add(HideAllPensCommand = ReactiveCommand.Create(() => SetAllPensVisibility(false)));
 
 		Plot.HideLegend();
 	}
@@ -93,6 +96,10 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 	public ChartMarkers Markers { get; }
 
 	public TimeWindowPanelViewModel TimeWindow { get; }
+
+	public ReactiveCommand<Unit, Unit> ShowAllPensCommand { get; }
+
+	public ReactiveCommand<Unit, Unit> HideAllPensCommand { get; }
 
 	public int ActivePenId
 	{
@@ -119,6 +126,9 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 
 	/// <summary>One signal per redraw request, raised at once on the caller's thread; completes on dispose.</summary>
 	public IObservable<Unit> RedrawRequested => _redrawRequests.AsObservable();
+
+	/// <summary>The pen of each accepted SetActivePen call; a pen the chart settles on itself emits nothing.</summary>
+	public IObservable<int> PenPicked => _penPicks.AsObservable();
 
 	/// <summary>The pens in catalogue order; a new list, and a change notification, per catalogue applied.</summary>
 	public IReadOnlyList<TrendPenState> Pens => _penSet.Ordered;
@@ -188,6 +198,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		TimeWindow.Dispose();
 		_disposables.Dispose();
 		_redrawRequests.OnCompleted();
+		_penPicks.OnCompleted();
 		Plot.Dispose();
 	}
 
@@ -288,19 +299,47 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			return;
 		}
 
-		state.SetVisibility(isVisible);
-		var readsTheSwitchedOnPen = isVisible && _isHistoryStarted;
+		SettleVisibilityChange(SwitchPen(state, isVisible));
+	}
 
-		if (readsTheSwitchedOnPen)
+	/// <summary>Switches every pen at once and settles the active pen, the layer and the read once for all.</summary>
+	public void SetAllPensVisibility(bool isVisible)
+	{
+		ObjectDisposedException.ThrowIf(_isDisposed, this);
+
+		var readsTheSwitchedOnPens = false;
+
+		foreach (var state in Pens)
+		{
+			if (SwitchPen(state, isVisible))
+			{
+				readsTheSwitchedOnPens = true;
+			}
+		}
+
+		SettleVisibilityChange(readsTheSwitchedOnPens);
+	}
+
+	/// <summary>Sets one pen's flag and returns whether it was switched on and needs a read.</summary>
+	private bool SwitchPen(TrendPenState state, bool isVisible)
+	{
+		var readsThePen = isVisible && !state.IsVisible && _isHistoryStarted;
+		state.SetVisibility(isVisible);
+
+		if (readsThePen)
 		{
 			ClearAnUnreadCurve(state);
 		}
 
+		return readsThePen;
+	}
+
+	private void SettleVisibilityChange(bool readsTheSwitchedOnPens)
+	{
 		ActivateAVisiblePen();
 		RestyleActivePen();
 		this.RaisePropertyChanged(nameof(DrawnPenId));
 
-		// docs/architecture/charting.md#applying-a-catalogue-read
 		var layerBefore = Navigation.ActiveLayer;
 		Navigation.SetVisiblePenCount(VisiblePenIds().Count);
 		var windowChangeReadAndDrew = Navigation.ActiveLayer != layerBefore;
@@ -310,7 +349,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 			return;
 		}
 
-		if (readsTheSwitchedOnPen)
+		if (readsTheSwitchedOnPens)
 		{
 			RequestWindowInForce();
 		}
@@ -353,6 +392,7 @@ public sealed class TrendChartViewModel : ReactiveObject, IDisposable
 		RestyleActivePen();
 		ApplyAxisModel();
 		RequestRedraw();
+		_penPicks.OnNext(penId);
 
 		return true;
 	}

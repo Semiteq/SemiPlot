@@ -173,14 +173,15 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 			var dataProvider = services.GetRequiredService<IDataProvider>();
 			var liveSource = services.GetRequiredService<ILiveSource>();
 			var dataScheduler = services.GetRequiredService<IScheduler>();
-			var catalogue = await dataProvider.QueryPensAsync();
+			var catalogue = await dataProvider.QueryCatalogueAsync();
 			var extent = await dataProvider.QueryArchiveExtentAsync();
 
 			catalogue.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(catalogue));
 			extent.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(extent));
 
+			var pens = catalogue.Value.Pens;
 			var coordinator = new TrendCoordinator(
-				dataProvider, liveSource, catalogue.Value, dataScheduler, ImmediateScheduler.Instance);
+				dataProvider, liveSource, pens, dataScheduler, ImmediateScheduler.Instance);
 
 			var messagePanel = new MessagePanelViewModel();
 			var chart = new TrendChartViewModel(
@@ -194,9 +195,9 @@ public sealed class LiveEdgeArchiveJourneyTests(PostgresContainerFixture postgre
 			var batches = new BatchCollector<RealtimeBatch>(
 				coordinator.RealtimeBatches.Where(batch => batch.Timestamps.Count > 0));
 			stand = new LiveEdgeStand(
-				services, coordinator, armed, chart, messagePanel, batches, catalogue.Value, extent.Value);
+				services, coordinator, armed, chart, messagePanel, batches, pens, extent.Value);
 
-			chart.ApplyCatalogue(catalogue.Value);
+			chart.ApplyCatalogue(pens);
 
 			chart.Navigation.SeedFromArchiveExtent(extent.Value);
 

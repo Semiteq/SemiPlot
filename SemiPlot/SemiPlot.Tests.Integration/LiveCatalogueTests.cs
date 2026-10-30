@@ -55,26 +55,27 @@ public sealed class LiveCatalogueTests(PostgresContainerFixture postgresContaine
 		$"UPDATE public.semiplot_tags SET format = '%0.00', line_style = 98 WHERE id = {HandEditedId};";
 
 	[Fact]
-	public async Task TwoReadsWithNoWriteBetween_GiveAnEmptyDelta()
+	public async Task TwoReadsWithNoWriteBetween_Match()
 	{
 		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
 		var provider = services.GetRequiredService<IDataProvider>();
 
-		var delta = PenListDelta.Between(await ReadPensAsync(provider), await ReadPensAsync(provider));
+		var before = await ReadCatalogueAsync(provider);
+		var after = await ReadCatalogueAsync(provider);
 
-		delta.IsEmpty.Should().BeTrue();
-		delta.Current.Select(pen => pen.PenId).Should().BeEquivalentTo([ChamberPressureId, HeaterId, UncommissionedId]);
+		before.Matches(after).Should().BeTrue();
+		after.Pens.Select(pen => pen.PenId).Should().BeEquivalentTo([ChamberPressureId, HeaterId, UncommissionedId]);
 	}
 
 	[Fact]
-	public async Task AColourAndAMembershipWrittenThroughTheEditor_GiveOneRevisionCarryingBoth()
+	public async Task AColourAndAMembershipWrittenThroughTheEditor_ChangeOnePenAndOneGroup()
 	{
 		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
 		var provider = services.GetRequiredService<IDataProvider>();
 		var editor = services.GetRequiredService<IPenCatalogueEditor>();
-		var before = await ReadPensAsync(provider);
+		var before = await ReadCatalogueAsync(provider);
 
 		var colourWritten = await editor.ChangeAsync(
 			await StoredPenAsync(editor, HeaterId),
@@ -93,26 +94,30 @@ public sealed class LiveCatalogueTests(PostgresContainerFixture postgresContaine
 
 		membershipWritten.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(membershipWritten));
 
-		var delta = PenListDelta.Between(before, await ReadPensAsync(provider));
+		var after = await ReadCatalogueAsync(provider);
 
-		var revised = delta.Revised.Should().ContainSingle().Which;
+		before.Matches(after).Should().BeFalse();
+		var pens = PenListDelta.Between(before.Pens, after.Pens);
+		var revised = pens.Revised.Should().ContainSingle().Which;
 
 		revised.PenId.Should().Be(HeaterId);
 		revised.Color.Should().Be("#ABCDEF");
-		before.Should().ContainSingle(pen => pen.PenId == HeaterId).Which.Groups.Should().NotContain(VacuumGroup);
+		before.Pens.Should().ContainSingle(pen => pen.PenId == HeaterId).Which.Groups.Should().NotContain(VacuumGroup);
 		revised.Groups.Should().Contain(VacuumGroup);
-		delta.Added.Should().BeEmpty();
-		delta.RemovedPenIds.Should().BeEmpty();
+		pens.Added.Should().BeEmpty();
+		pens.RemovedPenIds.Should().BeEmpty();
+		ChangedGroups(before, after).Should().ContainSingle().Which.Name.Should().Be(VacuumGroup);
+		GroupIds(after).Should().Equal(GroupIds(before));
 	}
 
 	[Fact]
-	public async Task AColourWrittenThroughTheEditor_GivesOneRevisionOfThatPen()
+	public async Task AColourWrittenThroughTheEditor_ChangesOnePenAndNoGroup()
 	{
 		using var services = ArchiveProviderFactory.Build(Database.PlotConnectionString);
 
 		var provider = services.GetRequiredService<IDataProvider>();
 		var editor = services.GetRequiredService<IPenCatalogueEditor>();
-		var before = await ReadPensAsync(provider);
+		var before = await ReadCatalogueAsync(provider);
 
 		var colourWritten = await editor.ChangeAsync(
 			await StoredPenAsync(editor, HeaterId),
@@ -120,15 +125,19 @@ public sealed class LiveCatalogueTests(PostgresContainerFixture postgresContaine
 
 		colourWritten.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(colourWritten));
 
-		var delta = PenListDelta.Between(before, await ReadPensAsync(provider));
+		var after = await ReadCatalogueAsync(provider);
 
-		var revised = delta.Revised.Should().ContainSingle().Which;
+		before.Matches(after).Should().BeFalse();
+		var pens = PenListDelta.Between(before.Pens, after.Pens);
+		var revised = pens.Revised.Should().ContainSingle().Which;
 
 		revised.PenId.Should().Be(HeaterId);
 		revised.Color.Should().Be("#ABCDEF");
-		revised.Groups.Should().Equal(before.Single(pen => pen.PenId == HeaterId).Groups);
-		delta.Added.Should().BeEmpty();
-		delta.RemovedPenIds.Should().BeEmpty();
+		revised.Groups.Should().Equal(before.Pens.Single(pen => pen.PenId == HeaterId).Groups);
+		pens.Added.Should().BeEmpty();
+		pens.RemovedPenIds.Should().BeEmpty();
+		ChangedGroups(before, after).Should().BeEmpty();
+		GroupIds(after).Should().Equal(GroupIds(before));
 	}
 
 	[Fact]
@@ -139,8 +148,8 @@ public sealed class LiveCatalogueTests(PostgresContainerFixture postgresContaine
 
 		var provider = services.GetRequiredService<IDataProvider>();
 
-		await ReadPensAsync(provider);
-		await ReadPensAsync(provider);
+		await ReadCatalogueAsync(provider);
+		await ReadCatalogueAsync(provider);
 
 		LevelsOf(logs, UncommissionedId, FallbackColorArgument).Should().Equal(LogLevel.Warning, LogLevel.Debug);
 	}
@@ -157,13 +166,13 @@ public sealed class LiveCatalogueTests(PostgresContainerFixture postgresContaine
 			Database.AdminConnectionString,
 			_handEditedTagCommand,
 			TestContext.Current.CancellationToken);
-		await ReadPensAsync(provider);
-		await ReadPensAsync(provider);
+		await ReadCatalogueAsync(provider);
+		await ReadCatalogueAsync(provider);
 		await ArchiveDatabase.ExecuteAsync(
 			Database.AdminConnectionString,
 			_handEditedAgainCommand,
 			TestContext.Current.CancellationToken);
-		await ReadPensAsync(provider);
+		await ReadCatalogueAsync(provider);
 
 		LevelsOf(logs, HandEditedId, StoredMaskArgument).Should().Equal(
 			LogLevel.Warning, LogLevel.Debug, LogLevel.Warning);
@@ -186,13 +195,33 @@ public sealed class LiveCatalogueTests(PostgresContainerFixture postgresContaine
 			TestContext.Current.CancellationToken);
 	}
 
-	private static async Task<IReadOnlyList<Pen>> ReadPensAsync(IDataProvider provider)
+	private static async Task<CatalogueRead> ReadCatalogueAsync(IDataProvider provider)
 	{
-		var pens = await provider.QueryPensAsync();
+		var read = await provider.QueryCatalogueAsync();
 
-		pens.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(pens));
+		read.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(read));
 
-		return pens.Value;
+		return read.Value;
+	}
+
+	/// <summary>
+	/// The groups of <paramref name="after"/> whose name or members differ from the group of that id before.
+	/// </summary>
+	private static IReadOnlyList<StoredGroup> ChangedGroups(CatalogueRead before, CatalogueRead after)
+	{
+		var beforeById = before.Stored.Groups.ToDictionary(group => group.Id);
+
+		return
+		[
+			.. after.Stored.Groups.Where(group =>
+				beforeById.TryGetValue(group.Id, out var previous)
+				&& (previous.Name != group.Name || !previous.MemberPenIds.SequenceEqual(group.MemberPenIds)))
+		];
+	}
+
+	private static IEnumerable<int> GroupIds(CatalogueRead read)
+	{
+		return read.Stored.Groups.Select(group => group.Id).Order();
 	}
 
 	private static async Task<StoredPen> StoredPenAsync(IPenCatalogueEditor editor, int penId)

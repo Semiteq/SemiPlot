@@ -155,10 +155,10 @@ Semi owns the controls; these sixteen keys are ours, and each exists in both var
 | `AppPanelBackgroundBrush` | Navigation bar, legend panel, message panel, status bar, startup-failure window's message panel, minimap frame, chart hover readout, the plot's figure background | `#F7F8FA` | `#2B2D30` |
 | `AppContentBackgroundBrush` | Chart area and the plot's data background, minimap strip canvas, the sidebar's resize handle, the ground of the active pen's reading at each marker | `#FFFFFF` | `#1E1F22` |
 | `AppBorderBrush` | The border of the navigation bar, legend panel, message panel and status bar, of the startup-failure window's message panel, of the minimap frame, of the chart hover readout and of the export window's pen list | `#EBECF0` | `#393B40` |
-| `AppSubtleLineBrush` | Plot grid, the line above every sidebar group header but the first, the status bar's separator after the connection indicator, the navigation bar's group separator | `#EBECF0` | `#393B40` |
+| `AppSubtleLineBrush` | Plot grid, the line above every sidebar group header but the first, the line under the sidebar's top row, the status bar's separator after the connection indicator, the navigation bar's group separator | `#EBECF0` | `#393B40` |
 | `AppMinorGridLineBrush` | The plot's minor gridlines, drawn on a log10 axis only | `#F4F5F7` | `#2B2D30` |
-| `AppSecondaryForegroundBrush` | Minimap end labels, hover line and hover time, chart crosshair, plot axis furniture, the chart's empty-catalogue message, the sidebar group header caption and a row's unit, the axis scale panel's unit, the message panel's empty text and an entry's remedy, repeat count and time | `#818594` | `#6F737A` |
-| `AppAccentBrush` | Minimap window highlight border, the active sidebar row's left bar | `#3574F0` | `#3574F0` |
+| `AppSecondaryForegroundBrush` | Minimap end labels, hover line and hover time, chart crosshair, plot axis furniture, the chart's empty-catalogue message, the sidebar group header caption, its fold chevron and a row's unit, the axis scale panel's unit, the message panel's empty text and an entry's remedy, repeat count and time | `#818594` | `#6F737A` |
+| `AppAccentBrush` | Minimap window highlight border, the active sidebar row's left bar, a group header's fold chevron under the pointer (`overview.md#the-sidebar-fold`) | `#3574F0` | `#3574F0` |
 | `AppAccentFillBrush` | Minimap window highlight fill, the active sidebar row's background | `#3574F0` at 0.25 opacity | `#3574F0` at 0.25 opacity |
 | `AppSeverityErrorBrush` | The message panel's dot on an `Error` entry; a form's invalid field border and its message line | `#DB3B4B` | `#E55765` |
 | `AppSeverityWarningBrush` | The same dot on a `Warning` entry | `#E3AE4D` | `#F2C55C` |

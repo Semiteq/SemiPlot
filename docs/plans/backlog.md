@@ -97,6 +97,14 @@ each is a scoped future task.
   nested interaction sub-VM (mirror the existing `Navigation` sub-VM pattern). Deferred during the fix pass
   as risky public-surface churn with no net saving; do it as a focused refactor.
 
+- **`Pen.Groups` has no viewer reader.** The sidebar builds its headers from `CatalogueRead.Stored.Groups`
+  (`TrendLegendViewModel.MembershipsOf`), yet `CatalogueNormaliser.GroupNamesByPen` still projects the group
+  names into each `Pen`. The field's one effect is `Pen.Equals`, so a group rename marks every member pen
+  revised in `ChartPenSet.Apply` with nothing visible changing, and one read carries membership twice. The
+  seeder does not keep it alive: `TagCatalogWriter` reads `SyntheticPen.Groups`, a type of its own. Removing
+  it changes the positional `Pen` record, about 190 constructions across the tests, and the provider tests
+  that pin the names (`PostgresCatalogReadTests`, `LiveCatalogueTests`); do it as its own refactor.
+
 - **~~Latent: coordinator history sequence frozen at 1.~~ Resolved (20260618-post-review-fixes, Task 4).**
   The standalone coordinator history path (`RequestHistory`/`SetLayer`/`HistoryResults`) was removed.
   `RequestInitialHistory` now awaits `QueryHistoryAsync` directly and applies through the same
@@ -144,6 +152,11 @@ Paths are under `SemiPlot/SemiPlot.UI/` unless they name another project.
   dictionary in `ChartCursorReader.ReadAt` (`Chart/ChartCursorReader.cs:12`).
 - **An idle chart keeps a 400 ms timer.** The debouncer's `Sample` runs on the data scheduler for the chart's
   lifetime, idle or not (`Chart/ChartHistoryRequestDebouncer.cs:55-57`, `Chart/TrendChartViewModel.cs:25`).
+- **The group header switch settles once per pen.** `TrendLegendGroupViewModel.SwitchGroup`
+  (`Legend/TrendLegendGroupViewModel.cs:117-125`) calls `row.SetVisibility` row by row, so the chart moves
+  the active pen and plans the history once per pen, the loop `charting.md#switching-every-pen-at-once`
+  rules out for Show all. The fix widens `SetAllPensVisibility` to `SetPensVisibility(IEnumerable<int>,
+  bool)` and calls it once. Left out of `20261029-catalogue-read-and-group-fold.md` by its Decision 11.
 
 ## Tooling
 

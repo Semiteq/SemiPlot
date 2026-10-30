@@ -1,7 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 
 using SemiPlot.Core.Data;
-using SemiPlot.Core.Trends;
 
 namespace SemiPlot.UI.Startup;
 
@@ -15,5 +14,5 @@ namespace SemiPlot.UI.Startup;
 /// </remarks>
 public sealed record StartupData(
 	ServiceProvider ServiceProvider,
-	IReadOnlyList<Pen> Pens,
+	CatalogueRead Catalogue,
 	ArchiveExtent Extent);

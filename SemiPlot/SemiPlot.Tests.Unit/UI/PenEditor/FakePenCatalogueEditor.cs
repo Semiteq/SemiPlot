@@ -27,6 +27,8 @@ internal abstract record FakeEditorCall
 
 	public sealed record RenameGroup(StoredGroup Group, string Name) : FakeEditorCall;
 
+	public sealed record SetFoldedOnStart(StoredGroup Group, bool FoldedOnStart) : FakeEditorCall;
+
 	public sealed record DeleteGroup(StoredGroup Group) : FakeEditorCall;
 
 	public sealed record SetMembership(StoredPen Pen, StoredGroup Group, bool IsMember) : FakeEditorCall;
@@ -53,6 +55,8 @@ internal sealed class FakePenCatalogueEditor : IPenCatalogueEditor
 	public Result<int> CreateGroupResult { get; set; } = Result.Ok(1);
 
 	public Result RenameGroupResult { get; set; } = Result.Ok();
+
+	public Result FoldedOnStartResult { get; set; } = Result.Ok();
 
 	public Result DeleteGroupResult { get; set; } = Result.Ok();
 
@@ -106,6 +110,11 @@ internal sealed class FakePenCatalogueEditor : IPenCatalogueEditor
 	public Task<Result> RenameGroupAsync(StoredGroup group, string name)
 	{
 		return AnswerAsync(new FakeEditorCall.RenameGroup(group, name), () => RenameGroupResult);
+	}
+
+	public Task<Result> SetFoldedOnStartAsync(StoredGroup group, bool foldedOnStart)
+	{
+		return AnswerAsync(new FakeEditorCall.SetFoldedOnStart(group, foldedOnStart), () => FoldedOnStartResult);
 	}
 
 	public Task<Result> DeleteGroupAsync(StoredGroup group)

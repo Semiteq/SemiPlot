@@ -232,18 +232,17 @@ public sealed class ArchiveStatementTextTests
 		command.CommandTimeout.Should().Be(TickBoundSeconds);
 	}
 
-	// Three failed catalogue reads raise the archive fault, so each must fail at its own bound rather than at
-	// the connection string's five-minute backstop.
-	[Fact]
-	public void TheCatalogueCommandCarriesItsOwnBoundAndNotTheDataSourceBackstop()
+	[Theory]
+	[InlineData(ArchiveStatements.StoredPens)]
+	[InlineData(ArchiveStatements.StoredGroups)]
+	public void TheCatalogueCommandsCarryTheirOwnBoundAndNotTheDataSourceBackstop(string statement)
 	{
 		const int CatalogueBoundSeconds = 5;
 
 		using var connection = new NpgsqlConnection();
 
-		using var command = PostgresDataProvider.CreateCatalogueCommand(connection);
+		using var command = CatalogueRowReader.CreateCommand(statement, connection, isBounded: true);
 
-		command.CommandText.Should().Be(ArchiveStatements.PenCatalog);
 		command.CommandTimeout.Should().Be(CatalogueBoundSeconds);
 	}
 

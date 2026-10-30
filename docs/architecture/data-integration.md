@@ -38,7 +38,7 @@ implementation of `IDataProvider`; tests build fakes against the interface.
 ```csharp
 public interface IDataProvider
 {
-    Task<Result<IReadOnlyList<Pen>>> QueryPensAsync();
+    Task<Result<CatalogueRead>> QueryCatalogueAsync();
 
     Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(
         IReadOnlyList<int> penIds,
@@ -61,6 +61,7 @@ public interface IDataProvider
 | Type | Shape | Notes |
 | --- | --- | --- |
 | `Pen` | `PenId`, `Name`, `Groups`, `Color`, `Unit`, `Format`, `EnabledOnStart`, `ScaleMinOnStart`, `ScaleMaxOnStart`, `LogScaleOnStart`, `LineStyle` | `PenId` is the archive's `trends.id`. Equality compares `Groups` element by element, ordinal, so two reads of one stored pen are equal; `LogScaleOnStart` takes part in it, so a pen whose flag alone changed is revised. |
+| `CatalogueRead` | `Stored`, `Pens` | The one catalogue read: the stored `PenCatalogue` and the chart's normalised pens, both projections of the same rows, so no caller reads the catalogue twice. `Pens` sorts by name then id; `Stored.Pens` keeps the stored statement's id order (The stored read, below). |
 | `Sample` | `PenId`, `TimestampUtc`, `Value` | Realtime element. Timestamps are UTC by the time they leave the live source. A null `Value` is a break the live source reported: the pen has no data from that moment until its next sample. |
 | `PenHistoryEnvelope` | parallel `Timestamps` / `Min` / `Max` / `Center`, strictly ascending, `NaN` marks a gap | One per pen per history query. |
 | `ArchiveExtent` | `FirstUtc`, `LastUtc`, `IsEmpty` | The span of the configured variables, consumed by the minimap (`TM-4`). `ArchiveExtent.Empty` is the no-span form. |
@@ -153,6 +154,7 @@ public interface IPenCatalogueEditor
     Task<Result> ChangeAsync(StoredPen pen, PenSettingChange change);
     Task<Result<int>> CreateGroupAsync(string name);
     Task<Result> RenameGroupAsync(StoredGroup group, string name);
+    Task<Result> SetFoldedOnStartAsync(StoredGroup group, bool foldedOnStart);
     Task<Result> DeleteGroupAsync(StoredGroup group);
     Task<Result> SetMembershipAsync(StoredPen pen, StoredGroup group, bool isMember);
 }
@@ -161,7 +163,7 @@ public interface IPenCatalogueEditor
 No member adds a pen by hand, deletes one or changes an `id`: the key is the SCADA variable number and
 belongs to the SCADA. The `semiplot` role draws the same line, with a column-level `UPDATE` of the eight
 settings columns and no `INSERT` or `DELETE` on `semiplot_tags` (`postgres-instance.md`).
-`PenCatalogueEditorSurfaceTests` pins the seven method names.
+`PenCatalogueEditorSurfaceTests` pins the eight method names.
 
 The read interface stays read-only because the chart consumes it. A write member on `IDataProvider`
 would put a write in reach of every chart consumer; with the write paths apart, `Chart/` and `Legend/`
@@ -178,7 +180,7 @@ singleton, so one role and one connection string serve reads and writes.
 | --- | --- | --- |
 | `PenCatalogue` | `Pens`, `Groups` | The catalogue as stored. |
 | `StoredPen` | `Id`, `Name`, `Unit`, `Format`, `Color`, `LineStyle`, `EnabledOnStart`, `ScaleMinOnStart`, `ScaleMaxOnStart`, `LogScaleOnStart` | One `semiplot_tags` row; a null field is a stored `NULL`. |
-| `StoredGroup` | `Id`, `Name`, `MemberPenIds` | Member ids ascending; the member count is `MemberPenIds.Count`. |
+| `StoredGroup` | `Id`, `Name`, `MemberPenIds`, `FoldedOnStart` | Member ids ascending; the member count is `MemberPenIds.Count`. `FoldedOnStart` is `semiplot_groups.folded_on_start`, the fold the group's sidebar header starts with (`overview.md#the-sidebar-fold`). |
 | `PenSettingChange` | `Name`, `Unit`, `Format`, `Color`, `LineStyle`, `EnabledOnStart`, `ScaleOnStart(Min, Max)`, `LogScaleOnStart` | A closed family, one arm per column; the scale pair is one arm. |
 
 A parameter record carries the id the statement binds and the name a fault names. The implementation
@@ -186,15 +188,29 @@ reads only `Id` and `Name` from it, and no statement compares old values in its 
 
 ### The stored read
 
-`ReadAsync` runs `StoredPens` and `StoredGroups` on one connection, with `PenCatalogRelations` as the
-failure detail. It returns the values as stored, not as `PostgresDataProvider.ReadPen` normalises them:
-a `NULL` colour stays null instead of `#808080`, and a mask `PenValueFormat.IsAcceptable` refuses comes
-back as written instead of null. The form opens such a value as an invalid field, the way the settings
-window opens a file value its rule refuses (`overview.md#the-settings-window`). `line_style` goes
-through `StoredLineStyle.Read`, which the provider's read calls too; a value it does not recognise reads
-as interpolated and is logged at the level the caller's function gives, asked only for such a value.
-The editor gives `Warning` on every read, and the provider gives `Warning` once per pen and stored value
-and `Debug` after that (`#the-catalogue-while-the-viewer-runs`, below).
+`SemiPlot.DataSource.Postgres` owns the one catalogue read: `StoredPens` and `StoredGroups` run as a
+pair on one connection in one `REPEATABLE READ` transaction (`CatalogueRowReader.ReadAsync`), so both
+statements read one snapshot and a write landing between them never yields a read whose groups and pens
+disagree. `CatalogueRelations` is the failure detail. The editor's `ReadAsync`
+reads through the same pair, on its own connection with its own error mapping, and the provider's
+`QueryCatalogueAsync` runs the pair under the catalogue command's 5 s statement bound
+(`#configuration`). The normalisation is a mapping over the raw row, `CatalogueNormaliser` in the
+data-source project, warn-once included: the row carries the raw `line_style` smallint, and both
+`StoredPen` and the normalised `Pen` project from it. The stored projection returns the values as
+stored, not normalised: a `NULL` colour stays null instead of `#808080`, and a mask
+`PenValueFormat.IsAcceptable` refuses comes back as written instead of null. The form opens such a value
+as an invalid field, the way the settings window opens a file value its rule refuses
+(`overview.md#the-settings-window`). `line_style` goes through `StoredLineStyle.Read` in both
+projections; a value it does not recognise reads as interpolated and is logged at the level the
+caller's function gives, asked only for such a value. The editor gives `Warning` on every read, and the
+provider gives `Warning` once per pen and stored value and `Debug` after that
+(`#the-catalogue-while-the-viewer-runs`, below).
+
+The two projections order differently: the `Pens` projection sorts by name then id, and the stored list
+keeps `StoredPens`' id order, the order the editor's table shows. The name sort runs in the current
+culture (`StringComparer.CurrentCulture`), the order the sidebar's headers sort in and the nearest client
+match to the database collation the deleted `PenCatalog` statement ordered by; the id tie-break keeps
+names that compare equal on one order across reads.
 
 The editor reads fresh when its window opens and after every refresh, never from the startup
 catalogue: a form seeded from the startup read would revert a field to a value another instance has
@@ -208,6 +224,7 @@ already replaced.
 | `ChangeAsync`, `ScaleOnStart` | `UpdatePenScaleOnStart` | Both bounds in one statement: `semiplot_tags_scale_paired` refuses a half-set pair between two. |
 | `CreateGroupAsync` | `CreateGroup` | `INSERT ... RETURNING id`; the result is the new group's id. |
 | `RenameGroupAsync` | `RenameGroup` | One row by id. |
+| `SetFoldedOnStartAsync` | `UpdateGroupFoldedOnStart` | One row by id; `folded_on_start` is `NOT NULL`, and the flag binds as a non-null boolean. |
 | `DeleteGroupAsync` | `DeleteGroup` | `ON DELETE CASCADE` on `semiplot_pen_groups.group_id` removes the memberships. The pens stay, and a pen left in no group falls under the Ungrouped header at the next catalogue read. |
 | `SetMembershipAsync` | `AddMembership`, `RemoveMembership` | Idempotent: adding a membership that exists is `ON CONFLICT (pen_id, group_id) DO NOTHING`, and removing one that does not touches no row and succeeds. |
 | `RegisterNewPensAsync` | `RegisterNewPens` | `SELECT semiplot_register_new_pens();`, whose answer is the number of pens added. |
@@ -246,17 +263,23 @@ exactly that, so the editor takes no advisory lock.
 ### The catalogue while the viewer runs
 
 The editor writes the tables, and every running viewer reads them again: `Bridge/PenCatalogueSync`
-issues `QueryPensAsync` every 5 s and at once after each write the editor lands, and the chart and the
-sidebar apply what changed (`overview.md#the-live-catalogue`). Several instances may run on one
+issues `QueryCatalogueAsync` every 5 s and at once after each write the editor lands, emits on `Changes`
+each read that does not `CatalogueRead.Matches` the one before, and the chart and the sidebar reconcile
+to it (`overview.md#the-live-catalogue`). Several instances may run on one
 machine, and the last write wins per column. The read side keeps three rules for that loop:
 
-- `PenCatalog` orders by `tag.name, tag.id`, so two pens that share a name keep one order across reads.
-- `QueryPensAsync` builds a new group list per row, and `Pen` compares `Groups` element by element, so
-  an unchanged catalogue reads as unchanged.
-- `PostgresDataProvider` warns about a stored value it normalises, a `NULL` colour, a mask the rule
+- The read's `Pens` projection sorts by name then id, so two pens that share a name keep one order
+  across reads (The stored read, above).
+- `CatalogueNormaliser` builds a new group list per pen, and `Pen` compares `Groups` element by
+  element, so an unchanged catalogue reads as unchanged.
+- `CatalogueNormaliser` warns about a stored value it normalises, a `NULL` colour, a mask the rule
   refuses or an unknown `line_style`, once per process for each pen, column and stored value, and logs
-  a repeat at `Debug`. The provider keeps the set of warned triples. A hand-edited row would otherwise
+  a repeat at `Debug`. It keeps the set of warned triples. A hand-edited row would otherwise
   write a warning every 5 s.
+
+`StoredGroups` reads `folded_on_start`, and `CatalogueRead.Matches` compares it, so a change of the flag
+alone is emitted. The sidebar seeds only a header it draws for the first time from the flag, so the
+emitted read folds nothing already shown (`overview.md#the-sidebar-fold`).
 
 A read that adds or removes a pen moves the live edge onto the new pen set (Realtime, below).
 
@@ -341,13 +364,14 @@ of the repeated autumn hour.
 Every statement the provider, the live source, the editor, the row reader and the marker store issue is
 a constant in `SemiPlot.DataSource.Postgres/ArchiveStatements.cs`; parameters are always bound. The
 bench seeder and the test harness own SQL of their own (`bench.md`). `ArchiveStatementTextTests` pins
-each constant below clause by clause except `PenCatalog` and `ArchiveExtent`; `ExplainPlanTests`
-asserts the plan shape of each one except `PenCatalog` against a container. The editor's and the
+each constant below clause by clause except the catalogue pair and `ArchiveExtent`, and pins the
+catalogue pair's own 5 s command bound instead; `ExplainPlanTests`
+asserts the plan shape of each one except the catalogue pair against a container. The editor's and the
 marker store's statements are in their own tables above.
 
 | Operation | Constant | What the statement must keep, and why |
 | --- | --- | --- |
-| Pen catalogue | `PenCatalog` | `semiplot_tags` left-joined through `semiplot_pen_groups` to `semiplot_groups`, the names aggregated with `array_agg` under `GROUP BY tag.id`: a pen in two groups stays one row and a pen in none survives the outer join. `ORDER BY tag.name, tag.id`, because a pen has no single group to sort by, and the id keeps two pens that share a name in one order across reads. An empty table is an empty list; a missing one is `ArchiveFault.TableMissing` naming all three relations. |
+| Catalogue read | `StoredPens` + `StoredGroups` | The editor's stored pair (The pen catalogue editor, above) runs as the one catalogue read on one connection, each statement under the catalogue command's 5 s bound. `StoredPens` reads `semiplot_tags` alone and orders by id, so a pen in two groups or in none stays one row; `StoredGroups` reads the groups left-joined to the memberships and orders by name, and a group in no pen stays one row with an empty member list. The normaliser sorts the `Pens` projection by name then id (The stored read, above). An empty table is an empty list; a missing one is `ArchiveFault.TableMissing` naming all three relations, `semiplot_tags, semiplot_groups, semiplot_pen_groups` (`CatalogueRelations`). |
 | Archive extent | `ArchiveExtent` | Rooted at `semiplot_tags`, one `min(t)`/`max(t)` subquery pair per configured `id` at `l = 0`. A bare `min(t)` over `trends` cannot use `PRIMARY KEY (id, l, t)` and scans the archive. Nulls map to `ArchiveExtent.Empty`; an empty catalogue over a full archive is also `Empty`, since no pen could draw it. |
 | Archive days | `ArchiveDays` | `generate_series(@firstDay, @lastDay, interval '1 day')` filtered by `EXISTS` over `semiplot_tags` with the extent's lateral probe per `id`: `l = 0 AND t >= day.start AND t < day.start + interval '1 day' ORDER BY t LIMIT 1`, then `ORDER BY 1`. The probe stops at the first row of each pen's day, and the `ORDER BY t` keeps it one index edge rather than a `Bitmap Heap Scan` over the pen's whole day ("Read cost"). Both days bind as `Timestamp` values of kind `Unspecified` at midnight, unconverted. An empty catalogue returns no day; a failure maps with `TagCatalogAndTrendsRelations`, `semiplot_tags, trends`. |
 | History | `BucketedHistoryWindow` | Two branches at `l = @layer` under one outer `ORDER BY id, t`. The seed branch reads per pen one row strictly before `@from`, bounded to the wider of the window and one day: the bound prunes older partitions from the seed's `Merge Append`, and the seed keeps a steady variable on the chart as a horizontal line. The server reduces the window branch to one row per column: `GROUP BY id, segment, date_bin(@bucket, t, @from)`. `segment` counts the `q = 32` markers strictly before each row, so a marker closes its own bucket and no bucket straddles a break. Each bucket carries `min(v)`, `max(v)`, whether it ends in a gap, and the bucket's newest non-null sample as the column's timestamp and value, which is what the legend reads at the cursor. A `q = 32` marker and a null `v` both end the bucket in a gap. `BucketedRowFold` groups by consecutive identifier, so the single total ordering keeps each pen one run. Every layer takes this statement: a coarse row is a verbatim raw row and the markers are copied into the coarse layers (`scada-archive.md#layers`), so the buckets and the break split hold at `Minute` and `Hour` as at `Raw`. `@bucket` is `(to - from) / targetColumnCount`, never below one millisecond, the column's own resolution, and truncated down to whole microseconds (`PostgresDataProvider.BucketFor`). |
@@ -1211,7 +1235,7 @@ carries no file-access kind.
 The write kinds come from `ArchiveExceptionMapper.MapWrite(exception, subject, relation)`. It maps
 `23514`, `23505` and `23503` to `ValueRejected`, `NameTaken` and `RowGone` carrying `subject`, and sends
 every other exception to the read classification with the `relation` its caller gives, the relations the
-caller's statement touches. The pen editor passes `PenCatalogRelations`: every editor write touches one of
+caller's statement touches. The pen editor passes `CatalogueRelations`: every editor write touches one of
 those three relations, and one provisioning run creates all three. The marker store passes
 `MarkersRelation`, so a marker write against a missing table names `semiplot_markers` and no pen table.
 `RowGone(subject)` is the form for an editor update that touched no row, and `MarkerGone(subject)` the
@@ -1416,7 +1440,8 @@ The file states no query bound: `statement_timeout` belongs to the `semiplot` ro
 it (`postgres-instance.md`). The connection
 string carries `Command Timeout=300` as a client backstop. Two reads override it with a bound of their
 own: the live-edge poll's tick (10 s, `RealtimePoll.CreateTickCommand`) and the catalogue read (5 s,
-`PostgresDataProvider.CreateCatalogueCommand`), whose failures raise the connection fault. Loading returns a `Result`; a malformed file is reported at startup, not at
+`CatalogueRowReader.CreateCommand`), whose failures raise the connection fault. Loading
+returns a `Result`; a malformed file is reported at startup, not at
 first query. The password is stored in plain text; the mitigation is a role that cannot write the
 archive.
 

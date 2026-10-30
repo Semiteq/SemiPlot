@@ -43,12 +43,12 @@ public sealed class TrendWindowTests
 	public void DisposingTheWindowStopsTheCatalogueRead()
 	{
 		var stand = NewWindowStand();
-		var pensQueriesBefore = stand.Provider.PensQueryCount;
+		var pensQueriesBefore = stand.Provider.CatalogueQueryCount;
 
 		stand.Dispose();
 		stand.Scheduler.AdvanceBy(ArchiveReadLoop.ReadInterval.Ticks * 2);
 
-		stand.Provider.PensQueryCount.Should().Be(pensQueriesBefore);
+		stand.Provider.CatalogueQueryCount.Should().Be(pensQueriesBefore);
 	}
 
 	[AvaloniaFact]
@@ -84,7 +84,7 @@ public sealed class TrendWindowTests
 	{
 		using var stand = NewWindowStand();
 
-		stand.Provider.PensQueryCount.Should().Be(1, "the connection state starts at window open");
+		stand.Provider.CatalogueQueryCount.Should().Be(1, "the connection state starts at window open");
 	}
 
 	[AvaloniaFact]
@@ -95,7 +95,7 @@ public sealed class TrendWindowTests
 		var statusBar = stand.ViewModel.StatusBar;
 		var connectionLost = ArchiveFailureMapper.Map(
 			FakeDataProvider.BenchArchiveError(ArchiveFault.ConnectionLost, "3"));
-		stand.Provider.FailPens = true;
+		stand.Provider.FailCatalogue = true;
 
 		stand.Scheduler.AdvanceBy(ArchiveReadLoop.ReadInterval.Ticks * 3);
 
@@ -108,7 +108,7 @@ public sealed class TrendWindowTests
 		panel.Entries.Should().ContainSingle().Which.Should().BeSameAs(entry);
 		entry.RepeatCount.Should().Be(1, "a fourth failure neither adds nor restamps an entry");
 
-		stand.Provider.FailPens = false;
+		stand.Provider.FailCatalogue = false;
 		stand.Scheduler.AdvanceBy(ArchiveReadLoop.ReadInterval.Ticks);
 
 		statusBar.IsConnected.Should().BeTrue();

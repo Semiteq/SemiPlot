@@ -1,6 +1,7 @@
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
 
+using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
@@ -19,9 +20,14 @@ internal sealed class PenCatalogueApplier : IDisposable
 	private readonly TrendChartViewModel _chart;
 	private readonly MinimapViewModel _minimap;
 	private readonly TrendLegendViewModel _legend;
+
+	// The last read both the chart and the legend took; the read a failed apply rebases the sync on.
+	private CatalogueRead _lastApplied;
+
 	private readonly IDisposable _subscription;
 
 	public PenCatalogueApplier(
+		CatalogueRead startupCatalogue,
 		PenCatalogueSync catalogueSync,
 		TrendChartViewModel chart,
 		MinimapViewModel minimap,
@@ -32,8 +38,9 @@ internal sealed class PenCatalogueApplier : IDisposable
 		_chart = chart;
 		_minimap = minimap;
 		_legend = legend;
-		_subscription = catalogueSync.Deltas
-			.Select(delta => Observable.FromAsync(disposed => ApplyAsync(delta, disposed), uiScheduler))
+		_lastApplied = startupCatalogue;
+		_subscription = catalogueSync.Changes
+			.Select(read => Observable.FromAsync(disposed => ApplyAsync(read, disposed), uiScheduler))
 			.Concat()
 			.Subscribe(_ => { }, chart.ReportFailure);
 	}
@@ -43,14 +50,14 @@ internal sealed class PenCatalogueApplier : IDisposable
 		_subscription.Dispose();
 	}
 
-	private async Task ApplyAsync(PenListDelta delta, CancellationToken disposed)
+	private async Task ApplyAsync(CatalogueRead read, CancellationToken disposed)
 	{
-		var shownBefore = _chart.Catalogue;
+		var appliedBefore = _lastApplied;
 		var isApplied = false;
 
 		try
 		{
-			var addsPens = delta.Added.Count > 0;
+			var addsPens = PenListDelta.Between(appliedBefore.Pens, read.Pens).Added.Count > 0;
 			var hadPens = !_chart.HasNoPens;
 
 			if (!hadPens && addsPens)
@@ -69,8 +76,9 @@ internal sealed class PenCatalogueApplier : IDisposable
 				}
 			}
 
-			_chart.ApplyCatalogue(delta.Current);
-			_legend.Rebuild();
+			_chart.ApplyCatalogue(read.Pens);
+			_legend.Rebuild(read.Stored.Groups);
+			_lastApplied = read;
 			isApplied = true;
 
 			if (hadPens && addsPens)
@@ -90,7 +98,7 @@ internal sealed class PenCatalogueApplier : IDisposable
 			// docs/architecture/overview.md#what-a-read-changes
 			if (!isApplied)
 			{
-				_catalogueSync.Rebase(shownBefore);
+				_catalogueSync.Rebase(appliedBefore);
 			}
 		}
 	}

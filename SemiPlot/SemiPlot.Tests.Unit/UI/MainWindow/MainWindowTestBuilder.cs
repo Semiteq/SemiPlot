@@ -96,6 +96,7 @@ internal static class MainWindowTestBuilder
 	/// </summary>
 	public static ArchiveStand NewArchiveStand(
 		IReadOnlyList<Pen>? pens = null,
+		PenCatalogue? stored = null,
 		IPenCatalogueEditor? penCatalogueEditor = null,
 		MessagePanelViewModel? panel = null,
 		IArchiveRowReader? rowReader = null,
@@ -103,6 +104,11 @@ internal static class MainWindowTestBuilder
 	{
 		var scheduler = new TestScheduler();
 		var provider = new FakeDataProvider(scheduler, TimeSpan.FromSeconds(1), pens);
+
+		if (stored is not null)
+		{
+			provider.Stored = stored;
+		}
 		var markerStore = new FakeMarkerStore();
 		var services = new ServiceCollection()
 			.AddSingleton<IScheduler>(scheduler)
@@ -126,7 +132,7 @@ internal static class MainWindowTestBuilder
 			? ArchiveExtent.Empty
 			: new ArchiveExtent(provider.ArchiveFirstUtc, provider.ArchiveLastUtc);
 
-		var startupData = new StartupData(container, provider.Pens, startupExtent);
+		var startupData = new StartupData(container, provider.Catalogue, startupExtent);
 
 		return new ArchiveStand(container, provider, markerStore, scheduler, startupData);
 	}
@@ -137,13 +143,14 @@ internal static class MainWindowTestBuilder
 	/// </summary>
 	public static WindowStand NewWindowStand(
 		IReadOnlyList<Pen>? pens = null,
+		PenCatalogue? stored = null,
 		IPenCatalogueEditor? penCatalogueEditor = null,
 		string? configDirectory = null,
 		MessagePanelViewModel? panel = null,
 		Action<ProcessStartInfo>? start = null,
 		IArchiveRowReader? rowReader = null)
 	{
-		var archive = NewArchiveStand(pens, penCatalogueEditor, panel, rowReader);
+		var archive = NewArchiveStand(pens, stored, penCatalogueEditor, panel, rowReader);
 		var launcher = TestLaunch.LauncherAt(configDirectory ?? AppContext.BaseDirectory, start);
 		var window = TrendWindow.Build(
 			archive.Data, launcher, archive.Scheduler, App.CsvDialectFor(UiLanguage.En), TimeZoneInfo.Utc);

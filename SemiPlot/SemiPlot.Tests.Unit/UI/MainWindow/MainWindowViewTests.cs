@@ -282,6 +282,28 @@ public sealed class MainWindowViewTests
 		panel.Width.Should().Be(TrendLegendViewModel.CollapsedWidth);
 	}
 
+	[AvaloniaTheory]
+	[InlineData(272, true)]
+	[InlineData(271, false)]
+	public void TheLegendTopRow_ShowsTextFromA272PxSlotAndIconsBelowIt(double panelWidth, bool showsText)
+	{
+		using var stand = NewWindowStand();
+		var legend = stand.ViewModel.LegendViewModel;
+		var window = new MainWindowView { DataContext = stand.ViewModel };
+		ViewProbe.Realise(window);
+
+		legend.ResizePanel(legend.PanelWidth - panelWidth);
+		Dispatcher.UIThread.RunJobs();
+
+		ViewProbe.Named<Border>(window, "LegendPanel").Bounds.Width.Should().Be(panelWidth);
+		foreach (var name in new[] { "PanelStateToggle", "FoldAllButton" })
+		{
+			var button = ViewProbe.Descendant<Button>(window, name);
+			ViewProbe.Descendants<TextBlock>(button).Single().IsEffectivelyVisible.Should().Be(showsText, name);
+			ViewProbe.Descendants<PathIcon>(button).Single().IsEffectivelyVisible.Should().Be(!showsText, name);
+		}
+	}
+
 	// The handle sits on the panel's left edge, so a drag to the left widens the panel.
 	[AvaloniaFact]
 	public void ADragOnTheHandle_ResizesThePanelInBothStatesAndEachStateKeepsItsWidth()

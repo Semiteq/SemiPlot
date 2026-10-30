@@ -75,7 +75,7 @@ public sealed class TrendWindowBuildTests
 		var dataProvider = stand.Provider;
 
 		var probe = await StartupProbe.ReadAsync(stand.Data.ServiceProvider, StartupProbe.DefaultReadBound);
-		var pensQueriesBefore = dataProvider.PensQueryCount;
+		var pensQueriesBefore = dataProvider.CatalogueQueryCount;
 
 		using var window = TrendWindow.Build(
 			probe.Value,
@@ -85,7 +85,7 @@ public sealed class TrendWindowBuildTests
 			TimeZoneInfo.Utc);
 		Dispatcher.UIThread.RunJobs();
 
-		dataProvider.PensQueryCount.Should().Be(pensQueriesBefore + 1);
+		dataProvider.CatalogueQueryCount.Should().Be(pensQueriesBefore + 1);
 	}
 
 	// One fake serves both interfaces elsewhere, so only a second instance tells a cast from a resolve.

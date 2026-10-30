@@ -545,19 +545,27 @@
                                                          Converter="{x:Static ObjectConverters.IsNotNull}" />
                                             </Panel.IsEnabled>
 
-                                            <Panel DataContext="{Binding SelectedGroup}">
+                                            <StackPanel DataContext="{Binding SelectedGroup}"
+                                                        Spacing="8">
 
                                                 <TextBox x:DataType="local:PenGroupViewModel"
                                                          Name="GroupRename"
                                                          Classes.invalid="{Binding !IsNameValid}"
                                                          Text="{Binding RenameDraft}" />
 
-                                            </Panel>
+                                                <CheckBox x:DataType="local:PenGroupViewModel"
+                                                          Name="GroupFoldedOnStartBox"
+                                                          Content="{x:Static text:Resources.PenGroupsFoldedOnStartLabel}"
+                                                          IsChecked="{Binding FoldedOnStart, Mode=OneWay}"
+                                                          Command="{Binding ToggleFoldedOnStartCommand}" />
+
+                                            </StackPanel>
 
                                         </Panel>
 
                                         <Button Grid.Column="1"
                                                 Name="DeleteGroupButton"
+                                                VerticalAlignment="Top"
                                                 Content="{x:Static text:Resources.PenGroupsDelete}"
                                                 Command="{Binding DeleteGroupCommand}" />
 

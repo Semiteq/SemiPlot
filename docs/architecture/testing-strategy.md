@@ -99,6 +99,13 @@ is the apply's last statement and a production signal, while the columns, the qu
 move before the apply ends. A release that also applies a catalogue or pans redraws more than once, so each
 call site passes its own count.
 
+In ReactiveUI 23.2.28 a handler that throws inside a `PropertyChanged` event permanently disconnects
+that object's C# event bridge: the event is driven through a Buffer/Subject Rx pipeline, and the
+exception kills the subscription, while the state still updates. A test that needs the same object to
+raise further events after one threw therefore asserts state, not event counts:
+`UI/MainWindow/PenCatalogueApplierTests.AGroupRenameApplyThatThrows_IsRetriedByTheNextIdenticalRead`
+throws once from a chart listener and asserts the legend's group name after the retry read.
+
 Two pieces of state are process-global and the project runs its classes in parallel: the UI culture
 (`CultureInfo.DefaultThreadCurrentUICulture` / `CurrentUICulture`) and the application's theme
 variant. A class that writes either one, **and** a class that reads what either one selects (a
@@ -113,7 +120,8 @@ container: the bucketed history window's outer `ORDER BY id, t`, its
 `GROUP BY id, segment, date_bin(@bucket, t, @from)`, its break flag, its newest non-null timestamp,
 `l = @layer` in both branches, its strict seed bound and its one-day seed floor; the realtime poll's
 `l = 0` filter and its `ORDER BY t`; the realtime baseline's `l = 0` filter and its
-`DISTINCT unnest(@ids)`. Five binders are each pinned against their statement's parameter names:
+`DISTINCT unnest(@ids)`; the catalogue pair's own 5 s command bound. Five binders are each pinned
+against their statement's parameter names:
 `PostgresDataProvider.BindLocalBucketedWindow`, `RealtimePoll.BindPoll`,
 `RealtimePoll.BindBaseline`, `PostgresArchiveRowReader.BindSeed` and
 `PostgresArchiveRowReader.BindPensRange`. Two assertions more pin

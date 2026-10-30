@@ -24,14 +24,38 @@
   <data name="LegendUngroupedHeader" xml:space="preserve">
     <value>Ungrouped</value>
   </data>
-  <data name="LegendCollapsePanel" xml:space="preserve">
-    <value>Collapse</value>
+  <data name="LegendHideValues" xml:space="preserve">
+    <value>Hide values</value>
   </data>
-  <data name="LegendExpandPanel" xml:space="preserve">
-    <value>Expand</value>
+  <data name="LegendShowValues" xml:space="preserve">
+    <value>Show values</value>
+  </data>
+  <data name="LegendHideValuesTip" xml:space="preserve">
+    <value>Hide values and narrow the panel</value>
+  </data>
+  <data name="LegendShowValuesTip" xml:space="preserve">
+    <value>Show values and widen the panel</value>
+  </data>
+  <data name="LegendFoldAll" xml:space="preserve">
+    <value>Fold all</value>
+  </data>
+  <data name="LegendUnfoldAll" xml:space="preserve">
+    <value>Unfold all</value>
+  </data>
+  <data name="LegendFoldAllGroups" xml:space="preserve">
+    <value>Fold all groups</value>
+  </data>
+  <data name="LegendUnfoldAllGroups" xml:space="preserve">
+    <value>Unfold all groups</value>
   </data>
   <data name="LegendGroupSwitch" xml:space="preserve">
     <value>Show or hide every pen of group {0}</value>
+  </data>
+  <data name="LegendFoldGroup" xml:space="preserve">
+    <value>Fold group {0}</value>
+  </data>
+  <data name="LegendUnfoldGroup" xml:space="preserve">
+    <value>Unfold group {0}</value>
   </data>
   <data name="NavigationJumpToNow" xml:space="preserve">
     <value>Jump to now</value>
@@ -101,6 +125,15 @@
   </data>
   <data name="MenuViewRecipeMarkers" xml:space="preserve">
     <value>Recipe markers</value>
+  </data>
+  <data name="MenuViewLegendValues" xml:space="preserve">
+    <value>Values in the panel</value>
+  </data>
+  <data name="MenuViewShowAllPens" xml:space="preserve">
+    <value>Show all pens</value>
+  </data>
+  <data name="MenuViewHideAllPens" xml:space="preserve">
+    <value>Hide all pens</value>
   </data>
   <data name="MenuViewAutoscale" xml:space="preserve">
     <value>Autoscale</value>
@@ -659,6 +692,9 @@
   </data>
   <data name="PenGroupsCancel" xml:space="preserve">
     <value>Cancel</value>
+  </data>
+  <data name="PenGroupsFoldedOnStartLabel" xml:space="preserve">
+    <value>Folded when the viewer opens</value>
   </data>
   <data name="PenGroupsMembersHeader" xml:space="preserve">
     <value>Pens in the selected group</value>

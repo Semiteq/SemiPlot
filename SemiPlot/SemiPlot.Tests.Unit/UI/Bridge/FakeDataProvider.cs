@@ -45,24 +45,24 @@ internal sealed class FakeDataProvider(
 	// The catalogue and extent reads succeed unconditionally otherwise, which is what the startup path
 	// could never be tested against. Both switches answer with a typed error, the shape a real provider
 	// returns, so a consumer routing on error type is exercised rather than one reading a message.
-	public bool FailPens { get; set; }
+	public bool FailCatalogue { get; set; }
 
-	public ArchiveFault PensFailureKind { get; set; } = ArchiveFault.Unreachable;
+	public ArchiveFault CatalogueFailureKind { get; set; } = ArchiveFault.Unreachable;
 
 	public bool FailExtent { get; set; }
 
 	// A catalogue read that throws instead of answering. The real provider answers every failure with a
 	// failed Result, so this is the shape of a defect rather than of an outage.
-	public Exception? PensReadException { get; set; }
+	public Exception? CatalogueReadException { get; set; }
 
 	// Held tasks for the catalogue and extent reads, completed by the test or never, to drive a caller's own
 	// bound. Awaited by production code and completed by the test body with an inline continuation, so none
 	// of these gates may take RunContinuationsAsynchronously (the opposite of ChartHistoryRequestDebouncerTests').
-	public TaskCompletionSource<Result<IReadOnlyList<Pen>>> PensGate { get; } = new();
+	public TaskCompletionSource<Result<CatalogueRead>> CatalogueGate { get; } = new();
 
 	public TaskCompletionSource<Result<ArchiveExtent>> ExtentGate { get; } = new();
 
-	public bool GatePens { get; set; }
+	public bool GateCatalogue { get; set; }
 
 	public bool GateExtent { get; set; }
 
@@ -91,7 +91,7 @@ internal sealed class FakeDataProvider(
 	// (e.g. an initial Raw load vs. a superseding coarser-layer gesture re-query).
 	public Dictionary<AggregationLayer, double> LayerCenterOverrides { get; } = [];
 
-	// Plain, for the reason stated at PensGate: TrendChartViewModelTests asserts inline after SetResult. A held
+	// Plain, for the reason stated at CatalogueGate: TrendChartViewModelTests asserts inline after SetResult. A held
 	// read waits on the gate in place when it starts, so replacing the gate holds the next read apart from it.
 	public TaskCompletionSource<Result<IReadOnlyList<PenHistoryEnvelope>>> HistoryGate { get; set; } = new();
 
@@ -136,7 +136,7 @@ internal sealed class FakeDataProvider(
 		}
 	}
 
-	public int PensQueryCount { get; private set; }
+	public int CatalogueQueryCount { get; private set; }
 
 	public int ExtentQueryCount { get; private set; }
 
@@ -148,6 +148,10 @@ internal sealed class FakeDataProvider(
 	public Action? LiveSubscriptionChanging { get; set; }
 
 	public IReadOnlyList<Pen> Pens { get; set; } = pens ?? [FirstPen, SecondPen];
+
+	public PenCatalogue Stored { get; set; } = new([], []);
+
+	public CatalogueRead Catalogue => new(Stored, Pens);
 
 	// Off by default: every pen shares one timestamp per tick. Set, each pen's sample offsets by its own
 	// position, matching the real archive's per-variable, change-based delivery, where two variables rarely
@@ -294,27 +298,27 @@ internal sealed class FakeDataProvider(
 		return samples;
 	}
 
-	public Task<Result<IReadOnlyList<Pen>>> QueryPensAsync()
+	public Task<Result<CatalogueRead>> QueryCatalogueAsync()
 	{
-		PensQueryCount++;
+		CatalogueQueryCount++;
 
-		if (PensReadException is { } readException)
+		if (CatalogueReadException is { } readException)
 		{
-			return Task.FromException<Result<IReadOnlyList<Pen>>>(readException);
+			return Task.FromException<Result<CatalogueRead>>(readException);
 		}
 
-		if (FailPens)
+		if (FailCatalogue)
 		{
 			return Task.FromResult(
-				Result.Fail<IReadOnlyList<Pen>>(BenchArchiveError(PensFailureKind)));
+				Result.Fail<CatalogueRead>(BenchArchiveError(CatalogueFailureKind)));
 		}
 
-		if (GatePens)
+		if (GateCatalogue)
 		{
-			return PensGate.Task;
+			return CatalogueGate.Task;
 		}
 
-		return Task.FromResult(Result.Ok(Pens));
+		return Task.FromResult(Result.Ok(Catalogue));
 	}
 
 	public Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(

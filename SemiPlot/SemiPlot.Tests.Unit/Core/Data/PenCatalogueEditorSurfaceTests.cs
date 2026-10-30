@@ -23,6 +23,7 @@ public sealed class PenCatalogueEditorSurfaceTests
 			"ChangeAsync",
 			"CreateGroupAsync",
 			"RenameGroupAsync",
+			"SetFoldedOnStartAsync",
 			"DeleteGroupAsync",
 			"SetMembershipAsync");
 	}

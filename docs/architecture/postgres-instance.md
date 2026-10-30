@@ -92,8 +92,12 @@ screen (`overview.md#what-a-read-changes`).
 
 Group membership is many-to-many. `semiplot_groups` holds one row per group name,
 `semiplot_pen_groups` one row per membership, and a pen may sit in several groups or in none. The
-catalogue read joins all three tables (`data-integration.md`). The editor creates, renames and deletes
-groups and adds and removes memberships; deleting a group removes its memberships through
+catalogue read reads all three tables (`data-integration.md`). `semiplot_groups.folded_on_start`,
+`NOT NULL DEFAULT false`, is the fold the group's sidebar header starts with
+(`overview.md#the-sidebar-fold`). The catalogue read names the column, so the viewer needs a schema that
+carries it, Semiteq/SemiBase#18 or newer: against an older one every catalogue read fails with `42703`,
+`ArchiveFault.ShapeUnexpected`, and the viewer does not start. The editor creates, renames and deletes groups, sets that flag, and adds
+and removes memberships; deleting a group removes its memberships through
 `ON DELETE CASCADE` and leaves the pens.
 
 `semiplot_markers` holds the chart's time markers, one row per marker: an identity `id`, a `timestamptz`

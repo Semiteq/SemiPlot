@@ -62,7 +62,7 @@ operator interaction.
   IReadOnlyList<Pen> pens, IScheduler dataScheduler, IScheduler uiScheduler)`,
   `Buffer` (the 100 ms `TrendCoordinator.BatchWindow`) on the data scheduler, `ObserveOn` on the UI one. No second `IScheduler` container registration.
   The pen catalogue is passed in because the coordinator needs the pen identifiers in its constructor
-  and `QueryPensAsync` cannot be awaited there; the composition root hands over the start sequence's
+  and `QueryCatalogueAsync` cannot be awaited there; the composition root hands over the start sequence's
   read, and a later pen set arrives through `SetPens` (`data-integration.md#realtime`).
 - **Decimation envelope contract:** history record per pen = ascending `X[]` + `Min[]` + `Max[]` + center
   `Y[]`; realtime stays single-value `double?[]` (null = gap); rendered as one `EnvelopeLine` polyline
@@ -682,19 +682,23 @@ panel refuses a time the spring change skips and gives an ambiguous autumn time 
 
 ## Legend
 
-Required by trend-feature-spec.md §PN-8. As-built: a grouped sidebar whose row carries the on/off
-box, a round colour dot, the name, the current value in the pen's own mask and the unit
-(charting.md). A pen in several groups is listed under each of them and switching it off under one
-header switches it off under all. Every drawn header carries a switch whose state is derived from its
-pens: on when all are on, off when all are off, indeterminate when mixed. A click on a mixed or off
-header switches every pen of the group on, on an all-on header off, and every other header a shared
-pen sits under re-derives. A header reads as a section caption, small grey capitals under a thin line,
-with its rows indented beneath it; the active pen's row is marked by an accent background and an accent
-bar on its left edge, not by bold text. The panel has two states: collapsed, it leaves the box, the dot and the
-name. A handle on the panel's left edge drags its width in either state; each state remembers its own
-width for the session, and a restart returns both to their defaults. The value at the cursor is the
-chart's own hover readout (§CU-2), not a legend cell. The row shows no scale range: the padded axis
-bound would read as the pen's measured extremes.
+Required by trend-feature-spec.md §PN-8. As-built: a grouped sidebar whose row carries the on/off box, a
+round colour dot, the name, the current value in the pen's own mask and the unit (charting.md). A pen in
+several groups is listed under each of them and switching it off under one header switches it off under
+all. Every drawn header carries a switch whose state is derived from its pens: on when all are on, off
+when all are off, indeterminate when mixed. A click on a mixed or off header switches every pen of the
+group on, on an all-on header off, and every other header a shared pen sits under re-derives. A header
+reads as a section caption, small grey capitals under a thin line, with its rows indented beneath it; the
+active pen's row is marked by an accent background and an accent bar on its left edge, not by bold text.
+A toggle at a header's right edge folds the group's rows away for the session, and a pick of a pen folded
+away unfolds it (`overview.md#the-sidebar-fold`). The panel's top row holds a values button, which hides
+the value and unit columns and narrows the panel, and a fold-all button (`overview.md#the-sidebar-fold`);
+with the values hidden, a row leaves the box, the dot and the name. `View` -> Show all pens and Hide all
+pens switch every pen at once (`charting.md#switching-every-pen-at-once`). A handle on the panel's left
+edge drags its width with the values shown or hidden; each state remembers its own width for the session,
+and a restart returns both to their defaults. The value at the cursor is the chart's own hover readout
+(§CU-2), not a legend cell. The row shows no scale range: the padded axis bound would read as the pen's
+measured extremes.
 
 ## Archive-overview minimap
 
@@ -712,8 +716,8 @@ strip names its two ends and, while the pointer is over the strip, the time unde
   the chart (`TrendChartViewModel`) and reads its `Navigation`, `DrawnPenId`, `Pens` and `FindPen`.
   The band is its own part, `Minimap/MinimapBandFeed`, which the view model builds, exposes as
   `BandFeed` and disposes. The strip's geometry is pure (`Core/Trends/MinimapGeometry`).
-- The strip reads the extent at start (`TrendWindow.StartExtentLoad`), before a catalogue delta gives
-  an empty chart its first pens, and after a delta adds a pen to a chart that already has some
+- The strip reads the extent at start (`TrendWindow.StartExtentLoad`), before a catalogue read gives
+  an empty chart its first pens, and after a read adds a pen to a chart that already has some
   (`overview.md#what-a-read-changes`). `LoadExtentAsync` returns the read once the strip has applied
   it. Both callers widen the navigation's first sample to an earlier one in that read
   (`TrendChartViewModel.WidenToArchiveExtent`), so the chart pans back as far as the strip draws and

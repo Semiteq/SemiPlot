@@ -42,6 +42,9 @@ public sealed class PostgresCatalogReadTests(
 		SELECT 9996, id FROM public.semiplot_groups WHERE name = 'Alpha';
 		""";
 
+	private const string FoldedWatchlistCommand =
+		"UPDATE public.semiplot_groups SET folded_on_start = true WHERE name = 'Watchlist';";
+
 	private const int ScalingMaskTagId = 9997;
 
 	private const int ShapingMaskTagId = 9998;
@@ -84,7 +87,7 @@ public sealed class PostgresCatalogReadTests(
 		var result = await ReadCatalogueAsync(seededArchive.Database.PlotConnectionString);
 
 		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
-		result.Value.Should().BeEquivalentTo(ExpectedPens(), options => options.WithStrictOrdering());
+		result.Value.Pens.Should().BeEquivalentTo(ExpectedPens(), options => options.WithStrictOrdering());
 	}
 
 	// The wholesale comparison above reads ExpectedPens(), which the seeder built from too: a catalogue
@@ -97,7 +100,7 @@ public sealed class PostgresCatalogReadTests(
 
 		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
 
-		var commissioned = Single(result.Value, SyntheticPenCatalog.TwoGroupPenId);
+		var commissioned = Single(result.Value.Pens, SyntheticPenCatalog.TwoGroupPenId);
 
 		commissioned.Unit.Should().Be("degC");
 		commissioned.Format.Should().Be("0.0");
@@ -105,9 +108,9 @@ public sealed class PostgresCatalogReadTests(
 		commissioned.ScaleMaxOnStart.Should().Be(850.0);
 		commissioned.EnabledOnStart.Should().BeTrue();
 
-		Single(result.Value, SyntheticPenCatalog.HiddenOnStartPenId).EnabledOnStart.Should().BeFalse();
+		Single(result.Value.Pens, SyntheticPenCatalog.HiddenOnStartPenId).EnabledOnStart.Should().BeFalse();
 
-		var logScale = Single(result.Value, SyntheticPenCatalog.LogScalePenId);
+		var logScale = Single(result.Value.Pens, SyntheticPenCatalog.LogScalePenId);
 
 		logScale.LogScaleOnStart.Should().BeTrue();
 		logScale.Format.Should().Be("0.0E+0");
@@ -122,7 +125,7 @@ public sealed class PostgresCatalogReadTests(
 
 		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
 
-		Single(result.Value, SyntheticPenCatalog.TwoGroupPenId)
+		Single(result.Value.Pens, SyntheticPenCatalog.TwoGroupPenId)
 			.Groups.Should().Equal("Heaters", "Watchlist");
 	}
 
@@ -140,10 +143,9 @@ public sealed class PostgresCatalogReadTests(
 		var result = await ReadCatalogueAsync(database.PlotConnectionString);
 
 		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
-		Single(result.Value, ReversedMembershipTagId).Groups.Should().Equal("Alpha", "Zulu");
+		Single(result.Value.Pens, ReversedMembershipTagId).Groups.Should().Equal("Alpha", "Zulu");
 	}
 
-	// The outer join is what keeps this pen in the answer at all.
 	[Fact]
 	public async Task APenInNoGroupReadsAsAnEmptyGroupList()
 	{
@@ -151,11 +153,32 @@ public sealed class PostgresCatalogReadTests(
 
 		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
 
-		var uncommissioned = Single(result.Value, SyntheticPenCatalog.UncommissionedPenId);
+		var uncommissioned = Single(result.Value.Pens, SyntheticPenCatalog.UncommissionedPenId);
 
 		uncommissioned.Groups.Should().BeEmpty();
 		uncommissioned.ScaleMinOnStart.Should().BeNull();
 		uncommissioned.ScaleMaxOnStart.Should().BeNull();
+	}
+
+	[Fact]
+	public async Task AGroupReadsItsStoredFoldedOnStartFlag()
+	{
+		await using var database = await postgresContainerFixture.CloneAsync(
+			CloneSource.Template,
+			clone => ArchiveDatabase.ExecuteAsync(
+				clone.AdminConnectionString,
+				FoldedWatchlistCommand,
+				TestContext.Current.CancellationToken),
+			TestContext.Current.CancellationToken);
+
+		var result = await ReadCatalogueAsync(database.PlotConnectionString);
+
+		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
+
+		var groups = result.Value.Stored.Groups;
+
+		groups.Should().ContainSingle(group => group.Name == "Heaters").Which.FoldedOnStart.Should().BeFalse();
+		groups.Should().ContainSingle(group => group.Name == "Watchlist").Which.FoldedOnStart.Should().BeTrue();
 	}
 
 	[Fact]
@@ -172,8 +195,8 @@ public sealed class PostgresCatalogReadTests(
 		var result = await ReadCatalogueAsync(database.PlotConnectionString);
 
 		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
-		Single(result.Value, ShapingMaskTagId).Format.Should().Be("0.##0");
-		Single(result.Value, ScalingMaskTagId).Format.Should().BeNull();
+		Single(result.Value.Pens, ShapingMaskTagId).Format.Should().Be("0.##0");
+		Single(result.Value.Pens, ScalingMaskTagId).Format.Should().BeNull();
 	}
 
 	[Fact]
@@ -187,9 +210,9 @@ public sealed class PostgresCatalogReadTests(
 			$"pen {entry.Id} stores line_style {entry.LineStyle}"));
 		stored.Should().Contain(entry => entry.LineStyle == InterpolatedOrdinal);
 		stored.Should().Contain(entry => entry.LineStyle == SteppedOrdinal);
-		ReadLineStyles(result.Value).Should().Equal(stored);
-		result.Value.Should().Contain(pen => pen.LineStyle == PenLineStyle.Interpolated);
-		result.Value.Should().Contain(pen => pen.LineStyle == PenLineStyle.Stepped);
+		ReadLineStyles(result.Value.Pens).Should().Equal(stored);
+		result.Value.Pens.Should().Contain(pen => pen.LineStyle == PenLineStyle.Interpolated);
+		result.Value.Pens.Should().Contain(pen => pen.LineStyle == PenLineStyle.Stepped);
 	}
 
 	[Fact]
@@ -209,15 +232,15 @@ public sealed class PostgresCatalogReadTests(
 
 		var expected = ExpectedPens();
 
-		result.Value.Count.Should().Be(expected.Count + 1);
+		result.Value.Pens.Count.Should().Be(expected.Count + 1);
 
-		var uncommissioned = Single(result.Value, NullColumnTagId);
+		var uncommissioned = Single(result.Value.Pens, NullColumnTagId);
 
 		uncommissioned.Groups.Should().BeEmpty();
 		uncommissioned.Color.Should().Be(UncommissionedPenColor);
 		uncommissioned.Unit.Should().BeNull();
 		uncommissioned.Format.Should().BeNull();
-		result.Value.Should().BeEquivalentTo([.. expected, ExpectedUncommissionedPen()]);
+		result.Value.Pens.Should().BeEquivalentTo([.. expected, ExpectedUncommissionedPen()]);
 	}
 
 	[Fact]
@@ -234,12 +257,11 @@ public sealed class PostgresCatalogReadTests(
 		var result = await ReadCatalogueAsync(database.PlotConnectionString);
 
 		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
-		result.Value.Should().BeEmpty();
+		result.Value.Pens.Should().BeEmpty();
 	}
 
-	// The statement reads three tables, so naming semiplot_tags alone would send the operator to a
-	// table that is still there. Asserted against the three names rather than the constant the
-	// provider passed, which would compare the answer to itself.
+	// The read is a pair of statements touching three relations across them, so naming semiplot_tags
+	// alone would send the operator to a table that is still there.
 	[Theory]
 	[InlineData(ArchiveReadSupport.DropCatalogCommand)]
 	[InlineData(ArchiveReadSupport.DropPenGroupsCommand)]
@@ -261,15 +283,15 @@ public sealed class PostgresCatalogReadTests(
 		var error = result.Errors.OfType<ArchiveError>().Should().ContainSingle().Which;
 
 		error.Kind.Should().Be(ArchiveFault.TableMissing);
-		error.Detail.Should().Be(ArchiveStatements.PenCatalogRelations);
+		error.Detail.Should().Be(ArchiveStatements.CatalogueRelations);
 		error.Database.Should().Be(database.Name);
 	}
 
-	private static async Task<Result<IReadOnlyList<Pen>>> ReadCatalogueAsync(string connectionString)
+	private static async Task<Result<CatalogueRead>> ReadCatalogueAsync(string connectionString)
 	{
 		await using var services = ArchiveProviderFactory.Build(connectionString);
 
-		return await services.GetRequiredService<IDataProvider>().QueryPensAsync();
+		return await services.GetRequiredService<IDataProvider>().QueryCatalogueAsync();
 	}
 
 	private static Pen Single(IEnumerable<Pen> pens, int penId)
@@ -277,13 +299,11 @@ public sealed class PostgresCatalogReadTests(
 		return pens.Should().ContainSingle(pen => pen.PenId == penId).Which;
 	}
 
-	// Ordinal rather than the database collation: every seeded name differs inside its first word and
-	// is ASCII, where the two orderings agree.
 	private static IReadOnlyList<Pen> ExpectedPens()
 	{
 		return [.. RawLayerGenerator.SelectPens(ArchiveTemplate.Slice.PenCount)
 			.Select(ToPen)
-			.OrderBy(pen => pen.Name, StringComparer.Ordinal)];
+			.OrderBy(pen => pen.Name, StringComparer.CurrentCulture)];
 	}
 
 	private static Pen ToPen(SyntheticPen pen)

@@ -60,12 +60,15 @@ public static class StartupProbe
 		{
 			var dataProvider = serviceProvider.GetRequiredService<IDataProvider>();
 
-			var pens = await ReadBoundedAsync(dataProvider.QueryPensAsync(), readBound, StartupRead.PenCatalogue)
+			var catalogue = await ReadBoundedAsync(
+					dataProvider.QueryCatalogueAsync(),
+					readBound,
+					StartupRead.PenCatalogue)
 				.ConfigureAwait(false);
 
-			if (pens.IsFailed)
+			if (catalogue.IsFailed)
 			{
-				return await FailAsync<StartupData>(serviceProvider, pens.Errors).ConfigureAwait(false);
+				return await FailAsync<StartupData>(serviceProvider, catalogue.Errors).ConfigureAwait(false);
 			}
 
 			var extent = await ReadBoundedAsync(dataProvider.QueryArchiveExtentAsync(), readBound, StartupRead.ArchiveExtent)
@@ -76,7 +79,7 @@ public static class StartupProbe
 				return await FailAsync<StartupData>(serviceProvider, extent.Errors).ConfigureAwait(false);
 			}
 
-			return Result.Ok(new StartupData(serviceProvider, pens.Value, extent.Value));
+			return Result.Ok(new StartupData(serviceProvider, catalogue.Value, extent.Value));
 		}
 		catch (Exception exception)
 		{

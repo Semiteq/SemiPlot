@@ -1,10 +1,9 @@
 namespace SemiPlot.DataSource.Postgres;
 
 /// <summary>
-/// The column order of <see cref="ArchiveStatements.PenCatalog"/> and, up to <see cref="LogScaleOnStart"/>, of
-/// <see cref="ArchiveStatements.StoredPens"/>, named so a transposition shows.
+/// The column order of <see cref="ArchiveStatements.StoredPens"/>, named so a transposition shows.
 /// </summary>
-internal static class PenCatalogColumn
+internal static class StoredPenColumn
 {
 	public const int Id = 0;
 	public const int Name = 1;
@@ -16,7 +15,6 @@ internal static class PenCatalogColumn
 	public const int ScaleMinOnStart = 7;
 	public const int ScaleMaxOnStart = 8;
 	public const int LogScaleOnStart = 9;
-	public const int Groups = 10;
 }
 
 /// <summary>The column order of <see cref="ArchiveStatements.StoredGroups"/>, named so a transposition shows.</summary>
@@ -25,6 +23,7 @@ internal static class StoredGroupColumn
 	public const int Id = 0;
 	public const int Name = 1;
 	public const int Members = 2;
+	public const int FoldedOnStart = 3;
 }
 
 /// <summary>
@@ -62,9 +61,9 @@ internal static class ArchiveStatements
 	public const string TrendsRelation = "trends";
 
 	/// <summary>
-	/// Every relation <see cref="PenCatalog"/> touches, for the detail line of a failed read.
+	/// Every relation the catalogue read touches, for the detail line of a failed read.
 	/// </summary>
-	public const string PenCatalogRelations = $"{TagCatalogRelation}, {GroupsRelation}, {PenGroupsRelation}";
+	public const string CatalogueRelations = $"{TagCatalogRelation}, {GroupsRelation}, {PenGroupsRelation}";
 
 	/// <summary>
 	/// Every relation a catalogue-rooted probe of trends touches, for the detail line of a failed read.
@@ -77,7 +76,7 @@ internal static class ArchiveStatements
 	public const string RegisterNewPensFunction = "semiplot_register_new_pens()";
 
 	/// <summary>
-	/// Every pen as stored, for the editor: no value is normalised on the way out.
+	/// Every pen as stored: no value is normalised on the way out.
 	/// </summary>
 	public const string StoredPens = """
 	                                 SELECT id, name, unit, format, color, line_style, enabled_on_start,
@@ -89,7 +88,8 @@ internal static class ArchiveStatements
 	public const string StoredGroups = """
 	                                   SELECT grp.id, grp.name,
 	                                          coalesce(array_agg(membership.pen_id ORDER BY membership.pen_id)
-	                                                   FILTER (WHERE membership.pen_id IS NOT NULL), '{}') AS members
+	                                                   FILTER (WHERE membership.pen_id IS NOT NULL), '{}') AS members,
+	                                          grp.folded_on_start
 	                                   FROM semiplot_groups grp
 	                                   LEFT JOIN semiplot_pen_groups membership ON membership.group_id = grp.id
 	                                   GROUP BY grp.id
@@ -129,6 +129,9 @@ internal static class ArchiveStatements
 
 	public const string RenameGroup = "UPDATE semiplot_groups SET name = @name WHERE id = @id;";
 
+	public const string UpdateGroupFoldedOnStart =
+		"UPDATE semiplot_groups SET folded_on_start = @value WHERE id = @id;";
+
 	public const string DeleteGroup = "DELETE FROM semiplot_groups WHERE id = @id;";
 
 	public const string AddMembership = """
@@ -156,23 +159,6 @@ internal static class ArchiveStatements
 
 	/// <summary>The name PostgreSQL gives the membership's foreign key to the pen SemiBase declares unnamed.</summary>
 	public const string MembershipPenKey = "semiplot_pen_groups_pen_id_fkey";
-
-	/// <summary>
-	/// One row per pen whatever its group count. <c>GROUP BY tag.id</c> alone is legal because it is the key;
-	/// the id breaks a tie of names, so two pens sharing a name keep one order across reads.
-	/// </summary>
-	public const string PenCatalog = """
-	                                 SELECT tag.id, tag.name, tag.unit, tag.format, tag.color, tag.line_style,
-	                                        tag.enabled_on_start, tag.scale_min_on_start, tag.scale_max_on_start,
-	                                        tag.log_scale_on_start,
-	                                        coalesce(array_agg(grp.name ORDER BY grp.name)
-	                                                 FILTER (WHERE grp.name IS NOT NULL), '{}') AS groups
-	                                 FROM semiplot_tags tag
-	                                 LEFT JOIN semiplot_pen_groups membership ON membership.pen_id = tag.id
-	                                 LEFT JOIN semiplot_groups grp ON grp.id = membership.group_id
-	                                 GROUP BY tag.id
-	                                 ORDER BY tag.name, tag.id;
-	                                 """;
 
 	/// <summary>
 	/// The oldest and newest raw timestamps across the whole catalogue, read once to bound the chart; the

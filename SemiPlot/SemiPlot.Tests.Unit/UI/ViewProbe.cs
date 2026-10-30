@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
@@ -34,6 +35,17 @@ internal static class ViewProbe
 	{
 		return root.GetVisualDescendants().OfType<T>().FirstOrDefault(child => child.Name == name)
 			?? throw new InvalidOperationException($"{root.GetType().Name} realised no {name}.");
+	}
+
+	public static IEnumerable<T> Descendants<T>(Visual root)
+		where T : Control
+	{
+		return root.GetVisualDescendants().OfType<T>();
+	}
+
+	public static Color? ColourOf(IBrush? brush)
+	{
+		return (brush as ISolidColorBrush)?.Color;
 	}
 
 	public static double LeftOf(Control control, Visual ancestor)

@@ -18,6 +18,8 @@ public interface IPenCatalogueEditor
 
 	Task<Result> RenameGroupAsync(StoredGroup group, string name);
 
+	Task<Result> SetFoldedOnStartAsync(StoredGroup group, bool foldedOnStart);
+
 	Task<Result> DeleteGroupAsync(StoredGroup group);
 
 	Task<Result> SetMembershipAsync(StoredPen pen, StoredGroup group, bool isMember);

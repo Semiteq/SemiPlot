@@ -249,9 +249,36 @@ public sealed class PenCatalogueEditorTests(PostgresContainerFixture postgresCon
 		Group(after, HeatersGroup).Should().BeEquivalentTo(Group(before, HeatersGroup));
 	}
 
+	[Fact]
+	public async Task TheFoldedOnStartFlagRoundtripsOnThatGroupOnly()
+	{
+		using var services = Build();
+
+		var editor = Editor(services);
+		var before = await ReadAsync(editor);
+		var vacuum = Group(before, VacuumGroup);
+
+		vacuum.FoldedOnStart.Should().BeFalse();
+
+		var folded = await editor.SetFoldedOnStartAsync(vacuum, true);
+
+		folded.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(folded));
+
+		var after = await ReadAsync(editor);
+
+		Group(after, VacuumGroup).Should().BeEquivalentTo(vacuum with { FoldedOnStart = true });
+		Group(after, HeatersGroup).Should().BeEquivalentTo(Group(before, HeatersGroup));
+
+		var unfolded = await editor.SetFoldedOnStartAsync(vacuum, false);
+
+		unfolded.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(unfolded));
+		Group(await ReadAsync(editor), VacuumGroup).Should().BeEquivalentTo(vacuum);
+	}
+
 	[Theory]
 	[InlineData("ChangePen")]
 	[InlineData("RenameGroup")]
+	[InlineData("FoldGroup")]
 	[InlineData("DeleteGroup")]
 	[InlineData("MembershipOfGroup")]
 	[InlineData("MembershipOfPen")]
@@ -273,6 +300,7 @@ public sealed class PenCatalogueEditorTests(PostgresContainerFixture postgresCon
 				() => editor.ChangeAsync(chamberPressure, new PenSettingChange.Unit("mbar")),
 				"Chamber pressure"),
 			"RenameGroup" => (deleteGroup, () => editor.RenameGroupAsync(vacuum, "Pumps"), VacuumGroup),
+			"FoldGroup" => (deleteGroup, () => editor.SetFoldedOnStartAsync(vacuum, true), VacuumGroup),
 			"DeleteGroup" => (deleteGroup, () => editor.DeleteGroupAsync(vacuum), VacuumGroup),
 			"MembershipOfGroup" => (
 				deleteGroup,
@@ -328,7 +356,7 @@ public sealed class PenCatalogueEditorTests(PostgresContainerFixture postgresCon
 
 		var refused = thrown.Should().BeOfType<PostgresException>().Which;
 		var error = services.GetRequiredService<ArchiveExceptionMapper>()
-			.MapWrite(refused, "Chamber pressure", ArchiveStatements.PenCatalogRelations);
+			.MapWrite(refused, "Chamber pressure", ArchiveStatements.CatalogueRelations);
 
 		error.Should().BeOfType<ArchiveError>().Which.Kind.Should().Be(ArchiveFault.AccessDenied);
 		(await ReadAsync(Editor(services))).Pens.Select(pen => pen.Id).Should().Equal(101, 102, 103, 104, 105);
@@ -349,10 +377,10 @@ public sealed class PenCatalogueEditorTests(PostgresContainerFixture postgresCon
 		result.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(result));
 		(await CountHeaterMembershipsAsync()).Should().Be(0);
 
-		var pens = await services.GetRequiredService<IDataProvider>().QueryPensAsync();
+		var catalogue = await services.GetRequiredService<IDataProvider>().QueryCatalogueAsync();
 
-		pens.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(pens));
-		pens.Value.Where(pen => _heaterIds.Contains(pen.PenId)).Should().HaveCount(_heaterIds.Length)
+		catalogue.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(catalogue));
+		catalogue.Value.Pens.Where(pen => _heaterIds.Contains(pen.PenId)).Should().HaveCount(_heaterIds.Length)
 			.And.OnlyContain(pen => pen.Groups.Count == 0);
 	}
 
@@ -365,7 +393,7 @@ public sealed class PenCatalogueEditorTests(PostgresContainerFixture postgresCon
 
 		var result = await Editor(services).CreateGroupAsync("Etch gases");
 
-		FailureOf(result).Should().Be((ArchiveFault.TableMissing, ArchiveStatements.PenCatalogRelations));
+		FailureOf(result).Should().Be((ArchiveFault.TableMissing, ArchiveStatements.CatalogueRelations));
 	}
 
 	protected override async ValueTask SeedAsync()

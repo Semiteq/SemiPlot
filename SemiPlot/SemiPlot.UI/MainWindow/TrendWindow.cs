@@ -79,7 +79,7 @@ internal sealed class TrendWindow : IDisposable
 		var loggerFactory = serviceProvider.GetRequiredService<ILoggerFactory>();
 
 		var coordinator = new TrendCoordinator(
-			dataProvider, liveSource, startupData.Pens, dataScheduler, uiScheduler);
+			dataProvider, liveSource, startupData.Catalogue.Pens, dataScheduler, uiScheduler);
 		var markerSync = new MarkerSync(
 			markerStore, messagePanel, uiScheduler, loggerFactory.CreateLogger<MarkerSync>());
 
@@ -95,13 +95,13 @@ internal sealed class TrendWindow : IDisposable
 		// Before the first history request and before the minimap exists: RequestInitialHistory queries
 		// whatever window is in force, and the minimap reads it back when its own extent arrives.
 		chart.Navigation.SeedFromArchiveExtent(startupData.Extent);
-		chart.ApplyCatalogue(startupData.Pens);
+		chart.ApplyCatalogue(startupData.Catalogue.Pens);
 
 		var minimapLogger = loggerFactory.CreateLogger<MinimapViewModel>();
 		var minimap = new MinimapViewModel(coordinator, chart, uiScheduler, messagePanel, minimapLogger);
 		var catalogueSync = new PenCatalogueSync(
 			dataProvider,
-			startupData.Pens,
+			startupData.Catalogue,
 			messagePanel,
 			uiScheduler,
 			loggerFactory.CreateLogger<PenCatalogueSync>());
@@ -113,8 +113,9 @@ internal sealed class TrendWindow : IDisposable
 			chart.Navigation,
 			loggerFactory.CreateLogger<AppStatusBarViewModel>());
 		var navigationBar = new NavigationBarViewModel(chart);
-		var legend = new TrendLegendViewModel(chart);
-		var catalogueApplier = new PenCatalogueApplier(catalogueSync, chart, minimap, legend, uiScheduler);
+		var legend = new TrendLegendViewModel(chart, startupData.Catalogue.Stored.Groups);
+		var catalogueApplier = new PenCatalogueApplier(
+			startupData.Catalogue, catalogueSync, chart, minimap, legend, uiScheduler);
 		var viewModel = new MainWindowViewModel(
 			messagePanel,
 			statusBar,

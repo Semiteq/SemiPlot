@@ -29,15 +29,15 @@ public sealed class PenCatalogueSyncTests : IDisposable
 	private readonly FakeDataProvider _provider;
 	private readonly MessagePanelViewModel _messagePanel = new();
 	private readonly PenCatalogueSync _sync;
-	private readonly List<PenListDelta> _deltas = [];
+	private readonly List<CatalogueRead> _changes = [];
 	private readonly List<ArchiveConnectionState> _states = [];
 
 	public PenCatalogueSyncTests()
 	{
 		_provider = new FakeDataProvider(_scheduler, TimeSpan.FromSeconds(1));
 		_sync = new PenCatalogueSync(
-			_provider, _provider.Pens, _messagePanel, _scheduler, NullLogger<PenCatalogueSync>.Instance);
-		_sync.Deltas.Subscribe(_deltas.Add);
+			_provider, _provider.Catalogue, _messagePanel, _scheduler, NullLogger<PenCatalogueSync>.Instance);
+		_sync.Changes.Subscribe(_changes.Add);
 		_sync.ConnectionStates.Subscribe(_states.Add);
 	}
 
@@ -51,55 +51,55 @@ public sealed class PenCatalogueSyncTests : IDisposable
 	public void TheFirstRead_ComesOneIntervalAfterStart_ThenOneEveryInterval()
 	{
 		StartAndEnterTheWait();
-		_provider.PensQueryCount.Should().Be(0, "the start sequence has just read the same catalogue");
+		_provider.CatalogueQueryCount.Should().Be(0, "the start sequence has just read the same catalogue");
 
 		Advance(ArchiveReadLoop.ReadInterval - _tick);
-		_provider.PensQueryCount.Should().Be(0);
+		_provider.CatalogueQueryCount.Should().Be(0);
 
 		Advance(_tick);
-		_provider.PensQueryCount.Should().Be(1);
+		_provider.CatalogueQueryCount.Should().Be(1);
 
 		Advance(ArchiveReadLoop.ReadInterval);
-		_provider.PensQueryCount.Should().Be(2);
+		_provider.CatalogueQueryCount.Should().Be(2);
 	}
 
 	[Fact]
 	public void NoRead_StartsWhileOneIsHeld()
 	{
-		_provider.GatePens = true;
+		_provider.GateCatalogue = true;
 		StartAndEnterTheWait();
 		Advance(ArchiveReadLoop.ReadInterval);
 
 		Advance(ArchiveReadLoop.ReadInterval * 4);
-		_provider.PensQueryCount.Should().Be(1);
+		_provider.CatalogueQueryCount.Should().Be(1);
 
-		_provider.PensGate.SetResult(Result.Ok(_provider.Pens));
+		_provider.CatalogueGate.SetResult(Result.Ok(_provider.Catalogue));
 		Advance(ArchiveReadLoop.ReadInterval - _tick);
-		_provider.PensQueryCount.Should().Be(1, "the wait after a read is a full interval");
+		_provider.CatalogueQueryCount.Should().Be(1, "the wait after a read is a full interval");
 
 		Advance(_tick);
-		_provider.PensQueryCount.Should().Be(2);
+		_provider.CatalogueQueryCount.Should().Be(2);
 	}
 
 	[Fact]
 	public void ReadNow_DuringAHeldRead_GivesExactlyOneReadAfterIt()
 	{
-		_provider.GatePens = true;
+		_provider.GateCatalogue = true;
 		StartAndEnterTheWait();
 		Advance(ArchiveReadLoop.ReadInterval);
 
 		_sync.ReadNow();
 		_sync.ReadNow();
-		_provider.PensQueryCount.Should().Be(1);
+		_provider.CatalogueQueryCount.Should().Be(1);
 
-		_provider.PensGate.SetResult(Result.Ok(_provider.Pens));
-		_provider.PensQueryCount.Should().Be(2);
+		_provider.CatalogueGate.SetResult(Result.Ok(_provider.Catalogue));
+		_provider.CatalogueQueryCount.Should().Be(2);
 
 		Advance(ArchiveReadLoop.ReadInterval - _tick);
-		_provider.PensQueryCount.Should().Be(2, "the wait after the asked read is a full interval");
+		_provider.CatalogueQueryCount.Should().Be(2, "the wait after the asked read is a full interval");
 
 		Advance(_tick);
-		_provider.PensQueryCount.Should().Be(3);
+		_provider.CatalogueQueryCount.Should().Be(3);
 	}
 
 	[Fact]
@@ -109,37 +109,71 @@ public sealed class PenCatalogueSyncTests : IDisposable
 		Advance(TimeSpan.FromSeconds(2));
 
 		_sync.ReadNow();
-		_provider.PensQueryCount.Should().Be(1);
+		_provider.CatalogueQueryCount.Should().Be(1);
 
 		Advance(ArchiveReadLoop.ReadInterval - _tick);
-		_provider.PensQueryCount.Should().Be(1);
+		_provider.CatalogueQueryCount.Should().Be(1);
 
 		Advance(_tick);
-		_provider.PensQueryCount.Should().Be(2);
+		_provider.CatalogueQueryCount.Should().Be(2);
 	}
 
 	[Fact]
-	public void AnUnchangedRead_EmitsNoDelta()
+	public void AnUnchangedRead_EmitsNothing()
 	{
 		StartAndEnterTheWait();
 
 		Advance(ArchiveReadLoop.ReadInterval * 2);
 
-		_provider.PensQueryCount.Should().BeGreaterThan(0, "the catalogue was read");
-		_deltas.Should().BeEmpty();
+		_provider.CatalogueQueryCount.Should().BeGreaterThan(0, "the catalogue was read");
+		_changes.Should().BeEmpty();
 	}
 
 	[Fact]
-	public void AChangedRead_EmitsItsDeltaOnce_AndBecomesTheBaseline()
+	public void AChangedRead_IsEmittedOnce_AndBecomesTheBaseline()
 	{
 		StartAndEnterTheWait();
 		_provider.Pens = [Renamed(_provider.Pens[0]), _provider.Pens[1]];
 
 		Advance(ArchiveReadLoop.ReadInterval * 2);
 
-		_deltas.Should().ContainSingle()
-			.Which.Revised.Should().ContainSingle()
-			.Which.Should().Be(_provider.Pens[0]);
+		_changes.Should().ContainSingle()
+			.Which.Pens.Should().Equal(_provider.Pens);
+	}
+
+	[Fact]
+	public void AGroupRenameAlone_IsEmitted_WithThePensUnchanged()
+	{
+		_provider.Stored = new PenCatalogue([], [new StoredGroup(1, "Group A", [1, 2])]);
+		StartAndEnterTheWait();
+		Advance(ArchiveReadLoop.ReadInterval);
+		_changes.Should().ContainSingle("the group joined the catalogue the start did not hold");
+		var pensBefore = _changes[0].Pens;
+
+		_provider.Stored = new PenCatalogue([], [new StoredGroup(1, "Group B", [1, 2])]);
+		Advance(ArchiveReadLoop.ReadInterval);
+
+		_changes.Should().HaveCount(2);
+		var rename = _changes[1];
+		rename.Stored.Groups.Should().ContainSingle().Which.Should().BeEquivalentTo(
+			new { Id = 1, Name = "Group B", MemberPenIds = new[] { 1, 2 } });
+		rename.Pens.Should().Equal(pensBefore);
+	}
+
+	[Fact]
+	public void ARebaseOnAnOlderRead_MakesTheNextIdenticalReadEmitAgain()
+	{
+		StartAndEnterTheWait();
+		var stored = _provider.Pens;
+		_provider.Pens = [Renamed(stored[0]), stored[1]];
+		Advance(ArchiveReadLoop.ReadInterval);
+		_changes.Should().ContainSingle();
+
+		_sync.Rebase(new CatalogueRead(_provider.Stored, stored));
+		Advance(ArchiveReadLoop.ReadInterval);
+
+		_changes.Should().HaveCount(2);
+		_changes[1].Pens.Should().Equal(_provider.Pens);
 	}
 
 	[Fact]
@@ -150,7 +184,7 @@ public sealed class PenCatalogueSyncTests : IDisposable
 
 		Advance(ArchiveReadLoop.ReadInterval * 3);
 
-		_provider.PensQueryCount.Should().Be(4);
+		_provider.CatalogueQueryCount.Should().Be(4);
 		_states.Should().ContainSingle("only the first success is news");
 	}
 
@@ -158,7 +192,7 @@ public sealed class PenCatalogueSyncTests : IDisposable
 	public void TwoUnreachableReads_EmitNothing_TheThirdRaisesConnectionLost_AndTheNextSuccessCarriesEverythingSince()
 	{
 		var stored = _provider.Pens;
-		_provider.FailPens = true;
+		_provider.FailCatalogue = true;
 		StartAndEnterTheWait();
 
 		Advance(ArchiveReadLoop.ReadInterval * 2);
@@ -169,25 +203,25 @@ public sealed class PenCatalogueSyncTests : IDisposable
 		ShouldBeConnectionLost(_states[0]);
 		_messagePanel.Entries.Should().BeEmpty("the bar writes the one entry a lost connection makes");
 
-		_provider.FailPens = false;
+		_provider.FailCatalogue = false;
 		_provider.Pens = [Renamed(stored[0]), stored[1] with { Color = "#0000ff" }];
 		Advance(ArchiveReadLoop.ReadInterval);
 
 		_states.Should().HaveCount(2);
 		_states[1].Should().Be(ArchiveConnectionState.Connected);
-		_deltas.Should().ContainSingle()
-			.Which.Revised.Select(pen => pen.PenId).Should().Equal(1, 2);
+		_changes.Should().ContainSingle()
+			.Which.Pens.Should().Equal(_provider.Pens);
 	}
 
 	[Fact]
 	public void AFourthUnreachableRead_EmitsNothing()
 	{
 		StartAndReadNow();
-		_provider.FailPens = true;
+		_provider.FailCatalogue = true;
 
 		Advance(ArchiveReadLoop.ReadInterval * 4);
 
-		_provider.PensQueryCount.Should().Be(5);
+		_provider.CatalogueQueryCount.Should().Be(5);
 		_states.Should().HaveCount(2);
 		_states[0].Should().Be(ArchiveConnectionState.Connected);
 		ShouldBeConnectionLost(_states[1]);
@@ -199,21 +233,21 @@ public sealed class PenCatalogueSyncTests : IDisposable
 	{
 		var stored = _provider.Pens;
 		StartAndReadNow();
-		_provider.FailPens = true;
+		_provider.FailCatalogue = true;
 		Advance(ArchiveReadLoop.ReadInterval * 3);
 
 		_states.Should().HaveCount(2);
 		_states[0].Should().Be(ArchiveConnectionState.Connected);
 		ShouldBeConnectionLost(_states[1]);
 
-		_provider.FailPens = false;
+		_provider.FailCatalogue = false;
 		_provider.Pens = [Renamed(stored[0]), stored[1] with { Color = "#0000ff" }];
 		Advance(ArchiveReadLoop.ReadInterval);
 
 		_states.Should().HaveCount(3);
 		_states[2].Should().Be(ArchiveConnectionState.Connected);
-		_deltas.Should().ContainSingle()
-			.Which.Revised.Select(pen => pen.PenId).Should().Equal(1, 2);
+		_changes.Should().ContainSingle()
+			.Which.Pens.Should().Equal(_provider.Pens);
 		_messagePanel.Entries.Should().BeEmpty();
 
 		Advance(ArchiveReadLoop.ReadInterval);
@@ -224,12 +258,12 @@ public sealed class PenCatalogueSyncTests : IDisposable
 	public void ASecondOutageAfterARecovery_RaisesConnectionLostAgain()
 	{
 		StartAndReadNow();
-		_provider.FailPens = true;
+		_provider.FailCatalogue = true;
 		Advance(ArchiveReadLoop.ReadInterval * 3);
-		_provider.FailPens = false;
+		_provider.FailCatalogue = false;
 		Advance(ArchiveReadLoop.ReadInterval);
 
-		_provider.FailPens = true;
+		_provider.FailCatalogue = true;
 		Advance(ArchiveReadLoop.ReadInterval * 2);
 		_states.Should().HaveCount(3);
 
@@ -243,17 +277,17 @@ public sealed class PenCatalogueSyncTests : IDisposable
 	public void ATableMissingReadAfterTheFault_LeavesTheFault_AndReachesThePanelAtOnce()
 	{
 		StartAndReadNow();
-		_provider.FailPens = true;
+		_provider.FailCatalogue = true;
 		Advance(ArchiveReadLoop.ReadInterval * 3);
 
-		_provider.PensFailureKind = ArchiveFault.TableMissing;
+		_provider.CatalogueFailureKind = ArchiveFault.TableMissing;
 		Advance(ArchiveReadLoop.ReadInterval);
 
 		_states.Should().HaveCount(2, "only a success ends the fault");
 		_messagePanel.Entries.Should().ContainSingle("the failed reads before it count toward the third in a row")
 			.Which.View.Should().Be(ArchiveFailureMapper.Map(_tableMissing));
 
-		_provider.FailPens = false;
+		_provider.FailCatalogue = false;
 		Advance(ArchiveReadLoop.ReadInterval);
 		_states.Should().HaveCount(3);
 		_states[2].Should().Be(ArchiveConnectionState.Connected);
@@ -262,13 +296,13 @@ public sealed class PenCatalogueSyncTests : IDisposable
 	[Fact]
 	public void ASuccess_ResetsTheFailureCount()
 	{
-		_provider.FailPens = true;
+		_provider.FailCatalogue = true;
 		StartAndEnterTheWait();
 		Advance(ArchiveReadLoop.ReadInterval * 2);
 
-		_provider.FailPens = false;
+		_provider.FailCatalogue = false;
 		Advance(ArchiveReadLoop.ReadInterval);
-		_provider.FailPens = true;
+		_provider.FailCatalogue = true;
 		Advance(ArchiveReadLoop.ReadInterval * 2);
 
 		_states.Should().Equal([ArchiveConnectionState.Connected], "no third failure in a row has happened");
@@ -279,8 +313,8 @@ public sealed class PenCatalogueSyncTests : IDisposable
 	public void ThreeTableMissingReads_EmitNoState_AndAddOnePanelEntry()
 	{
 		StartAndReadNow();
-		_provider.FailPens = true;
-		_provider.PensFailureKind = ArchiveFault.TableMissing;
+		_provider.FailCatalogue = true;
+		_provider.CatalogueFailureKind = ArchiveFault.TableMissing;
 
 		Advance(ArchiveReadLoop.ReadInterval * 2);
 		_messagePanel.Entries.Should().BeEmpty();
@@ -299,17 +333,17 @@ public sealed class PenCatalogueSyncTests : IDisposable
 	public void TwoUnreachableReadsThenTableMissing_AddOneTableMissingEntry_AndRestartTheConnectionRun()
 	{
 		StartAndReadNow();
-		_provider.FailPens = true;
+		_provider.FailCatalogue = true;
 		Advance(ArchiveReadLoop.ReadInterval * 2);
 
-		_provider.PensFailureKind = ArchiveFault.TableMissing;
+		_provider.CatalogueFailureKind = ArchiveFault.TableMissing;
 		Advance(ArchiveReadLoop.ReadInterval);
 
 		_messagePanel.Entries.Should().ContainSingle()
 			.Which.View.Should().Be(ArchiveFailureMapper.Map(_tableMissing));
 		_states.Should().Equal(ArchiveConnectionState.Connected);
 
-		_provider.PensFailureKind = ArchiveFault.Unreachable;
+		_provider.CatalogueFailureKind = ArchiveFault.Unreachable;
 		Advance(ArchiveReadLoop.ReadInterval * 2);
 		_states.Should().Equal([ArchiveConnectionState.Connected], "the TableMissing read ended the connection run");
 
@@ -323,11 +357,11 @@ public sealed class PenCatalogueSyncTests : IDisposable
 	public void ThreeTableMissingReadsThenUnreachable_AddOneTableMissingEntry_AndEmitNoState()
 	{
 		StartAndReadNow();
-		_provider.FailPens = true;
-		_provider.PensFailureKind = ArchiveFault.TableMissing;
+		_provider.FailCatalogue = true;
+		_provider.CatalogueFailureKind = ArchiveFault.TableMissing;
 		Advance(ArchiveReadLoop.ReadInterval * 3);
 
-		_provider.PensFailureKind = ArchiveFault.Unreachable;
+		_provider.CatalogueFailureKind = ArchiveFault.Unreachable;
 		Advance(ArchiveReadLoop.ReadInterval);
 
 		_messagePanel.Entries.Should().ContainSingle()
@@ -336,9 +370,9 @@ public sealed class PenCatalogueSyncTests : IDisposable
 	}
 
 	[Fact]
-	public void ADeltasSubscriberThatThrows_StillGetsConnectedOutFirst()
+	public void AChangesSubscriberThatThrows_StillGetsConnectedOutFirst()
 	{
-		using var throwing = _sync.Deltas.Subscribe(_ => throw new InvalidOperationException("the subscriber threw"));
+		using var throwing = _sync.Changes.Subscribe(_ => throw new InvalidOperationException("the subscriber threw"));
 		_provider.Pens = [Renamed(_provider.Pens[0]), _provider.Pens[1]];
 
 		StartAndReadNow();
@@ -350,43 +384,45 @@ public sealed class PenCatalogueSyncTests : IDisposable
 	[Fact]
 	public void ASubscriberThatThrows_AddsOnePanelEntry_AndTheNextReadStillRuns()
 	{
-		using var throwing = _sync.Deltas.Subscribe(_ => throw new InvalidOperationException("the subscriber threw"));
+		using var throwing = _sync.Changes.Subscribe(_ => throw new InvalidOperationException("the subscriber threw"));
 		StartAndEnterTheWait();
 		_provider.Pens = [Renamed(_provider.Pens[0]), _provider.Pens[1]];
 
 		Advance(ArchiveReadLoop.ReadInterval);
 		_messagePanel.Entries.Should().ContainSingle();
 
+		Advance(ArchiveReadLoop.ReadInterval);
+		_changes.Should().ContainSingle("the read the subscriber threw on is the baseline all the same");
+
 		_provider.Pens = [_provider.Pens[0], Renamed(_provider.Pens[1])];
 		Advance(ArchiveReadLoop.ReadInterval);
 
-		_deltas.Should().HaveCount(2, "the loop survived the throw and emitted the next change");
-		_deltas[1].Revised.Select(pen => pen.PenId).Should().Equal(
-			[2], "the read the subscriber threw on is the baseline all the same");
+		_changes.Should().HaveCount(2, "the loop survived the throw and emitted the next change");
+		_changes[1].Pens.Should().Equal(_provider.Pens);
 	}
 
 	[Fact]
 	public void AReadThatThrows_AddsOnePanelEntryAtOnce_AndTheNextReadComesOneIntervalLater()
 	{
-		_provider.FailPens = true;
+		_provider.FailCatalogue = true;
 		StartAndEnterTheWait();
 		Advance(ArchiveReadLoop.ReadInterval * 2);
-		_provider.FailPens = false;
+		_provider.FailCatalogue = false;
 		var thrown = new InvalidOperationException("the read threw");
-		_provider.PensReadException = thrown;
+		_provider.CatalogueReadException = thrown;
 
 		Advance(ArchiveReadLoop.ReadInterval);
 		_messagePanel.Entries.Should().ContainSingle()
 			.Which.View.Should().Be(ArchiveFailureMapper.Map(new ExceptionalError(thrown)));
 		_states.Should().BeEmpty();
 
-		_provider.PensReadException = null;
-		_provider.FailPens = true;
+		_provider.CatalogueReadException = null;
+		_provider.FailCatalogue = true;
 		Advance(ArchiveReadLoop.ReadInterval - _tick);
-		_provider.PensQueryCount.Should().Be(3);
+		_provider.CatalogueQueryCount.Should().Be(3);
 
 		Advance(_tick);
-		_provider.PensQueryCount.Should().Be(4);
+		_provider.CatalogueQueryCount.Should().Be(4);
 		_states.Should().ContainSingle("the throw left two failed reads in a row standing");
 		ShouldBeConnectionLost(_states[0]);
 		_messagePanel.Entries.Should().ContainSingle("a lost connection adds no entry of the loop's own");
@@ -396,17 +432,17 @@ public sealed class PenCatalogueSyncTests : IDisposable
 	[Fact]
 	public void Dispose_DuringAHeldRead_ReportsNothingWhenTheReadLands()
 	{
-		_provider.FailPens = true;
+		_provider.FailCatalogue = true;
 		StartAndEnterTheWait();
 		Advance(ArchiveReadLoop.ReadInterval * 2);
-		_provider.FailPens = false;
-		_provider.GatePens = true;
+		_provider.FailCatalogue = false;
+		_provider.GateCatalogue = true;
 		Advance(ArchiveReadLoop.ReadInterval);
 
 		_sync.Dispose();
-		_provider.PensGate.SetResult(Result.Fail<IReadOnlyList<Pen>>("the held read failed"));
+		_provider.CatalogueGate.SetResult(Result.Fail<CatalogueRead>("the held read failed"));
 
-		_deltas.Should().BeEmpty();
+		_changes.Should().BeEmpty();
 		_messagePanel.Entries.Should().BeEmpty();
 	}
 
@@ -426,13 +462,13 @@ public sealed class PenCatalogueSyncTests : IDisposable
 	{
 		StartAndEnterTheWait();
 		Advance(ArchiveReadLoop.ReadInterval);
-		var queriesBefore = _provider.PensQueryCount;
+		var queriesBefore = _provider.CatalogueQueryCount;
 
 		_sync.Dispose();
 		_sync.ReadNow();
 		Advance(TimeSpan.FromMinutes(1));
 
-		_provider.PensQueryCount.Should().Be(queriesBefore);
+		_provider.CatalogueQueryCount.Should().Be(queriesBefore);
 	}
 
 	// TestScheduler runs work scheduled for now one tick later, so the loop enters its first wait on that tick.

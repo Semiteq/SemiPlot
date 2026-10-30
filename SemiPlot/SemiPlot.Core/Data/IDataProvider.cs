@@ -6,7 +6,7 @@ namespace SemiPlot.Core.Data;
 
 public interface IDataProvider
 {
-	Task<Result<IReadOnlyList<Pen>>> QueryPensAsync();
+	Task<Result<CatalogueRead>> QueryCatalogueAsync();
 
 	Task<Result<IReadOnlyList<PenHistoryEnvelope>>> QueryHistoryAsync(
 		IReadOnlyList<int> penIds,

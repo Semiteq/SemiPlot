@@ -9,6 +9,7 @@ using AwesomeAssertions;
 
 using ReactiveUI;
 
+using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.MainWindow;
@@ -47,8 +48,9 @@ public sealed class AppMenuBarTests
 			.Should()
 			.Contain(
 				[
-					"FileNewWindow", "FileExport", "FileExit", "EditSettings", "EditPensAndGroups", "ViewAutoscale",
-					"ViewInitialScale", "ViewMessagePanel", "HelpAbout"
+					"FileNewWindow", "FileExport", "FileExit", "EditSettings", "EditPensAndGroups", "ViewLegendValues",
+					"ViewFoldAllGroups", "ViewShowAllPens", "ViewHideAllPens", "ViewAutoscale", "ViewInitialScale",
+					"ViewMessagePanel", "HelpAbout"
 				],
 				"the walk descends into every menu");
 
@@ -96,6 +98,7 @@ public sealed class AppMenuBarTests
 	[InlineData("ViewLegend")]
 	[InlineData("ViewMinimap")]
 	[InlineData("ViewRecipeMarkers")]
+	[InlineData("ViewLegendValues")]
 	public void ToggleItem_TakesItsCheckStateFromTheCommandAndWritesNothingBack(string itemName)
 	{
 		using var stand = NewWindowStand();
@@ -107,6 +110,8 @@ public sealed class AppMenuBarTests
 			"ViewLegend" => (viewModel.ToggleLegendCommand, () => viewModel.IsLegendVisible),
 			"ViewRecipeMarkers" => (
 				viewModel.ToggleRecipeMarkersCommand, () => viewModel.ChartViewModel.Markers.ShowsRecipeMarkers),
+			"ViewLegendValues" => (
+				viewModel.LegendViewModel.ToggleExpandedCommand, () => viewModel.LegendViewModel.IsExpanded),
 			_ => (viewModel.ToggleMinimapCommand, () => viewModel.IsMinimapVisible)
 		};
 
@@ -225,7 +230,7 @@ public sealed class AppMenuBarTests
 	}
 
 	[AvaloniaFact]
-	public void ViewMenu_HoldsThePenScaleSubmenuBetweenTheTogglesAndTheMessagePanel()
+	public void ViewMenu_HoldsTheLegendItemsTheAllPensItemsAndThePenScaleSubmenuBetweenTheTogglesAndTheMessagePanel()
 	{
 		using var stand = NewWindowStand([]);
 		var viewModel = stand.ViewModel;
@@ -238,12 +243,70 @@ public sealed class AppMenuBarTests
 			.Select(item => item is Separator ? "-" : item.Name)
 			.Should()
 			.Equal(
-				"ViewNavigationBar", "ViewLegend", "ViewMinimap", "ViewRecipeMarkers", "-", "ViewPenScale", "-",
+				"ViewNavigationBar", "ViewLegend", "ViewMinimap", "ViewRecipeMarkers", "-", "ViewLegendValues",
+				"ViewFoldAllGroups", "-", "ViewShowAllPens", "ViewHideAllPens", "-", "ViewPenScale", "-",
 				"ViewMessagePanel");
 		viewMenu.Items.OfType<MenuItem>().Single(item => item.Name == "ViewPenScale").Items.OfType<MenuItem>()
 			.Select(item => item.Name)
 			.Should()
 			.Equal("ViewAutoscale", "ViewInitialScale");
+	}
+
+	[AvaloniaFact]
+	public void AllPensItems_AreBoundToTheChartsCommandsAndReadTheirResxText()
+	{
+		using var stand = NewWindowStand();
+		var viewModel = stand.ViewModel;
+		var menuBar = ShowMenuBar(viewModel);
+		var chart = viewModel.ChartViewModel;
+		var showAll = menuBar.FindControl<MenuItem>("ViewShowAllPens")!;
+		var hideAll = menuBar.FindControl<MenuItem>("ViewHideAllPens")!;
+
+		showAll.Header.Should().Be(Resources.MenuViewShowAllPens);
+		hideAll.Header.Should().Be(Resources.MenuViewHideAllPens);
+		showAll.Command.Should().BeSameAs(chart.ShowAllPensCommand);
+		hideAll.Command.Should().BeSameAs(chart.HideAllPensCommand);
+
+		chart.Pens.Should().NotBeEmpty();
+		hideAll.Command!.Execute(null);
+		Dispatcher.UIThread.RunJobs();
+
+		chart.Pens.Should().AllSatisfy(state => state.IsVisible.Should().BeFalse());
+
+		showAll.Command!.Execute(null);
+		Dispatcher.UIThread.RunJobs();
+
+		chart.Pens.Should().AllSatisfy(state => state.IsVisible.Should().BeTrue());
+	}
+
+	[AvaloniaFact]
+	public void FoldAllItem_RunsTheLegendsCommandAndNamesTheNextPress()
+	{
+		using var stand = NewWindowStand(
+			stored: new PenCatalogue([], [new StoredGroup(1, "Group A", [1]), new StoredGroup(2, "Group B", [2])]));
+		var legend = stand.ViewModel.LegendViewModel;
+		var menuBar = ShowMenuBar(stand.ViewModel);
+		var item = menuBar.FindControl<MenuItem>("ViewFoldAllGroups")!;
+		var headers = legend.Groups.Where(group => group.HasHeader).ToList();
+		headers.Should().HaveCount(2);
+
+		item.Command.Should().BeSameAs(legend.ToggleAllFoldsCommand);
+		item.Header.Should().Be(Resources.LegendFoldAllGroups);
+
+		item.Command!.Execute(null);
+		Dispatcher.UIThread.RunJobs();
+
+		headers.Should().AllSatisfy(header => header.IsFolded.Should().BeTrue());
+		item.Header.Should().Be(Resources.LegendUnfoldAllGroups);
+	}
+
+	[AvaloniaFact]
+	public void LegendValuesItem_ReadsItsResxText()
+	{
+		using var stand = NewWindowStand();
+		var menuBar = ShowMenuBar(stand.ViewModel);
+
+		menuBar.FindControl<MenuItem>("ViewLegendValues")!.Header.Should().Be(Resources.MenuViewLegendValues);
 	}
 
 	[AvaloniaFact]

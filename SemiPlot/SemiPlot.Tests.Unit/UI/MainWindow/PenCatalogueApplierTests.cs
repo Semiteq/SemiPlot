@@ -29,7 +29,7 @@ namespace SemiPlot.Tests.Unit.UI.MainWindow;
 public sealed class PenCatalogueApplierTests
 {
 	[AvaloniaFact]
-	public void ADeltaAddingAPenToAChartWithPens_ReachesTheChartAndTheSidebarAndReadsTheExtentOnce()
+	public void AReadAddingAPenToAChartWithPens_ReachesTheChartAndTheSidebarAndReadsTheExtentOnce()
 	{
 		using var stand = NewWindowStand();
 		var viewModel = stand.ViewModel;
@@ -46,7 +46,21 @@ public sealed class PenCatalogueApplierTests
 	}
 
 	[AvaloniaFact]
-	public void ADeltaAddingAPenWithOlderRows_LetsTheChartPanBackToThem()
+	public void AReadAddingAPen_ListsItUnderItsStoredGroupsHeader()
+	{
+		using var stand = NewWindowStand(
+			stored: new PenCatalogue([], [new StoredGroup(7, "Chamber", [1, 2, 3])]));
+		var viewModel = stand.ViewModel;
+		stand.Provider.Pens = [.. stand.Provider.Pens, new Pen(3, "Pen 3", [], "#0000ff")];
+
+		AdvanceOneRead(stand);
+
+		var chamber = viewModel.LegendViewModel.Groups.Single(group => group.Name == "Chamber");
+		chamber.Rows.Select(row => row.PenState.Pen.Name).Should().Equal("Pen 1", "Pen 2", "Pen 3");
+	}
+
+	[AvaloniaFact]
+	public void AReadAddingAPenWithOlderRows_LetsTheChartPanBackToThem()
 	{
 		using var stand = NewWindowStand();
 		var viewModel = stand.ViewModel;
@@ -64,7 +78,7 @@ public sealed class PenCatalogueApplierTests
 	}
 
 	[AvaloniaFact]
-	public void ADeltaAddingAPenWithOlderRows_WhoseReadLandsBeforeTheExtent_ReadsTheOlderRowsInView()
+	public void AReadAddingAPenWithOlderRows_WhoseReadLandsBeforeTheExtent_ReadsTheOlderRowsInView()
 	{
 		using var stand = NewWindowStand();
 		var provider = stand.Provider;
@@ -95,7 +109,7 @@ public sealed class PenCatalogueApplierTests
 	}
 
 	[AvaloniaFact]
-	public void ADeltaGivingAChartThatLostItsPensAPenWithOlderRows_ReadsAndPansBackToThem()
+	public void AReadGivingAChartThatLostItsPensAPenWithOlderRows_ReadsAndPansBackToThem()
 	{
 		using var stand = NewWindowStand();
 		var provider = stand.Provider;
@@ -123,7 +137,7 @@ public sealed class PenCatalogueApplierTests
 	}
 
 	[AvaloniaFact]
-	public void ADeltaGivingAnEmptyChartItsFirstPens_SeedsTheNavigationBeforeTheHistoryQuery()
+	public void AReadGivingAnEmptyChartItsFirstPens_SeedsTheNavigationBeforeTheHistoryQuery()
 	{
 		using var stand = NewWindowStand(pens: []);
 		var viewModel = stand.ViewModel;
@@ -155,7 +169,7 @@ public sealed class PenCatalogueApplierTests
 	}
 
 	[AvaloniaFact]
-	public void ADeltaGivingAnEmptyChartItsFirstPens_WhenTheExtentReadFails_StillAppliesThePens()
+	public void AReadGivingAnEmptyChartItsFirstPens_WhenTheExtentReadFails_StillAppliesThePens()
 	{
 		using var stand = NewWindowStand(pens: []);
 		var viewModel = stand.ViewModel;
@@ -178,7 +192,7 @@ public sealed class PenCatalogueApplierTests
 	}
 
 	[AvaloniaFact]
-	public void ADeltaThatAddsNoPen_ReadsNoExtent()
+	public void AReadThatAddsNoPen_ReadsNoExtent()
 	{
 		using var stand = NewWindowStand();
 		var viewModel = stand.ViewModel;
@@ -197,7 +211,7 @@ public sealed class PenCatalogueApplierTests
 	}
 
 	[AvaloniaFact]
-	public void ADeltaWhoseExtentReloadThrows_AddsOnePanelEntry_AndTheNextDeltaStillApplies()
+	public void AReadWhoseExtentReloadThrows_AddsOnePanelEntry_AndTheNextReadStillApplies()
 	{
 		using var stand = NewWindowStand();
 		var viewModel = stand.ViewModel;
@@ -217,13 +231,48 @@ public sealed class PenCatalogueApplierTests
 		AdvanceOneRead(stand);
 
 		viewModel.ChartViewModel.FindPen(1)!.Pen.Name.Should().Be("Chamber pressure");
-		provider.ExtentQueryCount.Should().Be(extentQueriesAtStart + 1, "a delta that adds no pen reads no extent");
+		provider.ExtentQueryCount.Should().Be(extentQueriesAtStart + 1, "a read that adds no pen reads no extent");
+		viewModel.MessagePanel.Entries.Should().ContainSingle();
+	}
+
+	// A chart listener throws once, on a group rename no normalised pen carries: the rebase on the whole
+	// last-applied read makes the next identical read not match it, so that read retries the rename.
+	[AvaloniaFact]
+	public void AGroupRenameApplyThatThrows_IsRetriedByTheNextIdenticalRead()
+	{
+		using var stand = NewWindowStand(
+			stored: new PenCatalogue([], [new StoredGroup(1, "Group A", [1, 2])]));
+		var viewModel = stand.ViewModel;
+		var chart = viewModel.ChartViewModel;
+		var throwsOnce = true;
+		chart.PropertyChanged += (_, change) =>
+		{
+			if (throwsOnce && change.PropertyName == nameof(TrendChartViewModel.Pens))
+			{
+				throwsOnce = false;
+
+				throw new InvalidOperationException("a chart listener threw");
+			}
+		};
+
+		stand.Provider.Stored = new PenCatalogue([], [new StoredGroup(1, "Group B", [1, 2])]);
+		AdvanceOneRead(stand);
+
+		throwsOnce.Should().BeFalse("the listener has to have thrown");
+		viewModel.LegendViewModel.Groups.Single().Name.Should()
+			.Be("Group A", "the throw landed before the sidebar took the rename");
+		viewModel.MessagePanel.Entries.Should().ContainSingle();
+
+		AdvanceOneRead(stand);
+
+		viewModel.LegendViewModel.Groups.Single().Name.Should()
+			.Be("Group B", "the rebase made the identical read carry the rename again");
 		viewModel.MessagePanel.Entries.Should().ContainSingle();
 	}
 
 	// A chart listener throws once, after the chart took pen 3 and before the sidebar learned of it.
 	[AvaloniaFact]
-	public void ADeltaWhoseApplyThrows_AddsOnePanelEntry_AndTheNextReadCarriesItAgain()
+	public void AReadWhoseApplyThrows_AddsOnePanelEntry_AndTheNextReadCarriesItAgain()
 	{
 		using var stand = NewWindowStand();
 		var viewModel = stand.ViewModel;
@@ -255,11 +304,11 @@ public sealed class PenCatalogueApplierTests
 		viewModel.MessagePanel.Entries.Should().ContainSingle();
 	}
 
-	// The first delta waits for the extent while the second, read against it, queues behind. The first throws,
+	// The first read waits for the extent while the second, read against it, queues behind. The first throws,
 	// so the second reaches a chart that never took pen 1, and the rebase puts the loop's baseline behind both:
-	// the next read names pen 2 as added, not revised.
+	// the next read is compared with the start's empty catalogue.
 	[AvaloniaFact]
-	public void AnApplyThatThrowsWithTheNextDeltaQueued_StillTakesALaterRevisionOfThatDeltasPen()
+	public void AnApplyThatThrowsWithTheNextReadQueued_StillTakesALaterRevisionOfThatReadsPen()
 	{
 		using var stand = NewWindowStand(pens: []);
 		var viewModel = stand.ViewModel;

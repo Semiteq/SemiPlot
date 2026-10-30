@@ -277,6 +277,56 @@ public sealed class PenGroupsViewModelTests : IDisposable
 	}
 
 	[AvaloniaFact]
+	public async Task AFoldToggle_WritesTheFlagOnceAndStoresItOnTheGroup()
+	{
+		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+		var chamber = editor.Groups.Groups[0];
+		editor.Groups.SelectedGroup = chamber;
+
+		chamber.FoldedOnStart.Should().BeFalse();
+		_editor.Calls.Should().BeEmpty("selecting a group writes no flag");
+
+		await chamber.ToggleFoldedOnStartCommand.Execute();
+
+		_editor.Calls.Should().Equal(new FakeEditorCall.SetFoldedOnStart(Chamber, true));
+		chamber.FoldedOnStart.Should().BeTrue();
+		chamber.Group.Should().Be(Chamber with { FoldedOnStart = true });
+
+		await chamber.ToggleFoldedOnStartCommand.Execute();
+
+		_editor.Calls.Should().Equal(
+			new FakeEditorCall.SetFoldedOnStart(Chamber, true),
+			new FakeEditorCall.SetFoldedOnStart(Chamber with { FoldedOnStart = true }, false));
+		chamber.Group.Should().Be(Chamber);
+	}
+
+	[AvaloniaFact]
+	public async Task AFailedFoldToggle_ReRaisesTheFlagUnchangedFillsTheMessageAndReportsOnce()
+	{
+		var refusal = FakePenCatalogueEditor.Refusal(ArchiveFault.RowGone, "Chamber");
+		_editor.FoldedOnStartResult = Result.Fail(refusal);
+		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+		var groups = editor.Groups;
+		var chamber = groups.Groups[0];
+		groups.SelectedGroup = chamber;
+		var raised = new List<string?>();
+		chamber.PropertyChanged += Record;
+
+		await chamber.ToggleFoldedOnStartCommand.Execute();
+
+		raised.Should().Equal(nameof(PenGroupViewModel.FoldedOnStart));
+		chamber.FoldedOnStart.Should().BeFalse();
+		chamber.Group.Should().Be(Chamber);
+		groups.Message.Should().Be(ArchiveFailureMapper.Map(refusal).Title);
+		_messagePanel.Entries.Should().ContainSingle();
+
+		void Record(object? sender, PropertyChangedEventArgs args)
+		{
+			raised.Add(args.PropertyName);
+		}
+	}
+
+	[AvaloniaFact]
 	public void CreateGroup_CannotExecuteWhileTheNameIsBlank()
 	{
 		using var editor = _editor.EditorOver(_catalogue, _messagePanel);

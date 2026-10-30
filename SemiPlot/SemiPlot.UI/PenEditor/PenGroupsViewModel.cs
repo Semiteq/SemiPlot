@@ -17,7 +17,7 @@ namespace SemiPlot.UI.PenEditor;
 public sealed record PendingGroupDeletion(PenGroupViewModel Group, string Text);
 
 /// <summary>
-/// The groups tab: create, rename and delete groups, and the membership of the selected group. Every editor
+/// The groups tab: create, rename and delete groups, the selected group's fold flag and its membership. Every editor
 /// call runs through the queue the pen editor owns.
 /// </summary>
 public sealed class PenGroupsViewModel : ReactiveObject, IDisposable
@@ -128,6 +128,11 @@ public sealed class PenGroupsViewModel : ReactiveObject, IDisposable
 		{
 			DisposeAll(memberships);
 		}
+
+		foreach (var group in Groups)
+		{
+			group.Dispose();
+		}
 	}
 
 	// docs/architecture/overview.md#a-field-writes-when-its-edit-ends
@@ -203,6 +208,8 @@ public sealed class PenGroupsViewModel : ReactiveObject, IDisposable
 		{
 			DisposeAll(memberships);
 		}
+
+		pending.Group.Dispose();
 
 		if (SelectedGroup == pending.Group)
 		{

@@ -1,3 +1,5 @@
+using System.Reactive;
+
 using FluentResults;
 
 using ReactiveUI;
@@ -8,8 +10,8 @@ using SemiPlot.UI.Messages;
 
 namespace SemiPlot.UI.PenEditor;
 
-/// <summary>One group of the groups tab: the group as last written and its rename draft.</summary>
-public sealed class PenGroupViewModel : ReactiveObject
+/// <summary>One group of the groups tab: the group as last written, its rename draft and its fold flag.</summary>
+public sealed class PenGroupViewModel : ReactiveObject, IDisposable
 {
 	private readonly PenGroupWriter _penGroupWriter;
 	private readonly List<string> _queuedNames = [];
@@ -20,6 +22,8 @@ public sealed class PenGroupViewModel : ReactiveObject
 		_penGroupWriter = penGroupWriter;
 		Group = group;
 		RenameDraft = group.Name;
+
+		ToggleFoldedOnStartCommand = ReactiveCommand.CreateFromTask(ToggleFoldedOnStartAsync);
 	}
 
 	public StoredGroup Group
@@ -29,10 +33,16 @@ public sealed class PenGroupViewModel : ReactiveObject
 		{
 			this.RaiseAndSetIfChanged(ref field, value);
 			this.RaisePropertyChanged(nameof(MemberCount));
+			this.RaisePropertyChanged(nameof(FoldedOnStart));
 		}
 	}
 
 	public int MemberCount => Group.MemberPenIds.Count;
+
+	public bool FoldedOnStart => Group.FoldedOnStart;
+
+	/// <summary>The fold check box's one writer: stores the flag the other way round.</summary>
+	public ReactiveCommand<Unit, Unit> ToggleFoldedOnStartCommand { get; }
 
 	public string RenameDraft
 	{
@@ -109,12 +119,36 @@ public sealed class PenGroupViewModel : ReactiveObject
 		_penGroupWriter.ShowGroupsOn(Group.MemberPenIds);
 	}
 
+	public void Dispose()
+	{
+		ToggleFoldedOnStartCommand.Dispose();
+	}
+
 	/// <summary>Records a membership the editor has written.</summary>
 	internal void SetMembership(int penId, bool isMember)
 	{
 		var others = Group.MemberPenIds.Where(memberPenId => memberPenId != penId);
 
 		Group = Group with { MemberPenIds = isMember ? [.. others.Append(penId).Order()] : [.. others] };
+	}
+
+	private async Task ToggleFoldedOnStartAsync()
+	{
+		var foldedOnStart = !FoldedOnStart;
+		var written = await _penGroupWriter.RunAsync(
+			editor => editor.SetFoldedOnStartAsync(Group, foldedOnStart));
+
+		if (written.IsFailed)
+		{
+			_penGroupWriter.RefuseWrite(written);
+
+			// The check box flipped itself on the click; the unchanged value puts it back.
+			this.RaisePropertyChanged(nameof(FoldedOnStart));
+
+			return;
+		}
+
+		Group = Group with { FoldedOnStart = foldedOnStart };
 	}
 
 	// The group's renames finish in the order queued, so the one finishing is the first equal name in the list.

@@ -59,17 +59,18 @@ public sealed class BreakRenderArchiveJourneyTests(
 		var dataProvider = services.GetRequiredService<IDataProvider>();
 		var liveSource = services.GetRequiredService<ILiveSource>();
 		var dataScheduler = services.GetRequiredService<IScheduler>();
-		var catalogue = await dataProvider.QueryPensAsync();
+		var catalogue = await dataProvider.QueryCatalogueAsync();
 		var extent = await dataProvider.QueryArchiveExtentAsync();
 
 		catalogue.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(catalogue));
 		extent.IsSuccess.Should().BeTrue(ArchiveReadSupport.Describe(extent));
-		catalogue.Value.Should().AllSatisfy(pen => Chroma(pen.Color).Should().BeGreaterThanOrEqualTo(
+		var pens = catalogue.Value.Pens;
+		pens.Should().AllSatisfy(pen => Chroma(pen.Color).Should().BeGreaterThanOrEqualTo(
 			ChromaThreshold,
 			"the blank-column probe reads chroma, so a greyscale pen would be invisible to it"));
 
 		using var coordinator = new TrendCoordinator(
-			dataProvider, liveSource, catalogue.Value, dataScheduler, ImmediateScheduler.Instance);
+			dataProvider, liveSource, pens, dataScheduler, ImmediateScheduler.Instance);
 		using var chart = new TrendChartViewModel(
 			coordinator,
 			new NoMarkers(),
@@ -79,7 +80,7 @@ public sealed class BreakRenderArchiveJourneyTests(
 			new MessagePanelViewModel(),
 			NullLogger<TrendChartViewModel>.Instance);
 
-		chart.ApplyCatalogue(catalogue.Value);
+		chart.ApplyCatalogue(pens);
 
 		var stopped = FirstBreak();
 		OpenWindowOn(chart.Navigation, extent.Value.FirstUtc, stopped);

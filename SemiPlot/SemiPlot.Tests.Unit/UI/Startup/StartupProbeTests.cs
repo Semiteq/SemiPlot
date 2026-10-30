@@ -33,7 +33,7 @@ public sealed class StartupProbeTests
 	private static readonly TimeSpan _shortBound = TimeSpan.FromMilliseconds(100);
 
 	[Fact]
-	public async Task ReadAsync_Succeeding_CarriesPensAndExtent()
+	public async Task ReadAsync_Succeeding_CarriesCatalogueAndExtent()
 	{
 		var dataProvider = NewProvider();
 		using var container = BuildContainer(dataProvider);
@@ -41,7 +41,7 @@ public sealed class StartupProbeTests
 		var result = await StartupProbe.ReadAsync(container, StartupProbe.DefaultReadBound);
 
 		result.IsSuccess.Should().BeTrue();
-		result.Value.Pens.Should().BeEquivalentTo(dataProvider.Pens);
+		result.Value.Catalogue.Pens.Should().BeEquivalentTo(dataProvider.Pens);
 		result.Value.Extent.FirstUtc.Should().Be(dataProvider.ArchiveFirstUtc);
 		result.Value.Extent.LastUtc.Should().Be(dataProvider.ArchiveLastUtc);
 		result.Value.ServiceProvider.Should().BeSameAs(container);
@@ -60,7 +60,7 @@ public sealed class StartupProbeTests
 
 		result.IsSuccess.Should().BeTrue();
 		result.Errors.Should().BeEmpty();
-		result.Value.Pens.Should().BeEmpty();
+		result.Value.Catalogue.Pens.Should().BeEmpty();
 		container.GetRequiredService<IDataProvider>().Should().BeSameAs(dataProvider);
 	}
 
@@ -71,7 +71,7 @@ public sealed class StartupProbeTests
 		bool isCatalogueFailing, ArchiveFault expected)
 	{
 		var dataProvider = NewProvider();
-		dataProvider.FailPens = isCatalogueFailing;
+		dataProvider.FailCatalogue = isCatalogueFailing;
 		dataProvider.FailExtent = !isCatalogueFailing;
 		var container = BuildContainer(dataProvider);
 
@@ -89,7 +89,7 @@ public sealed class StartupProbeTests
 	public async Task ReadAsync_FailedCatalogue_DoesNotReadTheExtent()
 	{
 		var dataProvider = NewProvider();
-		dataProvider.FailPens = true;
+		dataProvider.FailCatalogue = true;
 		dataProvider.GateExtent = true;
 		var container = BuildContainer(dataProvider);
 
@@ -105,7 +105,7 @@ public sealed class StartupProbeTests
 	public async Task ReadAsync_CatalogueExceedingItsBound_FailsInsteadOfHanging()
 	{
 		var dataProvider = NewProvider();
-		dataProvider.GatePens = true;
+		dataProvider.GateCatalogue = true;
 		var container = BuildContainer(dataProvider);
 
 		var result = await StartupProbe.ReadAsync(container, _shortBound);
@@ -168,8 +168,8 @@ public sealed class StartupProbeTests
 	public async Task ReadAsync_ReadThrowing_FailsInsteadOfPropagating()
 	{
 		var dataProvider = NewProvider();
-		dataProvider.GatePens = true;
-		dataProvider.PensGate.SetException(new OperationCanceledException("the read was cancelled"));
+		dataProvider.GateCatalogue = true;
+		dataProvider.CatalogueGate.SetException(new OperationCanceledException("the read was cancelled"));
 		var container = BuildContainer(dataProvider);
 
 		var result = await StartupProbe.ReadAsync(container, StartupProbe.DefaultReadBound);

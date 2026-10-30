@@ -37,14 +37,15 @@ public sealed class PostgresPenCatalogueEditor : IPenCatalogueEditor
 		{
 			await using var connection = await _dataSource.OpenConnectionAsync().ConfigureAwait(false);
 
-			var pens = await ReadStoredPensAsync(connection).ConfigureAwait(false);
-			var groups = await ReadStoredGroupsAsync(connection).ConfigureAwait(false);
+			var (pens, groups) = await CatalogueRowReader.ReadAsync(connection, isBounded: false).ConfigureAwait(false);
 
-			return Result.Ok(new PenCatalogue(pens, groups));
+			return Result.Ok(new PenCatalogue(
+				CatalogueNormaliser.ProjectStoredPens(pens, _logger),
+				groups));
 		}
 		catch (Exception exception)
 		{
-			return Result.Fail<PenCatalogue>(Map(exception, ArchiveStatements.PenCatalogRelations));
+			return Result.Fail<PenCatalogue>(Map(exception, ArchiveStatements.CatalogueRelations));
 		}
 	}
 
@@ -93,6 +94,15 @@ public sealed class PostgresPenCatalogueEditor : IPenCatalogueEditor
 			ArchiveStatements.RenameGroup,
 			[IdParameter(group.Id), new NpgsqlParameter("name", NpgsqlDbType.Text) { Value = name }],
 			name,
+			group.Name);
+	}
+
+	public Task<Result> SetFoldedOnStartAsync(StoredGroup group, bool foldedOnStart)
+	{
+		return UpdateOneRowAsync(
+			ArchiveStatements.UpdateGroupFoldedOnStart,
+			[IdParameter(group.Id), new NpgsqlParameter("value", NpgsqlDbType.Boolean) { Value = foldedOnStart }],
+			group.Name,
 			group.Name);
 	}
 
@@ -213,67 +223,6 @@ public sealed class PostgresPenCatalogueEditor : IPenCatalogueEditor
 		}
 	}
 
-	private async Task<IReadOnlyList<StoredPen>> ReadStoredPensAsync(NpgsqlConnection connection)
-	{
-		await using var command = new NpgsqlCommand(ArchiveStatements.StoredPens, connection);
-		await using var reader = await command.ExecuteReaderAsync().ConfigureAwait(false);
-
-		var pens = new List<StoredPen>();
-
-		while (await reader.ReadAsync().ConfigureAwait(false))
-		{
-			pens.Add(ReadStoredPen(reader));
-		}
-
-		return pens;
-	}
-
-	private static async Task<IReadOnlyList<StoredGroup>> ReadStoredGroupsAsync(NpgsqlConnection connection)
-	{
-		await using var command = new NpgsqlCommand(ArchiveStatements.StoredGroups, connection);
-		await using var reader = await command.ExecuteReaderAsync().ConfigureAwait(false);
-
-		var groups = new List<StoredGroup>();
-
-		while (await reader.ReadAsync().ConfigureAwait(false))
-		{
-			groups.Add(new StoredGroup(
-				reader.GetInt32(StoredGroupColumn.Id),
-				reader.GetString(StoredGroupColumn.Name),
-				reader.GetFieldValue<int[]>(StoredGroupColumn.Members)));
-		}
-
-		return groups;
-	}
-
-	private StoredPen ReadStoredPen(NpgsqlDataReader reader)
-	{
-		var penId = reader.GetInt32(PenCatalogColumn.Id);
-		var storedLineStyle = reader.GetInt16(PenCatalogColumn.LineStyle);
-
-		return new StoredPen(
-			penId,
-			reader.GetString(PenCatalogColumn.Name),
-			ReadText(reader, PenCatalogColumn.Unit),
-			ReadText(reader, PenCatalogColumn.Format),
-			ReadText(reader, PenCatalogColumn.Color),
-			StoredLineStyle.Read(storedLineStyle, penId, _logger, () => LogLevel.Warning),
-			reader.GetBoolean(PenCatalogColumn.EnabledOnStart),
-			ReadBound(reader, PenCatalogColumn.ScaleMinOnStart),
-			ReadBound(reader, PenCatalogColumn.ScaleMaxOnStart),
-			reader.GetBoolean(PenCatalogColumn.LogScaleOnStart));
-	}
-
-	private static string? ReadText(NpgsqlDataReader reader, int ordinal)
-	{
-		return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
-	}
-
-	private static double? ReadBound(NpgsqlDataReader reader, int ordinal)
-	{
-		return reader.IsDBNull(ordinal) ? null : reader.GetDouble(ordinal);
-	}
-
 	private Error Map(Exception exception, string relation)
 	{
 		return ArchiveFailureLog.LogIfUnexpected(_exceptionMapper.Map(exception, relation), exception, _logger);
@@ -282,6 +231,6 @@ public sealed class PostgresPenCatalogueEditor : IPenCatalogueEditor
 	private Error MapWrite(Exception exception, string subject)
 	{
 		return ArchiveFailureLog.LogIfUnexpected(
-			_exceptionMapper.MapWrite(exception, subject, ArchiveStatements.PenCatalogRelations), exception, _logger);
+			_exceptionMapper.MapWrite(exception, subject, ArchiveStatements.CatalogueRelations), exception, _logger);
 	}
 }

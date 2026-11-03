@@ -522,7 +522,7 @@ The window has no tabs. It is one row of three parts under a top bar, pen list |
 
 | Part | Holds |
 | --- | --- |
-| Top bar | The number of pens the last refresh added and `Refresh pen list`, right-aligned; its left side is empty. `Refresh pen list` registers the keys the SCADA writes as hidden pens and reads the catalogue again. |
+| Top bar | On the left, the filter box: the pen list shows the rows whose id, name or group text contains the typed text, trimmed at both ends and compared case-insensitively, and an empty box shows every row; the groups pane is not filtered (`#the-pen-list-filter`). On the right, the number of pens the last refresh added and `Refresh pen list`. `Refresh pen list` registers the keys the SCADA writes as hidden pens and reads the catalogue again. |
 | Pen list and pen pane | A read-only `DataGrid` of every pen: id, name with the pen's colour dot, unit, the start flag as a check glyph, and groups. A click on a column header sorts by that column ascending, the next click descending, and the header's arrow shows the direction. Every column resizes and opens no narrower than its header, and the groups column takes the spare width. Beside it, the 420 px pen pane: a hint while no pen is selected, otherwise a one-line title (id, then name), the sections Label (name, unit, mask, preview), Appearance (colour as a `#RRGGBB` text box, which normalises what the operator types or pastes to upper-case `#RRGGBB` and shows a stored value as stored, beside a square `ColorPicker` swatch; line style) and On start (visibility, minimum, maximum, scale type), and the reserved message line. A pen's groups show in the list as text and are not edited there. |
 | Groups pane | The title, a one-line subtitle, a new-name field with a create button, then a read-only `DataGrid` of every group in three columns: the membership box, the group name with its pen count as secondary text, and a "..." button. The box is ticked where the pen selected in the pen list is a member of the group; with no pen selected every box is disabled and unchecked. Membership is edited here only, from the pen side. The "..." button opens a menu of Rename, the fold flag as a checkable item, and Delete. A row shows no selection highlight and no cell outline. Under the grid a block the pane always reserves shows the rename field or the delete confirmation, and the pane's reserved message line closes it. |
 
@@ -544,7 +544,8 @@ description. Each comparer orders by its column's key and then by `Pen.Id`, text
 `StringComparer.CurrentCultureIgnoreCase`, and a descending sort reverses the whole order, the tie-break
 included. A refresh clears and refills the collection with no `DeferRefresh` (the view throws on a change
 inside a deferral), the view places each added row at its sorted position, so the sort and its arrow
-survive, and the refresh then sets `SelectedRow` to the pen selected before. A refresh of N pens raises N
+survive, and the refresh then sets `SelectedRow` to the pen selected before if its new row passes the
+filter (`#the-pen-list-filter`). A refresh of N pens raises N
 inserts into the view, each placed at its sorted position, rather than one reset. The refresh builds the new
 `PenGroupsViewModel` after it sets `SelectedRow`, over the row array it built, so the new pane's first
 memberships are the restored pen's (`#the-groups-pane`).
@@ -556,6 +557,57 @@ Avalonia 12.0.1, so it keeps the selected pen and its form
 refresh's `Clear()` raises one null, which the refresh overwrites with the pen selected before. A Ctrl+click
 on the selected row clears the selection, and the pane shows the hint
 (`ANameTypedThenTheSelectedRowCtrlClicked_WritesOnceAndShowsTheHint`).
+
+#### The pen list filter
+
+The filter narrows the same view the grid sorts. `PenRows.Filter` is set once, in the constructor, to
+`PenEditor/PenRowFilter.Matches` over the row and `FilterText`. The match trims the text at both ends; an
+empty or whitespace-only text matches every row. Otherwise a row matches when its id as invariant decimal
+text, `Pen.Name` or `GroupsText` contains the text under `StringComparison.CurrentCultureIgnoreCase`, the
+comparison the sort uses, so Cyrillic folds case too; the unit is not matched (`PenRowFilterTests`). The box
+`PenListFilter` is the one writer of `FilterText`, through a two-way `Text` binding that writes on every
+keystroke. The setter calls `ShowRowsMatchingFilter` when the value changes, and that calls
+`PenRows.Refresh()`, which re-creates the view with its sort descriptions and its filter. Nothing touches the
+sort descriptions, so the order and the header's arrow stay (`AFilter_KeepsTheSortOrder`,
+`PenListViewTests.AFilterUnderASort_KeepsTheOrderAndItsArrow`). No throttle runs: the rows are in memory and
+the view realises only the rows on screen.
+
+The selection stays while the selected row matches: the same `SelectedItem`, `SelectedRow` and
+`SelectedForm` (`PenListViewTests.AFilterTheSelectedRowMatches_KeepsTheRowSelectedAndItsForm`). When the new
+text hides the selected row, `ShowRowsMatchingFilter` sets `SelectedRow` to null before the refresh, so the
+form drops, the pane shows the hint and every membership box disables
+(`PenListViewTests.AFilterTheSelectedRowFailsToMatch_ClearsTheListSelectionAndShowsTheHint`). A selected row
+the operator cannot see would keep an editable form and membership boxes for a pen the list does not show. A
+cleared text restores no selection, so `SelectedRow` holds no remembered hidden row
+(`AFilterTheSelectedRowNoLongerMatches_ClearsTheSelectionAndAClearedTextRestoresNone`).
+
+After a refresh the grid selects the view's current item, and the current item can be a row while nothing
+is selected. The view opens with no current item, but a Ctrl+click that clears the selection leaves its row
+current; when the filter then hides that row, the refresh makes the first matching row current and the grid
+selects it. `ShowRowsMatchingFilter` therefore calls `PenRows.MoveCurrentTo(SelectedRow)` after the clear
+and before the refresh. With a row selected the grid already holds that row current and the call changes
+nothing; with none it puts the current item before the first row, and the refresh selects nothing
+(`PenListViewTests.AFilterAfterACtrlClickClearedTheSelection_SelectsNoRow`). The grid's echo through
+`OnPenListSelectionChanged` writes the same null.
+
+The catalogue refresh keeps `FilterText`. Each row the refill adds enters the view only if it passes the
+filter, at its sorted place (`ARefreshWhileFiltered_ShowsOnlyTheMatchingRowsAndKeepsTheText`), and
+`RefreshAsync` restores the selected pen only if its new row passes the filter, since the re-read row may
+carry a new name or new groups (`ARefreshThatMakesTheSelectedPenStopMatching_ClearsTheSelection`).
+
+The view does not filter a row again when the row's name or groups change; the filter applies at the next
+text change and at the next refresh. With "Chamber" typed, unticking Chamber for the selected pen, or
+renaming it in its form, would otherwise hide the row and drop the form under the operator's hands
+(`AMembershipChangeThatStopsTheSelectedRowMatching_KeepsTheRowShownAndSelected`). The groups pane takes the
+row array, not `PenRows`, so it lists every group whatever the list shows (`AFilter_LeavesTheGroupsPaneWhole`,
+`PenListViewTests.TheGroupsPane_ListsEveryGroupWhileThePenListIsFiltered`).
+
+The box carries no `PenEditorWindow.Field`, and its `DataContext` is the `PenEditorViewModel`, so the
+edit-end routing ignores it as it ignores `NewGroupName`. A click into the box ends a pending form edit
+through the form field's own `LostFocus`
+(`PenEditorViewTests.ANameTypedThenTheFilterBoxTypedAndEnterPressed_WritesOnceAndTheFilterWritesNothing`).
+The box stays enabled during a refresh, because the refill keeps the view it filters. The text lives for the
+window's life and is written nowhere.
 
 #### The groups pane
 

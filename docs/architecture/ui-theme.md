@@ -40,7 +40,7 @@ control, in each state the tree can reach.
 | `WindowDefaultForeground` | `Window`, and every control inheriting from it | `#000000` | `#DFE1E5` |
 | `MenuItemForeground` | Every menu caption at rest: the menu bar's File, Edit, View and Help, their items, the check glyph, and the `TextBox` context menu | `#000000` | `#DFE1E5` |
 | `MenuItemPointeroverForeground` | A menu caption while its submenu is open or the pointer is over it; Semi ships this brighter than its own text colour | `#000000` | `#DFE1E5` |
-| `TextBoxPlaceholderForeground` | A `TextBox` watermark: the new-group-name field of the pen editor's groups pane | `#818594` | `#6F737A` |
+| `TextBoxPlaceholderForeground` | A `TextBox` watermark: the new-group-name field of the pen editor's groups pane and the pen editor's filter box `PenListFilter` | `#818594` | `#6F737A` |
 | `TextBlockDisabledForeground` | Disabled `TextBlock` | `#A8ADBD` | `#5A5D63` |
 | `TextBoxDisabledForeground` | Disabled `TextBox` | `#A8ADBD` | `#5A5D63` |
 | `ButtonDefaultDisabledForeground` | A button whose command cannot execute | `#A8ADBD` | `#5A5D63` |
@@ -429,7 +429,11 @@ area counts the frame, so on a screen narrower than 1440 px the client width equ
 the frame overhangs it by its border. A screen narrower than 1272 px opens the window at its minimum.
 
 The root grid has `Margin="16"` and two rows 16 px apart. The top row is the top bar `PenEditorTopBar`, a
-`*,Auto,Auto` grid with 8 px column spacing: column 0 stays empty, then `PenEditorAddedCount` and
+`*,Auto,Auto` grid with 8 px column spacing. Column 0 holds the filter box `PenListFilter`,
+`PenEditorWindow.FilterBoxWidth` (280 px) wide and left-aligned, so its left edge is the root margin and the
+pen list border's left edge. The box is wider than the 240 px of a free-text field because it carries a
+sentence-long placeholder rather than one value, with room left for typed text past it. It realises at the
+button's height with no `Height` set, so the bar stays 32 px. Columns 1 and 2 hold `PenEditorAddedCount` and
 `PenEditorRefreshButton` (`Padding="12,2"`), so both stand right-aligned and the button's right edge is the
 groups pane's. The top bar carries no notice. The second row is a `*,16,Auto,16,Auto` grid of the bordered
 pen list, the pen pane `PenFormPanel` and the groups pane `GroupsPanel`. The rule above holds for every part
@@ -600,8 +604,11 @@ gate reads the realised layout. The longest form message, `PenFormMaskInvalid`, 
 and 480.3 px in Russian on one line on 2026-09-30, so it wraps into the second reserved line; the wrapped
 line has not been measured in the pane. Measured on 2026-09-29, with a three-digit added count the count needs
 210 px in English and 294 px in Russian, and the button 250 px for "Refresh pen list" and 334 px for «Обновить
-список перьев»; with the 8 px between them the top bar needs 468 and 636 px, inside the 1240 px it has at
-`MinWidth`. The groups pane's 340 px is chosen; its texts are gated in Inter against the realised
+список перьев»; with the 280 px filter box and the 8 px gaps the top bar needs 756 px in English and 924 px
+in Russian, inside the 1240 px it has at `MinWidth`. Measured on 2026-11-03 in Inter at the box's
+`FontSize` (`ThePlaceholder_FitsTheFilterBoxInInter`), the filter placeholder is 157.6 px in English and
+217.3 px in Russian, inside the box's 254 px inner width, 280 px less its `Padding` and `BorderThickness` on
+both sides. The groups pane's 340 px is chosen; its texts are gated in Inter against the realised
 `GroupsSubtitle` width, 306 px. The headless font also pushes the pen list's Groups column partly past the
 viewport at the designed 1440 px, so `EachHeaderClick_OrdersTheListByItsColumn` scrolls that column in
 through `PenEditorWindowDriver.ScrollColumnIntoView` before it clicks the header. The realised list raises
@@ -615,6 +622,8 @@ each fixed width to its header in the headless font, so
 | --- | --- |
 | `PenEditorLayoutViewTests.TheWindow_ShowsThePenListThePenPaneAndTheGroupsPaneSideBySide` | No `TabControl`; the pen list's border, the 420 px pen pane and the 340 px groups pane on one top, 16 px apart, 16 px from the window's edges, the top bar 16 px above them |
 | `PenEditorLayoutViewTests.TheTopBar_StandsAboveThePanesRightAlignedAndTheVisibilityColumnReadsOnStart` | The count and the button 8 px apart above the panes, the button's right edge on the groups pane's, and the On start header |
+| `PenEditorLayoutViewTests.TheFilterBox_StandsLeftInTheTopBar280PxWideWithItsPlaceholder` | The filter box inside the top bar, `FilterBoxWidth` wide, its left edge on the pen list border's, the box and the bar at the button's height, its placeholder, and its right edge left of the count |
+| `PenEditorLayoutViewTests.ThePlaceholder_FitsTheFilterBoxInInter` | The filter placeholder in Inter, in `en` and `ru`, inside the box's width less its `Padding` and `BorderThickness` |
 | `PenEditorLayoutViewTests.AtTheMinimumWidth_BothPanesKeepTheirWidthAndThePenListScrolls` | The opening at `DesignedWidth`; at `MinWidth` both panes at their widths, every pen column at or above its minimum, Id and Name inside the viewport, and the horizontal scroll |
 | `PenEditorLayoutViewTests.BothPanes_StayFixedWhenTheWindowWidens` | Both panes unchanged and the pen list 300 px wider when the window widens by 300 px |
 | `PenEditorLayoutViewTests.TheOpeningWidth_TakesTheDesignedWidthWhereTheWorkingAreaAllowsAndNeverLessThanTheMinimum` | `OpeningWidthFor` over working areas of 1920, 1440, 1366, 1280 and 1024 px and the infinite width of no screen |

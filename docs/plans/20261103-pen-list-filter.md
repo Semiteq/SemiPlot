@@ -534,23 +534,24 @@ Task 5 states the built behaviour in `overview.md`.
 
 ### Task 5: [Final] Update documentation
 
-- [ ] `docs/architecture/overview.md:525`: the top bar's row names the filter box on the left (id, name or
+- [x] `docs/architecture/overview.md:525`: the top bar's row names the filter box on the left (id, name or
       group text, case-insensitive, trimmed; an empty box shows every row; the groups pane unfiltered)
-- [ ] `docs/architecture/overview.md`, after the selection paragraph (`:552-557`): a paragraph on the filter:
+- [x] `docs/architecture/overview.md`, after the selection paragraph (`:552-557`): a paragraph on the filter:
       `PenRows.Filter` set once over `PenRowFilter.Matches` and `FilterText`, `Refresh()` on each change with
       the sort descriptions untouched; the selection kept while it matches and cleared before the refresh when
       it does not, with no restore; the refresh restoring the selected pen only if it matches; no
       re-evaluation on a row's own change, and why; each with its gating test name
-- [ ] `docs/architecture/ui-theme.md:431-435`: the top bar's column 0 holds `PenListFilter`, 280 px
+- [x] `docs/architecture/ui-theme.md:431-435`: the top bar's column 0 holds `PenListFilter`, 280 px
       (`FilterBoxWidth`), left-aligned on the margin, and why 280 rather than 240; `:43` names the filter box
       beside the new-group field as a `TextBoxPlaceholderForeground` consumer; `:601-604` adds the box to the
       top bar's width sum (924 px of 1240 px in Russian) and the placeholder's measured Inter widths from
       Task 3; the gates table gains `TheFilterBox_StandsLeftInTheTopBar280PxWideWithItsPlaceholder` and
       `ThePlaceholder_FitsTheFilterBoxInInter`
-- [ ] `docs/architecture/ui-text.md:255-260`: the top bar reads `PenEditorFilterPlaceholder`, "Filter: id,
+- [x] `docs/architecture/ui-text.md:255-260`: the top bar reads `PenEditorFilterPlaceholder`, "Filter: id,
       name or group" / «Фильтр: номер, имя или группа», which reuses the Id column's term in each language
-- [ ] if a Task 2 or Task 3 fallback ran, state the built behaviour in the matching `overview.md` sentence
-- [ ] move this plan to `docs/plans/completed/` (left to the delivery step)
+- [x] if a Task 2 or Task 3 fallback ran, state the built behaviour in the matching `overview.md` sentence
+      (the Task 3 no-selection fallback: `overview.md#the-pen-list-filter`, the `MoveCurrentTo` paragraph)
+- [x] move this plan to `docs/plans/completed/` (left to the delivery step)
 
 ## Post-Completion
 

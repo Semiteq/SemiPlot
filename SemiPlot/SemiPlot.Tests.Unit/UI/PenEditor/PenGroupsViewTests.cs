@@ -798,11 +798,6 @@ public sealed class PenGroupsViewTests : IDisposable
 			.Select(row => ((PenGroupViewModel)row.DataContext!).Group.Name);
 	}
 
-	private static List<StoredGroup> GroupsNumbered(int count)
-	{
-		return [.. Enumerable.Range(1, count).Select(id => new StoredGroup(id, $"Group {id}", []))];
-	}
-
 	private static (Color? Color, double? Opacity) BackgroundOf(DataGridRow row)
 	{
 		var background = Descendant<Border>(row, "BackgroundBorder").Background;

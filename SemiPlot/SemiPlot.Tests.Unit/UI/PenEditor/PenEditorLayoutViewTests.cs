@@ -8,6 +8,7 @@ using AwesomeAssertions;
 
 using FluentResults;
 
+using SemiPlot.Core.Data;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.Messages;
 using SemiPlot.UI.PenEditor;
@@ -157,6 +158,58 @@ public sealed class PenEditorLayoutViewTests : IDisposable
 		{
 			Close(window);
 		}
+	}
+
+	[AvaloniaFact]
+	public void AtTheMinimumHeight_EveryFixedRowShowsAndEachListShowsFourRows()
+	{
+		const double MinimumHeight = 536;
+		const double GroupsPaneInset = 1 + 16;
+		const int ListedRows = 4;
+		using var viewModel = _editor.EditorOver(new PenCatalogue(PensNumbered(20), GroupsNumbered(20)), _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			window.Height = window.MinHeight;
+			Dispatcher.UIThread.RunJobs();
+			window.Height.Should().Be(MinimumHeight);
+			PickGroupMenuItem(window, 0, "GroupDeleteItem");
+
+			var groupsPane = Named<Border>(window, "GroupsPanel");
+			var actionBlock = Named<Panel>(window, "GroupActionBlock");
+			var confirm = Named<Button>(window, "ConfirmDeleteButton");
+			IsOnScreen(confirm).Should().BeTrue("a deletion is asked");
+			BottomOf(confirm, actionBlock).Should().BeLessThanOrEqualTo(actionBlock.Bounds.Height);
+			BottomOf(Named<TextBlock>(window, "GroupsMessage"), groupsPane).Should()
+				.BeLessThanOrEqualTo(groupsPane.Bounds.Height - GroupsPaneInset, "the message line ends above the padding");
+			RowsPresenterOf(GroupListOf(window)).Bounds.Height.Should()
+				.BeGreaterThanOrEqualTo(ListedRows * PenEditorWindow.RowHeight);
+			RowsPresenterOf(PenListOf(window)).Bounds.Height.Should()
+				.BeGreaterThanOrEqualTo(ListedRows * PenEditorWindow.RowHeight);
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[Theory]
+	[InlineData(1920, 1440)]
+	[InlineData(1440, 1440)]
+	[InlineData(1366, 1366)]
+	[InlineData(1280, 1280)]
+	[InlineData(1024, 1272)]
+	[InlineData(double.PositiveInfinity, 1440)]
+	public void TheOpeningWidth_TakesTheDesignedWidthWhereTheWorkingAreaAllowsAndNeverLessThanTheMinimum(
+		double workingAreaWidth,
+		double expected)
+	{
+		PenEditorWindow.OpeningWidthFor(workingAreaWidth).Should().Be(expected);
+	}
+
+	private static DataGridRowsPresenter RowsPresenterOf(DataGrid list)
+	{
+		return Descendant<DataGridRowsPresenter>(list, "PART_RowsPresenter");
 	}
 
 	private static Border PenListBorderOf(PenEditorWindow window)

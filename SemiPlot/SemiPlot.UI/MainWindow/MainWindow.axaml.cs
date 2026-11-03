@@ -37,7 +37,14 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 			settings => DialogOpener.ShowSettings(this, settings, viewModel.ReportFailure)));
 		_requests.Add(viewModel.PenEditorRequests.Subscribe(
 			penEditor => DialogOpener.ShowOwnedDialog(
-				this, () => new PenEditorWindow { DataContext = penEditor }, penEditor, viewModel.ReportFailure)));
+				this,
+				() => new PenEditorWindow
+				{
+					DataContext = penEditor,
+					Width = PenEditorWindow.OpeningWidthFor(WorkingAreaWidth())
+				},
+				penEditor,
+				viewModel.ReportFailure)));
 		_requests.Add(viewModel.ExportRequests.Subscribe(
 			export => DialogOpener.ShowOwnedDialog(
 				this, () => new CsvExportWindow { DataContext = export }, export, viewModel.ReportFailure)));
@@ -70,5 +77,13 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 	private double MaximumPanelWidth()
 	{
 		return ContentGrid.Bounds.Width - TrendLegendViewModel.ChartMinWidth - PanelResizeHandle.Width;
+	}
+
+	/// <summary>The working area of this window's screen in device-independent pixels, unbounded with no screen.</summary>
+	private double WorkingAreaWidth()
+	{
+		return Screens.ScreenFromWindow(this) is { } screen
+			? screen.WorkingArea.Width / screen.Scaling
+			: double.PositiveInfinity;
 	}
 }

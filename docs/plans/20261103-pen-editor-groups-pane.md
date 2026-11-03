@@ -919,26 +919,39 @@ pane.
 - Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/PenEditor/PenListViewTests.cs`
 - Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/MainWindow/MainWindowViewTests.cs`
 
-- [ ] write the failing theory `TheOpeningWidth_TakesTheDesignedWidthWhereTheWorkingAreaAllowsAndNeverLessThanTheMinimum`
+- [x] write the failing theory `TheOpeningWidth_TakesTheDesignedWidthWhereTheWorkingAreaAllowsAndNeverLessThanTheMinimum`
       (`[Theory]`: `OpeningWidthFor` is pure): working area 1920 -> 1440, 1440 -> 1440, 1366 -> 1366, 1280 -> 1280,
       1024 -> 1272, `double.PositiveInfinity` -> 1440 (red: `OpeningWidthFor` does not exist)
-- [ ] extend `EditPensAndGroups_ClickedOnTheRealisedWindow_OpensTheEditorOverIt`: `editorWindow.Width` equals
+- [x] extend `EditPensAndGroups_ClickedOnTheRealisedWindow_OpensTheEditorOverIt`: `editorWindow.Width` equals
       `PenEditorWindow.OpeningWidthFor(area)`, where `area` is the main window's
       `Screens.ScreenFromWindow(window)` working area width over its scaling, or infinity with no screen
-- [ ] write the failing `AtTheMinimumHeight_EveryFixedRowShowsAndEachListShowsFourRows`: at
+- [x] write the failing `AtTheMinimumHeight_EveryFixedRowShowsAndEachListShowsFourRows`: at
       `Height = MinHeight` the window's height is 536; with a deletion asked, `ConfirmDeleteButton` ends inside
       `GroupActionBlock` and `GroupsMessage` ends inside `GroupsPanel` above its padding; `GroupList`'s and `PenList`'s `PART_RowsPresenter` are each at least four `RowHeight` tall
-- [ ] write the failing theory `AtTheOpeningWidth_EveryPenListColumnFitsTheViewportInInter` (`en`, `ru`;
+- [x] write the failing theory `AtTheOpeningWidth_EveryPenListColumnFitsTheViewportInInter` (`en`, `ru`;
       100 pens, so the vertical scroll bar shows): each fixed column's width is
       `max(declared Width, HeaderWidthInInter)`, the Groups fill column's minimum its `HeaderWidthInInter`,
       and their sum is at most `ViewportOf(PenList)` at the designed width
-- [ ] add `OpeningWidthFor` to `PenEditorWindow.axaml.cs`; set `MinHeight="536"` in the AXAML; the pen list's
+- [x] add `OpeningWidthFor` to `PenEditorWindow.axaml.cs`; set `MinHeight="536"` in the AXAML; the pen list's
       Name column opens at 200 px; `MainWindow`'s factory sets `Width = PenEditorWindow.OpeningWidthFor(...)`
       from its screen, through one private method `WorkingAreaWidth()` in `MainWindow.axaml.cs`
-- [ ] if `AtTheOpeningWidth_EveryPenListColumnFitsTheViewportInInter` fails at 200 px, lower the Name width to
-      the largest multiple of 4 that passes and record the value here for Task 6
-- [ ] run `PenEditorLayoutViewTests`, `PenListViewTests`, `PenFormPaneViewTests`, `MainWindowViewTests`:
+- [x] if `AtTheOpeningWidth_EveryPenListColumnFitsTheViewportInInter` fails at 200 px, lower the Name width to
+      the largest multiple of 4 that passes and record the value here for Task 6 (passes at 200 px: no change)
+- [x] run `PenEditorLayoutViewTests`, `PenListViewTests`, `PenFormPaneViewTests`, `MainWindowViewTests`:
       every case passes
+- ⚠️ measured in Inter at 1440 px with 100 pens (`AtTheOpeningWidth_EveryPenListColumnFitsTheViewportInInter`):
+  viewport 598 px; `en` columns 84, 200, 96, 120 and Groups' header 78.5 px (578.5 px), `ru` 84, 200, 96, 120 and
+  81.1 px (581.1 px). At 220 px both cultures fail (598.5 and 601.1 px), the red state
+- ⚠️ the realised list raises each fixed width to its header in the headless font (`HeaderMeasuredColumns`), so the
+  Inter test reads the declared widths from an unshown `PenEditorWindow`, not from the realised columns
+- ⚠️ the headless screen stub reports a working area of 1920 device-independent px, so `MainWindowViewTests` exercises the
+  designed-width branch (1440 px)
+- ⚠️ `ScrollColumnIntoView` re-checked at 200 px: `ARefreshThatChangesTheCatalogue_RebindsThePenListAndTheGroupsPane`
+  passes without it and drops the call; the Groups case of `EachHeaderClick_OrdersTheListByItsColumn` still fails
+  without it (the headless font still pushes the Groups header past the viewport), so it keeps the call and the
+  driver keeps the method
+- ⚠️ `GroupsNumbered` moved from `PenGroupsViewTests` to `PenEditorFixture`: the minimum-height test is its second
+  consumer
 
 ### Task 5: Verify acceptance criteria
 

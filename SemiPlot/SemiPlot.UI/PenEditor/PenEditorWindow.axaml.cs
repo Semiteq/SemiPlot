@@ -47,6 +47,12 @@ public partial class PenEditorWindow : Window
 		AddHandler(KeyDownEvent, OnFieldKeyDown, RoutingStrategies.Tunnel);
 	}
 
+	/// <summary>The designed width where the owner's working area holds it, never below the minimum.</summary>
+	public static double OpeningWidthFor(double workingAreaWidth)
+	{
+		return Math.Max(MinimumWidth, Math.Min(DesignedWidth, workingAreaWidth));
+	}
+
 	public static PenField? GetField(TextBox textBox)
 	{
 		return textBox.GetValue(FieldProperty);

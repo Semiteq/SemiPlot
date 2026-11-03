@@ -575,7 +575,6 @@ public sealed class PenEditorViewTests : IDisposable
 			HeadlessInput.Click(window, Named<Button>(window, "PenEditorRefreshButton"));
 
 			TextOf(RowAt(window, 3), "RowName").Should().Be(registered.Name);
-			ScrollColumnIntoView(window, Resources.PenEditorColumnGroups);
 			TextOf(RowAt(window, 3), "RowGroups").Should().Be(vacuum.Name);
 
 			viewModel.Groups.Should().NotBeSameAs(groupsBefore);

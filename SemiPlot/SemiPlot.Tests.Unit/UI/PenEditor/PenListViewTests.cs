@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
@@ -12,9 +13,11 @@ using SemiPlot.Core.Data;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.Messages;
 using SemiPlot.UI.PenEditor;
+using SemiPlot.UI.Tables;
 
 using Xunit;
 
+using static SemiPlot.Tests.Unit.UI.InterMeasure;
 using static SemiPlot.Tests.Unit.UI.PenEditor.PenEditorFixture;
 using static SemiPlot.Tests.Unit.UI.PenEditor.PenEditorWindowDriver;
 using static SemiPlot.Tests.Unit.UI.ViewProbe;
@@ -288,6 +291,47 @@ public sealed class PenListViewTests : IDisposable
 		{
 			Close(window);
 		}
+	}
+
+	[AvaloniaTheory]
+	[InlineData("en")]
+	[InlineData("ru")]
+	public void AtTheOpeningWidth_EveryPenListColumnFitsTheViewportInInter(string culture)
+	{
+		using var cultureScope = new CultureScope(culture);
+		using var viewModel = _editor.EditorOver(new PenCatalogue(PensNumbered(100), []), _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			window.Width.Should().Be(PenEditorWindow.DesignedWidth);
+			var list = PenListOf(window);
+			Descendant<ScrollBar>(list, "PART_VerticalScrollbar").IsVisible.Should().BeTrue("100 pens scroll");
+			using var semiBold = InterTypeface("SemiBold");
+			var declaredWidths = DeclaredColumnWidths();
+			var widths = list.Columns
+				.Select((column, index) =>
+				{
+					var headerWidth = HeaderWidthInInter(window, HeaderOf(list, (string)column.Header!), semiBold);
+
+					return HeaderMeasuredColumns.GetIsFill(column) ? headerWidth : Math.Max(declaredWidths[index], headerWidth);
+				})
+				.ToList();
+			var viewport = ViewportOf(list);
+
+			TestContext.Current.TestOutputHelper?.WriteLine(
+				$"{culture}: columns {string.Join(", ", widths.Select(width => $"{width:0.#}"))} px, viewport {viewport:0.#} px");
+			widths.Sum().Should().BeLessThanOrEqualTo(viewport, "the list opens with no horizontal scroll in Inter");
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	// The realised list raises each width to its header in the test font, so the declared widths come from an unshown window.
+	private static List<double> DeclaredColumnWidths()
+	{
+		return [.. PenListOf(new PenEditorWindow()).Columns.Select(column => column.Width.Value)];
 	}
 
 	private static PathIcon StartGlyphOf(DataGridRow row)

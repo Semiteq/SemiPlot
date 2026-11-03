@@ -12,6 +12,7 @@
         Width="{x:Static local:PenEditorWindow.DesignedWidth}"
         MinWidth="{x:Static local:PenEditorWindow.MinimumWidth}"
         Height="720"
+        MinHeight="536"
         SizeToContent="Manual"
         CanResize="True"
         ShowInTaskbar="False"
@@ -145,7 +146,7 @@
                         </DataGridTemplateColumn>
 
                         <DataGridTemplateColumn Header="{x:Static text:Resources.PenEditorColumnName}"
-                                                Width="220"
+                                                Width="200"
                                                 CanUserSort="True"
                                                 CustomSortComparer="{x:Static local:PenRowOrder.ByName}">
                             <DataGridTemplateColumn.CellTemplate>

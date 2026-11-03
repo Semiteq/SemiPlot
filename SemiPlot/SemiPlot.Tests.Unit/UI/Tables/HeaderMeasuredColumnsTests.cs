@@ -1,4 +1,3 @@
-using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Data;
@@ -235,6 +234,29 @@ public sealed class HeaderMeasuredColumnsTests
 		}
 	}
 
+	[AvaloniaFact]
+	public void AGridEnabledAfterItIsShown_FitsItsColumns()
+	{
+		var (window, grid) = Stand(WindowWidth, rowCount: 3);
+		HeaderMeasuredColumns.SetIsEnabled(grid, false);
+		try
+		{
+			window.Show();
+			Dispatcher.UIThread.RunJobs();
+
+			HeaderMeasuredColumns.SetIsEnabled(grid, true);
+			Dispatcher.UIThread.RunJobs();
+
+			var others = ColumnOf(grid, NarrowHeader).ActualWidth + ColumnOf(grid, WideHeader).ActualWidth;
+			ColumnOf(grid, NarrowHeader).MinWidth.Should().Be(UnconstrainedWidthOf(window, HeaderOf(grid, NarrowHeader)));
+			ColumnOf(grid, FillHeader).ActualWidth.Should().BeApproximately(ViewportOf(grid) - others, 0.5);
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
 	private static (Window Window, DataGrid Grid) Realise(double width, int rowCount)
 	{
 		var (window, grid) = Stand(width, rowCount);
@@ -294,16 +316,6 @@ public sealed class HeaderMeasuredColumnsTests
 		var scrollBarWidth = scrollBar.IsVisible ? scrollBar.Bounds.Width : 0;
 
 		return HeadersPresenterOf(grid).Bounds.Width - scrollBarWidth;
-	}
-
-	private static double UnconstrainedWidthOf(Window window, DataGridColumnHeader header)
-	{
-		header.Measure(Size.Infinity);
-		var width = Math.Ceiling(header.DesiredSize.Width);
-		header.InvalidateMeasure();
-		window.UpdateLayout();
-
-		return width;
 	}
 
 	private sealed record StandRow(string Text);

@@ -104,6 +104,8 @@ public sealed class PenEditorViewTests : IDisposable
 		try
 		{
 			Descendants<CheckBox>(PenListOf(window)).Should().BeEmpty("the list is read-only and looks it");
+			window.TryFindResource("CheckGeometry", out var checkGeometry).Should().BeTrue();
+			StartGlyphOf(RowAt(window, 1)).Data.Should().BeSameAs(checkGeometry, "the start flag is the check glyph");
 			StartGlyphOf(RowAt(window, 0)).IsVisible.Should().BeFalse("Argon is hidden on start");
 			StartGlyphOf(RowAt(window, 1)).IsVisible.Should().BeTrue("Pressure is shown on start");
 			StartGlyphOf(RowAt(window, 2)).IsVisible.Should().BeTrue("Power is shown on start");
@@ -208,23 +210,32 @@ public sealed class PenEditorViewTests : IDisposable
 		}
 	}
 
+	// Pen 1, lowest id and shown on start, makes every ascending order differ from the catalogue's and the id's.
 	[AvaloniaTheory]
-	[InlineData(nameof(Resources.PenEditorColumnId), new[] { 3, 7, 12 })]
-	[InlineData(nameof(Resources.PenEditorColumnName), new[] { 3, 12, 7 })]
-	[InlineData(nameof(Resources.PenEditorColumnUnit), new[] { 7, 3, 12 })]
-	[InlineData(nameof(Resources.PenEditorColumnOnStart), new[] { 3, 7, 12 })]
-	[InlineData(nameof(Resources.PenEditorColumnGroups), new[] { 12, 3, 7 })]
-	public void EachHeaderClick_OrdersTheListByItsColumn(string headerKey, int[] expectedIds)
+	[InlineData(nameof(Resources.PenEditorColumnId), new[] { 1, 3, 7, 12 })]
+	[InlineData(nameof(Resources.PenEditorColumnName), new[] { 1, 3, 12, 7 })]
+	[InlineData(nameof(Resources.PenEditorColumnUnit), new[] { 1, 7, 3, 12 })]
+	[InlineData(nameof(Resources.PenEditorColumnOnStart), new[] { 3, 1, 7, 12 })]
+	[InlineData(nameof(Resources.PenEditorColumnGroups), new[] { 1, 12, 3, 7 })]
+	public void EachHeaderClick_OrdersTheListByItsColumn(string headerKey, int[] ascendingIds)
 	{
-		var header = Resources.ResourceManager.GetString(headerKey, Resources.Culture)
+		var headerText = Resources.ResourceManager.GetString(headerKey, Resources.Culture)
 			?? throw new InvalidOperationException($"No resource {headerKey}.");
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		var catalogue = new PenCatalogue(
+			[Argon, Pressure, Power, NumberedPen(1) with { EnabledOnStart = true }], [Chamber, Spare]);
+		using var viewModel = _editor.EditorOver(catalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
-			HeadlessInput.Click(window, HeaderOf(window, header));
+			HeadlessInput.Click(window, HeaderOf(window, headerText));
 
-			RealisedPens(PenListOf(window)).Select(pen => pen.Id).Should().Equal(expectedIds);
+			RealisedPens(PenListOf(window)).Select(pen => pen.Id).Should().Equal(ascendingIds);
+			HeaderOf(window, headerText).Classes.Should().Contain(":sortascending");
+
+			HeadlessInput.Click(window, HeaderOf(window, headerText));
+
+			RealisedPens(PenListOf(window)).Select(pen => pen.Id).Should().Equal(ascendingIds.Reverse());
+			HeaderOf(window, headerText).Classes.Should().Contain(":sortdescending");
 		}
 		finally
 		{
@@ -295,6 +306,10 @@ public sealed class PenEditorViewTests : IDisposable
 				column.MinWidth.Should().BeInRange(
 					headerWidth, headerWidth + 1, "the header sets the minimum, the last one with its separator shown");
 				column.ActualWidth.Should().BeGreaterThanOrEqualTo(column.MinWidth);
+				header.Bounds.Width.Should().BeLessThanOrEqualTo(column.ActualWidth + 0.5);
+				var headerText = Descendants<TextBlock>(header).Single(text => Equals(text.Text, column.Header));
+				headerText.TextLayout.WidthIncludingTrailingWhitespace.Should()
+					.BeLessThanOrEqualTo(headerText.Bounds.Width + 0.5, "the header shows its whole text");
 			});
 		}
 		finally
@@ -418,6 +433,78 @@ public sealed class PenEditorViewTests : IDisposable
 			hint.Text.Should().Be(Resources.PenFormEmptyHint);
 			Named<ScrollViewer>(window, "PenFormScroller").IsEffectivelyVisible.Should().BeFalse("no form shows");
 			_editor.Calls.Should().BeEmpty();
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void ANameTypedThenTheSelectedRowCtrlClicked_WritesOnceAndShowsTheHint()
+	{
+		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			var row = RowAt(window, 1);
+			HeadlessInput.Click(window, row);
+			Retype(window, Named<TextBox>(window, "FormName"), "Chamber pressure A");
+
+			HeadlessInput.Click(
+				window, row, new Point(row.Bounds.Width / 2, row.Bounds.Height / 2), RawInputModifiers.Control);
+
+			_editor.Changes.Should().Equal(
+				new FakeEditorCall.Change(Pressure, new PenSettingChange.Name("Chamber pressure A")));
+			PenListOf(window).SelectedItem.Should().BeNull("a Ctrl+click on the selected row clears the selection");
+			viewModel.SelectedRow.Should().BeNull("the view model follows the list");
+			IsOnScreen(Named<TextBlock>(window, "PenFormEmptyHint")).Should().BeTrue();
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void ARefreshWithNoPenSelected_SelectsNoRowAndShowsTheHint()
+	{
+		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			_editor.RegisterResult = Result.Ok(0);
+			_editor.ReadResult = Result.Ok(_catalogue);
+
+			HeadlessInput.Click(window, Named<Button>(window, "PenEditorRefreshButton"));
+
+			PenListOf(window).SelectedItem.Should().BeNull();
+			viewModel.SelectedRow.Should().BeNull();
+			IsOnScreen(Named<TextBlock>(window, "PenFormEmptyHint")).Should().BeTrue();
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void ARefreshThatDropsTheSelectedPen_SelectsNoRowAndShowsTheHint()
+	{
+		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			HeadlessInput.Click(window, RowAt(window, 1));
+			_editor.RegisterResult = Result.Ok(0);
+			_editor.ReadResult = Result.Ok(new PenCatalogue([Argon, Power], [Chamber, Spare]));
+
+			HeadlessInput.Click(window, Named<Button>(window, "PenEditorRefreshButton"));
+
+			RealisedPens(PenListOf(window)).Should().Equal(Argon, Power);
+			PenListOf(window).SelectedItem.Should().BeNull("the selected pen is gone");
+			viewModel.SelectedRow.Should().BeNull();
+			IsOnScreen(Named<TextBlock>(window, "PenFormEmptyHint")).Should().BeTrue();
 		}
 		finally
 		{
@@ -1493,15 +1580,5 @@ public sealed class PenEditorViewTests : IDisposable
 	private static PathIcon StartGlyphOf(DataGridRow row)
 	{
 		return Descendant<PathIcon>(row, "RowEnabledOnStart");
-	}
-
-	private static double UnconstrainedWidthOf(PenEditorWindow window, DataGridColumnHeader header)
-	{
-		header.Measure(Size.Infinity);
-		var width = Math.Ceiling(header.DesiredSize.Width);
-		header.InvalidateMeasure();
-		window.UpdateLayout();
-
-		return width;
 	}
 }

@@ -7,7 +7,7 @@ using SemiPlot.Core.Data;
 namespace SemiPlot.UI.PenEditor;
 
 /// <summary>
-/// One row of the pen table: the pen as last written, the pen as it stands once every write queued for it
+/// One row of the pen list: the pen as last written, the pen as it stands once every write queued for it
 /// succeeds, and the names of its groups.
 /// </summary>
 public sealed class PenRowViewModel(StoredPen pen, IEnumerable<StoredGroup> groups) : ReactiveObject

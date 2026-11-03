@@ -67,7 +67,7 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 	/// <summary>The one view the pen list sorts; a refresh replaces its rows and keeps its sort.</summary>
 	public DataGridCollectionView PenRows { get; }
 
-	/// <summary>Two-way from the pen list.</summary>
+	/// <summary>Set by each pen list selection change and by the refresh; the list binds it one way.</summary>
 	public PenRowViewModel? SelectedRow
 	{
 		get;

@@ -63,6 +63,7 @@ public static class HeaderMeasuredColumns
 		if (TopLevel.GetTopLevel(grid) is not null)
 		{
 			grid.LayoutUpdated += OnLayoutUpdated;
+			grid.InvalidateMeasure();
 		}
 	}
 

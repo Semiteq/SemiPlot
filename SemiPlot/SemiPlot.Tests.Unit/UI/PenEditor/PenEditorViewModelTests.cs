@@ -134,14 +134,14 @@ public sealed class PenEditorViewModelTests : IDisposable
 	public async Task AFailedRegistration_ReportsOnceReadsNothingAndLeavesTheTable()
 	{
 		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
-		PenRowViewModel[] rows = [.. editor.PenRows.Cast<PenRowViewModel>()];
+		var rows = RowsOf(editor);
 		_editor.RegisterResult = Result.Fail(
 			FakePenCatalogueEditor.Refusal(ArchiveFault.TableMissing, "semiplot_register_new_pens()"));
 
 		await editor.RefreshCommand.Execute();
 
 		_editor.Calls.Should().Equal(new FakeEditorCall.RegisterNewPens());
-		editor.PenRows.Cast<PenRowViewModel>().Should().Equal(rows);
+		RowsOf(editor).Should().Equal(rows);
 		editor.AddedCountText.Should().BeEmpty();
 		_messagePanel.Entries.Should().ContainSingle();
 	}

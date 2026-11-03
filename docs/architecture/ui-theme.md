@@ -493,7 +493,7 @@ the rule while the box is ticked marks the minimum `TextBox` `invalid`.
 #### What gates the layout
 
 `EveryPenFormLabel_FitsTheLabelColumnInInter` measures each of the form's ten label texts in the Inter font
-the app ships, at the label's `FontSize`, through Skia (`UI/InterMeasure.cs`), in `en` and `ru`: each is at
+the app ships, at the label's `FontSize`, through Skia (`SemiPlot.Tests.Unit/UI/InterMeasure.cs`), in `en` and `ru`: each is at
 most 112 px. The headless tests measure with the test font, which is about twice as wide, so every other
 gate reads the realised layout. The longest form message, `PenFormMaskInvalid`, measured 476.6 px in English
 and 480.3 px in Russian on one line on 2026-09-30, so it wraps into the second reserved line; the wrapped

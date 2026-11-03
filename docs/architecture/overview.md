@@ -544,13 +544,17 @@ description. Each comparer orders by its column's key and then by `Pen.Id`, text
 `StringComparer.CurrentCultureIgnoreCase`, and a descending sort reverses the whole order, the tie-break
 included. A refresh clears and refills the collection with no `DeferRefresh` (the view throws on a change
 inside a deferral), the view places each added row at its sorted position, so the sort and its arrow
-survive, and the refresh then sets `SelectedRow` to the pen selected before. `PenGroupsViewModel` takes the
+survive, and the refresh then sets `SelectedRow` to the pen selected before. A refresh of N pens raises N
+inserts into the view, each placed at its sorted position, rather than one reset. `PenGroupsViewModel` takes the
 row array the refresh builds, so the memberships stay in catalogue order whatever the list's sort.
 
 The list's `SelectedItem` binds `SelectedRow` one way, and `OnPenListSelectionChanged` in the code-behind
-writes `SelectedRow` only for a non-null `SelectedItem`: a sort resets the grid's rows, which clears its
-selection before it restores it, and a null written back would rebuild the form and drop its drafts. So a
-sort keeps the selected pen and its form, and the list follows a selection the view model writes.
+writes every selection change back to `SelectedRow`, null included. A sort raises no selection change in
+Avalonia 12.0.1, so it keeps the selected pen and its form
+(`PenEditorViewTests.AHeaderClick_SortsAscendingThenDescendingAndKeepsTheSelectedPenAndItsForm`). The
+refresh's `Clear()` raises one null, which the refresh overwrites with the pen selected before. A Ctrl+click
+on the selected row clears the selection, and the pane shows the hint
+(`ANameTypedThenTheSelectedRowCtrlClicked_WritesOnceAndShowsTheHint`).
 
 #### Where the view model is built
 
@@ -604,7 +608,7 @@ There is no save button.
   is the last name, and any queued name is a later write. The two share only the append and the removal
   of the settled entry, and a common type would take both differences as parameters.
 - The scale pair writes only when focus leaves the pair, so tabbing from the minimum to the maximum
-  writes no half pair; both bounds go in one statement. The log scale checkbox sits under the pair but
+  writes no half pair; both bounds go in one statement. The scale type box sits under the pair but
   outside its focus scope, so a click on it ends the pair's edit first, and the flag's rule, a minimum
   above zero, reads the minimum just typed.
 - The line-style combo box and the two start checkboxes write only a value that differs from the draft,
@@ -638,6 +642,8 @@ list's `DataGrid` is focusable and takes the focus on a left press anywhere insi
 the empty area below the rows, so the field's `LostFocus` ends the edit; the handler has no branch of its own
 for the list (`PenEditorViewTests.ANameTypedThenAnotherRowClicked_WritesToThePenTheFieldShowed`,
 `ANameTypedThenAColumnHeaderClicked_WritesOnce`, `ANameTypedThenThePenListsEmptyAreaClicked_WritesOnce`).
+A right or middle press on the pen list ends no edit: the grid is a focusable ancestor, so the handler passes
+it, and `FocusManager` moves the focus on a left press only.
 The group list, its scroll bar and its empty area below the rows take no focus in Avalonia 12.0.5, so a
 press there ends the edit as a press on a label does. `FocusManager` moves the focus only on a left press, while the handler clears it on any
 button, so a right or middle press on a label or an empty area ends the edit too. Closing the window drains: `Closing` is cancelled until the recorded edits have ended and the queue is

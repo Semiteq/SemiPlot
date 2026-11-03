@@ -123,7 +123,6 @@
                                 <DataGridTemplateColumn Header="{x:Static text:Resources.PenEditorColumnId}"
                                                         Width="84"
                                                         CanUserSort="True"
-                                                        CanUserResize="True"
                                                         CustomSortComparer="{x:Static local:PenRowOrder.ById}">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate x:DataType="local:PenRowViewModel">
@@ -138,7 +137,6 @@
                                 <DataGridTemplateColumn Header="{x:Static text:Resources.PenEditorColumnName}"
                                                         Width="220"
                                                         CanUserSort="True"
-                                                        CanUserResize="True"
                                                         CustomSortComparer="{x:Static local:PenRowOrder.ByName}">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate x:DataType="local:PenRowViewModel">
@@ -175,7 +173,6 @@
                                 <DataGridTemplateColumn Header="{x:Static text:Resources.PenEditorColumnUnit}"
                                                         Width="96"
                                                         CanUserSort="True"
-                                                        CanUserResize="True"
                                                         CustomSortComparer="{x:Static local:PenRowOrder.ByUnit}">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate x:DataType="local:PenRowViewModel">
@@ -190,7 +187,6 @@
                                 <DataGridTemplateColumn Header="{x:Static text:Resources.PenEditorColumnOnStart}"
                                                         Width="120"
                                                         CanUserSort="True"
-                                                        CanUserResize="True"
                                                         CustomSortComparer="{x:Static local:PenRowOrder.ByEnabledOnStart}">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate x:DataType="local:PenRowViewModel">
@@ -208,7 +204,6 @@
                                 <DataGridTemplateColumn Header="{x:Static text:Resources.PenEditorColumnGroups}"
                                                         Width="96"
                                                         CanUserSort="True"
-                                                        CanUserResize="True"
                                                         CustomSortComparer="{x:Static local:PenRowOrder.ByGroups}"
                                                         tables:HeaderMeasuredColumns.IsFill="True">
                                     <DataGridTemplateColumn.CellTemplate>

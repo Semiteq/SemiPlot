@@ -906,16 +906,17 @@ Height of the form, from the AXAML: title 24; three section headers at 16 + 20 +
       grid taking the focus or, when Task 4 added it, through the handler's rows-presenter branch
 - [x] run the key gate under Acceptance Evidence over `-- SemiPlot docs/architecture`: it prints
       nothing; no rewritten paragraph names a deleted or renamed key
-- [x] move this plan to `docs/plans/completed/` (left to the delivery step)
+- [ ] move this plan to `docs/plans/completed/` (left to the delivery step)
 - ⚠️ the docs describe the selection route as built: `SelectedItem` binds one way and
-  `OnPenListSelectionChanged` writes `SelectedRow` only for a non-null item; the refresh refills the
+  `OnPenListSelectionChanged` writes every selection change to `SelectedRow`, null included (review fix:
+  a sort raises no selection change in 12.0.1, and a Ctrl+click deselect now shows the hint); the refresh refills the
   collection with no `DeferRefresh`; the grid takes the focus on any press inside it, so the window's
   tunnel handler has no rows-presenter branch; the window height stays 720
 - ⚠️ `testing-strategy.md#what-a-realised-view-test-owns` named the deleted `_isReorderingRows`; it names
   `OnPenListSelectionChanged` instead. The table rows of `ui-theme.md` that read "while no pen is selected"
   read "while a refresh runs", because the form is hidden with no pen selected
-- ⚠️ `PenEditorViewModel.SelectedRow`'s summary reads "Two-way from the pen list", which the one-way
-  binding contradicts; it is code, outside this documentation task
+- ⚠️ `PenEditorViewModel.SelectedRow`'s summary read "Two-way from the pen list", which the one-way
+  binding contradicts; the review fix rewrote it
 
 ## Post-Completion
 

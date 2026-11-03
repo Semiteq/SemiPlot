@@ -212,12 +212,11 @@ public partial class PenEditorWindow : Window
 		}
 	}
 
-	// A sort resets the grid's rows and it clears its selection before it restores it; a null would drop the form.
 	private void OnPenListSelectionChanged(object? sender, SelectionChangedEventArgs e)
 	{
-		if (PenList.SelectedItem is PenRowViewModel row && DataContext is PenEditorViewModel editor)
+		if (DataContext is PenEditorViewModel editor)
 		{
-			editor.SelectedRow = row;
+			editor.SelectedRow = PenList.SelectedItem as PenRowViewModel;
 		}
 	}
 

@@ -137,8 +137,8 @@ production window instead of repeating the 100 ms literal; the constant is the o
 A `*ViewTests` class asserts what only a realised view shows: a binding reaching a control, a gesture
 routed to a command, layout and size, focus and keyboard routing, and any outcome the code-behind itself
 decides (`PenEditorWindow`'s drain and `_textEdit` slot, `TrendChartView`'s axis repaint) and any outcome only
-a realised control can trigger (the pen list's transient null selection during a sort, which
-`PenEditorWindow.OnPenListSelectionChanged` keeps from reaching `SelectedRow`). An
+a realised control can trigger (the pen list's null selection after a Ctrl+click on the selected row, which
+`PenEditorWindow.OnPenListSelectionChanged` writes to `SelectedRow`). An
 outcome the view model decides is asserted in the view-model test; the view test drives
 one representative case of the binding.
 

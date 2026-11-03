@@ -281,6 +281,7 @@ public sealed class ThemeTests
 			SelectionOf(selectedRow).Should().Be((Color.Parse(Accent), 0.25), "a selected row");
 
 			PointAt(window, selectedRow);
+			selectedRow.Classes.Should().Contain(":pointerover", "the pointer rests on the selected row");
 			SelectionOf(selectedRow).Should().Be((Color.Parse(Accent), 0.25), "a hovered selected row");
 		}
 		finally

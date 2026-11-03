@@ -69,4 +69,15 @@ internal static class ViewProbe
 	{
 		return TopOf(control, ancestor) + control.Bounds.Height;
 	}
+
+	/// <summary>The control's desired width with no constraint, rounded up, and the window laid out again.</summary>
+	public static double UnconstrainedWidthOf(Window window, Control control)
+	{
+		control.Measure(Size.Infinity);
+		var width = Math.Ceiling(control.DesiredSize.Width);
+		control.InvalidateMeasure();
+		window.UpdateLayout();
+
+		return width;
+	}
 }

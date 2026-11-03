@@ -307,6 +307,129 @@ public sealed class PenEditorViewModelTests : IDisposable
 	}
 
 	[AvaloniaFact]
+	public void AFilterText_ShowsOnlyTheMatchingRowsAndAClearedTextShowsEveryRow()
+	{
+		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+
+		editor.FilterText = "chamber";
+
+		RowsOf(editor).Select(row => row.Pen).Should().Equal(Argon, Pressure);
+		editor.PenRows.Count.Should().Be(2);
+
+		editor.FilterText = string.Empty;
+
+		RowsOf(editor).Select(row => row.Pen).Should().Equal(Argon, Pressure, Power);
+		editor.PenRows.Count.Should().Be(3);
+		_editor.Calls.Should().BeEmpty();
+	}
+
+	[AvaloniaFact]
+	public void AFilter_KeepsTheSortOrder()
+	{
+		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+		editor.PenRows.SortDescriptions.Add(
+			DataGridSortDescription.FromComparer(PenRowOrder.ById, ListSortDirection.Descending));
+
+		editor.FilterText = "chamber";
+
+		RowsOf(editor).Select(row => row.Pen.Id).Should().Equal(7, 3);
+	}
+
+	[AvaloniaFact]
+	public void AFilterTheSelectedRowStillMatches_KeepsTheSelectionAndItsForm()
+	{
+		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+		var pressure = RowsOf(editor)[1];
+		editor.SelectedRow = pressure;
+		var form = editor.SelectedForm;
+
+		editor.FilterText = "press";
+
+		editor.SelectedRow.Should().BeSameAs(pressure);
+		editor.SelectedForm.Should().BeSameAs(form);
+	}
+
+	[AvaloniaFact]
+	public void AFilterTheSelectedRowNoLongerMatches_ClearsTheSelectionAndAClearedTextRestoresNone()
+	{
+		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+		editor.SelectedRow = RowsOf(editor)[2];
+
+		editor.FilterText = "chamber";
+
+		editor.SelectedRow.Should().BeNull();
+		editor.SelectedForm.Should().BeNull();
+
+		editor.FilterText = string.Empty;
+
+		RowsOf(editor).Select(row => row.Pen).Should().Contain(Power);
+		editor.SelectedRow.Should().BeNull();
+	}
+
+	[AvaloniaFact]
+	public async Task ARefreshWhileFiltered_ShowsOnlyTheMatchingRowsAndKeepsTheText()
+	{
+		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+		editor.PenRows.SortDescriptions.Add(
+			DataGridSortDescription.FromComparer(PenRowOrder.ById, ListSortDirection.Descending));
+		editor.FilterText = "4";
+		_editor.ReadResult = Result.Ok(
+			new PenCatalogue([Argon, Pressure, Power, _registered, NumberedPen(14)], [Chamber, Gas]));
+
+		await editor.RefreshCommand.Execute();
+
+		RowsOf(editor).Select(row => row.Pen.Id).Should().Equal(4242, 14);
+		editor.FilterText.Should().Be("4");
+	}
+
+	[AvaloniaFact]
+	public async Task ARefreshThatMakesTheSelectedPenStopMatching_ClearsTheSelection()
+	{
+		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+		editor.FilterText = "chamber";
+		editor.SelectedRow = RowsOf(editor)[1];
+		var renamed = Pressure with { Name = "Gauge" };
+		_editor.ReadResult = Result.Ok(
+			new PenCatalogue([Argon, renamed, Power], [Chamber with { MemberPenIds = [3] }, Gas]));
+
+		await editor.RefreshCommand.Execute();
+
+		editor.SelectedRow.Should().BeNull();
+		editor.SelectedForm.Should().BeNull();
+	}
+
+	[AvaloniaFact]
+	public async Task AMembershipChangeThatStopsTheSelectedRowMatching_KeepsTheRowShownAndSelected()
+	{
+		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+		editor.FilterText = "gas";
+		var argon = RowsOf(editor).Single();
+		editor.SelectedRow = argon;
+		var gas = editor.Groups.Groups[1];
+
+		await gas.Membership!.ToggleMembershipCommand.Execute();
+
+		argon.GroupsText.Should().Be("Chamber");
+		RowsOf(editor).Should().Equal(argon);
+		editor.SelectedRow.Should().BeSameAs(argon);
+	}
+
+	[AvaloniaFact]
+	public void AFilter_LeavesTheGroupsPaneWhole()
+	{
+		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+		var power = RowsOf(editor)[2];
+		editor.SelectedRow = power;
+		var groups = editor.Groups;
+
+		editor.FilterText = "power";
+
+		editor.Groups.Should().BeSameAs(groups);
+		groups.Groups.Select(group => group.Group.Name).Should().Equal("Chamber", "Gas");
+		groups.Groups.Should().OnlyContain(group => group.Membership!.Row == power);
+	}
+
+	[AvaloniaFact]
 	public void ReportFailure_AddsOneMessagePanelEntry()
 	{
 		using var editor = _editor.EditorOver(_catalogue, _messagePanel);

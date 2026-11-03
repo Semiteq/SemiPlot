@@ -424,26 +424,26 @@ sentence, so the box and the header use one term per concept.
 - Modify: `SemiPlot/SemiPlot.UI/PenEditor/PenEditorViewModel.cs`
 - Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/PenEditor/PenEditorViewModelTests.cs`
 
-- [ ] write the failing `AFilterText_ShowsOnlyTheMatchingRowsAndAClearedTextShowsEveryRow` (`"chamber"` ->
+- [x] write the failing `AFilterText_ShowsOnlyTheMatchingRowsAndAClearedTextShowsEveryRow` (`"chamber"` ->
       Argon and Pressure; `""` -> all three in catalogue order; `PenRows.Count` equals the rows shown;
       `_editor.Calls` stays empty) and `AFilter_KeepsTheSortOrder` (a descending `PenRowOrder.ById` sort, then
       `"chamber"` -> ids 7, 3) (red: `FilterText` does not exist)
-- [ ] write the failing `AFilterTheSelectedRowStillMatches_KeepsTheSelectionAndItsForm` (Pressure selected,
+- [x] write the failing `AFilterTheSelectedRowStillMatches_KeepsTheSelectionAndItsForm` (Pressure selected,
       `"press"`: the same `SelectedRow` and `SelectedForm` instances) and
       `AFilterTheSelectedRowNoLongerMatches_ClearsTheSelectionAndAClearedTextRestoresNone` (Power selected,
       `"chamber"`: `SelectedRow` and `SelectedForm` null; then `""`: Power shown, `SelectedRow` still null)
-- [ ] write the failing `ARefreshWhileFiltered_ShowsOnlyTheMatchingRowsAndKeepsTheText` (a descending id sort,
+- [x] write the failing `ARefreshWhileFiltered_ShowsOnlyTheMatchingRowsAndKeepsTheText` (a descending id sort,
       `"4"`, a read adding `NumberedPen(4242)` and `NumberedPen(14)`: shown ids 4242, 14; `FilterText` still
       `"4"`) and `ARefreshThatMakesTheSelectedPenStopMatching_ClearsTheSelection` (`"chamber"`, Pressure
       selected, a read where Pressure is named "Gauge" and no group holds it: `SelectedRow` null)
-- [ ] write the failing `AMembershipChangeThatStopsTheSelectedRowMatching_KeepsTheRowShownAndSelected`
+- [x] write the failing `AMembershipChangeThatStopsTheSelectedRowMatching_KeepsTheRowShownAndSelected`
       (`"gas"`, Argon selected, `await gas.Membership!.ToggleMembershipCommand.Execute()` on Gas (`editor.Groups.Groups[1]`) succeeds: Argon's
       `GroupsText` is "Chamber", it is still the one row shown and still `SelectedRow`) and
       `AFilter_LeavesTheGroupsPaneWhole` (Power selected, `"power"`: `Groups` is the same instance, it lists
       Chamber and Gas, and each group's `Membership.Row` is Power's row)
-- [ ] add `FilterText`, the constructor's `Filter`, `ShowRowsMatchingFilter` and the refresh's restore rule as
+- [x] add `FilterText`, the constructor's `Filter`, `ShowRowsMatchingFilter` and the refresh's restore rule as
       Technical Details states
-- [ ] run `PenEditorViewModelTests`, `PenGroupsViewModelTests` and `PenRowFilterTests`: every case passes
+- [x] run `PenEditorViewModelTests`, `PenGroupsViewModelTests` and `PenRowFilterTests`: every case passes
 
 ### Task 3: Add the filter box to the top bar, tests first
 

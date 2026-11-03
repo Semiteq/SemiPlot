@@ -48,7 +48,10 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 
 		var rows = RowsOf(catalogue);
 		_rows = [.. rows];
-		PenRows = new DataGridCollectionView(_rows);
+		PenRows = new DataGridCollectionView(_rows)
+		{
+			Filter = row => row is PenRowViewModel penRow && PenRowFilter.Matches(penRow, FilterText),
+		};
 		Groups = GroupsOf(rows, catalogue.Groups);
 
 		_selectedForm = this.WhenAnyValue(editor => editor.SelectedRow)
@@ -66,6 +69,22 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 
 	/// <summary>The one view the pen list sorts; a refresh replaces its rows and keeps its sort.</summary>
 	public DataGridCollectionView PenRows { get; }
+
+	/// <summary>
+	/// The pen list shows the rows <see cref="PenRowFilter"/> matches against it; the filter box writes it.
+	/// </summary>
+	public string FilterText
+	{
+		get;
+		set
+		{
+			if (field != value)
+			{
+				this.RaiseAndSetIfChanged(ref field, value);
+				ShowRowsMatchingFilter();
+			}
+		}
+	} = string.Empty;
 
 	/// <summary>Set by each pen list selection change and by the refresh; the list binds it one way.</summary>
 	public PenRowViewModel? SelectedRow
@@ -130,6 +149,17 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 			form => Observable.Return<PenFormViewModel?>(form).Concat(Observable.Never<PenFormViewModel?>()));
 	}
 
+	// The clear runs ahead of the refresh, so the grid drops its current row before the view is re-created.
+	private void ShowRowsMatchingFilter()
+	{
+		if (SelectedRow is not null && !PenRowFilter.Matches(SelectedRow, FilterText))
+		{
+			SelectedRow = null;
+		}
+
+		PenRows.Refresh();
+	}
+
 	private async Task RefreshAsync()
 	{
 		var registered = await _archiveCallQueue.RunAsync(_penCatalogueEditor.RegisterNewPensAsync);
@@ -162,7 +192,7 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 		}
 
 		replacedGroups.Dispose();
-		SelectedRow = rows.FirstOrDefault(row => row.Pen.Id == selectedPenId);
+		SelectedRow = rows.FirstOrDefault(row => row.Pen.Id == selectedPenId && PenRowFilter.Matches(row, FilterText));
 		Groups = GroupsOf(rows, read.Value.Groups);
 	}
 

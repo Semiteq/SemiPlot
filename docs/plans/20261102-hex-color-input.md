@@ -260,10 +260,10 @@ The existing cases of the three time layouts and the view tests at `PenEditorVie
 
 ### Task 4: Verify acceptance criteria
 
-- [ ] run the command under Acceptance Evidence: 0 failed, every test named under Acceptance Evidence present
-- [ ] run `dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj`: 0 failed
-- [ ] run `dotnet build SemiPlot.slnx`: 0 warnings, 0 errors
-- [ ] run `dotnet format SemiPlot.slnx --verify-no-changes`, then `dotnet tool restore; dotnet terse SemiPlot/SemiPlot.UI/Input/FormattedFieldInput.cs SemiPlot/SemiPlot.UI/PenEditor/PenColorConverters.cs SemiPlot/SemiPlot.Tests.Unit/UI/HeadlessInput.cs SemiPlot/SemiPlot.Tests.Unit/UI/Input/FormattedFieldInputTests.cs SemiPlot/SemiPlot.Tests.Unit/UI/PenEditor/PenEditorViewTests.cs`: both exit 0
+- [x] run the command under Acceptance Evidence: 0 failed, every test named under Acceptance Evidence present
+- [x] run `dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj`: 0 failed
+- [x] run `dotnet build SemiPlot.slnx`: 0 warnings, 0 errors (0 errors; the only warnings are the 2 pre-existing NU1902 for MessagePack 2.5.302 in `SemiPlot.AppHost`, a project this branch does not touch)
+- [x] run `dotnet format SemiPlot.slnx --verify-no-changes`, then `dotnet tool restore; dotnet terse SemiPlot/SemiPlot.UI/Input/FormattedFieldInput.cs SemiPlot/SemiPlot.UI/PenEditor/PenColorConverters.cs SemiPlot/SemiPlot.Tests.Unit/UI/HeadlessInput.cs SemiPlot/SemiPlot.Tests.Unit/UI/Input/FormattedFieldInputTests.cs SemiPlot/SemiPlot.Tests.Unit/UI/PenEditor/PenEditorViewTests.cs`: both exit 0
 
 ### Task 5: [Final] Update documentation
 

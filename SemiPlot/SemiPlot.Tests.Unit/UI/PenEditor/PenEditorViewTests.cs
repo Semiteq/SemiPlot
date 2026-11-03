@@ -26,8 +26,8 @@ using static SemiPlot.Tests.Unit.UI.ViewProbe;
 namespace SemiPlot.Tests.Unit.UI.PenEditor;
 
 /// <summary>
-/// The editor window and its pens tab as the operator drives them: values read off realised controls, input
-/// clicked.
+/// The editor window's pen list and pen pane as the operator drives them: values read off realised controls,
+/// input clicked.
 /// </summary>
 [Collection(ProcessGlobalStateCollection.Name)]
 [Trait("Component", "UI")]
@@ -44,43 +44,6 @@ public sealed class PenEditorViewTests : IDisposable
 	public void Dispose()
 	{
 		_messagePanel.Dispose();
-	}
-
-	[AvaloniaFact]
-	public void TheBottomBar_StandsOnBothTabsRightAlignedAndTheVisibilityColumnReadsOnStart()
-	{
-		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			var refresh = Named<Button>(window, "PenEditorRefreshButton");
-			var addedCount = Named<TextBlock>(window, "PenEditorAddedCount");
-			var tabs = Named<TabControl>(window, "PenEditorTabs");
-			var groupsTab = Named<TabItem>(window, "GroupsTab");
-			_editor.RegisterResult = Result.Ok(2);
-			_editor.ReadResult = Result.Ok(ViewCatalogue);
-
-			HeadlessInput.Click(window, refresh);
-
-			addedCount.Text.Should().Be(Resources.FormatPenEditorAddedCount(2));
-			refresh.Content.Should().Be(Resources.PenEditorRefresh, "the button names what it refreshes");
-			IsOnScreen(refresh).Should().BeTrue("the refresh button stands on the pens tab");
-			IsOnScreen(addedCount).Should().BeTrue("the added count stands on the pens tab");
-			RightOf(refresh, window).Should().Be(RightOf(tabs, window), "the bar is right-aligned");
-			RightOf(addedCount, window).Should().BeLessThan(LeftOf(refresh, window), "the count sits left of Refresh");
-			PenListOf(window).Columns[3].Header.Should().Be(Resources.PenEditorColumnOnStart);
-
-			HeadlessInput.Click(window, groupsTab);
-
-			tabs.SelectedItem.Should().BeSameAs(groupsTab, "a click on the tab header switches to it");
-			IsOnScreen(refresh).Should().BeTrue("the refresh button stands on the groups tab too");
-			IsOnScreen(addedCount).Should().BeTrue("the added count stands on the groups tab too");
-			IsOnScreen(PenListOf(window)).Should().BeFalse("the pens tab gave way");
-		}
-		finally
-		{
-			Close(window);
-		}
 	}
 
 	[AvaloniaFact]
@@ -612,9 +575,8 @@ public sealed class PenEditorViewTests : IDisposable
 			HeadlessInput.Click(window, Named<Button>(window, "PenEditorRefreshButton"));
 
 			TextOf(RowAt(window, 3), "RowName").Should().Be(registered.Name);
+			ScrollColumnIntoView(window, Resources.PenEditorColumnGroups);
 			TextOf(RowAt(window, 3), "RowGroups").Should().Be(vacuum.Name);
-
-			OpenGroupsTab(window);
 
 			viewModel.Groups.Should().NotBeSameAs(groupsBefore);
 			GroupListOf(window).ItemsSource.Should().BeSameAs(viewModel.Groups.Groups);

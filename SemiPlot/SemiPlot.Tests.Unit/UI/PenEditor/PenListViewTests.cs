@@ -170,6 +170,7 @@ public sealed class PenListViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
+			ScrollColumnIntoView(window, headerText);
 			HeadlessInput.Click(window, HeaderOf(window, headerText));
 
 			RealisedPens(PenListOf(window)).Select(pen => pen.Id).Should().Equal(ascendingIds);

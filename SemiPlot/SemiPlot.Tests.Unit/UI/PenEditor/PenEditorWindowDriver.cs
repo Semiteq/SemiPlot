@@ -75,15 +75,13 @@ internal static class PenEditorWindowDriver
 		return ViewProbe.HeaderOf(PenListOf(window), header);
 	}
 
-	public static void OpenGroupsTab(PenEditorWindow window)
+	/// <summary>Scrolls the pen list to the column, which the test font's wider headers can push past the viewport.</summary>
+	public static void ScrollColumnIntoView(PenEditorWindow window, string header)
 	{
-		HeadlessInput.Click(window, ViewProbe.Named<TabItem>(window, "GroupsTab"));
-	}
-
-	public static Control GroupAt(PenEditorWindow window, int index)
-	{
-		return ViewProbe.Named<ListBox>(window, "GroupList").ContainerFromIndex(index)
-			?? throw new InvalidOperationException($"The group list realised no row {index}.");
+		var list = PenListOf(window);
+		var items = list.ItemsSource ?? throw new InvalidOperationException("The pen list binds no items.");
+		list.ScrollIntoView(items.Cast<object>().First(), list.Columns.Single(column => Equals(column.Header, header)));
+		Dispatcher.UIThread.RunJobs();
 	}
 
 	public static string? TextOf(Control row, string name)

@@ -202,39 +202,28 @@ public sealed class ThemeTests
 		}
 	}
 
-	// The pen editor's tabs and table, read back off realised controls in each state the window reaches:
+	// The export window's pen list, read back off realised rows in each state the window reaches:
 	// docs/architecture/ui-theme.md, How the retint reaches a control.
 	[AvaloniaTheory]
-	[InlineData(AppThemeVariant.Light, "#000000", "#818594", "#EBECF0")]
-	[InlineData(AppThemeVariant.Dark, "#DFE1E5", "#6F737A", "#393B40")]
-	public void EveryTabAndListSurface_PaintsItselfFromThePalette(
-		AppThemeVariant theme, string text, string secondaryText, string border)
+	[InlineData(AppThemeVariant.Light, "#000000")]
+	[InlineData(AppThemeVariant.Dark, "#DFE1E5")]
+	public void EveryListSurface_PaintsItselfFromThePalette(AppThemeVariant theme, string text)
 	{
 		using var scope = ThemeProbe.ApplyVariant(App.VariantFor(theme));
 		Dispatcher.UIThread.RunJobs();
 
-		var selectedTab = new TabItem { Header = "selected", Content = new TextBlock { Text = "content" } };
-		var otherTab = new TabItem { Header = "other" };
-		var tabs = new TabControl { ItemsSource = new[] { selectedTab, otherTab } };
 		var list = new ListBox { ItemsSource = new[] { "selected", "hovered", "pressed" }, SelectedIndex = 0 };
-		var window = new Window { Content = Stacked(tabs, list) };
+		var window = new Window { Content = Stacked(list) };
 		try
 		{
 			window.Show();
 			Dispatcher.UIThread.RunJobs();
 			var selectedRow = list.ContainerFromIndex(0).Should().BeOfType<ListBoxItem>().Subject;
 
-			ColourOf(TextOf(selectedTab)).Should().Be(Color.Parse(text), "the selected tab's caption");
-			ColourOf(TextOf(otherTab)).Should().Be(Color.Parse(secondaryText), "a tab at rest");
-			ColourOf(NamedBorder(selectedTab, "PART_RootBorder").BorderBrush).Should().Be(Color.Parse(Accent));
-			ColourOf(NamedBorder(tabs, "PART_BorderSeparator").Background).Should().Be(Color.Parse(border));
 			ColourOf(TextOf(selectedRow)).Should().Be(Color.Parse(text), "the selected row");
 			var selection = selectedRow.Background.Should().BeAssignableTo<ISolidColorBrush>().Subject;
 			selection.Color.Should().Be(Color.Parse(Accent));
 			selection.Opacity.Should().Be(0.25);
-
-			PointAt(window, otherTab);
-			ColourOf(TextOf(otherTab)).Should().Be(Color.Parse(text), "a hovered tab");
 
 			PointAt(window, list.ContainerFromIndex(1)!);
 			ColourOf(TextOf(list.ContainerFromIndex(1)!)).Should().Be(Color.Parse(text), "a hovered row");

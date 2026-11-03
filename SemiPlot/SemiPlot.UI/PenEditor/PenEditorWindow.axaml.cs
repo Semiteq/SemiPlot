@@ -19,6 +19,11 @@ public partial class PenEditorWindow : Window
 	/// <summary>One height for a pen, group and membership row, so each virtualised list estimates its extent.</summary>
 	public const double RowHeight = 28;
 
+	public const double DesignedWidth = 1440;
+
+	/// <summary>The pen list's first three columns beside both panes at their widths.</summary>
+	public const double MinimumWidth = 1272;
+
 	public static readonly IReadOnlyList<PenLineStyle> LineStyles = Enum.GetValues<PenLineStyle>();
 
 	/// <summary>The pen form field a text box edits, for a box that ends its edit on its own.</summary>

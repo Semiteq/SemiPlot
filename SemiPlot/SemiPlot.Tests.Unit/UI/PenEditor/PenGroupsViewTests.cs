@@ -53,8 +53,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			OpenGroupsTab(window);
-
 			var boxes = Descendants<CheckBox>(GroupListOf(window)).Where(box => box.Name == "MembershipBox").ToList();
 
 			boxes.Should().HaveCount(2);
@@ -85,8 +83,6 @@ public sealed class PenGroupsViewTests : IDisposable
 
 			_editor.Calls.Should().Equal(new FakeEditorCall.SetMembership(Power, Chamber, true));
 			box.IsChecked.Should().BeTrue();
-
-			HeadlessInput.Click(window, Named<TabItem>(window, "PensTab"));
 
 			TextOf(RowAt(window, 2), "RowGroups").Should().Be(Chamber.Name);
 		}
@@ -152,7 +148,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			OpenGroupsTab(window);
 			var row = GroupRowAt(window, 0);
 			var name = Descendant<TextBlock>(row, "GroupName");
 			var count = Descendant<TextBlock>(row, "GroupMemberCount");
@@ -181,7 +176,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			OpenGroupsTab(window);
 			var list = GroupListOf(window);
 
 			HeadlessInput.Click(window, Descendant<TextBlock>(GroupRowAt(window, 0), "GroupName"));
@@ -211,7 +205,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			OpenGroupsTab(window);
 			var header = HeaderOf(GroupListOf(window), Resources.PenGroupsColumnGroup);
 
 			HeadlessInput.Click(window, header);
@@ -235,7 +228,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			OpenGroupsTab(window);
 			var list = GroupListOf(window);
 			var headers = Descendants<DataGridColumnHeader>(list).ToList();
 
@@ -263,7 +255,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			OpenGroupsTab(window);
 			var button = Descendant<Button>(GroupRowAt(window, 0), "GroupActionsButton");
 			ToolTip.GetTip(button).Should().Be(Resources.PenGroupsActionsTip);
 
@@ -291,8 +282,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			OpenGroupsTab(window);
-
 			PickGroupMenuItem(window, 1, "GroupFoldItem");
 
 			_editor.Calls.Should().Equal(new FakeEditorCall.SetFoldedOnStart(Spare, true));
@@ -315,8 +304,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			OpenGroupsTab(window);
-
 			PickGroupMenuItem(window, 0, "GroupFoldItem");
 
 			_editor.Calls.Should().ContainSingle();
@@ -337,7 +324,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			OpenGroupsTab(window);
 			var chamber = viewModel.Groups.Groups[0];
 			var item = FoldItemOf(OpenMenu(window, 0));
 
@@ -367,7 +353,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			OpenGroupsTab(window);
 			var rename = Named<TextBox>(window, "GroupRename");
 
 			PickGroupMenuItem(window, 1, "GroupRenameItem");
@@ -391,7 +376,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			OpenGroupsTab(window);
 			PickGroupMenuItem(window, 0, "GroupRenameItem");
 			Retype(window, Named<TextBox>(window, "GroupRename"), "Chamber A");
 
@@ -414,7 +398,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			OpenGroupsTab(window);
 			PickGroupMenuItem(window, 0, "GroupRenameItem");
 			var rename = Named<TextBox>(window, "GroupRename");
 			HeadlessInput.Clear(window, rename);
@@ -443,7 +426,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			OpenGroupsTab(window);
 			PickGroupMenuItem(window, 0, "GroupRenameItem");
 			Retype(window, Named<TextBox>(window, "GroupRename"), Spare.Name);
 			var write = _editor.HoldNextCall();
@@ -471,7 +453,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			OpenGroupsTab(window);
 			PickGroupMenuItem(window, 0, "GroupRenameItem");
 			Retype(window, Named<TextBox>(window, "GroupRename"), "Chamber A");
 
@@ -494,7 +475,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			OpenGroupsTab(window);
 			PickGroupMenuItem(window, 0, "GroupRenameItem");
 			var rename = Named<TextBox>(window, "GroupRename");
 			var message = Named<TextBlock>(window, "GroupsMessage");
@@ -521,7 +501,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			OpenGroupsTab(window);
 			PickGroupMenuItem(window, 0, "GroupRenameItem");
 			Retype(window, Named<TextBox>(window, "GroupRename"), "Chamber A");
 			var write = _editor.HoldNextCall();
@@ -549,7 +528,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			OpenGroupsTab(window);
 			PickGroupMenuItem(window, 0, "GroupRenameItem");
 			var rename = Named<TextBox>(window, "GroupRename");
 			var registration = _editor.HoldNextCall();
@@ -578,7 +556,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			OpenGroupsTab(window);
 			var block = Named<StackPanel>(window, "GroupDeletionBlock");
 			var confirm = Named<Button>(window, "ConfirmDeleteButton");
 			IsOnScreen(confirm).Should().BeFalse("nothing asks before delete is chosen");
@@ -610,7 +587,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			OpenGroupsTab(window);
 			PickGroupMenuItem(window, 0, "GroupDeleteItem");
 
 			HeadlessInput.Click(window, Named<Button>(window, "ConfirmDeleteButton"));
@@ -618,8 +594,6 @@ public sealed class PenGroupsViewTests : IDisposable
 			_editor.Calls.Should().Equal(new FakeEditorCall.DeleteGroup(Chamber));
 			RealisedGroupNames(window).Should().Equal(Spare.Name);
 			Named<StackPanel>(window, "GroupDeletionBlock").IsVisible.Should().BeFalse();
-
-			HeadlessInput.Click(window, Named<TabItem>(window, "PensTab"));
 
 			TextOf(RowAt(window, 0), "RowGroups").Should().BeEmpty("the deleted group leaves the pen list");
 			TextOf(RowAt(window, 1), "RowGroups").Should().BeEmpty();
@@ -637,7 +611,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			OpenGroupsTab(window);
 			var block = Named<Panel>(window, "GroupActionBlock");
 			var panel = Named<Border>(window, "GroupsPanel");
 			var blockBounds = block.Bounds;
@@ -685,7 +658,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			OpenGroupsTab(window);
 			var create = Named<Button>(window, "CreateGroupButton");
 			create.IsEffectivelyEnabled.Should().BeFalse("a blank name creates nothing");
 
@@ -713,8 +685,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			OpenGroupsTab(window);
-
 			RealisedRows(GroupListOf(window)).Count().Should().BePositive().And.BeLessThan(GroupCount);
 		}
 		finally
@@ -736,7 +706,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			OpenGroupsTab(window);
 			var list = GroupListOf(window);
 			Descendant<ScrollBar>(list, "PART_VerticalScrollbar").IsVisible.Should().BeTrue("40 groups scroll");
 			using var semiBold = InterTypeface("SemiBold");
@@ -772,7 +741,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			OpenGroupsTab(window);
 			PickGroupMenuItem(window, 0, "GroupDeleteItem");
 			var subtitle = Named<TextBlock>(window, "GroupsSubtitle");
 			var deletionCount = Named<TextBlock>(window, "GroupDeletionCount");
@@ -793,9 +761,7 @@ public sealed class PenGroupsViewTests : IDisposable
 
 	private static void SelectPen(PenEditorWindow window, int index)
 	{
-		HeadlessInput.Click(window, Named<TabItem>(window, "PensTab"));
 		HeadlessInput.Click(window, RowAt(window, index));
-		OpenGroupsTab(window);
 	}
 
 	private static CheckBox MembershipBoxAt(PenEditorWindow window, int index)

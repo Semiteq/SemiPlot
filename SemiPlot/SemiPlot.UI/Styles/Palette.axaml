@@ -41,11 +41,6 @@
             <SolidColorBrush x:Key="CheckBoxDefaultBorderBrush" Color="#EBECF0" />
             <SolidColorBrush x:Key="MenuItemSeparatorBackground" Color="#EBECF0" />
 
-            <SolidColorBrush x:Key="TabItemLineHeaderForeground" Color="#818594" />
-            <SolidColorBrush x:Key="TabItemLineHeaderPointeroverForeground" Color="#000000" />
-            <SolidColorBrush x:Key="TabItemLineHeaderSelectedForeground" Color="#000000" />
-            <SolidColorBrush x:Key="TabItemLinePipeSelectedBackground" Color="#3574F0" />
-            <SolidColorBrush x:Key="TabControlSeparatorBorderBrush" Color="#EBECF0" />
             <SolidColorBrush x:Key="ListBoxItemPointeroverForeground" Color="#000000" />
             <SolidColorBrush x:Key="ListBoxItemPressedForeground" Color="#000000" />
             <SolidColorBrush x:Key="ListBoxItemSelectedForeground" Color="#000000" />
@@ -136,11 +131,6 @@
             <SolidColorBrush x:Key="CheckBoxDefaultBorderBrush" Color="#393B40" />
             <SolidColorBrush x:Key="MenuItemSeparatorBackground" Color="#393B40" />
 
-            <SolidColorBrush x:Key="TabItemLineHeaderForeground" Color="#6F737A" />
-            <SolidColorBrush x:Key="TabItemLineHeaderPointeroverForeground" Color="#DFE1E5" />
-            <SolidColorBrush x:Key="TabItemLineHeaderSelectedForeground" Color="#DFE1E5" />
-            <SolidColorBrush x:Key="TabItemLinePipeSelectedBackground" Color="#3574F0" />
-            <SolidColorBrush x:Key="TabControlSeparatorBorderBrush" Color="#393B40" />
             <SolidColorBrush x:Key="ListBoxItemPointeroverForeground" Color="#DFE1E5" />
             <SolidColorBrush x:Key="ListBoxItemPressedForeground" Color="#DFE1E5" />
             <SolidColorBrush x:Key="ListBoxItemSelectedForeground" Color="#DFE1E5" />

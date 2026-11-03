@@ -865,41 +865,49 @@ pane.
 - Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/PenEditor/PenGroupsViewTests.cs`
 - Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/PenEditor/PenEditorWindowDriver.cs`
 - Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/ThemeTests.cs`
+- ➕ Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/PenEditor/PenListViewTests.cs` (the Groups sort case scrolls its column in)
 
-- [ ] create `PenEditorLayoutViewTests` (the three traits, `ProcessGlobalStateCollection`) and write the
+- [x] create `PenEditorLayoutViewTests` (the three traits, `ProcessGlobalStateCollection`) and write the
       failing `TheWindow_ShowsThePenListThePenPaneAndTheGroupsPaneSideBySide`: no `TabControl` among the
       window's visual descendants; the pen list's border, `PenFormPanel` and `GroupsPanel` share one top,
       stand left to right 16 px apart, the panes 420 and 340 px wide; the list's border starts 16 px from the
       window's left edge, `GroupsPanel` ends 16 px from its right, and `PenEditorTopBar` sits 16 px above the
       three
-- [ ] move and rewrite `TheBottomBar_StandsOnBothTabsRightAlignedAndTheVisibilityColumnReadsOnStart` as
+- [x] move and rewrite `TheBottomBar_StandsOnBothTabsRightAlignedAndTheVisibilityColumnReadsOnStart` as
       `TheTopBar_StandsAboveThePanesRightAlignedAndTheVisibilityColumnReadsOnStart`: after a refresh with two
       added pens, the count text, the button caption, the button's right edge on `GroupsPanel`'s right edge,
       the count left of the button by 8 px, both above the panes, and the On start column header
-- [ ] replace `TheWindow_OpensOnA1280PxScreenAndAtItsMinimumWidthKeepsThePaneAndEveryColumnMinimum` with
+- [x] replace `TheWindow_OpensOnA1280PxScreenAndAtItsMinimumWidthKeepsThePaneAndEveryColumnMinimum` with
       `AtTheMinimumWidth_BothPanesKeepTheirWidthAndThePenListScrolls` (opens at `DesignedWidth`; at
       `MinWidth` 1272 the panes are 420 and 340 px, every pen column's `ActualWidth >= MinWidth`, Id and Name
       lie inside the viewport, and the headers presenter's extent exceeds its bounds) and
       `ThePane_Stays420PxWideWhenTheWindowWidens` with `BothPanes_StayFixedWhenTheWindowWidens` (+300 px:
       both panes unchanged, the list 300 px wider); both move into `PenEditorLayoutViewTests` and the
       `PaneWidth` constant they read goes with them
-- [ ] in `PenEditorWindow.axaml` replace the `TabControl` and the bottom bar with the root grid of Technical
+- [x] in `PenEditorWindow.axaml` replace the `TabControl` and the bottom bar with the root grid of Technical
       Details: the top bar, then `*,16,Auto,16,Auto` holding the bordered `PenList`, `PenFormPanel` and
       `GroupsPanel`; `Width` and `MinWidth` from the two constants added to `PenEditorWindow.axaml.cs`
       (`DesignedWidth = 1440`, `MinimumWidth = 1272`); the root margin 16
-- [ ] delete `PenEditorPensTab` from both resx files; delete the five tab keys from both variants of
+- [x] delete `PenEditorPensTab` from both resx files; delete the five tab keys from both variants of
       `Palette.axaml`; rewrite `EveryTabAndListSurface_PaintsItselfFromThePalette` as
       `EveryListSurface_PaintsItselfFromThePalette` over the `ListBox` alone
-- [ ] delete `OpenGroupsTab` and `GroupAt` from the driver and every `OpenGroupsTab(window)` call; drop the
+- [x] delete `OpenGroupsTab` and `GroupAt` from the driver and every `OpenGroupsTab(window)` call; drop the
       `Pens` tab switch from the view tests that made one
-- [ ] sweep the `<summary>` lines of the `PenEditor` test files and view models for "tab" wording
+- [x] sweep the `<summary>` lines of the `PenEditor` test files and view models for "tab" wording
       (`PenEditorViewTests.cs:28-31` "its pens tab", `PenGroupsViewTests`' "the groups tab", the driver's
       "both tabs", `PenEditorViewModel`'s "the groups tab"): each names the pane it now covers;
       `git grep -n -i "tab\b" -- SemiPlot/SemiPlot.UI/PenEditor SemiPlot/SemiPlot.Tests.Unit/UI/PenEditor`
       prints no line that means an editor tab
-- [ ] run `PenEditorLayoutViewTests`, `PenEditorViewTests`, `PenListViewTests`, `PenFormPaneViewTests`
+- [x] run `PenEditorLayoutViewTests`, `PenEditorViewTests`, `PenListViewTests`, `PenFormPaneViewTests`
       (`AtTheOpeningSize_ThePaneShowsTheWholeForm` passes at 1440 x 720), `PenGroupsViewTests`, `ThemeTests`,
       `ResourcesTests`: every case passes
+- ⚠️ at the designed 1440 px the headless test font pushes the pen list's Groups column partly past the
+  viewport (at 220 px Name), so its header click misses and its cells are not realised; the driver gained
+  `ScrollColumnIntoView(window, header)`, which `EachHeaderClick_OrdersTheListByItsColumn` and
+  `ARefreshThatChangesTheCatalogue_RebindsThePenListAndTheGroupsPane` call before reading that column. The Name
+  width stays 220 px for Task 4
+- ⚠️ the new layout tests read `PenEditorWindow.DesignedWidth` and `MinimumWidth`, so the constants were added
+  first and the four tests seen red at run time (no `PenEditorTopBar`, width 1272, `GroupsPanel` 0 px wide)
 
 ### Task 4: Open at the designed width where the screen allows, and fix the minimum height
 

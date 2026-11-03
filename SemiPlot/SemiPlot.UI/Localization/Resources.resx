@@ -222,9 +222,6 @@
   <data name="PenEditorTitle" xml:space="preserve">
     <value>Pens and groups</value>
   </data>
-  <data name="PenEditorPensTab" xml:space="preserve">
-    <value>Pens</value>
-  </data>
   <data name="PenGroupsTitle" xml:space="preserve">
     <value>Groups</value>
   </data>

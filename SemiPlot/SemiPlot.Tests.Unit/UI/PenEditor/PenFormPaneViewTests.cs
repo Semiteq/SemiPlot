@@ -4,7 +4,6 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
-using Avalonia.Threading;
 
 using AwesomeAssertions;
 
@@ -22,15 +21,13 @@ using static SemiPlot.Tests.Unit.UI.ViewProbe;
 
 namespace SemiPlot.Tests.Unit.UI.PenEditor;
 
-/// <summary>The pen pane's layout: the empty hint, the form's sections, the field widths and the pane width.</summary>
+/// <summary>The pen pane's layout: the empty hint, the form's sections and the field widths.</summary>
 [Collection(ProcessGlobalStateCollection.Name)]
 [Trait("Component", "UI")]
 [Trait("Area", "Chart")]
 [Trait("Category", "Unit")]
 public sealed class PenFormPaneViewTests : IDisposable
 {
-	private const double PaneWidth = 420;
-
 	private const double LabelColumnWidth = 112;
 
 	private const double FormColumnSpacing = 12;
@@ -42,31 +39,6 @@ public sealed class PenFormPaneViewTests : IDisposable
 	public void Dispose()
 	{
 		_messagePanel.Dispose();
-	}
-
-	[AvaloniaFact]
-	public void TheWindow_OpensOnA1280PxScreenAndAtItsMinimumWidthKeepsThePaneAndEveryColumnMinimum()
-	{
-		const double SmallestScreenWidth = 1280;
-		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			window.Width.Should().BeLessThan(SmallestScreenWidth, "the window opens whole on a 1280 px screen");
-
-			window.Width = window.MinWidth;
-			Dispatcher.UIThread.RunJobs();
-
-			var list = PenListOf(window);
-			Named<Border>(window, "PenFormPanel").Bounds.Width.Should().Be(PaneWidth);
-			list.Columns.Should().AllSatisfy(column => column.ActualWidth.Should().BeGreaterThanOrEqualTo(column.MinWidth));
-			list.Columns.Sum(column => column.ActualWidth).Should()
-				.BeLessThanOrEqualTo(ViewportOf(list) + 0.5, "every column fits the list without scrolling");
-		}
-		finally
-		{
-			Close(window);
-		}
 	}
 
 	[AvaloniaFact]
@@ -194,30 +166,6 @@ public sealed class PenFormPaneViewTests : IDisposable
 			(LeftOf(picker, window) - RightOf(color, window)).Should().BeApproximately(8, 0.5);
 			Descendant<Control>(picker, "DropDownGlyph").IsEffectivelyVisible.Should()
 				.BeFalse("the picker is the swatch alone");
-		}
-		finally
-		{
-			Close(window);
-		}
-	}
-
-	[AvaloniaFact]
-	public void ThePane_Stays420PxWideWhenTheWindowWidens()
-	{
-		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			var pane = Named<Border>(window, "PenFormPanel");
-			var list = PenListOf(window);
-			var listWidth = list.Bounds.Width;
-			pane.Bounds.Width.Should().Be(PaneWidth);
-
-			window.Width += 300;
-			Dispatcher.UIThread.RunJobs();
-
-			pane.Bounds.Width.Should().Be(PaneWidth);
-			list.Bounds.Width.Should().BeApproximately(listWidth + 300, 0.5, "the list takes the width");
 		}
 		finally
 		{

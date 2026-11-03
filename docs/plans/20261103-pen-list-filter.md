@@ -177,6 +177,11 @@ It must report 0 failed. These named tests must be present and pass:
 - `PenEditorLayoutViewTests.AtTheMinimumHeight_EveryFixedRowShowsAndEachListShowsFourRows` (unchanged) — Task 3
 - `PenListViewTests.AHeaderClick_SortsAscendingThenDescendingAndKeepsTheSelectedPenAndItsForm` (unchanged) — Task 3
 - `ResourcesTests.TheRussianSet_CarriesEveryKeyTheNeutralSetCarries` (passes with the new key) — Task 3
+- `PenListViewTests.AHeaderClickAfterTheSelectedRowStoppedMatching_KeepsTheRowShownAndSelected` (➕, review
+  addition) — Task 3
+- `PenListViewTests.ARefreshThatMakesTheSelectedPenStopMatching_ClearsTheListSelectionAndShowsTheHint` (➕,
+  review addition) — Task 3
+- `PenRowFilterTests.TheMatch_FoldsCaseByTheCurrentCulture` (➕, review addition) — Task 1
 
 Gates, each run fresh:
 
@@ -204,12 +209,13 @@ Post-Completion cover them.
 ## Solution Overview
 
 - **The view model filters the one view the grid already sorts.** `PenRows` takes a `Filter` once, in the
-  constructor, as a predicate over the row and the current `FilterText`; a `FilterText` change calls
-  `PenRows.Refresh()`, which re-creates the view with its sort descriptions and its filter
+  constructor, as a lookup in `_matchingRows`, the set of rows that match the current `FilterText`; a
+  `FilterText` change recomputes the set and calls `PenRows.Refresh()`, which re-creates the view with its
+  sort descriptions and its filter
   (`Avalonia.Controls.DataGrid.xml:3809-3812`). The sort descriptions are never touched, so the grid's sort
   and its arrow stay. No second collection and no copied row list exist.
 - **The match rule lives in one pure static class**, `PenEditor/PenRowFilter`, beside `PenRowOrder`:
-  `Matches(PenRowViewModel row, string? filterText)`. The view model and its tests call it; the view never
+  `Matches(PenRowViewModel row, string filterText)`. The view model and its tests call it; the view never
   does.
 - **The filter box is the one writer of `FilterText`**, through a plain two-way `Text` binding. The refresh
   does not touch it.
@@ -230,8 +236,9 @@ Design decisions, each with its reason:
 - **The refresh restores the selected pen only if it still matches.** `RefreshAsync` looks the pen up by id
   among the new rows that pass the filter. Reason: the re-read row may carry a new name or new groups, and
   the rule above holds for every change of the view, not only for a typed one.
-- **The filter does not re-evaluate when a shown row's name or groups change.** It applies at the next
-  filter change and at the next refresh. Reason: with "Chamber" typed and a pen selected, unticking Chamber in
+- **The filter does not re-evaluate when a shown row's name or groups change.** `Filter` reads
+  `_matchingRows`, not the row, and only a filter change and a refresh recompute the set, so a sort cannot
+  re-apply the filter either. Reason: with "Chamber" typed and a pen selected, unticking Chamber in
   the groups pane, or renaming the pen in its form, would make the row vanish and drop the form under the
   operator's hands. The rows stay as filtered until the operator types again.
 - **The match**: the text is trimmed at both ends; an empty or whitespace-only text matches every row.
@@ -245,8 +252,8 @@ Design decisions, each with its reason:
 - **No throttle.** Every keystroke refreshes the view at once. Reason: the rows are in memory, a refresh
   realises only the rows on screen (`PenListViewTests.AFullCatalogue_RealisesOnlyTheRowsOnScreen`), and a
   `Throttle` would bring a second scheduler and an `ObserveOn` into a synchronous property.
-- **The filter call is a change-guarded call from the setter.** `FilterText`'s setter assigns and raises
-  through `RaiseAndSetIfChanged` and, when the value changed, calls the one private method
+- **The filter call is a change-guarded call from the setter.** `FilterText`'s setter coalesces a null to
+  an empty text, compares once, and, when the value changed, assigns, raises and calls the one private method
   `ShowRowsMatchingFilter()` (`csharp.md`, a change-guarded call to one named private method). Reason: it is
   synchronous, so the view-model tests need no scheduler.
 - **The box stays enabled during a refresh.** The pen pane disables because the rebuild replaces its target
@@ -276,7 +283,7 @@ namespace SemiPlot.UI.PenEditor;
 /// <summary>The pen list's filter: a row matches when its id, name or groups contain the trimmed text.</summary>
 public static class PenRowFilter
 {
-	public static bool Matches(PenRowViewModel row, string? filterText)
+	public static bool Matches(PenRowViewModel row, string filterText)
 	{
 		if (string.IsNullOrWhiteSpace(filterText))
 		{
@@ -297,12 +304,15 @@ public static class PenRowFilter
 }
 ```
 
-The parameter is `string?` because the `TextBox` binding may write a null when the box empties (ASSUMPTION
-below).
+The parameter is `string`: the `TextBox` binding may write a null when the box empties (ASSUMPTION below),
+and the `FilterText` setter turns it into an empty text before any match runs.
 
 ### `PenEditorViewModel`
 
-- Constructor: `PenRows = new DataGridCollectionView(_rows) { Filter = row => row is PenRowViewModel penRow && PenRowFilter.Matches(penRow, FilterText) };`
+- New field `_matchingRows`, a `HashSet<PenRowViewModel>` of the rows `PenRowFilter.Matches` accepts for
+  `FilterText`, filled by `RecomputeMatchingRows(rows)` (the ⚠️ on the no-refilter ASSUMPTION under Task 3).
+- Constructor: `RecomputeMatchingRows(rows)` before the view is built, then
+  `PenRows = new DataGridCollectionView(_rows) { Filter = row => row is PenRowViewModel penRow && _matchingRows.Contains(penRow) };`
   The compiler checks the delegate type of `Filter`; the pattern match keeps the cast soft.
 - New property, ordered after `PenRows`:
 
@@ -313,20 +323,24 @@ below).
   	get;
   	set
   	{
-  		if (field != value)
+  		var text = value ?? string.Empty;
+  		if (field == text)
   		{
-  			this.RaiseAndSetIfChanged(ref field, value);
-  			ShowRowsMatchingFilter();
+  			return;
   		}
+
+  		field = text;
+  		this.RaisePropertyChanged();
+  		ShowRowsMatchingFilter();
   	}
   } = string.Empty;
   ```
 
-- `ShowRowsMatchingFilter()`: if `SelectedRow` is set and `PenRowFilter.Matches(SelectedRow, FilterText)` is
-  false, set `SelectedRow = null`; then `PenRows.MoveCurrentTo(SelectedRow)`; then `PenRows.Refresh()`. As
-  built, the match reads the `_matchingRows` set the method recomputes first (the ⚠️ on the no-refilter
-  ASSUMPTION under Task 3).
-- `RefreshAsync` (`:165`): `SelectedRow = rows.FirstOrDefault(row => row.Pen.Id == selectedPenId && PenRowFilter.Matches(row, FilterText));`
+- `ShowRowsMatchingFilter()`: `RecomputeMatchingRows(_rows)`; if `SelectedRow` is set and
+  `_matchingRows.Contains(SelectedRow)` is false, set `SelectedRow = null`; then
+  `PenRows.MoveCurrentTo(SelectedRow)`; then `PenRows.Refresh()`.
+- `RefreshAsync` (`:165`): `RecomputeMatchingRows(rows)` before the refill, then
+  `SelectedRow = rows.FirstOrDefault(row => row.Pen.Id == selectedPenId && _matchingRows.Contains(row));`
   The refill loop (`:158-162`) does not change.
 
 ### The window
@@ -379,9 +393,9 @@ sentence, so the box and the header use one term per concept.
   `PenListViewTests.TypingInTheFilterBox_ShowsOnlyTheMatchingRowsAndClearingItShowsEveryRow` reads the rows
   after `HeadlessInput.Type` with the focus still in the box. Fallback: the binding takes
   `UpdateSourceTrigger=PropertyChanged`.
-- ASSUMPTION: the emptied box writes `""` or null, never another value; `PenRowFilter` treats both as empty.
-  Guard: the same test's `HeadlessInput.Clear` step. Fallback: none needed beyond the `string?` parameter of
-  `Matches`.
+- ASSUMPTION: the emptied box writes `""` or null, never another value; the `FilterText` setter turns a null
+  into `""`, which `PenRowFilter` matches against every row. Guard: the same test's `HeadlessInput.Clear`
+  step. Fallback: none needed beyond the setter's coalescing.
 - ASSUMPTION: Semi's `TextBox` realises 32 px tall, the height of the bar's button, so the bar stays 32 px and
   `MinimumHeight` 536 holds (`ui-theme.md:445`). Guard:
   `TheFilterBox_StandsLeftInTheTopBar280PxWideWithItsPlaceholder` asserts the box's and the bar's heights
@@ -526,7 +540,8 @@ before the change and passes after it.
 ### Task 4: Verify acceptance criteria
 
 - [x] run the filtered command under Acceptance Evidence: 0 failed, every named test present (195 passed;
-      all 26 named tests present and passed in the TRX)
+      all 26 named tests present and passed in the TRX; after review: 199 passed, all 29 named tests, the three
+      review additions included)
 - [x] run `dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj`: 0 failed (2734 passed)
 - [x] run `dotnet build SemiPlot.slnx`: 0 errors and no warning beyond the two NU1902 for `MessagePack`
       2.5.302 in `SemiPlot.AppHost` that the base already reports (0 errors, 2 warnings, both that NU1902;

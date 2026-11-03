@@ -5,7 +5,7 @@ namespace SemiPlot.UI.PenEditor;
 /// <summary>The pen list's filter: a row matches when its id, name or groups contain the trimmed text.</summary>
 public static class PenRowFilter
 {
-	public static bool Matches(PenRowViewModel row, string? filterText)
+	public static bool Matches(PenRowViewModel row, string filterText)
 	{
 		if (string.IsNullOrWhiteSpace(filterText))
 		{

@@ -106,8 +106,7 @@ public sealed class PenEditorViewTests : IDisposable
 			HeadlessInput.Click(window, row);
 			Retype(window, Named<TextBox>(window, "FormName"), "Chamber pressure A");
 
-			HeadlessInput.Click(
-				window, row, new Point(row.Bounds.Width / 2, row.Bounds.Height / 2), RawInputModifiers.Control);
+			HeadlessInput.Click(window, row, RawInputModifiers.Control);
 
 			_editor.Changes.Should().Equal(
 				new FakeEditorCall.Change(Pressure, new PenSettingChange.Name("Chamber pressure A")));

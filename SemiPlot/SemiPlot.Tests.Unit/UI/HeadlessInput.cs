@@ -15,7 +15,13 @@ internal static class HeadlessInput
 {
 	internal static void Click(TopLevel topLevel, Control control)
 	{
-		Click(topLevel, control, new Point(control.Bounds.Width / 2, control.Bounds.Height / 2));
+		Click(topLevel, control, RawInputModifiers.None);
+	}
+
+	/// <summary>Clicks <paramref name="control"/>'s centre with <paramref name="modifiers"/> held through the click.</summary>
+	internal static void Click(TopLevel topLevel, Control control, RawInputModifiers modifiers)
+	{
+		Click(topLevel, control, new Point(control.Bounds.Width / 2, control.Bounds.Height / 2), modifiers);
 	}
 
 	/// <summary>Clicks <paramref name="controlPoint"/>, a point in <paramref name="control"/>'s own coordinates.</summary>

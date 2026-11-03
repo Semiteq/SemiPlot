@@ -1,4 +1,3 @@
-using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
@@ -249,7 +248,6 @@ public sealed class PenListViewTests : IDisposable
 		}
 	}
 
-	// A Ctrl+click clears the selection and leaves the row the view's current item, which the filter then hides.
 	[AvaloniaFact]
 	public void AFilterAfterACtrlClickClearedTheSelection_SelectsNoRow()
 	{
@@ -260,8 +258,7 @@ public sealed class PenListViewTests : IDisposable
 			var list = PenListOf(window);
 			var argon = RowAt(window, 0);
 			HeadlessInput.Click(window, argon);
-			HeadlessInput.Click(
-				window, argon, new Point(argon.Bounds.Width / 2, argon.Bounds.Height / 2), RawInputModifiers.Control);
+			HeadlessInput.Click(window, argon, RawInputModifiers.Control);
 			list.SelectedItem.Should().BeNull("a Ctrl+click on the selected row clears the selection");
 			viewModel.SelectedRow.Should().BeNull();
 

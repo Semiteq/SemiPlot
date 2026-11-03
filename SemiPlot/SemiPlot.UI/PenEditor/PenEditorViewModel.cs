@@ -48,7 +48,7 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 		_archiveCallQueue = new ArchiveCallQueue(editorCallSucceeded);
 
 		var rows = RowsOf(catalogue);
-		MatchFilter(rows);
+		RecomputeMatchingRows(rows);
 		_rows = [.. rows];
 		PenRows = new DataGridCollectionView(_rows)
 		{
@@ -162,7 +162,7 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 	// docs/architecture/overview.md#the-pen-list-filter
 	private void ShowRowsMatchingFilter()
 	{
-		MatchFilter(_rows);
+		RecomputeMatchingRows(_rows);
 		if (SelectedRow is not null && !_matchingRows.Contains(SelectedRow))
 		{
 			SelectedRow = null;
@@ -172,8 +172,7 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 		PenRows.Refresh();
 	}
 
-	/// <summary>The view shows only these rows, so a sort, which refreshes the view, re-applies no filter.</summary>
-	private void MatchFilter(IEnumerable<PenRowViewModel> rows)
+	private void RecomputeMatchingRows(IEnumerable<PenRowViewModel> rows)
 	{
 		_matchingRows.Clear();
 		_matchingRows.UnionWith(rows.Where(row => PenRowFilter.Matches(row, FilterText)));
@@ -204,7 +203,7 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 		var rows = RowsOf(read.Value);
 		var replacedGroups = Groups;
 
-		MatchFilter(rows);
+		RecomputeMatchingRows(rows);
 		_rows.Clear();
 		foreach (var row in rows)
 		{

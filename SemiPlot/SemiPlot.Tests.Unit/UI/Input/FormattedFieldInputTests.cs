@@ -181,8 +181,8 @@ public sealed class FormattedFieldInputTests
 	[InlineData("#1f77b4")]
 	public async Task APasteWithOrWithoutTheHash_IsNormalised(string pasted)
 	{
-		var (_, field) = Show(FieldLayout.HexColor);
-		await TopLevel.GetTopLevel(field)!.Clipboard!.SetTextAsync(pasted);
+		var (window, field) = Show(FieldLayout.HexColor);
+		await window.Clipboard!.SetTextAsync(pasted);
 
 		field.Paste();
 		Dispatcher.UIThread.RunJobs();

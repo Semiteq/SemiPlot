@@ -26,7 +26,9 @@ public enum FieldLayout
 	HexColor
 }
 
-/// <summary>Keeps only the characters a text box's <see cref="FieldLayout"/> allows and inserts its fixed ones.</summary>
+/// <summary>
+/// Keeps only the characters a text box's <see cref="FieldLayout"/> allows and inserts its fixed ones.
+/// </summary>
 public static class FormattedFieldInput
 {
 	private const int GroupLength = 2;
@@ -35,7 +37,9 @@ public static class FormattedFieldInput
 	public static readonly AttachedProperty<FieldLayout?> LayoutProperty =
 		AvaloniaProperty.RegisterAttached<TextBox, FieldLayout?>("Layout", typeof(FormattedFieldInput));
 
-	/// <summary>Set by an operator route into a <see cref="FieldLayout.HexColor"/> box, read by its next text change.</summary>
+	/// <summary>
+	/// Set by an operator route into a <see cref="FieldLayout.HexColor"/> box, read by its next text change.
+	/// </summary>
 	private static readonly AttachedProperty<bool> _operatorEditPendingProperty =
 		AvaloniaProperty.RegisterAttached<TextBox, bool>("OperatorEditPending", typeof(FormattedFieldInput));
 
@@ -59,16 +63,14 @@ public static class FormattedFieldInput
 		textBox.TextChanged -= OnTextChanged;
 		RemoveOperatorRoutes(textBox);
 
-		var layout = change.GetNewValue<FieldLayout?>();
-
-		if (layout is null)
+		if (change.GetNewValue<FieldLayout?>() is not { } layout)
 		{
 			return;
 		}
 
 		textBox.TextChanged += OnTextChanged;
 
-		if (layout == FieldLayout.HexColor)
+		if (RuleFor(layout).NormalisesOperatorEditsOnly)
 		{
 			AddOperatorRoutes(textBox);
 		}
@@ -134,40 +136,60 @@ public static class FormattedFieldInput
 			return;
 		}
 
-		var operatorEdit = textBox.GetValue(_operatorEditPendingProperty);
-		textBox.ClearValue(_operatorEditPendingProperty);
+		var rule = RuleFor(layout);
 
-		if (textBox.Text is not { } text || (layout == FieldLayout.HexColor && !operatorEdit))
+		if (rule.NormalisesOperatorEditsOnly && !TakeOperatorEdit(textBox))
 		{
 			return;
 		}
 
-		var isAllowed = AllowedCharacter(layout);
-		var normalised = Normalise(new string([.. text.Where(isAllowed)]), layout);
+		if (textBox.Text is not { } text)
+		{
+			return;
+		}
+
+		var normalised = rule.Normalise(new string([.. text.Where(rule.IsAllowed)]));
 
 		if (normalised == text)
 		{
 			return;
 		}
 
-		var allowedBeforeCaret = text[..Math.Min(textBox.CaretIndex, text.Length)].Count(isAllowed);
+		var allowedBeforeCaret = text[..Math.Min(textBox.CaretIndex, text.Length)].Count(rule.IsAllowed);
 		textBox.SetCurrentValue(TextBox.TextProperty, normalised);
-		textBox.SetCurrentValue(TextBox.CaretIndexProperty, IndexAfterAllowed(normalised, allowedBeforeCaret, isAllowed));
+		textBox.SetCurrentValue(
+			TextBox.CaretIndexProperty,
+			IndexAfterAllowed(normalised, allowedBeforeCaret, rule.IsAllowed));
 	}
 
-	private static Func<char, bool> AllowedCharacter(FieldLayout layout)
+	private static bool TakeOperatorEdit(TextBox textBox)
 	{
-		return layout == FieldLayout.HexColor ? char.IsAsciiHexDigit : char.IsAsciiDigit;
+		var pending = textBox.GetValue(_operatorEditPendingProperty);
+		textBox.ClearValue(_operatorEditPendingProperty);
+
+		return pending;
 	}
 
-	private static string Normalise(string allowed, FieldLayout layout)
+	private static LayoutRule RuleFor(FieldLayout layout)
 	{
 		return layout switch
 		{
-			FieldLayout.ClockTime => FillSlots(allowed, WallClockRangeForm.TimeFieldFormat),
-			FieldLayout.Date => FillSlots(allowed, Resources.ExportDateFormat),
-			FieldLayout.Duration => GroupFromRight(allowed),
-			FieldLayout.HexColor => PrefixHash(allowed),
+			FieldLayout.ClockTime => new LayoutRule(
+				char.IsAsciiDigit,
+				digits => FillSlots(digits, WallClockRangeForm.TimeFieldFormat),
+				NormalisesOperatorEditsOnly: false),
+			FieldLayout.Date => new LayoutRule(
+				char.IsAsciiDigit,
+				digits => FillSlots(digits, Resources.ExportDateFormat),
+				NormalisesOperatorEditsOnly: false),
+			FieldLayout.Duration => new LayoutRule(
+				char.IsAsciiDigit,
+				GroupFromRight,
+				NormalisesOperatorEditsOnly: false),
+			FieldLayout.HexColor => new LayoutRule(
+				char.IsAsciiHexDigit,
+				PrefixHash,
+				NormalisesOperatorEditsOnly: true),
 			_ => throw new ArgumentOutOfRangeException(nameof(layout), layout, null)
 		};
 	}
@@ -213,19 +235,26 @@ public static class FormattedFieldInput
 		return kept.Length == 0 ? string.Empty : $"#{kept}";
 	}
 
-	/// <summary>The index after the <paramref name="count"/>-th allowed character, or before the first one for zero.</summary>
+	/// <summary>
+	/// The index after the <paramref name="count"/>-th allowed character, or before the first one for zero.
+	/// </summary>
 	private static int IndexAfterAllowed(string text, int count, Func<char, bool> isAllowed)
 	{
-		if (count == 0)
-		{
-			return text.TakeWhile(character => !isAllowed(character)).Count();
-		}
-
 		var seen = 0;
 
 		for (var index = 0; index < text.Length; index++)
 		{
-			if (isAllowed(text[index]) && ++seen == count)
+			if (!isAllowed(text[index]))
+			{
+				continue;
+			}
+
+			if (count == 0)
+			{
+				return index;
+			}
+
+			if (++seen == count)
 			{
 				return index + 1;
 			}
@@ -233,4 +262,10 @@ public static class FormattedFieldInput
 
 		return text.Length;
 	}
+
+	/// <summary>What a layout keeps, how it rebuilds the kept text, and whether a code write is left as set.</summary>
+	private sealed record LayoutRule(
+		Func<char, bool> IsAllowed,
+		Func<string, string> Normalise,
+		bool NormalisesOperatorEditsOnly);
 }

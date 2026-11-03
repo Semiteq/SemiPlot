@@ -613,9 +613,9 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   therefore stays as set, so a stored `red` or `#1f77b4` shows as stored and is not written back. A route that
   leaves the text as it was, such as a digit typed over the same selected digit, leaves the flag set until the
   next key or focus loss, and a binding write inside that window is normalised. An edit of a stored named
-  colour keeps the name's hex letters: a `1` typed after `red` gives `#ED1`. The time window panel and the export window set it on their time
-  and width boxes, a style sets `Date` on each `CalendarDatePicker`'s `PART_TextBox`, and the pen form sets
-  `HexColor` on its colour box.
+  colour keeps the name's hex letters: a `1` typed after `red` gives `#ED1`. The time window panel and the
+  export window set it on their time and width boxes, a style sets `Date` on each `CalendarDatePicker`'s
+  `PART_TextBox`, and the pen form sets `HexColor` on its colour box.
 - `Navigation/ArchiveDayCalendar` — the days a pair of range calendars offers and the read days without a
   row among them, for the time window panel and the export window; `Navigation/CalendarBlackout` writes the
   set into the pickers' `BlackoutDates`.

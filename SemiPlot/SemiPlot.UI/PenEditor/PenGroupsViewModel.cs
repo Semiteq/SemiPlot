@@ -101,7 +101,9 @@ public sealed class PenGroupsViewModel : ReactiveObject, IDisposable
 	/// <summary>Creates a group named as typed; a refused name stays in the field.</summary>
 	public ReactiveCommand<Unit, Unit> CreateGroupCommand { get; }
 
-	/// <summary>Closes the rename block, but only while its draft is valid, so a refused draft stays in view.</summary>
+	/// <summary>
+	/// Closes the rename block while its draft is valid; a refused draft stays in view until a second close.
+	/// </summary>
 	public ReactiveCommand<Unit, Unit> CloseRenameCommand { get; }
 
 	public ReactiveCommand<Unit, Unit> ConfirmDeleteCommand { get; }
@@ -171,12 +173,19 @@ public sealed class PenGroupsViewModel : ReactiveObject, IDisposable
 	private void AskToRename(PenGroupViewModel group)
 	{
 		PendingDeletion = null;
+
+		// The view focuses the field each time the block opens, so a Rename on the open group opens it again.
+		if (PendingRename == group)
+		{
+			PendingRename = null;
+		}
+
 		PendingRename = group;
 	}
 
 	private void CloseRename()
 	{
-		if (PendingRename is { IsNameValid: true })
+		if (PendingRename?.AcceptsClose() == true)
 		{
 			PendingRename = null;
 		}
@@ -209,10 +218,25 @@ public sealed class PenGroupsViewModel : ReactiveObject, IDisposable
 		}
 
 		Groups = [.. Groups.Where(group => group != pending.Group)];
+		CloseActionsOn(pending.Group);
 		DisposeMembershipsOf(pending.Group);
 		pending.Group.Dispose();
 
 		ShowGroupsOn(pending.Group.Group.MemberPenIds);
+	}
+
+	/// <summary>Closes a rename or a deletion asked on the group while its delete waited in the queue.</summary>
+	private void CloseActionsOn(PenGroupViewModel group)
+	{
+		if (PendingRename == group)
+		{
+			PendingRename = null;
+		}
+
+		if (PendingDeletion?.Group == group)
+		{
+			PendingDeletion = null;
+		}
 	}
 
 	private void DisposeMembershipsOf(PenGroupViewModel group)

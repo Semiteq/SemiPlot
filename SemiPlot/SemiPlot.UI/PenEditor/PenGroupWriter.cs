@@ -47,16 +47,11 @@ internal sealed class PenGroupWriter(
 		return result;
 	}
 
-	public void ReportFailure(IResultBase failed)
-	{
-		_messagePanel.ReportFailure(failed, _logger);
-	}
-
 	/// <summary>Shows a failed pane write on the pane's message line and in the message panel.</summary>
 	public void RefuseWrite(IResultBase failed)
 	{
 		Refusal = ArchiveFailureMapper.Map(failed.Errors[0]).Title;
-		ReportFailure(failed);
+		_messagePanel.ReportFailure(failed, _logger);
 	}
 
 	/// <summary>Renames the groups text of the rows of these pens after a group write the editor has made.</summary>

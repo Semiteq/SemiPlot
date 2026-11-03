@@ -19,6 +19,7 @@ public sealed class PenGroupViewModel : ReactiveObject, IDisposable
 	private readonly PenGroupWriter _penGroupWriter;
 	private readonly List<string> _queuedNames = [];
 	private string? _refusal;
+	private bool _isCloseRefused;
 
 	internal PenGroupViewModel(
 		StoredGroup group,
@@ -148,6 +149,19 @@ public sealed class PenGroupViewModel : ReactiveObject, IDisposable
 		AskDeleteCommand.Dispose();
 	}
 
+	/// <summary>True while the draft is valid, and on the second close of a refused draft left as stored.</summary>
+	internal bool AcceptsClose()
+	{
+		if (IsNameValid || (_isCloseRefused && RenameDraft == QueuedName))
+		{
+			return true;
+		}
+
+		_isCloseRefused = true;
+
+		return false;
+	}
+
 	/// <summary>Records a membership the editor has written.</summary>
 	internal void SetMembership(int penId, bool isMember)
 	{
@@ -192,6 +206,7 @@ public sealed class PenGroupViewModel : ReactiveObject, IDisposable
 	private void OnDraftChanged()
 	{
 		_refusal = null;
+		_isCloseRefused = false;
 		RaiseValidity();
 	}
 
@@ -205,6 +220,7 @@ public sealed class PenGroupViewModel : ReactiveObject, IDisposable
 	private void Mark(string refusal)
 	{
 		_refusal = refusal;
+		_isCloseRefused = false;
 		RaiseValidity();
 	}
 

@@ -93,6 +93,32 @@ public sealed class PenGroupsViewTests : IDisposable
 	}
 
 	[AvaloniaFact]
+	public async Task AMembershipBoxWhoseWriteIsHeld_StaysDisabledUntilTheWriteLands()
+	{
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			SelectPen(window, 2);
+			var box = MembershipBoxAt(window, 0);
+			var write = _editor.HoldNextCall();
+
+			HeadlessInput.Click(window, box);
+
+			box.IsEffectivelyEnabled.Should().BeFalse("a second click waits for the write it would undo");
+
+			write.SetResult();
+			await HeadlessWait.Until(() => box.IsEffectivelyEnabled, "the landed write to free the box");
+
+			_editor.Calls.Should().Equal(new FakeEditorCall.SetMembership(Power, Chamber, true));
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
 	public void AMembershipTheArchiveRefuses_PutsTheBoxBackAndReportsOnce()
 	{
 		_editor.MembershipResult = Result.Fail(FakePenCatalogueEditor.Refusal(ArchiveFault.RowGone, Chamber.Name));
@@ -362,6 +388,12 @@ public sealed class PenGroupsViewTests : IDisposable
 			rename.Text.Should().Be(Spare.Name);
 			rename.IsFocused.Should().BeTrue("the operator types the new name at once");
 			(rename.SelectionStart, rename.SelectionEnd).Should().Be((0, Spare.Name.Length));
+
+			PickGroupMenuItem(window, 1, "GroupRenameItem");
+
+			rename.IsFocused.Should().BeTrue("Rename on the open group puts the caret back in the field");
+			rename.Text.Should().Be(Spare.Name);
+			_editor.Calls.Should().BeEmpty();
 		}
 		finally
 		{
@@ -416,6 +448,30 @@ public sealed class PenGroupsViewTests : IDisposable
 		}
 	}
 
+	[AvaloniaFact]
+	public void ABlankRenameThenDoneClickedTwice_ClosesTheBlockOnTheStoredName()
+	{
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			PickGroupMenuItem(window, 0, "GroupRenameItem");
+			HeadlessInput.Clear(window, Named<TextBox>(window, "GroupRename"));
+			var done = Named<Button>(window, "GroupRenameDoneButton");
+
+			HeadlessInput.Click(window, done);
+			HeadlessInput.Click(window, done);
+
+			Named<StackPanel>(window, "GroupRenameBlock").IsVisible.Should().BeFalse();
+			TextOf(GroupRowAt(window, 0), "GroupName").Should().Be(Chamber.Name);
+			_editor.Calls.Should().BeEmpty();
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
 	// The archive answers after the click lands, as a real one does; the fake would otherwise answer inside the press.
 	[AvaloniaFact]
 	public void ARenameTheArchiveRefusesThenDoneClicked_ClosesTheBlockAndTheMessageLineNamesTheRefusal()
@@ -439,6 +495,12 @@ public sealed class PenGroupsViewTests : IDisposable
 			Named<TextBlock>(window, "GroupsMessage").Text.Should().Be(ArchiveFailureMapper.Map(refusal).Title);
 			_messagePanel.Entries.Should().ContainSingle();
 			TextOf(GroupRowAt(window, 0), "GroupName").Should().Be(Chamber.Name);
+
+			PickGroupMenuItem(window, 0, "GroupRenameItem");
+
+			var rename = Named<TextBox>(window, "GroupRename");
+			rename.Text.Should().Be(Chamber.Name, "the refused rename reverted the draft");
+			rename.Classes.Should().Contain("invalid");
 		}
 		finally
 		{

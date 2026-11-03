@@ -823,8 +823,8 @@ pane.
       `GroupListOf(window).ItemsSource` is `viewModel.Groups.Groups` and `GroupRowAt(window, 2)`'s `GroupName`
       is "Vacuum"
 - [x] replace the `GroupsTab` content (`PenEditorWindow.axaml:492-684`) with the `GroupsPanel` of Technical
-      Details, left-aligned in the tab; update the window styles as listed; add `OnRenameItemClick` to the
-      code-behind
+      Details, left-aligned in the tab; update the window styles as listed; add the
+      `GroupRename.DataContextChanged` focus route to the code-behind (see ⚠️ below)
 - [x] run `PenGroupsViewModelTests`, `PenGroupsViewTests`, `PenEditorViewTests`, `PenEditorViewModelTests`,
       `PenListViewTests`, `PenFormPaneViewTests`, `MainWindowViewTests`, `MainWindowViewModelTests`,
       `ThemeTests` and `ResourcesTests`: every case passes
@@ -1004,7 +1004,7 @@ pane.
 - [x] run the key gate under Acceptance Evidence over `-- SemiPlot docs/architecture`: it prints nothing
 - ⚠️ a scratch view test (typed rename, then a left click on the second group row's name) showed the group grid
   takes the focus and the rename writes once; `overview.md` states it, and the probe was deleted
-- [x] move this plan to `docs/plans/completed/` (left to the delivery step)
+- [ ] move this plan to `docs/plans/completed/` (left to the delivery step)
 
 ## Post-Completion
 
@@ -1023,6 +1023,7 @@ pane.
    press; Отмена empties the block; nothing in the pane moves in any state.
 7. Narrow the window to its minimum: both panes keep their widths and the pen list scrolls horizontally.
    Lower it to its minimum height: the groups pane's rows all show and the pen form scrolls.
+8. Retake `docs/img/pens-and-groups.png` from the running viewer: the readme still shows the tabbed window.
 
 **Remaining slices** of `docs/plans/roadmaps/20261102-visual-chore-roadmap.md`: pen-list-filter (the top
 bar's filter box over id, name and group, case-insensitive, keeping the selection while it matches);

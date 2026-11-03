@@ -331,7 +331,15 @@ public sealed class PenListViewTests : IDisposable
 	// The realised list raises each width to its header in the test font, so the declared widths come from an unshown window.
 	private static List<double> DeclaredColumnWidths()
 	{
-		return [.. PenListOf(new PenEditorWindow()).Columns.Select(column => column.Width.Value)];
+		var window = new PenEditorWindow();
+		try
+		{
+			return [.. PenListOf(window).Columns.Select(column => column.Width.Value)];
+		}
+		finally
+		{
+			window.Close();
+		}
 	}
 
 	private static PathIcon StartGlyphOf(DataGridRow row)

@@ -277,6 +277,80 @@ public sealed class PenGroupsViewModelTests : IDisposable
 	}
 
 	[AvaloniaFact]
+	public async Task ASecondCloseRenameAfterARefusal_ClosesTheBlockAndWritesNothing()
+	{
+		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+		var groups = editor.Groups;
+		var chamber = groups.Groups[0];
+		chamber.AskRenameCommand.Execute().Subscribe();
+		chamber.RenameDraft = string.Empty;
+		await chamber.EndRenameAsync();
+
+		groups.CloseRenameCommand.Execute().Subscribe();
+		groups.CloseRenameCommand.Execute().Subscribe();
+
+		groups.PendingRename.Should().BeNull("the second close leaves the reverted name as stored");
+		chamber.RenameDraft.Should().Be(Chamber.Name);
+		_editor.Calls.Should().BeEmpty();
+	}
+
+	[AvaloniaFact]
+	public void ASecondCloseRenameOnABlankDraft_KeepsTheBlockOpen()
+	{
+		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+		var groups = editor.Groups;
+		var chamber = groups.Groups[0];
+		chamber.AskRenameCommand.Execute().Subscribe();
+		chamber.RenameDraft = string.Empty;
+
+		groups.CloseRenameCommand.Execute().Subscribe();
+		groups.CloseRenameCommand.Execute().Subscribe();
+
+		groups.PendingRename.Should().BeSameAs(chamber, "a blank draft never closes the block");
+	}
+
+	[AvaloniaFact]
+	public async Task ARenameAskedWhileTheGroupsDeleteIsQueued_ClosesWhenTheDeleteLands()
+	{
+		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+		var groups = editor.Groups;
+		var chamber = groups.Groups[0];
+		var gas = groups.Groups[1];
+		chamber.AskDeleteCommand.Execute().Subscribe();
+		var gate = _editor.HoldNextCall();
+		var deleted = groups.ConfirmDeleteCommand.Execute().ToTask();
+
+		chamber.AskRenameCommand.Execute().Subscribe();
+		groups.PendingRename.Should().BeSameAs(chamber);
+
+		gate.SetResult();
+		await deleted;
+
+		groups.PendingRename.Should().BeNull("the block never edits a deleted group");
+		groups.Groups.Should().Equal(gas);
+		_editor.Calls.Should().Equal(new FakeEditorCall.DeleteGroup(Chamber));
+	}
+
+	[AvaloniaFact]
+	public async Task ADeleteAskedAgainWhileTheFirstIsQueued_ClosesWhenTheFirstLands()
+	{
+		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+		var groups = editor.Groups;
+		var chamber = groups.Groups[0];
+		chamber.AskDeleteCommand.Execute().Subscribe();
+		var gate = _editor.HoldNextCall();
+		var deleted = groups.ConfirmDeleteCommand.Execute().ToTask();
+
+		chamber.AskDeleteCommand.Execute().Subscribe();
+
+		gate.SetResult();
+		await deleted;
+
+		groups.PendingDeletion.Should().BeNull("nothing asks to delete a deleted group");
+		_editor.Calls.Should().ContainSingle();
+	}
+
+	[AvaloniaFact]
 	public async Task AFailedRename_RevertsMarksSaysWhyAndReportsOnce()
 	{
 		var refusal = FakePenCatalogueEditor.Refusal(ArchiveFault.NameTaken, "Gas");
@@ -441,6 +515,23 @@ public sealed class PenGroupsViewModelTests : IDisposable
 	}
 
 	[AvaloniaFact]
+	public async Task AGroupCreatedWithAPenSelected_ShowsThatPensEntryAtOnce()
+	{
+		_editor.CreateGroupResult = Result.Ok(9);
+		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+		var groups = editor.Groups;
+		editor.SelectedRow = RowsOf(editor)[2];
+
+		groups.NewGroupName = "Vacuum";
+		await groups.CreateGroupCommand.Execute();
+
+		var vacuum = groups.Groups[2];
+		vacuum.Membership.Should().NotBeNull("the selected pen's box shows on the new group");
+		vacuum.Membership!.Row.Should().BeSameAs(RowsOf(editor)[2]);
+		vacuum.Membership.IsMember.Should().BeFalse();
+	}
+
+	[AvaloniaFact]
 	public async Task ANameTypedWhileTheCreateIsHeld_StaysInTheField()
 	{
 		_editor.CreateGroupResult = Result.Ok(9);
@@ -527,6 +618,14 @@ public sealed class PenGroupsViewModelTests : IDisposable
 		editor.SelectedRow!.Pen.Should().Be(Pressure);
 		editor.Groups.Groups.Should().OnlyContain(group => group.Membership!.Row == editor.SelectedRow);
 		editor.Groups.Groups.Select(group => group.Membership!.IsMember).Should().Equal(true, true, false);
+		before.Groups.Should().OnlyContain(
+			group => group.Membership!.Row != editor.SelectedRow,
+			"the replaced pane stops before the selection moves onto the new rows");
+
+		var replacedMembership = before.Groups[0].Membership;
+		editor.SelectedRow = RowsOf(editor)[0];
+
+		before.Groups[0].Membership.Should().BeSameAs(replacedMembership, "the replaced pane follows no selection");
 	}
 
 	[AvaloniaFact]

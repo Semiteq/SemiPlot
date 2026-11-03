@@ -71,6 +71,7 @@ public sealed class MainWindowViewTests
 			: double.PositiveInfinity;
 		TestContext.Current.TestOutputHelper?.WriteLine($"working area {area} px");
 		editorWindow.Width.Should().Be(PenEditorWindow.OpeningWidthFor(area), "the editor opens at its screen's width");
+		editorWindow.Width.Should().Be(PenEditorWindow.DesignedWidth, "the headless screen holds the designed width");
 		PenEditorFixture.RowsOf(penEditor).Select(row => row.Pen).Should().Equal(pen);
 		viewModel.MessagePanel.Entries.Should().BeEmpty();
 

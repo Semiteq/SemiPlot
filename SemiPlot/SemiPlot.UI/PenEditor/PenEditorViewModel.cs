@@ -161,9 +161,9 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 			_rows.Add(row);
 		}
 
+		replacedGroups.Dispose();
 		SelectedRow = rows.FirstOrDefault(row => row.Pen.Id == selectedPenId);
 		Groups = GroupsOf(rows, read.Value.Groups);
-		replacedGroups.Dispose();
 	}
 
 	private async Task<Result<PenCatalogue>> ReadAfterEveryQueuedCallAsync()

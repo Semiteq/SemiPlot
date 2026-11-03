@@ -563,8 +563,8 @@ on the selected row clears the selection, and the pane shows the hint
 `PenEditorViewModel`. One pipeline, that observable combined with the pane's own `Groups` through
 `CombineLatest`, sets every `PenGroupViewModel.Membership` to the selected pen's entry, or to null with no
 pen selected; the pane is `Membership`'s one writer, and no property of the pane mirrors the selected pen.
-The subscription is disposed with the pane, which `PenEditorViewModel` disposes when a refresh replaces it
-and in its own `Dispose`.
+The subscription is disposed with the pane, which `PenEditorViewModel` disposes when a refresh replaces it,
+before the selection moves onto the new rows, and in its own `Dispose`.
 
 The group grid binds no selection, so a group has no selected state; its one state is the membership box.
 It sorts nothing (`CanUserSortColumns="False"`): the groups stand in the order the catalogue reads them, and
@@ -582,12 +582,16 @@ neither. The reserved block shows the rename field while `PendingRename` is set 
   when the data context becomes a `PenGroupViewModel`, it posts the focus and `SelectAll` at
   `DispatcherPriority.Background`. The flyout hands the focus back to `GroupActionsButton` as it closes,
   and the posted focus lands after it. A `Click` handler named on a `MenuItem` inside the cell template's
-  `MenuFlyout` never runs in Avalonia 12.0.5, so the route keys on the data context instead.
+  `MenuFlyout` never runs in Avalonia 12.0.5, so the route keys on the data context instead. Rename on the
+  group whose block is already open clears `PendingRename` and sets it again, so the field takes the focus
+  again.
 - The rename block closes on Done, not on Cancel. A press on any button ends the edit first, and the edit
   writes when it ends, so a Cancel button could not stop the write it suggests it stops. Done's press ends
   the edit, and `CloseRenameCommand` then clears `PendingRename` only while `PendingRename.IsNameValid`
   holds. A blank draft is refused when the edit ends, before the click lands, so it stays in the open
-  block, reverted and marked, with the rule on the message line. A rename the archive refuses lands after
+  block, reverted and marked, with the rule on the message line. A second Done with the reverted name left
+  as it is closes the block and writes nothing (`PenGroupViewModel.AcceptsClose`); a blank draft never closes
+  it. A rename the archive refuses lands after
   the block has closed: `PenGroupViewModel.EndRenameAsync` reports it through `PenGroupWriter.RefuseWrite`,
   so the pane's message line names the refusal with the block open or closed, the panel gets one entry,
   and the next Rename on that group opens the field reverted and marked. The block also closes when
@@ -598,7 +602,8 @@ neither. The reserved block shows the rename field while `PendingRename` is set 
   taken when Delete is chosen. The confirm button carries the `destructive` class
   (`ui-theme.md#the-applications-own-surfaces`). `ConfirmDeleteAsync` clears `PendingDeletion` before it
   awaits the write; a landed delete removes the group from `Groups`, disposes its membership entries and
-  updates the groups text of the rows it held.
+  updates the groups text of the rows it held. A rename or a second deletion asked on the group while its
+  delete waited in the queue closes when the delete lands.
 
 #### Where the view model is built
 

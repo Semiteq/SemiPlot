@@ -70,10 +70,24 @@ internal static class HeadlessInput
 		Dispatcher.UIThread.RunJobs();
 	}
 
+	/// <summary>Clicks the box, puts its caret at <paramref name="caretIndex"/> and types <paramref name="text"/>.</summary>
+	internal static void Type(TopLevel topLevel, TextBox textBox, string text, int caretIndex)
+	{
+		Click(topLevel, textBox);
+		textBox.CaretIndex = caretIndex;
+		topLevel.KeyTextInput(text);
+		Dispatcher.UIThread.RunJobs();
+	}
+
 	internal static void Press(TopLevel topLevel, PhysicalKey key)
 	{
-		topLevel.KeyPressQwerty(key, RawInputModifiers.None);
-		topLevel.KeyReleaseQwerty(key, RawInputModifiers.None);
+		Press(topLevel, key, RawInputModifiers.None);
+	}
+
+	internal static void Press(TopLevel topLevel, PhysicalKey key, RawInputModifiers modifiers)
+	{
+		topLevel.KeyPressQwerty(key, modifiers);
+		topLevel.KeyReleaseQwerty(key, modifiers);
 		Dispatcher.UIThread.RunJobs();
 	}
 

@@ -2,13 +2,15 @@ using System.Text;
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.Navigation;
 
 namespace SemiPlot.UI.Input;
 
-/// <summary>Where a time or date field puts its separators among the digits the operator types.</summary>
+/// <summary>Which characters a formatted field keeps and where it puts its fixed ones.</summary>
 public enum FieldLayout
 {
 	/// <summary>The <see cref="WallClockRangeForm.TimeFieldFormat"/> slots, filled from the left.</summary>
@@ -18,16 +20,24 @@ public enum FieldLayout
 	Date,
 
 	/// <summary><c>h:mm:ss</c> with unbounded hours, grouped from the right.</summary>
-	Duration
+	Duration,
+
+	/// <summary><c>#RRGGBB</c>: up to six upper-cased hex digits behind a leading <c>#</c>.</summary>
+	HexColor
 }
 
-/// <summary>Keeps only the digits of a text box and inserts the separators of its <see cref="FieldLayout"/>.</summary>
+/// <summary>Keeps only the characters a text box's <see cref="FieldLayout"/> allows and inserts its fixed ones.</summary>
 public static class FormattedFieldInput
 {
 	private const int GroupLength = 2;
+	private const int HexColorDigitCount = 6;
 
 	public static readonly AttachedProperty<FieldLayout?> LayoutProperty =
 		AvaloniaProperty.RegisterAttached<TextBox, FieldLayout?>("Layout", typeof(FormattedFieldInput));
+
+	/// <summary>Set by an operator route into a <see cref="FieldLayout.HexColor"/> box, read by its next text change.</summary>
+	private static readonly AttachedProperty<bool> _operatorEditPendingProperty =
+		AvaloniaProperty.RegisterAttached<TextBox, bool>("OperatorEditPending", typeof(FormattedFieldInput));
 
 	static FormattedFieldInput()
 	{
@@ -47,41 +57,122 @@ public static class FormattedFieldInput
 	private static void OnLayoutChanged(TextBox textBox, AvaloniaPropertyChangedEventArgs change)
 	{
 		textBox.TextChanged -= OnTextChanged;
+		RemoveOperatorRoutes(textBox);
 
-		if (change.GetNewValue<FieldLayout?>() is not null)
+		var layout = change.GetNewValue<FieldLayout?>();
+
+		if (layout is null)
 		{
-			textBox.TextChanged += OnTextChanged;
+			return;
 		}
+
+		textBox.TextChanged += OnTextChanged;
+
+		if (layout == FieldLayout.HexColor)
+		{
+			AddOperatorRoutes(textBox);
+		}
+	}
+
+	private static void AddOperatorRoutes(TextBox textBox)
+	{
+		textBox.AddHandler(InputElement.TextInputEvent, OnOperatorTextInput, RoutingStrategies.Tunnel);
+		textBox.AddHandler(InputElement.KeyDownEvent, OnOperatorKeyDown, RoutingStrategies.Tunnel);
+		textBox.PastingFromClipboard += MarkOperatorEdit;
+		textBox.CuttingToClipboard += MarkOperatorEdit;
+		textBox.LostFocus += ClearOperatorEdit;
+	}
+
+	private static void RemoveOperatorRoutes(TextBox textBox)
+	{
+		textBox.RemoveHandler(InputElement.TextInputEvent, OnOperatorTextInput);
+		textBox.RemoveHandler(InputElement.KeyDownEvent, OnOperatorKeyDown);
+		textBox.PastingFromClipboard -= MarkOperatorEdit;
+		textBox.CuttingToClipboard -= MarkOperatorEdit;
+		textBox.LostFocus -= ClearOperatorEdit;
+		textBox.ClearValue(_operatorEditPendingProperty);
+	}
+
+	private static void OnOperatorTextInput(object? sender, TextInputEventArgs e)
+	{
+		MarkOperatorEdit(sender, e);
+	}
+
+	/// <summary>Tunnels so that a paste or cut the key raises inside the box's own handling keeps its mark.</summary>
+	private static void OnOperatorKeyDown(object? sender, KeyEventArgs e)
+	{
+		if (sender is TextBox textBox)
+		{
+			textBox.SetValue(_operatorEditPendingProperty, KeyChangesText(textBox, e));
+		}
+	}
+
+	private static bool KeyChangesText(TextBox textBox, KeyEventArgs e)
+	{
+		var hasSelection = textBox.SelectionStart != textBox.SelectionEnd;
+		var hotkeys = Application.Current?.PlatformSettings?.HotkeyConfiguration;
+
+		return e.Key switch
+		{
+			Key.Back => hasSelection || textBox.CaretIndex > 0,
+			Key.Delete => hasSelection || textBox.CaretIndex < (textBox.Text?.Length ?? 0),
+			_ => hotkeys is not null
+				&& ((textBox.CanUndo && hotkeys.Undo.Any(gesture => gesture.Matches(e)))
+					|| (textBox.CanRedo && hotkeys.Redo.Any(gesture => gesture.Matches(e))))
+		};
+	}
+
+	private static void MarkOperatorEdit(object? sender, RoutedEventArgs e)
+	{
+		(sender as TextBox)?.SetValue(_operatorEditPendingProperty, true);
+	}
+
+	private static void ClearOperatorEdit(object? sender, RoutedEventArgs e)
+	{
+		(sender as TextBox)?.ClearValue(_operatorEditPendingProperty);
 	}
 
 	private static void OnTextChanged(object? sender, TextChangedEventArgs e)
 	{
-		if (sender is not TextBox { Text: { } text } textBox || GetLayout(textBox) is not { } layout)
+		if (sender is not TextBox textBox || GetLayout(textBox) is not { } layout)
 		{
 			return;
 		}
 
-		var grouped = Group(text, layout);
+		var operatorEdit = textBox.GetValue(_operatorEditPendingProperty);
+		textBox.ClearValue(_operatorEditPendingProperty);
 
-		if (grouped == text)
+		if (textBox.Text is not { } text || (layout == FieldLayout.HexColor && !operatorEdit))
 		{
 			return;
 		}
 
-		var digitsBeforeCaret = text[..Math.Min(textBox.CaretIndex, text.Length)].Count(char.IsAsciiDigit);
-		textBox.SetCurrentValue(TextBox.TextProperty, grouped);
-		textBox.SetCurrentValue(TextBox.CaretIndexProperty, IndexAfterDigits(grouped, digitsBeforeCaret));
+		var isAllowed = AllowedCharacter(layout);
+		var normalised = Normalise(new string([.. text.Where(isAllowed)]), layout);
+
+		if (normalised == text)
+		{
+			return;
+		}
+
+		var allowedBeforeCaret = text[..Math.Min(textBox.CaretIndex, text.Length)].Count(isAllowed);
+		textBox.SetCurrentValue(TextBox.TextProperty, normalised);
+		textBox.SetCurrentValue(TextBox.CaretIndexProperty, IndexAfterAllowed(normalised, allowedBeforeCaret, isAllowed));
 	}
 
-	private static string Group(string text, FieldLayout layout)
+	private static Func<char, bool> AllowedCharacter(FieldLayout layout)
 	{
-		var digits = new string([.. text.Where(char.IsAsciiDigit)]);
+		return layout == FieldLayout.HexColor ? char.IsAsciiHexDigit : char.IsAsciiDigit;
+	}
 
+	private static string Normalise(string allowed, FieldLayout layout)
+	{
 		return layout switch
 		{
-			FieldLayout.ClockTime => FillSlots(digits, WallClockRangeForm.TimeFieldFormat),
-			FieldLayout.Date => FillSlots(digits, Resources.ExportDateFormat),
-			FieldLayout.Duration => GroupFromRight(digits),
+			FieldLayout.ClockTime => FillSlots(allowed, WallClockRangeForm.TimeFieldFormat),
+			FieldLayout.Date => FillSlots(allowed, Resources.ExportDateFormat),
+			FieldLayout.Duration => GroupFromRight(allowed),
+			FieldLayout.HexColor => PrefixHash(allowed),
 			_ => throw new ArgumentOutOfRangeException(nameof(layout), layout, null)
 		};
 	}
@@ -120,18 +211,31 @@ public static class FormattedFieldInput
 			: $"{rest[..^GroupLength]}:{rest[^GroupLength..]}:{seconds}";
 	}
 
-	private static int IndexAfterDigits(string text, int digitCount)
+	private static string PrefixHash(string hexDigits)
 	{
-		if (digitCount == 0)
-		{
-			return 0;
-		}
+		var kept = hexDigits[..Math.Min(hexDigits.Length, HexColorDigitCount)].ToUpperInvariant();
 
+		return kept.Length == 0 ? string.Empty : $"#{kept}";
+	}
+
+	/// <summary>The index after the <paramref name="count"/>-th allowed character, or before the first one for zero.</summary>
+	private static int IndexAfterAllowed(string text, int count, Func<char, bool> isAllowed)
+	{
 		var seen = 0;
 
 		for (var index = 0; index < text.Length; index++)
 		{
-			if (char.IsAsciiDigit(text[index]) && ++seen == digitCount)
+			if (!isAllowed(text[index]))
+			{
+				continue;
+			}
+
+			if (seen == count)
+			{
+				return index;
+			}
+
+			if (++seen == count)
 			{
 				return index + 1;
 			}

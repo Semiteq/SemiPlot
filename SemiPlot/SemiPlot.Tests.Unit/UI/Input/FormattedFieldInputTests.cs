@@ -1,5 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
+using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Layout;
 using Avalonia.Threading;
 
@@ -98,6 +100,174 @@ public sealed class FormattedFieldInputTests
 		HeadlessInput.Type(window, field, "083000");
 
 		field.Text.Should().Be("083000");
+	}
+
+	[AvaloniaTheory]
+	[InlineData("1f77b4", "#1F77B4")]
+	[InlineData("#1f77b4", "#1F77B4")]
+	[InlineData("#1F77B4", "#1F77B4")]
+	[InlineData("1g2h3", "#123")]
+	[InlineData("1F77B4AA", "#1F77B4")]
+	[InlineData("#", "")]
+	public void AHexColorField_KeepsHexDigitsUpperCasesThemAndPutsTheHash(string typed, string shown)
+	{
+		var (window, field) = Show(FieldLayout.HexColor);
+
+		HeadlessInput.Type(window, field, typed);
+
+		field.Text.Should().Be(shown);
+	}
+
+	[AvaloniaFact]
+	public void AHexDigitTypedAfterTheHash_KeepsTheCaretAfterThatDigit()
+	{
+		var (window, field) = ShowHex("#ABCDEF");
+
+		HeadlessInput.Type(window, field, "1", caretIndex: 1);
+
+		field.Text.Should().Be("#1ABCDE");
+		field.CaretIndex.Should().Be(2);
+	}
+
+	[AvaloniaFact]
+	public void ANonHexCharacterTypedAfterTheHash_LeavesTheTextAndTheCaretAfterTheHash()
+	{
+		var (window, field) = ShowHex("#ABCDEF");
+
+		HeadlessInput.Type(window, field, "g", caretIndex: 1);
+
+		field.Text.Should().Be("#ABCDEF");
+		field.CaretIndex.Should().Be(1);
+	}
+
+	[AvaloniaFact]
+	public void BackspaceOnTheHash_KeepsTheTextAndTheCaretAfterTheHash()
+	{
+		var (window, field) = ShowHex("#1F77B4");
+		HeadlessInput.Click(window, field);
+		field.CaretIndex = 1;
+
+		HeadlessInput.Press(window, PhysicalKey.Backspace);
+
+		field.Text.Should().Be("#1F77B4");
+		field.CaretIndex.Should().Be(1);
+	}
+
+	[AvaloniaFact]
+	public void BackspaceOnTheOnlyDigit_EmptiesTheBox()
+	{
+		var (window, field) = ShowHex("#1");
+		HeadlessInput.Click(window, field);
+		field.CaretIndex = field.Text!.Length;
+
+		HeadlessInput.Press(window, PhysicalKey.Backspace);
+
+		field.Text.Should().BeEmpty();
+		field.CaretIndex.Should().Be(0);
+	}
+
+	[AvaloniaFact]
+	public void SelectAllAndBackspace_EmptiesAFilledHexBox()
+	{
+		var (window, field) = ShowHex("#1F77B4");
+
+		HeadlessInput.Clear(window, field);
+
+		field.Text.Should().BeEmpty();
+	}
+
+	[AvaloniaTheory]
+	[InlineData("1f77b4")]
+	[InlineData("#1f77b4")]
+	public async Task APasteWithOrWithoutTheHash_IsNormalised(string pasted)
+	{
+		var (_, field) = Show(FieldLayout.HexColor);
+		await TopLevel.GetTopLevel(field)!.Clipboard!.SetTextAsync(pasted);
+
+		field.Paste();
+		Dispatcher.UIThread.RunJobs();
+
+		field.Text.Should().Be("#1F77B4");
+	}
+
+	[AvaloniaFact]
+	public void DeleteOnTheHash_KeepsTheTextAndPutsTheCaretAfterTheHash()
+	{
+		var (window, field) = ShowHex("#1F77B4");
+		HeadlessInput.Click(window, field);
+		field.CaretIndex = 0;
+
+		HeadlessInput.Press(window, PhysicalKey.Delete);
+
+		field.Text.Should().Be("#1F77B4");
+		field.CaretIndex.Should().Be(1);
+	}
+
+	[AvaloniaFact]
+	public void ACutOfTheHash_PutsTheHashBack()
+	{
+		var (_, field) = ShowHex("#1F77B4");
+		field.SelectionStart = 0;
+		field.SelectionEnd = 1;
+
+		field.Cut();
+		Dispatcher.UIThread.RunJobs();
+
+		field.Text.Should().Be("#1F77B4");
+	}
+
+	[AvaloniaFact]
+	public void UndoAfterTypedDigits_LeavesANormalisedText()
+	{
+		var (window, field) = Show(FieldLayout.HexColor);
+		HeadlessInput.Type(window, field, "1f77b4");
+
+		HeadlessInput.Press(window, PhysicalKey.Z, RawInputModifiers.Control);
+
+		field.Text.Should().MatchRegex("^(#[0-9A-F]{1,6})?$");
+	}
+
+	[AvaloniaTheory]
+	[InlineData("red", false)]
+	[InlineData("red", true)]
+	[InlineData("#1f77b4", false)]
+	[InlineData("#1f77b4", true)]
+	public void AValueSetInCode_StaysAsSet(string value, bool focused)
+	{
+		var (window, field) = Show(FieldLayout.HexColor);
+
+		if (focused)
+		{
+			HeadlessInput.Click(window, field);
+		}
+
+		field.Text = value;
+		Dispatcher.UIThread.RunJobs();
+
+		field.Text.Should().Be(value);
+	}
+
+	[AvaloniaFact]
+	public void AValueSetInCodeAfterBackspaceAtTheStart_StaysAsSet()
+	{
+		var (window, field) = ShowHex("#1F77B4");
+		HeadlessInput.Click(window, field);
+		HeadlessInput.Press(window, PhysicalKey.Home);
+		HeadlessInput.Press(window, PhysicalKey.Backspace);
+
+		field.Text = "red";
+		Dispatcher.UIThread.RunJobs();
+
+		field.Text.Should().Be("red");
+	}
+
+	private static (Window Window, TextBox Field) ShowHex(string text)
+	{
+		var (window, field) = Show(FieldLayout.HexColor);
+		field.Text = text;
+		Dispatcher.UIThread.RunJobs();
+
+		return (window, field);
 	}
 
 	private static (Window Window, TextBox Field) Show(FieldLayout layout)

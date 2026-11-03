@@ -690,8 +690,8 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   configuration directory this run read.
 - `Settings/SettingsDialog` + `SettingsViewModel` — the modal that edits the `app/` and `connection/`
   section folders, opened from Edit -> Settings (`overview.md#the-settings-window`).
-- `PenEditor/PenEditorWindow` + `PenEditorViewModel` (+ `PenFormViewModel`, `PenGroupsViewModel`, the
-  row and membership VMs, over `Bridge/ArchiveCallQueue`) - the modal that edits the pen catalogue through
+- `PenEditor/PenEditorWindow` + `PenEditorViewModel` (+ `PenFormViewModel`, `PenGroupsViewModel`,
+  `PenRowViewModel`, `PenGroupViewModel` and `PenMembershipViewModel`, over `Bridge/ArchiveCallQueue`) - the modal that edits the pen catalogue through
   `IPenCatalogueEditor`, opened from Edit -> Pens and groups (`overview.md#the-pen-and-group-editor`).
   Nothing under `Chart/` or `Legend/` references it.
 - `Export/CsvExportWindow` + `CsvExportViewModel` (+ `ExportRangeForm`, `ExportRangeProblemText`, `ExportMessageLine`, `ExportPenChoice`, `ExportMarkerChoice`, `ExportFileName`, `CsvFileExporter`)

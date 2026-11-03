@@ -224,8 +224,8 @@ the one detail naming `<config-dir>` and the staging folder (`overview.md#the-se
 
 `MenuEditPensAndGroups` is the `Edit` menu's second item, "Pens and groups" / "Перья и группы", and
 carries no ellipsis, as `MenuEditSettings` carries none. `PenEditor/PenEditorWindow.axaml` reads
-`PenEditorTitle`, the tab headers `PenEditorPensTab` and `PenEditorGroupsTab`, and the pen list's five column
-headers `PenEditorColumnId`, `PenEditorColumnName`, `PenEditorColumnUnit`, `PenEditorColumnOnStart` and
+`PenEditorTitle` and the pen list's five column headers; the window has no tabs and so no tab header.
+The headers are `PenEditorColumnId`, `PenEditorColumnName`, `PenEditorColumnUnit`, `PenEditorColumnOnStart` and
 `PenEditorColumnGroups`. The start flag's column reads `PenEditorColumnOnStart`, "On start" / "При запуске",
 because the flag is the visibility a pen starts with and a change of it switches nothing on a running chart.
 
@@ -252,26 +252,39 @@ The scale pair and the log flag have no column and no header key of their own. T
 scale the way Excel, MasterSCADA 4D and Simple-Scada 2 do and leaves the base out; the chart builds base 10
 only (`charting.md#log10-y-axis`).
 
-The bottom bar reads the button `PenEditorRefresh`, "Refresh pen list" / «Обновить список перьев», which
+The top bar reads the button `PenEditorRefresh`, "Refresh pen list" / «Обновить список перьев», which
 names what it refreshes, and `PenEditorAddedCount`, "Pens added: {0}" / "Добавлено перьев: {0}", empty
 until the first successful refresh. It carries no notice: every running chart follows what the editor
 writes through the catalogue read (`overview.md#the-live-catalogue`), except the scale pair and the log
 scale flag, which change no pen already shown (`overview.md#what-a-read-changes`), so there is nothing to
-wait for. The `Groups` tab reads `PenGroupsNewNamePlaceholder`, one of the tree's two watermarks beside
-the marker label editor's `MarkerLabelPlaceholder` (`#the-marker-menu-and-label-editors-text`),
-`PenGroupsCreate`, `PenGroupsNameLabel`, `PenGroupsDelete`, which is also the confirm button's caption,
-`PenGroupsCancel` and `PenGroupsMembersHeader`. The selected group's fold checkbox reads
-`PenGroupsFoldedOnStartLabel`, "Folded when the viewer opens" / "Свёрнута при открытии": the stored flag
-is the fold the group's sidebar header starts with, and a change of it folds nothing on a running sidebar
-(`overview.md#the-sidebar-fold`). `PenGroupsDeleteConfirmation` takes the group name as
-`{0}` and its member count as `{1}`, and is a snapshot taken when delete is pressed. The added count and
-the confirmation put the counted noun first in both languages, "Pens in the group: {1}" / "Перьев в
-группе: {1}", so neither needs a plural form.
+wait for.
+
+The groups pane reads its title `PenGroupsTitle`, "Groups" / "Группы", and the one-line subtitle
+`PenGroupsSubtitle`, "The selected pen's groups are ticked" / "Отмечены группы выбранного пера". The
+new-group row reads `PenGroupsNewNamePlaceholder`, one of the tree's two watermarks beside the marker label
+editor's `MarkerLabelPlaceholder` (`#the-marker-menu-and-label-editors-text`), and `PenGroupsCreate`. The
+grid's membership column has no header; the other two read `PenGroupsColumnGroup`, "Group" / "Группа", and
+`PenGroupsColumnActions`, "Actions" / "Действия". A row's pen count carries the tooltip
+`PenGroupsMemberCountTip`, "Pens in the group" / "Перьев в группе", and its "..." button, a glyph and not
+text, the tooltip `PenGroupsActionsTip`, "Group actions" / "Действия с группой". The button's menu reads
+`PenGroupsRename`, "Rename" / "Переименовать", the checkable `PenGroupsFoldedOnStartLabel`, "Folded when
+the viewer opens" / "Свёрнута при открытии", and `PenGroupsDelete`. The stored fold flag is the fold the
+group's sidebar header starts with, and a change of it folds nothing on a running sidebar
+(`overview.md#the-sidebar-fold`).
+
+The rename block reads the label `PenGroupsNameLabel`, which need not repeat the group's name because the
+field shows it, and the button `PenGroupsRenameDone`, "Done" / "Готово". The delete confirmation is three
+lines: `PenGroupsDeleteQuestion`, "Delete group '{0}'?" / «Удалить группу «{0}»?», with the group name as
+`{0}`; `PenGroupsDeleteCount`, "Pens in the group: {0}" / «Перьев в группе: {0}», with the member count;
+and `PenGroupsDeleteKeepsPens`, "The pens themselves stay." / «Сами перья останутся.». The question and the
+count are a snapshot taken when Delete is chosen. The confirm button reads `PenGroupsDelete`, the menu
+item's key, because both name one action, and the other button `PenGroupsCancel`. The added count and the
+count line put the counted noun first in both languages, so neither needs a plural form.
 
 The pen form's message line shows the first rule a draft breaks, in form order: `PenFormNameRequired`,
 `PenFormMaskInvalid`, `PenFormColorInvalid`, `PenFormScaleBoundInvalid`, `PenFormScaleHalfSet`,
-`PenFormScaleInverted` and `ScaleLogMinimumPositive`. The `Groups` tab's line shows
-`PenGroupsNameRequired`. The line is not under the field, so each message opens with the field it names,
+`PenFormScaleInverted` and `ScaleLogMinimumPositive`. The groups pane's line shows
+`PenGroupsNameRequired` for a blank rename. The line is not under the field, so each message opens with the field it names,
 as the settings messages do. `ScaleLogMinimumPositive`, "A logarithmic scale needs a minimum above zero"
 / "Для логарифмической шкалы минимум должен быть больше нуля", is the one exception: the
 axis scale panel shows the same rule with the same key, so it names the rule rather than a form field.

@@ -570,19 +570,18 @@ public sealed class PenGroupsViewModel : ReactiveObject, IDisposable
 
 - Every column sets `CanUserSort="False"`; the membership and action columns `CanUserResize="False"`.
 - The menu, in order: `MenuItem` `GroupRenameItem` (`PenGroupsRename`, `Command="{Binding AskRenameCommand}"`,
-  `Click="OnRenameItemClick"`); `MenuItem` `GroupFoldItem` (`PenGroupsFoldedOnStartLabel`,
+  no `Click`); `MenuItem` `GroupFoldItem` (`PenGroupsFoldedOnStartLabel`,
   `ToggleType="CheckBox"`, `IsChecked="{Binding FoldedOnStart, Mode=OneWay}"`,
   `Command="{Binding ToggleFoldedOnStartCommand}"`); `Separator`; `MenuItem` `GroupDeleteItem`
   (`PenGroupsDelete`, `Command="{Binding AskDeleteCommand}"`).
-- (Task 2 took the fallback below: the template's `Click` never runs.) `OnRenameItemClick` posts `GroupRename.Focus()` and `GroupRename.SelectAll()` at
-  `DispatcherPriority.Background`, after the item's command has set `PendingRename` and the block has been
-  laid out (`~/.claude/rules/avalonia.md`, UI thread). The handler is input interop only; the command decides.
-  ASSUMPTION: a handler named inside a cell template's `MenuFlyout` hooks to the window's code-behind, and
-  the posted focus lands after the flyout restores the focus on close;
-  `RenameChosenOnTheSecondRow_OpensTheBlockOnThatGroupWithItsNameFocusedAndSelected` checks both. If either
-  fails, `GroupRenameItem` loses its `Click`, and the code-behind focuses and selects `GroupRename` at
-  `DispatcherPriority.Background` when `GroupRename.DataContext` changes to a `PenGroupViewModel`, recorded
-  under Task 2.
+- The rename focus keys on the data context: the code-behind subscribes `GroupRename.DataContextChanged` in
+  `OnLoaded`, removes it in `OnUnloaded`, and, when the data context becomes a `PenGroupViewModel`, posts
+  `GroupRename.Focus()` and `GroupRename.SelectAll()` at `DispatcherPriority.Background`, after the item's
+  command has set `PendingRename` and the block has been laid out (`~/.claude/rules/avalonia.md`, UI thread).
+  A `Click` handler named on a `MenuItem` inside the cell template's `MenuFlyout` never runs, so the menu item
+  carries none. The flyout hands the focus back to `GroupActionsButton` as it closes, and the posted focus
+  lands after it; `RenameChosenOnTheSecondRow_OpensTheBlockOnThatGroupWithItsNameFocusedAndSelected` checks
+  it. The route is input interop only; the command decides.
 - `GroupRenameBlock`, a `StackPanel` `Spacing="8"` on the pane's data context, visible while
   `PendingRename` is not null: the label `TextBlock.form-label` `PenGroupsNameLabel`, `Height="20"`; a
   `Grid` `*,Auto` 8 apart: in column 0 a `Panel` with `DataContext="{Binding PendingRename}"` holding the
@@ -975,7 +974,7 @@ pane.
 
 ### Task 6: [Final] Update documentation
 
-- [ ] `docs/architecture/overview.md:521-527`: the window is one row under a top bar, pen list | pen pane |
+- [x] `docs/architecture/overview.md:521-527`: the window is one row under a top bar, pen list | pen pane |
       groups pane, no tabs; the table's rows become the pen list and pane (the existing `Pens` row text), the
       groups pane (title, one-line subtitle, the new-group row, the three-column grid, the "..." menu of
       rename, the fold flag and delete, the reserved block, the message line; membership is edited from the
@@ -985,7 +984,7 @@ pane.
       handed to the group row for the selected pen), `:626-632` (the fold flag is a checkable menu item), and
       `:647-648` (the group grid is a focusable `DataGrid`, so a press on it ends an edit as the pen list
       does); add the rename block's Done rule and the delete confirmation's three lines
-- [ ] `docs/architecture/ui-theme.md`: the key table loses the five tab rows (`:60-63`) and names the groups
+- [x] `docs/architecture/ui-theme.md`: the key table loses the five tab rows (`:60-63`) and names the groups
       pane for `TextBoxPlaceholderForeground` (`:43`), `ListBoxItem*` (`:64-65`, the export list now) and the
       membership box rows (`:82-84`); the retint paragraph (`:101-108`) states the window-wide outline rule
       and the two `GroupList` selection styles; the tests paragraph (`:120-131`) names
@@ -997,13 +996,15 @@ pane.
       `MinHeight` 536 with their arithmetic, the margin 16, the top bar, the three parts, the Name column at
       its Task 4 width, the groups pane's rows, column widths, insets, the reserved 116 px block, and the gates
       table with every test this plan adds or replaces; record Task 2's measured Inter widths
-- [ ] `docs/architecture/ui-text.md:223-269`: no tab headers; the top bar; the groups pane's keys of the
+- [x] `docs/architecture/ui-text.md:223-269`: no tab headers; the top bar; the groups pane's keys of the
       Resources table, the reused ones, the three confirmation lines (the count noun first in both languages
       still holds), the menu items, `PenGroupsNameRequired` on the pane's message line
-- [ ] `docs/architecture/charting.md:693-695`: name `PenGroupViewModel` and `PenMembershipViewModel` instead
+- [x] `docs/architecture/charting.md:693-695`: name `PenGroupViewModel` and `PenMembershipViewModel` instead
       of "the row and membership VMs" if that wording no longer covers them
-- [ ] run the key gate under Acceptance Evidence over `-- SemiPlot docs/architecture`: it prints nothing
-- [ ] move this plan to `docs/plans/completed/` (left to the delivery step)
+- [x] run the key gate under Acceptance Evidence over `-- SemiPlot docs/architecture`: it prints nothing
+- ⚠️ a scratch view test (typed rename, then a left click on the second group row's name) showed the group grid
+  takes the focus and the rename writes once; `overview.md` states it, and the probe was deleted
+- [x] move this plan to `docs/plans/completed/` (left to the delivery step)
 
 ## Post-Completion
 

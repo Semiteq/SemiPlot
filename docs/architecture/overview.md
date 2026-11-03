@@ -522,7 +522,7 @@ The window is a `TabControl` of two tabs over a bottom bar that both tabs share:
 
 | Part | Holds |
 | --- | --- |
-| `Pens` tab | A read-only table of every pen: a click on a column header sorts by that column, a second click reverses. Under it, the form of the selected pen: name, unit, mask with a live preview, colour as a `#RRGGBB` text box beside a `ColorPicker`, line style, "on start", the scale pair and the log scale flag under it. A pen's groups show in the table as text and are not edited there. |
+| `Pens` tab | A read-only table of every pen: a click on a column header sorts by that column, a second click reverses. Under it, the form of the selected pen: name, unit, mask with a live preview, colour as a `#RRGGBB` text box beside a `ColorPicker`, which normalises what the operator types or pastes to `#RRGGBB` upper case and shows a stored value as stored, line style, "on start", the scale pair and the log scale flag under it. A pen's groups show in the table as text and are not edited there. |
 | `Groups` tab | The group list with a new-name field, a create button, one rename field, a delete button and, under them, the selected group's fold flag as a checkbox, disabled while no group is selected. Beside it, every pen of the catalogue as a checkbox, checked where the pen is a member of the selected group. Membership is edited here only. A delete asks once, in a row the tab always reserves, naming the group and how many pens it holds. |
 | Bottom bar | The number of pens the last refresh added and `Refresh pen list`, right-aligned. `Refresh pen list` registers the keys the SCADA writes as hidden pens and reads the catalogue again. |
 

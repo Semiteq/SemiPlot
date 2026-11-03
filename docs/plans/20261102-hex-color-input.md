@@ -167,7 +167,7 @@ The existing cases of the three time layouts and the view tests at `PenEditorVie
   `CaretIndex`. The new index is `min(digitsBeforeCaret, 6) + 1` when the result is not empty, and
   0 when it is empty.
 - The `HexColor` layout keeps a per-box "operator edit pending" flag in a private attached
-  property, `OperatorEditPendingProperty`, registered with
+  property, `_operatorEditPendingProperty`, registered with
   `AvaloniaProperty.RegisterAttached<TextBox, bool>("OperatorEditPending", typeof(FormattedFieldInput))`
   beside `LayoutProperty`. `OnLayoutChanged` subscribes the flag's routes only when the new layout
   is `HexColor`, and removes them whenever the layout changes:
@@ -267,10 +267,10 @@ The existing cases of the three time layouts and the view tests at `PenEditorVie
 
 ### Task 5: [Final] Update documentation
 
-- [ ] `docs/architecture/charting.md:602-607`: rename the entry to `Input/FormattedFieldInput`; add the `HexColor` layout, its operator-edit flag and its caret rule; keep "Selection, Backspace and paste stay the `TextBox`'s own" for the time layouts and state that a `HexColor` box normalises after those routes and leaves a binding write as set; add the pen form's colour box to its consumers
-- [ ] `docs/architecture/overview.md`, the editor's Pens row (line 525): the colour box normalises to `#RRGGBB` as typed and shows a stored value as stored
-- [ ] `docs/architecture/ui-text.md`, "What stays a literal": add the colour box's `#RRGGBB` placeholder (`PenColorConverters.FieldFormat`)
-- [ ] move this plan to `docs/plans/completed/`
+- [x] `docs/architecture/charting.md:602-607`: rename the entry to `Input/FormattedFieldInput`; add the `HexColor` layout, its operator-edit flag and its caret rule; keep "Selection, Backspace and paste stay the `TextBox`'s own" for the time layouts and state that a `HexColor` box normalises after those routes and leaves a binding write as set; add the pen form's colour box to its consumers
+- [x] `docs/architecture/overview.md`, the editor's Pens row (line 525): the colour box normalises to `#RRGGBB` as typed and shows a stored value as stored
+- [x] `docs/architecture/ui-text.md`, "What stays a literal": add the colour box's `#RRGGBB` placeholder (`PenColorConverters.FieldFormat`)
+- [x] move this plan to `docs/plans/completed/` (left to the delivery step)
 
 ## Post-Completion
 

@@ -95,6 +95,8 @@ targets instead: measured on 2026-09-09, a cold build fails with
 - The time window panel's field formats: the time boxes' `HH:mm:ss` (`WallClockRangeForm.TimeFieldFormat`,
   the export's constant) and the width box's `h:mm:ss` (`WindowWidthText.FieldFormat`). Both are typed and
   read with the invariant culture, and the messages take them as `{0}` (`#the-time-window-panels-text`).
+- The pen form's colour box placeholder `#RRGGBB` (`PenColorConverters.FieldFormat`), the stored colour's
+  format.
 - Log message templates, in `Program.cs` and every `ILogger` call. The operator never reads them on
   the screen; the log is read by whoever triages the machine.
 - `AppSettingsError.Describe` and the other error messages, the two read names

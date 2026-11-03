@@ -316,7 +316,7 @@ covers it (no visible width jump on open).
   tie-break included, as `Sorted` does today (`PenEditorViewModel.cs:191`).
 - **One row collection, one view.** The rows live in one private `ObservableCollection<PenRowViewModel>`, never replaced; `PenRows` is the only public surface over it. `PenGroupsViewModel` keeps receiving the new row array a refresh builds (`PenEditorViewModel.cs:217-218`), so the memberships stay in catalogue order whatever the list's sort.
 - **Header-measured columns are one attached behaviour.** `Tables/HeaderMeasuredColumns` has two
-  attached properties: `IsEnabled` on a `DataGrid` and `IsFill` on one `DataGridColumn`. While the grid
+  attached properties: `FitsColumns` on a `DataGrid` and `IsFill` on one `DataGridColumn`. While the grid
   is attached to the visual tree it handles `LayoutUpdated`:
   - The first time every visible column's header is realised, it measures each header unconstrained,
     sets the column's `MinWidth` to that width, and raises the column's `Width` to it when the declared
@@ -334,7 +334,7 @@ covers it (no visible width jump on open).
     dispatcher.
   - The fill column has a pixel width, never `Width="*"`: a star column ends a resize drag and leaves
     the last column no grab edge (`desktop-ui`, Tables).
-  - The class handler of `IsEnabled` subscribes the grid's `AttachedToVisualTree` and
+  - The class handler of `FitsColumns` subscribes the grid's `AttachedToVisualTree` and
     `DetachedFromVisualTree` once and removes them when it turns false; `LayoutUpdated` is added on
     attach and removed on detach (`~/.claude/rules/avalonia.md`, lifecycle pairs).
 - **The arrow slot is the theme's.** Semi's header lays the `SortIcon` out with a fixed
@@ -443,7 +443,7 @@ the `.cs` sources stay ASCII (`ui-text.md:3-10, :484-486`):
               GridLinesVisibility="None" CanUserSortColumns="True" CanUserResizeColumns="True"
               CanUserReorderColumns="False"
               RowHeight="{x:Static local:PenEditorWindow.RowHeight}"
-              tables:HeaderMeasuredColumns.IsEnabled="True">
+              tables:HeaderMeasuredColumns.FitsColumns="True">
         <DataGrid.Columns>
             <!-- one DataGridTemplateColumn per column; CellTemplate DataTemplate x:DataType="local:PenRowViewModel" -->
         </DataGrid.Columns>
@@ -481,12 +481,12 @@ namespace SemiPlot.UI.Tables;
 
 public static class HeaderMeasuredColumns
 {
-	public static readonly AttachedProperty<bool> IsEnabledProperty =
-		AvaloniaProperty.RegisterAttached<DataGrid, bool>("IsEnabled", typeof(HeaderMeasuredColumns));
+	public static readonly AttachedProperty<bool> FitsColumnsProperty =
+		AvaloniaProperty.RegisterAttached<DataGrid, bool>("FitsColumns", typeof(HeaderMeasuredColumns));
 
 	public static readonly AttachedProperty<bool> IsFillProperty =
 		AvaloniaProperty.RegisterAttached<DataGridColumn, bool>("IsFill", typeof(HeaderMeasuredColumns));
-	// Get/Set pairs; a class handler on IsEnabledProperty subscribes attach/detach once and adds LayoutUpdated at once when the grid is already attached.
+	// Get/Set pairs; a class handler on FitsColumnsProperty subscribes attach/detach once and adds LayoutUpdated at once when the grid is already attached.
 }
 ```
 
@@ -621,7 +621,7 @@ Height of the form, from the AXAML: title 24; three section headers at 16 + 20 +
 
 - [x] create the test class with the three traits (`UI`, `Chart`, `Unit`); its stand is a `Window` of
       a given width holding a `DataGrid` over a list of small records, three text columns with string
-      headers and `IsEnabled` set, the last column `IsFill`; it shows the window and drives
+      headers and `FitsColumns` set, the last column `IsFill`; it shows the window and drives
       `Dispatcher.UIThread.RunJobs()`, except where a test says otherwise
 - [x] write the failing tests `AColumnNarrowerThanItsHeader_OpensAtTheHeadersUnconstrainedWidth` (a
       column declared `Width="10"`: `MinWidth` and `ActualWidth` equal the ceiling of that header's
@@ -942,3 +942,28 @@ delete button takes palette-key destructive brushes); pen-list-filter (the top b
 name and group); export-pen-choice-list (the export pens become checkboxes only); axis-scale-checkbox-column
 (the log checkbox moves to the field column); ui-spacing-scale (every remaining inset onto the
 4/8/12/16/24/32 scale, the `12,2` button padding with them).
+
+**Executed by exec:**
+- branch: pen-editor-pens-pane
+
+## Verify it yourself
+
+1. #111, inert boxes gone. Open `Edit` -> `Pens and groups`. At `hex-color-input` the pen table shows
+   two checkbox columns ("При запуске", "Начальная шкала, логарифмическая") that ignore a click. On
+   this branch the list has five columns (Номер, Имя, Ед. изм., При запуске, Группы); the start flag is
+   a check glyph and the log flag is gone from the list. Proof: `PenListViewTests.ThePenList_RealisesNoCheckBox`.
+2. Sort. Click each header: the list sorts ascending with an arrow, a second click descending; the
+   selected pen and its form stay (`PenListViewTests.EachHeaderClick_OrdersTheListByItsColumn`,
+   `AHeaderClick_SortsAscendingThenDescendingAndKeepsTheSelectedPenAndItsForm`).
+3. Resize. Drag any column edge, the last one included: no column goes narrower than its header,
+   wider ones scroll; Группы takes the spare width when the window widens
+   (`EveryColumn_IsResizableAndOpensNoNarrowerThanItsHeader`, `HeaderMeasuredColumnsTests`).
+4. Long names end in an ellipsis with the full text as a tooltip.
+5. The pane. With no pen selected it shows only "Выберите перо в списке слева"; select a pen: a
+   one-line title (id, name) and three sections Подпись / Вид / При запуске on one grid; Ctrl+click
+   the selected row and the hint returns (`PenFormPaneViewTests`, `PenEditorViewTests`).
+6. Validation. Clear the name: the box gets the red border plus a warning glyph inside, the window
+   does not resize (`AnInvalidField_ShowsTheWarningGlyphInsideTheBoxWithoutResizing`).
+7. The Groups tab is unchanged.
+
+Run all of it: the Acceptance Evidence command of this plan (246 passed, 0 failed on `291ceec`).

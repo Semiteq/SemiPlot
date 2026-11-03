@@ -659,16 +659,16 @@ Height of the form, from the AXAML: title 24; three section headers at 16 + 20 +
 - Create: `SemiPlot/SemiPlot.UI/PenEditor/PenRowOrder.cs`
 - Create: `SemiPlot/SemiPlot.Tests.Unit/UI/PenEditor/PenRowOrderTests.cs`
 
-- [ ] write the failing `[AvaloniaTheory]` `EachOrder_SortsByItsKeyThenById` over the fixture pens `Argon`,
+- [x] write the failing `[AvaloniaTheory]` `EachOrder_SortsByItsKeyThenById` over the fixture pens `Argon`,
       `Pressure`, `Power` with the groups `Chamber` and `Gas` (`PenEditorFixture.cs:9-22`): `ById`
       3, 7, 12; `ByName` 3, 12, 7; `ByUnit` 7, 3, 12; `ByEnabledOnStart` 3, 7, 12; `ByGroups` 12, 7, 3
       (the orders `PenEditorViewModelTests.cs:294-304` pins today)
-- [ ] write the failing test `TheTextOrders_IgnoreCase`: two pens named `alpha` and `Beta` order alpha
+- [x] write the failing test `TheTextOrders_IgnoreCase`: two pens named `alpha` and `Beta` order alpha
       first, and two pens differing only in case order by id
-- [ ] create `PenRowOrder` with the five `public static readonly IComparer` comparers, each
+- [x] create `PenRowOrder` with the five `public static readonly IComparer` comparers, each
       `Comparer<PenRowViewModel>.Create` over the key then `Pen.Id`; text keys through
       `StringComparer.CurrentCultureIgnoreCase`
-- [ ] run `PenRowOrderTests`: every case passes
+- [x] run `PenRowOrderTests`: every case passes
 
 ### Task 4: Replace the pen table with the DataGrid pen list
 

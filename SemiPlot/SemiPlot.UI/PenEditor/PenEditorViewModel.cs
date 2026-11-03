@@ -30,6 +30,7 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 	private readonly ArchiveCallQueue _archiveCallQueue;
 	private readonly CompositeDisposable _disposables = [];
 	private readonly ObservableCollection<PenRowViewModel> _rows;
+	private readonly HashSet<PenRowViewModel> _matchingRows = [];
 	private readonly ObservableAsPropertyHelper<PenFormViewModel?> _selectedForm;
 	private readonly ObservableAsPropertyHelper<bool> _isRefreshing;
 
@@ -47,10 +48,11 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 		_archiveCallQueue = new ArchiveCallQueue(editorCallSucceeded);
 
 		var rows = RowsOf(catalogue);
+		MatchFilter(rows);
 		_rows = [.. rows];
 		PenRows = new DataGridCollectionView(_rows)
 		{
-			Filter = row => row is PenRowViewModel penRow && PenRowFilter.Matches(penRow, FilterText),
+			Filter = row => row is PenRowViewModel penRow && _matchingRows.Contains(penRow),
 		};
 		Groups = GroupsOf(rows, catalogue.Groups);
 
@@ -67,7 +69,9 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 		_disposables.Add(_isRefreshing);
 	}
 
-	/// <summary>The one view the pen list sorts; a refresh replaces its rows and keeps its sort.</summary>
+	/// <summary>
+	/// The one view the pen list sorts and filters; a refresh replaces its rows and keeps its sort and filter.
+	/// </summary>
 	public DataGridCollectionView PenRows { get; }
 
 	/// <summary>
@@ -78,15 +82,21 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 		get;
 		set
 		{
-			if (field != value)
+			var text = value ?? string.Empty;
+			if (field == text)
 			{
-				this.RaiseAndSetIfChanged(ref field, value);
-				ShowRowsMatchingFilter();
+				return;
 			}
+
+			field = text;
+			this.RaisePropertyChanged();
+			ShowRowsMatchingFilter();
 		}
 	} = string.Empty;
 
-	/// <summary>Set by each pen list selection change and by the refresh; the list binds it one way.</summary>
+	/// <summary>
+	/// Set by each pen list selection change, by the refresh and by a filter that hides it; the list binds it one way.
+	/// </summary>
 	public PenRowViewModel? SelectedRow
 	{
 		get;
@@ -149,17 +159,24 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 			form => Observable.Return<PenFormViewModel?>(form).Concat(Observable.Never<PenFormViewModel?>()));
 	}
 
-	// The clear runs ahead of the refresh, so the grid drops its current row before the view is re-created.
+	// docs/architecture/overview.md#the-pen-list-filter
 	private void ShowRowsMatchingFilter()
 	{
-		if (SelectedRow is not null && !PenRowFilter.Matches(SelectedRow, FilterText))
+		MatchFilter(_rows);
+		if (SelectedRow is not null && !_matchingRows.Contains(SelectedRow))
 		{
 			SelectedRow = null;
 		}
 
-		// After a refresh the grid selects the view's current item, which a cleared selection leaves set.
 		PenRows.MoveCurrentTo(SelectedRow);
 		PenRows.Refresh();
+	}
+
+	/// <summary>The view shows only these rows, so a sort, which refreshes the view, re-applies no filter.</summary>
+	private void MatchFilter(IEnumerable<PenRowViewModel> rows)
+	{
+		_matchingRows.Clear();
+		_matchingRows.UnionWith(rows.Where(row => PenRowFilter.Matches(row, FilterText)));
 	}
 
 	private async Task RefreshAsync()
@@ -187,6 +204,7 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 		var rows = RowsOf(read.Value);
 		var replacedGroups = Groups;
 
+		MatchFilter(rows);
 		_rows.Clear();
 		foreach (var row in rows)
 		{
@@ -194,7 +212,7 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 		}
 
 		replacedGroups.Dispose();
-		SelectedRow = rows.FirstOrDefault(row => row.Pen.Id == selectedPenId && PenRowFilter.Matches(row, FilterText));
+		SelectedRow = rows.FirstOrDefault(row => row.Pen.Id == selectedPenId && _matchingRows.Contains(row));
 		Groups = GroupsOf(rows, read.Value.Groups);
 	}
 

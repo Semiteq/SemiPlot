@@ -323,7 +323,9 @@ below).
   ```
 
 - `ShowRowsMatchingFilter()`: if `SelectedRow` is set and `PenRowFilter.Matches(SelectedRow, FilterText)` is
-  false, set `SelectedRow = null`; then `PenRows.Refresh()`.
+  false, set `SelectedRow = null`; then `PenRows.MoveCurrentTo(SelectedRow)`; then `PenRows.Refresh()`. As
+  built, the match reads the `_matchingRows` set the method recomputes first (the ⚠️ on the no-refilter
+  ASSUMPTION under Task 3).
 - `RefreshAsync` (`:165`): `SelectedRow = rows.FirstOrDefault(row => row.Pen.Id == selectedPenId && PenRowFilter.Matches(row, FilterText));`
   The refill loop (`:158-162`) does not change.
 
@@ -364,7 +366,7 @@ sentence, so the box and the header use one term per concept.
   matching `SelectedRow` before `Refresh()` and writes it back after; the test then asserts the same
   `SelectedRow` and a form for the same pen, and the deviation is recorded as a ⚠️ under Task 3. The fallback
   loses no edit: typing in the filter box means the focus left the form field, whose `LostFocus` wrote it.
-- ASSUMPTION: a `PenRows.Refresh()` with no row selected selects nothing. The view's current item can be a row while nothing is selected: the view opens with its first row current, and a Ctrl+click that clears the selection leaves the row current. When the filter hides that row, `DataGridCollectionView.ResetCurrencyValues` makes the first matching row current and the grid's `UpdateStateOnCurrentChanged` selects it (decompiled `Avalonia.Controls.DataGrid` 12.0.1, verified 2026-11-03), so this assumption is expected to fail. Guard: `PenListViewTests.TypingInTheFilterBox_ShowsOnlyTheMatchingRowsAndClearingItShowsEveryRow`, which types "bias" with no row clicked and so hides Argon, the view's current row. Fallback: `ShowRowsMatchingFilter` calls `PenRows.MoveCurrentTo(SelectedRow)` after the clear and before `PenRows.Refresh()`. With a selected row the call changes nothing, because the grid already made that row current; with none it puts the current item before the first row, so the refresh selects nothing. The deviation is recorded as a ⚠️ under Task 3, and Task 5 states it in `overview.md`.
+- ASSUMPTION: a `PenRows.Refresh()` with no row selected selects nothing. The view's current item can be a row while nothing is selected: the view opens with its first row current, and a Ctrl+click that clears the selection leaves the row current. When the filter hides that row, `DataGridCollectionView.ResetCurrencyValues` makes the first matching row current and the grid's `UpdateStateOnCurrentChanged` selects it (decompiled `Avalonia.Controls.DataGrid` 12.0.1, verified 2026-11-03), so this assumption is expected to fail. Guard: `PenListViewTests.TypingInTheFilterBox_ShowsOnlyTheMatchingRowsAndClearingItShowsEveryRow`, which types "bias" with no row clicked and so hides Argon, the view's current row. Fallback: `ShowRowsMatchingFilter` calls `PenRows.MoveCurrentTo(SelectedRow)` after the clear and before `PenRows.Refresh()`. With a selected row the call changes nothing, because the grid already made that row current; with none it puts the current item before the first row, so the refresh selects nothing. The deviation is recorded as a ⚠️ under Task 3, and Task 5 states it in `overview.md`. As measured, the view opens with no current item; the ⚠️ under Task 3 records where the assumption failed instead.
 - ASSUMPTION: while `Filter` is set, a row added to `_rows` enters the view only if it passes the filter, at
   its sorted place. Guard: `PenEditorViewModelTests.ARefreshWhileFiltered_ShowsOnlyTheMatchingRowsAndKeepsTheText`
   under a descending id sort. Fallback: `RefreshAsync` calls `PenRows.Refresh()` once after the refill loop;
@@ -513,6 +515,13 @@ nothing: `AFilterTheSelectedRowMatches_KeepsTheRowSelectedAndItsForm` and
 `AHeaderClick_SortsAscendingThenDescendingAndKeepsTheSelectedPenAndItsForm` keep asserting the same instances.
 Task 5 states the built behaviour in `overview.md`.
 
+⚠️ The no-refilter ASSUMPTION held for a row's own change but failed at a sort, found in review: a header
+click re-creates the view, which re-ran `PenRowFilter.Matches` over the live row, so a selected row that
+stopped matching through a membership change or a rename was hidden and the grid selected the first matching
+row. The fallback is built: `Filter` reads `_matchingRows`, which `ShowRowsMatchingFilter` and `RefreshAsync`
+recompute. `PenListViewTests.AHeaderClickAfterTheSelectedRowStoppedMatching_KeepsTheRowShownAndSelected` failed
+before the change and passes after it.
+
 
 ### Task 4: Verify acceptance criteria
 
@@ -551,7 +560,7 @@ Task 5 states the built behaviour in `overview.md`.
       name or group" / «Фильтр: номер, имя или группа», which reuses the Id column's term in each language
 - [x] if a Task 2 or Task 3 fallback ran, state the built behaviour in the matching `overview.md` sentence
       (the Task 3 no-selection fallback: `overview.md#the-pen-list-filter`, the `MoveCurrentTo` paragraph)
-- [x] move this plan to `docs/plans/completed/` (left to the delivery step)
+- [ ] move this plan to `docs/plans/completed/` (left to the delivery step)
 
 ## Post-Completion
 

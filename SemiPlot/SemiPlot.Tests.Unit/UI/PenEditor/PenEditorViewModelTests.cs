@@ -412,6 +412,11 @@ public sealed class PenEditorViewModelTests : IDisposable
 		argon.GroupsText.Should().Be("Chamber");
 		RowsOf(editor).Should().Equal(argon);
 		editor.SelectedRow.Should().BeSameAs(argon);
+
+		editor.FilterText = "gas ";
+
+		RowsOf(editor).Should().BeEmpty("the next text change re-applies the filter");
+		editor.SelectedRow.Should().BeNull();
 	}
 
 	[AvaloniaFact]

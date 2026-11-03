@@ -258,13 +258,14 @@ until the first successful refresh. It carries no notice: every running chart fo
 writes through the catalogue read (`overview.md#the-live-catalogue`), except the scale pair and the log
 scale flag, which change no pen already shown (`overview.md#what-a-read-changes`), so there is nothing to
 wait for. The top bar's filter box reads the watermark `PenEditorFilterPlaceholder`, "Filter: id, name or
-group" / «Фильтр: номер, имя или группа», which reuses the Id column's term in each language, `PenEditorColumnId`
-"Id" / «Номер», lower-cased inside the sentence (`overview.md#the-pen-list-filter`).
+group" / «Фильтр: номер, имя или группа», which reuses the Id column's term in each language,
+`PenEditorColumnId` "Id" / «Номер», lower-cased inside the sentence (`overview.md#the-pen-list-filter`).
 
 The groups pane reads its title `PenGroupsTitle`, "Groups" / "Группы", and the one-line subtitle
 `PenGroupsSubtitle`, "The selected pen's groups are ticked" / "Отмечены группы выбранного пера". The
-new-group row reads `PenGroupsNewNamePlaceholder`, one of the tree's three watermark keys beside the top bar's
-`PenEditorFilterPlaceholder` and the marker label editor's `MarkerLabelPlaceholder` (`#the-marker-menu-and-label-editors-text`), and `PenGroupsCreate`. The
+new-group row reads `PenGroupsNewNamePlaceholder`, one of the tree's three watermark keys beside the top
+bar's `PenEditorFilterPlaceholder` and the marker label editor's `MarkerLabelPlaceholder`
+(`#the-marker-menu-and-label-editors-text`), and `PenGroupsCreate`. The
 grid's membership column has no header; the other two read `PenGroupsColumnGroup`, "Group" / "Группа", and
 `PenGroupsColumnActions`, "Actions" / "Действия". A row's pen count carries the tooltip
 `PenGroupsMemberCountTip`, "Pens in the group" / "Перьев в группе", and its "..." button, a glyph and not

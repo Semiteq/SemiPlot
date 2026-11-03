@@ -355,6 +355,63 @@ public sealed class PenListViewTests : IDisposable
 	}
 
 	[AvaloniaFact]
+	public void AHeaderClickAfterTheSelectedRowStoppedMatching_KeepsTheRowShownAndSelected()
+	{
+		var catalogue = new PenCatalogue([Argon, Pressure, Power], [Chamber, Gas with { MemberPenIds = [3, 12] }]);
+		using var viewModel = _editor.EditorOver(catalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			var list = PenListOf(window);
+			HeadlessInput.Type(window, FilterBoxOf(window), "gas");
+			HeadlessInput.Click(window, RowAt(window, 0));
+			var argon = viewModel.SelectedRow;
+			var form = viewModel.SelectedForm;
+			argon!.Pen.Should().Be(Argon);
+			HeadlessInput.Click(window, Descendant<CheckBox>(GroupRowAt(window, 1), "MembershipBox"));
+			argon.GroupsText.Should().Be(Chamber.Name, "Argon left Gas");
+
+			HeadlessInput.Click(window, HeaderOf(window, Resources.PenEditorColumnName));
+
+			RealisedPens(list).Should().Equal(Argon, Power);
+			list.SelectedItem.Should().BeSameAs(argon, "a sort re-applies no filter");
+			viewModel.SelectedRow.Should().BeSameAs(argon);
+			viewModel.SelectedForm.Should().BeSameAs(form);
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void ARefreshThatMakesTheSelectedPenStopMatching_ClearsTheListSelectionAndShowsTheHint()
+	{
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			var list = PenListOf(window);
+			HeadlessInput.Click(window, RowAt(window, 1));
+			viewModel.SelectedRow!.Pen.Should().Be(Pressure);
+			HeadlessInput.Type(window, FilterBoxOf(window), "chamber");
+			_editor.ReadResult = Result.Ok(new PenCatalogue(
+				[Argon, Pressure with { Name = "Gauge" }, Power], [Chamber with { MemberPenIds = [3] }, Spare]));
+
+			HeadlessInput.Click(window, Named<Button>(window, "PenEditorRefreshButton"));
+
+			RealisedPens(list).Should().Equal(Argon);
+			list.SelectedItem.Should().BeNull("the refreshed pen no longer matches");
+			viewModel.SelectedRow.Should().BeNull();
+			IsOnScreen(Named<TextBlock>(window, "PenFormEmptyHint")).Should().BeTrue();
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
 	public void TheGroupsPane_ListsEveryGroupWhileThePenListIsFiltered()
 	{
 		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);

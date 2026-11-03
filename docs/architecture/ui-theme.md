@@ -40,7 +40,7 @@ control, in each state the tree can reach.
 | `WindowDefaultForeground` | `Window`, and every control inheriting from it | `#000000` | `#DFE1E5` |
 | `MenuItemForeground` | Every menu caption at rest: the menu bar's File, Edit, View and Help, their items, the check glyph, and the `TextBox` context menu | `#000000` | `#DFE1E5` |
 | `MenuItemPointeroverForeground` | A menu caption while its submenu is open or the pointer is over it; Semi ships this brighter than its own text colour | `#000000` | `#DFE1E5` |
-| `TextBoxPlaceholderForeground` | A `TextBox` watermark: the new-group-name field of the pen editor's groups pane and the pen editor's filter box `PenListFilter` | `#818594` | `#6F737A` |
+| `TextBoxPlaceholderForeground` | Every `TextBox` watermark: the pen editor's filter box `PenListFilter`, its colour box, the new-group-name field of its groups pane, and the chart's marker label editor | `#818594` | `#6F737A` |
 | `TextBlockDisabledForeground` | Disabled `TextBlock` | `#A8ADBD` | `#5A5D63` |
 | `TextBoxDisabledForeground` | Disabled `TextBox` | `#A8ADBD` | `#5A5D63` |
 | `ButtonDefaultDisabledForeground` | A button whose command cannot execute | `#A8ADBD` | `#5A5D63` |

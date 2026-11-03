@@ -113,7 +113,7 @@ public sealed class PenEditorLayoutViewTests : IDisposable
 			var addedCount = Named<TextBlock>(window, "PenEditorAddedCount");
 
 			box.GetVisualAncestors().Should().Contain(topBar, "the box sits in the top bar");
-			box.Bounds.Width.Should().Be(PenEditorWindow.FilterBoxWidth);
+			box.Bounds.Width.Should().Be(PenEditorWindow.FilterBoxWidth).And.Be(280);
 			LeftOf(box, window).Should().Be(LeftOf(PenListBorderOf(window), window), "the box starts above the list");
 			LeftOf(box, window).Should().Be(Gap);
 			box.Bounds.Height.Should().Be(refresh.Bounds.Height, "the box keeps the bar at the button's height");
@@ -143,7 +143,8 @@ public sealed class PenEditorLayoutViewTests : IDisposable
 			var inner = box.Bounds.Width
 				- box.Padding.Left - box.Padding.Right
 				- box.BorderThickness.Left - box.BorderThickness.Right;
-			var placeholder = font.MeasureText(Resources.PenEditorFilterPlaceholder);
+			var placeholder = font.MeasureText(
+				box.PlaceholderText ?? throw new InvalidOperationException("The filter box shows no placeholder."));
 
 			TestContext.Current.TestOutputHelper?.WriteLine(
 				$"{culture}: placeholder {placeholder:0.#} px, inner width {inner:0.#} px");

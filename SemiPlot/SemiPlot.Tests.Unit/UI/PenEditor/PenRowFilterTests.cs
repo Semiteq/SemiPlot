@@ -29,6 +29,7 @@ public sealed class PenRowFilterTests
 
 	[AvaloniaTheory]
 	[InlineData("1", new[] { 12 })]
+	[InlineData("2", new[] { 12 })]
 	[InlineData("7", new[] { 7 })]
 	[InlineData("power", new[] { 12 })]
 	[InlineData("flow", new[] { 3 })]
@@ -50,6 +51,15 @@ public sealed class PenRowFilterTests
 		PenRowFilter.Matches(new PenRowViewModel(Argon, _groups), "ARGON").Should().BeTrue();
 		PenRowFilter.Matches(chamberPressure, "\u0414\u0410\u0412\u041b\u0415\u041d\u0418\u0415").Should().BeTrue();
 		PenRowFilter.Matches(chamberPressure, "\u041a\u0410\u041c\u0415\u0420\u042b").Should().BeTrue();
+	}
+
+	// Under Turkish casing the capital of 'i' is the dotted capital, which an ordinal comparison would not fold.
+	[AvaloniaFact]
+	public void TheMatch_FoldsCaseByTheCurrentCulture()
+	{
+		using var cultureScope = new CultureScope("tr-TR");
+
+		PenRowFilter.Matches(new PenRowViewModel(Power, _groups), "B\u0130AS").Should().BeTrue();
 	}
 
 	[AvaloniaFact]

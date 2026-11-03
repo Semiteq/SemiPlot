@@ -560,15 +560,16 @@ on the selected row clears the selection, and the pane shows the hint
 
 #### The pen list filter
 
-The filter narrows the same view the grid sorts. `PenRows.Filter` is set once, in the constructor, to
-`PenEditor/PenRowFilter.Matches` over the row and `FilterText`. The match trims the text at both ends; an
-empty or whitespace-only text matches every row. Otherwise a row matches when its id as invariant decimal
-text, `Pen.Name` or `GroupsText` contains the text under `StringComparison.CurrentCultureIgnoreCase`, the
-comparison the sort uses, so Cyrillic folds case too; the unit is not matched (`PenRowFilterTests`). The box
-`PenListFilter` is the one writer of `FilterText`, through a two-way `Text` binding that writes on every
-keystroke. The setter calls `ShowRowsMatchingFilter` when the value changes, and that calls
-`PenRows.Refresh()`, which re-creates the view with its sort descriptions and its filter. Nothing touches the
-sort descriptions, so the order and the header's arrow stay (`AFilter_KeepsTheSortOrder`,
+The filter narrows the same view the grid sorts. `PenRows.Filter` is set once, in the constructor, to a
+lookup in `_matchingRows`, the set of rows `PenEditor/PenRowFilter.Matches` accepts for `FilterText`. The
+match trims the text at both ends; an empty or whitespace-only text matches every row. Otherwise a row
+matches when its id as invariant decimal text, `Pen.Name` or `GroupsText` contains the text under
+`StringComparison.CurrentCultureIgnoreCase`, the comparison the sort uses, so Cyrillic folds case too; the
+unit is not matched (`PenRowFilterTests`). The box `PenListFilter` is the one writer of `FilterText`,
+through a two-way `Text` binding that writes on every keystroke; a null it writes becomes an empty text. The
+setter calls `ShowRowsMatchingFilter` when the value changes, which recomputes the set over every row and
+calls `PenRows.Refresh()`, which re-creates the view with its sort descriptions and its filter. Nothing
+touches the sort descriptions, so the order and the header's arrow stay (`AFilter_KeepsTheSortOrder`,
 `PenListViewTests.AFilterUnderASort_KeepsTheOrderAndItsArrow`). No throttle runs: the rows are in memory and
 the view realises only the rows on screen.
 
@@ -590,14 +591,19 @@ nothing; with none it puts the current item before the first row, and the refres
 (`PenListViewTests.AFilterAfterACtrlClickClearedTheSelection_SelectsNoRow`). The grid's echo through
 `OnPenListSelectionChanged` writes the same null.
 
-The catalogue refresh keeps `FilterText`. Each row the refill adds enters the view only if it passes the
-filter, at its sorted place (`ARefreshWhileFiltered_ShowsOnlyTheMatchingRowsAndKeepsTheText`), and
-`RefreshAsync` restores the selected pen only if its new row passes the filter, since the re-read row may
-carry a new name or new groups (`ARefreshThatMakesTheSelectedPenStopMatching_ClearsTheSelection`).
+The catalogue refresh keeps `FilterText`. `RefreshAsync` recomputes the set over the new rows before the
+refill, so each row the refill adds enters the view only if it matches, at its sorted place
+(`ARefreshWhileFiltered_ShowsOnlyTheMatchingRowsAndKeepsTheText`), and it restores the selected pen only if
+its new row matches, since the re-read row may carry a new name or new groups
+(`ARefreshThatMakesTheSelectedPenStopMatching_ClearsTheSelection`,
+`PenListViewTests.ARefreshThatMakesTheSelectedPenStopMatching_ClearsTheListSelectionAndShowsTheHint`).
 
-The view does not filter a row again when the row's name or groups change; the filter applies at the next
-text change and at the next refresh. With "Chamber" typed, unticking Chamber for the selected pen, or
-renaming it in its form, would otherwise hide the row and drop the form under the operator's hands
+The view does not filter a row again when the row's name or groups change, because the filter reads the set
+and not the row: the filter applies at the next text change and at the next refresh. A column sort also
+re-creates the view, and the set keeps the selected row in it
+(`PenListViewTests.AHeaderClickAfterTheSelectedRowStoppedMatching_KeepsTheRowShownAndSelected`). With
+"Chamber" typed, unticking Chamber for the selected pen, or renaming it in its form, would otherwise hide the
+row and drop the form under the operator's hands
 (`AMembershipChangeThatStopsTheSelectedRowMatching_KeepsTheRowShownAndSelected`). The groups pane takes the
 row array, not `PenRows`, so it lists every group whatever the list shows (`AFilter_LeavesTheGroupsPaneWhole`,
 `PenListViewTests.TheGroupsPane_ListsEveryGroupWhileThePenListIsFiltered`).

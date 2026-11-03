@@ -955,22 +955,22 @@ pane.
 
 ### Task 5: Verify acceptance criteria
 
-- [ ] run the filtered command under Acceptance Evidence: 0 failed, every named test present
-- [ ] run `dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj`: 0 failed
-- [ ] run `dotnet build SemiPlot.slnx`: 0 errors and no warning beyond the two NU1902 for `MessagePack`
-      2.5.302 in `SemiPlot.AppHost` that the base already reports
-- [ ] set `$BASE` to the stacking base: `pen-editor-pens-pane` while it is unmerged, `master` once it merges
-      (`git merge-base --is-ancestor pen-editor-pens-pane master`, exit 1 means unmerged)
-- [ ] run `dotnet format SemiPlot.slnx --verify-no-changes`, then `dotnet tool restore` and `dotnet terse`
-      over every `.cs` file `git diff --name-only $BASE...HEAD` lists: both exit 0
-- [ ] run the HeadlessInput gate, the key gate with `-- SemiPlot` only, the `.Memberships` gate and the
+- [x] run the filtered command under Acceptance Evidence: 0 failed, every named test present (278 passed, all 56 named tests listed)
+- [x] run `dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj`: 0 failed (2696 passed)
+- [x] run `dotnet build SemiPlot.slnx`: 0 errors and no warning beyond the two NU1902 for `MessagePack`
+      2.5.302 in `SemiPlot.AppHost` that the base already reports (0 errors; only the NU1902 `MessagePack` warnings, pre-existing)
+- [x] set `$BASE` to the stacking base: `pen-editor-pens-pane` while it is unmerged, `master` once it merges
+      (`git merge-base --is-ancestor pen-editor-pens-pane master`, exit 1 means unmerged) (exit 1: `$BASE` = `pen-editor-pens-pane`)
+- [x] run `dotnet format SemiPlot.slnx --verify-no-changes`, then `dotnet tool restore` and `dotnet terse`
+      over every `.cs` file `git diff --name-only $BASE...HEAD` lists: both exit 0 (18 files)
+- [x] run the HeadlessInput gate, the key gate with `-- SemiPlot` only, the `.Memberships` gate and the
       `Danger` gate under Acceptance Evidence: each prints what it must; the key gate over `docs/architecture`
       runs in Task 6
-- [ ] confirm the scope guard: `git diff $BASE...HEAD --stat` lists no `IPenCatalogueEditor`, `ArchiveCallQueue`,
+- [x] confirm the scope guard: `git diff $BASE...HEAD --stat` lists no `IPenCatalogueEditor`, `ArchiveCallQueue`,
       `PostgresPenCatalogueEditor`, `PenFormViewModel.cs` or `HeaderMeasuredColumns.cs`, and
       `git diff $BASE...HEAD -- SemiPlot/SemiPlot.UI/PenEditor/PenGroupWriter.cs SemiPlot/SemiPlot.UI/PenEditor/PenMembershipViewModel.cs`
       changes only `///` lines
-- [ ] confirm no filter box and no saved widths: `git diff $BASE...HEAD -- SemiPlot/SemiPlot.UI` adds no
+- [x] confirm no filter box and no saved widths: `git diff $BASE...HEAD -- SemiPlot/SemiPlot.UI` adds no
       `TextBox` to `PenEditorTopBar` and no settings key
 
 ### Task 6: [Final] Update documentation

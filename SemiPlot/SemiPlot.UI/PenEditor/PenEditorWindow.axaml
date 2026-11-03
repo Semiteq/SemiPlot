@@ -3,6 +3,7 @@
         xmlns:local="clr-namespace:SemiPlot.UI.PenEditor"
         xmlns:input="clr-namespace:SemiPlot.UI.Input"
         xmlns:legend="clr-namespace:SemiPlot.UI.Legend"
+        xmlns:tables="clr-namespace:SemiPlot.UI.Tables"
         xmlns:text="clr-namespace:SemiPlot.UI.Localization"
         xmlns:trends="clr-namespace:SemiPlot.Core.Trends;assembly=SemiPlot.Core"
         x:Class="SemiPlot.UI.PenEditor.PenEditorWindow"
@@ -18,20 +19,7 @@
 
     <Window.Resources>
         <GridLength x:Key="IdColumnWidth">72</GridLength>
-        <ColumnDefinitions x:Key="PenTableColumns"
-                           x:Shared="False">
-            <ColumnDefinition Width="{StaticResource IdColumnWidth}" />
-            <ColumnDefinition Width="112" />
-            <ColumnDefinition Width="68" />
-            <ColumnDefinition Width="220" />
-            <ColumnDefinition Width="96" />
-            <ColumnDefinition Width="96" />
-            <ColumnDefinition Width="104" />
-            <ColumnDefinition Width="104" />
-            <ColumnDefinition Width="104" />
-            <ColumnDefinition Width="160" />
-            <ColumnDefinition Width="*" />
-        </ColumnDefinitions>
+        <x:Double x:Key="DataGridCellMinHeight">28</x:Double>
         <ColumnDefinitions x:Key="MembershipColumns"
                            x:Shared="False">
             <ColumnDefinition Width="{StaticResource IdColumnWidth}" />
@@ -44,18 +32,17 @@
     </Window.Resources>
 
     <Window.Styles>
-        <Style Selector="Button.column-header">
-            <Setter Property="HorizontalAlignment" Value="Stretch" />
-            <Setter Property="HorizontalContentAlignment" Value="Left" />
-            <Setter Property="Padding" Value="6,2" />
-            <Setter Property="VerticalContentAlignment" Value="Center" />
-            <Setter Property="Height" Value="44" />
-            <Setter Property="ContentTemplate">
-                <DataTemplate x:DataType="x:String">
-                    <TextBlock Text="{Binding}"
-                               TextWrapping="Wrap" />
-                </DataTemplate>
-            </Setter>
+        <Style Selector="DataGrid#PenList DataGridColumnHeader">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="DataGrid#PenList DataGridCell:current /template/ Rectangle#CurrencyVisual, DataGrid#PenList DataGridCell:focus /template/ Panel#FocusVisual">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+        <Style Selector="TextBlock.grid-cell">
+            <Setter Property="Margin" Value="12,0,8,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         </Style>
         <Style Selector="TextBlock.cell">
             <Setter Property="Margin" Value="6,0" />
@@ -68,7 +55,7 @@
         <Style Selector="Grid#FormScale TextBox">
             <Setter Property="Width" Value="120" />
         </Style>
-        <Style Selector="ListBox#PenTable ListBoxItem, ListBox#GroupList ListBoxItem">
+        <Style Selector="ListBox#GroupList ListBoxItem">
             <Setter Property="Padding" Value="0" />
             <Setter Property="MinHeight" Value="0" />
         </Style>
@@ -84,186 +71,139 @@
             <TabItem Name="PensTab"
                      Header="{x:Static text:Resources.PenEditorPensTab}">
 
-                <Grid RowDefinitions="Auto,*,Auto"
+                <Grid RowDefinitions="*,Auto"
                       RowSpacing="4">
 
-                    <Grid Grid.Row="0"
-                          Name="PenTableHeader"
-                          ColumnDefinitions="{StaticResource PenTableColumns}">
+                    <Border Grid.Row="0"
+                            BorderBrush="{DynamicResource AppBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="4">
 
-                        <Button Grid.Column="0"
-                                Name="SortById"
-                                Classes="column-header"
-                                Content="{x:Static text:Resources.PenEditorColumnId}"
-                                Command="{Binding SortCommand}"
-                                CommandParameter="{x:Static local:PenColumn.Id}" />
+                        <DataGrid Name="PenList"
+                                  ItemsSource="{Binding PenRows}"
+                                  SelectedItem="{Binding SelectedRow, Mode=OneWay}"
+                                  SelectionChanged="OnPenListSelectionChanged"
+                                  IsReadOnly="True"
+                                  SelectionMode="Single"
+                                  HeadersVisibility="Column"
+                                  GridLinesVisibility="None"
+                                  CanUserSortColumns="True"
+                                  CanUserResizeColumns="True"
+                                  CanUserReorderColumns="False"
+                                  RowHeight="{x:Static local:PenEditorWindow.RowHeight}"
+                                  tables:HeaderMeasuredColumns.IsEnabled="True">
+                            <DataGrid.Columns>
 
-                        <Button Grid.Column="1"
-                                Name="SortByEnabledOnStart"
-                                Classes="column-header"
-                                Content="{x:Static text:Resources.PenEditorColumnOnStart}"
-                                Command="{Binding SortCommand}"
-                                CommandParameter="{x:Static local:PenColumn.EnabledOnStart}" />
+                                <DataGridTemplateColumn Header="{x:Static text:Resources.PenEditorColumnId}"
+                                                        Width="84"
+                                                        CanUserSort="True"
+                                                        CanUserResize="True"
+                                                        CustomSortComparer="{x:Static local:PenRowOrder.ById}">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate x:DataType="local:PenRowViewModel">
+                                            <TextBlock Name="RowId"
+                                                       Classes="grid-cell"
+                                                       Text="{Binding Pen.Id}"
+                                                       ToolTip.Tip="{Binding $self.Text}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
 
-                        <Button Grid.Column="2"
-                                Name="SortByColor"
-                                Classes="column-header"
-                                Content="{x:Static text:Resources.PenEditorColumnColor}"
-                                Command="{Binding SortCommand}"
-                                CommandParameter="{x:Static local:PenColumn.Color}" />
+                                <DataGridTemplateColumn Header="{x:Static text:Resources.PenEditorColumnName}"
+                                                        Width="220"
+                                                        CanUserSort="True"
+                                                        CanUserResize="True"
+                                                        CustomSortComparer="{x:Static local:PenRowOrder.ByName}">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate x:DataType="local:PenRowViewModel">
+                                            <Grid Margin="12,0,8,0"
+                                                  ColumnDefinitions="Auto,*"
+                                                  ColumnSpacing="8">
 
-                        <Button Grid.Column="3"
-                                Name="SortByName"
-                                Classes="column-header"
-                                Content="{x:Static text:Resources.PenEditorColumnName}"
-                                Command="{Binding SortCommand}"
-                                CommandParameter="{x:Static local:PenColumn.Name}" />
+                                                <Border Grid.Column="0"
+                                                        Name="RowColor"
+                                                        Width="12"
+                                                        Height="12"
+                                                        CornerRadius="6"
+                                                        VerticalAlignment="Center"
+                                                        BorderBrush="{DynamicResource AppBorderBrush}"
+                                                        BorderThickness="1">
+                                                    <Border.Background>
+                                                        <Binding Path="Pen.Color"
+                                                                 Converter="{x:Static legend:LegendConverters.HexToBrush}" />
+                                                    </Border.Background>
+                                                </Border>
 
-                        <Button Grid.Column="4"
-                                Name="SortByUnit"
-                                Classes="column-header"
-                                Content="{x:Static text:Resources.PenEditorColumnUnit}"
-                                Command="{Binding SortCommand}"
-                                CommandParameter="{x:Static local:PenColumn.Unit}" />
+                                                <TextBlock Grid.Column="1"
+                                                           Name="RowName"
+                                                           Classes="grid-cell"
+                                                           Margin="0"
+                                                           Text="{Binding Pen.Name}"
+                                                           ToolTip.Tip="{Binding $self.Text}" />
 
-                        <Button Grid.Column="5"
-                                Name="SortByMask"
-                                Classes="column-header"
-                                Content="{x:Static text:Resources.PenEditorColumnMask}"
-                                Command="{Binding SortCommand}"
-                                CommandParameter="{x:Static local:PenColumn.Mask}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
 
-                        <Button Grid.Column="6"
-                                Name="SortByLineStyle"
-                                Classes="column-header"
-                                Content="{x:Static text:Resources.PenEditorColumnLineStyle}"
-                                Command="{Binding SortCommand}"
-                                CommandParameter="{x:Static local:PenColumn.LineStyle}" />
+                                <DataGridTemplateColumn Header="{x:Static text:Resources.PenEditorColumnUnit}"
+                                                        Width="96"
+                                                        CanUserSort="True"
+                                                        CanUserResize="True"
+                                                        CustomSortComparer="{x:Static local:PenRowOrder.ByUnit}">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate x:DataType="local:PenRowViewModel">
+                                            <TextBlock Name="RowUnit"
+                                                       Classes="grid-cell"
+                                                       Text="{Binding Pen.Unit}"
+                                                       ToolTip.Tip="{Binding $self.Text}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
 
-                        <Button Grid.Column="7"
-                                Name="SortByScaleMinOnStart"
-                                Classes="column-header"
-                                Content="{x:Static text:Resources.PenEditorColumnScaleMinOnStart}"
-                                Command="{Binding SortCommand}"
-                                CommandParameter="{x:Static local:PenColumn.ScaleMinOnStart}" />
+                                <DataGridTemplateColumn Header="{x:Static text:Resources.PenEditorColumnOnStart}"
+                                                        Width="120"
+                                                        CanUserSort="True"
+                                                        CanUserResize="True"
+                                                        CustomSortComparer="{x:Static local:PenRowOrder.ByEnabledOnStart}">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate x:DataType="local:PenRowViewModel">
+                                            <PathIcon Name="RowEnabledOnStart"
+                                                      Width="12"
+                                                      Height="12"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"
+                                                      Data="{StaticResource CheckGeometry}"
+                                                      IsVisible="{Binding Pen.EnabledOnStart}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
 
-                        <Button Grid.Column="8"
-                                Name="SortByScaleMaxOnStart"
-                                Classes="column-header"
-                                Content="{x:Static text:Resources.PenEditorColumnScaleMaxOnStart}"
-                                Command="{Binding SortCommand}"
-                                CommandParameter="{x:Static local:PenColumn.ScaleMaxOnStart}" />
+                                <DataGridTemplateColumn Header="{x:Static text:Resources.PenEditorColumnGroups}"
+                                                        Width="96"
+                                                        CanUserSort="True"
+                                                        CanUserResize="True"
+                                                        CustomSortComparer="{x:Static local:PenRowOrder.ByGroups}"
+                                                        tables:HeaderMeasuredColumns.IsFill="True">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate x:DataType="local:PenRowViewModel">
+                                            <TextBlock Name="RowGroups"
+                                                       Classes="grid-cell"
+                                                       Margin="12,0,12,0"
+                                                       Foreground="{DynamicResource AppSecondaryForegroundBrush}"
+                                                       Text="{Binding GroupsText}"
+                                                       ToolTip.Tip="{Binding $self.Text}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
 
-                        <Button Grid.Column="9"
-                                Name="SortByLogScaleOnStart"
-                                Classes="column-header"
-                                Content="{x:Static text:Resources.PenEditorColumnLogScaleOnStart}"
-                                Command="{Binding SortCommand}"
-                                CommandParameter="{x:Static local:PenColumn.LogScaleOnStart}" />
+                            </DataGrid.Columns>
+                        </DataGrid>
 
-                        <Button Grid.Column="10"
-                                Name="SortByGroups"
-                                Classes="column-header"
-                                Content="{x:Static text:Resources.PenEditorColumnGroups}"
-                                Command="{Binding SortCommand}"
-                                CommandParameter="{x:Static local:PenColumn.Groups}" />
+                    </Border>
 
-                    </Grid>
-
-                    <ListBox Grid.Row="1"
-                             Name="PenTable"
-                             ItemsSource="{Binding Rows}"
-                             SelectedItem="{Binding SelectedRow}">
-                        <ListBox.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <VirtualizingStackPanel />
-                            </ItemsPanelTemplate>
-                        </ListBox.ItemsPanel>
-                        <ListBox.ItemTemplate>
-                            <DataTemplate x:DataType="local:PenRowViewModel">
-                                <Grid Name="RowGrid"
-                                      Height="{x:Static local:PenEditorWindow.RowHeight}"
-                                      ColumnDefinitions="{StaticResource PenTableColumns}">
-
-                                <TextBlock Grid.Column="0"
-                                           Name="RowId"
-                                           Classes="cell"
-                                           Text="{Binding Pen.Id}" />
-
-                                <CheckBox Grid.Column="1"
-                                          Name="RowEnabledOnStart"
-                                          HorizontalAlignment="Center"
-                                          VerticalAlignment="Center"
-                                          IsHitTestVisible="False"
-                                          Focusable="False"
-                                          IsChecked="{Binding Pen.EnabledOnStart, Mode=OneWay}" />
-
-                                <Border Grid.Column="2"
-                                        Name="RowColor"
-                                        Width="14"
-                                        Height="14"
-                                        CornerRadius="7"
-                                        HorizontalAlignment="Center"
-                                        VerticalAlignment="Center">
-                                    <Border.Background>
-                                        <Binding Path="Pen.Color"
-                                                 Converter="{x:Static legend:LegendConverters.HexToBrush}" />
-                                    </Border.Background>
-                                </Border>
-
-                                <TextBlock Grid.Column="3"
-                                           Name="RowName"
-                                           Classes="cell"
-                                           Text="{Binding Pen.Name}" />
-
-                                <TextBlock Grid.Column="4"
-                                           Name="RowUnit"
-                                           Classes="cell"
-                                           Text="{Binding Pen.Unit}" />
-
-                                <TextBlock Grid.Column="5"
-                                           Name="RowMask"
-                                           Classes="cell"
-                                           Text="{Binding Pen.Format}" />
-
-                                <TextBlock Grid.Column="6"
-                                           Name="RowLineStyle"
-                                           Classes="cell">
-                                    <TextBlock.Text>
-                                        <Binding Path="Pen.LineStyle"
-                                                 Converter="{x:Static local:PenLineStyleConverters.ToLabel}" />
-                                    </TextBlock.Text>
-                                </TextBlock>
-
-                                <TextBlock Grid.Column="7"
-                                           Name="RowScaleMinOnStart"
-                                           Classes="cell"
-                                           Text="{Binding Pen.ScaleMinOnStart}" />
-
-                                <TextBlock Grid.Column="8"
-                                           Name="RowScaleMaxOnStart"
-                                           Classes="cell"
-                                           Text="{Binding Pen.ScaleMaxOnStart}" />
-
-                                <CheckBox Grid.Column="9"
-                                          Name="RowLogScaleOnStart"
-                                          HorizontalAlignment="Center"
-                                          VerticalAlignment="Center"
-                                          IsHitTestVisible="False"
-                                          Focusable="False"
-                                          IsChecked="{Binding Pen.LogScaleOnStart, Mode=OneWay}" />
-
-                                <TextBlock Grid.Column="10"
-                                           Name="RowGroups"
-                                           Classes="cell"
-                                           Text="{Binding GroupsText}" />
-
-                                </Grid>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-
-                    <Border Grid.Row="2"
+                    <Border Grid.Row="1"
                             Name="PenFormPanel"
                             Height="240"
                             Padding="0,8,0,0">

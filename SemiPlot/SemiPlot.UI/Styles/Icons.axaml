@@ -1,6 +1,8 @@
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
+    <StreamGeometry x:Key="CheckGeometry">M6.2,11.6 L2.6,8 L1.5,9.1 L6.2,13.8 L14.5,5.5 L13.4,4.4 Z</StreamGeometry>
+
     <StreamGeometry x:Key="ChevronDownGeometry">M2,5.5 L3.4,4.1 L8,8.7 L12.6,4.1 L14,5.5 L8,11.5 Z</StreamGeometry>
 
     <StreamGeometry x:Key="ChevronUpGeometry">M2,10.5 L3.4,11.9 L8,7.3 L12.6,11.9 L14,10.5 L8,4.5 Z</StreamGeometry>

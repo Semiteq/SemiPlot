@@ -683,7 +683,7 @@ Height of the form, from the AXAML: title 24; three section headers at 16 + 20 +
 - Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/MainWindow/MainWindowViewModelTests.cs`
 - Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/MainWindow/MainWindowViewTests.cs`
 
-- [ ] update `PenEditorWindowDriver` (`PenListOf`, `RowAt`, `HeaderOf`) and `RealisedPens`; update
+- [x] update `PenEditorWindowDriver` (`PenListOf`, `RowAt`, `HeaderOf`) and `RealisedPens`; update
       `TheBottomBar_StandsOnBothTabsRightAlignedAndTheVisibilityColumnReadsOnStart` to read the On start
       column's `Header` and `PenList`'s visibility; drop the `RowLineStyle` and `RowEnabledOnStart`
       checkbox reads of `ALineStyleChosenAndTheStartBoxClicked_WriteOneChangeEach` (read the glyph
@@ -693,48 +693,48 @@ Height of the form, from the AXAML: title 24; three section headers at 16 + 20 +
       `TheWindow_OpensOnA1280PxScreenAndAtItsMinimumWidthClipsNoFixedColumn`, which reads the deleted
       `PenTableHeader` and `PenTable` (`PenEditorViewTests.cs:190`, `:200`), and the `FixedColumnCount`
       constant it alone reads (`PenEditorViewTests.cs:39`); Task 5 writes its replacement
-- [ ] write the failing view test `ThePenList_RealisesNoCheckBox`: no `CheckBox` among the visual
+- [x] write the failing view test `ThePenList_RealisesNoCheckBox`: no `CheckBox` among the visual
       descendants of `PenList`; every row's `RowEnabledOnStart` is a `PathIcon` visible for `Pressure`
       and `Power` and hidden for `Argon`
-- [ ] rewrite `ARow_ShowsThePenAsStoredUnderItsHeader`: `RowId`, `RowName`, `RowUnit`, `RowGroups` as
+- [x] rewrite `ARow_ShowsThePenAsStoredUnderItsHeader`: `RowId`, `RowName`, `RowUnit`, `RowGroups` as
       stored; `RowColor`'s brush is `Argon`'s colour and `Transparent` for `Power`; `RowColor` lies inside
       the bounds of the name column's cell; a row is 28 px high
-- [ ] write `EveryTextCell_TrimsWithAnEllipsisAndCarriesItsTextAsATooltip`: every `TextBlock.grid-cell`
+- [x] write `EveryTextCell_TrimsWithAnEllipsisAndCarriesItsTextAsATooltip`: every `TextBlock.grid-cell`
       in a realised row has `TextTrimming.CharacterEllipsis` and `ToolTip.GetTip` equal to its `Text`
-- [ ] rewrite `AHeaderClick_ReordersTheRowsAndKeepsTheSelectedPen` as
+- [x] rewrite `AHeaderClick_ReordersTheRowsAndKeepsTheSelectedPen` as
       `AHeaderClick_SortsAscendingThenDescendingAndKeepsTheSelectedPenAndItsForm`: click row 1, click the
       name header: `Argon, Power, Pressure`, the header carries `:sortascending`, the grid's selected item
       and `viewModel.SelectedForm` are the same instances; click again: reversed, `:sortdescending`,
       same selection and form; `_editor.Calls` empty. If the selection or the form changes across the
       sort, bind `SelectedItem` `Mode=OneWay` and write `SelectedRow` from the grid's `SelectionChanged`
       only for a non-null `SelectedItem`, and record it under Solution Overview
-- [ ] write the theory `EachHeaderClick_OrdersTheListByItsColumn` over the five header keys and the view
+- [x] write the theory `EachHeaderClick_OrdersTheListByItsColumn` over the five header keys and the view
       catalogue `[Argon, Pressure, Power]` with `[Chamber, Spare]` (`PenEditorViewTests.cs:43`): Id 3, 7,
       12; Name 3, 12, 7; Unit 7, 3, 12; On start 3, 7, 12; Groups 12, 3, 7 (`GroupsText` is "Chamber",
       "Chamber" and empty), and `ARefresh_KeepsTheSortAndItsArrow` (sort Id
       descending, refresh to four pens: `4242, 12, 7, 3`, the Id header still `:sortdescending`)
-- [ ] rewrite `AFullCatalogue_RealisesOnlyTheRowsOnScreen` to count realised `DataGridRow`s
-- [ ] write `EveryColumn_IsResizableAndOpensNoNarrowerThanItsHeader` (`CanUserResize` on every column;
+- [x] rewrite `AFullCatalogue_RealisesOnlyTheRowsOnScreen` to count realised `DataGridRow`s
+- [x] write `EveryColumn_IsResizableAndOpensNoNarrowerThanItsHeader` (`CanUserResize` on every column;
       `ActualWidth >= MinWidth` and `MinWidth` equal to the header's unconstrained width) and
       `AClickedRow_ShowsTheRowHighlightAndNoCellOutline` (after a click on row 1, its
       `Border#BackgroundBorder` paints the selection brush and no cell of the grid shows a visible
       `Rectangle#CurrencyVisual` or `Panel#FocusVisual`)
-- [ ] write `ANameTypedThenThePenListsEmptyAreaClicked_WritesOnce`: retype the name, click the list
+- [x] write `ANameTypedThenThePenListsEmptyAreaClicked_WritesOnce`: retype the name, click the list
       below its last row: one name change, the field no longer focused. If it fails, the window's tunnel
       press handler (`PenEditorWindow.axaml.cs:136-149`) also clears the focus for a press inside
       `PART_RowsPresenter` with no `DataGridRow` among its ancestors, and Task 7 records that route
-- [ ] write `ANameTypedThenAColumnHeaderClicked_WritesOnce`: retype the name, click the Id header: one
+- [x] write `ANameTypedThenAColumnHeaderClicked_WritesOnce`: retype the name, click the Id header: one
       name change, the field no longer focused. If it or the empty-area test fails, the fallback widens
       to "a press inside `PenList` focuses `PenList`" in the window's tunnel handler, and Task 7 records
       that route
-- [ ] in the view model: delete `PenColumn`, `SortCommand`, `_sortColumn`, `_isSortDescending`,
+- [x] in the view model: delete `PenColumn`, `SortCommand`, `_sortColumn`, `_isSortDescending`,
       `_isReorderingRows`, `Sort`, `Sorted`, `ComparisonOf` and `ByText`; hold the rows in one private `ObservableCollection<PenRowViewModel>`; delete `Rows`; tests read
       `PenRows.Cast<PenRowViewModel>()`; expose `PenRows`, a `DataGridCollectionView` over the collection
       built once in the constructor; the refresh replaces the collection's contents inside
       `using (PenRows.DeferRefresh())`, so the view re-sorts once on dispose, and then sets
       `SelectedRow`; `SelectedRow` becomes a plain
       `RaiseAndSetIfChanged` property
-- [ ] rewrite `Refresh_KeepsTheSortOrder` to add
+- [x] rewrite `Refresh_KeepsTheSortOrder` to add
       `DataGridSortDescription.FromComparer(PenRowOrder.ById, ListSortDirection.Descending)` to
       `PenRows.SortDescriptions` and read `PenRows`; write `PenRows_ListsEveryRowInCatalogueOrderUntilSorted`; rewrite the failed-registration assertion (`PenEditorViewModelTests.cs:121-128`) as
       `PenRows.Cast<PenRowViewModel>().Should().Equal(rows)` over a snapshot
@@ -744,7 +744,7 @@ Height of the form, from the AXAML: title 24; three section headers at 16 + 20 +
       `ASecondSortOnTheSameColumn_ReversesTheRowsAndKeepsTheSelectionAndItsForm` and
       `ASortOnAnotherColumn_StartsAscending` (`PenRowOrderTests` and the header-click view tests own those orders); in
       `PenGroupsViewModelTests.cs:214` sort through `PenRows.SortDescriptions` instead of `SortCommand`
-- [ ] add `CheckGeometry` to `Icons.axaml`; add `xmlns:tables="clr-namespace:SemiPlot.UI.Tables"` to the
+- [x] add `CheckGeometry` to `Icons.axaml`; add `xmlns:tables="clr-namespace:SemiPlot.UI.Tables"` to the
       window root; in `PenEditorWindow.axaml` replace the header grid and the `ListBox` (`:90-264`) with
       the bordered `DataGrid` of Technical Details, and change the tab's grid from `Auto,*,Auto`
       (`:87-88`) to `*,Auto`: the list in row 0, today's form panel unchanged in row 1 at full width. The
@@ -752,8 +752,30 @@ Height of the form, from the AXAML: title 24; three section headers at 16 + 20 +
       `*,16,420` columns arrive with the new pane in Task 5. Add the `DataGridCellMinHeight` resource, the
       header font style and the `CurrencyVisual` style; delete `PenTableColumns`, `Button.column-header`
       and the `ListBox#PenTable ListBoxItem` selector
-- [ ] run `PenEditorViewTests`, `PenGroupsViewTests`, `PenEditorViewModelTests`,
+- [x] run `PenEditorViewTests`, `PenGroupsViewTests`, `PenEditorViewModelTests`,
       `PenGroupsViewModelTests`, `MainWindowViewTests` and `MainWindowViewModelTests`: every case passes
+- ⚠️ `DataGridCollectionView.DeferRefresh()` throws `InvalidOperationException` ("Cannot change or check the
+  contents ... while Refresh is being deferred") on the first `Add` inside it, so the refresh clears and
+  refills the collection with no deferral; the view inserts each added row at its sorted place, and
+  `Refresh_KeepsTheSortOrder` and `ARefresh_KeepsTheSortAndItsArrow` pass
+- ⚠️ the header click wrote a transient null back through the two-way `SelectedItem` binding, which rebuilt
+  the form, so the plan's fallback is in: `SelectedItem` binds `Mode=OneWay` and the window's
+  `OnPenListSelectionChanged` writes `SelectedRow` only for a non-null `SelectedItem`.
+  `ARefresh_KeepsTheSortAndItsArrow` also checks that the list follows a selection the view model writes
+  after a click
+- ⚠️ the outline rule needs the theme's own triggers: a plain `DataGridCell /template/ Rectangle#CurrencyVisual`
+  setter loses to Semi's `:current` trigger, so the one window style is
+  `DataGridCell:current /template/ Rectangle#CurrencyVisual, DataGridCell:focus /template/ Panel#FocusVisual`
+- ⚠️ the fill column's header is measured while the filler header still stands right of it, so its
+  `VerticalSeparator` (1 px) is shown then and hidden once the fill closes the gap: the Groups minimum is
+  1 px over the header's later unconstrained width. `EveryColumn_IsResizableAndOpensNoNarrowerThanItsHeader`
+  asserts the minimum between the header's width and 1 px more
+- ⚠️ a cell's tooltip binds `{Binding $self.Text}`: bound to `Pen.Id` it carries the boxed `int`, not the text
+- ⚠️ `PenEditorFixture.RowsOf(editor)` reads `PenRows.Cast<PenRowViewModel>()` for the view-model tests, and
+  `RowAt` scrolls through `DataGridRow.Index`, not the obsolete `GetIndex()`; the failed-read test compares
+  the rows by `Equal`, since `PenRows` is no longer a replaced list
+- ⚠️ the new view tests were written with the implementation, not run red first: at HEAD they cannot
+  compile, because `PenList`, `PenRows` and `DataGridRow` reads do not exist there
 
 ### Task 5: Rebuild the pen form as the sectioned 420 px pane
 

@@ -1,7 +1,11 @@
+using Avalonia.Collections;
 using Avalonia.Controls;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 using AwesomeAssertions;
 
+using SemiPlot.Core.Data;
 using SemiPlot.UI.PenEditor;
 
 namespace SemiPlot.Tests.Unit.UI.PenEditor;
@@ -32,10 +36,32 @@ internal static class PenEditorWindowDriver
 		return control.IsEffectivelyVisible && TopLevel.GetTopLevel(control) is not null && control.Bounds.Height > 0;
 	}
 
-	public static Control RowAt(PenEditorWindow window, int index)
+	public static DataGrid PenListOf(PenEditorWindow window)
 	{
-		return ViewProbe.Named<ListBox>(window, "PenTable").ContainerFromIndex(index)
-			?? throw new InvalidOperationException($"The table realised no row {index}.");
+		return ViewProbe.Named<DataGrid>(window, "PenList");
+	}
+
+	public static DataGridRow RowAt(PenEditorWindow window, int index)
+	{
+		var list = PenListOf(window);
+		if (RealisedRowAt(list, index) is { } realised)
+		{
+			return realised;
+		}
+
+		var view = list.ItemsSource as DataGridCollectionView
+			?? throw new InvalidOperationException("The pen list binds no collection view.");
+		list.ScrollIntoView(view[index], null);
+		Dispatcher.UIThread.RunJobs();
+
+		return RealisedRowAt(list, index)
+			?? throw new InvalidOperationException($"The pen list realised no row {index}.");
+	}
+
+	public static DataGridColumnHeader HeaderOf(PenEditorWindow window, string header)
+	{
+		return PenListOf(window).GetVisualDescendants().OfType<DataGridColumnHeader>()
+			.Single(candidate => Equals(candidate.Content, header));
 	}
 
 	public static void OpenGroupsTab(PenEditorWindow window)
@@ -52,5 +78,25 @@ internal static class PenEditorWindowDriver
 	public static string? TextOf(Control row, string name)
 	{
 		return ViewProbe.Descendant<TextBlock>(row, name).Text;
+	}
+
+	/// <summary>The realised rows' pens in list order.</summary>
+	public static IEnumerable<StoredPen> RealisedPens(DataGrid list)
+	{
+		return RealisedRows(list)
+			.OrderBy(row => row.Index)
+			.Select(row => row.DataContext)
+			.Cast<PenRowViewModel>()
+			.Select(row => row.Pen);
+	}
+
+	public static IEnumerable<DataGridRow> RealisedRows(DataGrid list)
+	{
+		return list.GetVisualDescendants().OfType<DataGridRow>().Where(row => row.IsVisible && row.Index >= 0);
+	}
+
+	private static DataGridRow? RealisedRowAt(DataGrid list, int index)
+	{
+		return RealisedRows(list).FirstOrDefault(row => row.Index == index);
 	}
 }

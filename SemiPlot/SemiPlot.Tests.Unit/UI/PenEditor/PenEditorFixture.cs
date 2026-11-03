@@ -1,5 +1,6 @@
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
+using SemiPlot.UI.PenEditor;
 
 namespace SemiPlot.Tests.Unit.UI.PenEditor;
 
@@ -31,5 +32,11 @@ internal static class PenEditorFixture
 	public static List<StoredPen> PensNumbered(int count)
 	{
 		return [.. Enumerable.Range(1, count).Select(NumberedPen)];
+	}
+
+	/// <summary>The rows of the editor's pen list in the order its view shows them.</summary>
+	public static PenRowViewModel[] RowsOf(PenEditorViewModel editor)
+	{
+		return [.. editor.PenRows.Cast<PenRowViewModel>()];
 	}
 }

@@ -1,6 +1,9 @@
+using System.Collections.ObjectModel;
 using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
+
+using Avalonia.Collections;
 
 using FluentResults;
 
@@ -15,24 +18,8 @@ using SemiPlot.UI.Messages;
 
 namespace SemiPlot.UI.PenEditor;
 
-/// <summary>The pen table's columns in the order the table shows them.</summary>
-public enum PenColumn
-{
-	Id,
-	EnabledOnStart,
-	Color,
-	Name,
-	Unit,
-	Mask,
-	LineStyle,
-	ScaleMinOnStart,
-	ScaleMaxOnStart,
-	LogScaleOnStart,
-	Groups
-}
-
 /// <summary>
-/// The pen and group editor window's root: the pen table, the form of the selected pen, the groups tab and
+/// The pen and group editor window's root: the pen list, the form of the selected pen, the groups tab and
 /// refresh. Every editor call runs through the one queue it owns.
 /// </summary>
 public sealed class PenEditorViewModel : ReactiveObject, IDisposable
@@ -44,9 +31,7 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 	private readonly CompositeDisposable _disposables = [];
 	private readonly ObservableAsPropertyHelper<PenFormViewModel?> _selectedForm;
 	private readonly ObservableAsPropertyHelper<bool> _isRefreshing;
-	private PenColumn? _sortColumn;
-	private bool _isSortDescending;
-	private bool _isReorderingRows;
+	private readonly ObservableCollection<PenRowViewModel> _rows;
 
 	/// <summary><paramref name="editorCallSucceeded"/> runs on the UI thread after an editor call succeeds.</summary>
 	public PenEditorViewModel(
@@ -62,7 +47,8 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 		_archiveCallQueue = new ArchiveCallQueue(editorCallSucceeded);
 
 		var rows = RowsOf(catalogue);
-		Rows = rows;
+		_rows = [.. rows];
+		PenRows = new DataGridCollectionView(_rows);
 		Groups = GroupsOf(rows, catalogue.Groups);
 
 		_selectedForm = this.WhenAnyValue(editor => editor.SelectedRow)
@@ -72,31 +58,20 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 			.ToProperty(this, editor => editor.SelectedForm);
 		_disposables.Add(_selectedForm);
 
-		_disposables.Add(SortCommand = ReactiveCommand.Create<PenColumn>(Sort));
 		_disposables.Add(RefreshCommand = ReactiveCommand.CreateFromTask(RefreshAsync));
 
 		_isRefreshing = RefreshCommand.IsExecuting.ToProperty(this, editor => editor.IsRefreshing);
 		_disposables.Add(_isRefreshing);
 	}
 
-	/// <summary>Replaced whole on sort and on refresh; a sort keeps the row instances.</summary>
-	public IReadOnlyList<PenRowViewModel> Rows
-	{
-		get;
-		private set => this.RaiseAndSetIfChanged(ref field, value);
-	}
+	/// <summary>The one view the pen list sorts; a refresh replaces its rows and keeps its sort.</summary>
+	public DataGridCollectionView PenRows { get; }
 
-	/// <summary>Two-way from the table, whose selection write-back is ignored while a sort reorders the rows.</summary>
+	/// <summary>Two-way from the pen list.</summary>
 	public PenRowViewModel? SelectedRow
 	{
 		get;
-		set
-		{
-			if (!_isReorderingRows)
-			{
-				this.RaiseAndSetIfChanged(ref field, value);
-			}
-		}
+		set => this.RaiseAndSetIfChanged(ref field, value);
 	}
 
 	/// <summary>The form of the selected row, built when the selection changes; null with no row selected.</summary>
@@ -115,9 +90,6 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 		get;
 		private set => this.RaiseAndSetIfChanged(ref field, value);
 	} = string.Empty;
-
-	/// <summary>Orders the rows by the column; a second sort on the same column reverses them.</summary>
-	public ReactiveCommand<PenColumn, Unit> SortCommand { get; }
 
 	/// <summary>Registers the keys SCADA writes that have no pen, then reads the catalogue again.</summary>
 	public ReactiveCommand<Unit, Unit> RefreshCommand { get; }
@@ -158,39 +130,6 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 			form => Observable.Return<PenFormViewModel?>(form).Concat(Observable.Never<PenFormViewModel?>()));
 	}
 
-	private void Sort(PenColumn column)
-	{
-		_isSortDescending = _sortColumn == column && !_isSortDescending;
-		_sortColumn = column;
-
-		// A new items source makes the table write a null selection back before it finds the row again,
-		// which would rebuild the form and drop its drafts.
-		_isReorderingRows = true;
-		try
-		{
-			Rows = Sorted(Rows);
-		}
-		finally
-		{
-			_isReorderingRows = false;
-		}
-
-		this.RaisePropertyChanged(nameof(SelectedRow));
-	}
-
-	private PenRowViewModel[] Sorted(IEnumerable<PenRowViewModel> rows)
-	{
-		if (_sortColumn is not { } column)
-		{
-			return [.. rows];
-		}
-
-		var ascending = rows.Order(Comparer<PenRowViewModel>.Create(ComparisonOf(column)))
-			.ThenBy(row => row.Pen.Id);
-
-		return _isSortDescending ? [.. ascending.Reverse()] : [.. ascending];
-	}
-
 	private async Task RefreshAsync()
 	{
 		var registered = await _archiveCallQueue.RunAsync(_penCatalogueEditor.RegisterNewPensAsync);
@@ -219,8 +158,13 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 		groups.SelectedGroup = groups.Groups.FirstOrDefault(group => group.Group.Id == selectedGroupId);
 		var replacedGroups = Groups;
 
-		Rows = Sorted(rows);
-		SelectedRow = Rows.FirstOrDefault(row => row.Pen.Id == selectedPenId);
+		_rows.Clear();
+		foreach (var row in rows)
+		{
+			_rows.Add(row);
+		}
+
+		SelectedRow = rows.FirstOrDefault(row => row.Pen.Id == selectedPenId);
 		Groups = groups;
 		replacedGroups.Dispose();
 	}
@@ -247,32 +191,5 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 	private PenGroupsViewModel GroupsOf(IReadOnlyList<PenRowViewModel> rows, IReadOnlyList<StoredGroup> groups)
 	{
 		return new PenGroupsViewModel(rows, groups, _penCatalogueEditor, _archiveCallQueue, _messagePanel, _logger);
-	}
-
-	private static Comparison<PenRowViewModel> ComparisonOf(PenColumn column)
-	{
-		return column switch
-		{
-			PenColumn.Id => (left, right) => left.Pen.Id.CompareTo(right.Pen.Id),
-			PenColumn.EnabledOnStart => (left, right) => left.Pen.EnabledOnStart.CompareTo(right.Pen.EnabledOnStart),
-			PenColumn.Color => ByText(row => row.Pen.Color),
-			PenColumn.Name => ByText(row => row.Pen.Name),
-			PenColumn.Unit => ByText(row => row.Pen.Unit),
-			PenColumn.Mask => ByText(row => row.Pen.Format),
-			PenColumn.LineStyle => (left, right) => left.Pen.LineStyle.CompareTo(right.Pen.LineStyle),
-			PenColumn.ScaleMinOnStart
-				=> (left, right) => Nullable.Compare(left.Pen.ScaleMinOnStart, right.Pen.ScaleMinOnStart),
-			PenColumn.ScaleMaxOnStart
-				=> (left, right) => Nullable.Compare(left.Pen.ScaleMaxOnStart, right.Pen.ScaleMaxOnStart),
-			PenColumn.LogScaleOnStart
-				=> (left, right) => left.Pen.LogScaleOnStart.CompareTo(right.Pen.LogScaleOnStart),
-			PenColumn.Groups => ByText(row => row.GroupsText),
-			_ => throw new ArgumentOutOfRangeException(nameof(column), column, null)
-		};
-	}
-
-	private static Comparison<PenRowViewModel> ByText(Func<PenRowViewModel, string?> textOf)
-	{
-		return (left, right) => StringComparer.CurrentCultureIgnoreCase.Compare(textOf(left), textOf(right));
 	}
 }

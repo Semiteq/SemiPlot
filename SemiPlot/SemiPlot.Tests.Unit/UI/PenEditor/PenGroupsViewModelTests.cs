@@ -3,6 +3,7 @@ using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
 using System.Windows.Input;
 
+using Avalonia.Collections;
 using Avalonia.Headless.XUnit;
 
 using AwesomeAssertions;
@@ -71,7 +72,7 @@ public sealed class PenGroupsViewModelTests : IDisposable
 		groups.Groups.Should().Equal(gas);
 		groups.SelectedGroup.Should().BeNull();
 		groups.Memberships.Should().BeEmpty();
-		editor.Rows.Select(row => row.GroupsText).Should().Equal("Gas", string.Empty, string.Empty);
+		RowsOf(editor).Select(row => row.GroupsText).Should().Equal("Gas", string.Empty, string.Empty);
 	}
 
 	[AvaloniaFact]
@@ -88,7 +89,7 @@ public sealed class PenGroupsViewModelTests : IDisposable
 
 		groups.Groups.Should().HaveCount(2);
 		groups.Message.Should().Be(ArchiveFailureMapper.Map(refusal).Title);
-		editor.Rows[0].GroupsText.Should().Be("Chamber, Gas");
+		RowsOf(editor)[0].GroupsText.Should().Be("Chamber, Gas");
 		_messagePanel.Entries.Should().ContainSingle();
 	}
 
@@ -106,7 +107,7 @@ public sealed class PenGroupsViewModelTests : IDisposable
 		_editor.Calls.Should().Equal(new FakeEditorCall.RenameGroup(Chamber, "Process chamber"));
 		chamber.Group.Should().Be(Chamber with { Name = "Process chamber" });
 		gas.Group.Should().Be(Gas);
-		editor.Rows.Select(row => row.GroupsText)
+		RowsOf(editor).Select(row => row.GroupsText)
 			.Should()
 			.Equal("Process chamber, Gas", "Process chamber", string.Empty);
 	}
@@ -211,7 +212,7 @@ public sealed class PenGroupsViewModelTests : IDisposable
 
 		groups.Memberships.Should().BeEmpty();
 
-		editor.SortCommand.Execute(PenColumn.Name).Subscribe();
+		editor.PenRows.SortDescriptions.Add(DataGridSortDescription.FromComparer(PenRowOrder.ByName));
 		groups.SelectedGroup = groups.Groups[1];
 
 		groups.Memberships.Select(membership => membership.Row.Pen).Should().Equal(Argon, Pressure, Power);
@@ -231,7 +232,7 @@ public sealed class PenGroupsViewModelTests : IDisposable
 		_editor.Calls.Should().Equal(new FakeEditorCall.SetMembership(Power, Gas, true));
 		power.IsMember.Should().BeTrue();
 		groups.SelectedGroup.MemberCount.Should().Be(2);
-		editor.Rows[2].GroupsText.Should().Be("Gas");
+		RowsOf(editor)[2].GroupsText.Should().Be("Gas");
 	}
 
 	[AvaloniaFact]
@@ -247,7 +248,7 @@ public sealed class PenGroupsViewModelTests : IDisposable
 		_editor.Calls.Should().Equal(new FakeEditorCall.SetMembership(Pressure, Chamber, false));
 		pressure.IsMember.Should().BeFalse();
 		groups.SelectedGroup.Group.MemberPenIds.Should().Equal(3);
-		editor.Rows[1].GroupsText.Should().BeEmpty();
+		RowsOf(editor)[1].GroupsText.Should().BeEmpty();
 	}
 
 	[AvaloniaFact]
@@ -266,7 +267,7 @@ public sealed class PenGroupsViewModelTests : IDisposable
 
 		raised.Should().Equal(nameof(PenMembershipViewModel.IsMember));
 		power.IsMember.Should().BeFalse();
-		editor.Rows[2].GroupsText.Should().BeEmpty();
+		RowsOf(editor)[2].GroupsText.Should().BeEmpty();
 		groups.Message.Should().Be(ArchiveFailureMapper.Map(refusal).Title);
 		_messagePanel.Entries.Should().ContainSingle();
 
@@ -437,7 +438,7 @@ public sealed class PenGroupsViewModelTests : IDisposable
 	public async Task GroupCalls_WaitInTheQueueBehindAHeldPenCommit()
 	{
 		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
-		editor.SelectedRow = editor.Rows[1];
+		editor.SelectedRow = RowsOf(editor)[1];
 		var groups = editor.Groups;
 		groups.SelectedGroup = groups.Groups[1];
 		var gate = _editor.HoldNextCall();

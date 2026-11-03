@@ -5,6 +5,8 @@ namespace SemiPlot.UI.PenEditor;
 
 public static class PenColorConverters
 {
+	public const string FieldFormat = "#RRGGBB";
+
 	private const int StoredColorLength = 7;
 
 	/// <summary>The picker's colour: the draft's, and transparent for an empty or malformed draft.</summary>

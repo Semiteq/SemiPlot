@@ -251,12 +251,12 @@ The existing cases of the three time layouts and the view tests at `PenEditorVie
 - Modify: `SemiPlot/SemiPlot.UI/PenEditor/PenEditorWindow.axaml`
 - Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/PenEditor/PenEditorViewTests.cs`
 
-- [ ] write the failing view test `ALowerCaseHexTypedWithoutTheHash_WritesTheUpperCaseColour`: select Power (`RowAt(window, 2)`, stored with no colour, so the box opens empty), type `1f77b4` into `FormColor`, press Tab; `_editor.Changes` equals `new FakeEditorCall.Change(Power, new PenSettingChange.Color("#1F77B4"))` and the box shows `#1F77B4`
-- [ ] write the view test `AStoredLowerCaseColour_ShowsAsStoredAndWritesNothingOnFocusAndLeave`: a pen stored with `#1f77b4` shows `#1f77b4`; a click into the box and a Tab out write nothing
-- [ ] write the view test `ARefusedDraftRevertedOnEnter_ShowsTheStoredColourAsStored` (passes at HEAD; it goes red against a layout that normalises every change, so it guards the operator-edit flag): a pen stored with colour `red`; select it, type `1` into `FormColor`, press Enter; the box shows `red`, carries the `invalid` class, the message is `PenFormColorInvalid`, and `_editor.Changes` is empty
-- [ ] add `public const string FieldFormat = "#RRGGBB"` to `PenColorConverters`
-- [ ] add `xmlns:input="clr-namespace:SemiPlot.UI.Input"` to the root of `PenEditorWindow.axaml`, then set `input:FormattedFieldInput.Layout="HexColor"` and `PlaceholderText="{x:Static local:PenColorConverters.FieldFormat}"` on `FormColor`; Task 4's build is the check that XamlX resolves a `const` through `x:Static`
-- [ ] run `PenEditorViewTests` and `PenFormViewModelTests`: the new cases and the existing colour cases (`PenEditorViewTests.cs:231`, `:498-517`, `:541-564`; `PenFormViewModelTests.cs:84-87`) pass
+- [x] write the failing view test `ALowerCaseHexTypedWithoutTheHash_WritesTheUpperCaseColour`: select Power (`RowAt(window, 2)`, stored with no colour, so the box opens empty), type `1f77b4` into `FormColor`, press Tab; `_editor.Changes` equals `new FakeEditorCall.Change(Power, new PenSettingChange.Color("#1F77B4"))` and the box shows `#1F77B4`
+- [x] write the view test `AStoredLowerCaseColour_ShowsAsStoredAndWritesNothingOnFocusAndLeave`: a pen stored with `#1f77b4` shows `#1f77b4`; a click into the box and a Tab out write nothing
+- [x] write the view test `ARefusedDraftRevertedOnEnter_ShowsTheStoredColourAsStored` (passes at HEAD; it goes red against a layout that normalises every change, so it guards the operator-edit flag): a pen stored with colour `red`; select it, type `1` into `FormColor`, press Enter; the box shows `red`, carries the `invalid` class, the message is `PenFormColorInvalid`, and `_editor.Changes` is empty
+- [x] add `public const string FieldFormat = "#RRGGBB"` to `PenColorConverters`
+- [x] add `xmlns:input="clr-namespace:SemiPlot.UI.Input"` to the root of `PenEditorWindow.axaml`, then set `input:FormattedFieldInput.Layout="HexColor"` and `PlaceholderText="{x:Static local:PenColorConverters.FieldFormat}"` on `FormColor`; Task 4's build is the check that XamlX resolves a `const` through `x:Static`
+- [x] run `PenEditorViewTests` and `PenFormViewModelTests`: the new cases and the existing colour cases (`PenEditorViewTests.cs:231`, `:498-517`, `:541-564`; `PenFormViewModelTests.cs:84-87`) pass
 
 ### Task 4: Verify acceptance criteria
 

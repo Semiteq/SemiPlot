@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:SemiPlot.UI.PenEditor"
+        xmlns:input="clr-namespace:SemiPlot.UI.Input"
         xmlns:legend="clr-namespace:SemiPlot.UI.Legend"
         xmlns:text="clr-namespace:SemiPlot.UI.Localization"
         xmlns:trends="clr-namespace:SemiPlot.Core.Trends;assembly=SemiPlot.Core"
@@ -345,6 +346,8 @@
                                     <TextBox Grid.Column="0"
                                              Name="FormColor"
                                              local:PenEditorWindow.Field="Color"
+                                             input:FormattedFieldInput.Layout="HexColor"
+                                             PlaceholderText="{x:Static local:PenColorConverters.FieldFormat}"
                                              Classes.invalid="{Binding !IsColorValid}"
                                              Text="{Binding Color}" />
 

@@ -516,17 +516,21 @@ Task 5 states the built behaviour in `overview.md`.
 
 ### Task 4: Verify acceptance criteria
 
-- [ ] run the filtered command under Acceptance Evidence: 0 failed, every named test present
-- [ ] run `dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj`: 0 failed
-- [ ] run `dotnet build SemiPlot.slnx`: 0 errors and no warning beyond the two NU1902 for `MessagePack`
-      2.5.302 in `SemiPlot.AppHost` that the base already reports
-- [ ] set `$BASE` to the stacking base: `pen-editor-groups-pane` while it is unmerged, `master` once it merges
-      (`git merge-base --is-ancestor pen-editor-groups-pane master`, exit 1 means unmerged)
-- [ ] run `dotnet format SemiPlot.slnx --verify-no-changes`, then `dotnet tool restore` and `dotnet terse`
-      over every `.cs` file `git diff --name-only $BASE...HEAD` lists: both exit 0
-- [ ] run the HeadlessInput gate and the three scope gates under Acceptance Evidence: each prints what it must
+- [x] run the filtered command under Acceptance Evidence: 0 failed, every named test present (195 passed;
+      all 26 named tests present and passed in the TRX)
+- [x] run `dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj`: 0 failed (2734 passed)
+- [x] run `dotnet build SemiPlot.slnx`: 0 errors and no warning beyond the two NU1902 for `MessagePack`
+      2.5.302 in `SemiPlot.AppHost` that the base already reports (0 errors, 2 warnings, both that NU1902;
+      no package version changed)
+- [x] set `$BASE` to the stacking base: `pen-editor-groups-pane` while it is unmerged, `master` once it merges
+      (`git merge-base --is-ancestor pen-editor-groups-pane master`, exit 1 means unmerged) (exit 1:
+      `$BASE = pen-editor-groups-pane`)
+- [x] run `dotnet format SemiPlot.slnx --verify-no-changes`, then `dotnet tool restore` and `dotnet terse`
+      over every `.cs` file `git diff --name-only $BASE...HEAD` lists: both exit 0 (9 files)
+- [x] run the HeadlessInput gate and the three scope gates under Acceptance Evidence: each prints what it must
       (no change to `PenRowOrder.cs`, `PenGroupsViewModel.cs`, `PenGroupViewModel.cs`; no `SortDescriptions`
-      line; nothing under `ConfigFiles` or `Settings`)
+      line; nothing under `ConfigFiles` or `Settings`) (HeadlessInput gate: only `HeadlessInput.cs` lines; the
+      three scope gates printed nothing)
 
 ### Task 5: [Final] Update documentation
 

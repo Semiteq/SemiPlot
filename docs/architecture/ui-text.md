@@ -224,23 +224,33 @@ the one detail naming `<config-dir>` and the staging folder (`overview.md#the-se
 
 `MenuEditPensAndGroups` is the `Edit` menu's second item, "Pens and groups" / "Перья и группы", and
 carries no ellipsis, as `MenuEditSettings` carries none. `PenEditor/PenEditorWindow.axaml` reads
-`PenEditorTitle`, the tab headers `PenEditorPensTab` and `PenEditorGroupsTab`, and the eleven column
-headers `PenEditorColumn*`. The form's labels reuse the column-header keys, one term per concept; its one
-label of its own is `PenFormMaskPreviewLabel`. The line-style cell and the combo box read
+`PenEditorTitle`, the tab headers `PenEditorPensTab` and `PenEditorGroupsTab`, and the pen list's five column
+headers `PenEditorColumnId`, `PenEditorColumnName`, `PenEditorColumnUnit`, `PenEditorColumnOnStart` and
+`PenEditorColumnGroups`. The start flag's column reads `PenEditorColumnOnStart`, "On start" / "При запуске",
+because the flag is the visibility a pen starts with and a change of it switches nothing on a running chart.
+
+The pen pane reads `PenFormEmptyHint`, "Select a pen in the list on the left" / "Выберите перо в списке
+слева", while no pen is selected. Its title is two `TextBlock`s, the id and the name, with no format key, as
+the axis scale panel joins name and unit. The section headers are `PenFormSectionLabel` ("Label" /
+"Подпись"), `PenFormSectionAppearance` ("Appearance" / "Вид") and `PenFormSectionOnStart` ("On start" /
+"При запуске"). The form's labels reuse a key wherever the term is the same concept: `PenEditorColumnName`
+and `PenEditorColumnUnit` from the pen list, `PenFormMaskPreviewLabel`, and the axis scale panel's
+`AxisScaleMinimumLabel` and `AxisScaleMaximumLabel`, "Minimum" / "Минимум" and "Maximum" / "Максимум". The
+rest are its own: `PenFormMaskLabel`, `PenFormColorLabel`, `PenFormLineStyleLabel`, `PenFormVisibilityLabel`
+("Visibility" / "Видимость") and `PenFormScaleTypeLabel` ("Scale type" / "Тип шкалы"). The visibility box
+reads `PenFormShowOnChart`, "Show on the chart" / "Показывать на графике", and the scale type box
+`PenFormLogarithmic`, "Logarithmic" / "Логарифмическая". The line-style combo box reads
 `PenLineStyleInterpolated` and `PenLineStyleStepped` through `PenLineStyleConverters.ToLabel`, a
-`FuncValueConverter` consumed through `{x:Static}`. The visibility column and field read
-`PenEditorColumnOnStart`, "On start" / "При запуске", because the flag is the visibility a pen starts
-with and a change of it switches nothing on a running chart. The scale columns and fields read
-`PenEditorColumnScaleMinOnStart` and `PenEditorColumnScaleMaxOnStart`, "Initial scale, min" / "Начальная
-шкала, от" and "Initial scale, max" / "Начальная шкала, до", because the stored pair is the pen's initial
-scale, the term the axis scale panel's button `AxisScaleInitialScale` ("Restore initial scale" / "Вернуть
-начальную") and the `View` menu item `MenuViewInitialScale` ("Restore initial scale" / "Вернуть начальную
-шкалу") use: it applies when the pen enters a chart and on that command, and it changes no pen already
-shown. The three scale messages open with the same term, "Initial scale:" / "Начальная шкала:". The log
-column and field read `PenEditorColumnLogScaleOnStart`, "Initial scale, logarithmic" / "Начальная
-шкала, логарифмическая": the flag is a start value like the pair, so it takes the pair's term. The
-label names the scale type the way Excel, MasterSCADA 4D and Simple-Scada 2 do and leaves the base out;
-the chart builds base 10 only (`charting.md#log10-y-axis`).
+`FuncValueConverter` consumed through `{x:Static}`.
+
+The "On start" section holds the visibility flag and the pen's initial scale: the stored pair and the log
+flag apply when the pen enters a chart and on the axis scale panel's `AxisScaleInitialScale` ("Restore
+initial scale" / "Вернуть начальную") and the `View` menu item `MenuViewInitialScale` ("Restore initial
+scale" / "Вернуть начальную шкалу"), and they change no pen already shown. The three scale messages open
+with that term, "Initial scale:" / "Начальная шкала:", because they name the stored pair the section holds.
+The scale pair and the log flag have no column and no header key of their own. The scale type names the
+scale the way Excel, MasterSCADA 4D and Simple-Scada 2 do and leaves the base out; the chart builds base 10
+only (`charting.md#log10-y-axis`).
 
 The bottom bar reads the button `PenEditorRefresh`, "Refresh pen list" / «Обновить список перьев», which
 names what it refreshes, and `PenEditorAddedCount`, "Pens added: {0}" / "Добавлено перьев: {0}", empty

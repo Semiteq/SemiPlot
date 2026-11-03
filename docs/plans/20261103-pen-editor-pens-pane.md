@@ -870,19 +870,19 @@ Height of the form, from the AXAML: title 24; three section headers at 16 + 20 +
 
 ### Task 7: [Final] Update documentation
 
-- [ ] `docs/architecture/ui-theme.md:10-15`: the manifest names `<semi:DataGridSemiTheme/>`
+- [x] `docs/architecture/ui-theme.md:10-15`: the manifest names `<semi:DataGridSemiTheme/>`
       (`Semi.Avalonia.DataGrid` 12.0.0 over `Avalonia.Controls.DataGrid` 12.0.1)
-- [ ] `ui-theme.md` key table (`:33-82`): rows for the four DataGrid keys and any the probe added;
+- [x] `ui-theme.md` key table (`:33-82`): rows for the four DataGrid keys and any the probe added;
       `:108-116`: name `EveryDataGridSurface_PaintsItselfFromThePalette` and the two new opacity keys;
       `:133-147`: the two DataGrid radii and the extended corner test; the application-surfaces table
       (`:153-170`): `AppBorderBrush` gains the pen list's border, the pane's border and the colour dot's
       ring, `AppSecondaryForegroundBrush` the empty hint, the title's id, the mask preview and the groups
       cell, `AppSeverityErrorBrush` the warning glyph
-- [ ] `ui-theme.md:185-186`, "A form never resizes on validation": an invalid field shows the `invalid`
+- [x] `ui-theme.md:185-186`, "A form never resizes on validation": an invalid field shows the `invalid`
       border and a warning glyph inside the box (`InnerRightContent`, `WarningGeometry`,
       `AppSeverityErrorBrush`); the pen editor's form carries the glyph through its window-scoped
       style, and a form adopts it when it is next touched; until then a form marks by the border alone
-- [ ] rewrite `ui-theme.md:367-431`, "A resizable window keeps its fixed parts": the window size
+- [x] rewrite `ui-theme.md:367-431`, "A resizable window keeps its fixed parts": the window size
       (Task 5's value); the list is the one part that takes the width and the height; the pane is 420 px,
       its 16 px padding, the 112 px label column, the 12 px gap, the field widths and the 22 px slack after the widest field (the 1 px border takes 2 of the skill's
       24); the
@@ -890,12 +890,12 @@ Height of the form, from the AXAML: title 24; three section headers at 16 + 20 +
       the realised header (`Tables/HeaderMeasuredColumns`), the fill column and the viewport rule; the
       cell insets 12 and 8, 12 on the fill column; the hidden currency rectangle; the form's fixed 588 px
       height and its scroller; the checkboxes in the field column; the tests that gate each part
-- [ ] `docs/architecture/ui-text.md:223-243`: five column headers; the form's labels, the renamed
+- [x] `docs/architecture/ui-text.md:223-243`: five column headers; the form's labels, the renamed
       `PenForm*Label` keys and the eight new keys; Minimum and Maximum reuse the axis scale panel's keys;
       the "On start" section holds the visibility flag and the initial scale, whose messages keep their
       "Initial scale:" opening; the scale pair and the log flag have no column and no header key of their
       own
-- [ ] `docs/architecture/overview.md:525`, the `Pens` row: a read-only `DataGrid` of id, name with the
+- [x] `docs/architecture/overview.md:525`, the `Pens` row: a read-only `DataGrid` of id, name with the
       colour dot, unit, the start flag as a check glyph and groups, sorted by a header click and reversed
       by the next, every column resizable from its header's width, groups taking the spare width; beside
       it the 420 px pane: the hint with no pen selected, otherwise the title and the three sections
@@ -904,9 +904,18 @@ Height of the form, from the AXAML: title 24; three section headers at 16 + 20 +
       field reads "Show on the chart" under "On start") and `:618-621`: a press on the pen list's empty
       area ends the edit, as `ANameTypedThenThePenListsEmptyAreaClicked_WritesOnce` shows, through the
       grid taking the focus or, when Task 4 added it, through the handler's rows-presenter branch
-- [ ] run the key gate under Acceptance Evidence over `-- SemiPlot docs/architecture`: it prints
+- [x] run the key gate under Acceptance Evidence over `-- SemiPlot docs/architecture`: it prints
       nothing; no rewritten paragraph names a deleted or renamed key
-- [ ] move this plan to `docs/plans/completed/` (left to the delivery step)
+- [x] move this plan to `docs/plans/completed/` (left to the delivery step)
+- ⚠️ the docs describe the selection route as built: `SelectedItem` binds one way and
+  `OnPenListSelectionChanged` writes `SelectedRow` only for a non-null item; the refresh refills the
+  collection with no `DeferRefresh`; the grid takes the focus on any press inside it, so the window's
+  tunnel handler has no rows-presenter branch; the window height stays 720
+- ⚠️ `testing-strategy.md#what-a-realised-view-test-owns` named the deleted `_isReorderingRows`; it names
+  `OnPenListSelectionChanged` instead. The table rows of `ui-theme.md` that read "while no pen is selected"
+  read "while a refresh runs", because the form is hidden with no pen selected
+- ⚠️ `PenEditorViewModel.SelectedRow`'s summary reads "Two-way from the pen list", which the one-way
+  binding contradicts; it is code, outside this documentation task
 
 ## Post-Completion
 

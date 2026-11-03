@@ -522,18 +522,35 @@ The window is a `TabControl` of two tabs over a bottom bar that both tabs share:
 
 | Part | Holds |
 | --- | --- |
-| `Pens` tab | A read-only table of every pen: a click on a column header sorts by that column, a second click reverses. Under it, the form of the selected pen: name, unit, mask with a live preview, colour as a `#RRGGBB` text box, which normalises what the operator types or pastes to upper-case `#RRGGBB` and shows a stored value as stored, beside a `ColorPicker`, line style, "on start", the scale pair and the log scale flag under it. A pen's groups show in the table as text and are not edited there. |
+| `Pens` tab | A read-only `DataGrid` of every pen: id, name with the pen's colour dot, unit, the start flag as a check glyph, and groups. A click on a column header sorts by that column ascending, the next click descending, and the header's arrow shows the direction. Every column resizes and opens no narrower than its header, and the groups column takes the spare width. Beside it, the 420 px pen pane: a hint while no pen is selected, otherwise a one-line title (id, then name), the sections Label (name, unit, mask, preview), Appearance (colour as a `#RRGGBB` text box, which normalises what the operator types or pastes to upper-case `#RRGGBB` and shows a stored value as stored, beside a square `ColorPicker` swatch; line style) and On start (visibility, minimum, maximum, scale type), and the reserved message line. A pen's groups show in the list as text and are not edited there. |
 | `Groups` tab | The group list with a new-name field, a create button, one rename field, a delete button and, under them, the selected group's fold flag as a checkbox, disabled while no group is selected. Beside it, every pen of the catalogue as a checkbox, checked where the pen is a member of the selected group. Membership is edited here only. A delete asks once, in a row the tab always reserves, naming the group and how many pens it holds. |
 | Bottom bar | The number of pens the last refresh added and `Refresh pen list`, right-aligned. `Refresh pen list` registers the keys the SCADA writes as hidden pens and reads the catalogue again. |
 
 The editor reads fresh from the tables when it opens and after each refresh, and shows the values as
 stored: a pen with no colour opens with an empty, invalid colour field
 (`data-integration.md#the-stored-read`). It keeps that snapshot while it is open and reads again only on
-`Refresh pen list`, so no periodic read rebuilds a form under the operator's hands. The visibility column and
-field read "on start": the flag is the visibility a pen starts with, and a change of it switches nothing
-on a running chart. What the editor writes reaches the running chart as The live catalogue, below,
+`Refresh pen list`, so no periodic read rebuilds a form under the operator's hands. The start flag's column
+reads "On start", and its field, "Show on the chart", stands in the "On start" section: the flag is the
+visibility a pen starts with, and a change of it switches nothing on a running chart. What the editor writes reaches the running chart as The live catalogue, below,
 states. Several viewers may run on one machine, and the last write wins per column. The layout is in
 `ui-theme.md#a-resizable-window-keeps-its-fixed-parts`, the text in `ui-text.md#the-pen-editors-text`.
+
+The grid owns the sort, and the view model owns the collection view it sorts. `PenEditorViewModel` holds the
+rows in one private `ObservableCollection<PenRowViewModel>`, never replaced, and exposes one
+`DataGridCollectionView` over it, `PenRows`, built once. A header click writes a
+`DataGridSortDescription` of the column's `PenEditor/PenRowOrder` comparer into `PenRows.SortDescriptions`;
+the header's arrow is its `:sortascending` or `:sortdescending` pseudo-class, which the grid sets from that
+description. Each comparer orders by its column's key and then by `Pen.Id`, text through
+`StringComparer.CurrentCultureIgnoreCase`, and a descending sort reverses the whole order, the tie-break
+included. A refresh clears and refills the collection with no `DeferRefresh` (the view throws on a change
+inside a deferral), the view places each added row at its sorted position, so the sort and its arrow
+survive, and the refresh then sets `SelectedRow` to the pen selected before. `PenGroupsViewModel` takes the
+row array the refresh builds, so the memberships stay in catalogue order whatever the list's sort.
+
+The list's `SelectedItem` binds `SelectedRow` one way, and `OnPenListSelectionChanged` in the code-behind
+writes `SelectedRow` only for a non-null `SelectedItem`: a sort resets the grid's rows, which clears its
+selection before it restores it, and a null written back would rebuild the form and drop its drafts. So a
+sort keeps the selected pen and its form, and the list follows a selection the view model writes.
 
 #### Where the view model is built
 
@@ -615,10 +632,14 @@ An edit ends when its field loses the focus, and a label or an empty area takes 
 So the window handles every pointer press in the tunnel phase, handled ones too: a press on an element
 with no focusable, enabled ancestor inside the window clears the focus through the window's
 `FocusManager`, and the field's `LostFocus`, or the scale pair losing the focus within, ends the edit as
-a click on another control does. A press on a field, a button, a row of the pen table or the group list,
-or any other focusable control passes untouched, because that control takes the focus itself. The two
-lists themselves, their scroll bars and their empty area below the rows take no focus in Avalonia 12.0.5,
-so a press there ends the edit as a press on a label does. `FocusManager` moves the focus only on a left press, while the handler clears it on any
+a click on another control does. A press on a field, a button, a row of the group list,
+or any other focusable control passes untouched, because that control takes the focus itself. The pen
+list's `DataGrid` is focusable and takes the focus on a left press anywhere inside it, on a row, a header or
+the empty area below the rows, so the field's `LostFocus` ends the edit; the handler has no branch of its own
+for the list (`PenEditorViewTests.ANameTypedThenAnotherRowClicked_WritesToThePenTheFieldShowed`,
+`ANameTypedThenAColumnHeaderClicked_WritesOnce`, `ANameTypedThenThePenListsEmptyAreaClicked_WritesOnce`).
+The group list, its scroll bar and its empty area below the rows take no focus in Avalonia 12.0.5, so a
+press there ends the edit as a press on a label does. `FocusManager` moves the focus only on a left press, while the handler clears it on any
 button, so a right or middle press on a label or an empty area ends the edit too. Closing the window drains: `Closing` is cancelled until the recorded edits have ended and the queue is
 idle, and then the window closes itself. `MainWindow` disposes the view model only after `ShowDialog`
 returns, so a name typed just before the close is written once and nothing is disposed under a write

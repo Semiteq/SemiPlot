@@ -605,12 +605,15 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   groups seconds and minutes from the right and leaves the hours unbounded, and `HexColor` keeps the first six
   hex digits, upper-cased, behind a leading `#`, and empties the box when no digit is left. One caret rule
   serves all four layouts: the caret returns after as many allowed characters as stood before it, and with
-  none before it, ahead of the first one, which for `HexColor` is right after the `#`. Selection, Backspace
-  and paste stay the `TextBox`'s own. The time layouts normalise on every text change. A `HexColor` box
-  normalises only the change an operator route causes (typing, Backspace, Delete, undo, redo, cut, paste),
-  which sets the private attached flag `_operatorEditPendingProperty`; the next text change reads and clears
-  it, and losing focus clears it too. A binding write therefore stays as set, so a stored `red` or `#1f77b4`
-  shows as stored and is not written back. The time window panel and the export window set it on their time
+  none before it, ahead of the first one, which for `HexColor` is right after the `#`. The behaviour adds no
+  edit operation of its own: selection, Backspace and paste stay the `TextBox`'s own, and it normalises the
+  text they leave. The time layouts normalise on every text change. A `HexColor` box normalises only the
+  change an operator route causes (typing, Backspace, Delete, undo, redo, cut, paste): the route sets a
+  private attached flag, and the next text change, any other key and losing focus clear it. A binding write
+  therefore stays as set, so a stored `red` or `#1f77b4` shows as stored and is not written back. A route that
+  leaves the text as it was, such as a digit typed over the same selected digit, leaves the flag set until the
+  next key or focus loss, and a binding write inside that window is normalised. An edit of a stored named
+  colour keeps the name's hex letters: a `1` typed after `red` gives `#ED1`. The time window panel and the export window set it on their time
   and width boxes, a style sets `Date` on each `CalendarDatePicker`'s `PART_TextBox`, and the pen form sets
   `HexColor` on its colour box.
 - `Navigation/ArchiveDayCalendar` — the days a pair of range calendars offers and the read days without a

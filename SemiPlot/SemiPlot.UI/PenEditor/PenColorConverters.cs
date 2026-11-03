@@ -1,13 +1,15 @@
 using Avalonia.Data.Converters;
 using Avalonia.Media;
 
+using SemiPlot.UI.Input;
+
 namespace SemiPlot.UI.PenEditor;
 
 public static class PenColorConverters
 {
 	public const string FieldFormat = "#RRGGBB";
 
-	private const int StoredColorLength = 7;
+	private const int StoredColorLength = FormattedFieldInput.HexColorDigitCount + 1;
 
 	/// <summary>The picker's colour: the draft's, and transparent for an empty or malformed draft.</summary>
 	public static readonly FuncValueConverter<string?, Color> ToColor =

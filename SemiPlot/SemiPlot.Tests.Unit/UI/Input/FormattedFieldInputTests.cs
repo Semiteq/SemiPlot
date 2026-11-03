@@ -224,7 +224,38 @@ public sealed class FormattedFieldInputTests
 
 		HeadlessInput.Press(window, PhysicalKey.Z, RawInputModifiers.Control);
 
-		field.Text.Should().MatchRegex("^(#[0-9A-F]{1,6})?$");
+		field.Text.Should().Be("#1F77B4", "the undo restores the typed 1f77b4, which the box normalises again");
+	}
+
+	[AvaloniaFact]
+	public async Task ACtrlVPaste_IsNormalised()
+	{
+		var (window, field) = Show(FieldLayout.HexColor);
+		HeadlessInput.Click(window, field);
+		await window.Clipboard!.SetTextAsync("1f77b4");
+
+		HeadlessInput.Press(window, PhysicalKey.V, RawInputModifiers.Control);
+
+		field.Text.Should().Be("#1F77B4");
+	}
+
+	[AvaloniaFact]
+	public async Task AValueSetInCodeAfterAnEmptyPasteAndAFocusLoss_StaysAsSet()
+	{
+		var field = new TextBox { Width = 300 };
+		FormattedFieldInput.SetLayout(field, FieldLayout.HexColor);
+		var other = new TextBox { Width = 300 };
+		var window = new Window { Width = 400, Height = 120, Content = new StackPanel { Children = { field, other } } };
+		window.Show();
+		HeadlessInput.Click(window, field);
+		await window.Clipboard!.SetTextAsync(string.Empty);
+		HeadlessInput.Press(window, PhysicalKey.V, RawInputModifiers.Control);
+		HeadlessInput.Click(window, other);
+
+		field.Text = "red";
+		Dispatcher.UIThread.RunJobs();
+
+		field.Text.Should().Be("red");
 	}
 
 	[AvaloniaTheory]

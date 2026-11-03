@@ -229,6 +229,7 @@ public sealed class PenEditorViewTests : IDisposable
 			Named<TextBlock>(window, "FormMaskPreview").Text.Should()
 				.Be(PenValueFormat.Format(PenFormViewModel.MaskPreviewSample, Pressure.Format));
 			Named<TextBox>(window, "FormColor").Text.Should().Be(Pressure.Color);
+			Named<TextBox>(window, "FormColor").PlaceholderText.Should().Be(PenColorConverters.FieldFormat);
 			Named<ColorPicker>(window, "FormColorPicker").Color.Should().Be(Color.Parse(Pressure.Color!));
 			Named<ComboBox>(window, "FormLineStyle").SelectedItem.Should().Be(Pressure.LineStyle);
 			Named<CheckBox>(window, "FormEnabledOnStart").IsChecked.Should().Be(Pressure.EnabledOnStart);

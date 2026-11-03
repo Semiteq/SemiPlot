@@ -30,7 +30,7 @@ public enum FieldLayout
 public static class FormattedFieldInput
 {
 	private const int GroupLength = 2;
-	private const int HexColorDigitCount = 6;
+	internal const int HexColorDigitCount = 6;
 
 	public static readonly AttachedProperty<FieldLayout?> LayoutProperty =
 		AvaloniaProperty.RegisterAttached<TextBox, FieldLayout?>("Layout", typeof(FormattedFieldInput));
@@ -76,7 +76,7 @@ public static class FormattedFieldInput
 
 	private static void AddOperatorRoutes(TextBox textBox)
 	{
-		textBox.AddHandler(InputElement.TextInputEvent, OnOperatorTextInput, RoutingStrategies.Tunnel);
+		textBox.AddHandler(InputElement.TextInputEvent, MarkOperatorEdit, RoutingStrategies.Tunnel);
 		textBox.AddHandler(InputElement.KeyDownEvent, OnOperatorKeyDown, RoutingStrategies.Tunnel);
 		textBox.PastingFromClipboard += MarkOperatorEdit;
 		textBox.CuttingToClipboard += MarkOperatorEdit;
@@ -85,17 +85,12 @@ public static class FormattedFieldInput
 
 	private static void RemoveOperatorRoutes(TextBox textBox)
 	{
-		textBox.RemoveHandler(InputElement.TextInputEvent, OnOperatorTextInput);
+		textBox.RemoveHandler(InputElement.TextInputEvent, MarkOperatorEdit);
 		textBox.RemoveHandler(InputElement.KeyDownEvent, OnOperatorKeyDown);
 		textBox.PastingFromClipboard -= MarkOperatorEdit;
 		textBox.CuttingToClipboard -= MarkOperatorEdit;
 		textBox.LostFocus -= ClearOperatorEdit;
 		textBox.ClearValue(_operatorEditPendingProperty);
-	}
-
-	private static void OnOperatorTextInput(object? sender, TextInputEventArgs e)
-	{
-		MarkOperatorEdit(sender, e);
 	}
 
 	/// <summary>Tunnels so that a paste or cut the key raises inside the box's own handling keeps its mark.</summary>
@@ -221,21 +216,16 @@ public static class FormattedFieldInput
 	/// <summary>The index after the <paramref name="count"/>-th allowed character, or before the first one for zero.</summary>
 	private static int IndexAfterAllowed(string text, int count, Func<char, bool> isAllowed)
 	{
+		if (count == 0)
+		{
+			return text.TakeWhile(character => !isAllowed(character)).Count();
+		}
+
 		var seen = 0;
 
 		for (var index = 0; index < text.Length; index++)
 		{
-			if (!isAllowed(text[index]))
-			{
-				continue;
-			}
-
-			if (seen == count)
-			{
-				return index;
-			}
-
-			if (++seen == count)
+			if (isAllowed(text[index]) && ++seen == count)
 			{
 				return index + 1;
 			}

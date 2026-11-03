@@ -618,24 +618,24 @@ Height of the form, from the AXAML: title 24; three section headers at 16 + 20 +
 - Create: `SemiPlot/SemiPlot.UI/Tables/HeaderMeasuredColumns.cs`
 - Create: `SemiPlot/SemiPlot.Tests.Unit/UI/Tables/HeaderMeasuredColumnsTests.cs`
 
-- [ ] create the test class with the three traits (`UI`, `Chart`, `Unit`); its stand is a `Window` of
+- [x] create the test class with the three traits (`UI`, `Chart`, `Unit`); its stand is a `Window` of
       a given width holding a `DataGrid` over a list of small records, three text columns with string
       headers and `IsEnabled` set, the last column `IsFill`; it shows the window and drives
       `Dispatcher.UIThread.RunJobs()`, except where a test says otherwise
-- [ ] write the failing tests `AColumnNarrowerThanItsHeader_OpensAtTheHeadersUnconstrainedWidth` (a
+- [x] write the failing tests `AColumnNarrowerThanItsHeader_OpensAtTheHeadersUnconstrainedWidth` (a
       column declared `Width="10"`: `MinWidth` and `ActualWidth` equal the ceiling of that header's
       `DesiredSize.Width` after `Measure(Size.Infinity)`) and
       `AColumnDeclaredWiderThanItsHeader_KeepsItsDeclaredWidth` (a 300 px column stays 300, its
       `MinWidth` is its header's width)
-- [ ] write the failing test `TheWidths_AreFittedInTheLayoutPassThatRealisesTheHeaders`: `Show()` and
+- [x] write the failing test `TheWidths_AreFittedInTheLayoutPassThatRealisesTheHeaders`: `Show()` and
       `window.UpdateLayout()` with no `RunJobs()`; the narrow column's `Width.Value` already equals its
       header's width. A fit posted to the dispatcher fails it
-- [ ] write `AnUnsortedHeader_ReservesTheSortArrowSlot`: the header's unconstrained width is equal
+- [x] write `AnUnsortedHeader_ReservesTheSortArrowSlot`: the header's unconstrained width is equal
       before and after a click sorts its column (`HeadlessInput.Click` on the header), and
       `PathIcon#SortIcon` is visible with a positive width while unsorted. If it fails, add
       `Styles/Tables.axaml` with `DataGridColumnHeader /template/ PathIcon#SortIcon` `IsVisible="True"`,
       include it from `App.axaml`, and record the fact under Solution Overview
-- [ ] write the failing tests `TheFillColumn_TakesTheViewportTheOtherColumnsLeave`,
+- [x] write the failing tests `TheFillColumn_TakesTheViewportTheOtherColumnsLeave`,
       `TheFillColumn_ShrinksWithTheGridDownToItsMinimumAndThenTheGridScrolls` (narrow the window: the fill
       column shrinks, stops at its `MinWidth`, and the headers presenter's extent exceeds its width),
       `TheFillColumn_GrowsBackWhenTheGridWidens`, `AResizedColumn_GivesItsDifferenceToTheFillColumn` (set
@@ -644,10 +644,14 @@ Height of the form, from the AXAML: title 24; three section headers at 16 + 20 +
       presenter's width less the visible vertical bar's width) and
       `AGridDetachedAndAttachedAgain_KeepsFittingTheFillColumn` (remove the grid from the window, add it
       back, widen the window: the fill column takes the new width)
-- [ ] implement `HeaderMeasuredColumns` as Technical Details states: the two attached properties, the
+- [x] implement `HeaderMeasuredColumns` as Technical Details states: the two attached properties, the
       class handler that subscribes attach and detach once, `LayoutUpdated` added on attach and removed
       on detach, the one-time header measure, the fill rule; no `Dispatcher.Post`
-- [ ] run `HeaderMeasuredColumnsTests`: every case passes
+- [x] run `HeaderMeasuredColumnsTests`: every case passes
+- ⚠️ `AnUnsortedHeader_ReservesTheSortArrowSlot` passed before the behaviour existed: Semi's header
+  reserves the arrow slot itself, so no `Styles/Tables.axaml` was added
+- ⚠️ the behaviour caches the headers presenter and the vertical scroll bar and finds them again only
+  when the cached presenter is no longer inside the grid, so a layout pass walks no row's visuals
 
 ### Task 3: Move the sort comparisons into PenRowOrder, tests first
 

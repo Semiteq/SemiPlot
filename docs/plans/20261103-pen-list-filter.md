@@ -594,3 +594,23 @@ before the change and passes after it.
 export window's pens as checkboxes only, no row selection); axis-scale-checkbox-column (the axis scale panel's
 log checkbox in the field column, with a label in the label column); ui-spacing-scale (every remaining inset
 onto the 4/8/12/16/24/32 scale, the `12,2` button padding with them).
+
+**Executed by exec:**
+- branch: pen-list-filter
+
+## Verify it yourself
+
+1. Filter. In `Edit` -> `Pens and groups`, type into the top bar's box («Фильтр: номер, имя или группа»):
+   the pen list keeps only rows whose number, name or groups contain the text, in any case; clear it
+   and every row returns. At `pen-editor-groups-pane` there is no box
+   (`PenListViewTests.TypingInTheFilterBox_ShowsOnlyTheMatchingRowsAndClearingItShowsEveryRow`).
+2. Selection. Select a pen, type a filter it matches: it stays selected with its form. Type one it does
+   not match: the selection clears and the pane shows its hint; clearing the box does not bring it back.
+3. No surprise selection. With nothing selected (or after Ctrl+click deselects), typing a filter selects
+   no row (`AFilterAfterACtrlClickClearedTheSelection_SelectsNoRow`).
+4. Sort keeps the shown set. Filter by a group, untick that group for the selected pen, then click a
+   column header: the pen stays shown and selected
+   (`AHeaderClickAfterTheSelectedRowStoppedMatching_KeepsTheRowShownAndSelected`).
+5. The groups pane is never filtered.
+
+Run all of it: the Acceptance Evidence command of this plan (199 passed, 0 failed on `d95f050`).

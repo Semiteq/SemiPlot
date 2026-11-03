@@ -789,50 +789,62 @@ Height of the form, from the AXAML: title 24; three section headers at 16 + 20 +
 - Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/Export/CsvExportWindowTests.cs`
 - Create: `SemiPlot/SemiPlot.Tests.Unit/UI/InterMeasure.cs` (internal static `InterTypeface`, `InterFont`)
 
-- [ ] replace `TheForm_IsEmptyAndDisabledWithNoRowAndShowsTheClickedPen` with the failing tests
+- [x] replace `TheForm_IsEmptyAndDisabledWithNoRowAndShowsTheClickedPen` with the failing tests
       `WithNoPenSelected_ThePaneShowsOnlyTheHint` (`PenFormEmptyHint` on screen with
       `Resources.PenFormEmptyHint`, `PenFormScroller` not visible) and
       `AClickedPen_FillsTheFormUnderAOneLineTitle` (the old test's field reads after `RowAt(window, 1)`,
       plus `PenFormTitleId` `7` left of `PenFormTitleName` `Chamber pressure` on one line, the hint gone)
-- [ ] write the failing tests `TheForm_HasThreeSectionsOnOneLabelColumnAndOneFieldEdge` (the three
+- [x] write the failing tests `TheForm_HasThreeSectionsOnOneLabelColumnAndOneFieldEdge` (the three
       section headers in order; every `form-label` shares one left edge; every field, the two
       `CheckBox` controls included, starts 124 px right of it, each read as `LeftOf(control, window)` as
       `PenEditorViewTests.cs:951-952` reads the log box), `EveryField_HasTheWidthOfItsContentType`
       (Name and Line 240; Unit, Mask, Colour, Minimum, Maximum 120), `TheColourSwatchPicker_IsSquare`
       (`FormColorPicker` 32 x 32, 8 px right of `FormColor`, its `DropDownGlyph` not visible) and
       `ThePane_Stays420PxWideWhenTheWindowWidens`
-- [ ] write the failing tests `AnInvalidField_ShowsTheWarningGlyphInsideTheBoxWithoutResizing` (an
+- [x] write the failing tests `AnInvalidField_ShowsTheWarningGlyphInsideTheBoxWithoutResizing` (an
       unusable mask and an empty name: `FormMask` and `FormName` each carry `invalid`, and each one's
       `InnerRightContent` is a distinct visible `PathIcon` whose `Data` is `WarningGeometry` and whose
       bounds lie inside its box; the boxes', the pane's and the window's `Bounds` are unchanged) and `AValidField_ShowsNoWarningGlyph`
-- [ ] write `AtTheOpeningSize_ThePaneShowsTheWholeForm` (at 1272 x 720 the scroller's
+- [x] write `AtTheOpeningSize_ThePaneShowsTheWholeForm` (at 1272 x 720 the scroller's
       `Extent.Height <= Viewport.Height`; when it fails, set `Height` to the smallest multiple of 8 above
       720 that passes and record the value for Task 7) and
       `TheWindow_OpensOnA1280PxScreenAndAtItsMinimumWidthKeepsThePaneAndEveryColumnMinimum`, the
       replacement of the test Task 4 deletes (the window opens below
       1280 px; at `MinWidth` the pane is 420 px, every column's `ActualWidth >= MinWidth`, the columns
       sum to no more than the list's viewport)
-- [ ] write the theory `EveryPenFormLabel_FitsTheLabelColumnInInter` (`en`, `ru` through
+- [x] write the theory `EveryPenFormLabel_FitsTheLabelColumnInInter` (`en`, `ru` through
       `CultureScope`): each of the ten label texts, measured with Inter at the label's `FontSize` through
       Skia (the `CsvExportWindowTests.cs:1214-1223` helpers, moved to `UI/InterMeasure.cs`, which both classes
       call), is at most 112 px
-- [ ] add the eight keys of Technical Details to both resx files, rename the three keys, delete the
+- [x] add the eight keys of Technical Details to both resx files, rename the three keys, delete the
       three keys; both files hand-edited, no byte order mark
-- [ ] add `WarningGeometry` to `Icons.axaml`; rebuild the pane in `PenEditorWindow.axaml` as Technical
+- [x] add `WarningGeometry` to `Icons.axaml`; rebuild the pane in `PenEditorWindow.axaml` as Technical
       Details states (hint, scroller, title, three sections, `FormScale` as the pair's grid, message
       line), with the picker style and the invalid-glyph style; delete `Grid#FormScale TextBox` and the
       `ScaleLabel` wrapper
-- [ ] in `PenEditorWindow.axaml.cs`, resolve the picker's flyout on `FormColorPicker.TemplateApplied`
+- [x] in `PenEditorWindow.axaml.cs`, resolve the picker's flyout on `FormColorPicker.TemplateApplied`
       as well as at load, detaching the previous flyout first, and remove the subscription in
       `OnUnloaded`
-- [ ] update `FormLabel` callers to the renamed keys; confirm the unchanged guards pass:
+- [x] update `FormLabel` callers to the renamed keys; confirm the unchanged guards pass:
       `ASwatchPickedInThePicker_WritesOneColourChange`, `AfterAPickInOneRow_ThePickerShowsTheNextRowsColour`,
       `APenWithNoColour_OpeningAndDismissingThePicker_WritesNothing`,
       `AnUnusableMask_WritesNothingRevertsMarksAndSaysWhyWithoutResizing` (panel `Bounds` unchanged),
       `TheLogBoxOverAStoredMinimumOfZero_PutsTheBoxBackAndSaysWhyWithoutResizing` (the box lines up with
       the minimum, above the message line), `BothBoundsTypedThenTheFormsEmptyAreaClicked_WritesOneScaleChange`
-- [ ] run `PenEditorViewTests`, `PenGroupsViewTests`, `PenFormViewModelTests` and `ResourcesTests`:
+- [x] run `PenEditorViewTests`, `PenGroupsViewTests`, `PenFormViewModelTests` and `ResourcesTests`:
       every case passes
+- ⚠️ the four section grids carry `HorizontalAlignment="Left"`: stretched across the 378 px scroller
+  viewport, the `112,240` grid widened its two pixel columns by a pixel each, and every field stood 125 px
+  right of the label edge instead of 124
+- ⚠️ `AtTheOpeningSize_ThePaneShowsTheWholeForm` passes at `Height="720"`, so the window height stays and
+  Task 7 records no new value
+- ⚠️ the empty-state ASSUMPTION holds: with the subscription to `FormColorPicker.TemplateApplied` removed,
+  `ASwatchPickedInThePicker_WritesOneColourChange` and `AfterAPickInOneRow_ThePickerShowsTheNextRowsColour`
+  fail, so the load-time lookup alone finds no flyout
+- ⚠️ no `FormLabel` caller read a renamed key: `ANameTypedThenAFormLabelClicked_WritesOnce` reads
+  `PenEditorColumnName` and `PenEditorColumnUnit`, which the form reuses
+- ⚠️ the title's two blocks share a window style `TextBlock.form-title` (16 px, SemiBold, centred) rather
+  than repeating the two setters
 
 ### Task 6: Verify acceptance criteria
 

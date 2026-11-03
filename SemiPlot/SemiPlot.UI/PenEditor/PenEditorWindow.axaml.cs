@@ -65,12 +65,8 @@ public partial class PenEditorWindow : Window
 		_scaleFocus = FormScale.GetObservable(IsKeyboardFocusWithinProperty)
 			.Subscribe(OnScaleFocusWithinChanged);
 
-		_colorFlyout = FormColorPicker.GetVisualDescendants().OfType<DropDownButton>().FirstOrDefault()?.Flyout;
-		if (_colorFlyout is not null)
-		{
-			_colorFlyout.Opened += OnColorFlyoutOpened;
-			_colorFlyout.Closed += OnColorFlyoutClosed;
-		}
+		FormColorPicker.TemplateApplied += OnColorPickerTemplateApplied;
+		AttachColorFlyout();
 	}
 
 	protected override void OnUnloaded(RoutedEventArgs e)
@@ -80,12 +76,8 @@ public partial class PenEditorWindow : Window
 		_scaleFocus?.Dispose();
 		_scaleFocus = null;
 
-		if (_colorFlyout is not null)
-		{
-			_colorFlyout.Opened -= OnColorFlyoutOpened;
-			_colorFlyout.Closed -= OnColorFlyoutClosed;
-			_colorFlyout = null;
-		}
+		FormColorPicker.TemplateApplied -= OnColorPickerTemplateApplied;
+		DetachColorFlyout();
 
 		base.OnUnloaded(e);
 	}
@@ -266,6 +258,34 @@ public partial class PenEditorWindow : Window
 		catch (Exception exception)
 		{
 			ReportFailure(exception);
+		}
+	}
+
+	// The picker applies its template only once the form shows, after the window has loaded.
+	private void OnColorPickerTemplateApplied(object? sender, TemplateAppliedEventArgs e)
+	{
+		AttachColorFlyout();
+	}
+
+	private void AttachColorFlyout()
+	{
+		DetachColorFlyout();
+
+		_colorFlyout = FormColorPicker.GetVisualDescendants().OfType<DropDownButton>().FirstOrDefault()?.Flyout;
+		if (_colorFlyout is not null)
+		{
+			_colorFlyout.Opened += OnColorFlyoutOpened;
+			_colorFlyout.Closed += OnColorFlyoutClosed;
+		}
+	}
+
+	private void DetachColorFlyout()
+	{
+		if (_colorFlyout is not null)
+		{
+			_colorFlyout.Opened -= OnColorFlyoutOpened;
+			_colorFlyout.Closed -= OnColorFlyoutClosed;
+			_colorFlyout = null;
 		}
 	}
 

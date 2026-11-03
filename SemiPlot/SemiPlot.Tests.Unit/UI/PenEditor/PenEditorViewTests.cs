@@ -2,6 +2,7 @@ using System.Globalization;
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
@@ -22,6 +23,7 @@ using SemiPlot.UI.PenEditor;
 
 using Xunit;
 
+using static SemiPlot.Tests.Unit.UI.InterMeasure;
 using static SemiPlot.Tests.Unit.UI.PenEditor.PenEditorFixture;
 using static SemiPlot.Tests.Unit.UI.PenEditor.PenEditorWindowDriver;
 using static SemiPlot.Tests.Unit.UI.ViewProbe;
@@ -38,6 +40,12 @@ namespace SemiPlot.Tests.Unit.UI.PenEditor;
 [Trait("Category", "Unit")]
 public sealed class PenEditorViewTests : IDisposable
 {
+	private const double PaneWidth = 420;
+
+	private const double LabelColumnWidth = 112;
+
+	private const double FormColumnSpacing = 12;
+
 	private static readonly Color _pickedColor = Color.Parse("#123456");
 
 	private static readonly PenCatalogue _catalogue = new([Argon, Pressure, Power], [Chamber, Spare]);
@@ -373,20 +381,68 @@ public sealed class PenEditorViewTests : IDisposable
 	}
 
 	[AvaloniaFact]
-	public void TheForm_IsEmptyAndDisabledWithNoRowAndShowsTheClickedPen()
+	public void TheWindow_OpensOnA1280PxScreenAndAtItsMinimumWidthKeepsThePaneAndEveryColumnMinimum()
+	{
+		const double SmallestScreenWidth = 1280;
+		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			window.Width.Should().BeLessThan(SmallestScreenWidth, "the window opens whole on a 1280 px screen");
+
+			window.Width = window.MinWidth;
+			Dispatcher.UIThread.RunJobs();
+
+			var list = PenListOf(window);
+			Named<Border>(window, "PenFormPanel").Bounds.Width.Should().Be(PaneWidth);
+			list.Columns.Should().AllSatisfy(column => column.ActualWidth.Should().BeGreaterThanOrEqualTo(column.MinWidth));
+			list.Columns.Sum(column => column.ActualWidth).Should()
+				.BeLessThanOrEqualTo(ViewportOf(list) + 0.5, "every column fits the list without scrolling");
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void WithNoPenSelected_ThePaneShowsOnlyTheHint()
+	{
+		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			var hint = Named<TextBlock>(window, "PenFormEmptyHint");
+
+			IsOnScreen(hint).Should().BeTrue("the pane says what to do with no pen selected");
+			hint.Text.Should().Be(Resources.PenFormEmptyHint);
+			Named<ScrollViewer>(window, "PenFormScroller").IsEffectivelyVisible.Should().BeFalse("no form shows");
+			_editor.Calls.Should().BeEmpty();
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void AClickedPen_FillsTheFormUnderAOneLineTitle()
 	{
 		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
 			var name = Named<TextBox>(window, "FormName");
-			name.IsEffectivelyEnabled.Should().BeFalse("no pen is selected");
-			name.Text.Should().BeNullOrEmpty();
-			Named<ComboBox>(window, "FormLineStyle").IsEffectivelyEnabled.Should().BeFalse();
-			Named<ColorPicker>(window, "FormColorPicker").IsEffectivelyEnabled.Should().BeFalse();
 
 			HeadlessInput.Click(window, RowAt(window, 1));
 
+			Named<TextBlock>(window, "PenFormEmptyHint").IsEffectivelyVisible.Should().BeFalse("the hint gave way");
+			var titleId = Named<TextBlock>(window, "PenFormTitleId");
+			var titleName = Named<TextBlock>(window, "PenFormTitleName");
+			titleId.Text.Should().Be("7");
+			titleName.Text.Should().Be(Pressure.Name);
+			TopOf(titleId, window).Should().Be(TopOf(titleName, window), "the title is one line");
+			RightOf(titleId, window).Should().BeLessThan(LeftOf(titleName, window), "the id stands first");
 			name.IsEffectivelyEnabled.Should().BeTrue();
 			name.Text.Should().Be(Pressure.Name);
 			Named<TextBox>(window, "FormUnit").Text.Should().Be(Pressure.Unit);
@@ -402,6 +458,210 @@ public sealed class PenEditorViewTests : IDisposable
 			Named<TextBox>(window, "FormScaleMaxOnStart").Text.Should().Be(100.ToString(CultureInfo.CurrentCulture));
 			Named<TextBlock>(window, "FormMessage").Text.Should().BeEmpty();
 			_editor.Calls.Should().BeEmpty();
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void TheForm_HasThreeSectionsOnOneLabelColumnAndOneFieldEdge()
+	{
+		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			HeadlessInput.Click(window, RowAt(window, 1));
+			var form = Named<Panel>(window, "PenForm");
+
+			var sections = Descendants<TextBlock>(form)
+				.Where(block => block.Classes.Contains("form-section"))
+				.OrderBy(block => TopOf(block, window))
+				.Select(block => block.Text);
+			sections.Should().Equal(
+				Resources.PenFormSectionLabel, Resources.PenFormSectionAppearance, Resources.PenFormSectionOnStart);
+			var labelEdges = FormLabels(window).Select(label => LeftOf(label, window)).Distinct().ToList();
+			labelEdges.Should().ContainSingle("every label starts at one edge");
+			FormFields(window).Should().AllSatisfy(field => (LeftOf(field, window) - labelEdges[0]).Should()
+				.BeApproximately(LabelColumnWidth + FormColumnSpacing, 0.5, $"{field.Name} starts at the field edge"));
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void EveryField_HasTheWidthOfItsContentType()
+	{
+		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			HeadlessInput.Click(window, RowAt(window, 1));
+
+			Named<TextBox>(window, "FormName").Bounds.Width.Should().Be(240);
+			Named<ComboBox>(window, "FormLineStyle").Bounds.Width.Should().Be(240);
+			Named<TextBox>(window, "FormUnit").Bounds.Width.Should().Be(120);
+			Named<TextBox>(window, "FormMask").Bounds.Width.Should().Be(120);
+			Named<TextBox>(window, "FormColor").Bounds.Width.Should().Be(120);
+			Named<TextBox>(window, "FormScaleMinOnStart").Bounds.Width.Should().Be(120);
+			Named<TextBox>(window, "FormScaleMaxOnStart").Bounds.Width.Should().Be(120);
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void TheColourSwatchPicker_IsSquare()
+	{
+		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			HeadlessInput.Click(window, RowAt(window, 1));
+			var picker = Named<ColorPicker>(window, "FormColorPicker");
+			var color = Named<TextBox>(window, "FormColor");
+
+			picker.Bounds.Size.Should().Be(new Size(32, 32));
+			(LeftOf(picker, window) - RightOf(color, window)).Should().BeApproximately(8, 0.5);
+			Descendant<Control>(picker, "DropDownGlyph").IsEffectivelyVisible.Should()
+				.BeFalse("the picker is the swatch alone");
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void ThePane_Stays420PxWideWhenTheWindowWidens()
+	{
+		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			var pane = Named<Border>(window, "PenFormPanel");
+			var list = PenListOf(window);
+			var listWidth = list.Bounds.Width;
+			pane.Bounds.Width.Should().Be(PaneWidth);
+
+			window.Width += 300;
+			Dispatcher.UIThread.RunJobs();
+
+			pane.Bounds.Width.Should().Be(PaneWidth);
+			list.Bounds.Width.Should().BeApproximately(listWidth + 300, 0.5, "the list takes the width");
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void AnInvalidField_ShowsTheWarningGlyphInsideTheBoxWithoutResizing()
+	{
+		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			HeadlessInput.Click(window, RowAt(window, 1));
+			var mask = Named<TextBox>(window, "FormMask");
+			var name = Named<TextBox>(window, "FormName");
+			var pane = Named<Border>(window, "PenFormPanel");
+			var (maskBounds, nameBounds, paneBounds, windowBounds) = (mask.Bounds, name.Bounds, pane.Bounds, window.Bounds);
+			window.TryFindResource("WarningGeometry", out var warning).Should().BeTrue();
+
+			Retype(window, mask, "%0.0");
+			HeadlessInput.Clear(window, name);
+
+			var glyphs = new[] { mask, name }.Select(box =>
+			{
+				box.Classes.Should().Contain("invalid");
+				var glyph = box.InnerRightContent.Should().BeOfType<PathIcon>().Subject;
+				glyph.IsEffectivelyVisible.Should().BeTrue();
+				glyph.Data.Should().BeSameAs(warning);
+				LeftOf(glyph, box).Should().BeGreaterThanOrEqualTo(0);
+				RightOf(glyph, box).Should().BeLessThanOrEqualTo(box.Bounds.Width, "the glyph sits inside the box");
+				TopOf(glyph, box).Should().BeGreaterThanOrEqualTo(0);
+				BottomOf(glyph, box).Should().BeLessThanOrEqualTo(box.Bounds.Height);
+
+				return glyph;
+			}).ToList();
+
+			glyphs[0].Should().NotBeSameAs(glyphs[1], "each box carries a glyph of its own");
+			(mask.Bounds, name.Bounds, pane.Bounds, window.Bounds).Should()
+				.Be((maskBounds, nameBounds, paneBounds, windowBounds));
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void AValidField_ShowsNoWarningGlyph()
+	{
+		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			HeadlessInput.Click(window, RowAt(window, 1));
+			var name = Named<TextBox>(window, "FormName");
+
+			name.Classes.Should().NotContain("invalid");
+			name.InnerRightContent.Should().BeNull();
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void AtTheOpeningSize_ThePaneShowsTheWholeForm()
+	{
+		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			HeadlessInput.Click(window, RowAt(window, 1));
+			var scroller = Named<ScrollViewer>(window, "PenFormScroller");
+
+			window.Bounds.Size.Should().Be(new Size(window.Width, window.Height));
+			scroller.Extent.Height.Should().BePositive();
+			scroller.Extent.Height.Should().BeLessThanOrEqualTo(scroller.Viewport.Height, "the form needs no scrolling");
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaTheory]
+	[InlineData("en")]
+	[InlineData("ru")]
+	public void EveryPenFormLabel_FitsTheLabelColumnInInter(string culture)
+	{
+		const int LabelCount = 10;
+		using var cultureScope = new CultureScope(culture);
+		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			HeadlessInput.Click(window, RowAt(window, 1));
+			var labels = FormLabels(window).ToList();
+			using var typeface = InterTypeface();
+
+			labels.Should().HaveCount(LabelCount);
+			labels.Should().AllSatisfy(label =>
+			{
+				using var font = InterFont(typeface, label.FontSize);
+				font.MeasureText(label.Text).Should().BeLessThanOrEqualTo((float)LabelColumnWidth, label.Text);
+			});
 		}
 		finally
 		{
@@ -1167,9 +1427,39 @@ public sealed class PenEditorViewTests : IDisposable
 
 	private static TextBlock FormLabel(PenEditorWindow window, string text)
 	{
-		return Named<Panel>(window, "PenForm").GetVisualDescendants()
-			.OfType<TextBlock>()
-			.Single(label => label.Classes.Contains("form-label") && label.Text == text);
+		return FormLabels(window).Single(label => label.Text == text);
+	}
+
+	private static IEnumerable<TextBlock> FormLabels(PenEditorWindow window)
+	{
+		return Descendants<TextBlock>(Named<Panel>(window, "PenForm"))
+			.Where(label => label.Classes.Contains("form-label"));
+	}
+
+	private static IEnumerable<Control> FormFields(PenEditorWindow window)
+	{
+		return
+		[
+			Named<TextBox>(window, "FormName"),
+			Named<TextBox>(window, "FormUnit"),
+			Named<TextBox>(window, "FormMask"),
+			Named<TextBlock>(window, "FormMaskPreview"),
+			Named<TextBox>(window, "FormColor"),
+			Named<ComboBox>(window, "FormLineStyle"),
+			Named<CheckBox>(window, "FormEnabledOnStart"),
+			Named<TextBox>(window, "FormScaleMinOnStart"),
+			Named<TextBox>(window, "FormScaleMaxOnStart"),
+			Named<CheckBox>(window, "FormLogScaleOnStart"),
+		];
+	}
+
+	private static double ViewportOf(DataGrid list)
+	{
+		var scrollBar = Descendant<ScrollBar>(list, "PART_VerticalScrollbar");
+		var scrollBarWidth = scrollBar.IsVisible ? scrollBar.Bounds.Width : 0;
+
+		return Descendant<DataGridColumnHeadersPresenter>(list, "PART_ColumnHeadersPresenter").Bounds.Width
+			- scrollBarWidth;
 	}
 
 	private static TopLevel TopLevelOf(Control control)

@@ -234,7 +234,7 @@
   <data name="PenEditorColumnOnStart" xml:space="preserve">
     <value>On start</value>
   </data>
-  <data name="PenEditorColumnColor" xml:space="preserve">
+  <data name="PenFormColorLabel" xml:space="preserve">
     <value>Colour</value>
   </data>
   <data name="PenEditorColumnName" xml:space="preserve">
@@ -243,20 +243,11 @@
   <data name="PenEditorColumnUnit" xml:space="preserve">
     <value>Unit</value>
   </data>
-  <data name="PenEditorColumnMask" xml:space="preserve">
+  <data name="PenFormMaskLabel" xml:space="preserve">
     <value>Mask</value>
   </data>
-  <data name="PenEditorColumnLineStyle" xml:space="preserve">
+  <data name="PenFormLineStyleLabel" xml:space="preserve">
     <value>Line</value>
-  </data>
-  <data name="PenEditorColumnScaleMinOnStart" xml:space="preserve">
-    <value>Initial scale, min</value>
-  </data>
-  <data name="PenEditorColumnScaleMaxOnStart" xml:space="preserve">
-    <value>Initial scale, max</value>
-  </data>
-  <data name="PenEditorColumnLogScaleOnStart" xml:space="preserve">
-    <value>Initial scale, logarithmic</value>
   </data>
   <data name="PenEditorColumnGroups" xml:space="preserve">
     <value>Groups</value>
@@ -671,6 +662,30 @@
   </data>
   <data name="PenFormMaskPreviewLabel" xml:space="preserve">
     <value>Preview</value>
+  </data>
+  <data name="PenFormEmptyHint" xml:space="preserve">
+    <value>Select a pen in the list on the left</value>
+  </data>
+  <data name="PenFormSectionLabel" xml:space="preserve">
+    <value>Label</value>
+  </data>
+  <data name="PenFormSectionAppearance" xml:space="preserve">
+    <value>Appearance</value>
+  </data>
+  <data name="PenFormSectionOnStart" xml:space="preserve">
+    <value>On start</value>
+  </data>
+  <data name="PenFormVisibilityLabel" xml:space="preserve">
+    <value>Visibility</value>
+  </data>
+  <data name="PenFormShowOnChart" xml:space="preserve">
+    <value>Show on the chart</value>
+  </data>
+  <data name="PenFormScaleTypeLabel" xml:space="preserve">
+    <value>Scale type</value>
+  </data>
+  <data name="PenFormLogarithmic" xml:space="preserve">
+    <value>Logarithmic</value>
   </data>
   <data name="PenGroupsNameRequired" xml:space="preserve">
     <value>Group name: required</value>

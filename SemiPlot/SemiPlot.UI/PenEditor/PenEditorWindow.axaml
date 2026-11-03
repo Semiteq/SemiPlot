@@ -25,6 +25,11 @@
             <ColumnDefinition Width="{StaticResource IdColumnWidth}" />
             <ColumnDefinition Width="*" />
         </ColumnDefinitions>
+        <ColumnDefinitions x:Key="PenFormColumns"
+                           x:Shared="False">
+            <ColumnDefinition Width="112" />
+            <ColumnDefinition Width="240" />
+        </ColumnDefinitions>
         <DataTemplate x:Key="LineStyleItem"
                       x:DataType="trends:PenLineStyle">
             <TextBlock Text="{Binding Converter={x:Static local:PenLineStyleConverters.ToLabel}}" />
@@ -52,8 +57,29 @@
         <Style Selector="TextBlock.form-label">
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
-        <Style Selector="Grid#FormScale TextBox">
-            <Setter Property="Width" Value="120" />
+        <Style Selector="TextBlock.form-title">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.form-section">
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Margin" Value="0,16,0,8" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="ColorPicker#FormColorPicker /template/ DropDownButton /template/ :is(Control)#DropDownGlyph">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+        <Style Selector="Panel#PenForm TextBox.invalid">
+            <Setter Property="InnerRightContent">
+                <Template>
+                    <PathIcon Width="16"
+                              Height="16"
+                              Margin="0,0,8,0"
+                              Data="{StaticResource WarningGeometry}"
+                              Foreground="{DynamicResource AppSeverityErrorBrush}" />
+                </Template>
+            </Setter>
         </Style>
         <Style Selector="ListBox#GroupList ListBoxItem">
             <Setter Property="Padding" Value="0" />
@@ -71,10 +97,9 @@
             <TabItem Name="PensTab"
                      Header="{x:Static text:Resources.PenEditorPensTab}">
 
-                <Grid RowDefinitions="*,Auto"
-                      RowSpacing="4">
+                <Grid ColumnDefinitions="*,16,420">
 
-                    <Border Grid.Row="0"
+                    <Border Grid.Column="0"
                             BorderBrush="{DynamicResource AppBorderBrush}"
                             BorderThickness="1"
                             CornerRadius="4"
@@ -203,203 +228,265 @@
 
                     </Border>
 
-                    <Border Grid.Row="1"
+                    <Border Grid.Column="2"
                             Name="PenFormPanel"
-                            Height="240"
-                            Padding="0,8,0,0">
-                        <Border.IsEnabled>
-                            <MultiBinding Converter="{x:Static BoolConverters.And}">
-                                <Binding Path="SelectedForm"
-                                         Converter="{x:Static ObjectConverters.IsNotNull}" />
-                                <Binding Path="IsRefreshing"
-                                         Converter="{x:Static BoolConverters.Not}" />
-                            </MultiBinding>
-                        </Border.IsEnabled>
+                            Width="420"
+                            Padding="16"
+                            BorderBrush="{DynamicResource AppBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            IsEnabled="{Binding !IsRefreshing}">
 
-                        <Panel Name="PenForm"
-                               DataContext="{Binding SelectedForm}">
+                        <Panel>
 
-                            <Grid x:DataType="local:PenFormViewModel"
-                                  ColumnDefinitions="Auto,*,Auto,*,Auto"
-                                  RowDefinitions="Auto,Auto,Auto,Auto,Auto"
-                                  ColumnSpacing="12"
-                                  RowSpacing="10">
+                            <TextBlock Name="PenFormEmptyHint"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource AppSecondaryForegroundBrush}"
+                                       Text="{x:Static text:Resources.PenFormEmptyHint}"
+                                       IsVisible="{Binding SelectedForm, Converter={x:Static ObjectConverters.IsNull}}" />
 
-                                <TextBlock Grid.Row="0"
-                                           Grid.Column="0"
-                                           Classes="form-label"
-                                           Text="{x:Static text:Resources.PenEditorColumnName}" />
+                            <ScrollViewer Name="PenFormScroller"
+                                          Focusable="False"
+                                          HorizontalScrollBarVisibility="Disabled"
+                                          IsVisible="{Binding SelectedForm, Converter={x:Static ObjectConverters.IsNotNull}}">
 
-                                <TextBox Grid.Row="0"
-                                         Grid.Column="1"
-                                         Name="FormName"
-                                         local:PenEditorWindow.Field="Name"
-                                         Classes.invalid="{Binding !IsNameValid}"
-                                         Text="{Binding Name}" />
+                                <Panel Name="PenForm"
+                                       DataContext="{Binding SelectedForm}">
 
-                                <TextBlock Grid.Row="1"
-                                           Grid.Column="0"
-                                           Classes="form-label"
-                                           Text="{x:Static text:Resources.PenEditorColumnUnit}" />
+                                    <StackPanel x:DataType="local:PenFormViewModel">
 
-                                <TextBox Grid.Row="1"
-                                         Grid.Column="1"
-                                         Name="FormUnit"
-                                         local:PenEditorWindow.Field="Unit"
-                                         Classes.invalid="{Binding !IsUnitValid}"
-                                         Text="{Binding Unit}" />
+                                        <Grid Height="24"
+                                              ColumnDefinitions="Auto,*"
+                                              ColumnSpacing="8">
 
-                                <TextBlock Grid.Row="2"
-                                           Grid.Column="0"
-                                           Classes="form-label"
-                                           Text="{x:Static text:Resources.PenEditorColumnMask}" />
+                                            <TextBlock Grid.Column="0"
+                                                       Name="PenFormTitleId"
+                                                       Classes="form-title"
+                                                       Foreground="{DynamicResource AppSecondaryForegroundBrush}"
+                                                       Text="{Binding Row.Pen.Id}" />
 
-                                <TextBox Grid.Row="2"
-                                         Grid.Column="1"
-                                         Name="FormMask"
-                                         local:PenEditorWindow.Field="Mask"
-                                         Classes.invalid="{Binding !IsMaskValid}"
-                                         Text="{Binding Mask}" />
+                                            <TextBlock Grid.Column="1"
+                                                       Name="PenFormTitleName"
+                                                       Classes="form-title"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Text="{Binding Row.Pen.Name}"
+                                                       ToolTip.Tip="{Binding $self.Text}" />
 
-                                <TextBlock Grid.Row="3"
-                                           Grid.Column="0"
-                                           Classes="form-label"
-                                           Text="{x:Static text:Resources.PenFormMaskPreviewLabel}" />
+                                        </Grid>
 
-                                <TextBlock Grid.Row="3"
-                                           Grid.Column="1"
-                                           Name="FormMaskPreview"
-                                           Classes="form-label"
-                                           TextTrimming="CharacterEllipsis"
-                                           Text="{Binding MaskPreview}" />
+                                        <TextBlock Classes="form-section"
+                                                   Text="{x:Static text:Resources.PenFormSectionLabel}" />
 
-                                <TextBlock Grid.Row="0"
-                                           Grid.Column="2"
-                                           Classes="form-label"
-                                           Text="{x:Static text:Resources.PenEditorColumnColor}" />
+                                        <Grid HorizontalAlignment="Left"
+                                              ColumnDefinitions="{StaticResource PenFormColumns}"
+                                              RowDefinitions="32,32,32,32"
+                                              ColumnSpacing="12"
+                                              RowSpacing="8">
 
-                                <Grid Grid.Row="0"
-                                      Grid.Column="3"
-                                      ColumnDefinitions="*,Auto"
-                                      ColumnSpacing="8">
+                                            <TextBlock Grid.Row="0"
+                                                       Grid.Column="0"
+                                                       Classes="form-label"
+                                                       Text="{x:Static text:Resources.PenEditorColumnName}" />
 
-                                    <TextBox Grid.Column="0"
-                                             Name="FormColor"
-                                             local:PenEditorWindow.Field="Color"
-                                             input:FormattedFieldInput.Layout="HexColor"
-                                             PlaceholderText="{x:Static local:PenColorConverters.FieldFormat}"
-                                             Classes.invalid="{Binding !IsColorValid}"
-                                             Text="{Binding Color}" />
+                                            <TextBox Grid.Row="0"
+                                                     Grid.Column="1"
+                                                     Name="FormName"
+                                                     Width="240"
+                                                     HorizontalAlignment="Left"
+                                                     local:PenEditorWindow.Field="Name"
+                                                     Classes.invalid="{Binding !IsNameValid}"
+                                                     Text="{Binding Name}" />
 
-                                    <ColorPicker Grid.Column="1"
-                                                 Name="FormColorPicker"
-                                                 IsAlphaEnabled="False"
-                                                 IsAlphaVisible="False">
-                                        <ColorPicker.Color>
-                                            <Binding Path="Color"
-                                                     Mode="OneWay"
-                                                     Converter="{x:Static local:PenColorConverters.ToColor}" />
-                                        </ColorPicker.Color>
-                                    </ColorPicker>
+                                            <TextBlock Grid.Row="1"
+                                                       Grid.Column="0"
+                                                       Classes="form-label"
+                                                       Text="{x:Static text:Resources.PenEditorColumnUnit}" />
 
-                                </Grid>
+                                            <TextBox Grid.Row="1"
+                                                     Grid.Column="1"
+                                                     Name="FormUnit"
+                                                     Width="120"
+                                                     HorizontalAlignment="Left"
+                                                     local:PenEditorWindow.Field="Unit"
+                                                     Classes.invalid="{Binding !IsUnitValid}"
+                                                     Text="{Binding Unit}" />
 
-                                <TextBlock Grid.Row="1"
-                                           Grid.Column="2"
-                                           Classes="form-label"
-                                           Text="{x:Static text:Resources.PenEditorColumnLineStyle}" />
+                                            <TextBlock Grid.Row="2"
+                                                       Grid.Column="0"
+                                                       Classes="form-label"
+                                                       Text="{x:Static text:Resources.PenFormMaskLabel}" />
 
-                                <ComboBox Grid.Row="1"
-                                          Grid.Column="3"
-                                          Name="FormLineStyle"
-                                          HorizontalAlignment="Stretch"
-                                          ItemsSource="{x:Static local:PenEditorWindow.LineStyles}"
-                                          SelectedItem="{Binding LineStyle, Mode=OneWay}"
-                                          ItemTemplate="{StaticResource LineStyleItem}"
-                                          SelectionChanged="OnLineStyleSelectionChanged" />
+                                            <TextBox Grid.Row="2"
+                                                     Grid.Column="1"
+                                                     Name="FormMask"
+                                                     Width="120"
+                                                     HorizontalAlignment="Left"
+                                                     local:PenEditorWindow.Field="Mask"
+                                                     Classes.invalid="{Binding !IsMaskValid}"
+                                                     Text="{Binding Mask}" />
 
-                                <TextBlock Grid.Row="2"
-                                           Grid.Column="2"
-                                           Classes="form-label"
-                                           Text="{x:Static text:Resources.PenEditorColumnOnStart}" />
+                                            <TextBlock Grid.Row="3"
+                                                       Grid.Column="0"
+                                                       Classes="form-label"
+                                                       Text="{x:Static text:Resources.PenFormMaskPreviewLabel}" />
 
-                                <CheckBox Grid.Row="2"
-                                          Grid.Column="3"
-                                          Name="FormEnabledOnStart"
-                                          IsChecked="{Binding EnabledOnStart, Mode=OneWay}"
-                                          IsCheckedChanged="OnStartFlagChanged" />
+                                            <TextBlock Grid.Row="3"
+                                                       Grid.Column="1"
+                                                       Name="FormMaskPreview"
+                                                       HorizontalAlignment="Left"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Foreground="{DynamicResource AppSecondaryForegroundBrush}"
+                                                       Text="{Binding MaskPreview}"
+                                                       ToolTip.Tip="{Binding $self.Text}" />
 
-                                <Grid Grid.Row="0"
-                                      Grid.RowSpan="3"
-                                      Grid.Column="4"
-                                      Grid.IsSharedSizeScope="True"
-                                      RowDefinitions="Auto,Auto"
-                                      RowSpacing="10">
+                                        </Grid>
 
-                                    <Grid Grid.Row="0"
-                                          Name="FormScale"
-                                          RowDefinitions="Auto,Auto"
-                                          ColumnSpacing="12"
-                                          RowSpacing="10">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"
-                                                              SharedSizeGroup="ScaleLabel" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Classes="form-section"
+                                                   Text="{x:Static text:Resources.PenFormSectionAppearance}" />
 
-                                        <TextBlock Grid.Row="0"
-                                                   Grid.Column="0"
-                                                   Classes="form-label"
-                                                   Text="{x:Static text:Resources.PenEditorColumnScaleMinOnStart}" />
+                                        <Grid HorizontalAlignment="Left"
+                                              ColumnDefinitions="{StaticResource PenFormColumns}"
+                                              RowDefinitions="32,32"
+                                              ColumnSpacing="12"
+                                              RowSpacing="8">
 
-                                        <TextBox Grid.Row="0"
-                                                 Grid.Column="1"
-                                                 Name="FormScaleMinOnStart"
-                                                 Classes.invalid="{Binding !IsScaleMinOnStartValid}"
-                                                 Text="{Binding ScaleMinOnStart}" />
+                                            <TextBlock Grid.Row="0"
+                                                       Grid.Column="0"
+                                                       Classes="form-label"
+                                                       Text="{x:Static text:Resources.PenFormColorLabel}" />
 
-                                        <TextBlock Grid.Row="1"
-                                                   Grid.Column="0"
-                                                   Classes="form-label"
-                                                   Text="{x:Static text:Resources.PenEditorColumnScaleMaxOnStart}" />
+                                            <StackPanel Grid.Row="0"
+                                                        Grid.Column="1"
+                                                        Orientation="Horizontal"
+                                                        Spacing="8">
 
-                                        <TextBox Grid.Row="1"
-                                                 Grid.Column="1"
-                                                 Name="FormScaleMaxOnStart"
-                                                 Classes.invalid="{Binding !IsScaleMaxOnStartValid}"
-                                                 Text="{Binding ScaleMaxOnStart}" />
+                                                <TextBox Name="FormColor"
+                                                         Width="120"
+                                                         local:PenEditorWindow.Field="Color"
+                                                         input:FormattedFieldInput.Layout="HexColor"
+                                                         PlaceholderText="{x:Static local:PenColorConverters.FieldFormat}"
+                                                         Classes.invalid="{Binding !IsColorValid}"
+                                                         Text="{Binding Color}" />
 
-                                    </Grid>
+                                                <ColorPicker Name="FormColorPicker"
+                                                             Width="32"
+                                                             Height="32"
+                                                             Padding="0"
+                                                             IsAlphaEnabled="False"
+                                                             IsAlphaVisible="False">
+                                                    <ColorPicker.Color>
+                                                        <Binding Path="Color"
+                                                                 Mode="OneWay"
+                                                                 Converter="{x:Static local:PenColorConverters.ToColor}" />
+                                                    </ColorPicker.Color>
+                                                </ColorPicker>
 
-                                    <Grid Grid.Row="1"
-                                          ColumnSpacing="12">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"
-                                                              SharedSizeGroup="ScaleLabel" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
+                                            </StackPanel>
 
-                                        <TextBlock Grid.Column="0"
-                                                   Classes="form-label"
-                                                   Text="{x:Static text:Resources.PenEditorColumnLogScaleOnStart}" />
+                                            <TextBlock Grid.Row="1"
+                                                       Grid.Column="0"
+                                                       Classes="form-label"
+                                                       Text="{x:Static text:Resources.PenFormLineStyleLabel}" />
 
-                                        <CheckBox Grid.Column="1"
-                                                  Name="FormLogScaleOnStart"
-                                                  IsChecked="{Binding LogScaleOnStart, Mode=OneWay}"
-                                                  IsCheckedChanged="OnStartFlagChanged" />
+                                            <ComboBox Grid.Row="1"
+                                                      Grid.Column="1"
+                                                      Name="FormLineStyle"
+                                                      Width="240"
+                                                      HorizontalAlignment="Left"
+                                                      ItemsSource="{x:Static local:PenEditorWindow.LineStyles}"
+                                                      SelectedItem="{Binding LineStyle, Mode=OneWay}"
+                                                      ItemTemplate="{StaticResource LineStyleItem}"
+                                                      SelectionChanged="OnLineStyleSelectionChanged" />
 
-                                    </Grid>
+                                        </Grid>
 
-                                </Grid>
+                                        <TextBlock Classes="form-section"
+                                                   Text="{x:Static text:Resources.PenFormSectionOnStart}" />
 
-                                <TextBlock Grid.Row="4"
-                                           Grid.Column="0"
-                                           Grid.ColumnSpan="5"
-                                           Name="FormMessage"
-                                           Classes="form-message error"
-                                           Text="{Binding Message}" />
+                                        <Grid HorizontalAlignment="Left"
+                                              ColumnDefinitions="{StaticResource PenFormColumns}"
+                                              RowDefinitions="32,Auto,32"
+                                              ColumnSpacing="12"
+                                              RowSpacing="8">
 
-                            </Grid>
+                                            <TextBlock Grid.Row="0"
+                                                       Grid.Column="0"
+                                                       Classes="form-label"
+                                                       Text="{x:Static text:Resources.PenFormVisibilityLabel}" />
+
+                                            <CheckBox Grid.Row="0"
+                                                      Grid.Column="1"
+                                                      Name="FormEnabledOnStart"
+                                                      HorizontalAlignment="Left"
+                                                      Content="{x:Static text:Resources.PenFormShowOnChart}"
+                                                      IsChecked="{Binding EnabledOnStart, Mode=OneWay}"
+                                                      IsCheckedChanged="OnStartFlagChanged" />
+
+                                            <Grid Grid.Row="1"
+                                                  Grid.Column="0"
+                                                  Grid.ColumnSpan="2"
+                                                  Name="FormScale"
+                                                  HorizontalAlignment="Left"
+                                                  ColumnDefinitions="{StaticResource PenFormColumns}"
+                                                  RowDefinitions="32,32"
+                                                  ColumnSpacing="12"
+                                                  RowSpacing="8">
+
+                                                <TextBlock Grid.Row="0"
+                                                           Grid.Column="0"
+                                                           Classes="form-label"
+                                                           Text="{x:Static text:Resources.AxisScaleMinimumLabel}" />
+
+                                                <TextBox Grid.Row="0"
+                                                         Grid.Column="1"
+                                                         Name="FormScaleMinOnStart"
+                                                         Width="120"
+                                                         HorizontalAlignment="Left"
+                                                         Classes.invalid="{Binding !IsScaleMinOnStartValid}"
+                                                         Text="{Binding ScaleMinOnStart}" />
+
+                                                <TextBlock Grid.Row="1"
+                                                           Grid.Column="0"
+                                                           Classes="form-label"
+                                                           Text="{x:Static text:Resources.AxisScaleMaximumLabel}" />
+
+                                                <TextBox Grid.Row="1"
+                                                         Grid.Column="1"
+                                                         Name="FormScaleMaxOnStart"
+                                                         Width="120"
+                                                         HorizontalAlignment="Left"
+                                                         Classes.invalid="{Binding !IsScaleMaxOnStartValid}"
+                                                         Text="{Binding ScaleMaxOnStart}" />
+
+                                            </Grid>
+
+                                            <TextBlock Grid.Row="2"
+                                                       Grid.Column="0"
+                                                       Classes="form-label"
+                                                       Text="{x:Static text:Resources.PenFormScaleTypeLabel}" />
+
+                                            <CheckBox Grid.Row="2"
+                                                      Grid.Column="1"
+                                                      Name="FormLogScaleOnStart"
+                                                      HorizontalAlignment="Left"
+                                                      Content="{x:Static text:Resources.PenFormLogarithmic}"
+                                                      IsChecked="{Binding LogScaleOnStart, Mode=OneWay}"
+                                                      IsCheckedChanged="OnStartFlagChanged" />
+
+                                        </Grid>
+
+                                        <TextBlock Name="FormMessage"
+                                                   Margin="0,16,0,0"
+                                                   Classes="form-message error"
+                                                   Text="{Binding Message}" />
+
+                                    </StackPanel>
+
+                                </Panel>
+
+                            </ScrollViewer>
 
                         </Panel>
 

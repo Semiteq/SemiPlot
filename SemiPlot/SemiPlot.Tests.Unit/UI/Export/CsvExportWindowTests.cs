@@ -8,7 +8,6 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Platform;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
@@ -32,6 +31,7 @@ using SkiaSharp;
 
 using Xunit;
 
+using static SemiPlot.Tests.Unit.UI.InterMeasure;
 using static SemiPlot.Tests.Unit.UI.ViewProbe;
 
 namespace SemiPlot.Tests.Unit.UI.Export;
@@ -1209,19 +1209,6 @@ public sealed class CsvExportWindowTests : IDisposable
 		{
 			Dismiss(window);
 		}
-	}
-
-	private static SKTypeface InterTypeface()
-	{
-		using var stream = AssetLoader.Open(new Uri("avares://Avalonia.Fonts.Inter/Assets/Inter-Regular.ttf"));
-		using var data = SKData.Create(stream);
-
-		return SKTypeface.FromData(data);
-	}
-
-	private static SKFont InterFont(SKTypeface typeface, double fontSize)
-	{
-		return new SKFont(typeface, (float)fontSize) { LinearMetrics = true, Subpixel = true };
 	}
 
 	// Each digit repeated over the mask bounds every date the mask can show.

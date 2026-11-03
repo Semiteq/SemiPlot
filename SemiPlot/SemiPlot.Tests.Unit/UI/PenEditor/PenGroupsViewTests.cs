@@ -281,10 +281,10 @@ public sealed class PenGroupsViewTests : IDisposable
 		var window = Realise(viewModel);
 		try
 		{
-			var button = Descendant<Button>(GroupRowAt(window, 0), "GroupActionsButton");
+			var button = GroupActionsButtonAt(window, 0);
 			ToolTip.GetTip(button).Should().Be(Resources.PenGroupsActionsTip);
 
-			var items = OpenMenu(window, 0).Items.Cast<Control>().ToList();
+			var items = OpenGroupMenu(window, 0).Items.Cast<Control>().ToList();
 
 			items.Should().HaveCount(4);
 			items[2].Should().BeOfType<Separator>();
@@ -311,9 +311,9 @@ public sealed class PenGroupsViewTests : IDisposable
 			PickGroupMenuItem(window, 1, "GroupFoldItem");
 
 			_editor.Calls.Should().Equal(new FakeEditorCall.SetFoldedOnStart(Spare, true));
-			FoldItemOf(OpenMenu(window, 1)).IsChecked.Should().BeTrue("the reopened menu shows the stored flag");
+			FoldItemOf(OpenGroupMenu(window, 1)).IsChecked.Should().BeTrue("the reopened menu shows the stored flag");
 			CloseMenu(window, 1);
-			FoldItemOf(OpenMenu(window, 0)).IsChecked.Should().BeFalse("another group keeps its own flag");
+			FoldItemOf(OpenGroupMenu(window, 0)).IsChecked.Should().BeFalse("another group keeps its own flag");
 			_editor.Calls.Should().ContainSingle();
 		}
 		finally
@@ -333,7 +333,7 @@ public sealed class PenGroupsViewTests : IDisposable
 			PickGroupMenuItem(window, 0, "GroupFoldItem");
 
 			_editor.Calls.Should().ContainSingle();
-			FoldItemOf(OpenMenu(window, 0)).IsChecked.Should().BeFalse("the refused toggle puts the flag back");
+			FoldItemOf(OpenGroupMenu(window, 0)).IsChecked.Should().BeFalse("the refused toggle puts the flag back");
 			_messagePanel.Entries.Should().ContainSingle();
 			Named<TextBlock>(window, "GroupsMessage").Text.Should().NotBeEmpty();
 		}
@@ -351,7 +351,7 @@ public sealed class PenGroupsViewTests : IDisposable
 		try
 		{
 			var chamber = viewModel.Groups.Groups[0];
-			var item = FoldItemOf(OpenMenu(window, 0));
+			var item = FoldItemOf(OpenGroupMenu(window, 0));
 
 			item.IsChecked = true;
 			Dispatcher.UIThread.RunJobs();
@@ -465,6 +465,11 @@ public sealed class PenGroupsViewTests : IDisposable
 			Named<StackPanel>(window, "GroupRenameBlock").IsVisible.Should().BeFalse();
 			TextOf(GroupRowAt(window, 0), "GroupName").Should().Be(Chamber.Name);
 			_editor.Calls.Should().BeEmpty();
+
+			PickGroupMenuItem(window, 0, "GroupRenameItem");
+
+			Named<TextBox>(window, "GroupRename").Classes.Should().NotContain("invalid", "the second Done dropped the mark");
+			Named<TextBlock>(window, "GroupsMessage").Text.Should().BeEmpty();
 		}
 		finally
 		{
@@ -518,7 +523,7 @@ public sealed class PenGroupsViewTests : IDisposable
 			PickGroupMenuItem(window, 0, "GroupRenameItem");
 			Retype(window, Named<TextBox>(window, "GroupRename"), "Chamber A");
 
-			OpenMenu(window, 1);
+			OpenGroupMenu(window, 1);
 
 			_editor.Calls.Should().Equal(new FakeEditorCall.RenameGroup(Chamber, "Chamber A"));
 			TextOf(GroupRowAt(window, 0), "GroupName").Should().Be("Chamber A");
@@ -831,19 +836,9 @@ public sealed class PenGroupsViewTests : IDisposable
 		return Descendant<CheckBox>(GroupRowAt(window, index), "MembershipBox");
 	}
 
-	private static MenuFlyout OpenMenu(PenEditorWindow window, int index)
-	{
-		var button = Descendant<Button>(GroupRowAt(window, index), "GroupActionsButton");
-		HeadlessInput.Click(window, button);
-		var menu = button.Flyout.Should().BeOfType<MenuFlyout>().Subject;
-		menu.IsOpen.Should().BeTrue();
-
-		return menu;
-	}
-
 	private static void CloseMenu(PenEditorWindow window, int index)
 	{
-		var menu = (MenuFlyout)Descendant<Button>(GroupRowAt(window, index), "GroupActionsButton").Flyout!;
+		var menu = (MenuFlyout)GroupActionsButtonAt(window, index).Flyout!;
 		menu.Hide();
 		Dispatcher.UIThread.RunJobs();
 	}
@@ -867,7 +862,6 @@ public sealed class PenGroupsViewTests : IDisposable
 		return (ColourOf(background), background?.Opacity);
 	}
 
-	// A hover is outside the HeadlessInput rule: it moves the pointer and runs what it queued.
 	private static void Hover(Window window, Control control)
 	{
 		var center = control.TranslatePoint(new Point(control.Bounds.Width / 2, control.Bounds.Height / 2), window)

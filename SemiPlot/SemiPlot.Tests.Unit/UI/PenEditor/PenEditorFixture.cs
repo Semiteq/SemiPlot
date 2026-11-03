@@ -37,7 +37,6 @@ internal static class PenEditorFixture
 		return [.. Enumerable.Range(1, count).Select(NumberedPen)];
 	}
 
-	/// <summary>Empty groups 1 to <paramref name="count"/>, each named "Group" and its number.</summary>
 	public static List<StoredGroup> GroupsNumbered(int count)
 	{
 		return [.. Enumerable.Range(1, count).Select(id => new StoredGroup(id, $"Group {id}", []))];

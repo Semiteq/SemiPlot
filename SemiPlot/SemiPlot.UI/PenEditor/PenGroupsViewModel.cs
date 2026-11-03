@@ -185,7 +185,7 @@ public sealed class PenGroupsViewModel : ReactiveObject, IDisposable
 
 	private void CloseRename()
 	{
-		if (PendingRename?.AcceptsClose() == true)
+		if (PendingRename?.TryClose() == true)
 		{
 			PendingRename = null;
 		}

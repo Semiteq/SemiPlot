@@ -149,11 +149,20 @@ public sealed class PenGroupViewModel : ReactiveObject, IDisposable
 		AskDeleteCommand.Dispose();
 	}
 
-	/// <summary>True while the draft is valid, and on the second close of a refused draft left as stored.</summary>
-	internal bool AcceptsClose()
+	/// <summary>
+	/// Closes on a valid draft, and on the second close of a refused draft left as stored, which drops the mark.
+	/// </summary>
+	internal bool TryClose()
 	{
-		if (IsNameValid || (_isCloseRefused && RenameDraft == QueuedName))
+		if (IsNameValid)
 		{
+			return true;
+		}
+
+		if (_isCloseRefused && RenameDraft == QueuedName)
+		{
+			Mark(null);
+
 			return true;
 		}
 
@@ -180,7 +189,7 @@ public sealed class PenGroupViewModel : ReactiveObject, IDisposable
 		{
 			_penGroupWriter.RefuseWrite(written);
 
-			// The check box flipped itself on the click; the unchanged value puts it back.
+			// The menu item flipped its check on the click; the unchanged value puts it back.
 			this.RaisePropertyChanged(nameof(FoldedOnStart));
 
 			return;
@@ -217,7 +226,7 @@ public sealed class PenGroupViewModel : ReactiveObject, IDisposable
 		Mark(refusal);
 	}
 
-	private void Mark(string refusal)
+	private void Mark(string? refusal)
 	{
 		_refusal = refusal;
 		_isCloseRefused = false;

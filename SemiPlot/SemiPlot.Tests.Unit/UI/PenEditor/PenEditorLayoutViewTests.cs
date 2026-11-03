@@ -28,10 +28,6 @@ namespace SemiPlot.Tests.Unit.UI.PenEditor;
 [Trait("Category", "Unit")]
 public sealed class PenEditorLayoutViewTests : IDisposable
 {
-	private const double PenPaneWidth = 420;
-
-	private const double GroupsPaneWidth = 340;
-
 	private const double Gap = 16;
 
 	private readonly FakePenCatalogueEditor _editor = new();
@@ -58,8 +54,8 @@ public sealed class PenEditorLayoutViewTests : IDisposable
 			window.GetVisualDescendants().OfType<TabControl>().Should().BeEmpty("the window holds no tabs");
 			TopOf(penPane, window).Should().Be(TopOf(list, window), "the three parts share one top");
 			TopOf(groupsPane, window).Should().Be(TopOf(list, window));
-			penPane.Bounds.Width.Should().Be(PenPaneWidth);
-			groupsPane.Bounds.Width.Should().Be(GroupsPaneWidth);
+			penPane.Bounds.Width.Should().Be(PenEditorWindow.PenPaneWidth);
+			groupsPane.Bounds.Width.Should().Be(PenEditorWindow.GroupsPaneWidth);
 			LeftOf(list, window).Should().Be(Gap, "the list starts at the window margin");
 			(LeftOf(penPane, window) - RightOf(list, window)).Should().Be(Gap);
 			(LeftOf(groupsPane, window) - RightOf(penPane, window)).Should().Be(Gap);
@@ -118,8 +114,8 @@ public sealed class PenEditorLayoutViewTests : IDisposable
 
 			var list = PenListOf(window);
 			var viewport = ViewportOf(list);
-			Named<Border>(window, "PenFormPanel").Bounds.Width.Should().Be(PenPaneWidth);
-			Named<Border>(window, "GroupsPanel").Bounds.Width.Should().Be(GroupsPaneWidth);
+			Named<Border>(window, "PenFormPanel").Bounds.Width.Should().Be(PenEditorWindow.PenPaneWidth);
+			Named<Border>(window, "GroupsPanel").Bounds.Width.Should().Be(PenEditorWindow.GroupsPaneWidth);
 			list.Columns.Should().AllSatisfy(column => column.ActualWidth.Should().BeGreaterThanOrEqualTo(column.MinWidth));
 			(list.Columns[0].ActualWidth + list.Columns[1].ActualWidth).Should()
 				.BeLessThanOrEqualTo(viewport + 0.5, "Id and Name stay inside the list");
@@ -144,14 +140,14 @@ public sealed class PenEditorLayoutViewTests : IDisposable
 			var groupsPane = Named<Border>(window, "GroupsPanel");
 			var list = PenListOf(window);
 			var listWidth = list.Bounds.Width;
-			penPane.Bounds.Width.Should().Be(PenPaneWidth);
-			groupsPane.Bounds.Width.Should().Be(GroupsPaneWidth);
+			penPane.Bounds.Width.Should().Be(PenEditorWindow.PenPaneWidth);
+			groupsPane.Bounds.Width.Should().Be(PenEditorWindow.GroupsPaneWidth);
 
 			window.Width += 300;
 			Dispatcher.UIThread.RunJobs();
 
-			penPane.Bounds.Width.Should().Be(PenPaneWidth);
-			groupsPane.Bounds.Width.Should().Be(GroupsPaneWidth);
+			penPane.Bounds.Width.Should().Be(PenEditorWindow.PenPaneWidth);
+			groupsPane.Bounds.Width.Should().Be(PenEditorWindow.GroupsPaneWidth);
 			list.Bounds.Width.Should().BeApproximately(listWidth + 300, 0.5, "the list takes the width");
 		}
 		finally
@@ -163,7 +159,6 @@ public sealed class PenEditorLayoutViewTests : IDisposable
 	[AvaloniaFact]
 	public void AtTheMinimumHeight_EveryFixedRowShowsAndEachListShowsFourRows()
 	{
-		const double MinimumHeight = 536;
 		const double GroupsPaneInset = 1 + 16;
 		const int ListedRows = 4;
 		using var viewModel = _editor.EditorOver(new PenCatalogue(PensNumbered(20), GroupsNumbered(20)), _messagePanel);
@@ -172,7 +167,7 @@ public sealed class PenEditorLayoutViewTests : IDisposable
 		{
 			window.Height = window.MinHeight;
 			Dispatcher.UIThread.RunJobs();
-			window.Height.Should().Be(MinimumHeight);
+			window.Height.Should().Be(PenEditorWindow.MinimumHeight);
 			PickGroupMenuItem(window, 0, "GroupDeleteItem");
 
 			var groupsPane = Named<Border>(window, "GroupsPanel");

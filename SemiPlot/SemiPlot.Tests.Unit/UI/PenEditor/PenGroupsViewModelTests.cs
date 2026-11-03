@@ -295,6 +295,30 @@ public sealed class PenGroupsViewModelTests : IDisposable
 	}
 
 	[AvaloniaFact]
+	public async Task RenameAskedAgainAfterTheSecondClose_OpensUnmarkedAndOneCloseClosesIt()
+	{
+		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+		var groups = editor.Groups;
+		var chamber = groups.Groups[0];
+		chamber.AskRenameCommand.Execute().Subscribe();
+		chamber.RenameDraft = string.Empty;
+		await chamber.EndRenameAsync();
+		groups.CloseRenameCommand.Execute().Subscribe();
+		groups.CloseRenameCommand.Execute().Subscribe();
+
+		chamber.AskRenameCommand.Execute().Subscribe();
+
+		chamber.IsNameValid.Should().BeTrue("the second close dropped the mark");
+		chamber.Message.Should().BeEmpty();
+		groups.Message.Should().BeEmpty();
+
+		groups.CloseRenameCommand.Execute().Subscribe();
+
+		groups.PendingRename.Should().BeNull("an unmarked draft closes on one close");
+		_editor.Calls.Should().BeEmpty();
+	}
+
+	[AvaloniaFact]
 	public void ASecondCloseRenameOnABlankDraft_KeepsTheBlockOpen()
 	{
 		using var editor = _editor.EditorOver(_catalogue, _messagePanel);

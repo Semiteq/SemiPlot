@@ -202,7 +202,7 @@ public sealed class ThemeTests
 		}
 	}
 
-	// The export window's pen list, read back off realised rows in each state the window reaches:
+	// A list's rows in each state the export window's pen list reaches, read back off realised rows:
 	// docs/architecture/ui-theme.md, How the retint reaches a control.
 	[AvaloniaTheory]
 	[InlineData(AppThemeVariant.Light, "#000000")]

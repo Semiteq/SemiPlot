@@ -55,13 +55,26 @@ internal static class PenEditorWindowDriver
 		return RowOf(GroupListOf(window), index);
 	}
 
-	/// <summary>Opens the row's action menu and clicks the named item on the menu's own top level.</summary>
-	public static void PickGroupMenuItem(PenEditorWindow window, int index, string itemName)
+	public static Button GroupActionsButtonAt(PenEditorWindow window, int index)
 	{
-		var button = ViewProbe.Descendant<Button>(GroupRowAt(window, index), "GroupActionsButton");
+		return ViewProbe.Descendant<Button>(GroupRowAt(window, index), "GroupActionsButton");
+	}
+
+	/// <summary>Clicks the row's action button and returns the menu it opened.</summary>
+	public static MenuFlyout OpenGroupMenu(PenEditorWindow window, int index)
+	{
+		var button = GroupActionsButtonAt(window, index);
 		HeadlessInput.Click(window, button);
 		var menu = button.Flyout.Should().BeOfType<MenuFlyout>().Subject;
 		menu.IsOpen.Should().BeTrue("a click on the action button opens the row's menu");
+
+		return menu;
+	}
+
+	/// <summary>Opens the row's action menu and clicks the named item on the menu's own top level.</summary>
+	public static void PickGroupMenuItem(PenEditorWindow window, int index, string itemName)
+	{
+		var menu = OpenGroupMenu(window, index);
 		var item = menu.Popup.Child!
 			.GetVisualDescendants()
 			.OfType<MenuItem>()

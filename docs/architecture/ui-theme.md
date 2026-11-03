@@ -414,8 +414,8 @@ scrolls inside it. No headless test sees the clipping, so the width is checked b
 
 The pen editor is the one form the operator may resize, because its pen list grows with the catalogue.
 `PenEditor/PenEditorWindow.axaml` takes `Width` from `PenEditorWindow.DesignedWidth`, 1440 px, and `MinWidth`
-from `PenEditorWindow.MinimumWidth`, 1272 px, with `Height="720"`, `MinHeight="536"`,
-`SizeToContent="Manual"` and `CanResize="True"`: the operator may resize it, and nothing inside it sizes
+from `PenEditorWindow.MinimumWidth`, 1272 px, `Height` from `PenEditorWindow.DesignedHeight`, 720 px, and
+`MinHeight` from `PenEditorWindow.MinimumHeight`, 536 px, with `SizeToContent="Manual"` and `CanResize="True"`: the operator may resize it, and nothing inside it sizes
 the window.
 
 `MainWindow`'s factory for the editor sets `Width = PenEditorWindow.OpeningWidthFor(WorkingAreaWidth())`
@@ -436,8 +436,8 @@ pen list, the pen pane `PenFormPanel` and the groups pane `GroupsPanel`. The rul
 but the two grids:
 
 - Resizing grows the two grids only. The pen list takes the spare width and height; the group grid takes
-  the spare height of its pane. The pen pane (420 px wide) and the groups pane (340 px wide) keep their
-  widths, and every other row of the groups pane exists in every state.
+  the spare height of its pane. The pen pane (`PenEditorWindow.PenPaneWidth`, 420 px) and the groups pane
+  (`PenEditorWindow.GroupsPaneWidth`, 340 px) keep their widths, and every other row of the groups pane exists in every state.
 - At `MinWidth` the pen list's border box is 1272 - 4 x 16 - 420 - 340 = 448 px and its grid 438 px, which
   holds Id, Name and Unit at their opening widths (84 + 200 + 96 = 380 px). The rest scrolls
   horizontally, and both panes keep their widths. At the designed 1440 px the grid is 606 px, its viewport
@@ -505,7 +505,7 @@ by its `PenRowOrder` comparer (`overview.md#the-pen-and-group-editor`):
 
 #### The pen pane
 
-The pane is the `Border` `PenFormPanel`, 420 px wide, with 16 px padding, a 1 px `AppBorderBrush` border and
+The pane is the `Border` `PenFormPanel`, `PenEditorWindow.PenPaneWidth` (420 px) wide, with 16 px padding, a 1 px `AppBorderBrush` border and
 `CornerRadius` 4, disabled while a refresh runs. With no pen selected it shows only the hint
 `PenFormEmptyHint`, centred both ways in `AppSecondaryForegroundBrush`. With a pen selected it shows the
 `ScrollViewer` `PenFormScroller` (`Focusable="False"`, no horizontal scrolling), which holds the form:
@@ -544,12 +544,13 @@ the rule while the box is ticked marks the minimum `TextBox` `invalid`.
 
 #### The groups pane
 
-The pane is the `Border` `GroupsPanel`, 340 px wide, with 16 px padding, a 1 px `AppBorderBrush` border and
+The pane is the `Border` `GroupsPanel`, `PenEditorWindow.GroupsPaneWidth` (340 px) wide, with 16 px padding, a 1 px `AppBorderBrush` border and
 `CornerRadius` 4, disabled while a refresh runs; its content is 306 px wide. Its grid has the rows
 `Auto,Auto,*,Auto,Auto`, 8 px apart:
 
 - The title `GroupsTitle`, `TextBlock.form-title`, 24 px, and 4 px under it the subtitle `GroupsSubtitle`,
-  20 px, one line, trimmed, in `AppSecondaryForegroundBrush`.
+  a `TextBlock.pane-line` in `AppSecondaryForegroundBrush`. The window style `pane-line` sets one 20 px line,
+  centred and trimmed.
 - The new-group row: `NewGroupName` and `CreateGroupButton` in a `*,Auto` grid, 8 px apart.
 - The `DataGrid` `GroupList` inside a `Border` of 1 px `AppBorderBrush`, `CornerRadius` 4 and 4 px padding,
   so the grid is 296 px wide less the vertical scroll bar while it shows. It is read-only, selects one row
@@ -581,7 +582,7 @@ The pane is the `Border` `GroupsPanel`, 340 px wide, with 16 px padding, a 1 px 
   `*,Auto` grid, 8 px apart, of the `TextBox` `GroupRename` (inside a `Panel` whose `DataContext` is
   `PendingRename`, with `Classes.invalid` bound to `!IsNameValid`) and `GroupRenameDoneButton`.
   `GroupDeletionBlock` holds `GroupDeletionQuestion`, `GroupDeletionCount` and `GroupDeletionNote` (in
-  `AppSecondaryForegroundBrush`), each 20 px and trimmed, the question with its text as a tooltip, then a
+  `AppSecondaryForegroundBrush`), each a `TextBlock.pane-line`, the question with its text as a tooltip, then a
   right-aligned row, 8 px apart, of `ConfirmDeleteButton` (`Classes="destructive"`) and
   `CancelDeleteButton`. No state moves anything else in the pane.
 

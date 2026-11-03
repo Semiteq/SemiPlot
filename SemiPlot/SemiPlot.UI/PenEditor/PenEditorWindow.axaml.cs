@@ -19,10 +19,19 @@ public partial class PenEditorWindow : Window
 	/// <summary>One height for a pen, group and membership row, so each virtualised list estimates its extent.</summary>
 	public const double RowHeight = 28;
 
+	public const double PenPaneWidth = 420;
+
+	public const double GroupsPaneWidth = 340;
+
 	public const double DesignedWidth = 1440;
 
 	/// <summary>The pen list's first three columns beside both panes at their widths.</summary>
 	public const double MinimumWidth = 1272;
+
+	public const double DesignedHeight = 720;
+
+	/// <summary>Every fixed row of the window with four rows showing in each list.</summary>
+	public const double MinimumHeight = 536;
 
 	public static readonly IReadOnlyList<PenLineStyle> LineStyles = Enum.GetValues<PenLineStyle>();
 

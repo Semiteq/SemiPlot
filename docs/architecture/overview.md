@@ -590,9 +590,9 @@ neither. The reserved block shows the rename field while `PendingRename` is set 
   the edit, and `CloseRenameCommand` then clears `PendingRename` only while `PendingRename.IsNameValid`
   holds. A blank draft is refused when the edit ends, before the click lands, so it stays in the open
   block, reverted and marked, with the rule on the message line. A second Done with the reverted name left
-  as it is closes the block and writes nothing (`PenGroupViewModel.AcceptsClose`); a blank draft never closes
-  it. A rename the archive refuses lands after
-  the block has closed: `PenGroupViewModel.EndRenameAsync` reports it through `PenGroupWriter.RefuseWrite`,
+  as it is closes the block, writes nothing and drops the mark (`PenGroupViewModel.TryClose`), so the next
+  Rename on that group opens unmarked; a blank draft never closes it. A rename the archive refuses lands
+  after the block has closed: `PenGroupViewModel.EndRenameAsync` reports it through `PenGroupWriter.RefuseWrite`,
   so the pane's message line names the refusal with the block open or closed, the panel gets one entry,
   and the next Rename on that group opens the field reverted and marked. The block also closes when
   another row action replaces it and on refresh.

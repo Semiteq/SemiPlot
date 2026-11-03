@@ -1,4 +1,4 @@
-<!-- docs/architecture/ui-theme.md#how-the-retint-reaches-a-control -->
+<!-- docs/architecture/ui-theme.md#the-applications-own-surfaces -->
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 

@@ -11,8 +11,8 @@
         Title="{x:Static text:Resources.PenEditorTitle}"
         Width="{x:Static local:PenEditorWindow.DesignedWidth}"
         MinWidth="{x:Static local:PenEditorWindow.MinimumWidth}"
-        Height="720"
-        MinHeight="536"
+        Height="{x:Static local:PenEditorWindow.DesignedHeight}"
+        MinHeight="{x:Static local:PenEditorWindow.MinimumHeight}"
         SizeToContent="Manual"
         CanResize="True"
         ShowInTaskbar="False"
@@ -67,6 +67,11 @@
             <Setter Property="Height" Value="20" />
             <Setter Property="Margin" Value="0,16,0,8" />
             <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.pane-line">
+            <Setter Property="Height" Value="20" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         </Style>
         <Style Selector="ColorPicker#FormColorPicker /template/ DropDownButton /template/ :is(Control)#DropDownGlyph">
             <Setter Property="IsVisible" Value="False" />
@@ -236,7 +241,7 @@
 
             <Border Grid.Column="2"
                     Name="PenFormPanel"
-                    Width="420"
+                    Width="{x:Static local:PenEditorWindow.PenPaneWidth}"
                     Padding="16"
                     BorderBrush="{DynamicResource AppBorderBrush}"
                     BorderThickness="1"
@@ -489,7 +494,7 @@
 
             <Border Grid.Column="4"
                     Name="GroupsPanel"
-                    Width="340"
+                    Width="{x:Static local:PenEditorWindow.GroupsPaneWidth}"
                     Padding="16"
                     BorderBrush="{DynamicResource AppBorderBrush}"
                     BorderThickness="1"
@@ -511,9 +516,7 @@
                                        Text="{x:Static text:Resources.PenGroupsTitle}" />
 
                             <TextBlock Name="GroupsSubtitle"
-                                       Height="20"
-                                       VerticalAlignment="Center"
-                                       TextTrimming="CharacterEllipsis"
+                                       Classes="pane-line"
                                        Foreground="{DynamicResource AppSecondaryForegroundBrush}"
                                        Text="{x:Static text:Resources.PenGroupsSubtitle}" />
 
@@ -693,22 +696,16 @@
                                 </StackPanel.IsVisible>
 
                                 <TextBlock Name="GroupDeletionQuestion"
-                                           Height="20"
-                                           VerticalAlignment="Center"
-                                           TextTrimming="CharacterEllipsis"
+                                           Classes="pane-line"
                                            Text="{Binding PendingDeletion.Question}"
                                            ToolTip.Tip="{Binding $self.Text}" />
 
                                 <TextBlock Name="GroupDeletionCount"
-                                           Height="20"
-                                           VerticalAlignment="Center"
-                                           TextTrimming="CharacterEllipsis"
+                                           Classes="pane-line"
                                            Text="{Binding PendingDeletion.Count}" />
 
                                 <TextBlock Name="GroupDeletionNote"
-                                           Height="20"
-                                           VerticalAlignment="Center"
-                                           TextTrimming="CharacterEllipsis"
+                                           Classes="pane-line"
                                            Foreground="{DynamicResource AppSecondaryForegroundBrush}"
                                            Text="{x:Static text:Resources.PenGroupsDeleteKeepsPens}" />
 

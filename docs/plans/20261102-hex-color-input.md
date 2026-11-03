@@ -291,3 +291,32 @@ The existing cases of the three time layouts and the view tests at `PenEditorVie
 - export-pen-choice-list: the export pen list becomes checkboxes only.
 - axis-scale-checkbox-column: the log checkbox moves to the field column.
 - ui-spacing-scale: every remaining inset moves onto the 4/8/12/16/24/32 scale.
+
+**Executed by exec:**
+- branch: hex-color-input
+
+## Verify it yourself
+
+1. Typed without `#` (the defect). In `Edit` -> `Pens and groups`, select a pen with no colour and
+   type `1f77b4` into the colour box. At `master` (`df129f7`) the box keeps `1f77b4`, Tab refuses
+   it with the colour message and nothing is written. On the branch the box shows `#1F77B4` as you
+   type and Tab writes it once. Proof: `ALowerCaseHexTypedWithoutTheHash_WritesTheUpperCaseColour`
+   fails before `acc4f8c` and passes from it.
+2. Paste. Copy `#1f77b4`, press Ctrl+V in an empty colour box: it shows `#1F77B4`
+   (`ACtrlVPaste_IsNormalised`, `APasteWithOrWithoutTheHash_IsNormalised`).
+3. The `#` cannot be deleted. Put the caret right after `#` and press Backspace, or before it and
+   press Delete: the text stays `#1F77B4`, the caret stays after `#`
+   (`BackspaceOnTheHash_KeepsTheTextAndTheCaretAfterTheHash`,
+   `DeleteOnTheHash_KeepsTheTextAndPutsTheCaretAfterTheHash`).
+4. A stored value shows as stored. A pen stored with `#1f77b4` shows `#1f77b4`; a click in and a
+   Tab out write nothing. A pen stored with `red` shows `red`, marked invalid; type `1`, press
+   Enter: it reverts to `red`, still invalid, nothing written
+   (`AStoredLowerCaseColour_ShowsAsStoredAndWritesNothingOnFocusAndLeave`,
+   `ARefusedDraftRevertedOnEnter_ShowsTheStoredColourAsStored`; both also pass at `master` and
+   guard the operator-edit flag).
+5. The time fields are unchanged. In the time window panel and the export window, type `083000`
+   into a time box: it shows `08:30:00` as before (the time-layout cases of
+   `FormattedFieldInputTests`).
+
+Run all of it: `dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj --filter "FullyQualifiedName~FormattedFieldInputTests|FullyQualifiedName~PenEditorViewTests"`
+(77 passed, 0 failed on `d53b144`).

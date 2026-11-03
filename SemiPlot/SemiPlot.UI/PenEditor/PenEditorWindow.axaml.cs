@@ -67,6 +67,8 @@ public partial class PenEditorWindow : Window
 
 		FormColorPicker.TemplateApplied += OnColorPickerTemplateApplied;
 		AttachColorFlyout();
+
+		GroupRename.DataContextChanged += OnGroupRenameDataContextChanged;
 	}
 
 	protected override void OnUnloaded(RoutedEventArgs e)
@@ -78,6 +80,8 @@ public partial class PenEditorWindow : Window
 
 		FormColorPicker.TemplateApplied -= OnColorPickerTemplateApplied;
 		DetachColorFlyout();
+
+		GroupRename.DataContextChanged -= OnGroupRenameDataContextChanged;
 
 		base.OnUnloaded(e);
 	}
@@ -217,6 +221,23 @@ public partial class PenEditorWindow : Window
 		if (DataContext is PenEditorViewModel editor)
 		{
 			editor.SelectedRow = PenList.SelectedItem as PenRowViewModel;
+		}
+	}
+
+	// The focus waits for the block's layout and for the row menu, which hands the focus back to its button as it closes.
+	private void OnGroupRenameDataContextChanged(object? sender, EventArgs e)
+	{
+		if (GroupRename.DataContext is PenGroupViewModel)
+		{
+			Dispatcher.UIThread.Post(FocusRename, DispatcherPriority.Background);
+		}
+	}
+
+	private void FocusRename()
+	{
+		if (GroupRename.Focus())
+		{
+			GroupRename.SelectAll();
 		}
 	}
 

@@ -18,14 +18,8 @@
         WindowStartupLocation="CenterOwner">
 
     <Window.Resources>
-        <GridLength x:Key="IdColumnWidth">72</GridLength>
         <DataGridLength x:Key="PenListIdColumnWidth">84</DataGridLength>
         <x:Double x:Key="DataGridCellMinHeight">28</x:Double>
-        <ColumnDefinitions x:Key="MembershipColumns"
-                           x:Shared="False">
-            <ColumnDefinition Width="{StaticResource IdColumnWidth}" />
-            <ColumnDefinition Width="*" />
-        </ColumnDefinitions>
         <ColumnDefinitions x:Key="PenFormColumns"
                            x:Shared="False">
             <ColumnDefinition Width="112" />
@@ -38,19 +32,20 @@
     </Window.Resources>
 
     <Window.Styles>
-        <Style Selector="DataGrid#PenList DataGridColumnHeader">
+        <Style Selector="DataGridColumnHeader">
             <Setter Property="FontSize" Value="12" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
-        <Style Selector="DataGrid#PenList DataGridCell:current /template/ Rectangle#CurrencyVisual, DataGrid#PenList DataGridCell:focus /template/ Panel#FocusVisual">
+        <Style Selector="DataGridCell:current /template/ Rectangle#CurrencyVisual, DataGridCell:focus /template/ Panel#FocusVisual">
             <Setter Property="IsVisible" Value="False" />
         </Style>
-        <Style Selector="TextBlock.grid-cell">
-            <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        <Style Selector="DataGrid#GroupList DataGridRow:selected /template/ Border#BackgroundBorder">
+            <Setter Property="Background" Value="{DynamicResource DataGridRowBackground}" />
         </Style>
-        <Style Selector="TextBlock.cell">
-            <Setter Property="Margin" Value="6,0" />
+        <Style Selector="DataGrid#GroupList DataGridRow:selected:pointerover /template/ Border#BackgroundBorder">
+            <Setter Property="Background" Value="{DynamicResource DataGridRowPointeroverBackground}" />
+        </Style>
+        <Style Selector="TextBlock.grid-cell">
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         </Style>
@@ -85,10 +80,6 @@
                               Foreground="{DynamicResource AppSeverityErrorBrush}" />
                 </Template>
             </Setter>
-        </Style>
-        <Style Selector="ListBox#GroupList ListBoxItem">
-            <Setter Property="Padding" Value="0" />
-            <Setter Property="MinHeight" Value="0" />
         </Style>
     </Window.Styles>
 
@@ -487,192 +478,253 @@
             </TabItem>
 
             <TabItem Name="GroupsTab"
-                     Header="{x:Static text:Resources.PenEditorGroupsTab}">
+                     Header="{x:Static text:Resources.PenGroupsTitle}">
 
-                <Panel IsEnabled="{Binding !IsRefreshing}">
+                <Border Name="GroupsPanel"
+                        Width="340"
+                        Padding="16"
+                        HorizontalAlignment="Left"
+                        BorderBrush="{DynamicResource AppBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="4"
+                        IsEnabled="{Binding !IsRefreshing}">
 
-                    <Panel Name="GroupsTabContent"
-                           DataContext="{Binding Groups}">
+                    <Panel DataContext="{Binding Groups}">
 
                         <Grid x:DataType="local:PenGroupsViewModel"
-                              RowDefinitions="*,Auto,Auto"
+                              RowDefinitions="Auto,Auto,*,Auto,Auto"
                               RowSpacing="8">
 
-                            <Grid Grid.Row="0"
-                                  ColumnDefinitions="320,*"
-                                  ColumnSpacing="12">
+                            <StackPanel Grid.Row="0"
+                                        Spacing="4">
 
-                                <Grid Grid.Column="0"
-                                      RowDefinitions="Auto,*,Auto,Auto"
-                                      RowSpacing="8">
+                                <TextBlock Name="GroupsTitle"
+                                           Classes="form-title"
+                                           Height="24"
+                                           Text="{x:Static text:Resources.PenGroupsTitle}" />
 
-                                    <Grid Grid.Row="0"
-                                          ColumnDefinitions="*,Auto"
-                                          ColumnSpacing="8">
+                                <TextBlock Name="GroupsSubtitle"
+                                           Height="20"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"
+                                           Foreground="{DynamicResource AppSecondaryForegroundBrush}"
+                                           Text="{x:Static text:Resources.PenGroupsSubtitle}" />
 
-                                        <TextBox Grid.Column="0"
-                                                 Name="NewGroupName"
-                                                 PlaceholderText="{x:Static text:Resources.PenGroupsNewNamePlaceholder}"
-                                                 Text="{Binding NewGroupName}" />
+                            </StackPanel>
 
-                                        <Button Grid.Column="1"
-                                                Name="CreateGroupButton"
-                                                Content="{x:Static text:Resources.PenGroupsCreate}"
-                                                Command="{Binding CreateGroupCommand}" />
+                            <Grid Grid.Row="1"
+                                  ColumnDefinitions="*,Auto"
+                                  ColumnSpacing="8">
 
-                                    </Grid>
+                                <TextBox Grid.Column="0"
+                                         Name="NewGroupName"
+                                         PlaceholderText="{x:Static text:Resources.PenGroupsNewNamePlaceholder}"
+                                         Text="{Binding NewGroupName}" />
 
-                                    <ListBox Grid.Row="1"
-                                             Name="GroupList"
-                                             ItemsSource="{Binding Groups}"
-                                             SelectedItem="{Binding SelectedGroup}">
-                                        <ListBox.ItemsPanel>
-                                            <ItemsPanelTemplate>
-                                                <VirtualizingStackPanel />
-                                            </ItemsPanelTemplate>
-                                        </ListBox.ItemsPanel>
-                                        <ListBox.ItemTemplate>
-                                            <DataTemplate x:DataType="local:PenGroupViewModel">
-                                                <Grid Height="{x:Static local:PenEditorWindow.RowHeight}"
-                                                      ColumnDefinitions="*,Auto">
+                                <Button Grid.Column="1"
+                                        Name="CreateGroupButton"
+                                        Content="{x:Static text:Resources.PenGroupsCreate}"
+                                        Command="{Binding CreateGroupCommand}" />
 
-                                                    <TextBlock Grid.Column="0"
-                                                               Name="GroupName"
-                                                               Classes="cell"
-                                                               Text="{Binding Group.Name}" />
+                            </Grid>
 
-                                                    <TextBlock Grid.Column="1"
-                                                               Name="GroupMemberCount"
-                                                               Classes="cell"
-                                                               Text="{Binding MemberCount}" />
+                            <Border Grid.Row="2"
+                                    BorderBrush="{DynamicResource AppBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="4"
+                                    Padding="4">
 
-                                                </Grid>
-                                            </DataTemplate>
-                                        </ListBox.ItemTemplate>
-                                    </ListBox>
+                                <DataGrid Name="GroupList"
+                                          ItemsSource="{Binding Groups}"
+                                          IsReadOnly="True"
+                                          SelectionMode="Single"
+                                          HeadersVisibility="Column"
+                                          GridLinesVisibility="None"
+                                          CanUserSortColumns="False"
+                                          CanUserResizeColumns="True"
+                                          CanUserReorderColumns="False"
+                                          RowHeight="{x:Static local:PenEditorWindow.RowHeight}"
+                                          tables:HeaderMeasuredColumns.FitsColumns="True">
+                                    <DataGrid.Columns>
 
-                                    <TextBlock Grid.Row="2"
-                                               Classes="form-label"
+                                        <DataGridTemplateColumn Width="36"
+                                                                CanUserSort="False"
+                                                                CanUserResize="False">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate x:DataType="local:PenGroupViewModel">
+                                                    <CheckBox Name="MembershipBox"
+                                                              HorizontalAlignment="Center"
+                                                              VerticalAlignment="Center"
+                                                              IsChecked="{Binding Membership.IsMember, Mode=OneWay, FallbackValue=False}"
+                                                              Command="{Binding Membership.ToggleMembershipCommand}"
+                                                              IsEnabled="{Binding Membership, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+
+                                        <DataGridTemplateColumn Header="{x:Static text:Resources.PenGroupsColumnGroup}"
+                                                                Width="120"
+                                                                CanUserSort="False"
+                                                                tables:HeaderMeasuredColumns.IsFill="True">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate x:DataType="local:PenGroupViewModel">
+                                                    <Grid Margin="12,0,8,0"
+                                                          ColumnDefinitions="*,Auto"
+                                                          ColumnSpacing="8">
+
+                                                        <TextBlock Grid.Column="0"
+                                                                   Name="GroupName"
+                                                                   Classes="grid-cell"
+                                                                   Text="{Binding Group.Name}"
+                                                                   ToolTip.Tip="{Binding $self.Text}" />
+
+                                                        <TextBlock Grid.Column="1"
+                                                                   Name="GroupMemberCount"
+                                                                   HorizontalAlignment="Right"
+                                                                   VerticalAlignment="Center"
+                                                                   Foreground="{DynamicResource AppSecondaryForegroundBrush}"
+                                                                   Text="{Binding MemberCount}"
+                                                                   ToolTip.Tip="{x:Static text:Resources.PenGroupsMemberCountTip}" />
+
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+
+                                        <DataGridTemplateColumn Header="{x:Static text:Resources.PenGroupsColumnActions}"
+                                                                Width="40"
+                                                                CanUserSort="False"
+                                                                CanUserResize="False">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate x:DataType="local:PenGroupViewModel">
+                                                    <Button Name="GroupActionsButton"
+                                                            Theme="{DynamicResource BorderlessButton}"
+                                                            Width="28"
+                                                            Height="24"
+                                                            Padding="0"
+                                                            Margin="12,0,0,0"
+                                                            HorizontalAlignment="Left"
+                                                            VerticalAlignment="Center"
+                                                            ToolTip.Tip="{x:Static text:Resources.PenGroupsActionsTip}">
+                                                        <Button.Flyout>
+                                                            <MenuFlyout Placement="BottomEdgeAlignedLeft">
+
+                                                                <MenuItem Name="GroupRenameItem"
+                                                                          Header="{x:Static text:Resources.PenGroupsRename}"
+                                                                          Command="{Binding AskRenameCommand}" />
+
+                                                                <MenuItem Name="GroupFoldItem"
+                                                                          Header="{x:Static text:Resources.PenGroupsFoldedOnStartLabel}"
+                                                                          ToggleType="CheckBox"
+                                                                          IsChecked="{Binding FoldedOnStart, Mode=OneWay}"
+                                                                          Command="{Binding ToggleFoldedOnStartCommand}" />
+
+                                                                <Separator />
+
+                                                                <MenuItem Name="GroupDeleteItem"
+                                                                          Header="{x:Static text:Resources.PenGroupsDelete}"
+                                                                          Command="{Binding AskDeleteCommand}" />
+
+                                                            </MenuFlyout>
+                                                        </Button.Flyout>
+                                                        <PathIcon Width="16"
+                                                                  Height="16"
+                                                                  Data="{StaticResource MoreGeometry}"
+                                                                  Foreground="{DynamicResource AppSecondaryForegroundBrush}" />
+                                                    </Button>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+
+                                    </DataGrid.Columns>
+                                </DataGrid>
+
+                            </Border>
+
+                            <Panel Grid.Row="3"
+                                   Name="GroupActionBlock"
+                                   Height="116">
+
+                                <StackPanel Name="GroupRenameBlock"
+                                            Spacing="8">
+                                    <StackPanel.IsVisible>
+                                        <Binding Path="PendingRename"
+                                                 Converter="{x:Static ObjectConverters.IsNotNull}" />
+                                    </StackPanel.IsVisible>
+
+                                    <TextBlock Classes="form-label"
+                                               Height="20"
                                                Text="{x:Static text:Resources.PenGroupsNameLabel}" />
 
-                                    <Grid Grid.Row="3"
-                                          ColumnDefinitions="*,Auto"
+                                    <Grid ColumnDefinitions="*,Auto"
                                           ColumnSpacing="8">
 
-                                        <Panel Grid.Column="0">
-                                            <Panel.IsEnabled>
-                                                <Binding Path="SelectedGroup"
-                                                         Converter="{x:Static ObjectConverters.IsNotNull}" />
-                                            </Panel.IsEnabled>
+                                        <Panel Grid.Column="0"
+                                               DataContext="{Binding PendingRename}">
 
-                                            <StackPanel DataContext="{Binding SelectedGroup}"
-                                                        Spacing="8">
-
-                                                <TextBox x:DataType="local:PenGroupViewModel"
-                                                         Name="GroupRename"
-                                                         Classes.invalid="{Binding !IsNameValid}"
-                                                         Text="{Binding RenameDraft}" />
-
-                                                <CheckBox x:DataType="local:PenGroupViewModel"
-                                                          Name="GroupFoldedOnStartBox"
-                                                          Content="{x:Static text:Resources.PenGroupsFoldedOnStartLabel}"
-                                                          IsChecked="{Binding FoldedOnStart, Mode=OneWay}"
-                                                          Command="{Binding ToggleFoldedOnStartCommand}" />
-
-                                            </StackPanel>
+                                            <TextBox x:DataType="local:PenGroupViewModel"
+                                                     Name="GroupRename"
+                                                     Classes.invalid="{Binding !IsNameValid}"
+                                                     Text="{Binding RenameDraft}" />
 
                                         </Panel>
 
                                         <Button Grid.Column="1"
-                                                Name="DeleteGroupButton"
-                                                VerticalAlignment="Top"
-                                                Content="{x:Static text:Resources.PenGroupsDelete}"
-                                                Command="{Binding DeleteGroupCommand}" />
+                                                Name="GroupRenameDoneButton"
+                                                Content="{x:Static text:Resources.PenGroupsRenameDone}"
+                                                Command="{Binding CloseRenameCommand}" />
 
                                     </Grid>
 
-                                </Grid>
+                                </StackPanel>
 
-                                <Grid Grid.Column="1"
-                                      RowDefinitions="Auto,*"
-                                      RowSpacing="8">
-
-                                    <TextBlock Grid.Row="0"
-                                               Classes="form-label"
-                                               Text="{x:Static text:Resources.PenGroupsMembersHeader}" />
-
-                                    <ScrollViewer Grid.Row="1"
-                                                  Name="MembershipScroller">
-                                        <ItemsControl Name="MembershipList"
-                                                      ItemsSource="{Binding Memberships}">
-                                            <ItemsControl.ItemsPanel>
-                                                <ItemsPanelTemplate>
-                                                    <VirtualizingStackPanel />
-                                                </ItemsPanelTemplate>
-                                            </ItemsControl.ItemsPanel>
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate x:DataType="local:PenMembershipViewModel">
-                                                    <CheckBox Name="MembershipBox"
-                                                              Height="{x:Static local:PenEditorWindow.RowHeight}"
-                                                              IsChecked="{Binding IsMember, Mode=OneWay}"
-                                                              Command="{Binding ToggleMembershipCommand}">
-                                                        <Grid ColumnDefinitions="{StaticResource MembershipColumns}">
-
-                                                            <TextBlock Grid.Column="0"
-                                                                       Classes="cell"
-                                                                       Text="{Binding Row.Pen.Id}" />
-
-                                                            <TextBlock Grid.Column="1"
-                                                                       Name="MembershipName"
-                                                                       Classes="cell"
-                                                                       Text="{Binding Row.Pen.Name}" />
-
-                                                        </Grid>
-                                                    </CheckBox>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </ScrollViewer>
-
-                                </Grid>
-
-                            </Grid>
-
-                            <Grid Grid.Row="1"
-                                  Name="GroupDeletionRow"
-                                  Height="32"
-                                  ColumnDefinitions="*,Auto,Auto"
-                                  ColumnSpacing="8">
-
-                                <TextBlock Grid.Column="0"
-                                           Name="GroupDeletionText"
-                                           VerticalAlignment="Center"
-                                           TextTrimming="CharacterEllipsis"
-                                           Text="{Binding PendingDeletion.Text}" />
-
-                                <Button Grid.Column="1"
-                                        Name="ConfirmDeleteButton"
-                                        Content="{x:Static text:Resources.PenGroupsDelete}"
-                                        Command="{Binding ConfirmDeleteCommand}">
-                                    <Button.IsVisible>
+                                <StackPanel Name="GroupDeletionBlock"
+                                            Spacing="8">
+                                    <StackPanel.IsVisible>
                                         <Binding Path="PendingDeletion"
                                                  Converter="{x:Static ObjectConverters.IsNotNull}" />
-                                    </Button.IsVisible>
-                                </Button>
+                                    </StackPanel.IsVisible>
 
-                                <Button Grid.Column="2"
-                                        Name="CancelDeleteButton"
-                                        Content="{x:Static text:Resources.PenGroupsCancel}"
-                                        Command="{Binding CancelDeleteCommand}">
-                                    <Button.IsVisible>
-                                        <Binding Path="PendingDeletion"
-                                                 Converter="{x:Static ObjectConverters.IsNotNull}" />
-                                    </Button.IsVisible>
-                                </Button>
+                                    <TextBlock Name="GroupDeletionQuestion"
+                                               Height="20"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"
+                                               Text="{Binding PendingDeletion.Question}"
+                                               ToolTip.Tip="{Binding $self.Text}" />
 
-                            </Grid>
+                                    <TextBlock Name="GroupDeletionCount"
+                                               Height="20"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"
+                                               Text="{Binding PendingDeletion.Count}" />
 
-                            <TextBlock Grid.Row="2"
+                                    <TextBlock Name="GroupDeletionNote"
+                                               Height="20"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"
+                                               Foreground="{DynamicResource AppSecondaryForegroundBrush}"
+                                               Text="{x:Static text:Resources.PenGroupsDeleteKeepsPens}" />
+
+                                    <StackPanel HorizontalAlignment="Right"
+                                                Orientation="Horizontal"
+                                                Spacing="8">
+
+                                        <Button Name="ConfirmDeleteButton"
+                                                Classes="destructive"
+                                                Content="{x:Static text:Resources.PenGroupsDelete}"
+                                                Command="{Binding ConfirmDeleteCommand}" />
+
+                                        <Button Name="CancelDeleteButton"
+                                                Content="{x:Static text:Resources.PenGroupsCancel}"
+                                                Command="{Binding CancelDeleteCommand}" />
+
+                                    </StackPanel>
+
+                                </StackPanel>
+
+                            </Panel>
+
+                            <TextBlock Grid.Row="4"
                                        Name="GroupsMessage"
                                        Classes="form-message error"
                                        Text="{Binding Message}" />
@@ -681,7 +733,7 @@
 
                     </Panel>
 
-                </Panel>
+                </Border>
 
             </TabItem>
 

@@ -19,7 +19,7 @@ using SemiPlot.UI.Messages;
 namespace SemiPlot.UI.PenEditor;
 
 /// <summary>
-/// The pen and group editor window's root: the pen list, the form of the selected pen, the groups tab and
+/// The pen and group editor window's root: the pen list, the form of the selected pen, the groups pane and
 /// refresh. Every editor call runs through the one queue it owns.
 /// </summary>
 public sealed class PenEditorViewModel : ReactiveObject, IDisposable
@@ -77,7 +77,7 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 	/// <summary>The form of the selected row, built when the selection changes; null with no row selected.</summary>
 	public PenFormViewModel? SelectedForm => _selectedForm.Value;
 
-	/// <summary>The groups tab, rebuilt on refresh.</summary>
+	/// <summary>The groups pane, rebuilt on refresh after the selected pen is restored.</summary>
 	public PenGroupsViewModel Groups
 	{
 		get;
@@ -152,10 +152,7 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 		}
 
 		var selectedPenId = SelectedRow?.Pen.Id;
-		var selectedGroupId = Groups.SelectedGroup?.Group.Id;
 		var rows = RowsOf(read.Value);
-		var groups = GroupsOf(rows, read.Value.Groups);
-		groups.SelectedGroup = groups.Groups.FirstOrDefault(group => group.Group.Id == selectedGroupId);
 		var replacedGroups = Groups;
 
 		_rows.Clear();
@@ -165,7 +162,7 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 		}
 
 		SelectedRow = rows.FirstOrDefault(row => row.Pen.Id == selectedPenId);
-		Groups = groups;
+		Groups = GroupsOf(rows, read.Value.Groups);
 		replacedGroups.Dispose();
 	}
 
@@ -190,6 +187,13 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 
 	private PenGroupsViewModel GroupsOf(IReadOnlyList<PenRowViewModel> rows, IReadOnlyList<StoredGroup> groups)
 	{
-		return new PenGroupsViewModel(rows, groups, _penCatalogueEditor, _archiveCallQueue, _messagePanel, _logger);
+		return new PenGroupsViewModel(
+			rows,
+			groups,
+			this.WhenAnyValue(editor => editor.SelectedRow),
+			_penCatalogueEditor,
+			_archiveCallQueue,
+			_messagePanel,
+			_logger);
 	}
 }

@@ -225,7 +225,7 @@
   <data name="PenEditorPensTab" xml:space="preserve">
     <value>Перья</value>
   </data>
-  <data name="PenEditorGroupsTab" xml:space="preserve">
+  <data name="PenGroupsTitle" xml:space="preserve">
     <value>Группы</value>
   </data>
   <data name="PenEditorColumnId" xml:space="preserve">
@@ -690,8 +690,35 @@
   <data name="PenGroupsNameRequired" xml:space="preserve">
     <value>Имя группы: обязательное поле</value>
   </data>
-  <data name="PenGroupsDeleteConfirmation" xml:space="preserve">
-    <value>Удалить группу «{0}»? Перьев в группе: {1}. Сами перья останутся.</value>
+  <data name="PenGroupsSubtitle" xml:space="preserve">
+    <value>Отмечены группы выбранного пера</value>
+  </data>
+  <data name="PenGroupsColumnGroup" xml:space="preserve">
+    <value>Группа</value>
+  </data>
+  <data name="PenGroupsColumnActions" xml:space="preserve">
+    <value>Действия</value>
+  </data>
+  <data name="PenGroupsMemberCountTip" xml:space="preserve">
+    <value>Перьев в группе</value>
+  </data>
+  <data name="PenGroupsActionsTip" xml:space="preserve">
+    <value>Действия с группой</value>
+  </data>
+  <data name="PenGroupsRename" xml:space="preserve">
+    <value>Переименовать</value>
+  </data>
+  <data name="PenGroupsRenameDone" xml:space="preserve">
+    <value>Готово</value>
+  </data>
+  <data name="PenGroupsDeleteQuestion" xml:space="preserve">
+    <value>Удалить группу «{0}»?</value>
+  </data>
+  <data name="PenGroupsDeleteCount" xml:space="preserve">
+    <value>Перьев в группе: {0}</value>
+  </data>
+  <data name="PenGroupsDeleteKeepsPens" xml:space="preserve">
+    <value>Сами перья останутся.</value>
   </data>
   <data name="PenGroupsNewNamePlaceholder" xml:space="preserve">
     <value>Имя новой группы</value>
@@ -710,9 +737,6 @@
   </data>
   <data name="PenGroupsFoldedOnStartLabel" xml:space="preserve">
     <value>Свёрнута при открытии</value>
-  </data>
-  <data name="PenGroupsMembersHeader" xml:space="preserve">
-    <value>Перья выбранной группы</value>
   </data>
   <data name="ExportMessageStartDateMissing" xml:space="preserve">
     <value>Начало: выберите дату.</value>

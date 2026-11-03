@@ -596,7 +596,7 @@ public sealed class PenEditorViewTests : IDisposable
 	}
 
 	[AvaloniaFact]
-	public void ARefreshThatChangesTheCatalogue_RebindsTheTableAndTheGroupsTab()
+	public void ARefreshThatChangesTheCatalogue_RebindsThePenListAndTheGroupsPane()
 	{
 		var registered = NumberedPen(4242);
 		var vacuum = new StoredGroup(9, "Vacuum", [4242]);
@@ -617,8 +617,8 @@ public sealed class PenEditorViewTests : IDisposable
 			OpenGroupsTab(window);
 
 			viewModel.Groups.Should().NotBeSameAs(groupsBefore);
-			Named<ListBox>(window, "GroupList").ItemsSource.Should().BeSameAs(viewModel.Groups.Groups);
-			TextOf(GroupAt(window, 2), "GroupName").Should().Be(vacuum.Name);
+			GroupListOf(window).ItemsSource.Should().BeSameAs(viewModel.Groups.Groups);
+			TextOf(GroupRowAt(window, 2), "GroupName").Should().Be(vacuum.Name);
 		}
 		finally
 		{

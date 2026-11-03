@@ -13,26 +13,25 @@ using SemiPlot.UI.Messages;
 
 namespace SemiPlot.UI.PenEditor;
 
-/// <summary>A group delete the operator asked for and has not confirmed yet, with the text naming it.</summary>
-public sealed record PendingGroupDeletion(PenGroupViewModel Group, string Text);
+/// <summary>A group delete the operator asked for and has not confirmed yet, with the lines naming it.</summary>
+public sealed record PendingGroupDeletion(PenGroupViewModel Group, string Question, string Count);
 
 /// <summary>
-/// The groups tab: create, rename and delete groups, the selected group's fold flag and its membership. Every editor
-/// call runs through the queue the pen editor owns.
+/// The groups pane: create, rename and delete groups, each group's fold flag and the selected pen's membership. Every
+/// editor call runs through the queue the pen editor owns.
 /// </summary>
 public sealed class PenGroupsViewModel : ReactiveObject, IDisposable
 {
 	private readonly IReadOnlyList<PenRowViewModel> _rows;
 	private readonly PenGroupWriter _penGroupWriter;
 	private readonly CompositeDisposable _disposables = [];
-	private readonly Dictionary<PenGroupViewModel, PenMembershipViewModel[]> _membershipsOfGroup = [];
-	private readonly ObservableAsPropertyHelper<IReadOnlyList<PenMembershipViewModel>> _memberships;
+	private readonly Dictionary<(PenRowViewModel Row, PenGroupViewModel Group), PenMembershipViewModel> _memberships = [];
 	private readonly ObservableAsPropertyHelper<string> _message;
-	private bool _isReplacingGroups;
 
 	public PenGroupsViewModel(
 		IReadOnlyList<PenRowViewModel> rows,
 		IReadOnlyList<StoredGroup> groups,
+		IObservable<PenRowViewModel?> selectedRow,
 		IPenCatalogueEditor penCatalogueEditor,
 		ArchiveCallQueue archiveCallQueue,
 		MessagePanelViewModel messagePanel,
@@ -41,29 +40,28 @@ public sealed class PenGroupsViewModel : ReactiveObject, IDisposable
 		_rows = rows;
 		_penGroupWriter = new PenGroupWriter(penCatalogueEditor, archiveCallQueue, messagePanel, logger, ShowGroupsOn);
 
-		Groups = [.. groups.Select(group => new PenGroupViewModel(group, _penGroupWriter))];
+		Groups = [.. groups.Select(GroupOf)];
 
-		_memberships = this.WhenAnyValue(tab => tab.SelectedGroup)
-			.Select(MembershipsOf)
-			.ToProperty(this, tab => tab.Memberships);
-		_disposables.Add(_memberships);
+		_disposables.Add(selectedRow
+			.CombineLatest(this.WhenAnyValue(pane => pane.Groups), (row, shown) => (Row: row, Groups: shown))
+			.Subscribe(selection => ShowMembershipsOf(selection.Row, selection.Groups)));
 
-		_message = this.WhenAnyValue(tab => tab.SelectedGroup)
-			.Select(group => group?.WhenAnyValue(selected => selected.Message) ?? Observable.Return(string.Empty))
+		_message = this.WhenAnyValue(pane => pane.PendingRename)
+			.Select(group => group?.WhenAnyValue(pending => pending.Message) ?? Observable.Return(string.Empty))
 			.Switch()
 			.CombineLatest(_penGroupWriter.WhenAnyValue(writer => writer.Refusal), FirstNonEmpty)
-			.ToProperty(this, tab => tab.Message);
+			.ToProperty(this, pane => pane.Message);
 		_disposables.Add(_message);
 
-		var hasNewGroupName = this.WhenAnyValue(tab => tab.NewGroupName)
+		var hasNewGroupName = this.WhenAnyValue(pane => pane.NewGroupName)
 			.Select(name => !string.IsNullOrWhiteSpace(name));
-		var hasSelectedGroup = this.WhenAnyValue(tab => tab.SelectedGroup)
+		var hasPendingRename = this.WhenAnyValue(pane => pane.PendingRename)
 			.Select(group => group is not null);
-		var hasPendingDeletion = this.WhenAnyValue(tab => tab.PendingDeletion)
+		var hasPendingDeletion = this.WhenAnyValue(pane => pane.PendingDeletion)
 			.Select(deletion => deletion is not null);
 
 		_disposables.Add(CreateGroupCommand = ReactiveCommand.CreateFromTask(CreateGroupAsync, hasNewGroupName));
-		_disposables.Add(DeleteGroupCommand = ReactiveCommand.Create(AskToDelete, hasSelectedGroup));
+		_disposables.Add(CloseRenameCommand = ReactiveCommand.Create(CloseRename, hasPendingRename));
 		_disposables.Add(ConfirmDeleteCommand = ReactiveCommand.CreateFromTask(ConfirmDeleteAsync, hasPendingDeletion));
 		_disposables.Add(CancelDeleteCommand = ReactiveCommand.Create(CancelDelete, hasPendingDeletion));
 	}
@@ -75,29 +73,18 @@ public sealed class PenGroupsViewModel : ReactiveObject, IDisposable
 		private set => this.RaiseAndSetIfChanged(ref field, value);
 	}
 
-	/// <summary>
-	/// Two-way from the group list, whose selection write-back is ignored while the list is replaced.
-	/// </summary>
-	public PenGroupViewModel? SelectedGroup
-	{
-		get;
-		set
-		{
-			if (!_isReplacingGroups)
-			{
-				this.RaiseAndSetIfChanged(ref field, value);
-			}
-		}
-	}
-
-	/// <summary>One entry per pen for the selected group, in catalogue order; empty with no group selected.</summary>
-	public IReadOnlyList<PenMembershipViewModel> Memberships => _memberships.Value;
-
 	public string NewGroupName
 	{
 		get;
 		set => this.RaiseAndSetIfChanged(ref field, value);
 	} = string.Empty;
+
+	/// <summary>The group the rename block edits; null while the block shows no rename.</summary>
+	public PenGroupViewModel? PendingRename
+	{
+		get;
+		private set => this.RaiseAndSetIfChanged(ref field, value);
+	}
 
 	public PendingGroupDeletion? PendingDeletion
 	{
@@ -106,15 +93,16 @@ public sealed class PenGroupsViewModel : ReactiveObject, IDisposable
 	}
 
 	/// <summary>
-	/// The selected group's rename message; otherwise the last refusal of a tab write; otherwise empty.
+	/// The renamed group's message while the rename block is open; otherwise the last refusal of a pane write;
+	/// otherwise empty.
 	/// </summary>
 	public string Message => _message.Value;
 
 	/// <summary>Creates a group named as typed; a refused name stays in the field.</summary>
 	public ReactiveCommand<Unit, Unit> CreateGroupCommand { get; }
 
-	/// <summary>Asks to delete the selected group; nothing is written until the deletion is confirmed.</summary>
-	public ReactiveCommand<Unit, Unit> DeleteGroupCommand { get; }
+	/// <summary>Closes the rename block, but only while its draft is valid, so a refused draft stays in view.</summary>
+	public ReactiveCommand<Unit, Unit> CloseRenameCommand { get; }
 
 	public ReactiveCommand<Unit, Unit> ConfirmDeleteCommand { get; }
 
@@ -124,9 +112,9 @@ public sealed class PenGroupsViewModel : ReactiveObject, IDisposable
 	{
 		_disposables.Dispose();
 
-		foreach (var memberships in _membershipsOfGroup.Values)
+		foreach (var membership in _memberships.Values)
 		{
-			DisposeAll(memberships);
+			membership.Dispose();
 		}
 
 		foreach (var group in Groups)
@@ -135,21 +123,29 @@ public sealed class PenGroupsViewModel : ReactiveObject, IDisposable
 		}
 	}
 
-	// docs/architecture/overview.md#a-field-writes-when-its-edit-ends
-	private PenMembershipViewModel[] MembershipsOf(PenGroupViewModel? group)
+	private PenGroupViewModel GroupOf(StoredGroup group)
 	{
-		if (group is null)
+		return new PenGroupViewModel(group, _penGroupWriter, AskToRename, AskToDelete);
+	}
+
+	private void ShowMembershipsOf(PenRowViewModel? row, IReadOnlyList<PenGroupViewModel> groups)
+	{
+		foreach (var group in groups)
 		{
-			return [];
+			group.Membership = row is null ? null : MembershipOf(row, group);
+		}
+	}
+
+	// docs/architecture/overview.md#a-field-writes-when-its-edit-ends
+	private PenMembershipViewModel MembershipOf(PenRowViewModel row, PenGroupViewModel group)
+	{
+		if (!_memberships.TryGetValue((row, group), out var membership))
+		{
+			membership = new PenMembershipViewModel(row, group, _penGroupWriter);
+			_memberships.Add((row, group), membership);
 		}
 
-		if (!_membershipsOfGroup.TryGetValue(group, out var memberships))
-		{
-			memberships = [.. _rows.Select(row => new PenMembershipViewModel(row, group, _penGroupWriter))];
-			_membershipsOfGroup.Add(group, memberships);
-		}
-
-		return memberships;
+		return membership;
 	}
 
 	private async Task CreateGroupAsync()
@@ -164,9 +160,7 @@ public sealed class PenGroupsViewModel : ReactiveObject, IDisposable
 			return;
 		}
 
-		var group = new PenGroupViewModel(new StoredGroup(created.Value, name, []), _penGroupWriter);
-		ReplaceGroups([.. Groups, group]);
-		SelectedGroup = group;
+		Groups = [.. Groups, GroupOf(new StoredGroup(created.Value, name, []))];
 
 		if (NewGroupName == name)
 		{
@@ -174,15 +168,27 @@ public sealed class PenGroupsViewModel : ReactiveObject, IDisposable
 		}
 	}
 
-	private void AskToDelete()
+	private void AskToRename(PenGroupViewModel group)
 	{
-		if (SelectedGroup is not { } group)
-		{
-			return;
-		}
+		PendingDeletion = null;
+		PendingRename = group;
+	}
 
-		var text = Resources.FormatPenGroupsDeleteConfirmation(group.Group.Name, group.MemberCount);
-		PendingDeletion = new PendingGroupDeletion(group, text);
+	private void CloseRename()
+	{
+		if (PendingRename is { IsNameValid: true })
+		{
+			PendingRename = null;
+		}
+	}
+
+	private void AskToDelete(PenGroupViewModel group)
+	{
+		PendingRename = null;
+		PendingDeletion = new PendingGroupDeletion(
+			group,
+			Resources.FormatPenGroupsDeleteQuestion(group.Group.Name),
+			Resources.FormatPenGroupsDeleteCount(group.MemberCount));
 	}
 
 	private async Task ConfirmDeleteAsync()
@@ -202,38 +208,20 @@ public sealed class PenGroupsViewModel : ReactiveObject, IDisposable
 			return;
 		}
 
-		ReplaceGroups([.. Groups.Where(group => group != pending.Group)]);
-
-		if (_membershipsOfGroup.Remove(pending.Group, out var memberships))
-		{
-			DisposeAll(memberships);
-		}
-
+		Groups = [.. Groups.Where(group => group != pending.Group)];
+		DisposeMembershipsOf(pending.Group);
 		pending.Group.Dispose();
-
-		if (SelectedGroup == pending.Group)
-		{
-			SelectedGroup = null;
-		}
 
 		ShowGroupsOn(pending.Group.Group.MemberPenIds);
 	}
 
-	private void ReplaceGroups(IReadOnlyList<PenGroupViewModel> groups)
+	private void DisposeMembershipsOf(PenGroupViewModel group)
 	{
-		// A new items source makes the list write a null selection back before it finds the group again,
-		// which would rebuild the memberships of a selection that never changed.
-		_isReplacingGroups = true;
-		try
+		foreach (var (key, membership) in _memberships.Where(entry => entry.Key.Group == group).ToList())
 		{
-			Groups = groups;
+			_memberships.Remove(key);
+			membership.Dispose();
 		}
-		finally
-		{
-			_isReplacingGroups = false;
-		}
-
-		this.RaisePropertyChanged(nameof(SelectedGroup));
 	}
 
 	private void CancelDelete()
@@ -248,14 +236,6 @@ public sealed class PenGroupsViewModel : ReactiveObject, IDisposable
 		foreach (var row in _rows.Where(row => penIds.Contains(row.Pen.Id)))
 		{
 			row.ShowGroupsOf(groups);
-		}
-	}
-
-	private static void DisposeAll(IEnumerable<PenMembershipViewModel> memberships)
-	{
-		foreach (var membership in memberships)
-		{
-			membership.Dispose();
 		}
 	}
 

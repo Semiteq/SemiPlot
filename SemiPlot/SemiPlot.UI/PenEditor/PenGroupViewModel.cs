@@ -10,20 +10,29 @@ using SemiPlot.UI.Messages;
 
 namespace SemiPlot.UI.PenEditor;
 
-/// <summary>One group of the groups tab: the group as last written, its rename draft and its fold flag.</summary>
+/// <summary>
+/// One group of the groups pane: the group as last written, its rename draft, its fold flag and the selected pen's
+/// membership.
+/// </summary>
 public sealed class PenGroupViewModel : ReactiveObject, IDisposable
 {
 	private readonly PenGroupWriter _penGroupWriter;
 	private readonly List<string> _queuedNames = [];
 	private string? _refusal;
 
-	internal PenGroupViewModel(StoredGroup group, PenGroupWriter penGroupWriter)
+	internal PenGroupViewModel(
+		StoredGroup group,
+		PenGroupWriter penGroupWriter,
+		Action<PenGroupViewModel> askToRename,
+		Action<PenGroupViewModel> askToDelete)
 	{
 		_penGroupWriter = penGroupWriter;
 		Group = group;
 		RenameDraft = group.Name;
 
 		ToggleFoldedOnStartCommand = ReactiveCommand.CreateFromTask(ToggleFoldedOnStartAsync);
+		AskRenameCommand = ReactiveCommand.Create(() => askToRename(this));
+		AskDeleteCommand = ReactiveCommand.Create(() => askToDelete(this));
 	}
 
 	public StoredGroup Group
@@ -41,8 +50,21 @@ public sealed class PenGroupViewModel : ReactiveObject, IDisposable
 
 	public bool FoldedOnStart => Group.FoldedOnStart;
 
-	/// <summary>The fold check box's one writer: stores the flag the other way round.</summary>
+	/// <summary>The fold menu item's one writer: stores the flag the other way round.</summary>
 	public ReactiveCommand<Unit, Unit> ToggleFoldedOnStartCommand { get; }
+
+	/// <summary>Opens the pane's rename block on this group.</summary>
+	public ReactiveCommand<Unit, Unit> AskRenameCommand { get; }
+
+	/// <summary>Asks to delete this group; nothing is written until the deletion is confirmed.</summary>
+	public ReactiveCommand<Unit, Unit> AskDeleteCommand { get; }
+
+	/// <summary>The selected pen's entry in this group; null with no pen selected.</summary>
+	public PenMembershipViewModel? Membership
+	{
+		get;
+		internal set => this.RaiseAndSetIfChanged(ref field, value);
+	}
 
 	public string RenameDraft
 	{
@@ -103,7 +125,7 @@ public sealed class PenGroupViewModel : ReactiveObject, IDisposable
 				Refuse(refusal);
 			}
 
-			_penGroupWriter.ReportFailure(renamed);
+			_penGroupWriter.RefuseWrite(renamed);
 
 			return;
 		}
@@ -122,6 +144,8 @@ public sealed class PenGroupViewModel : ReactiveObject, IDisposable
 	public void Dispose()
 	{
 		ToggleFoldedOnStartCommand.Dispose();
+		AskRenameCommand.Dispose();
+		AskDeleteCommand.Dispose();
 	}
 
 	/// <summary>Records a membership the editor has written.</summary>

@@ -4,7 +4,7 @@ using ReactiveUI;
 
 namespace SemiPlot.UI.PenEditor;
 
-/// <summary>One pen of the membership list, checked when the pen belongs to the selected group.</summary>
+/// <summary>One pen in one group, checked in the groups pane while the pen is selected and in the group.</summary>
 public sealed class PenMembershipViewModel : ReactiveObject, IDisposable
 {
 	private readonly PenGroupViewModel _group;

@@ -5,6 +5,8 @@
 
     <StreamGeometry x:Key="WarningGeometry">F0 M8,1.5 L15,14.5 L1,14.5 Z M7.25,6 L8.75,6 L8.75,10.5 L7.25,10.5 Z M7.25,11.75 L8.75,11.75 L8.75,13.25 L7.25,13.25 Z</StreamGeometry>
 
+    <StreamGeometry x:Key="MoreGeometry">M3,6.5 A1.5,1.5 0 1 1 3,9.5 A1.5,1.5 0 1 1 3,6.5 Z M8,6.5 A1.5,1.5 0 1 1 8,9.5 A1.5,1.5 0 1 1 8,6.5 Z M13,6.5 A1.5,1.5 0 1 1 13,9.5 A1.5,1.5 0 1 1 13,6.5 Z</StreamGeometry>
+
     <StreamGeometry x:Key="ChevronDownGeometry">M2,5.5 L3.4,4.1 L8,8.7 L12.6,4.1 L14,5.5 L8,11.5 Z</StreamGeometry>
 
     <StreamGeometry x:Key="ChevronUpGeometry">M2,10.5 L3.4,11.9 L8,7.3 L12.6,11.9 L14,10.5 L8,4.5 Z</StreamGeometry>

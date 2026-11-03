@@ -225,7 +225,7 @@
   <data name="PenEditorPensTab" xml:space="preserve">
     <value>Pens</value>
   </data>
-  <data name="PenEditorGroupsTab" xml:space="preserve">
+  <data name="PenGroupsTitle" xml:space="preserve">
     <value>Groups</value>
   </data>
   <data name="PenEditorColumnId" xml:space="preserve">
@@ -690,8 +690,35 @@
   <data name="PenGroupsNameRequired" xml:space="preserve">
     <value>Group name: required</value>
   </data>
-  <data name="PenGroupsDeleteConfirmation" xml:space="preserve">
-    <value>Delete group '{0}'? Pens in the group: {1}. The pens themselves stay.</value>
+  <data name="PenGroupsSubtitle" xml:space="preserve">
+    <value>The selected pen's groups are ticked</value>
+  </data>
+  <data name="PenGroupsColumnGroup" xml:space="preserve">
+    <value>Group</value>
+  </data>
+  <data name="PenGroupsColumnActions" xml:space="preserve">
+    <value>Actions</value>
+  </data>
+  <data name="PenGroupsMemberCountTip" xml:space="preserve">
+    <value>Pens in the group</value>
+  </data>
+  <data name="PenGroupsActionsTip" xml:space="preserve">
+    <value>Group actions</value>
+  </data>
+  <data name="PenGroupsRename" xml:space="preserve">
+    <value>Rename</value>
+  </data>
+  <data name="PenGroupsRenameDone" xml:space="preserve">
+    <value>Done</value>
+  </data>
+  <data name="PenGroupsDeleteQuestion" xml:space="preserve">
+    <value>Delete group '{0}'?</value>
+  </data>
+  <data name="PenGroupsDeleteCount" xml:space="preserve">
+    <value>Pens in the group: {0}</value>
+  </data>
+  <data name="PenGroupsDeleteKeepsPens" xml:space="preserve">
+    <value>The pens themselves stay.</value>
   </data>
   <data name="PenGroupsNewNamePlaceholder" xml:space="preserve">
     <value>New group name</value>
@@ -710,9 +737,6 @@
   </data>
   <data name="PenGroupsFoldedOnStartLabel" xml:space="preserve">
     <value>Folded when the viewer opens</value>
-  </data>
-  <data name="PenGroupsMembersHeader" xml:space="preserve">
-    <value>Pens in the selected group</value>
   </data>
   <data name="ExportMessageStartDateMissing" xml:space="preserve">
     <value>Start: pick a date.</value>

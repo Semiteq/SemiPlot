@@ -574,7 +574,7 @@ public sealed class PenGroupsViewModel : ReactiveObject, IDisposable
   `ToggleType="CheckBox"`, `IsChecked="{Binding FoldedOnStart, Mode=OneWay}"`,
   `Command="{Binding ToggleFoldedOnStartCommand}"`); `Separator`; `MenuItem` `GroupDeleteItem`
   (`PenGroupsDelete`, `Command="{Binding AskDeleteCommand}"`).
-- `OnRenameItemClick` posts `GroupRename.Focus()` and `GroupRename.SelectAll()` at
+- (Task 2 took the fallback below: the template's `Click` never runs.) `OnRenameItemClick` posts `GroupRename.Focus()` and `GroupRename.SelectAll()` at
   `DispatcherPriority.Background`, after the item's command has set `PendingRename` and the block has been
   laid out (`~/.claude/rules/avalonia.md`, UI thread). The handler is input interop only; the command decides.
   ASSUMPTION: a handler named inside a cell template's `MenuFlyout` hooks to the window's code-behind, and
@@ -700,7 +700,7 @@ pane.
 - Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/PenEditor/PenEditorWindowDriver.cs`
 - Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/InterMeasure.cs`
 
-- [ ] rewrite `PenGroupsViewModelTests` against the members of Technical Details (red: they do not compile).
+- [x] rewrite `PenGroupsViewModelTests` against the members of Technical Details (red: they do not compile).
       New or rewritten, over `_catalogue` `[Argon, Pressure, Power]` with `[Chamber, Gas]`
       (`PenGroupsViewModelTests.cs:32`) and `editor.SelectedRow = RowsOf(editor)[i]`:
       `EachGroup_ShowsTheSelectedPensMembership` (no pen: every `Membership` null; Argon: Chamber and Gas
@@ -736,17 +736,17 @@ pane.
       `Refresh_RebuildsTheGroupsKeepingTheSelectedGroupById` with the new tests above; keep the other rename,
       fold, create and dispose tests unchanged in what they assert, moving `SelectedGroup = x` to
       `x.AskRenameCommand` where a test reads the pane's `Message`
-- [ ] `EndRenameAsync` reports an archive refusal through `RefuseWrite` (Technical Details, View models)
-- [ ] implement the view models as Technical Details states; delete `SelectedGroup`, `_isReplacingGroups`,
+- [x] `EndRenameAsync` reports an archive refusal through `RefuseWrite` (Technical Details, View models)
+- [x] implement the view models as Technical Details states; delete `SelectedGroup`, `_isReplacingGroups`,
       `ReplaceGroups`, `Memberships`, `_membershipsOfGroup`, `MembershipsOf` and `DeleteGroupCommand`; adjust
       `PenEditorViewModel` (`GroupsOf` takes the observable; the refresh order of Technical Details)
-- [ ] edit both resx files: rename `PenEditorGroupsTab` to `PenGroupsTitle` (the `GroupsTab` header reads it
+- [x] edit both resx files: rename `PenEditorGroupsTab` to `PenGroupsTitle` (the `GroupsTab` header reads it
       until Task 3), add the ten keys of the Resources table, delete `PenGroupsDeleteConfirmation` and
       `PenGroupsMembersHeader`
-- [ ] add `MoreGeometry` to `Icons.axaml`
-- [ ] update the driver (`GroupListOf`, `GroupRowAt`, `PickGroupMenuItem`, the shared `RowOf`) and
+- [x] add `MoreGeometry` to `Icons.axaml`
+- [x] update the driver (`GroupListOf`, `GroupRowAt`, `PickGroupMenuItem`, the shared `RowOf`) and
       `InterMeasure` (`InterTypeface(face = "Regular")`, `HeaderWidthInInter`)
-- [ ] rewrite `PenGroupsViewTests` (red at run time: the window holds no `DataGrid` `GroupList`). Each test
+- [x] rewrite `PenGroupsViewTests` (red at run time: the window holds no `DataGrid` `GroupList`). Each test
       opens the `Groups` tab with `OpenGroupsTab`; a test that needs a pen first clicks `RowAt(window, i)` on
       the `Pens` tab; if a tab switch clears `SelectedRow`, those tests set `viewModel.SelectedRow` after the
       click and Task 3 removes the line, recorded under Task 2. The tests named under Acceptance Evidence for
@@ -819,16 +819,37 @@ pane.
     each at most 308 px. If a text fails, the
     failing language's value is shortened until it passes (a subtitle stays one line, `SKILL.md:227`) and
     the new value is recorded here and in the Resources table
-- [ ] rewrite `ARefreshThatChangesTheCatalogue_RebindsTheTableAndTheGroupsTab` as
+- [x] rewrite `ARefreshThatChangesTheCatalogue_RebindsTheTableAndTheGroupsTab` as
       `ARefreshThatChangesTheCatalogue_RebindsThePenListAndTheGroupsPane`: after the refresh
       `GroupListOf(window).ItemsSource` is `viewModel.Groups.Groups` and `GroupRowAt(window, 2)`'s `GroupName`
       is "Vacuum"
-- [ ] replace the `GroupsTab` content (`PenEditorWindow.axaml:492-684`) with the `GroupsPanel` of Technical
+- [x] replace the `GroupsTab` content (`PenEditorWindow.axaml:492-684`) with the `GroupsPanel` of Technical
       Details, left-aligned in the tab; update the window styles as listed; add `OnRenameItemClick` to the
       code-behind
-- [ ] run `PenGroupsViewModelTests`, `PenGroupsViewTests`, `PenEditorViewTests`, `PenEditorViewModelTests`,
+- [x] run `PenGroupsViewModelTests`, `PenGroupsViewTests`, `PenEditorViewTests`, `PenEditorViewModelTests`,
       `PenListViewTests`, `PenFormPaneViewTests`, `MainWindowViewTests`, `MainWindowViewModelTests`,
       `ThemeTests` and `ResourcesTests`: every case passes
+- ⚠️ the `Click` handler named on `GroupRenameItem` inside the cell template's `MenuFlyout` never runs (the item's
+  command does); the plan's fallback is in place: `GroupRenameItem` carries no `Click`, and the code-behind
+  subscribes `GroupRename.DataContextChanged` in `OnLoaded` (removed in `OnUnloaded`) and posts the focus and
+  `SelectAll` at `DispatcherPriority.Background` when the data context becomes a `PenGroupViewModel`. The flyout
+  hands the focus back to `GroupActionsButton` as it closes, and the posted focus lands after it
+- ⚠️ the other three ASSUMPTIONs hold: the menu items take the row's `DataContext` (the second-row tests act on
+  Spare), the compiled binding through a null `Membership` reads `False` with `FallbackValue` alone, and a click
+  on `MembershipBox` toggles it; a tab switch keeps `SelectedRow`, so no view test sets it in code
+- ⚠️ a disposed `ReactiveCommand` still executes and reports `CanExecute` true (probe), so "its membership entries
+  disposed" has no observation on the production surface; `ConfirmingTheDeletion_...` asserts the rest, and the
+  pane still disposes the deleted group's entries
+- ⚠️ `ARenameTheArchiveRefusesThenDoneClicked_...` holds the rename call across the Done click: the fake and the
+  queue answer an unheld call inside the press, which would refuse the draft before the click lands, while the
+  archive answers later
+- ⚠️ `GroupCalls_WaitInTheQueueBehindAHeldPenCommit` toggles Pressure into Gas through the selected pen's entry;
+  the toggle reads `Row.Pen` when the queue runs it, after the held name commit, so the call carries the new name
+- ⚠️ `ThePaneTexts_FitTheirLinesInInter` measures against the realised `GroupsSubtitle` width (the pane's 1 px
+  border leaves 306 px, not 308); `ARowClick_...` moves the pointer to `GroupsTitle` before the rest comparison,
+  since the clicked row is hovered after the click
+- ⚠️ measured in Inter (`TheGroupColumns_LeaveTheNameAtLeast100PxInInter`, 40 groups): `en` Действия 81.5 px,
+  Группа 169.5 px, name text 115.3 px; `ru` 95.2 px, 155.8 px, 101.6 px
 
 ### Task 3: Remove the tabs and stand the three parts side by side under a top bar
 

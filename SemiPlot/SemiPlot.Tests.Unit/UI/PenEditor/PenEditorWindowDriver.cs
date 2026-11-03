@@ -1,4 +1,3 @@
-using Avalonia.Collections;
 using Avalonia.Controls;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -10,7 +9,7 @@ using SemiPlot.UI.PenEditor;
 
 namespace SemiPlot.Tests.Unit.UI.PenEditor;
 
-/// <summary>Realises the editor window and reaches its controls, for the view tests of both tabs.</summary>
+/// <summary>Realises the editor window and reaches its controls, for the view tests of every part.</summary>
 internal static class PenEditorWindowDriver
 {
 	public static PenEditorWindow Realise(PenEditorViewModel viewModel)
@@ -43,19 +42,32 @@ internal static class PenEditorWindowDriver
 
 	public static DataGridRow RowAt(PenEditorWindow window, int index)
 	{
-		var list = PenListOf(window);
-		if (RealisedRowAt(list, index) is { } realised)
-		{
-			return realised;
-		}
+		return RowOf(PenListOf(window), index);
+	}
 
-		var view = list.ItemsSource as DataGridCollectionView
-			?? throw new InvalidOperationException("The pen list binds no collection view.");
-		list.ScrollIntoView(view[index], null);
-		Dispatcher.UIThread.RunJobs();
+	public static DataGrid GroupListOf(PenEditorWindow window)
+	{
+		return ViewProbe.Named<DataGrid>(window, "GroupList");
+	}
 
-		return RealisedRowAt(list, index)
-			?? throw new InvalidOperationException($"The pen list realised no row {index}.");
+	public static DataGridRow GroupRowAt(PenEditorWindow window, int index)
+	{
+		return RowOf(GroupListOf(window), index);
+	}
+
+	/// <summary>Opens the row's action menu and clicks the named item on the menu's own top level.</summary>
+	public static void PickGroupMenuItem(PenEditorWindow window, int index, string itemName)
+	{
+		var button = ViewProbe.Descendant<Button>(GroupRowAt(window, index), "GroupActionsButton");
+		HeadlessInput.Click(window, button);
+		var menu = button.Flyout.Should().BeOfType<MenuFlyout>().Subject;
+		menu.IsOpen.Should().BeTrue("a click on the action button opens the row's menu");
+		var item = menu.Popup.Child!
+			.GetVisualDescendants()
+			.OfType<MenuItem>()
+			.Single(menuItem => menuItem.Name == itemName);
+
+		HeadlessInput.Click(TopLevel.GetTopLevel(item)!, item);
 	}
 
 	public static DataGridColumnHeader HeaderOf(PenEditorWindow window, string header)
@@ -97,6 +109,21 @@ internal static class PenEditorWindowDriver
 	public static IEnumerable<DataGridRow> RealisedRows(DataGrid list)
 	{
 		return list.GetVisualDescendants().OfType<DataGridRow>().Where(row => row.IsVisible && row.Index >= 0);
+	}
+
+	private static DataGridRow RowOf(DataGrid list, int index)
+	{
+		if (RealisedRowAt(list, index) is { } realised)
+		{
+			return realised;
+		}
+
+		var items = list.ItemsSource ?? throw new InvalidOperationException($"{list.Name} binds no items.");
+		list.ScrollIntoView(items.Cast<object>().ElementAt(index), null);
+		Dispatcher.UIThread.RunJobs();
+
+		return RealisedRowAt(list, index)
+			?? throw new InvalidOperationException($"{list.Name} realised no row {index}.");
 	}
 
 	private static DataGridRow? RealisedRowAt(DataGrid list, int index)

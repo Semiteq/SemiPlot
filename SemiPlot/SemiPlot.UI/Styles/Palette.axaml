@@ -101,6 +101,10 @@
             <SolidColorBrush x:Key="AppSeverityInfoBrush" Color="#3574F0" />
             <SolidColorBrush x:Key="AppConnectionOkBrush" Color="#208A3C" />
             <SolidColorBrush x:Key="AppConnectionFaultBrush" Color="#DB3B4B" />
+            <SolidColorBrush x:Key="AppDestructiveBackgroundBrush" Color="#C7303F" />
+            <SolidColorBrush x:Key="AppDestructivePointeroverBackgroundBrush" Color="#B02A38" />
+            <SolidColorBrush x:Key="AppDestructivePressedBackgroundBrush" Color="#992431" />
+            <SolidColorBrush x:Key="AppDestructiveForegroundBrush" Color="#FFFFFF" />
         </ResourceDictionary>
 
         <ResourceDictionary x:Key="Dark">
@@ -192,6 +196,10 @@
             <SolidColorBrush x:Key="AppSeverityInfoBrush" Color="#3574F0" />
             <SolidColorBrush x:Key="AppConnectionOkBrush" Color="#5FAD65" />
             <SolidColorBrush x:Key="AppConnectionFaultBrush" Color="#E55765" />
+            <SolidColorBrush x:Key="AppDestructiveBackgroundBrush" Color="#C7303F" />
+            <SolidColorBrush x:Key="AppDestructivePointeroverBackgroundBrush" Color="#B02A38" />
+            <SolidColorBrush x:Key="AppDestructivePressedBackgroundBrush" Color="#992431" />
+            <SolidColorBrush x:Key="AppDestructiveForegroundBrush" Color="#FFFFFF" />
         </ResourceDictionary>
 
     </ResourceDictionary.ThemeDictionaries>

@@ -16,5 +16,6 @@
         <semi:ColorPickerSemiTheme />
         <semi:DataGridSemiTheme />
         <StyleInclude Source="avares://SemiPlot.UI/Styles/Forms.axaml" />
+        <StyleInclude Source="avares://SemiPlot.UI/Styles/Buttons.axaml" />
     </Application.Styles>
 </Application>

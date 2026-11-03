@@ -848,20 +848,25 @@ Height of the form, from the AXAML: title 24; three section headers at 16 + 20 +
 
 ### Task 6: Verify acceptance criteria
 
-- [ ] run the filtered command under Acceptance Evidence: 0 failed, every named test present
-- [ ] run `dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj`: 0 failed
-- [ ] run `dotnet build SemiPlot.slnx`: 0 errors and no warning beyond the ones `master` already reports
-- [ ] set `$BASE` to the stacking base: `hex-color-input` while that branch is unmerged, `master` after
-      it merges (`git merge-base --is-ancestor hex-color-input master`)
-- [ ] run `dotnet format SemiPlot.slnx --verify-no-changes`, then `dotnet tool restore` and
+- [x] run the filtered command under Acceptance Evidence: 0 failed, every named test present (242
+      passed, all 41 named tests found in the trx)
+- [x] run `dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj`: 0 failed (2660 passed)
+- [x] run `dotnet build SemiPlot.slnx`: 0 errors and no warning beyond the ones `master` already reports
+      (2 NU1902 for `MessagePack` 2.5.302 in `SemiPlot.AppHost`, which predate this branch and
+      `hex-color-input`; no AppHost file in the diff, no package version changed)
+- [x] set `$BASE` to the stacking base: `hex-color-input` while that branch is unmerged, `master` after
+      it merges (`git merge-base --is-ancestor hex-color-input master`) (exit 1: `$BASE` is
+      `hex-color-input`)
+- [x] run `dotnet format SemiPlot.slnx --verify-no-changes`, then `dotnet tool restore` and
       `dotnet terse` over every `.cs` file `git diff --name-only $BASE...HEAD` lists: both exit 0
-- [ ] run the HeadlessInput gate under Acceptance Evidence, and the key gate with `-- SemiPlot` only:
-      both print what they must
-- [ ] confirm the scope guard with `git diff $BASE...HEAD --stat`: no change to `PenGroupsViewModel`,
+- [x] run the HeadlessInput gate under Acceptance Evidence, and the key gate with `-- SemiPlot` only:
+      both print what they must (only `HeadlessInput.cs` lines; the key gate prints nothing)
+- [x] confirm the scope guard with `git diff $BASE...HEAD --stat`: no change to `PenGroupsViewModel`,
       `PenGroupViewModel`, `PenMembershipViewModel`, `PenGroupWriter`, `PenFormViewModel`,
       `ArchiveCallQueue` or `IPenCatalogueEditor`, and
       `git diff $BASE...HEAD -- SemiPlot/SemiPlot.UI/PenEditor/PenEditorWindow.axaml` shows no hunk inside
-      the `GroupsTab` `TabItem`
+      the `GroupsTab` `TabItem` (25 files, none of the seven named; the last new-side hunk ends at
+      line 489, `GroupsTab` opens at 499)
 
 ### Task 7: [Final] Update documentation
 

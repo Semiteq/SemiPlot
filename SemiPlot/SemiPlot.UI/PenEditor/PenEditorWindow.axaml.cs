@@ -23,6 +23,8 @@ public partial class PenEditorWindow : Window
 
 	public const double GroupsPaneWidth = 340;
 
+	public const double FilterBoxWidth = 280;
+
 	public const double DesignedWidth = 1440;
 
 	/// <summary>The pen list's first three columns beside both panes at their widths.</summary>

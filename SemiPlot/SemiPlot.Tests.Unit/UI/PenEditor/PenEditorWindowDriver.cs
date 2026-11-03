@@ -40,6 +40,11 @@ internal static class PenEditorWindowDriver
 		return ViewProbe.Named<DataGrid>(window, "PenList");
 	}
 
+	public static TextBox FilterBoxOf(PenEditorWindow window)
+	{
+		return ViewProbe.Named<TextBox>(window, "PenListFilter");
+	}
+
 	public static DataGridRow RowAt(PenEditorWindow window, int index)
 	{
 		return RowOf(PenListOf(window), index);

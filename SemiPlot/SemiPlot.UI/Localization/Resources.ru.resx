@@ -216,6 +216,9 @@
   <data name="PenEditorRefresh" xml:space="preserve">
     <value>Обновить список перьев</value>
   </data>
+  <data name="PenEditorFilterPlaceholder" xml:space="preserve">
+    <value>Фильтр: номер, имя или группа</value>
+  </data>
   <data name="PenEditorAddedCount" xml:space="preserve">
     <value>Добавлено перьев: {0}</value>
   </data>

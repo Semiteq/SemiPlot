@@ -167,6 +167,7 @@ It must report 0 failed. These named tests must be present and pass:
 - `PenEditorLayoutViewTests.TheFilterBox_StandsLeftInTheTopBar280PxWideWithItsPlaceholder` (the reproduction) — Task 3
 - `PenEditorLayoutViewTests.ThePlaceholder_FitsTheFilterBoxInInter` (theory: `en`, `ru`) — Task 3
 - `PenListViewTests.TypingInTheFilterBox_ShowsOnlyTheMatchingRowsAndClearingItShowsEveryRow` — Task 3
+- `PenListViewTests.AFilterAfterACtrlClickClearedTheSelection_SelectsNoRow` (➕, the no-selection guard) — Task 3
 - `PenListViewTests.AFilterTheSelectedRowMatches_KeepsTheRowSelectedAndItsForm` — Task 3
 - `PenListViewTests.AFilterTheSelectedRowFailsToMatch_ClearsTheListSelectionAndShowsTheHint` — Task 3
 - `PenListViewTests.AFilterUnderASort_KeepsTheOrderAndItsArrow` — Task 3
@@ -457,17 +458,17 @@ sentence, so the box and the header use one term per concept.
 - Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/PenEditor/PenListViewTests.cs`
 - Modify: `SemiPlot/SemiPlot.Tests.Unit/UI/PenEditor/PenEditorViewTests.cs`
 
-- [ ] add `FilterBoxOf` to the driver, and `PenEditorWindow.FilterBoxWidth` and the `PenEditorFilterPlaceholder`
+- [x] add `FilterBoxOf` to the driver, and `PenEditorWindow.FilterBoxWidth` and the `PenEditorFilterPlaceholder`
       key to both resx files, so the view tests compile; the box itself is not added yet
-- [ ] write the failing `TheFilterBox_StandsLeftInTheTopBar280PxWideWithItsPlaceholder`: the box is inside
+- [x] write the failing `TheFilterBox_StandsLeftInTheTopBar280PxWideWithItsPlaceholder`: the box is inside
       `PenEditorTopBar`, `Bounds.Width` equals `FilterBoxWidth`, its left edge equals the pen list border's
       (16 px), its height and the bar's each equal `PenEditorRefreshButton`'s (32 px in the `MinHeight` sum,
       `ui-theme.md:445`), `PlaceholderText` is
       `Resources.PenEditorFilterPlaceholder`, and the box ends left of `PenEditorAddedCount`
-- [ ] write the failing theory `ThePlaceholder_FitsTheFilterBoxInInter` (`en`, `ru`; `CultureScope` as
+- [x] write the failing theory `ThePlaceholder_FitsTheFilterBoxInInter` (`en`, `ru`; `CultureScope` as
       `ThePaneTexts_FitTheirLinesInInter`): the placeholder measured in Inter at the box's `FontSize` is at most
       the box's width less its `Padding` and `BorderThickness` on both sides
-- [ ] write the failing `PenListViewTests` cases over `ViewCatalogue`:
+- [x] write the failing `PenListViewTests` cases over `ViewCatalogue`:
       `TypingInTheFilterBox_ShowsOnlyTheMatchingRowsAndClearingItShowsEveryRow` (no row clicked;
       `HeadlessInput.Type` "bias": `RealisedPens` is Power alone, `PenList.SelectedItem` and `SelectedRow` null,
       `PenFormEmptyHint` on screen; `HeadlessInput.Clear`: all three, still no selection and the hint on screen);
@@ -479,17 +480,39 @@ sentence, so the box and the header use one term per concept.
       ids 7, 3 and the header keeps `:sortdescending`);
       `TheGroupsPane_ListsEveryGroupWhileThePenListIsFiltered` (type "zzz": no pen row realised, the group grid
       still realises Chamber and Spare)
-- [ ] write the failing `PenEditorViewTests.ANameTypedThenTheFilterBoxTypedAndEnterPressed_WritesOnceAndTheFilterWritesNothing`:
+- [x] write the failing `PenEditorViewTests.ANameTypedThenTheFilterBoxTypedAndEnterPressed_WritesOnceAndTheFilterWritesNothing`:
       click Pressure, retype its name as "Gauge", type "7" (its id, which the new name leaves matching) into
       the filter box and press Enter: `_editor.Calls` holds exactly one name write, "Gauge" for pen 7, and the
       row still shows
-- [ ] add the `TextBox` `PenListFilter` to column 0 of `PenEditorTopBar` as Technical Details states; the
+- [x] add the `TextBox` `PenListFilter` to column 0 of `PenEditorTopBar` as Technical Details states; the
       code-behind gains only the constant
-- [ ] run `PenEditorLayoutViewTests` (`TheTopBar_StandsAboveThePanesRightAlignedAndTheVisibilityColumnReadsOnStart`
+- [x] run `PenEditorLayoutViewTests` (`TheTopBar_StandsAboveThePanesRightAlignedAndTheVisibilityColumnReadsOnStart`
       and `AtTheMinimumHeight_EveryFixedRowShowsAndEachListShowsFourRows` unchanged), `PenListViewTests`,
       `PenEditorViewTests`, `PenFormPaneViewTests`, `PenGroupsViewTests`, `ResourcesTests`: every case passes;
       note under this task the placeholder's two measured Inter widths and the box's inner width, which Task 5
       carries into `ui-theme.md`
+- [x] ➕ write the failing `PenListViewTests.AFilterAfterACtrlClickClearedTheSelection_SelectsNoRow` (click Argon,
+      Ctrl+click it, type "bias": `RealisedPens` is Power alone, `PenList.SelectedItem` and `SelectedRow` null,
+      `PenFormEmptyHint` on screen), the guard for the path the no-selection ASSUMPTION fails on; red before the
+      fallback with Power selected
+- [x] apply the no-selection fallback: `ShowRowsMatchingFilter` calls `PenRows.MoveCurrentTo(SelectedRow)` after the
+      clear and before `PenRows.Refresh()`
+
+Measured in Inter at the box's `FontSize` (`ThePlaceholder_FitsTheFilterBoxInInter` output): the placeholder is
+157.6 px in `en` and 217.3 px in `ru`; the box's inner width (280 px less `Padding` and `BorderThickness` on both
+sides) is 254 px. The width ASSUMPTION held, `FilterBoxWidth` stays 280. The height ASSUMPTION held: the box and
+the bar realise at the button's height with no `Height` set.
+
+⚠️ The no-selection ASSUMPTION failed, but not where the plan predicted. The view opens with no current item
+(`PenRows.CurrentPosition` is -1 before any click), so the named guard
+`TypingInTheFilterBox_ShowsOnlyTheMatchingRowsAndClearingItShowsEveryRow` passed without the fallback. After a
+click on Argon and a Ctrl+click on it, the selection is null and Argon (id 3) stays current; typing "bias" then
+made the grid select Power (id 12) and `SelectedRow` followed. The fallback above fixes it, the new
+`AFilterAfterACtrlClickClearedTheSelection_SelectsNoRow` pins it, and with a row selected the call changes
+nothing: `AFilterTheSelectedRowMatches_KeepsTheRowSelectedAndItsForm` and
+`AHeaderClick_SortsAscendingThenDescendingAndKeepsTheSelectedPenAndItsForm` keep asserting the same instances.
+Task 5 states the built behaviour in `overview.md`.
+
 
 ### Task 4: Verify acceptance criteria
 

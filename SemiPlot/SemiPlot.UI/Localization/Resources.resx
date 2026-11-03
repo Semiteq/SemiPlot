@@ -216,6 +216,9 @@
   <data name="PenEditorRefresh" xml:space="preserve">
     <value>Refresh pen list</value>
   </data>
+  <data name="PenEditorFilterPlaceholder" xml:space="preserve">
+    <value>Filter: id, name or group</value>
+  </data>
   <data name="PenEditorAddedCount" xml:space="preserve">
     <value>Pens added: {0}</value>
   </data>

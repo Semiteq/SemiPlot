@@ -1,7 +1,9 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
 using Avalonia.Headless.XUnit;
+using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.VisualTree;
 
@@ -209,6 +211,163 @@ public sealed class PenListViewTests : IDisposable
 			HeaderOf(window, Resources.PenEditorColumnId).Classes.Should().Contain(":sortdescending");
 			viewModel.SelectedRow!.Pen.Should().Be(Pressure, "the refresh keeps the selected pen");
 			PenListOf(window).SelectedItem.Should().BeSameAs(viewModel.SelectedRow, "the list follows the selection");
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void TypingInTheFilterBox_ShowsOnlyTheMatchingRowsAndClearingItShowsEveryRow()
+	{
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			var list = PenListOf(window);
+			var hint = Named<TextBlock>(window, "PenFormEmptyHint");
+
+			HeadlessInput.Type(window, FilterBoxOf(window), "bias");
+
+			RealisedPens(list).Should().Equal(Power);
+			list.SelectedItem.Should().BeNull("the filter selects no row");
+			viewModel.SelectedRow.Should().BeNull();
+			IsOnScreen(hint).Should().BeTrue();
+
+			HeadlessInput.Clear(window, FilterBoxOf(window));
+
+			RealisedPens(list).Should().Equal(Argon, Pressure, Power);
+			list.SelectedItem.Should().BeNull("a cleared filter selects no row");
+			viewModel.SelectedRow.Should().BeNull();
+			IsOnScreen(hint).Should().BeTrue();
+			_editor.Calls.Should().BeEmpty();
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	// A Ctrl+click clears the selection and leaves the row the view's current item, which the filter then hides.
+	[AvaloniaFact]
+	public void AFilterAfterACtrlClickClearedTheSelection_SelectsNoRow()
+	{
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			var list = PenListOf(window);
+			var argon = RowAt(window, 0);
+			HeadlessInput.Click(window, argon);
+			HeadlessInput.Click(
+				window, argon, new Point(argon.Bounds.Width / 2, argon.Bounds.Height / 2), RawInputModifiers.Control);
+			list.SelectedItem.Should().BeNull("a Ctrl+click on the selected row clears the selection");
+			viewModel.SelectedRow.Should().BeNull();
+
+			HeadlessInput.Type(window, FilterBoxOf(window), "bias");
+
+			RealisedPens(list).Should().Equal(Power);
+			list.SelectedItem.Should().BeNull("the filter selects no row");
+			viewModel.SelectedRow.Should().BeNull();
+			IsOnScreen(Named<TextBlock>(window, "PenFormEmptyHint")).Should().BeTrue();
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void AFilterTheSelectedRowMatches_KeepsTheRowSelectedAndItsForm()
+	{
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			var list = PenListOf(window);
+			HeadlessInput.Click(window, RowAt(window, 1));
+			var selected = viewModel.SelectedRow;
+			var form = viewModel.SelectedForm;
+			selected!.Pen.Should().Be(Pressure);
+
+			HeadlessInput.Type(window, FilterBoxOf(window), "press");
+
+			RealisedPens(list).Should().Equal(Pressure);
+			list.SelectedItem.Should().BeSameAs(selected, "the list keeps the row it held");
+			viewModel.SelectedRow.Should().BeSameAs(selected);
+			viewModel.SelectedForm.Should().BeSameAs(form);
+			Named<TextBlock>(window, "PenFormEmptyHint").IsEffectivelyVisible.Should().BeFalse();
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void AFilterTheSelectedRowFailsToMatch_ClearsTheListSelectionAndShowsTheHint()
+	{
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			var list = PenListOf(window);
+			HeadlessInput.Click(window, RowAt(window, 2));
+			viewModel.SelectedRow!.Pen.Should().Be(Power);
+
+			HeadlessInput.Type(window, FilterBoxOf(window), "chamber");
+
+			RealisedPens(list).Should().Equal(Argon, Pressure);
+			list.SelectedItem.Should().BeNull("the selected row is filtered out");
+			viewModel.SelectedRow.Should().BeNull();
+			IsOnScreen(Named<TextBlock>(window, "PenFormEmptyHint")).Should().BeTrue();
+			Descendants<CheckBox>(GroupListOf(window))
+				.Where(box => box.Name == "MembershipBox")
+				.Should().NotBeEmpty()
+				.And.OnlyContain(box => !box.IsEffectivelyEnabled, "no pen is selected to edit");
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void AFilterUnderASort_KeepsTheOrderAndItsArrow()
+	{
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			HeadlessInput.Click(window, HeaderOf(window, Resources.PenEditorColumnId));
+			HeadlessInput.Click(window, HeaderOf(window, Resources.PenEditorColumnId));
+
+			HeadlessInput.Type(window, FilterBoxOf(window), "chamber");
+
+			RealisedPens(PenListOf(window)).Select(pen => pen.Id).Should().Equal(7, 3);
+			HeaderOf(window, Resources.PenEditorColumnId).Classes.Should().Contain(":sortdescending");
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void TheGroupsPane_ListsEveryGroupWhileThePenListIsFiltered()
+	{
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			HeadlessInput.Type(window, FilterBoxOf(window), "zzz");
+
+			RealisedPens(PenListOf(window)).Should().BeEmpty("no pen matches");
+			RealisedRows(GroupListOf(window))
+				.OrderBy(row => row.Index)
+				.Select(row => TextOf(row, "GroupName"))
+				.Should().Equal(Chamber.Name, Spare.Name);
 		}
 		finally
 		{

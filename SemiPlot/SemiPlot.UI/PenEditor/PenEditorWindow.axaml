@@ -98,6 +98,13 @@
               ColumnDefinitions="*,Auto,Auto"
               ColumnSpacing="8">
 
+            <TextBox Grid.Column="0"
+                     Name="PenListFilter"
+                     Width="{x:Static local:PenEditorWindow.FilterBoxWidth}"
+                     HorizontalAlignment="Left"
+                     PlaceholderText="{x:Static text:Resources.PenEditorFilterPlaceholder}"
+                     Text="{Binding FilterText}" />
+
             <TextBlock Grid.Column="1"
                        Name="PenEditorAddedCount"
                        VerticalAlignment="Center"

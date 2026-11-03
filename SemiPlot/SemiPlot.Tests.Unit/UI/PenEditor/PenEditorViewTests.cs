@@ -122,6 +122,28 @@ public sealed class PenEditorViewTests : IDisposable
 	}
 
 	[AvaloniaFact]
+	public void ANameTypedThenTheFilterBoxTypedAndEnterPressed_WritesOnceAndTheFilterWritesNothing()
+	{
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			HeadlessInput.Click(window, RowAt(window, 1));
+			Retype(window, Named<TextBox>(window, "FormName"), "Gauge");
+
+			HeadlessInput.Type(window, FilterBoxOf(window), "7");
+			HeadlessInput.Press(window, PhysicalKey.Enter);
+
+			_editor.Changes.Should().Equal(new FakeEditorCall.Change(Pressure, new PenSettingChange.Name("Gauge")));
+			RealisedPens(PenListOf(window)).Select(pen => pen.Id).Should().Equal(7);
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
 	public void ARefreshWithNoPenSelected_SelectsNoRowAndShowsTheHint()
 	{
 		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);

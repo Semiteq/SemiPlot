@@ -157,6 +157,8 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 			SelectedRow = null;
 		}
 
+		// After a refresh the grid selects the view's current item, which a cleared selection leaves set.
+		PenRows.MoveCurrentTo(SelectedRow);
 		PenRows.Refresh();
 	}
 

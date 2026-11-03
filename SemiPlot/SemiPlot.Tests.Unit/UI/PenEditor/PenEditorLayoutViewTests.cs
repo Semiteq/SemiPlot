@@ -15,6 +15,7 @@ using SemiPlot.UI.PenEditor;
 
 using Xunit;
 
+using static SemiPlot.Tests.Unit.UI.InterMeasure;
 using static SemiPlot.Tests.Unit.UI.PenEditor.PenEditorFixture;
 using static SemiPlot.Tests.Unit.UI.PenEditor.PenEditorWindowDriver;
 using static SemiPlot.Tests.Unit.UI.ViewProbe;
@@ -92,6 +93,61 @@ public sealed class PenEditorLayoutViewTests : IDisposable
 			BottomOf(refresh, window).Should().BeLessThanOrEqualTo(TopOf(groupsPane, window), "the bar is above");
 			BottomOf(addedCount, window).Should().BeLessThanOrEqualTo(TopOf(groupsPane, window));
 			PenListOf(window).Columns[3].Header.Should().Be(Resources.PenEditorColumnOnStart);
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void TheFilterBox_StandsLeftInTheTopBar280PxWideWithItsPlaceholder()
+	{
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			var box = FilterBoxOf(window);
+			var topBar = Named<Grid>(window, "PenEditorTopBar");
+			var refresh = Named<Button>(window, "PenEditorRefreshButton");
+			var addedCount = Named<TextBlock>(window, "PenEditorAddedCount");
+
+			box.GetVisualAncestors().Should().Contain(topBar, "the box sits in the top bar");
+			box.Bounds.Width.Should().Be(PenEditorWindow.FilterBoxWidth);
+			LeftOf(box, window).Should().Be(LeftOf(PenListBorderOf(window), window), "the box starts above the list");
+			LeftOf(box, window).Should().Be(Gap);
+			box.Bounds.Height.Should().Be(refresh.Bounds.Height, "the box keeps the bar at the button's height");
+			topBar.Bounds.Height.Should().Be(refresh.Bounds.Height);
+			box.PlaceholderText.Should().Be(Resources.PenEditorFilterPlaceholder);
+			RightOf(box, window).Should().BeLessThan(LeftOf(addedCount, window), "the box ends left of the count");
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaTheory]
+	[InlineData("en")]
+	[InlineData("ru")]
+	public void ThePlaceholder_FitsTheFilterBoxInInter(string culture)
+	{
+		using var cultureScope = new CultureScope(culture);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			var box = FilterBoxOf(window);
+			using var typeface = InterTypeface();
+			using var font = InterFont(typeface, box.FontSize);
+			var inner = box.Bounds.Width
+				- box.Padding.Left - box.Padding.Right
+				- box.BorderThickness.Left - box.BorderThickness.Right;
+			var placeholder = font.MeasureText(Resources.PenEditorFilterPlaceholder);
+
+			TestContext.Current.TestOutputHelper?.WriteLine(
+				$"{culture}: placeholder {placeholder:0.#} px, inner width {inner:0.#} px");
+			placeholder.Should().BeLessThanOrEqualTo((float)inner, "the placeholder shows whole on one line in Inter");
 		}
 		finally
 		{

@@ -551,7 +551,7 @@ row array the refresh builds, so the memberships stay in catalogue order whateve
 The list's `SelectedItem` binds `SelectedRow` one way, and `OnPenListSelectionChanged` in the code-behind
 writes every selection change back to `SelectedRow`, null included. A sort raises no selection change in
 Avalonia 12.0.1, so it keeps the selected pen and its form
-(`PenEditorViewTests.AHeaderClick_SortsAscendingThenDescendingAndKeepsTheSelectedPenAndItsForm`). The
+(`PenListViewTests.AHeaderClick_SortsAscendingThenDescendingAndKeepsTheSelectedPenAndItsForm`). The
 refresh's `Clear()` raises one null, which the refresh overwrites with the pen selected before. A Ctrl+click
 on the selected row clears the selection, and the pane shows the hint
 (`ANameTypedThenTheSelectedRowCtrlClicked_WritesOnceAndShowsTheHint`).

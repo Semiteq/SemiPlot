@@ -29,9 +29,9 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 	private readonly ILogger<PenEditorViewModel> _logger;
 	private readonly ArchiveCallQueue _archiveCallQueue;
 	private readonly CompositeDisposable _disposables = [];
+	private readonly ObservableCollection<PenRowViewModel> _rows;
 	private readonly ObservableAsPropertyHelper<PenFormViewModel?> _selectedForm;
 	private readonly ObservableAsPropertyHelper<bool> _isRefreshing;
-	private readonly ObservableCollection<PenRowViewModel> _rows;
 
 	/// <summary><paramref name="editorCallSucceeded"/> runs on the UI thread after an editor call succeeds.</summary>
 	public PenEditorViewModel(

@@ -19,6 +19,7 @@
 
     <Window.Resources>
         <GridLength x:Key="IdColumnWidth">72</GridLength>
+        <DataGridLength x:Key="PenListIdColumnWidth">84</DataGridLength>
         <x:Double x:Key="DataGridCellMinHeight">28</x:Double>
         <ColumnDefinitions x:Key="MembershipColumns"
                            x:Shared="False">
@@ -45,7 +46,6 @@
             <Setter Property="IsVisible" Value="False" />
         </Style>
         <Style Selector="TextBlock.grid-cell">
-            <Setter Property="Margin" Value="12,0,8,0" />
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
         </Style>
@@ -53,6 +53,11 @@
             <Setter Property="Margin" Value="6,0" />
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+        <Style Selector="Grid.form-grid">
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="ColumnSpacing" Value="12" />
+            <Setter Property="RowSpacing" Value="8" />
         </Style>
         <Style Selector="TextBlock.form-label">
             <Setter Property="VerticalAlignment" Value="Center" />
@@ -97,7 +102,7 @@
             <TabItem Name="PensTab"
                      Header="{x:Static text:Resources.PenEditorPensTab}">
 
-                <Grid ColumnDefinitions="*,16,420">
+                <Grid ColumnDefinitions="*,16,Auto">
 
                     <Border Grid.Column="0"
                             BorderBrush="{DynamicResource AppBorderBrush}"
@@ -117,17 +122,18 @@
                                   CanUserResizeColumns="True"
                                   CanUserReorderColumns="False"
                                   RowHeight="{x:Static local:PenEditorWindow.RowHeight}"
-                                  tables:HeaderMeasuredColumns.IsEnabled="True">
+                                  tables:HeaderMeasuredColumns.FitsColumns="True">
                             <DataGrid.Columns>
 
                                 <DataGridTemplateColumn Header="{x:Static text:Resources.PenEditorColumnId}"
-                                                        Width="84"
+                                                        Width="{StaticResource PenListIdColumnWidth}"
                                                         CanUserSort="True"
                                                         CustomSortComparer="{x:Static local:PenRowOrder.ById}">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate x:DataType="local:PenRowViewModel">
                                             <TextBlock Name="RowId"
                                                        Classes="grid-cell"
+                                                       Margin="12,0,8,0"
                                                        Text="{Binding Pen.Id}"
                                                        ToolTip.Tip="{Binding $self.Text}" />
                                         </DataTemplate>
@@ -161,7 +167,6 @@
                                                 <TextBlock Grid.Column="1"
                                                            Name="RowName"
                                                            Classes="grid-cell"
-                                                           Margin="0"
                                                            Text="{Binding Pen.Name}"
                                                            ToolTip.Tip="{Binding $self.Text}" />
 
@@ -178,6 +183,7 @@
                                         <DataTemplate x:DataType="local:PenRowViewModel">
                                             <TextBlock Name="RowUnit"
                                                        Classes="grid-cell"
+                                                       Margin="12,0,8,0"
                                                        Text="{Binding Pen.Unit}"
                                                        ToolTip.Tip="{Binding $self.Text}" />
                                         </DataTemplate>
@@ -273,11 +279,9 @@
                                         <TextBlock Classes="form-section"
                                                    Text="{x:Static text:Resources.PenFormSectionLabel}" />
 
-                                        <Grid HorizontalAlignment="Left"
+                                        <Grid Classes="form-grid"
                                               ColumnDefinitions="{StaticResource PenFormColumns}"
-                                              RowDefinitions="32,32,32,32"
-                                              ColumnSpacing="12"
-                                              RowSpacing="8">
+                                              RowDefinitions="32,32,32,32">
 
                                             <TextBlock Grid.Row="0"
                                                        Grid.Column="0"
@@ -287,8 +291,6 @@
                                             <TextBox Grid.Row="0"
                                                      Grid.Column="1"
                                                      Name="FormName"
-                                                     Width="240"
-                                                     HorizontalAlignment="Left"
                                                      local:PenEditorWindow.Field="Name"
                                                      Classes.invalid="{Binding !IsNameValid}"
                                                      Text="{Binding Name}" />
@@ -341,11 +343,9 @@
                                         <TextBlock Classes="form-section"
                                                    Text="{x:Static text:Resources.PenFormSectionAppearance}" />
 
-                                        <Grid HorizontalAlignment="Left"
+                                        <Grid Classes="form-grid"
                                               ColumnDefinitions="{StaticResource PenFormColumns}"
-                                              RowDefinitions="32,32"
-                                              ColumnSpacing="12"
-                                              RowSpacing="8">
+                                              RowDefinitions="32,32">
 
                                             <TextBlock Grid.Row="0"
                                                        Grid.Column="0"
@@ -388,8 +388,7 @@
                                             <ComboBox Grid.Row="1"
                                                       Grid.Column="1"
                                                       Name="FormLineStyle"
-                                                      Width="240"
-                                                      HorizontalAlignment="Left"
+                                                      HorizontalAlignment="Stretch"
                                                       ItemsSource="{x:Static local:PenEditorWindow.LineStyles}"
                                                       SelectedItem="{Binding LineStyle, Mode=OneWay}"
                                                       ItemTemplate="{StaticResource LineStyleItem}"
@@ -400,11 +399,9 @@
                                         <TextBlock Classes="form-section"
                                                    Text="{x:Static text:Resources.PenFormSectionOnStart}" />
 
-                                        <Grid HorizontalAlignment="Left"
+                                        <Grid Classes="form-grid"
                                               ColumnDefinitions="{StaticResource PenFormColumns}"
-                                              RowDefinitions="32,Auto,32"
-                                              ColumnSpacing="12"
-                                              RowSpacing="8">
+                                              RowDefinitions="32,Auto,32">
 
                                             <TextBlock Grid.Row="0"
                                                        Grid.Column="0"
@@ -423,11 +420,9 @@
                                                   Grid.Column="0"
                                                   Grid.ColumnSpan="2"
                                                   Name="FormScale"
-                                                  HorizontalAlignment="Left"
+                                                  Classes="form-grid"
                                                   ColumnDefinitions="{StaticResource PenFormColumns}"
-                                                  RowDefinitions="32,32"
-                                                  ColumnSpacing="12"
-                                                  RowSpacing="8">
+                                                  RowDefinitions="32,32">
 
                                                 <TextBlock Grid.Row="0"
                                                            Grid.Column="0"

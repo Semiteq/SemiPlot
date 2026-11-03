@@ -29,8 +29,6 @@ namespace SemiPlot.Tests.Unit.UI.PenEditor;
 [Trait("Category", "Unit")]
 public sealed class PenGroupsViewTests : IDisposable
 {
-	private static readonly PenCatalogue _catalogue = new([Argon, Pressure, Power], [Chamber, Spare]);
-
 	private readonly FakePenCatalogueEditor _editor = new();
 
 	private readonly MessagePanelViewModel _messagePanel = new();
@@ -43,7 +41,7 @@ public sealed class PenGroupsViewTests : IDisposable
 	[AvaloniaFact]
 	public void AMembershipBoxClicked_WritesOnceAndThePensTabNamesTheGroup()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -71,7 +69,7 @@ public sealed class PenGroupsViewTests : IDisposable
 	public void AMembershipTheArchiveRefuses_PutsTheBoxBackAndReportsOnce()
 	{
 		_editor.MembershipResult = Result.Fail(FakePenCatalogueEditor.Refusal(ArchiveFault.RowGone, Chamber.Name));
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -95,7 +93,7 @@ public sealed class PenGroupsViewTests : IDisposable
 	[AvaloniaFact]
 	public void TheFoldedOnStartBoxClicked_WritesOnceAndTheBoxFollowsTheSelectedGroup()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -130,7 +128,7 @@ public sealed class PenGroupsViewTests : IDisposable
 	public void AFoldedOnStartTheArchiveRefuses_PutsTheBoxBackAndReportsOnce()
 	{
 		_editor.FoldedOnStartResult = Result.Fail(FakePenCatalogueEditor.Refusal(ArchiveFault.RowGone, Chamber.Name));
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -156,7 +154,7 @@ public sealed class PenGroupsViewTests : IDisposable
 	[AvaloniaFact]
 	public void TheFoldedOnStartBoxSetInCode_WritesNothing_AndTheBoxFollowsTheCommand()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -187,7 +185,7 @@ public sealed class PenGroupsViewTests : IDisposable
 	[AvaloniaFact]
 	public void DeleteClicked_AsksNamingTheMemberCountAndCancelWritesNothing()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -222,7 +220,7 @@ public sealed class PenGroupsViewTests : IDisposable
 	[AvaloniaFact]
 	public void ADeleteConfirmedAfterAnotherGroupWasSelected_DeletesTheAskedGroupAndKeepsTheSelection()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -253,7 +251,7 @@ public sealed class PenGroupsViewTests : IDisposable
 	public void ANewNameCreated_AddsTheGroupAndSelectsIt()
 	{
 		_editor.CreateGroupResult = Result.Ok(9);
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -279,7 +277,7 @@ public sealed class PenGroupsViewTests : IDisposable
 	[AvaloniaFact]
 	public void ARenameTypedThenAnotherGroupClicked_RenamesTheFirstGroupOnce()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -305,7 +303,7 @@ public sealed class PenGroupsViewTests : IDisposable
 	[AvaloniaFact]
 	public void ARenameTypedThenTheTabsEmptyAreaClicked_RenamesOnce()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -355,8 +353,8 @@ public sealed class PenGroupsViewTests : IDisposable
 	[AvaloniaFact]
 	public void ARenameTypedWhileARefreshRuns_ReachesNoFieldAndWritesNothing()
 	{
-		_editor.ReadResult = Result.Ok(_catalogue);
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		_editor.ReadResult = Result.Ok(ViewCatalogue);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -386,7 +384,7 @@ public sealed class PenGroupsViewTests : IDisposable
 	[AvaloniaFact]
 	public void ARenameEnteredWhileItsWriteIsHeldThenAnotherGroupClicked_RenamesOnce()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{

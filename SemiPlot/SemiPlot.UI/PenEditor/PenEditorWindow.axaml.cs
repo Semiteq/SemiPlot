@@ -16,7 +16,7 @@ namespace SemiPlot.UI.PenEditor;
 /// </summary>
 public partial class PenEditorWindow : Window
 {
-	/// <summary>One height for every table row, so the virtualised list estimates its extent exactly.</summary>
+	/// <summary>One height for a pen, group and membership row, so each virtualised list estimates its extent.</summary>
 	public const double RowHeight = 28;
 
 	public static readonly IReadOnlyList<PenLineStyle> LineStyles = Enum.GetValues<PenLineStyle>();

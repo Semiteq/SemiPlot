@@ -5,8 +5,7 @@ namespace SemiPlot.UI.PenEditor;
 /// <summary>The pen list's sort orders, one per sortable column, each by its key and then by pen id.</summary>
 public static class PenRowOrder
 {
-	public static readonly IComparer ById =
-		Comparer<PenRowViewModel>.Create((left, right) => left.Pen.Id.CompareTo(right.Pen.Id));
+	public static readonly IComparer ById = Comparer<PenRowViewModel>.Create(CompareIds);
 
 	public static readonly IComparer ByName = ThenById(ByText(row => row.Pen.Name));
 
@@ -23,8 +22,13 @@ public static class PenRowOrder
 		{
 			var byKeyOrder = byKey(left, right);
 
-			return byKeyOrder != 0 ? byKeyOrder : left.Pen.Id.CompareTo(right.Pen.Id);
+			return byKeyOrder != 0 ? byKeyOrder : CompareIds(left, right);
 		});
+	}
+
+	private static int CompareIds(PenRowViewModel left, PenRowViewModel right)
+	{
+		return left.Pen.Id.CompareTo(right.Pen.Id);
 	}
 
 	private static Comparison<PenRowViewModel> ByText(Func<PenRowViewModel, string?> textOf)

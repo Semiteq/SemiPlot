@@ -205,7 +205,7 @@ colour and text, never size:
   `<Template>` setter, so every invalid box builds its own icon. The pen editor's form carries the glyph
   through its window-scoped style `Panel#PenForm TextBox.invalid`; another form adopts it when it is next
   touched, and until then marks an invalid field by the border alone.
-  `PenEditorViewTests.AnInvalidField_ShowsTheWarningGlyphInsideTheBoxWithoutResizing` gates two boxes
+  `PenFormPaneViewTests.AnInvalidField_ShowsTheWarningGlyphInsideTheBoxWithoutResizing` gates two boxes
   invalid at once, each with its own visible glyph inside its bounds and nothing resized, and
   `AValidField_ShowsNoWarningGlyph` the valid state.
 - One message line sits left of the buttons, or on its own full-width row above them (the export window), or
@@ -397,12 +397,13 @@ inside it sizes the window. The smallest screen the editor opens on is 1280 px w
 the working area of a 768 px screen. The rule above holds for every part but the two lists:
 
 - Resizing grows the pen list and the membership list only. The pen list takes the width and the height
-  the `Pens` tab gives it; the tab's grid is `*,16,420`, the list, a 16 px gap and the pen pane. The pane
-  (420 px wide), the `Groups` tab's side panel (320 px wide), its confirmation row (32 px high) and the
+  the `Pens` tab gives it; the tab's grid is `*,16,Auto`, the list, a 16 px gap and the pen pane, whose own
+  `Width` sets the last column. The pane (420 px wide), the `Groups` tab's side panel (320 px wide), its confirmation row (32 px high) and the
   bottom bar keep fixed sizes, made of rows that exist in every state.
 - A pen row, a group row and a membership row are each `RowHeight`, 28 px, and all three lists
   virtualise. The pen list's rows reach 28 px through a window-scoped `DataGridCellMinHeight` of 28, which
   the cell theme reads through `DynamicResource`; Semi's own 32 px minimum would raise every row.
+  `PenListViewTests.ARow_ShowsThePenAsStoredUnderItsHeader` pins the resource to `RowHeight`.
 - The bottom bar, on both tabs, holds the added count and the refresh button in a right-aligned `Auto,Auto`
   grid, 12 px apart, and carries no notice. Each tab has its own reserved `form-message` line.
 
@@ -415,7 +416,7 @@ by its `PenRowOrder` comparer (`overview.md#the-pen-and-group-editor`):
 
 | Column | Opening width | Cell |
 | --- | --- | --- |
-| Id | 84 px | `RowId`, the pen id |
+| Id | 84 px, `PenListIdColumnWidth` | `RowId`, the pen id |
 | Name | 220 px | The 12 x 12 px colour dot `RowColor`, ringed with 1 px `AppBorderBrush`, then `RowName` 8 px right of it |
 | Unit | 96 px | `RowUnit` |
 | On start | 120 px | `RowEnabledOnStart`, a 12 x 12 px `CheckGeometry` glyph, centred, shown while the pen starts visible |
@@ -425,7 +426,7 @@ by its `PenRowOrder` comparer (`overview.md#the-pen-and-group-editor`):
   arrow at a fixed size with an 8 px right margin whether the column is sorted or not, so a sorted header is
   as wide as an unsorted one and the arrow never pushes the text into an ellipsis.
   `HeaderMeasuredColumnsTests.AnUnsortedHeader_ReservesTheSortArrowSlot` gates it.
-- Every column opens no narrower than its realised header. `Tables/HeaderMeasuredColumns.IsEnabled` on the
+- Every column opens no narrower than its realised header. `Tables/HeaderMeasuredColumns.FitsColumns` on the
   grid measures every visible column's header unconstrained once all of them are realised, sets the column's
   `MinWidth` to the ceiling of that width and raises a narrower declared `Width` to it. The header is matched
   to its column through `DataGridColumn.GetColumnContainingElement`, never through its text.
@@ -443,10 +444,11 @@ by its `PenRowOrder` comparer (`overview.md#the-pen-and-group-editor`):
 - The Groups header is measured while the filler header still stands right of it, so its 1 px
   `VerticalSeparator` is part of that measure and is hidden once the fill closes the gap: the Groups
   minimum may sit 1 px over the header's later unconstrained width.
-- A text cell is `TextBlock.grid-cell`: 12 px from the cell's left edge and 8 px from its right, centred
-  vertically, trimmed with an ellipsis, and carrying its own text as a tooltip (`$self.Text`). The fill
-  column's cell keeps 12 px on both sides, so its text ends 12 px before the vertical scroll bar. The name
-  cell's grid carries the 12 and 8 px insets and its `RowName` none. The glyph cell carries no tooltip: its
+- A text cell is `TextBlock.grid-cell`: centred vertically, trimmed with an ellipsis, and carrying its own
+  text as a tooltip (`$self.Text`). The class sets no margin; each cell sets its own. `RowId` and `RowUnit`
+  stand 12 px from the cell's left edge and 8 px from its right. The fill column's cell keeps 12 px on both
+  sides, so its text ends 12 px before the vertical scroll bar. The name cell's grid carries the 12 and 8 px
+  insets and its `RowName` none. The glyph cell carries no tooltip: its
   column opens no narrower than its header, wider than the glyph.
 - A clicked row shows Semi's row highlight from `DataGridRowSelectedBackground` and no cell outline. The
   window style that hides the currency rectangle and the focus visual is under
@@ -464,12 +466,12 @@ The pane is the `Border` `PenFormPanel`, 420 px wide, with 16 px padding, a 1 px
 - Three section headers, Label, Appearance and On start: `TextBlock.form-section`, `SemiBold`, 20 px high,
   16 px above and 8 px below.
 - Under each header a grid of the window resource `PenFormColumns` (`x:Shared="False"`): a 112 px label
-  column and a 240 px field column, 12 px apart, 8 px between rows, every row 32 px. Each grid is
-  `HorizontalAlignment="Left"`: stretched across the scroller, a grid widens both pixel columns by a pixel
+  column and a 240 px field column, every row 32 px. Each grid is a `Grid.form-grid`, whose window style sets
+  12 px between the columns, 8 px between the rows and `HorizontalAlignment="Left"`: stretched across the scroller, a grid widens both pixel columns by a pixel
   and puts every field 125 px off the label edge.
 - Every label is `TextBlock.form-label` in the label column; every field, the two checkboxes included,
-  starts at the field column's edge, 124 px right of the label edge, with its width set on itself: Name and
-  Line 240 px; Unit, Mask, Colour, Minimum and Maximum 120 px. The colour row is the 120 px `FormColor` box
+  starts at the field column's edge, 124 px right of the label edge. Name and Line stretch across the 240 px
+  field column; Unit, Mask, Colour, Minimum and Maximum carry their own 120 px width. The colour row is the 120 px `FormColor` box
   and, 8 px right of it, the 32 x 32 px `FormColorPicker` with no padding, its drop-down arrow hidden, so the
   picker is the swatch alone. The mask preview is a trimmed `TextBlock` with its text as a tooltip.
 - The On start section holds the visibility box, `FormScale` and the scale type box. `FormScale` is the scale
@@ -503,19 +505,19 @@ Russian, 294 + 12 + 334 px for «Обновить список перьев»; b
 320 px and the confirmation row's 32 px are chosen, not measured; the confirmation text spans the tab's width
 and trims only past it.
 
-| Test in `PenEditorViewTests` | Part it gates |
+| Test | Part it gates |
 | --- | --- |
-| `TheWindow_OpensOnA1280PxScreenAndAtItsMinimumWidthKeepsThePaneAndEveryColumnMinimum` | The opening width under 1280 px; at `MinWidth` a 420 px pane, every column at or above its minimum and the columns inside the list's viewport |
-| `EveryColumn_IsResizableAndOpensNoNarrowerThanItsHeader` | `CanUserResize` on every column; each minimum between its header's unconstrained width and 1 px more |
-| `ARow_ShowsThePenAsStoredUnderItsHeader` | The cells as stored, the colour dot inside the name cell, the 28 px row |
-| `EveryTextCell_TrimsWithAnEllipsisAndCarriesItsTextAsATooltip` | The trimming and the tooltip of every text cell |
-| `AFullCatalogue_RealisesOnlyTheRowsOnScreen` | The virtualised rows |
-| `AClickedRow_ShowsTheRowHighlightAndNoCellOutline` | The selection fill and no visible currency rectangle or focus visual |
-| `WithNoPenSelected_ThePaneShowsOnlyTheHint`, `AClickedPen_FillsTheFormUnderAOneLineTitle` | The hint and the one-line title |
-| `TheForm_HasThreeSectionsOnOneLabelColumnAndOneFieldEdge`, `EveryField_HasTheWidthOfItsContentType`, `TheColourSwatchPicker_IsSquare` | The sections, the 124 px field edge, the field widths, the 32 x 32 px swatch 8 px right of the colour box |
-| `ThePane_Stays420PxWideWhenTheWindowWidens` | The fixed pane |
-| `AtTheOpeningSize_ThePaneShowsTheWholeForm` | The form's extent inside the scroller's viewport at 1272 x 720 px |
-| `AnUnusableMask_WritesNothingRevertsMarksAndSaysWhyWithoutResizing` | The window's and the pane's `Bounds` equal before and after the mask turns invalid |
+| `PenFormPaneViewTests.TheWindow_OpensOnA1280PxScreenAndAtItsMinimumWidthKeepsThePaneAndEveryColumnMinimum` | The opening width under 1280 px; at `MinWidth` a 420 px pane, every column at or above its minimum and the columns inside the list's viewport |
+| `PenListViewTests.EveryColumn_IsResizableAndOpensNoNarrowerThanItsHeader` | `CanUserResize` on every column; each minimum between its header's unconstrained width and 1 px more |
+| `PenListViewTests.ARow_ShowsThePenAsStoredUnderItsHeader` | The cells as stored, the colour dot inside the name cell, the 28 px row |
+| `PenListViewTests.EveryTextCell_TrimsWithAnEllipsisAndCarriesItsTextAsATooltip` | The trimming and the tooltip of every text cell |
+| `PenListViewTests.AFullCatalogue_RealisesOnlyTheRowsOnScreen` | The virtualised rows |
+| `PenListViewTests.AClickedRow_ShowsTheRowHighlightAndNoCellOutline` | The selection fill and no visible currency rectangle or focus visual |
+| `PenFormPaneViewTests.WithNoPenSelected_ThePaneShowsOnlyTheHint`, `PenFormPaneViewTests.AClickedPen_FillsTheFormUnderAOneLineTitle` | The hint and the one-line title |
+| `PenFormPaneViewTests.TheForm_HasThreeSectionsOnOneLabelColumnAndOneFieldEdge`, `PenFormPaneViewTests.EveryField_HasTheWidthOfItsContentType`, `PenFormPaneViewTests.TheColourSwatchPicker_IsSquare` | The sections, the 124 px field edge, the field widths, the 32 x 32 px swatch 8 px right of the colour box |
+| `PenFormPaneViewTests.ThePane_Stays420PxWideWhenTheWindowWidens` | The fixed pane |
+| `PenFormPaneViewTests.AtTheOpeningSize_ThePaneShowsTheWholeForm` | The form's extent inside the scroller's viewport at 1272 x 720 px |
+| `PenEditorViewTests.AnUnusableMask_WritesNothingRevertsMarksAndSaysWhyWithoutResizing` | The window's and the pane's `Bounds` equal before and after the mask turns invalid |
 
 `HeaderMeasuredColumnsTests` gates the behaviour on a bare grid: the header-width minimum, a declared width
 above it kept, the fit inside the layout pass that realises the headers, the reserved arrow slot, the fill

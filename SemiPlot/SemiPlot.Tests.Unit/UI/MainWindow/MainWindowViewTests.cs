@@ -66,7 +66,7 @@ public sealed class MainWindowViewTests
 
 		var editorWindow = window.OwnedWindows.OfType<PenEditorWindow>().Single();
 		var penEditor = editorWindow.DataContext.Should().BeOfType<PenEditorViewModel>().Which;
-		penEditor.PenRows.Cast<PenRowViewModel>().Select(row => row.Pen).Should().Equal(pen);
+		PenEditorFixture.RowsOf(penEditor).Select(row => row.Pen).Should().Equal(pen);
 		viewModel.MessagePanel.Entries.Should().BeEmpty();
 
 		editorWindow.Close();

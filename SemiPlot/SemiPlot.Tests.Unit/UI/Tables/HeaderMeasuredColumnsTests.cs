@@ -3,7 +3,6 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Data;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
-using Avalonia.VisualTree;
 
 using AwesomeAssertions;
 
@@ -238,13 +237,13 @@ public sealed class HeaderMeasuredColumnsTests
 	public void AGridEnabledAfterItIsShown_FitsItsColumns()
 	{
 		var (window, grid) = Stand(WindowWidth, rowCount: 3);
-		HeaderMeasuredColumns.SetIsEnabled(grid, false);
+		HeaderMeasuredColumns.SetFitsColumns(grid, false);
 		try
 		{
 			window.Show();
 			Dispatcher.UIThread.RunJobs();
 
-			HeaderMeasuredColumns.SetIsEnabled(grid, true);
+			HeaderMeasuredColumns.SetFitsColumns(grid, true);
 			Dispatcher.UIThread.RunJobs();
 
 			var others = ColumnOf(grid, NarrowHeader).ActualWidth + ColumnOf(grid, WideHeader).ActualWidth;
@@ -279,7 +278,7 @@ public sealed class HeaderMeasuredColumnsTests
 		var fill = TextColumn(FillHeader, 60);
 		HeaderMeasuredColumns.SetIsFill(fill, true);
 		grid.Columns.Add(fill);
-		HeaderMeasuredColumns.SetIsEnabled(grid, true);
+		HeaderMeasuredColumns.SetFitsColumns(grid, true);
 
 		return (new Window { Width = width, Height = 400, Content = grid }, grid);
 	}
@@ -299,23 +298,9 @@ public sealed class HeaderMeasuredColumnsTests
 		return grid.Columns.Single(column => Equals(column.Header, header));
 	}
 
-	private static DataGridColumnHeader HeaderOf(DataGrid grid, string header)
-	{
-		return grid.GetVisualDescendants().OfType<DataGridColumnHeader>()
-			.Single(candidate => Equals(candidate.Content, header));
-	}
-
 	private static Control HeadersPresenterOf(DataGrid grid)
 	{
 		return Descendant<DataGridColumnHeadersPresenter>(grid, "PART_ColumnHeadersPresenter");
-	}
-
-	private static double ViewportOf(DataGrid grid)
-	{
-		var scrollBar = Descendant<ScrollBar>(grid, "PART_VerticalScrollbar");
-		var scrollBarWidth = scrollBar.IsVisible ? scrollBar.Bounds.Width : 0;
-
-		return HeadersPresenterOf(grid).Bounds.Width - scrollBarWidth;
 	}
 
 	private sealed record StandRow(string Text);

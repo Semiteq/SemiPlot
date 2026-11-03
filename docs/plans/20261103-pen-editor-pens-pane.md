@@ -203,7 +203,7 @@ the three fixture pens.
 After the change:
 
 ```powershell
-dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj --filter "FullyQualifiedName~PenEditorViewTests|FullyQualifiedName~PenGroupsViewTests|FullyQualifiedName~PenEditorViewModelTests|FullyQualifiedName~PenGroupsViewModelTests|FullyQualifiedName~PenFormViewModelTests|FullyQualifiedName~PenRowOrderTests|FullyQualifiedName~HeaderMeasuredColumnsTests|FullyQualifiedName~ThemeTests|FullyQualifiedName~ResourcesTests|FullyQualifiedName~MainWindowViewTests|FullyQualifiedName~MainWindowViewModelTests"
+dotnet test SemiPlot/SemiPlot.Tests.Unit/SemiPlot.Tests.Unit.csproj --filter "FullyQualifiedName~PenEditorViewTests|FullyQualifiedName~PenListViewTests|FullyQualifiedName~PenFormPaneViewTests|FullyQualifiedName~PenGroupsViewTests|FullyQualifiedName~PenEditorViewModelTests|FullyQualifiedName~PenGroupsViewModelTests|FullyQualifiedName~PenFormViewModelTests|FullyQualifiedName~PenRowOrderTests|FullyQualifiedName~HeaderMeasuredColumnsTests|FullyQualifiedName~ThemeTests|FullyQualifiedName~ResourcesTests|FullyQualifiedName~MainWindowViewTests|FullyQualifiedName~MainWindowViewModelTests"
 ```
 
 It must report 0 failed. These named tests must be present and pass:
@@ -227,31 +227,32 @@ It must report 0 failed. These named tests must be present and pass:
 - `PenEditorViewModelTests.PenRows_ListsEveryRowInCatalogueOrderUntilSorted` — Task 4
 - `PenEditorViewModelTests.Refresh_KeepsTheSortOrder` (rewritten over `PenRows.SortDescriptions`) — Task 4
 - `PenGroupsViewModelTests.TheMemberships_ListEveryPenInCatalogueOrderForTheSelectedGroup` (sorts through `PenRows`) — Task 4
-- `PenEditorViewTests.ThePenList_RealisesNoCheckBox` (the #111 reproduction) — Task 4
-- `PenEditorViewTests.ARow_ShowsThePenAsStoredUnderItsHeader` (rewritten) — Task 4
-- `PenEditorViewTests.EveryTextCell_TrimsWithAnEllipsisAndCarriesItsTextAsATooltip` — Task 4
-- `PenEditorViewTests.AHeaderClick_SortsAscendingThenDescendingAndKeepsTheSelectedPenAndItsForm` — Task 4
-- `PenEditorViewTests.EachHeaderClick_OrdersTheListByItsColumn` (theory over the five headers) — Task 4
-- `PenEditorViewTests.ARefresh_KeepsTheSortAndItsArrow` — Task 4
-- `PenEditorViewTests.AFullCatalogue_RealisesOnlyTheRowsOnScreen` (rewritten over `DataGridRow`) — Task 4
-- `PenEditorViewTests.EveryColumn_IsResizableAndOpensNoNarrowerThanItsHeader` — Task 4
-- `PenEditorViewTests.AClickedRow_ShowsTheRowHighlightAndNoCellOutline` — Task 4
+- `PenListViewTests.ThePenList_RealisesNoCheckBox` (the #111 reproduction) — Task 4
+- `PenListViewTests.ARow_ShowsThePenAsStoredUnderItsHeader` (rewritten) — Task 4
+- `PenListViewTests.EveryTextCell_TrimsWithAnEllipsisAndCarriesItsTextAsATooltip` — Task 4
+- `PenListViewTests.AHeaderClick_SortsAscendingThenDescendingAndKeepsTheSelectedPenAndItsForm` — Task 4
+- `PenListViewTests.EachHeaderClick_OrdersTheListByItsColumn` (theory over the five headers) — Task 4
+- `PenListViewTests.ARefresh_KeepsTheSortAndItsArrow` — Task 4
+- `PenListViewTests.AFullCatalogue_RealisesOnlyTheRowsOnScreen` (rewritten over `DataGridRow`) — Task 4
+- `PenListViewTests.EveryColumn_IsResizableAndOpensNoNarrowerThanItsHeader` — Task 4
+- `PenListViewTests.AClickedRow_ShowsTheRowHighlightAndNoCellOutline` — Task 4
 - `PenEditorViewTests.ANameTypedThenThePenListsEmptyAreaClicked_WritesOnce` — Task 4
 - `PenEditorViewTests.ANameTypedThenAColumnHeaderClicked_WritesOnce` — Task 4
-- `PenEditorViewTests.TheWindow_OpensOnA1280PxScreenAndAtItsMinimumWidthKeepsThePaneAndEveryColumnMinimum` (replaces `TheWindow_OpensOnA1280PxScreenAndAtItsMinimumWidthClipsNoFixedColumn`) — Task 5
-- `PenEditorViewTests.WithNoPenSelected_ThePaneShowsOnlyTheHint` (replaces `TheForm_IsEmptyAndDisabledWithNoRowAndShowsTheClickedPen`) — Task 5
-- `PenEditorViewTests.AClickedPen_FillsTheFormUnderAOneLineTitle` — Task 5
-- `PenEditorViewTests.TheForm_HasThreeSectionsOnOneLabelColumnAndOneFieldEdge` — Task 5
-- `PenEditorViewTests.EveryField_HasTheWidthOfItsContentType` — Task 5
-- `PenEditorViewTests.TheColourSwatchPicker_IsSquare` — Task 5
-- `PenEditorViewTests.AnInvalidField_ShowsTheWarningGlyphInsideTheBoxWithoutResizing` — Task 5
-- `PenEditorViewTests.AValidField_ShowsNoWarningGlyph` — Task 5
-- `PenEditorViewTests.ThePane_Stays420PxWideWhenTheWindowWidens` — Task 5
-- `PenEditorViewTests.AtTheOpeningSize_ThePaneShowsTheWholeForm` — Task 5
-- `PenEditorViewTests.EveryPenFormLabel_FitsTheLabelColumnInInter` (theory: `en`, `ru`) — Task 5
+- `PenFormPaneViewTests.TheWindow_OpensOnA1280PxScreenAndAtItsMinimumWidthKeepsThePaneAndEveryColumnMinimum` (replaces `TheWindow_OpensOnA1280PxScreenAndAtItsMinimumWidthClipsNoFixedColumn`) — Task 5
+- `PenFormPaneViewTests.WithNoPenSelected_ThePaneShowsOnlyTheHint` (replaces `TheForm_IsEmptyAndDisabledWithNoRowAndShowsTheClickedPen`) — Task 5
+- `PenFormPaneViewTests.AClickedPen_FillsTheFormUnderAOneLineTitle` — Task 5
+- `PenFormPaneViewTests.TheForm_HasThreeSectionsOnOneLabelColumnAndOneFieldEdge` — Task 5
+- `PenFormPaneViewTests.EveryField_HasTheWidthOfItsContentType` — Task 5
+- `PenFormPaneViewTests.TheColourSwatchPicker_IsSquare` — Task 5
+- `PenFormPaneViewTests.AnInvalidField_ShowsTheWarningGlyphInsideTheBoxWithoutResizing` — Task 5
+- `PenFormPaneViewTests.AValidField_ShowsNoWarningGlyph` — Task 5
+- `PenFormPaneViewTests.ThePane_Stays420PxWideWhenTheWindowWidens` — Task 5
+- `PenFormPaneViewTests.AtTheOpeningSize_ThePaneShowsTheWholeForm` — Task 5
+- `PenFormPaneViewTests.EveryPenFormLabel_FitsTheLabelColumnInInter` (theory: `en`, `ru`) — Task 5
 - `ResourcesTests.TheRussianSet_CarriesEveryKeyTheNeutralSetCarries` (passes with the new keys) — Task 5
 
-Every other test of `PenEditorViewTests` passes with its write assertions unchanged; those whose row or
+Every other test of `PenEditorViewTests`, `PenListViewTests` and `PenFormPaneViewTests` passes with
+its write assertions unchanged; those whose row or
 header reads change are listed in Tasks 4 and 5. Two of them guard the picker's flyout lookup behind
 the empty-state hint: `ASwatchPickedInThePicker_WritesOneColourChange` and
 `APenWithNoColour_OpeningAndDismissingThePicker_WritesNothing`.

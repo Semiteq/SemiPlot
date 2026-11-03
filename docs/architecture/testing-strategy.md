@@ -191,7 +191,7 @@ gives them the unreachable address and an adjustable poll interval.
 for example the classes that realise a view: `ChartPointerInputTests`, `MinimapPointerInputTests`,
 `MinimapViewTests`, `TrendChartViewTests`, `ChartMarkerViewTests`, `AxisScalePanelViewTests`,
 `TimeWindowPanelViewTests`, `CsvExportWindowTests`, `MainWindowViewTests`, `TrendLegendViewTests`,
-`PenEditorViewTests`, `ThemeTests` and `StartupFailureWindowTests`. Seams guarded: the dispatcher, layout, hit-testing,
+`PenEditorViewTests`, `PenListViewTests`, `PenFormPaneViewTests`, `ThemeTests` and `StartupFailureWindowTests`. Seams guarded: the dispatcher, layout, hit-testing,
 pointer capture and event routing. Real framework, synthetic data. These are what catch a rendering-stack version bump.
 The headless platform draws no pixels, so `Minimap/MinimapBand.Render` has no test: `MinimapViewTests`
 pins the figures it receives, and the minimap's smoke walk on the demo stand covers what it paints.

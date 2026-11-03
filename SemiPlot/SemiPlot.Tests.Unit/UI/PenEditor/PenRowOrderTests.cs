@@ -14,28 +14,31 @@ using static SemiPlot.Tests.Unit.UI.PenEditor.PenEditorFixture;
 namespace SemiPlot.Tests.Unit.UI.PenEditor;
 
 [Trait("Component", "UI")]
-[Trait("Area", "Data")]
+[Trait("Area", "Chart")]
 [Trait("Category", "Unit")]
 public sealed class PenRowOrderTests
 {
 	private static readonly StoredGroup[] _groups = [Chamber, Gas];
 
-	public static TheoryData<string, int[]> Orders => new()
+	private static readonly Dictionary<string, (IComparer Order, int[] ExpectedIds)> _orders = new()
 	{
-		{ nameof(PenRowOrder.ById), [3, 7, 12] },
-		{ nameof(PenRowOrder.ByName), [3, 12, 7] },
-		{ nameof(PenRowOrder.ByUnit), [7, 3, 12] },
-		{ nameof(PenRowOrder.ByEnabledOnStart), [3, 7, 12] },
-		{ nameof(PenRowOrder.ByGroups), [12, 7, 3] },
+		[nameof(PenRowOrder.ById)] = (PenRowOrder.ById, [3, 7, 12]),
+		[nameof(PenRowOrder.ByName)] = (PenRowOrder.ByName, [3, 12, 7]),
+		[nameof(PenRowOrder.ByUnit)] = (PenRowOrder.ByUnit, [7, 3, 12]),
+		[nameof(PenRowOrder.ByEnabledOnStart)] = (PenRowOrder.ByEnabledOnStart, [3, 7, 12]),
+		[nameof(PenRowOrder.ByGroups)] = (PenRowOrder.ByGroups, [12, 7, 3]),
 	};
+
+	public static TheoryData<string> Orders => [.. _orders.Keys];
 
 	[AvaloniaTheory]
 	[MemberData(nameof(Orders))]
-	public void EachOrder_SortsByItsKeyThenById(string order, int[] expectedIds)
+	public void EachOrder_SortsByItsKeyThenById(string order)
 	{
-		var rows = RowsOf(Argon, Pressure, Power);
+		var (comparer, expectedIds) = _orders[order];
+		var rows = RowsOf(Power, Argon, Pressure);
 
-		IdsOf(Sorted(rows, OrderNamed(order))).Should().Equal(expectedIds);
+		IdsOf(Sorted(rows, comparer)).Should().Equal(expectedIds);
 	}
 
 	[AvaloniaFact]
@@ -66,18 +69,5 @@ public sealed class PenRowOrderTests
 	private static IEnumerable<int> IdsOf(IEnumerable<PenRowViewModel> rows)
 	{
 		return rows.Select(row => row.Pen.Id);
-	}
-
-	private static IComparer OrderNamed(string order)
-	{
-		return order switch
-		{
-			nameof(PenRowOrder.ById) => PenRowOrder.ById,
-			nameof(PenRowOrder.ByName) => PenRowOrder.ByName,
-			nameof(PenRowOrder.ByUnit) => PenRowOrder.ByUnit,
-			nameof(PenRowOrder.ByEnabledOnStart) => PenRowOrder.ByEnabledOnStart,
-			nameof(PenRowOrder.ByGroups) => PenRowOrder.ByGroups,
-			_ => throw new ArgumentOutOfRangeException(nameof(order), order, null)
-		};
 	}
 }

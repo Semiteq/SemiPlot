@@ -1,9 +1,5 @@
-using System.Globalization;
-
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
-using Avalonia.Controls.Shapes;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -23,7 +19,6 @@ using SemiPlot.UI.PenEditor;
 
 using Xunit;
 
-using static SemiPlot.Tests.Unit.UI.InterMeasure;
 using static SemiPlot.Tests.Unit.UI.PenEditor.PenEditorFixture;
 using static SemiPlot.Tests.Unit.UI.PenEditor.PenEditorWindowDriver;
 using static SemiPlot.Tests.Unit.UI.ViewProbe;
@@ -40,15 +35,7 @@ namespace SemiPlot.Tests.Unit.UI.PenEditor;
 [Trait("Category", "Unit")]
 public sealed class PenEditorViewTests : IDisposable
 {
-	private const double PaneWidth = 420;
-
-	private const double LabelColumnWidth = 112;
-
-	private const double FormColumnSpacing = 12;
-
 	private static readonly Color _pickedColor = Color.Parse("#123456");
-
-	private static readonly PenCatalogue _catalogue = new([Argon, Pressure, Power], [Chamber, Spare]);
 
 	private readonly FakePenCatalogueEditor _editor = new();
 
@@ -62,7 +49,7 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void TheBottomBar_StandsOnBothTabsRightAlignedAndTheVisibilityColumnReadsOnStart()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -71,7 +58,7 @@ public sealed class PenEditorViewTests : IDisposable
 			var tabs = Named<TabControl>(window, "PenEditorTabs");
 			var groupsTab = Named<TabItem>(window, "GroupsTab");
 			_editor.RegisterResult = Result.Ok(2);
-			_editor.ReadResult = Result.Ok(_catalogue);
+			_editor.ReadResult = Result.Ok(ViewCatalogue);
 
 			HeadlessInput.Click(window, refresh);
 
@@ -97,259 +84,9 @@ public sealed class PenEditorViewTests : IDisposable
 	}
 
 	[AvaloniaFact]
-	public void ThePenList_RealisesNoCheckBox()
-	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			Descendants<CheckBox>(PenListOf(window)).Should().BeEmpty("the list is read-only and looks it");
-			window.TryFindResource("CheckGeometry", out var checkGeometry).Should().BeTrue();
-			StartGlyphOf(RowAt(window, 1)).Data.Should().BeSameAs(checkGeometry, "the start flag is the check glyph");
-			StartGlyphOf(RowAt(window, 0)).IsVisible.Should().BeFalse("Argon is hidden on start");
-			StartGlyphOf(RowAt(window, 1)).IsVisible.Should().BeTrue("Pressure is shown on start");
-			StartGlyphOf(RowAt(window, 2)).IsVisible.Should().BeTrue("Power is shown on start");
-		}
-		finally
-		{
-			Close(window);
-		}
-	}
-
-	[AvaloniaFact]
-	public void ARow_ShowsThePenAsStoredUnderItsHeader()
-	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			var argon = RowAt(window, 0);
-			var power = RowAt(window, 2);
-
-			TextOf(argon, "RowId").Should().Be("3");
-			TextOf(argon, "RowName").Should().Be(Argon.Name);
-			TextOf(argon, "RowUnit").Should().Be(Argon.Unit);
-			TextOf(argon, "RowGroups").Should().Be(Chamber.Name);
-			var swatch = Descendant<Border>(argon, "RowColor");
-			swatch.Background.Should().BeAssignableTo<ISolidColorBrush>()
-				.Which.Color.Should().Be(Color.Parse(Argon.Color!));
-			swatch.Bounds.Width.Should().BePositive("the swatch renders");
-			Descendant<Border>(power, "RowColor").Background.Should()
-				.Be(Brushes.Transparent, "a pen with no colour draws no swatch");
-
-			var nameCell = swatch.GetVisualAncestors().OfType<DataGridCell>().First();
-			DataGridColumn.GetColumnContainingElement(nameCell).Should().BeAssignableTo<DataGridColumn>()
-				.Which.Header.Should().Be(Resources.PenEditorColumnName);
-			LeftOf(swatch, nameCell).Should().BeGreaterThanOrEqualTo(0, "the dot sits inside the name cell");
-			RightOf(swatch, nameCell).Should().BeLessThanOrEqualTo(nameCell.Bounds.Width);
-			argon.Bounds.Height.Should().Be(PenEditorWindow.RowHeight);
-		}
-		finally
-		{
-			Close(window);
-		}
-	}
-
-	[AvaloniaFact]
-	public void EveryTextCell_TrimsWithAnEllipsisAndCarriesItsTextAsATooltip()
-	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			var cells = Descendants<TextBlock>(RowAt(window, 1))
-				.Where(cell => cell.Classes.Contains("grid-cell"))
-				.ToList();
-
-			cells.Should().HaveCount(4, "the id, the name, the unit and the groups are text");
-			cells.Should().AllSatisfy(cell =>
-			{
-				cell.TextTrimming.Should().Be(TextTrimming.CharacterEllipsis);
-				ToolTip.GetTip(cell).Should().Be(cell.Text);
-			});
-		}
-		finally
-		{
-			Close(window);
-		}
-	}
-
-	[AvaloniaFact]
-	public void AHeaderClick_SortsAscendingThenDescendingAndKeepsTheSelectedPenAndItsForm()
-	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			var list = PenListOf(window);
-			HeadlessInput.Click(window, RowAt(window, 1));
-			var selected = viewModel.SelectedRow;
-			var form = viewModel.SelectedForm;
-			selected!.Pen.Should().Be(Pressure);
-
-			HeadlessInput.Click(window, HeaderOf(window, Resources.PenEditorColumnName));
-
-			RealisedPens(list).Should().Equal(Argon, Power, Pressure);
-			HeaderOf(window, Resources.PenEditorColumnName).Classes.Should().Contain(":sortascending");
-			list.SelectedItem.Should().BeSameAs(selected, "the list keeps the row it held");
-			viewModel.SelectedRow.Should().BeSameAs(selected);
-			viewModel.SelectedForm.Should().BeSameAs(form);
-
-			HeadlessInput.Click(window, HeaderOf(window, Resources.PenEditorColumnName));
-
-			RealisedPens(list).Should().Equal(Pressure, Power, Argon);
-			HeaderOf(window, Resources.PenEditorColumnName).Classes.Should().Contain(":sortdescending");
-			list.SelectedItem.Should().BeSameAs(selected);
-			viewModel.SelectedRow.Should().BeSameAs(selected);
-			viewModel.SelectedForm.Should().BeSameAs(form);
-			_editor.Calls.Should().BeEmpty();
-		}
-		finally
-		{
-			Close(window);
-		}
-	}
-
-	// Pen 1, lowest id and shown on start, makes every ascending order differ from the catalogue's and the id's.
-	[AvaloniaTheory]
-	[InlineData(nameof(Resources.PenEditorColumnId), new[] { 1, 3, 7, 12 })]
-	[InlineData(nameof(Resources.PenEditorColumnName), new[] { 1, 3, 12, 7 })]
-	[InlineData(nameof(Resources.PenEditorColumnUnit), new[] { 1, 7, 3, 12 })]
-	[InlineData(nameof(Resources.PenEditorColumnOnStart), new[] { 3, 1, 7, 12 })]
-	[InlineData(nameof(Resources.PenEditorColumnGroups), new[] { 1, 12, 3, 7 })]
-	public void EachHeaderClick_OrdersTheListByItsColumn(string headerKey, int[] ascendingIds)
-	{
-		var headerText = Resources.ResourceManager.GetString(headerKey, Resources.Culture)
-			?? throw new InvalidOperationException($"No resource {headerKey}.");
-		var catalogue = new PenCatalogue(
-			[Argon, Pressure, Power, NumberedPen(1) with { EnabledOnStart = true }], [Chamber, Spare]);
-		using var viewModel = _editor.EditorOver(catalogue, _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			HeadlessInput.Click(window, HeaderOf(window, headerText));
-
-			RealisedPens(PenListOf(window)).Select(pen => pen.Id).Should().Equal(ascendingIds);
-			HeaderOf(window, headerText).Classes.Should().Contain(":sortascending");
-
-			HeadlessInput.Click(window, HeaderOf(window, headerText));
-
-			RealisedPens(PenListOf(window)).Select(pen => pen.Id).Should().Equal(ascendingIds.Reverse());
-			HeaderOf(window, headerText).Classes.Should().Contain(":sortdescending");
-		}
-		finally
-		{
-			Close(window);
-		}
-	}
-
-	[AvaloniaFact]
-	public void ARefresh_KeepsTheSortAndItsArrow()
-	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			HeadlessInput.Click(window, HeaderOf(window, Resources.PenEditorColumnId));
-			HeadlessInput.Click(window, HeaderOf(window, Resources.PenEditorColumnId));
-			HeadlessInput.Click(window, RowAt(window, 1));
-			_editor.RegisterResult = Result.Ok(1);
-			_editor.ReadResult = Result.Ok(new PenCatalogue([Argon, Pressure, Power, NumberedPen(4242)], [Chamber, Spare]));
-
-			HeadlessInput.Click(window, Named<Button>(window, "PenEditorRefreshButton"));
-
-			RealisedPens(PenListOf(window)).Select(pen => pen.Id).Should().Equal(4242, 12, 7, 3);
-			HeaderOf(window, Resources.PenEditorColumnId).Classes.Should().Contain(":sortdescending");
-			viewModel.SelectedRow!.Pen.Should().Be(Pressure, "the refresh keeps the selected pen");
-			PenListOf(window).SelectedItem.Should().BeSameAs(viewModel.SelectedRow, "the list follows the selection");
-		}
-		finally
-		{
-			Close(window);
-		}
-	}
-
-	[AvaloniaFact]
-	public void AFullCatalogue_RealisesOnlyTheRowsOnScreen()
-	{
-		const int PenCount = 500;
-		using var viewModel = _editor.EditorOver(new PenCatalogue(PensNumbered(PenCount), []), _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			var realised = RealisedRows(PenListOf(window)).Count();
-
-			realised.Should().BePositive().And.BeLessThan(PenCount);
-		}
-		finally
-		{
-			Close(window);
-		}
-	}
-
-	[AvaloniaFact]
-	public void EveryColumn_IsResizableAndOpensNoNarrowerThanItsHeader()
-	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			var list = PenListOf(window);
-			var headers = Descendants<DataGridColumnHeader>(list).ToList();
-
-			list.Columns.Should().HaveCount(5);
-			list.Columns.Should().AllSatisfy(column =>
-			{
-				var header = headers.Single(candidate => DataGridColumn.GetColumnContainingElement(candidate) == column);
-				column.CanUserResize.Should().BeTrue();
-				var headerWidth = UnconstrainedWidthOf(window, header);
-				column.MinWidth.Should().BeInRange(
-					headerWidth, headerWidth + 1, "the header sets the minimum, the last one with its separator shown");
-				column.ActualWidth.Should().BeGreaterThanOrEqualTo(column.MinWidth);
-				header.Bounds.Width.Should().BeLessThanOrEqualTo(column.ActualWidth + 0.5);
-				var headerText = Descendants<TextBlock>(header).Single(text => Equals(text.Text, column.Header));
-				headerText.TextLayout.WidthIncludingTrailingWhitespace.Should()
-					.BeLessThanOrEqualTo(headerText.Bounds.Width + 0.5, "the header shows its whole text");
-			});
-		}
-		finally
-		{
-			Close(window);
-		}
-	}
-
-	[AvaloniaFact]
-	public void AClickedRow_ShowsTheRowHighlightAndNoCellOutline()
-	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			var list = PenListOf(window);
-			window.TryFindResource("DataGridRowSelectedBackground", window.ActualThemeVariant, out var resource)
-				.Should().BeTrue();
-			var selection = resource.Should().BeAssignableTo<ISolidColorBrush>().Subject;
-
-			HeadlessInput.Click(window, RowAt(window, 1));
-
-			var highlight = Descendant<Border>(RowAt(window, 1), "BackgroundBorder").Background
-				.Should().BeAssignableTo<ISolidColorBrush>().Subject;
-			(highlight.Color, highlight.Opacity).Should().Be((selection.Color, selection.Opacity));
-			var currencyVisuals = Descendants<Rectangle>(list).Where(visual => visual.Name == "CurrencyVisual").ToList();
-			var focusVisuals = Descendants<Panel>(list).Where(visual => visual.Name == "FocusVisual").ToList();
-			currencyVisuals.Should().NotBeEmpty().And.OnlyContain(visual => !visual.IsEffectivelyVisible);
-			focusVisuals.Should().NotBeEmpty().And.OnlyContain(visual => !visual.IsEffectivelyVisible);
-		}
-		finally
-		{
-			Close(window);
-		}
-	}
-
-	[AvaloniaFact]
 	public void ANameTypedThenThePenListsEmptyAreaClicked_WritesOnce()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -375,7 +112,7 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void ANameTypedThenAColumnHeaderClicked_WritesOnce()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -396,54 +133,9 @@ public sealed class PenEditorViewTests : IDisposable
 	}
 
 	[AvaloniaFact]
-	public void TheWindow_OpensOnA1280PxScreenAndAtItsMinimumWidthKeepsThePaneAndEveryColumnMinimum()
-	{
-		const double SmallestScreenWidth = 1280;
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			window.Width.Should().BeLessThan(SmallestScreenWidth, "the window opens whole on a 1280 px screen");
-
-			window.Width = window.MinWidth;
-			Dispatcher.UIThread.RunJobs();
-
-			var list = PenListOf(window);
-			Named<Border>(window, "PenFormPanel").Bounds.Width.Should().Be(PaneWidth);
-			list.Columns.Should().AllSatisfy(column => column.ActualWidth.Should().BeGreaterThanOrEqualTo(column.MinWidth));
-			list.Columns.Sum(column => column.ActualWidth).Should()
-				.BeLessThanOrEqualTo(ViewportOf(list) + 0.5, "every column fits the list without scrolling");
-		}
-		finally
-		{
-			Close(window);
-		}
-	}
-
-	[AvaloniaFact]
-	public void WithNoPenSelected_ThePaneShowsOnlyTheHint()
-	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			var hint = Named<TextBlock>(window, "PenFormEmptyHint");
-
-			IsOnScreen(hint).Should().BeTrue("the pane says what to do with no pen selected");
-			hint.Text.Should().Be(Resources.PenFormEmptyHint);
-			Named<ScrollViewer>(window, "PenFormScroller").IsEffectivelyVisible.Should().BeFalse("no form shows");
-			_editor.Calls.Should().BeEmpty();
-		}
-		finally
-		{
-			Close(window);
-		}
-	}
-
-	[AvaloniaFact]
 	public void ANameTypedThenTheSelectedRowCtrlClicked_WritesOnceAndShowsTheHint()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -469,12 +161,12 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void ARefreshWithNoPenSelected_SelectsNoRowAndShowsTheHint()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
 			_editor.RegisterResult = Result.Ok(0);
-			_editor.ReadResult = Result.Ok(_catalogue);
+			_editor.ReadResult = Result.Ok(ViewCatalogue);
 
 			HeadlessInput.Click(window, Named<Button>(window, "PenEditorRefreshButton"));
 
@@ -491,7 +183,7 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void ARefreshThatDropsTheSelectedPen_SelectsNoRowAndShowsTheHint()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -513,253 +205,9 @@ public sealed class PenEditorViewTests : IDisposable
 	}
 
 	[AvaloniaFact]
-	public void AClickedPen_FillsTheFormUnderAOneLineTitle()
-	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			var name = Named<TextBox>(window, "FormName");
-
-			HeadlessInput.Click(window, RowAt(window, 1));
-
-			Named<TextBlock>(window, "PenFormEmptyHint").IsEffectivelyVisible.Should().BeFalse("the hint gave way");
-			var titleId = Named<TextBlock>(window, "PenFormTitleId");
-			var titleName = Named<TextBlock>(window, "PenFormTitleName");
-			titleId.Text.Should().Be("7");
-			titleName.Text.Should().Be(Pressure.Name);
-			TopOf(titleId, window).Should().Be(TopOf(titleName, window), "the title is one line");
-			RightOf(titleId, window).Should().BeLessThan(LeftOf(titleName, window), "the id stands first");
-			name.IsEffectivelyEnabled.Should().BeTrue();
-			name.Text.Should().Be(Pressure.Name);
-			Named<TextBox>(window, "FormUnit").Text.Should().Be(Pressure.Unit);
-			Named<TextBox>(window, "FormMask").Text.Should().Be(Pressure.Format);
-			Named<TextBlock>(window, "FormMaskPreview").Text.Should()
-				.Be(PenValueFormat.Format(PenFormViewModel.MaskPreviewSample, Pressure.Format));
-			Named<TextBox>(window, "FormColor").Text.Should().Be(Pressure.Color);
-			Named<TextBox>(window, "FormColor").PlaceholderText.Should().Be(PenColorConverters.FieldFormat);
-			Named<ColorPicker>(window, "FormColorPicker").Color.Should().Be(Color.Parse(Pressure.Color!));
-			Named<ComboBox>(window, "FormLineStyle").SelectedItem.Should().Be(Pressure.LineStyle);
-			Named<CheckBox>(window, "FormEnabledOnStart").IsChecked.Should().Be(Pressure.EnabledOnStart);
-			Named<TextBox>(window, "FormScaleMinOnStart").Text.Should().Be(0.ToString(CultureInfo.CurrentCulture));
-			Named<TextBox>(window, "FormScaleMaxOnStart").Text.Should().Be(100.ToString(CultureInfo.CurrentCulture));
-			Named<TextBlock>(window, "FormMessage").Text.Should().BeEmpty();
-			_editor.Calls.Should().BeEmpty();
-		}
-		finally
-		{
-			Close(window);
-		}
-	}
-
-	[AvaloniaFact]
-	public void TheForm_HasThreeSectionsOnOneLabelColumnAndOneFieldEdge()
-	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			HeadlessInput.Click(window, RowAt(window, 1));
-			var form = Named<Panel>(window, "PenForm");
-
-			var sections = Descendants<TextBlock>(form)
-				.Where(block => block.Classes.Contains("form-section"))
-				.OrderBy(block => TopOf(block, window))
-				.Select(block => block.Text);
-			sections.Should().Equal(
-				Resources.PenFormSectionLabel, Resources.PenFormSectionAppearance, Resources.PenFormSectionOnStart);
-			var labelEdges = FormLabels(window).Select(label => LeftOf(label, window)).Distinct().ToList();
-			labelEdges.Should().ContainSingle("every label starts at one edge");
-			FormFields(window).Should().AllSatisfy(field => (LeftOf(field, window) - labelEdges[0]).Should()
-				.BeApproximately(LabelColumnWidth + FormColumnSpacing, 0.5, $"{field.Name} starts at the field edge"));
-		}
-		finally
-		{
-			Close(window);
-		}
-	}
-
-	[AvaloniaFact]
-	public void EveryField_HasTheWidthOfItsContentType()
-	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			HeadlessInput.Click(window, RowAt(window, 1));
-
-			Named<TextBox>(window, "FormName").Bounds.Width.Should().Be(240);
-			Named<ComboBox>(window, "FormLineStyle").Bounds.Width.Should().Be(240);
-			Named<TextBox>(window, "FormUnit").Bounds.Width.Should().Be(120);
-			Named<TextBox>(window, "FormMask").Bounds.Width.Should().Be(120);
-			Named<TextBox>(window, "FormColor").Bounds.Width.Should().Be(120);
-			Named<TextBox>(window, "FormScaleMinOnStart").Bounds.Width.Should().Be(120);
-			Named<TextBox>(window, "FormScaleMaxOnStart").Bounds.Width.Should().Be(120);
-		}
-		finally
-		{
-			Close(window);
-		}
-	}
-
-	[AvaloniaFact]
-	public void TheColourSwatchPicker_IsSquare()
-	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			HeadlessInput.Click(window, RowAt(window, 1));
-			var picker = Named<ColorPicker>(window, "FormColorPicker");
-			var color = Named<TextBox>(window, "FormColor");
-
-			picker.Bounds.Size.Should().Be(new Size(32, 32));
-			(LeftOf(picker, window) - RightOf(color, window)).Should().BeApproximately(8, 0.5);
-			Descendant<Control>(picker, "DropDownGlyph").IsEffectivelyVisible.Should()
-				.BeFalse("the picker is the swatch alone");
-		}
-		finally
-		{
-			Close(window);
-		}
-	}
-
-	[AvaloniaFact]
-	public void ThePane_Stays420PxWideWhenTheWindowWidens()
-	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			var pane = Named<Border>(window, "PenFormPanel");
-			var list = PenListOf(window);
-			var listWidth = list.Bounds.Width;
-			pane.Bounds.Width.Should().Be(PaneWidth);
-
-			window.Width += 300;
-			Dispatcher.UIThread.RunJobs();
-
-			pane.Bounds.Width.Should().Be(PaneWidth);
-			list.Bounds.Width.Should().BeApproximately(listWidth + 300, 0.5, "the list takes the width");
-		}
-		finally
-		{
-			Close(window);
-		}
-	}
-
-	[AvaloniaFact]
-	public void AnInvalidField_ShowsTheWarningGlyphInsideTheBoxWithoutResizing()
-	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			HeadlessInput.Click(window, RowAt(window, 1));
-			var mask = Named<TextBox>(window, "FormMask");
-			var name = Named<TextBox>(window, "FormName");
-			var pane = Named<Border>(window, "PenFormPanel");
-			var (maskBounds, nameBounds, paneBounds, windowBounds) = (mask.Bounds, name.Bounds, pane.Bounds, window.Bounds);
-			window.TryFindResource("WarningGeometry", out var warning).Should().BeTrue();
-
-			Retype(window, mask, "%0.0");
-			HeadlessInput.Clear(window, name);
-
-			var glyphs = new[] { mask, name }.Select(box =>
-			{
-				box.Classes.Should().Contain("invalid");
-				var glyph = box.InnerRightContent.Should().BeOfType<PathIcon>().Subject;
-				glyph.IsEffectivelyVisible.Should().BeTrue();
-				glyph.Data.Should().BeSameAs(warning);
-				LeftOf(glyph, box).Should().BeGreaterThanOrEqualTo(0);
-				RightOf(glyph, box).Should().BeLessThanOrEqualTo(box.Bounds.Width, "the glyph sits inside the box");
-				TopOf(glyph, box).Should().BeGreaterThanOrEqualTo(0);
-				BottomOf(glyph, box).Should().BeLessThanOrEqualTo(box.Bounds.Height);
-
-				return glyph;
-			}).ToList();
-
-			glyphs[0].Should().NotBeSameAs(glyphs[1], "each box carries a glyph of its own");
-			(mask.Bounds, name.Bounds, pane.Bounds, window.Bounds).Should()
-				.Be((maskBounds, nameBounds, paneBounds, windowBounds));
-		}
-		finally
-		{
-			Close(window);
-		}
-	}
-
-	[AvaloniaFact]
-	public void AValidField_ShowsNoWarningGlyph()
-	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			HeadlessInput.Click(window, RowAt(window, 1));
-			var name = Named<TextBox>(window, "FormName");
-
-			name.Classes.Should().NotContain("invalid");
-			name.InnerRightContent.Should().BeNull();
-		}
-		finally
-		{
-			Close(window);
-		}
-	}
-
-	[AvaloniaFact]
-	public void AtTheOpeningSize_ThePaneShowsTheWholeForm()
-	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			HeadlessInput.Click(window, RowAt(window, 1));
-			var scroller = Named<ScrollViewer>(window, "PenFormScroller");
-
-			window.Bounds.Size.Should().Be(new Size(window.Width, window.Height));
-			scroller.Extent.Height.Should().BePositive();
-			scroller.Extent.Height.Should().BeLessThanOrEqualTo(scroller.Viewport.Height, "the form needs no scrolling");
-		}
-		finally
-		{
-			Close(window);
-		}
-	}
-
-	[AvaloniaTheory]
-	[InlineData("en")]
-	[InlineData("ru")]
-	public void EveryPenFormLabel_FitsTheLabelColumnInInter(string culture)
-	{
-		const int LabelCount = 10;
-		using var cultureScope = new CultureScope(culture);
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			HeadlessInput.Click(window, RowAt(window, 1));
-			var labels = FormLabels(window).ToList();
-			using var typeface = InterTypeface();
-
-			labels.Should().HaveCount(LabelCount);
-			labels.Should().AllSatisfy(label =>
-			{
-				using var font = InterFont(typeface, label.FontSize);
-				font.MeasureText(label.Text).Should().BeLessThanOrEqualTo((float)LabelColumnWidth, label.Text);
-			});
-		}
-		finally
-		{
-			Close(window);
-		}
-	}
-
-	[AvaloniaFact]
 	public void ANameTypedAndTabbedOut_WritesOnceAndTheRowShowsIt()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -781,7 +229,7 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void AnUnusableMask_WritesNothingRevertsMarksAndSaysWhyWithoutResizing()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -812,7 +260,7 @@ public sealed class PenEditorViewTests : IDisposable
 	{
 		var refusal = FakePenCatalogueEditor.Refusal(ArchiveFault.NameTaken, Pressure.Name);
 		_editor.ChangeResult = Result.Fail(refusal);
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -838,7 +286,7 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void TheScalePair_WritesOnceWhenFocusLeavesBothBounds()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -866,7 +314,7 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void ANameTypedThenAnotherRowClicked_WritesToThePenTheFieldShowed()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -889,7 +337,7 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void BothBoundsTypedThenAnotherRowClicked_WritesOneScaleChangeToTheFirstPen()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -910,7 +358,7 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void ANameTypedThenAFormLabelClicked_WritesOnce()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -935,7 +383,7 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void BothBoundsTypedThenTheFormsEmptyAreaClicked_WritesOneScaleChange()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -959,7 +407,7 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void ANameTypedThenTheWindowClosed_WritesOnceBeforeTheWindowIsGone()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		int? changesWhenClosed = null;
 		window.Closed += (_, _) => changesWhenClosed = _editor.Changes.Count();
@@ -986,7 +434,7 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void ALineStyleChosenAndTheStartBoxClicked_WriteOneChangeEach()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -1011,7 +459,7 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void ASwatchPickedInThePicker_WritesOneColourChange()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -1032,7 +480,7 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void AfterAPickInOneRow_ThePickerShowsTheNextRowsColour()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -1054,7 +502,7 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void APenWithNoColour_OpeningAndDismissingThePicker_WritesNothing()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -1079,7 +527,7 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void ALowerCaseHexTypedWithoutTheHash_WritesTheUpperCaseColour()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -1152,7 +600,7 @@ public sealed class PenEditorViewTests : IDisposable
 	{
 		var registered = NumberedPen(4242);
 		var vacuum = new StoredGroup(9, "Vacuum", [4242]);
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -1181,8 +629,8 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void ANameTypedThenRefreshClicked_WritesBeforeTheRegistration()
 	{
-		_editor.ReadResult = Result.Ok(_catalogue);
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		_editor.ReadResult = Result.Ok(ViewCatalogue);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -1206,8 +654,8 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void ANameTypedWhileARefreshRuns_ReachesNoFieldAndWritesNothing()
 	{
-		_editor.ReadResult = Result.Ok(_catalogue);
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		_editor.ReadResult = Result.Ok(ViewCatalogue);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -1236,7 +684,7 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void ANameEnteredWhileItsWriteIsHeldThenTabbedOut_WritesOnce()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -1261,7 +709,7 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void ANameEnteredThenTypedOnAndTabbedOut_WritesEachEditOnce()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -1287,7 +735,7 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void AScalePairEnteredWhileItsWriteIsHeldThenTabbedOut_WritesOnce()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -1313,7 +761,7 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void AScalePairTypedThenTheWindowClosed_WritesOnceBeforeTheWindowIsGone()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		int? changesWhenClosed = null;
 		window.Closed += (_, _) => changesWhenClosed = _editor.Changes.Count();
@@ -1339,7 +787,7 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void AfterChoicesInOneRow_TheComboAndTheBoxShowTheNextRowsValues()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -1366,7 +814,7 @@ public sealed class PenEditorViewTests : IDisposable
 	{
 		var refusal = FakePenCatalogueEditor.Refusal(ArchiveFault.RowGone, Pressure.Name);
 		_editor.ChangeResult = Result.Fail(refusal);
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -1389,7 +837,7 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void TheLogBoxClicked_WritesTheFlag()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -1412,7 +860,7 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void TheLogBoxOverAStoredMinimumOfZero_PutsTheBoxBackAndSaysWhyWithoutResizing()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -1444,7 +892,7 @@ public sealed class PenEditorViewTests : IDisposable
 	[AvaloniaFact]
 	public void APositiveMinimumTypedThenTheLogBoxClicked_WritesThePairThenTheFlag()
 	{
-		using var viewModel = _editor.EditorOver(_catalogue, _messagePanel);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
 		{
@@ -1517,38 +965,6 @@ public sealed class PenEditorViewTests : IDisposable
 		return FormLabels(window).Single(label => label.Text == text);
 	}
 
-	private static IEnumerable<TextBlock> FormLabels(PenEditorWindow window)
-	{
-		return Descendants<TextBlock>(Named<Panel>(window, "PenForm"))
-			.Where(label => label.Classes.Contains("form-label"));
-	}
-
-	private static IEnumerable<Control> FormFields(PenEditorWindow window)
-	{
-		return
-		[
-			Named<TextBox>(window, "FormName"),
-			Named<TextBox>(window, "FormUnit"),
-			Named<TextBox>(window, "FormMask"),
-			Named<TextBlock>(window, "FormMaskPreview"),
-			Named<TextBox>(window, "FormColor"),
-			Named<ComboBox>(window, "FormLineStyle"),
-			Named<CheckBox>(window, "FormEnabledOnStart"),
-			Named<TextBox>(window, "FormScaleMinOnStart"),
-			Named<TextBox>(window, "FormScaleMaxOnStart"),
-			Named<CheckBox>(window, "FormLogScaleOnStart"),
-		];
-	}
-
-	private static double ViewportOf(DataGrid list)
-	{
-		var scrollBar = Descendant<ScrollBar>(list, "PART_VerticalScrollbar");
-		var scrollBarWidth = scrollBar.IsVisible ? scrollBar.Bounds.Width : 0;
-
-		return Descendant<DataGridColumnHeadersPresenter>(list, "PART_ColumnHeadersPresenter").Bounds.Width
-			- scrollBarWidth;
-	}
-
 	private static TopLevel TopLevelOf(Control control)
 	{
 		return TopLevel.GetTopLevel(control) ?? throw new InvalidOperationException("The control is not realised.");
@@ -1575,10 +991,5 @@ public sealed class PenEditorViewTests : IDisposable
 		flyout.IsOpen.Should().BeFalse("Escape dismisses the picker");
 
 		return _pickedColor;
-	}
-
-	private static PathIcon StartGlyphOf(DataGridRow row)
-	{
-		return Descendant<PathIcon>(row, "RowEnabledOnStart");
 	}
 }

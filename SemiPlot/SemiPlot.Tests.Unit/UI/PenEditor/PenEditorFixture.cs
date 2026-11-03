@@ -22,6 +22,9 @@ internal static class PenEditorFixture
 
 	public static readonly StoredGroup Spare = new(5, "Spare", []);
 
+	/// <summary>The catalogue the realised-window tests open the editor over.</summary>
+	public static readonly PenCatalogue ViewCatalogue = new([Argon, Pressure, Power], [Chamber, Spare]);
+
 	/// <summary>A pen named by its number, hidden on start, with no unit, mask or scale.</summary>
 	public static StoredPen NumberedPen(int id)
 	{

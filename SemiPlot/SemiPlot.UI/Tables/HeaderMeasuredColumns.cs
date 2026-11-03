@@ -9,9 +9,11 @@ namespace SemiPlot.UI.Tables;
 public static class HeaderMeasuredColumns
 {
 	private const double FitTolerance = 0.5;
+	private const string HeadersPresenterPart = "PART_ColumnHeadersPresenter";
+	private const string VerticalScrollBarPart = "PART_VerticalScrollbar";
 
-	public static readonly AttachedProperty<bool> IsEnabledProperty =
-		AvaloniaProperty.RegisterAttached<DataGrid, bool>("IsEnabled", typeof(HeaderMeasuredColumns));
+	public static readonly AttachedProperty<bool> FitsColumnsProperty =
+		AvaloniaProperty.RegisterAttached<DataGrid, bool>("FitsColumns", typeof(HeaderMeasuredColumns));
 
 	public static readonly AttachedProperty<bool> IsFillProperty =
 		AvaloniaProperty.RegisterAttached<DataGridColumn, bool>("IsFill", typeof(HeaderMeasuredColumns));
@@ -21,17 +23,17 @@ public static class HeaderMeasuredColumns
 
 	static HeaderMeasuredColumns()
 	{
-		IsEnabledProperty.Changed.AddClassHandler<DataGrid>(OnIsEnabledChanged);
+		FitsColumnsProperty.Changed.AddClassHandler<DataGrid>(OnFitsColumnsChanged);
 	}
 
-	public static bool GetIsEnabled(DataGrid grid)
+	public static bool GetFitsColumns(DataGrid grid)
 	{
-		return grid.GetValue(IsEnabledProperty);
+		return grid.GetValue(FitsColumnsProperty);
 	}
 
-	public static void SetIsEnabled(DataGrid grid, bool isEnabled)
+	public static void SetFitsColumns(DataGrid grid, bool fitsColumns)
 	{
-		grid.SetValue(IsEnabledProperty, isEnabled);
+		grid.SetValue(FitsColumnsProperty, fitsColumns);
 	}
 
 	public static bool GetIsFill(DataGridColumn column)
@@ -44,7 +46,7 @@ public static class HeaderMeasuredColumns
 		column.SetValue(IsFillProperty, isFill);
 	}
 
-	private static void OnIsEnabledChanged(DataGrid grid, AvaloniaPropertyChangedEventArgs change)
+	private static void OnFitsColumnsChanged(DataGrid grid, AvaloniaPropertyChangedEventArgs change)
 	{
 		grid.AttachedToVisualTree -= OnAttachedToVisualTree;
 		grid.DetachedFromVisualTree -= OnDetachedFromVisualTree;
@@ -137,15 +139,30 @@ public static class HeaderMeasuredColumns
 
 	private static void FitFillColumn(DataGrid grid, Fit fit)
 	{
-		var fill = grid.Columns.FirstOrDefault(column => column.IsVisible && GetIsFill(column));
+		DataGridColumn? fill = null;
+		var others = 0.0;
+		foreach (var column in grid.Columns)
+		{
+			if (!column.IsVisible)
+			{
+				continue;
+			}
+
+			if (fill is null && GetIsFill(column))
+			{
+				fill = column;
+			}
+			else
+			{
+				others += column.ActualWidth;
+			}
+		}
+
 		if (fill is null || ViewportOf(grid, fit) is not { } viewport)
 		{
 			return;
 		}
 
-		var others = grid.Columns
-			.Where(column => column.IsVisible && column != fill)
-			.Sum(column => column.ActualWidth);
 		if (viewport == fit.LastViewport && others == fit.LastOthers)
 		{
 			return;
@@ -182,8 +199,8 @@ public static class HeaderMeasuredColumns
 	{
 		var parts = grid.GetVisualDescendants().OfType<Control>().ToList();
 		fit.HeadersPresenter = parts.OfType<DataGridColumnHeadersPresenter>()
-			.FirstOrDefault(part => part.Name == "PART_ColumnHeadersPresenter");
-		fit.VerticalScrollBar = parts.OfType<ScrollBar>().FirstOrDefault(part => part.Name == "PART_VerticalScrollbar");
+			.FirstOrDefault(part => part.Name == HeadersPresenterPart);
+		fit.VerticalScrollBar = parts.OfType<ScrollBar>().FirstOrDefault(part => part.Name == VerticalScrollBarPart);
 	}
 
 	private sealed class Fit

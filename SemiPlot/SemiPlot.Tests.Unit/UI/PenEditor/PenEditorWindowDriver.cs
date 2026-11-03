@@ -60,8 +60,7 @@ internal static class PenEditorWindowDriver
 
 	public static DataGridColumnHeader HeaderOf(PenEditorWindow window, string header)
 	{
-		return PenListOf(window).GetVisualDescendants().OfType<DataGridColumnHeader>()
-			.Single(candidate => Equals(candidate.Content, header));
+		return ViewProbe.HeaderOf(PenListOf(window), header);
 	}
 
 	public static void OpenGroupsTab(PenEditorWindow window)
@@ -80,7 +79,6 @@ internal static class PenEditorWindowDriver
 		return ViewProbe.Descendant<TextBlock>(row, name).Text;
 	}
 
-	/// <summary>The realised rows' pens in list order.</summary>
 	public static IEnumerable<StoredPen> RealisedPens(DataGrid list)
 	{
 		return RealisedRows(list)
@@ -88,6 +86,12 @@ internal static class PenEditorWindowDriver
 			.Select(row => row.DataContext)
 			.Cast<PenRowViewModel>()
 			.Select(row => row.Pen);
+	}
+
+	public static IEnumerable<TextBlock> FormLabels(PenEditorWindow window)
+	{
+		return ViewProbe.Descendants<TextBlock>(ViewProbe.Named<Panel>(window, "PenForm"))
+			.Where(label => label.Classes.Contains("form-label"));
 	}
 
 	public static IEnumerable<DataGridRow> RealisedRows(DataGrid list)

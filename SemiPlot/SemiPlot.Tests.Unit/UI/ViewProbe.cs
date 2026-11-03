@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -41,6 +42,22 @@ internal static class ViewProbe
 		where T : Control
 	{
 		return root.GetVisualDescendants().OfType<T>();
+	}
+
+	public static DataGridColumnHeader HeaderOf(DataGrid grid, string header)
+	{
+		return grid.GetVisualDescendants().OfType<DataGridColumnHeader>()
+			.Single(candidate => Equals(candidate.Content, header));
+	}
+
+	/// <summary>The headers presenter's width less the vertical scroll bar's while that bar is visible.</summary>
+	public static double ViewportOf(DataGrid grid)
+	{
+		var scrollBar = Descendant<ScrollBar>(grid, "PART_VerticalScrollbar");
+		var scrollBarWidth = scrollBar.IsVisible ? scrollBar.Bounds.Width : 0;
+
+		return Descendant<DataGridColumnHeadersPresenter>(grid, "PART_ColumnHeadersPresenter").Bounds.Width
+			- scrollBarWidth;
 	}
 
 	public static Color? ColourOf(IBrush? brush)

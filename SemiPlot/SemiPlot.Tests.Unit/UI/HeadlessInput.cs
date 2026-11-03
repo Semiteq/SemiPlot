@@ -70,9 +70,6 @@ internal static class HeadlessInput
 		Dispatcher.UIThread.RunJobs();
 	}
 
-	/// <summary>
-	/// Clicks the box, puts its caret at <paramref name="caretIndex"/> and types <paramref name="text"/>.
-	/// </summary>
 	internal static void Type(TopLevel topLevel, TextBox textBox, string text, int caretIndex)
 	{
 		Click(topLevel, textBox);

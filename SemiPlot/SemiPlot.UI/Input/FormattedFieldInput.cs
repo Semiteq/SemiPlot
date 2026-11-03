@@ -37,9 +37,6 @@ public static class FormattedFieldInput
 	public static readonly AttachedProperty<FieldLayout?> LayoutProperty =
 		AvaloniaProperty.RegisterAttached<TextBox, FieldLayout?>("Layout", typeof(FormattedFieldInput));
 
-	/// <summary>
-	/// Set by an operator route into a <see cref="FieldLayout.HexColor"/> box, read by its next text change.
-	/// </summary>
 	private static readonly AttachedProperty<bool> _operatorEditPendingProperty =
 		AvaloniaProperty.RegisterAttached<TextBox, bool>("OperatorEditPending", typeof(FormattedFieldInput));
 
@@ -263,7 +260,6 @@ public static class FormattedFieldInput
 		return text.Length;
 	}
 
-	/// <summary>What a layout keeps, how it rebuilds the kept text, and whether a code write is left as set.</summary>
 	private sealed record LayoutRule(
 		Func<char, bool> IsAllowed,
 		Func<string, string> Normalise,

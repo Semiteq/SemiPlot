@@ -3,7 +3,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:SemiPlot.UI.Export"
-        xmlns:navigation="clr-namespace:SemiPlot.UI.Navigation"
+        xmlns:input="clr-namespace:SemiPlot.UI.Input"
         xmlns:text="clr-namespace:SemiPlot.UI.Localization"
         mc:Ignorable="d"
         d:DesignHeight="520"
@@ -37,7 +37,7 @@
             <Setter Property="MinHeight" Value="0" />
         </Style>
         <Style Selector="CalendarDatePicker /template/ TextBox#PART_TextBox">
-            <Setter Property="navigation:TimeFieldInput.Layout" Value="Date" />
+            <Setter Property="input:FormattedFieldInput.Layout" Value="Date" />
         </Style>
         <Style Selector="TextBlock.no-marker">
             <Setter Property="Foreground" Value="{DynamicResource AppSecondaryForegroundBrush}" />
@@ -78,7 +78,7 @@
 
                 <TextBox Grid.Column="0"
                          Name="ExportStartTime"
-                         navigation:TimeFieldInput.Layout="ClockTime"
+                         input:FormattedFieldInput.Layout="ClockTime"
                          Classes.invalid="{Binding Form.IsStartTimeInvalid}"
                          Text="{Binding Form.StartTimeText}" />
 
@@ -118,7 +118,7 @@
 
                 <TextBox Grid.Column="0"
                          Name="ExportEndTime"
-                         navigation:TimeFieldInput.Layout="ClockTime"
+                         input:FormattedFieldInput.Layout="ClockTime"
                          Classes.invalid="{Binding Form.IsEndTimeInvalid}"
                          Text="{Binding Form.EndTimeText}" />
 

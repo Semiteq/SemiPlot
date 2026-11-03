@@ -4,11 +4,12 @@ using Avalonia;
 using Avalonia.Controls;
 
 using SemiPlot.UI.Localization;
+using SemiPlot.UI.Navigation;
 
-namespace SemiPlot.UI.Navigation;
+namespace SemiPlot.UI.Input;
 
 /// <summary>Where a time or date field puts its separators among the digits the operator types.</summary>
-public enum TimeFieldLayout
+public enum FieldLayout
 {
 	/// <summary>The <see cref="WallClockRangeForm.TimeFieldFormat"/> slots, filled from the left.</summary>
 	ClockTime,
@@ -20,25 +21,25 @@ public enum TimeFieldLayout
 	Duration
 }
 
-/// <summary>Keeps only the digits of a text box and inserts the separators of its <see cref="TimeFieldLayout"/>.</summary>
-public static class TimeFieldInput
+/// <summary>Keeps only the digits of a text box and inserts the separators of its <see cref="FieldLayout"/>.</summary>
+public static class FormattedFieldInput
 {
 	private const int GroupLength = 2;
 
-	public static readonly AttachedProperty<TimeFieldLayout?> LayoutProperty =
-		AvaloniaProperty.RegisterAttached<TextBox, TimeFieldLayout?>("Layout", typeof(TimeFieldInput));
+	public static readonly AttachedProperty<FieldLayout?> LayoutProperty =
+		AvaloniaProperty.RegisterAttached<TextBox, FieldLayout?>("Layout", typeof(FormattedFieldInput));
 
-	static TimeFieldInput()
+	static FormattedFieldInput()
 	{
 		LayoutProperty.Changed.AddClassHandler<TextBox>(OnLayoutChanged);
 	}
 
-	public static TimeFieldLayout? GetLayout(TextBox textBox)
+	public static FieldLayout? GetLayout(TextBox textBox)
 	{
 		return textBox.GetValue(LayoutProperty);
 	}
 
-	public static void SetLayout(TextBox textBox, TimeFieldLayout? layout)
+	public static void SetLayout(TextBox textBox, FieldLayout? layout)
 	{
 		textBox.SetValue(LayoutProperty, layout);
 	}
@@ -47,7 +48,7 @@ public static class TimeFieldInput
 	{
 		textBox.TextChanged -= OnTextChanged;
 
-		if (change.GetNewValue<TimeFieldLayout?>() is not null)
+		if (change.GetNewValue<FieldLayout?>() is not null)
 		{
 			textBox.TextChanged += OnTextChanged;
 		}
@@ -72,15 +73,15 @@ public static class TimeFieldInput
 		textBox.SetCurrentValue(TextBox.CaretIndexProperty, IndexAfterDigits(grouped, digitsBeforeCaret));
 	}
 
-	private static string Group(string text, TimeFieldLayout layout)
+	private static string Group(string text, FieldLayout layout)
 	{
 		var digits = new string([.. text.Where(char.IsAsciiDigit)]);
 
 		return layout switch
 		{
-			TimeFieldLayout.ClockTime => FillSlots(digits, WallClockRangeForm.TimeFieldFormat),
-			TimeFieldLayout.Date => FillSlots(digits, Resources.ExportDateFormat),
-			TimeFieldLayout.Duration => GroupFromRight(digits),
+			FieldLayout.ClockTime => FillSlots(digits, WallClockRangeForm.TimeFieldFormat),
+			FieldLayout.Date => FillSlots(digits, Resources.ExportDateFormat),
+			FieldLayout.Duration => GroupFromRight(digits),
 			_ => throw new ArgumentOutOfRangeException(nameof(layout), layout, null)
 		};
 	}

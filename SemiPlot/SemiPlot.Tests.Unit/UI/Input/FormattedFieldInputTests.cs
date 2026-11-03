@@ -5,17 +5,17 @@ using Avalonia.Threading;
 
 using AwesomeAssertions;
 
-using SemiPlot.UI.Navigation;
+using SemiPlot.UI.Input;
 
 using Xunit;
 
-namespace SemiPlot.Tests.Unit.UI.Navigation;
+namespace SemiPlot.Tests.Unit.UI.Input;
 
 [Collection(ProcessGlobalStateCollection.Name)]
 [Trait("Component", "UI")]
 [Trait("Area", "Chart")]
 [Trait("Category", "Unit")]
-public sealed class TimeFieldInputTests
+public sealed class FormattedFieldInputTests
 {
 	[AvaloniaTheory]
 	[InlineData("083000", "08:30:00")]
@@ -25,7 +25,7 @@ public sealed class TimeFieldInputTests
 	[InlineData("8a3", "83")]
 	public void AClockTimeField_PutsAColonAfterEveryTwoDigitsFromTheLeft(string typed, string shown)
 	{
-		var (window, field) = Show(TimeFieldLayout.ClockTime);
+		var (window, field) = Show(FieldLayout.ClockTime);
 
 		HeadlessInput.Type(window, field, typed);
 
@@ -41,7 +41,7 @@ public sealed class TimeFieldInputTests
 	public void ADateField_FillsTheSlotsOfTheCulturesDateFormat(string cultureName, string typed, string shown)
 	{
 		using var culture = new CultureScope(cultureName);
-		var (window, field) = Show(TimeFieldLayout.Date);
+		var (window, field) = Show(FieldLayout.Date);
 
 		HeadlessInput.Type(window, field, typed);
 
@@ -56,7 +56,7 @@ public sealed class TimeFieldInputTests
 	[InlineData("168:00:00", "168:00:00")]
 	public void ADurationField_GroupsSecondsAndMinutesFromTheRightAndLeavesTheHoursUnbounded(string typed, string shown)
 	{
-		var (window, field) = Show(TimeFieldLayout.Duration);
+		var (window, field) = Show(FieldLayout.Duration);
 
 		HeadlessInput.Type(window, field, typed);
 
@@ -66,7 +66,7 @@ public sealed class TimeFieldInputTests
 	[AvaloniaFact]
 	public void ADigitThatOpensAGroup_LandsAfterTheNewColonWithTheCaretAtTheEnd()
 	{
-		var (window, field) = Show(TimeFieldLayout.ClockTime);
+		var (window, field) = Show(FieldLayout.ClockTime);
 		field.Text = "08:30";
 		Dispatcher.UIThread.RunJobs();
 
@@ -79,7 +79,7 @@ public sealed class TimeFieldInputTests
 	[AvaloniaFact]
 	public void SelectAllAndBackspace_EmptiesAFilledField()
 	{
-		var (window, field) = Show(TimeFieldLayout.ClockTime);
+		var (window, field) = Show(FieldLayout.ClockTime);
 		field.Text = "08:30:00";
 		Dispatcher.UIThread.RunJobs();
 
@@ -100,10 +100,10 @@ public sealed class TimeFieldInputTests
 		field.Text.Should().Be("083000");
 	}
 
-	private static (Window Window, TextBox Field) Show(TimeFieldLayout layout)
+	private static (Window Window, TextBox Field) Show(FieldLayout layout)
 	{
 		var field = new TextBox { Width = 300, HorizontalAlignment = HorizontalAlignment.Left };
-		TimeFieldInput.SetLayout(field, layout);
+		FormattedFieldInput.SetLayout(field, layout);
 		var window = new Window { Width = 400, Height = 60, Content = field };
 		window.Show();
 

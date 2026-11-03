@@ -7,6 +7,7 @@
   <ItemGroup>
     <PackageVersion Include="Avalonia" Version="12.0.5"/>
     <PackageVersion Include="Avalonia.Controls.ColorPicker" Version="12.0.5"/>
+    <PackageVersion Include="Avalonia.Controls.DataGrid" Version="12.0.1"/>
     <PackageVersion Include="Avalonia.Desktop" Version="12.0.5"/>
     <PackageVersion Include="Avalonia.HarfBuzz" Version="12.0.5"/>
     <PackageVersion Include="Avalonia.Headless" Version="12.0.5"/>
@@ -28,6 +29,7 @@
     <PackageVersion Include="ScottPlot.Avalonia" Version="5.1.59"/>
     <PackageVersion Include="Semi.Avalonia" Version="12.0.3"/>
     <PackageVersion Include="Semi.Avalonia.ColorPicker" Version="12.0.3"/>
+    <PackageVersion Include="Semi.Avalonia.DataGrid" Version="12.0.0"/>
     <PackageVersion Include="Serilog" Version="4.3.1"/>
     <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0"/>
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1"/>

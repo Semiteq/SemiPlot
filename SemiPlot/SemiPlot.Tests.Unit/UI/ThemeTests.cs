@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
+using Avalonia.Data;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
@@ -87,13 +88,19 @@ public sealed class ThemeTests
 		var check = new CheckBox();
 		var combo = new ComboBox { ItemsSource = new[] { "first", "second" }, SelectedIndex = 0 };
 		var picker = new ColorPicker();
-		var window = new Window { Content = Stacked(button, box, check, combo, picker) };
+		var grid = GridOfTwoRows();
+		var window = new Window { Content = Stacked(button, box, check, combo, picker, grid), Height = 600 };
 		try
 		{
 			window.Show();
 			Dispatcher.UIThread.RunJobs();
 
 			var palette = new CornerRadius(4);
+			var row = grid.GetVisualDescendants().OfType<DataGridRow>().First();
+			var columnHeader = grid.GetVisualDescendants().OfType<DataGridColumnHeader>()
+				.First(candidate => Equals(candidate.Content, "header"));
+			NamedBorder(row, "BackgroundBorder").CornerRadius.Should().Be(palette);
+			NamedBorder(columnHeader, "HeaderBackground").CornerRadius.Should().Be(palette);
 			button.CornerRadius.Should().Be(palette);
 			NamedBorder(box, "PART_ContentPresenterBorder").CornerRadius.Should().Be(palette);
 			NamedBorder(check, "NormalRectangle").CornerRadius.Should().Be(palette);
@@ -238,6 +245,43 @@ public sealed class ThemeTests
 			Dispatcher.UIThread.RunJobs();
 			ColourOf(TextOf(pressedRow)).Should().Be(Color.Parse(text), "a pressed row");
 			window.MouseUp(pressedAt, MouseButton.Left);
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	// The pen list's header, separator line, selected row and cell text, at rest and with the selection hovered.
+	[AvaloniaTheory]
+	[InlineData(AppThemeVariant.Light, "#000000", "#818594", "#EBECF0")]
+	[InlineData(AppThemeVariant.Dark, "#DFE1E5", "#6F737A", "#393B40")]
+	public void EveryDataGridSurface_PaintsItselfFromThePalette(
+		AppThemeVariant theme, string text, string header, string line)
+	{
+		using var scope = ThemeProbe.ApplyVariant(App.VariantFor(theme));
+		Dispatcher.UIThread.RunJobs();
+
+		var grid = GridOfTwoRows();
+		var window = new Window { Content = grid, Width = 400, Height = 300 };
+		try
+		{
+			window.Show();
+			Dispatcher.UIThread.RunJobs();
+			var columnHeader = grid.GetVisualDescendants().OfType<DataGridColumnHeader>()
+				.First(candidate => Equals(candidate.Content, "header"));
+			var selectedRow = grid.GetVisualDescendants().OfType<DataGridRow>().Single(row => row.Index == 0);
+
+			ColourOf(columnHeader.Foreground).Should().Be(Color.Parse(header));
+			var separator = grid.GetVisualDescendants()
+				.OfType<Rectangle>()
+				.Single(rectangle => rectangle.Name == "PART_ColumnHeadersAndRowsSeparator");
+			ColourOf(separator.Fill).Should().Be(Color.Parse(line));
+			ColourOf(TextOf(selectedRow)).Should().Be(Color.Parse(text), "the cell text");
+			SelectionOf(selectedRow).Should().Be((Color.Parse(Accent), 0.25), "a selected row");
+
+			PointAt(window, selectedRow);
+			SelectionOf(selectedRow).Should().Be((Color.Parse(Accent), 0.25), "a hovered selected row");
 		}
 		finally
 		{
@@ -396,6 +440,8 @@ public sealed class ThemeTests
 	[InlineData("ListBoxItemSelectedBackground")]
 	[InlineData("ListBoxItemSelectedPointeroverBackground")]
 	[InlineData("ComboBoxItemSelectedBackground")]
+	[InlineData("DataGridRowSelectedBackground")]
+	[InlineData("DataGridRowSelectedPointeroverBackground")]
 	public void APaletteKeyCarryingOpacity_KeepsItUnderBothVariants(string key)
 	{
 		const double Opacity = 0.25;
@@ -486,6 +532,28 @@ public sealed class ThemeTests
 		};
 	}
 
+	private static DataGrid GridOfTwoRows()
+	{
+		var grid = new DataGrid
+		{
+			ItemsSource = new[] { new GridRow("first"), new GridRow("second") },
+			IsReadOnly = true,
+			HeadersVisibility = DataGridHeadersVisibility.Column
+		};
+		grid.Columns.Add(new DataGridTextColumn { Header = "header", Binding = new Binding(nameof(GridRow.Text)) });
+		grid.SelectedIndex = 0;
+
+		return grid;
+	}
+
+	private static (Color Colour, double Opacity) SelectionOf(DataGridRow row)
+	{
+		var brush = NamedBorder(row, "BackgroundBorder").Background.Should().BeAssignableTo<ISolidColorBrush>()
+			.Subject;
+
+		return (brush.Color, brush.Opacity);
+	}
+
 	private static Border NamedBorder(Control control, string name)
 	{
 		return control.GetVisualDescendants().OfType<Border>().Single(border => border.Name == name);
@@ -569,4 +637,6 @@ public sealed class ThemeTests
 	{
 		return brush.Should().BeAssignableTo<ISolidColorBrush>().Subject.Color;
 	}
+
+	private sealed record GridRow(string Text);
 }

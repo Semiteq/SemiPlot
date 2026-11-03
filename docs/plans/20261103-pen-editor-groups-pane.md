@@ -1031,3 +1031,25 @@ export-pen-choice-list (the export window's pens as checkboxes only, no row sele
 axis-scale-checkbox-column (the axis scale panel's log checkbox in the field column, with a label in the
 label column); ui-spacing-scale (every remaining inset onto the 4/8/12/16/24/32 scale, the `12,2` button
 padding with them, the refresh button's included).
+
+**Executed by exec:**
+- branch: pen-editor-groups-pane
+
+## Verify it yourself
+
+1. One window, no tabs. Open `Edit` -> `Pens and groups`: a top bar (added count, `Refresh pen list`)
+   over three parts side by side: pen list | pen pane (420) | groups pane (340). At `pen-editor-pens-pane`
+   the editor still had two tabs (`PenEditorLayoutViewTests.TheWindow_ShowsThePenListThePenPaneAndTheGroupsPaneSideBySide`).
+2. Opening size. On a 1920 px screen the window opens 1440 px wide; it cannot shrink below 1272 x 536
+   (`TheOpeningWidth_TakesTheDesignedWidthWhereTheWorkingAreaAllowsAndNeverLessThanTheMinimum`,
+   `AtTheMinimumHeight_EveryFixedRowShowsAndEachListShowsFourRows`).
+3. Membership from the pen side. Select a pen: each group row's checkbox shows whether it is a member;
+   tick one and the pen list's Группы column names the group; with no pen selected the boxes are disabled.
+4. Row menu. "..." on a group: Переименовать opens the rename block under the list with the name selected;
+   Готово closes it; a blank name is refused (first Done keeps it, a second Done closes on the stored name).
+   Свёрнута при открытии toggles the fold flag.
+5. Delete. Удалить shows three lines (question, pen count, «Сами перья останутся.») and a red Удалить
+   button from the palette; Отмена writes nothing.
+6. Retake `docs/img/pens-and-groups.png` from the running viewer (the readme shows the old tabbed window).
+
+Run all of it: the Acceptance Evidence command of this plan (286 passed, 0 failed on `d2809c0`).

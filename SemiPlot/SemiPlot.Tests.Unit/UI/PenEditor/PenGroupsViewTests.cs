@@ -1,7 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
-using Avalonia.Controls.Shapes;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
@@ -15,9 +14,11 @@ using FluentResults;
 
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
+using SemiPlot.UI;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.Messages;
 using SemiPlot.UI.PenEditor;
+using SemiPlot.UI.Startup;
 
 using Xunit;
 
@@ -195,9 +196,15 @@ public sealed class PenGroupsViewTests : IDisposable
 		}
 	}
 
-	[AvaloniaFact]
-	public void ARowClick_ShowsNoSelectionHighlightAndNoCellOutline()
+	// The flip is what catches an override captured under the variant the window opened in.
+	[AvaloniaTheory]
+	[InlineData(AppThemeVariant.Light, AppThemeVariant.Dark)]
+	[InlineData(AppThemeVariant.Dark, AppThemeVariant.Light)]
+	public void ARowClick_ShowsNoSelectionHighlightAndNoCellOutline_AcrossALiveThemeSwitch(
+		AppThemeVariant opening,
+		AppThemeVariant switched)
 	{
+		using var scope = ThemeProbe.ApplyVariant(App.VariantFor(opening));
 		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
 		try
@@ -206,17 +213,53 @@ public sealed class PenGroupsViewTests : IDisposable
 
 			HeadlessInput.Click(window, Descendant<TextBlock>(GroupRowAt(window, 0), "GroupName"));
 
-			GroupRowAt(window, 0).Classes.Should().Contain(":selected", "the click selects the row the style repaints");
+			GroupRowAt(window, 0).Classes.Should().Contain(":selected", "the click selects the row the keys repaint");
+			var hoveredBefore = ShouldPaintTheSelectedRowAsAnyOther(window, $"under {opening}");
+
+			Application.Current!.RequestedThemeVariant = App.VariantFor(switched);
+			Dispatcher.UIThread.RunJobs();
+
+			var hoveredAfter = ShouldPaintTheSelectedRowAsAnyOther(window, $"after the switch to {switched}");
+			hoveredAfter.Should().NotBe(hoveredBefore, "the hover fill is the variant's own");
+			CellOutlinesOf(list).Should().NotBeEmpty().And.OnlyContain(outline => !PaintsAnOutline(outline));
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
+	[AvaloniaTheory]
+	[InlineData(AppThemeVariant.Light)]
+	[InlineData(AppThemeVariant.Dark)]
+	public void TheRowMenuButton_PaintsNoFillAndASecondaryGlyphThatTurnsAccentUnderThePointer(AppThemeVariant theme)
+	{
+		var variant = App.VariantFor(theme);
+		using var scope = ThemeProbe.ApplyVariant(variant);
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			var secondary = ThemeProbe.Colour("AppSecondaryForegroundBrush", variant);
+			var accent = ThemeProbe.Colour("AppAccentBrush", variant);
+			var button = GroupActionsButtonAt(window, 0);
+			ShouldPaintTheGlyphAlone(button, secondary, "at rest");
+
+			var centre = Centre(window, button);
+			window.MouseMove(centre, RawInputModifiers.None);
+			Dispatcher.UIThread.RunJobs();
+			ShouldPaintTheGlyphAlone(button, accent, "under the pointer");
+
+			// The click is split around the held button so the pressed state can be read.
+			window.MouseDown(centre, MouseButton.Left, RawInputModifiers.None);
+			Dispatcher.UIThread.RunJobs();
+			ShouldPaintTheGlyphAlone(button, accent, "pressed");
+
+			window.MouseUp(centre, MouseButton.Left, RawInputModifiers.None);
+			Dispatcher.UIThread.RunJobs();
+			CloseMenu(window, 0);
 			Hover(window, Named<TextBlock>(window, "GroupsTitle"));
-			BackgroundOf(GroupRowAt(window, 0)).Should().Be(BackgroundOf(GroupRowAt(window, 1)), "at rest");
-			Hover(window, GroupRowAt(window, 0));
-			var hoveredSelected = BackgroundOf(GroupRowAt(window, 0));
-			Hover(window, GroupRowAt(window, 1));
-			hoveredSelected.Should().Be(BackgroundOf(GroupRowAt(window, 1)), "hovered");
-			var currencyVisuals = Descendants<Rectangle>(list).Where(visual => visual.Name == "CurrencyVisual").ToList();
-			var focusVisuals = Descendants<Panel>(list).Where(visual => visual.Name == "FocusVisual").ToList();
-			currencyVisuals.Should().NotBeEmpty().And.OnlyContain(visual => !visual.IsEffectivelyVisible);
-			focusVisuals.Should().NotBeEmpty().And.OnlyContain(visual => !visual.IsEffectivelyVisible);
+			ShouldPaintTheGlyphAlone(button, secondary, "after the pointer left");
 		}
 		finally
 		{
@@ -855,6 +898,20 @@ public sealed class PenGroupsViewTests : IDisposable
 			.Select(row => ((PenGroupViewModel)row.DataContext!).Group.Name);
 	}
 
+	/// <summary>Row 0 is selected; returns the hover fill of the unselected row 1.</summary>
+	private static (Color? Color, double? Opacity) ShouldPaintTheSelectedRowAsAnyOther(PenEditorWindow window, string state)
+	{
+		Hover(window, Named<TextBlock>(window, "GroupsTitle"));
+		BackgroundOf(GroupRowAt(window, 0)).Should().Be(BackgroundOf(GroupRowAt(window, 1)), "at rest {0}", state);
+		Hover(window, GroupRowAt(window, 0));
+		var hoveredSelected = BackgroundOf(GroupRowAt(window, 0));
+		Hover(window, GroupRowAt(window, 1));
+		var hoveredOther = BackgroundOf(GroupRowAt(window, 1));
+		hoveredSelected.Should().Be(hoveredOther, "hovered {0}", state);
+
+		return hoveredOther;
+	}
+
 	private static (Color? Color, double? Opacity) BackgroundOf(DataGridRow row)
 	{
 		var background = Descendant<Border>(row, "BackgroundBorder").Background;
@@ -864,10 +921,14 @@ public sealed class PenGroupsViewTests : IDisposable
 
 	private static void Hover(Window window, Control control)
 	{
-		var center = control.TranslatePoint(new Point(control.Bounds.Width / 2, control.Bounds.Height / 2), window)
-			?? throw new InvalidOperationException("The control is not in the window's visual tree.");
-		window.MouseMove(center, RawInputModifiers.None);
+		window.MouseMove(Centre(window, control), RawInputModifiers.None);
 		Dispatcher.UIThread.RunJobs();
+	}
+
+	private static Point Centre(Window window, Control control)
+	{
+		return control.TranslatePoint(new Point(control.Bounds.Width / 2, control.Bounds.Height / 2), window)
+			?? throw new InvalidOperationException("The control is not in the window's visual tree.");
 	}
 
 	/// <summary>The block's visible descendants, each asserted inside the block's bounds.</summary>

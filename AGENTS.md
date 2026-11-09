@@ -324,6 +324,8 @@ No abbreviations in names.
 - Every colour this tree's AXAML paints resolves to a key in `SemiPlot.UI/Styles/Palette.axaml`; a
   literal in AXAML is a defect. Semi's own surfaces outside that key set keep Semi's variant-aware
   stock brushes (`docs/architecture/ui-theme.md`).
+- A stock control is customised on the cheapest rung of the ladder that reaches the surface
+  (`docs/architecture/ui-theme.md#how-a-stock-control-is-customised`).
 - Every `Margin`, `Padding` and `*Spacing` value in AXAML is on the 4/8/12/16/24/32 scale; a text button
   takes Semi's padding (`docs/architecture/ui-theme.md#an-off-scale-inset-in-axaml-is-a-defect`).
 - A form never resizes on validation: fixed width, an `invalid` border class, one reserved message line
@@ -361,9 +363,9 @@ No abbreviations in names.
   allowlist over the realised row template: every control in it is a `Border`, `Grid`, `TextBlock` or
   `CheckBox`, and exactly one `CheckBox` is present. `ThePanel_RealisesNoTextEditor` gates the panel's
   header the same way. The group header is gated as an allowlist too: every control in it is a `Border`,
-  `Grid`, `TextBlock`, `PathIcon`, `CheckBox` or `ToggleButton`, with exactly one `CheckBox`, the group
-  switch, and one other `ToggleButton`, the fold toggle. The toggle reads `IsFolded` `Mode=OneWay` and
-  writes through `FoldCommand`; `TrendLegendGroupViewModel.SetFolded` is the flag's one writer, and the
+  `Grid`, `TextBlock`, `CheckBox` or `Button`, with exactly one `CheckBox`, the group
+  switch, and exactly one other `Button`, the fold toggle `GroupFoldToggle`. The toggle reads `IsFolded`
+  through its `folded` class and writes through `FoldCommand`; `TrendLegendGroupViewModel.SetFolded` is the flag's one writer, and the
   fold lives for the session, keyed by header name (`docs/architecture/overview.md#the-sidebar-fold`).
   Editing pens belongs to the pen editor (`PenEditor/PenEditorWindow`, `Edit` -> `Pens and groups`,
   `docs/architecture/overview.md#the-pen-and-group-editor`), so a control added to the row fails the

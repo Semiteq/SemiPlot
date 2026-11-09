@@ -2,8 +2,6 @@ using System.Reflection;
 
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Presenters;
-using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
@@ -180,21 +178,21 @@ public sealed class TrendLegendTopRowViewTests
 
 		foreach (var folded in new[] { false, true })
 		{
-			chevron.IsChecked.Should().Be(folded);
-			ShouldPaint(chevron, secondary, $"at rest, folded {folded}");
+			chevron.Classes.Contains("folded").Should().Be(folded);
+			ShouldPaintTheGlyphAlone(chevron, secondary, $"at rest, folded {folded}");
 
 			var centre = Hover(window, chevron);
-			ShouldPaint(chevron, accent, $"under the pointer, folded {folded}");
+			ShouldPaintTheGlyphAlone(chevron, accent, $"under the pointer, folded {folded}");
 
 			// The click is split around the held button so the pressed state can be read.
 			window.MouseDown(centre, MouseButton.Left, RawInputModifiers.None);
 			Dispatcher.UIThread.RunJobs();
-			ShouldPaint(chevron, accent, $"pressed, folded {folded}");
+			ShouldPaintTheGlyphAlone(chevron, accent, $"pressed, folded {folded}");
 
 			window.MouseUp(centre, MouseButton.Left, RawInputModifiers.None);
 			Dispatcher.UIThread.RunJobs();
 			Hover(window, Descendant<Button>(window, "PanelStateToggle"));
-			ShouldPaint(chevron, secondary, $"after the pointer left, folded {!folded}");
+			ShouldPaintTheGlyphAlone(chevron, secondary, $"after the pointer left, folded {!folded}");
 		}
 
 		legend.Groups[1].IsFolded.Should().BeFalse("the second release unfolded what the first folded");
@@ -279,25 +277,6 @@ public sealed class TrendLegendTopRowViewTests
 		return centre;
 	}
 
-	private static void ShouldPaint(ToggleButton chevron, Color glyph, string state)
-	{
-		var presenter = Descendant<ContentPresenter>(chevron, "PART_ContentPresenter");
-
-		AlphaOf(presenter.Background).Should().Be(0, "the presenter paints no fill {0}", state);
-		AlphaOf(presenter.BorderBrush).Should().Be(0, "the presenter paints no border {0}", state);
-		ColourOf(IconOf(chevron).Foreground).Should().Be(glyph, "the glyph {0}", state);
-	}
-
-	private static byte AlphaOf(IBrush? brush)
-	{
-		return brush switch
-		{
-			null => 0,
-			ISolidColorBrush solid => (byte)(solid.Color.A * solid.Opacity),
-			_ => throw new InvalidOperationException($"The presenter paints a {brush.GetType().Name}.")
-		};
-	}
-
 	// Avalonia keeps the open ToolTip behind an internal property; no public member reaches it.
 	private static TextBlock OpenTooltipText(Control holder)
 	{
@@ -329,9 +308,9 @@ public sealed class TrendLegendTopRowViewTests
 		return Descendants<PathIcon>(button).Single();
 	}
 
-	private static IReadOnlyList<ToggleButton> FoldToggles(Window window)
+	private static IReadOnlyList<Button> FoldToggles(Window window)
 	{
-		return [.. Descendants<ToggleButton>(window).Where(toggle => toggle.Name == "GroupFoldToggle")];
+		return [.. Descendants<Button>(window).Where(toggle => toggle.Name == "GroupFoldToggle")];
 	}
 
 	private static IReadOnlyList<Border> RowRoots(Window window)

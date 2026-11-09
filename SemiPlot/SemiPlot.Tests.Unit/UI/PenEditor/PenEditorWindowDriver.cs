@@ -1,4 +1,6 @@
 using Avalonia.Controls;
+using Avalonia.Controls.Shapes;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
@@ -58,6 +60,24 @@ internal static class PenEditorWindowDriver
 	public static DataGridRow GroupRowAt(PenEditorWindow window, int index)
 	{
 		return RowOf(GroupListOf(window), index);
+	}
+
+	/// <summary>Every cell's current-cell and focus rectangle in the grid, shown or not.</summary>
+	public static IReadOnlyList<Rectangle> CellOutlinesOf(DataGrid grid)
+	{
+		var currency = ViewProbe.Descendants<Rectangle>(grid).Where(visual => visual.Name == "CurrencyVisual");
+		var focus = ViewProbe.Descendants<Panel>(grid)
+			.Where(visual => visual.Name == "FocusVisual")
+			.SelectMany(ViewProbe.Descendants<Rectangle>);
+
+		return [.. currency, .. focus];
+	}
+
+	public static bool PaintsAnOutline(Rectangle outline)
+	{
+		return outline.IsEffectivelyVisible
+			&& outline.Stroke is ISolidColorBrush stroke
+			&& stroke.Color.A * stroke.Opacity > 0;
 	}
 
 	public static Button GroupActionsButtonAt(PenEditorWindow window, int index)

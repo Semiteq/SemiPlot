@@ -19,12 +19,6 @@
                     Command="{Binding CancelCommand}" />
     </UserControl.KeyBindings>
 
-    <UserControl.Styles>
-        <Style Selector="CalendarDatePicker /template/ TextBox#PART_TextBox">
-            <Setter Property="input:FormattedFieldInput.Layout" Value="Date" />
-        </Style>
-    </UserControl.Styles>
-
     <Grid RowDefinitions="Auto,Auto,Auto,Auto"
           ColumnDefinitions="Auto,Auto,*"
           ColumnSpacing="12"

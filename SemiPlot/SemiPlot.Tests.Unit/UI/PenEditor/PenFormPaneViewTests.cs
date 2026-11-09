@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
+using Avalonia.VisualTree;
 
 using AwesomeAssertions;
 
@@ -85,8 +86,6 @@ public sealed class PenFormPaneViewTests : IDisposable
 			Named<TextBox>(window, "FormMask").Text.Should().Be(Pressure.Format);
 			Named<TextBlock>(window, "FormMaskPreview").Text.Should()
 				.Be(PenValueFormat.Format(PenFormViewModel.MaskPreviewSample, Pressure.Format));
-			Named<TextBox>(window, "FormColor").Text.Should().Be(Pressure.Color);
-			Named<TextBox>(window, "FormColor").PlaceholderText.Should().Be(PenColorConverters.FieldFormat);
 			Named<ColorPicker>(window, "FormColorPicker").Color.Should().Be(Color.Parse(Pressure.Color!));
 			Named<ComboBox>(window, "FormLineStyle").SelectedItem.Should().Be(Pressure.LineStyle);
 			Named<CheckBox>(window, "FormEnabledOnStart").IsChecked.Should().Be(Pressure.EnabledOnStart);
@@ -141,7 +140,7 @@ public sealed class PenFormPaneViewTests : IDisposable
 			Named<ComboBox>(window, "FormLineStyle").Bounds.Width.Should().Be(240);
 			Named<TextBox>(window, "FormUnit").Bounds.Width.Should().Be(120);
 			Named<TextBox>(window, "FormMask").Bounds.Width.Should().Be(120);
-			Named<TextBox>(window, "FormColor").Bounds.Width.Should().Be(120);
+			Named<ColorPicker>(window, "FormColorPicker").Bounds.Width.Should().Be(240);
 			Named<TextBox>(window, "FormScaleMinOnStart").Bounds.Width.Should().Be(120);
 			Named<TextBox>(window, "FormScaleMaxOnStart").Bounds.Width.Should().Be(120);
 		}
@@ -152,7 +151,7 @@ public sealed class PenFormPaneViewTests : IDisposable
 	}
 
 	[AvaloniaFact]
-	public void TheColourSwatchPicker_IsSquare()
+	public void TheColourPicker_ShowsItsDropDownArrow()
 	{
 		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
 		var window = Realise(viewModel);
@@ -160,12 +159,23 @@ public sealed class PenFormPaneViewTests : IDisposable
 		{
 			HeadlessInput.Click(window, RowAt(window, 1));
 			var picker = Named<ColorPicker>(window, "FormColorPicker");
-			var color = Named<TextBox>(window, "FormColor");
+			var lineStyle = Named<ComboBox>(window, "FormLineStyle");
+			var swatch = Named<Border>(window, "FormColorSwatch");
+			var swatchPanel = (Control)swatch.GetVisualParent()!;
 
-			picker.Bounds.Size.Should().Be(new Size(32, 32));
-			(LeftOf(picker, window) - RightOf(color, window)).Should().BeApproximately(8, 0.5);
+			picker.Bounds.Size.Should().Be(new Size(240, 32));
+			LeftOf(picker, window).Should().Be(LeftOf(lineStyle, window), "the picker starts at the field column edge");
+			swatch.Bounds.Width.Should().BeGreaterThan(150, "the swatch fills the button up to the arrow");
+			var leftInset = LeftOf(swatch, swatchPanel);
+			var rightInset = swatchPanel.Bounds.Width - RightOf(swatch, swatchPanel);
+			var topInset = TopOf(swatch, swatchPanel);
+			var bottomInset = swatchPanel.Bounds.Height - BottomOf(swatch, swatchPanel);
+			leftInset.Should().BePositive();
+			new[] { rightInset, topInset, bottomInset }.Should()
+				.AllSatisfy(inset => inset.Should().BeApproximately(leftInset, 0.5, "the inset is equal on every side"));
+			swatch.Background.Should().BeOfType<SolidColorBrush>().Which.Color.Should().Be(Color.Parse(Pressure.Color!));
 			Descendant<Control>(picker, "DropDownGlyph").IsEffectivelyVisible.Should()
-				.BeFalse("the picker is the swatch alone");
+				.BeTrue("the picker reads as a drop-down");
 		}
 		finally
 		{
@@ -289,7 +299,7 @@ public sealed class PenFormPaneViewTests : IDisposable
 			Named<TextBox>(window, "FormUnit"),
 			Named<TextBox>(window, "FormMask"),
 			Named<TextBlock>(window, "FormMaskPreview"),
-			Named<TextBox>(window, "FormColor"),
+			Named<ColorPicker>(window, "FormColorPicker"),
 			Named<ComboBox>(window, "FormLineStyle"),
 			Named<CheckBox>(window, "FormEnabledOnStart"),
 			Named<TextBox>(window, "FormScaleMinOnStart"),

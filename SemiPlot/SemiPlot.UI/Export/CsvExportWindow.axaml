@@ -32,9 +32,6 @@
     </Window.Resources>
 
     <Window.Styles>
-        <Style Selector="CalendarDatePicker /template/ TextBox#PART_TextBox">
-            <Setter Property="input:FormattedFieldInput.Layout" Value="Date" />
-        </Style>
         <Style Selector="TextBlock.no-marker">
             <Setter Property="Foreground" Value="{DynamicResource AppSecondaryForegroundBrush}" />
         </Style>

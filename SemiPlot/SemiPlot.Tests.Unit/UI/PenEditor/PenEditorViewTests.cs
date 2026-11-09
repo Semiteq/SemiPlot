@@ -453,7 +453,8 @@ public sealed class PenEditorViewTests : IDisposable
 
 			var hex = PenColorConverters.Format(picked);
 			_editor.Changes.Should().Equal(new FakeEditorCall.Change(Pressure, new PenSettingChange.Color(hex)));
-			Named<TextBox>(window, "FormColor").Text.Should().Be(hex);
+			Named<Border>(window, "FormColorSwatch").Background.Should().BeOfType<SolidColorBrush>()
+				.Which.Color.Should().Be(Color.Parse(hex), "the swatch shows the written colour");
 		}
 		finally
 		{
@@ -499,8 +500,8 @@ public sealed class PenEditorViewTests : IDisposable
 
 			flyout.IsOpen.Should().BeFalse();
 			_editor.Calls.Should().BeEmpty();
-			Named<TextBox>(window, "FormColor").Classes.Should()
-				.Contain("invalid", "a pen with no colour opens invalid");
+			Named<TextBlock>(window, "FormMessage").Text.Should()
+				.Be(Resources.PenFormColorInvalid, "a pen with no colour says so on the message line");
 		}
 		finally
 		{
@@ -509,53 +510,7 @@ public sealed class PenEditorViewTests : IDisposable
 	}
 
 	[AvaloniaFact]
-	public void ALowerCaseHexTypedWithoutTheHash_WritesTheUpperCaseColour()
-	{
-		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			HeadlessInput.Click(window, RowAt(window, 2));
-			var color = Named<TextBox>(window, "FormColor");
-
-			HeadlessInput.Type(window, color, "1f77b4");
-			HeadlessInput.Press(window, PhysicalKey.Tab);
-
-			_editor.Changes.Should().Equal(new FakeEditorCall.Change(Power, new PenSettingChange.Color("#1F77B4")));
-			color.Text.Should().Be("#1F77B4");
-		}
-		finally
-		{
-			Close(window);
-		}
-	}
-
-	[AvaloniaFact]
-	public void AStoredLowerCaseColour_ShowsAsStoredAndWritesNothingOnFocusAndLeave()
-	{
-		var lowerCaseArgon = Argon with { Color = "#1f77b4" };
-		using var viewModel = _editor.EditorOver(new PenCatalogue([lowerCaseArgon, Pressure, Power], []), _messagePanel);
-		var window = Realise(viewModel);
-		try
-		{
-			HeadlessInput.Click(window, RowAt(window, 0));
-			var color = Named<TextBox>(window, "FormColor");
-			color.Text.Should().Be("#1f77b4", "the box shows the colour as stored");
-
-			HeadlessInput.Click(window, color);
-			HeadlessInput.Press(window, PhysicalKey.Tab);
-
-			color.Text.Should().Be("#1f77b4");
-			_editor.Calls.Should().BeEmpty("a focus and a leave are no edit");
-		}
-		finally
-		{
-			Close(window);
-		}
-	}
-
-	[AvaloniaFact]
-	public void ARefusedDraftRevertedOnEnter_ShowsTheStoredColourAsStored()
+	public void AStoredColourThatDoesNotParse_ShowsItsMessageOnTheMessageLineAndWritesNothing()
 	{
 		var namedColorArgon = Argon with { Color = "red" };
 		using var viewModel = _editor.EditorOver(new PenCatalogue([namedColorArgon, Pressure, Power], []), _messagePanel);
@@ -563,15 +518,10 @@ public sealed class PenEditorViewTests : IDisposable
 		try
 		{
 			HeadlessInput.Click(window, RowAt(window, 0));
-			var color = Named<TextBox>(window, "FormColor");
 
-			HeadlessInput.Type(window, color, "1");
-			HeadlessInput.Press(window, PhysicalKey.Enter);
-
-			color.Text.Should().Be("red", "the revert is a binding write and stays as set");
-			color.Classes.Should().Contain("invalid");
 			Named<TextBlock>(window, "FormMessage").Text.Should().Be(Resources.PenFormColorInvalid);
-			_editor.Changes.Should().BeEmpty();
+			Named<Border>(window, "FormColorSwatch").Background.Should().BeSameAs(Brushes.Transparent);
+			_editor.Calls.Should().BeEmpty();
 		}
 		finally
 		{

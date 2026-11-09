@@ -599,23 +599,16 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   `Export/ExportRangeForm` and `Navigation/TimeWindowForm` derive from; `TimeWindowForm` adds the width
   field, the skipped-time and span rules and the per-edge comparison with its seed.
   `Navigation/WindowWidthText` formats and parses the width as `h:mm:ss` with unbounded hours.
-- `Input/FormattedFieldInput` — the attached `Layout` of type `FieldLayout` that keeps only the characters a
-  text box's layout allows and inserts the fixed ones: `ClockTime` and `Date` fill the slots of
-  `WallClockRangeForm.TimeFieldFormat` and `Resources.ExportDateFormat` from the left with digits, `Duration`
-  groups seconds and minutes from the right and leaves the hours unbounded, and `HexColor` keeps the first six
-  hex digits, upper-cased, behind a leading `#`, and empties the box when no digit is left. One caret rule
-  serves all four layouts: the caret returns after as many allowed characters as stood before it, and with
-  none before it, ahead of the first one, which for `HexColor` is right after the `#`. The behaviour adds no
-  edit operation of its own: selection, Backspace and paste stay the `TextBox`'s own, and it normalises the
-  text they leave. The time layouts normalise on every text change. A `HexColor` box normalises only the
-  change an operator route causes (typing, Backspace, Delete, undo, redo, cut, paste): the route sets a
-  private attached flag, and the next text change, any other key and losing focus clear it. A binding write
-  therefore stays as set, so a stored `red` or `#1f77b4` shows as stored and is not written back. A route that
-  leaves the text as it was, such as a digit typed over the same selected digit, leaves the flag set until the
-  next key or focus loss, and a binding write inside that window is normalised. An edit of a stored named
-  colour keeps the name's hex letters: a `1` typed after `red` gives `#ED1`. The time window panel and the
-  export window set it on their time and width boxes, a style sets `Date` on each `CalendarDatePicker`'s
-  `PART_TextBox`, and the pen form sets `HexColor` on its colour box.
+- `Input/FormattedFieldInput` — the attached `Layout` of type `FieldLayout` that keeps only the digits of a
+  text box and inserts the fixed characters: `ClockTime` and `Date` fill the slots of
+  `WallClockRangeForm.TimeFieldFormat` and `Resources.ExportDateFormat` from the left, and `Duration`
+  groups seconds and minutes from the right and leaves the hours unbounded. One caret rule serves all three
+  layouts: the caret returns after as many digits as stood before it, and with none before it, ahead of the
+  first one. The behaviour adds no edit operation of its own: selection, Backspace and paste stay the
+  `TextBox`'s own, and it normalises the text they leave on every text change. The time window panel and the
+  export window set it on their time and width boxes, and one application-wide style in
+  `Styles/Forms.axaml` sets `Date` on every `CalendarDatePicker`'s `PART_TextBox`; the four pickers of
+  those two forms are the only ones in the application.
 - `Navigation/ArchiveDayCalendar` — the days a pair of range calendars offers and the read days without a
   row among them, for the time window panel and the export window; `Navigation/CalendarBlackout` writes the
   set into the pickers' `BlackoutDates`.

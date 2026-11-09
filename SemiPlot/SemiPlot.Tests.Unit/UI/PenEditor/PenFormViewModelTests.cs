@@ -167,7 +167,6 @@ public sealed class PenFormViewModelTests : IDisposable
 		var form = FormFor(Pressure with { Color = null });
 
 		form.Color.Should().BeEmpty();
-		form.IsColorValid.Should().BeFalse();
 		form.Message.Should().Be(Resources.PenFormColorInvalid);
 
 		await form.EndEditAsync(PenField.Color);
@@ -238,11 +237,10 @@ public sealed class PenFormViewModelTests : IDisposable
 		await form.EndEditAsync(PenField.Color);
 		form.Color = "#00FF0";
 
-		form.IsColorValid.Should().BeFalse("the new draft breaks the rule itself");
+		form.Message.Should().Be(Resources.PenFormColorInvalid, "the new draft breaks the rule itself");
 
 		form.Color = "#00FF00";
 
-		form.IsColorValid.Should().BeTrue();
 		form.Message.Should().BeEmpty();
 	}
 
@@ -566,7 +564,7 @@ public sealed class PenFormViewModelTests : IDisposable
 		{
 			PenField.Name => form.IsNameValid,
 			PenField.Mask => form.IsMaskValid,
-			PenField.Color => form.IsColorValid,
+			PenField.Color => form.Message.Length == 0,
 			_ => throw new ArgumentOutOfRangeException(nameof(field), field, null)
 		};
 	}

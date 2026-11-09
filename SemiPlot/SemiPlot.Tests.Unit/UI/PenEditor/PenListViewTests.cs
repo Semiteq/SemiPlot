@@ -1,6 +1,5 @@
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
-using Avalonia.Controls.Shapes;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -495,10 +494,7 @@ public sealed class PenListViewTests : IDisposable
 			var highlight = Descendant<Border>(RowAt(window, 1), "BackgroundBorder").Background
 				.Should().BeAssignableTo<ISolidColorBrush>().Subject;
 			(highlight.Color, highlight.Opacity).Should().Be((selection.Color, selection.Opacity));
-			var currencyVisuals = Descendants<Rectangle>(list).Where(visual => visual.Name == "CurrencyVisual").ToList();
-			var focusVisuals = Descendants<Panel>(list).Where(visual => visual.Name == "FocusVisual").ToList();
-			currencyVisuals.Should().NotBeEmpty().And.OnlyContain(visual => !visual.IsEffectivelyVisible);
-			focusVisuals.Should().NotBeEmpty().And.OnlyContain(visual => !visual.IsEffectivelyVisible);
+			CellOutlinesOf(list).Should().NotBeEmpty().And.OnlyContain(outline => !PaintsAnOutline(outline));
 		}
 		finally
 		{

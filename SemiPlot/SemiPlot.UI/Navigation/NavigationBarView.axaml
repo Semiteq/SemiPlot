@@ -23,7 +23,7 @@
 
         <Border Name="GroupSeparator"
                 Width="1"
-                Margin="4,3"
+                Margin="4,4"
                 Background="{DynamicResource AppSubtleLineBrush}" />
 
         <ToggleButton Content="{x:Static text:Resources.NavigationDelta}"

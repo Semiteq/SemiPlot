@@ -55,8 +55,7 @@
         <Button Name="AboutClose"
                 Content="{x:Static text:Resources.AboutClose}"
                 HorizontalAlignment="Right"
-                Click="OnCloseClick"
-                Padding="12,2" />
+                Click="OnCloseClick" />
 
     </StackPanel>
 

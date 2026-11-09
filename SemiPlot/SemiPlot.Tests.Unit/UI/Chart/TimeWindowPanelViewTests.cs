@@ -329,6 +329,20 @@ public sealed class TimeWindowPanelViewTests
 		skippedSizes.Should().Be(emptySizes);
 	}
 
+	[AvaloniaFact]
+	public void TheGrid_TakesItsGapsFromTheSpacingScale()
+	{
+		using var stand = PanelStand.Create();
+		stand.Open();
+		var startTime = stand.Panel.FindControl<TextBox>("TimeWindowStartTime")!;
+		var endTime = stand.Panel.FindControl<TextBox>("TimeWindowEndTime")!;
+
+		(ViewProbe.LeftOf(stand.Picker("TimeWindowStartDate"), stand.Panel) - ViewProbe.RightOf(startTime, stand.Panel))
+			.Should().Be(12, "field to field in one row");
+		(ViewProbe.TopOf(endTime, stand.Panel) - ViewProbe.BottomOf(startTime, stand.Panel))
+			.Should().Be(8, "the row spacing");
+	}
+
 	private static CalendarDayButton DayButton(CalendarDatePicker picker, DateTime day)
 	{
 		var popup = ViewProbe.Descendant<Popup>(picker, "PART_Popup");

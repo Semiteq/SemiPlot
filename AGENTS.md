@@ -324,6 +324,8 @@ No abbreviations in names.
 - Every colour this tree's AXAML paints resolves to a key in `SemiPlot.UI/Styles/Palette.axaml`; a
   literal in AXAML is a defect. Semi's own surfaces outside that key set keep Semi's variant-aware
   stock brushes (`docs/architecture/ui-theme.md`).
+- Every `Margin`, `Padding` and `*Spacing` value in AXAML is on the 4/8/12/16/24/32 scale; a text button
+  takes Semi's padding (`docs/architecture/ui-theme.md#an-off-scale-inset-in-axaml-is-a-defect`).
 - A form never resizes on validation: fixed width, an `invalid` border class, one reserved message line
   (`docs/architecture/ui-theme.md#a-form-never-resizes-on-validation`).
 - The left-button gesture is one state, never overlapping branches: a `Chart/LeftButtonTool`

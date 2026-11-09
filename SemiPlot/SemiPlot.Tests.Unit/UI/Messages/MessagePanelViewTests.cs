@@ -1,6 +1,7 @@
 using System.Globalization;
 
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Shapes;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
@@ -16,6 +17,8 @@ using SemiPlot.UI.Messages;
 using SemiPlot.UI.Startup;
 
 using Xunit;
+
+using static SemiPlot.Tests.Unit.UI.ViewProbe;
 
 namespace SemiPlot.Tests.Unit.UI.Messages;
 
@@ -129,6 +132,43 @@ public sealed class MessagePanelViewTests
 			Dispatcher.UIThread.RunJobs();
 
 			empty.IsVisible.Should().BeFalse("the list speaks for itself once it has an entry");
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[AvaloniaFact]
+	public void AnEntryRowAndTheClearButton_TakeTheirInsetsFromTheSpacingScale()
+	{
+		using var scope = ThemeProbe.ApplyVariant(ThemeVariant.Light);
+		using var panel = new MessagePanelViewModel(new FixedClock(_stamp, _operatorZone));
+		panel.Report(new ArchiveFailureView("first", "detail", "remedy", MessageSeverity.Warning));
+		panel.Report(new ArchiveFailureView("second", "detail", "remedy", MessageSeverity.Error));
+		var view = new MessagePanelView { DataContext = panel };
+		var window = Realise(new Window { Content = view, Width = 800, Height = 400 });
+		try
+		{
+			var entries = Named<ItemsControl>(view, "MessageEntries");
+			var clear = Named<Button>(view, "ClearMessages");
+
+			foreach (var index in new[] { 0, 1 })
+			{
+				var container = (ContentPresenter)entries.ContainerFromIndex(index)!;
+				var entry = (Grid)container.Child!;
+				var dot = entry.Children.OfType<Ellipse>().Single();
+				TestContext.Current.TestOutputHelper?.WriteLine(
+					$"message entry {index} height {container.Bounds.Height} px (headless)");
+
+				TopOf(entry, container).Should().Be(4);
+				(container.Bounds.Height - BottomOf(entry, container)).Should().Be(4);
+				TopOf(dot, entry).Should().Be(4);
+				(container.Bounds.Height % 4).Should().Be(
+					0, "the entry height {0} px sits on the 4 px grid", container.Bounds.Height);
+			}
+
+			ShouldTakeTheThemesButtonInsets(clear, "the Clear button is a text button");
 		}
 		finally
 		{

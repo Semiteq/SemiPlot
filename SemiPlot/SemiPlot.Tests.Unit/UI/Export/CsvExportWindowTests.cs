@@ -88,6 +88,24 @@ public sealed class CsvExportWindowTests : IDisposable
 	}
 
 	[AvaloniaFact]
+	public void TheButtons_TakeTheThemesPaddingAndHeight()
+	{
+		using var viewModel = Build();
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			foreach (var name in new[] { "ExportSaveAs", "ExportCancel", "ExportClose" })
+			{
+				ShouldTakeTheThemesButtonInsets(Named<Button>(window, name), name);
+			}
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
+	[AvaloniaFact]
 	public void TheInvalidControls_CarryTheInvalidClass_AndTheOthersDoNot()
 	{
 		using var viewModel = Build();
@@ -642,7 +660,7 @@ public sealed class CsvExportWindowTests : IDisposable
 	}
 
 	[AvaloniaFact]
-	public void ThePenCheckboxes_StandAtLeastSixPixelsOffTheListBorder()
+	public void ThePenCheckboxes_StandEightPixelsOffTheListBorder()
 	{
 		using var viewModel = BuildWithPens(12);
 		var window = Realise(new CsvExportWindow { DataContext = viewModel });
@@ -653,7 +671,33 @@ public sealed class CsvExportWindowTests : IDisposable
 			var innerLeft = list.BorderThickness.Left;
 			var boxLeft = box.TranslatePoint(new Point(0, 0), list)!.Value.X;
 
-			(boxLeft - innerLeft).Should().BeGreaterThanOrEqualTo(6);
+			(boxLeft - innerLeft).Should().Be(8);
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void TheForm_TakesItsGapsFromTheSpacingScale()
+	{
+		using var cultureScope = new CultureScope("en");
+		using var viewModel = BuildWithMarkers();
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			var startLabel = window.GetVisualDescendants().OfType<TextBlock>()
+				.Single(block => block.Text == Resources.ExportStartLabel);
+			var header = Named<TextBlock>(window, "ExportPensHeader");
+			var list = Named<Border>(window, "ExportPens");
+
+			(LeftOf(window, Named<CalendarDatePicker>(window, "ExportStartDate")) - RightOf(window, startLabel))
+				.Should().Be(12, "label to field");
+			(TopOf(window, header) - BottomOf(window, Named<ComboBox>(window, "ExportEndMarker")))
+				.Should().Be(16, "a section header stands 16 under the row above");
+			(TopOf(window, list) - BottomOf(window, header)).Should().Be(8, "and 8 over its first row");
+			LeftOf(window, list).Should().Be(16, "the window margin");
 		}
 		finally
 		{
@@ -789,7 +833,7 @@ public sealed class CsvExportWindowTests : IDisposable
 				timeBox.Bounds.Width.Should().Be(110, time);
 				(LeftOf(window, markerBox) - RightOf(window, timeBox)).Should().Be(8, marker);
 				RightOf(window, markerBox).Should().Be(RightOf(window, datePicker), marker);
-				(TopOf(window, timeBox) - BottomOf(window, datePicker)).Should().Be(10, "the second line is 10 px under");
+				(TopOf(window, timeBox) - BottomOf(window, datePicker)).Should().Be(8, "the second line is 8 px under");
 				TopOf(window, markerBox).Should().Be(TopOf(window, timeBox), "one line holds both");
 				CentreOf(window, labelBlock).Should().Be(CentreOf(window, datePicker), "the label is centred on the date");
 				new Control[] { datePicker, timeBox, markerBox }
@@ -798,7 +842,7 @@ public sealed class CsvExportWindowTests : IDisposable
 
 			(TopOf(window, Named<CalendarDatePicker>(window, "ExportEndDate"))
 					- BottomOf(window, Named<ComboBox>(window, "ExportStartMarker")))
-				.Should().Be(20, "the edges stand 20 px apart");
+				.Should().Be(16, "the edges stand 16 px apart");
 
 			string[] edgeControls =
 			[
@@ -833,8 +877,8 @@ public sealed class CsvExportWindowTests : IDisposable
 			RightOf(window, Named<ComboBox>(window, "ExportEndMarker")).Should().Be(edge);
 			RightOf(window, Named<Border>(window, "ExportPens")).Should().Be(edge);
 			RightOf(window, Named<TextBlock>(window, "ExportMessage")).Should().Be(edge);
-			edge.Should().Be(370);
-			window.Width.Should().Be(edge + 20, "the margin is the only space right of the form");
+			edge.Should().Be(374);
+			window.Width.Should().Be(edge + 16, "the margin is the only space right of the form");
 		}
 		finally
 		{
@@ -1382,8 +1426,6 @@ public sealed class CsvExportWindowTests : IDisposable
 	{
 		// The headless shaper advances every glyph by the font size, so the texts are measured in Inter through
 		// Skia and the realised layout is corrected by the label column's real width.
-		const double FormWidth = 350;
-		const double FormColumnSpacing = 14;
 		const double CaretAndRoundingAllowance = 2;
 		using var cultureScope = new CultureScope("ru");
 		using var viewModel = BuildWithMarkers();
@@ -1391,6 +1433,7 @@ public sealed class CsvExportWindowTests : IDisposable
 		try
 		{
 			var picker = Named<CalendarDatePicker>(window, "ExportStartDate");
+			var form = (Grid)picker.Parent!;
 			var box = TextOf(picker);
 			var label = window.GetVisualDescendants().OfType<TextBlock>()
 				.Single(block => block.Text == Resources.ExportStartLabel);
@@ -1398,7 +1441,7 @@ public sealed class CsvExportWindowTests : IDisposable
 			using var labelFont = InterFont(typeface, label.FontSize);
 			using var dateFont = InterFont(typeface, box.FontSize);
 
-			var headlessLabelColumn = LeftOf(window, picker) - LeftOf(window, label) - FormColumnSpacing;
+			var headlessLabelColumn = LeftOf(window, picker) - LeftOf(window, label) - form.ColumnSpacing;
 			var standLabelColumn = Math.Ceiling(Math.Max(
 				labelFont.MeasureText(Resources.ExportStartLabel), labelFont.MeasureText(Resources.ExportEndLabel)));
 			var labelCorrection = headlessLabelColumn - standLabelColumn;
@@ -1407,7 +1450,7 @@ public sealed class CsvExportWindowTests : IDisposable
 
 			box.Text.Should().Be("13.10.2026");
 			standDateCell.Should().BeApproximately(
-				FormWidth - FormColumnSpacing - standLabelColumn, 1, "the date takes the whole field column");
+				form.Bounds.Width - form.ColumnSpacing - standLabelColumn, 1, "the date takes the whole field column");
 			standViewport.Should().BeGreaterThanOrEqualTo(
 				WidestDateWidth(dateFont, Resources.ExportDateFormat) + CaretAndRoundingAllowance);
 		}

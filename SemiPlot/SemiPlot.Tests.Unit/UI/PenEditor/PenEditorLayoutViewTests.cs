@@ -127,6 +127,22 @@ public sealed class PenEditorLayoutViewTests : IDisposable
 		}
 	}
 
+	[AvaloniaFact]
+	public void TheRefreshButton_TakesTheThemesPaddingAndHeight()
+	{
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
+		var window = Realise(viewModel);
+		try
+		{
+			ShouldTakeTheThemesButtonInsets(
+				Named<Button>(window, "PenEditorRefreshButton"), "the refresh button is a text button");
+		}
+		finally
+		{
+			Close(window);
+		}
+	}
+
 	[AvaloniaTheory]
 	[InlineData("en")]
 	[InlineData("ru")]

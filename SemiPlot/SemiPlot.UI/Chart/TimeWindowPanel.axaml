@@ -27,8 +27,8 @@
 
     <Grid RowDefinitions="Auto,Auto,Auto,Auto"
           ColumnDefinitions="Auto,Auto,*"
-          ColumnSpacing="14"
-          RowSpacing="10">
+          ColumnSpacing="12"
+          RowSpacing="8">
 
         <TextBlock Grid.Row="0"
                    Grid.Column="0"

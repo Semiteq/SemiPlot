@@ -165,7 +165,7 @@ as-built mechanics that realize them:
   place that types limits: the navigation bar carries time navigation only. The scale modes are
   `auto`, which ranges over the columns inside the visible window, and `manual` (§AY-3, §AY-4); the
   log10 axis is an axis *type* beside either mode (§AY-6). A pen opens on the type its
-  `log_scale_on_start` stores, the panel's Logarithmic scale checkbox switches it for the session of the
+  `log_scale_on_start` stores, the panel's Logarithmic checkbox switches it for the session of the
   window, and Restore initial scale brings the stored type back with the stored bounds. A log axis
   needs a minimum above zero: the auto range skips values ≤ 0, the panel refuses the type over a manual
   minimum ≤ 0, and a sample ≤ 0 draws 2 px above the bottom of the data area while every readout
@@ -382,8 +382,9 @@ control in `TrendChartView.axaml` and shown at the pointer) over `Chart/AxisScal
   field takes the `invalid` border, the message line names the rule, and no commit writes the pair. While
   the axis is logarithmic, a minimum ≤ 0 is invalid the same way, under `ScaleLogMinimumPositive`. The
   panel keeps its size (`ui-theme.md#the-axis-scale-panel`).
-- The Logarithmic scale checkbox sits in its own row under the bounds, outside `AxisScaleBounds`, so a
-  press on it ends the pair's edit. It reads the pen's session flag, `IsLogarithmic`, `Mode=OneWay`,
+- The Logarithmic checkbox sits in its own row under the bounds, outside `AxisScaleBounds`, so a
+  press on it ends the pair's edit; the row's label column is shared with the bounds grid
+  (`ui-theme.md#the-axis-scale-panel`). It reads the pen's session flag, `IsLogarithmic`, `Mode=OneWay`,
   seeded from the chart's settings at every seed, and writes it only through `ToggleLogarithmicCommand`,
   which orders its two writes by direction. Switching on, the pending pair is in the chart before
   `TrendChartViewModel.SetLogarithmic(penId, true)` checks the log rule: in the view the press or Tab onto

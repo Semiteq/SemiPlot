@@ -76,17 +76,6 @@
         <Style Selector="ColorPicker#FormColorPicker /template/ DropDownButton /template/ :is(Control)#DropDownGlyph">
             <Setter Property="IsVisible" Value="False" />
         </Style>
-        <Style Selector="Panel#PenForm TextBox.invalid">
-            <Setter Property="InnerRightContent">
-                <Template>
-                    <PathIcon Width="16"
-                              Height="16"
-                              Margin="0,0,8,0"
-                              Data="{StaticResource WarningGeometry}"
-                              Foreground="{DynamicResource AppSeverityErrorBrush}" />
-                </Template>
-            </Setter>
-        </Style>
     </Window.Styles>
 
     <Grid Margin="16"
@@ -270,6 +259,7 @@
                                   IsVisible="{Binding SelectedForm, Converter={x:Static ObjectConverters.IsNotNull}}">
 
                         <Panel Name="PenForm"
+                               Classes="invalid-glyph"
                                DataContext="{Binding SelectedForm}">
 
                             <StackPanel x:DataType="local:PenFormViewModel">

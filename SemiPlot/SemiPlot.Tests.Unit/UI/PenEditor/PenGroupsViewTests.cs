@@ -782,8 +782,8 @@ public sealed class PenGroupsViewTests : IDisposable
 			var viewport = ViewportOf(list);
 			var membership = list.Columns[0].ActualWidth;
 			var actions = Math.Max(
-				ActionsOpeningWidth, HeaderWidthInInter(window, HeaderOf(list, Resources.PenGroupsColumnActions), semiBold));
-			var groupHeader = HeaderWidthInInter(window, HeaderOf(list, Resources.PenGroupsColumnGroup), semiBold);
+				ActionsOpeningWidth, ContentWidthInInter(window, HeaderOf(list, Resources.PenGroupsColumnActions), semiBold));
+			var groupHeader = ContentWidthInInter(window, HeaderOf(list, Resources.PenGroupsColumnGroup), semiBold);
 			var groupColumn = viewport - membership - actions;
 			var name = groupColumn - NameInsets - CountGap - countFont.MeasureText("999");
 

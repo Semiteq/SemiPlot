@@ -239,7 +239,8 @@ and `PenEditorColumnUnit` from the pen list, `PenFormMaskPreviewLabel`, and the 
 rest are its own: `PenFormMaskLabel`, `PenFormColorLabel`, `PenFormLineStyleLabel`, `PenFormVisibilityLabel`
 ("Visibility" / "Видимость") and `PenFormScaleTypeLabel` ("Scale type" / "Тип шкалы"). The visibility box
 reads `PenFormShowOnChart`, "Show on the chart" / "Показывать на графике", and the scale type box
-`PenFormLogarithmic`, "Logarithmic" / "Логарифмическая". The line-style combo box reads
+`PenFormLogarithmic`, "Logarithmic" / "Логарифмическая". The axis scale panel reads these two scale type
+keys as the pen form reads its bound labels. The line-style combo box reads
 `PenLineStyleInterpolated` and `PenLineStyleStepped` through `PenLineStyleConverters.ToLabel`, a
 `FuncValueConverter` consumed through `{x:Static}`.
 
@@ -334,7 +335,8 @@ English log line, names a statement the same way (`data-integration.md#two-error
 ## The axis scale panel's text
 
 `Chart/AxisScalePanel` reads `AxisScaleMaximumLabel` and `AxisScaleMinimumLabel` ("Maximum" / "Максимум",
-"Minimum" / "Минимум") and `AxisScaleInitialScale`; it has no apply button, because the pair is written
+"Minimum" / "Минимум"), `AxisScaleInitialScale`, and the pen form's `PenFormScaleTypeLabel` and
+`PenFormLogarithmic`; it has no apply button, because the pair is written
 when its edit ends (`trend-interaction.md#the-axis-scale-panel`). Its Autoscale button reads
 `MenuViewAutoscale`, the same key as the menu item, so one word names the command in both places. The
 pen's name and unit are data, shown in two `TextBlock`s, so no format key joins them.
@@ -342,8 +344,8 @@ The message line shows `AxisScaleBoundInvalid` ("Enter a number in each field" /
 число") for a field that is not a number in the operator's regional format, `AxisScaleBoundsRequired`
 ("Enter both bounds" / "Укажите обе границы") for an empty field and `AxisScaleMinimumBelowMaximum` ("The
 minimum must be below the maximum" / "Минимум должен быть меньше максимума") for an inverted or equal
-pair. The checkbox under Minimum reads `AxisScaleLogarithmic` ("Logarithmic scale" / "Логарифмическая
-шкала"), the scale type in the industry form the pen editor's log column uses, and
+pair. The Scale type row reads `PenFormScaleTypeLabel` ("Scale type" / "Тип шкалы") and its box
+`PenFormLogarithmic` ("Logarithmic" / "Логарифмическая"), the pen form's pair for the same setting, and
 `ScaleLogMinimumPositive`, the pen form's key, fills the message line for a minimum at or below zero on a
 logarithmic axis and for a tick the chart refuses over a manual minimum at or below zero. A tick refused
 over a pair that does not read shows that pair's rule instead. The Russian rule wraps to two lines in the

@@ -4,7 +4,6 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
 using Avalonia.Threading;
-using Avalonia.VisualTree;
 
 using AwesomeAssertions;
 
@@ -16,6 +15,7 @@ using SemiPlot.UI.PenEditor;
 
 using Xunit;
 
+using static SemiPlot.Tests.Unit.UI.Chart.AxisScalePanelDriver;
 using static SemiPlot.Tests.Unit.UI.Chart.ChartViewTestBuilder;
 
 namespace SemiPlot.Tests.Unit.UI.Chart;
@@ -326,7 +326,7 @@ public sealed class AxisScalePanelViewTests
 		var box = panel.FindControl<CheckBox>("AxisScaleLogarithmic")!;
 		var panelSize = panel.Bounds.Size;
 		var presenterSize = PresenterOf(panel).Bounds.Size;
-		box.Content.Should().Be(Resources.AxisScaleLogarithmic);
+		box.Content.Should().Be(Resources.PenFormLogarithmic);
 		box.IsChecked.Should().BeFalse();
 
 		HeadlessInput.Click(shown.Window, box);
@@ -393,16 +393,6 @@ public sealed class AxisScalePanelViewTests
 		logRuleSizes.Should().Be(emptySizes);
 	}
 
-	private static (Flyout Flyout, AxisScalePanel Panel) OpenPanel(TrendChartViewModel viewModel, ShownChart shown)
-	{
-		HeadlessInput.Click(shown.Window, shown.PlotControl, AxisRegionPoint(viewModel));
-		Dispatcher.UIThread.RunJobs();
-
-		var flyout = (Flyout)FlyoutBase.GetAttachedFlyout(shown.PlotControl)!;
-
-		return (flyout, (AxisScalePanel)flyout.Content!);
-	}
-
 	private static void ClickOutsideThePanel(ShownChart shown)
 	{
 		HeadlessInput.Click(shown.Window, shown.PlotControl, new Point(shown.PlotControl.Bounds.Width - 20.0, 20.0));
@@ -413,23 +403,5 @@ public sealed class AxisScalePanelViewTests
 		var boundsTop = panel.FindControl<Grid>("AxisScaleBounds")!.TranslatePoint(default, panel)!.Value.Y;
 
 		HeadlessInput.Click(shown.Window, panel, new Point(panel.Bounds.Width - 4.0, boundsTop - 5.0));
-	}
-
-	private static FlyoutPresenter PresenterOf(AxisScalePanel panel)
-	{
-		return panel.GetVisualAncestors().OfType<FlyoutPresenter>().First();
-	}
-
-	private static (Size Panel, Size Message, Size Presenter) SizesOf(AxisScalePanel panel, TextBlock message)
-	{
-		return (panel.Bounds.Size, message.Bounds.Size, PresenterOf(panel).Bounds.Size);
-	}
-
-	private static void TypeInto(Window window, AxisScalePanel panel, string fieldName, string text)
-	{
-		var field = panel.FindControl<TextBox>(fieldName)!;
-
-		HeadlessInput.Clear(window, field);
-		HeadlessInput.Type(window, field, text);
 	}
 }

@@ -14,10 +14,10 @@
             <Setter Property="IsVisible" Value="False" />
         </Style>
         <Style Selector="Grid#RowContent">
-            <Setter Property="Margin" Value="4,2" />
+            <Setter Property="Margin" Value="4,4" />
         </Style>
         <Style Selector="StackPanel.headed Grid#RowContent">
-            <Setter Property="Margin" Value="24,2,4,2" />
+            <Setter Property="Margin" Value="24,4,4,4" />
         </Style>
         <Style Selector="Border#RowRoot">
             <Setter Property="Background" Value="Transparent" />
@@ -81,7 +81,7 @@
             <Style Selector="Grid#PanelTopRow > Button">
                 <Setter Property="Width" Value="NaN" />
                 <Setter Property="Height" Value="24" />
-                <Setter Property="Padding" Value="8,2" />
+                <Setter Property="Padding" Value="8,0" />
             </Style>
             <Style Selector="Grid#PanelTopRow > Button > Panel > TextBlock">
                 <Setter Property="IsVisible" Value="True" />
@@ -150,7 +150,7 @@
                             <Grid Name="GroupHeaderRow"
                                   ColumnDefinitions="Auto,*,Auto"
                                   IsVisible="{Binding HasHeader}"
-                                  Margin="0,4,16,2">
+                                  Margin="0,4,16,4">
 
                                 <Border Name="HeaderActiveBar"
                                         Grid.Column="0"
@@ -224,7 +224,7 @@
                                                             Width="12"
                                                             Height="12"
                                                             CornerRadius="6"
-                                                            Margin="0,0,6,0"
+                                                            Margin="0,0,8,0"
                                                             VerticalAlignment="Center"
                                                             Background="{Binding PenState.Pen.Color, Converter={x:Static legend:LegendConverters.HexToBrush}}" />
 
@@ -237,7 +237,7 @@
                                                                Name="RowValue"
                                                                Text="{Binding CurrentValueText}"
                                                                IsVisible="{Binding $parent[UserControl].DataContext.IsExpanded}"
-                                                               Margin="6,0,0,0"
+                                                               Margin="8,0,0,0"
                                                                VerticalAlignment="Center" />
 
                                                     <TextBlock Grid.Column="4"

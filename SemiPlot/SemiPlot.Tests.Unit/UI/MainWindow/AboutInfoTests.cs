@@ -39,6 +39,22 @@ public sealed class AboutInfoTests
 		}
 	}
 
+	[AvaloniaFact]
+	public void TheCloseButton_TakesTheThemesPaddingAndHeight()
+	{
+		var about = new AboutInfo("SemiPlot", "1.2.3", @"C:\semiplot\config");
+		var dialog = ViewProbe.Realise(new AboutDialog { DataContext = about });
+		try
+		{
+			ViewProbe.ShouldTakeTheThemesButtonInsets(
+				ViewProbe.Named<Button>(dialog, "AboutClose"), "the Close button is a text button");
+		}
+		finally
+		{
+			dialog.Close();
+		}
+	}
+
 	[Fact]
 	public void AboutInfo_NamesTheConfigurationDirectoryTheRunRead()
 	{

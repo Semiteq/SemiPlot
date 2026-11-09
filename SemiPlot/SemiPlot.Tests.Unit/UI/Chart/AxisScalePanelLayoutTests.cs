@@ -122,6 +122,29 @@ public sealed class AxisScalePanelLayoutTests
 	}
 
 	[AvaloniaFact]
+	public void TheForm_TakesItsGapsFromTheSpacingScale()
+	{
+		using var viewModel = CreateLoadedViewModel();
+		using var shown = ShowChart(viewModel);
+		var (_, panel) = OpenPanel(viewModel, shown);
+		var bounds = panel.FindControl<Grid>("AxisScaleBounds")!;
+		var row = panel.FindControl<Grid>("AxisScaleType")!;
+		var header = (Control)panel.FindControl<TextBlock>("AxisScalePenName")!.Parent!;
+		var maximum = panel.FindControl<TextBox>("AxisScaleMaximum")!;
+		var maximumLabel = bounds.Children.OfType<TextBlock>().First();
+
+		(ViewProbe.LeftOf(maximum, bounds) - ViewProbe.RightOf(maximumLabel, bounds))
+			.Should().Be(12, "label to field");
+		(ViewProbe.LeftOf(panel.FindControl<CheckBox>("AxisScaleLogarithmic")!, row)
+			- ViewProbe.RightOf(panel.FindControl<TextBlock>("AxisScaleTypeLabel")!, row))
+			.Should().Be(12, "label to field");
+		(ViewProbe.TopOf(panel.FindControl<TextBox>("AxisScaleMinimum")!, panel) - ViewProbe.BottomOf(maximum, panel))
+			.Should().Be(8, "the row spacing");
+		(ViewProbe.TopOf(row, panel) - ViewProbe.BottomOf(bounds, panel)).Should().Be(8, "the row spacing");
+		(ViewProbe.TopOf(bounds, panel) - ViewProbe.BottomOf(header, panel)).Should().Be(8, "the row spacing");
+	}
+
+	[AvaloniaFact]
 	public void AClickOnTheScaleTypeLabelOrBesideTheBox_LeavesTheFlagAndGivesThePanelTheKeyboard()
 	{
 		using var viewModel = CreateLoadedViewModel();

@@ -20,6 +20,7 @@ using SemiPlot.UI.Startup;
 using Xunit;
 
 using static SemiPlot.Tests.Unit.UI.MainWindow.MainWindowTestBuilder;
+using static SemiPlot.Tests.Unit.UI.ViewProbe;
 
 namespace SemiPlot.Tests.Unit.UI.MainWindow;
 
@@ -119,6 +120,33 @@ public sealed class AppStatusBarViewTests
 		Dispatcher.UIThread.RunJobs();
 
 		layerText.Text.Should().Be(Resources.FormatStatusLayerFormat(Resources.StatusLayerHour));
+	}
+
+	[AvaloniaFact]
+	public void TheSeparatorAndTheIndicator_TakeTheirInsetsFromTheSpacingScale()
+	{
+		using var panel = new MessagePanelViewModel();
+		using var states = new Subject<ArchiveConnectionState>();
+		using var statusBar = NewStatusBar(panel, states);
+		var view = new AppStatusBar { DataContext = statusBar };
+		var window = Realise(new Window { Content = view, SizeToContent = SizeToContent.Height });
+		try
+		{
+			var bar = (Grid)view.Content!;
+			var separator = bar.Children.OfType<Border>().Single();
+			var indicator = Named<Button>(view, "ConnectionIndicator");
+			var layerText = Named<TextBlock>(view, "ActiveLayerText");
+
+			TopOf(separator, bar).Should().Be(4, "an inset inside the bar");
+			(bar.Bounds.Height - BottomOf(separator, bar)).Should().Be(4, "an inset inside the bar");
+			(LeftOf(separator, bar) - RightOf(indicator, bar)).Should().Be(8, "the gap between controls in one row");
+			(LeftOf(layerText, bar) - RightOf(separator, bar)).Should().Be(8, "the gap between controls in one row");
+			ShouldTakeTheThemesButtonInsets(indicator, "the indicator is a text button");
+		}
+		finally
+		{
+			Dismiss(window);
+		}
 	}
 
 	private static Color ColourOf(IBrush? brush)

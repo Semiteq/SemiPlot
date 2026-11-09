@@ -264,6 +264,61 @@ public sealed class SettingsViewTests : IDisposable
 		}
 	}
 
+	[AvaloniaFact]
+	public void TheButtons_TakeTheThemesPaddingAndHeight()
+	{
+		using var viewModel = Build();
+		var dialog = Realise(new SettingsDialog { DataContext = viewModel });
+		try
+		{
+			foreach (var name in new[] { "SettingsSaveButton", "SettingsClose" })
+			{
+				ShouldTakeTheThemesButtonInsets(Named<Button>(dialog, name), name);
+			}
+
+			Named<Button>(dialog, "SettingsRestartNow").Padding.Should().Be(
+				new Thickness(12, 0), "the hidden restart button takes the theme's padding too");
+		}
+		finally
+		{
+			dialog.Close();
+		}
+	}
+
+	[AvaloniaFact]
+	public void TheDialog_TakesItsInsetsFromTheSpacingScale()
+	{
+		using var viewModel = Build();
+		var dialog = Realise(new SettingsDialog { DataContext = viewModel });
+		try
+		{
+			var interfaceHeader = BlockReading(dialog, Resources.SettingsInterfaceHeader);
+			var connectionHeader = BlockReading(dialog, Resources.SettingsConnectionHeader);
+			var hostLabel = BlockReading(dialog, Resources.SettingsHostLabel);
+			var host = Named<TextBox>(dialog, "SettingsHost");
+
+			LeftOf(interfaceHeader, dialog).Should().Be(16, "the window margin");
+			TopOf(interfaceHeader, dialog).Should().Be(16, "the window margin");
+			(dialog.Bounds.Width - RightOf(host, dialog)).Should().Be(16, "the window margin");
+			(dialog.Bounds.Height - BottomOf(Named<TextBlock>(dialog, "SettingsValidationMessage"), dialog))
+				.Should().Be(16, "the window margin");
+			(LeftOf(host, dialog) - RightOf(hostLabel, dialog)).Should().Be(12, "label to field");
+			(TopOf(Named<ComboBox>(dialog, "SettingsTheme"), dialog)
+				- BottomOf(Named<ComboBox>(dialog, "SettingsLanguage"), dialog)).Should().Be(8, "the row spacing");
+			(TopOf(connectionHeader, dialog) - BottomOf(Named<ComboBox>(dialog, "SettingsTheme"), dialog))
+				.Should().Be(16, "a section header stands 16 below the row above");
+			(TopOf(host, dialog) - BottomOf(connectionHeader, dialog))
+				.Should().Be(8, "a section header stands 8 above its first row");
+			(TopOf(Named<Button>(dialog, "SettingsSaveButton"), dialog)
+				- BottomOf(Named<NumericUpDown>(dialog, "SettingsPollInterval"), dialog))
+				.Should().Be(12, "the form stands as far from its buttons as the export window's");
+		}
+		finally
+		{
+			dialog.Close();
+		}
+	}
+
 	// Semi paints the focused border from its own style: docs/architecture/ui-theme.md#a-form-never-resizes-on-validation
 	[AvaloniaFact]
 	public void AnInvalidField_PaintsItsBorderWithTheErrorBrushFocusedOrNot()
@@ -330,6 +385,11 @@ public sealed class SettingsViewTests : IDisposable
 	private static IEnumerable<TemplatedControl> InvalidFields(SettingsDialog dialog)
 	{
 		return dialog.GetVisualDescendants().OfType<TemplatedControl>().Where(field => field.Classes.Contains(InvalidClass));
+	}
+
+	private static TextBlock BlockReading(SettingsDialog dialog, string text)
+	{
+		return Descendants<TextBlock>(dialog).Single(block => block.Text == text);
 	}
 
 	private static Color BorderColourOf(TextBox textBox)

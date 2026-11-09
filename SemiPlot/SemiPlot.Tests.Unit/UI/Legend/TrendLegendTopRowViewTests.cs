@@ -58,6 +58,8 @@ public sealed class TrendLegendTopRowViewTests
 			LabelOf(button).IsEffectivelyVisible.Should().Be(showsText, "'{0}' at {1} px", button.Name, width);
 			IconOf(button).IsEffectivelyVisible.Should().Be(!showsText, "'{0}' at {1} px", button.Name, width);
 			button.Bounds.Height.Should().Be(showsText ? 24 : 20, "'{0}' at {1} px", button.Name, width);
+			button.Padding.Should().Be(
+				showsText ? new Thickness(8, 0) : new Thickness(0), "'{0}' at {1} px", button.Name, width);
 		}
 
 		if (!showsText)

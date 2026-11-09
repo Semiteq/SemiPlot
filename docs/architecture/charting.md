@@ -622,14 +622,16 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
 - `Legend/TrendLegendView` + `TrendLegendViewModel` (+ group / row VMs and the converters) — the grouped
   sidebar. A row carries the on/off box, a round colour dot, the name, the current value in the pen's own
   mask and the unit; nothing in it is editable but the box, which an allowlist test over the built row
-  template holds. A header is a section caption, not a bold name: smaller text in
-  `AppSecondaryForegroundBrush`, set in capitals by `LegendConverters.ToCapitals`, a one-pixel
-  `AppSubtleLineBrush` line above every header but the first (a `:nth-child(1)` style hides the first),
-  and the rows under a header indented so their box starts where the caption starts. The active row keeps
-  the regular weight and is marked by an `AppAccentFillBrush` background and a 3 px `AppAccentBrush` bar
-  on its left edge, both following `IsActive`. A pen draws once and is listed under every group it
-  belongs to, so one row view model appears under several headers and `Dispose` walks the distinct list.
-  Every drawn header, the ungrouped one included, carries a switch box:
+  template holds. The row's content stands 4 px inside its top, bottom and sides, a row under a drawn header
+  is indented 24 px, 8 px separate the dot from the name and the name from the value, and 4 px the box from
+  the dot and the value from the unit. A row is 24 px tall in the test font (headless, re-measure). A header
+  is a section caption, not a bold name: smaller text in `AppSecondaryForegroundBrush`, set in capitals by
+  `LegendConverters.ToCapitals`, a one-pixel `AppSubtleLineBrush` line above every header but the first (a
+  `:nth-child(1)` style hides the first), and the rows under a header indented so their box starts where the
+  caption starts. The active row keeps the regular weight and is marked by an `AppAccentFillBrush` background
+  and a 3 px `AppAccentBrush` bar on its left edge, both following `IsActive`. A pen draws once and is listed
+  under every group it belongs to, so one row view model appears under several headers and `Dispose` walks the
+  distinct list. Every drawn header, the ungrouped one included, carries a switch box:
   `TrendLegendGroupViewModel.SwitchState` is derived from its rows' pen states (all on true, all off
   false, mixed null) and stored nowhere, the box reads it `Mode=OneWay`, and `SwitchGroupCommand`, its
   one writer, switches every row on unless all are on, then off. A pen's visibility is

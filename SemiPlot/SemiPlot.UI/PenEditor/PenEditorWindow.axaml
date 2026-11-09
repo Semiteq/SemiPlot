@@ -101,7 +101,6 @@
 
             <Button Grid.Column="2"
                     Name="PenEditorRefreshButton"
-                    Padding="12,2"
                     Content="{x:Static text:Resources.PenEditorRefresh}"
                     Command="{Binding RefreshCommand}" />
 

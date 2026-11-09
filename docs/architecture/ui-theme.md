@@ -251,17 +251,20 @@ wins. `SettingsViewTests.AnInvalidField_PaintsItsBorderWithTheErrorBrushFocusedO
 rendered `BorderBrush` of both parts, focused and at rest, under both variants; it fails without the
 include.
 
-The settings dialog is 640 px wide, with a 20 px margin and 10 px between rows. Measured on 2026-09-25
-with Skia and HarfBuzz, every field valid, `SizeToContent="WidthAndHeight"`: 245 px in English and 278 px in
-Russian, so the labels and fields fit either way, and at 440 px the dialog held its size in both languages
-with each field invalid in turn. The 528 px width that the 1.2 times rule gave is superseded by the
-restart-notice measurement below, which set 640 px; a message that still does not fit wraps into the
-second reserved line. A longer label, button or message is measured the same way before it ships.
-`SettingsViewTests.TheDialog_KeepsItsSizeAndItsButtonsWhenAFieldTurnsInvalid` gates the rule: the
-dialog's and the save button's `Bounds` are equal before and after an invalid host.
+The settings dialog is 640 px wide, with a 16 px margin and 8 px between rows. Measured on 2026-09-25
+with Skia and HarfBuzz at the then 20 px margin and 14 px column gap, every field valid,
+`SizeToContent="WidthAndHeight"`: 245 px in English and 278 px in Russian; derived from that measurement for
+the 16 px margin and the 12 px column gap, 235 and 268 px. So the labels and fields fit either way, and at
+440 px the dialog held its size in both languages with each field invalid in turn. The 528 px width that the 1.2
+times rule gave is superseded by the restart-notice measurement below, which set 640 px; a message that still
+does not fit wraps into the second reserved line. A longer label, button or message is measured the same way
+before it ships. `SettingsViewTests.TheDialog_KeepsItsSizeAndItsButtonsWhenAFieldTurnsInvalid` gates the rule:
+the dialog's and the save button's `Bounds` are equal before and after an invalid host.
 
 The restart notice shares its cell with the Restart now button, which narrows the notice by the button and a
-12 px margin. Measured on 2026-09-30 with Skia and HarfBuzz, the real theme, at 14 px with 20 px lines:
+12 px margin. Measured on 2026-09-30 with Skia and HarfBuzz, the real theme, at 14 px with 20 px lines, at the
+then 20 px dialog margin. In the two 640 px rows the first figure is derived for the 16 px margin, 8 px wider;
+the measured figure follows in parentheses:
 
 | | English | Russian |
 | --- | --- | --- |
@@ -269,33 +272,34 @@ The restart notice shares its cell with the Restart now button, which narrows th
 | Save and Close buttons | 59 and 64 px | 104 and 88 px |
 | Notice text on one line | 224 px | 325 px |
 | Notice cell beside the button at 528 px wide | 222 px, two lines | 129 px, trimmed past the second line |
-| Notice cell beside the button at 640 px wide | 334 px, one line | 241 px, two lines, the first 235 px wide |
-| Message cell when the notice is hidden, at 640 px | 457 px | 388 px |
+| Notice cell beside the button at 640 px wide | 342 px derived (334 measured), one line | 249 px derived (241 measured), two lines, the first 235 px wide |
+| Message cell when the notice is hidden, at 640 px | 465 px derived (457 measured) | 396 px derived (388 measured) |
 
 At 528 px the Russian notice did not fit its two lines, so the dialog is 640 px wide: the cell holds the
-Russian notice in two lines with 482 px of line capacity for its 325 px. The headless tests measure with the
-test font, which is about twice as wide, so no test asserts the trimming; `SettingsViewTests` gates the
-button's and the notice's effect on the dialog's and the Save button's `Bounds` instead. A longer notice or
-label is measured again in both languages before it ships.
+Russian notice in two lines with 482 px of line capacity at the 20 px margin, 498 px derived, for its 325 px.
+The headless tests measure with the test font, which is about twice as wide, so no test asserts the trimming;
+`SettingsViewTests` gates the button's and the notice's effect on the dialog's and the Save button's `Bounds`
+instead. A longer notice or label is measured again in both languages before it ships.
 
 `SettingsRestartNoticeThemeApplied`, the notice after a save that also changed the theme, was measured the
-same way on 2026-10-01 in the realised 640 px dialog, with the notice showing beside the button: 304 px on one
-line in English, in a 334 px cell, and 420 px in Russian, which wraps in its 241 x 40 px cell into
+same way on 2026-10-01 in the realised 640 px dialog at the then 20 px margin, with the notice showing beside
+the button: 304 px on one line in English, in a 334 px cell (342 px derived for the 16 px margin), and 420 px in
+Russian, which wraps in its 241 x 40 px cell (249 px derived) into
 "Сохранено. Тема применена," at 208.6 px and "остальное после перезапуска." at 210.5 px, two lines with
 nothing trimmed.
 
 The export window (`Export/CsvExportWindow`) is 390 px wide with `SizeToContent="Height"` and
-`CanResize="False"`, a 20 px margin and 12 px between its three rows: the form grid, the message line and the
+`CanResize="False"`, a 16 px margin and 12 px between its three rows: the form grid, the message line and the
 buttons. The message line is its own full-width row above a right-aligned button row, as in the axis scale
-panel. The form grid is `Auto,*` at 14 px and holds two lines per edge, then the pens header, a bordered pen
+panel. The form grid is `Auto,*` at 12 px and holds two lines per edge, then the pens header, a bordered pen
 list and the row count. The first line is the edge label, centred on the date, and a `CalendarDatePicker`
 stretched over the field column. The second line is a nested grid `110,*` at 8 px under the date: the 110 px
 time `TextBox`, then the marker `ComboBox` stretched to the date's right edge; closed, it shows the marker's
-label alone, and its open list the time and the label (`ui-text.md#the-export-windows-text`). The lines of an edge stand 10 px
-apart; the end label and date carry a 10 px top margin, so 20 px separate the edges, and nothing draws between
-them. Every control keeps Semi's 32 px height, and the picker keeps Semi's text box padding. The dates, the
-marker boxes, the pen list, the message row and the button row end at
-one line, 20 px from the window edge.
+label alone, and its open list the time and the label (`ui-text.md#the-export-windows-text`). The lines of an
+edge stand 8 px apart; the end label and date carry an 8 px top margin, so 16 px separate the edges, and
+nothing draws between them. Every control keeps Semi's 32 px height, and the picker keeps Semi's text box
+padding. The dates, the marker boxes, the pen list, the message row and the button row end at
+one line, 16 px from the window edge.
 
 The pen list is the `Border` `ExportPens`: 1 px of `AppBorderBrush`, no background of its own, sized to its
 rows up to a `MaxHeight` of 226 px, eight 28 px rows plus the border. Inside it the `ScrollViewer`
@@ -303,11 +307,11 @@ rows up to a `MaxHeight` of 226 px, eight 28 px rows plus the border. Inside it 
 `AllowAutoHide="False"`) and disables the horizontal one: a pen label is a `TextBlock` with
 `TextTrimming="CharacterEllipsis"`, and the full label is the box's tooltip. The scroller holds the
 `ItemsControl` `ExportPenItems` over a `VirtualizingStackPanel`, so 500 pens realise only the rows on screen.
-Each row is the `CheckBox` alone with `Margin="6,0"`, the pen editor's cell margin, so a box stands 6 px off the
-list border. A row carries one state, its tick (`desktop-ui` One state per row): the list has no row selection
-and paints no row fill under the pointer, only the checkbox's own hover, press and focus visuals.
-`CsvExportWindowTests.ThePenList_IsCheckboxesWithNoRowSelection` finds no `SelectingItemsControl` and no
-`ISelectable` control inside `ExportPens`, and exactly one focusable control per row, the `CheckBox`.
+Each row is the `CheckBox` alone with `Margin="8,0"`, the plain list cell inset (`desktop-ui` Spacing), so a box
+stands 8 px off the list border. A row carries one state, its tick (`desktop-ui` One state per row): the list
+has no row selection and paints no row fill under the pointer, only the checkbox's own hover, press and focus
+visuals. `CsvExportWindowTests.ThePenList_IsCheckboxesWithNoRowSelection` finds no `SelectingItemsControl` and
+no `ISelectable` control inside `ExportPens`, and exactly one focusable control per row, the `CheckBox`.
 
 The list is one Tab stop. `ExportPenItems` sets `KeyboardNavigation.TabNavigation="Once"`, so Tab enters at a
 box, Tab or Shift+Tab from any box leaves the list, and Shift+Tab from `Save as...` returns to the box focused
@@ -324,45 +328,49 @@ gate the keyboard.
 The message line carries the form
 messages, the progress and success lines and the Excel notice, which are longer than the settings dialog's.
 Measured on 2026-10-14 with Skia and HarfBuzz, the real Win32 platform, the Semi theme, Inter at 14 px, 50
-pens `Damper 01` to `Damper 50`:
+pens `Damper 01` to `Damper 50`, at the then 20 px margin, 14 px column gap and 10 px rows. A row marked
+derived is that measurement recomputed for the 16 px margin, the 12 px column gap and 8 px rows:
 
 | | English | Russian |
 | --- | --- | --- |
-| Window size, every state below | 390 x 609 px, an estimate | 390 x 609 px, an estimate |
+| Window size, every state below | 390 x 585 px, an estimate, derived | 390 x 585 px, an estimate, derived |
 | `Save as...`, `Cancel` and `Close` buttons | 90, 73 and 64 px | 145, 82 and 88 px |
-| Message row, list, right edge of the dates, the marker boxes and the `Close` button | 350 px; 370 px | 350 px; 370 px |
-| Edge grid: label, date; time box, marker box | 32, 304; 110, 186 px | 52, 284; 110, 166 px |
+| Message row, list, right edge of the dates, the marker boxes and the `Close` button | 358 px; 374 px, derived | 358 px; 374 px, derived |
+| Edge grid: label, date; time box, marker box | 32, 314; 110, 196 px, derived | 52, 294; 110, 176 px, derived |
 | Pens header at "1 of 50" and "50 of 50" | 97 and 106 px | 112 and 121 px |
 | Excel notice on one line, lines in the row | 574 px, 2 | 612 px, 2 |
 | Success line with the 44-character suggested file name, one line, lines in the row | 454 px, 2 | 509 px, 2 |
 | Longest form message on one line (lines in the row) | 253 px, end not after start (1) | 274 px, start time unreadable (1) |
-| A 120-character pen name `W...W` in the list | trimmed to 314 px of a 348 px viewport, no horizontal extent | same |
+| A 120-character pen name `W...W` in the list | trimmed to about 318 px of a 356 px viewport, no horizontal extent, derived | same |
 
 The window keeps one size (50 pens, the list at its `MaxHeight`) with every field valid, with the Excel
 notice (a count of 2 000 000), with each of the seven problems in turn and with the success line. Its height is
-an estimate: 515 px measured with one 32 px line per edge, plus the two second lines of 32 px, their two 10 px
-row gaps and the 10 px top margin of the end edge, 94 px; the stand check of #160 measures it. Every message
-fits the two lines of the 350 px row (700 px of capacity), and every form message fits one. The Russian Excel
-notice took three lines at 701 px, so its wording lost the opening "in the range" clause; the English one fit as it was.
-The floor is the Russian buttons, 145 + 82 + 88 px and two 8 px gaps, 331 px, plus the 40 px margin: 371 px.
-The label column decides the date's width: 284 px in Russian and 304 px in English. The picker's chrome
-is Semi's 12 px text box padding on each side, the 8 px gap, the 16 px calendar icon and 8 px after it, 56 px,
-which leaves the Russian date 228 px. In Inter at 14 px the widest `dd.MM.yyyy` measures 79.6 px (the widest
-digit repeated over the mask, which bounds every date) and 13.10.2026 72.8 px.
+an estimate, 585 px, derived from the 609 px estimate at the old insets: 515 px measured with one 32 px line per
+edge, plus the two second lines of 32 px, their two 10 px row gaps and the 10 px top margin of the end edge,
+94 px. The new insets take 8 px off the margins, 12 px off six row gaps of 2 px, and 2 px each off the end
+edge's and the pens header's top margins: 609 - 8 - 12 - 2 - 2 = 585 px. The stand check of #160 measures it.
+Every message fits the two lines of the 358 px row (716 px of capacity), and every form message fits one. The
+Russian Excel notice took three lines at 701 px, so its wording lost the opening "in the range" clause; the
+English one fit as it was. The floor is the Russian buttons, 145 + 82 + 88 px and two 8 px gaps, 331 px, plus
+the 32 px margin: 363 px. The label column decides the date's width: 294 px in Russian and 314 px in English.
+The picker's chrome is Semi's 12 px text box padding on each side, the 8 px gap, the 16 px calendar icon and
+8 px after it, 56 px, which leaves the Russian date 239 px, as the fit test computes it in Inter on 2026-11-03.
+In Inter at 14 px the widest `dd.MM.yyyy` measures 79.6 px (the widest digit repeated over the mask, which
+bounds every date) and 13.10.2026 72.8 px.
 `UnderRussian_TheWidestDateInInter_FitsTheStartPickersTextViewportOnTheStand` gates the fit: the headless
 shaper advances every glyph by the font size, so the test measures the label and the date masks in the Inter
 font the app ships, through Skia, corrects the realised layout by the label column's real width, requires the
-corrected date to be the 350 px form less the 14 px column gap and that label column, within 1 px, and requires
-the corrected text viewport to hold the widest date plus 2 px. Skia's `MeasureText` sums the advances without
-kerning, an upper bound on the HarfBuzz width of a digit string. The manual stand check of the export by
-markers (#160) checks the whole layout by eye. The success line names the file and not the path; the full path
-is the line's tooltip. The headless tests measure with the test font, which is about twice as wide, so none asserts the
-wrapping and the button row overflows the window there;
+corrected date to be the 358 px form less the 12 px column gap and that label column, within 1 px, and
+requires the corrected text viewport to hold the widest date plus 2 px. Skia's `MeasureText` sums the advances
+without kerning, an upper bound on the HarfBuzz width of a digit string. The manual stand check of the export
+by markers (#160) checks the whole layout by eye. The success line names the file and not the path; the full
+path is the line's tooltip. The headless tests measure with the test font, which is about twice as wide, so
+none asserts the wrapping and the button row overflows the window there;
 `CsvExportWindowTests.TheWindow_KeepsItsSizeAndItsButtonsWhenAFieldTurnsInvalid` gates the rule on the
 window's and the `Save as...` button's `Bounds`, and
-`TheDatesTheMarkerBoxesTheListAndTheMessage_EndAtOneRightEdge` gates the alignment and the 20 px right margin
+`TheDatesTheMarkerBoxesTheListAndTheMessage_EndAtOneRightEdge` gates the alignment and the 16 px right margin
 in both languages, and `EachEdge_PutsTheDateOverTheTimeAndTheMarkerBox_AndTheTabOrderFollows` the two lines,
-the 8, 10 and 20 px gaps, the centred label and the 32 px controls. A longer message is measured again in both
+the 8, 8 and 16 px gaps, the centred label and the 32 px controls. A longer message is measured again in both
 languages before it ships.
 
 ### The axis scale panel
@@ -377,13 +385,14 @@ bottom margin. Each bound is a 140 px `TextBox` aligned left in the field column
 The Logarithmic box starts at the fields' left edge. The bounds grid and the Scale type grid `AxisScaleType`
 each name their `Auto` label column `SharedSizeGroup="AxisScaleLabel"` under the outer grid's
 `Grid.IsSharedSizeScope`, so the column is the widest of the three labels in each language and the form has
-one label edge and one field edge (`desktop-ui` Alignment). Both grids use a 14 px `ColumnSpacing`. The box
+one label edge and one field edge (`desktop-ui` Alignment). Both grids use a 12 px `ColumnSpacing`. The box
 keeps its own grid outside `AxisScaleBounds`, so focus onto it ends the pair's edit
 (`trend-interaction.md#the-axis-scale-panel`). The box is `HorizontalAlignment="Left"`, so only the box and
 its text toggle the flag, and a click on the label or on the empty right part of the row gives the panel the
 keyboard; `AxisScalePanelLayoutTests.AClickOnTheScaleTypeLabelOrBesideTheBox_LeavesTheFlagAndGivesThePanelTheKeyboard`
 gates both clicks. `AxisScalePanelLayoutTests.TheLogarithmicBox_StartsAtTheFieldEdge_UnderTheScaleTypeLabel` gates
-the edge and the shared column in both cultures, and `TheScaleTypeRow_FitsThePanelInInter` the fit in Inter: the
+the edge and the shared column in both cultures; it compares the two grids' `ColumnDefinitions[0].ActualWidth`
+(`#an-off-scale-inset-in-axaml-is-a-defect`), and `TheScaleTypeRow_FitsThePanelInInter` the fit in Inter: the
 label column, the gap and the 140 px field leave at least 24 px of the panel free, and the label column, the
 gap and the box fit the panel.
 
@@ -393,7 +402,7 @@ and a refused Logarithmic click leaves the box as it was and fills the message l
 disappears.
 
 Measured on 2026-10-16 with Skia and HarfBuzz, in the real theme at 14 px on the Windows machine fonts, off a
-realised panel with no view model, so the header row is empty:
+realised panel with no view model, so the header row is empty, at the then 14 px column gap and 10 px rows:
 
 | | English | Russian |
 | --- | --- | --- |
@@ -407,13 +416,15 @@ realised panel with no view model, so the header row is empty:
 | `ScaleLogMinimumPositive` | 255.5 and 73.8 px, two lines | 283.2 and 185.4 px, two lines (the first with its trailing space) |
 | Panel size with each message shown | unchanged | unchanged |
 
-The three rows marked "before the Scale type row" predate the current layout; the current row, measured in
-Inter at 14 px through Skia by `TheScaleTypeRow_FitsThePanelInInter` (2026-11-03):
+The three rows marked "before the Scale type row" predate the current layout and were measured at the 14 px
+column gap; the current row, measured in Inter at 14 px through Skia by `TheScaleTypeRow_FitsThePanelInInter`
+(2026-11-03), with the field column start the label column plus the 12 px gap:
 
 | Inter | English | Russian |
 | --- | --- | --- |
 | Labels Maximum, Minimum, Scale type | 63.7, 59.8, 69.6 px | 72.8, 66.1, 75.0 px |
 | Label column | 69.6 px | 75.0 px |
+| Field column start | 81.6 px | 87.0 px |
 | Logarithmic box, its 24.0 px chrome included | 101.9 px | 149.2 px |
 
 The submenu header with the pen "Damper valve 01" in mTorr, measured at 360 px: 181.3 px in a 270 px item in
@@ -430,8 +441,8 @@ wide, so the measurement above is the only evidence that nothing is trimmed.
 
 `Chart/TimeWindowPanel` is a `Flyout` form under the same rule, 360 px wide, with four rows that exist in every
 state: Start, End, Width and the reserved message line (`form-message error`, 40 px) across all three columns.
-Its grid has an `Auto` label column, each time box is a 110 px `TextBox`, and the third column, `*`, holds a
-`CalendarDatePicker` on the Start and End rows and the presets
+Its grid has an `Auto` label column, a 12 px column gap and an 8 px row gap, each time box is a 110 px
+`TextBox`, and the third column, `*`, holds a `CalendarDatePicker` on the Start and End rows and the presets
 `DropDownButton` on the Width row, each stretched to the row's end. The panel has no buttons: Enter, a preset
 and the close commit (`trend-interaction.md#the-time-window-panel`). All five fields bind `Classes.invalid`:
 the two dates, the two times and the width. An end that is not after the start, or a span over 365 days,
@@ -447,7 +458,7 @@ untrimmed; it is measured that way before a longer label or message ships.
 ### The marker label editor
 
 The chart's label editor (`MarkerLabelFlyout` in `Chart/TrendChartView.axaml`) is a `Flyout` form under the
-same rule, 360 px wide, with two rows and 10 px between them: the label `TextBox` (`MaxLength = 80`) and a
+same rule, 360 px wide, with two rows and 8 px between them: the label `TextBox` (`MaxLength = 80`) and a
 right-aligned row of OK and Cancel. No field can be invalid: the text is trimmed, an empty one means no
 label, and the box takes no 81st character. The editor therefore reserves no message line, no field binds
 `Classes.invalid`, and the watermark `MarkerLabelPlaceholder` says the label is optional. The width is the
@@ -480,10 +491,10 @@ The root grid has `Margin="16"` and two rows 16 px apart. The top row is the top
 pen list border's left edge. The box is wider than the 240 px of a free-text field because it carries a
 sentence-long placeholder rather than one value, with room left for typed text past it. It realises at the
 button's height with no `Height` set, so the bar stays 32 px. Columns 1 and 2 hold `PenEditorAddedCount` and
-`PenEditorRefreshButton` (`Padding="12,2"`), so both stand right-aligned and the button's right edge is the
-groups pane's. The top bar carries no notice. The second row is a `*,16,Auto,16,Auto` grid of the bordered
-pen list, the pen pane `PenFormPanel` and the groups pane `GroupsPanel`. The rule above holds for every part
-but the two grids:
+`PenEditorRefreshButton`, which takes Semi's `12,0` padding and 32 px height, so both stand right-aligned and
+the button's right edge is the groups pane's. The top bar carries no notice. The second row is a
+`*,16,Auto,16,Auto` grid of the bordered pen list, the pen pane `PenFormPanel` and the groups pane
+`GroupsPanel`. The rule above holds for every part but the two grids:
 
 - Resizing grows the two grids only. The pen list takes the spare width and height; the group grid takes
   the spare height of its pane. The pen pane (`PenEditorWindow.PenPaneWidth`, 420 px) and the groups pane
@@ -778,6 +789,70 @@ variants, and `TrendChartViewTests.ALoadedView_RepaintsThePlotWhenTheApplication
 its unloaded counterpart covers the wiring: the subscription, and that `OnUnloaded` drops it.
 `TrendChartViewTests.AViewWithNoViewModel_StillPaintsTheChartAreaFromThePalette` covers a view
 with no view model.
+
+## An off-scale inset in AXAML is a defect
+
+Every `Margin`, `Padding`, `Spacing`, `ColumnSpacing` and `RowSpacing` value in the UI's AXAML, as an attribute
+or as a `Setter`, is one to four numbers from the `desktop-ui` spacing scale: 0, 4, 8, 12, 16, 24, 32. Each
+value takes the level it belongs to: window margin 16, label to field 12, row spacing 8, a section header 16
+above and 8 below, a plain list cell inset 8, a gap between controls in one row 8, an inset inside a control 4.
+
+A text button carries no padding of its own. Semi's `Button` theme supplies `ButtonDefaultPadding`, `12,0`, and
+a `MinHeight` of 32 px, so every dialog button, the status bar's `ConnectionIndicator` and the message panel's
+`ClearMessages` are 32 px tall with 12 px sides. Fixed-size icon buttons set `Padding="0"`: the sidebar's top
+row in its icon form, the group fold toggle (`Legend/TrendLegendView.axaml`) and the pen editor's
+`GroupActionsButton` (`PenEditor/PenEditorWindow.axaml`). The sidebar's top-row text buttons have a fixed 24 px
+`Height` in a 28 px row and keep their own `Padding` setter, `8,0`.
+
+This command finds an off-scale inset, and returns nothing today:
+
+```powershell
+git grep -nP '(?:Margin|Padding|Spacing)(?:\x22\s+Value)?=\x22(?!(?:0|4|8|12|16|24|32)(?:[, ]+(?:0|4|8|12|16|24|32)){0,3}\x22)' -- 'SemiPlot/SemiPlot.UI/*.axaml'
+```
+
+`\x22` is the double quote, so the command runs unchanged in PowerShell and in bash. It needs a Git built with
+PCRE; without it, two stages print the same lines:
+
+```bash
+git grep -noE '[A-Za-z]*(Margin|Padding|Spacing)="[^"]*"|Property="[A-Za-z]*(Margin|Padding|Spacing)" Value="[^"]*"' -- 'SemiPlot/SemiPlot.UI/*.axaml' \
+  | grep -vE ':[0-9]+:(([A-Za-z]*(Margin|Padding|Spacing)=)|(Property="[A-Za-z]*" Value=))"(0|4|8|12|16|24|32)([, ]+(0|4|8|12|16|24|32)){0,3}"$'
+```
+
+The rule is by property, and no file or line is exempt. The gate does not scan:
+
+- sizes and geometry that are not insets: `Width`, `Height`, `MinWidth`, `MinHeight`, `MaxHeight`,
+  `LineHeight`, `BorderThickness`, `CornerRadius`, `FontSize`, `StrokeThickness` and `ColumnDefinitions`
+  widths, such as the sidebar's 1 px hairlines, 3 px active bars and 28 px top row;
+- the reserved message line, `TextBlock.form-message` at `LineHeight` 20 and `Height` 40
+  (`Styles/Forms.axaml`), two 20 px lines;
+- C# and the plot: `ChartMarkerReadings.TextPadding` pads a ScottPlot label in plot pixels, not an Avalonia
+  layout inset;
+- the test projects.
+
+No `ControlTemplate` or `ControlTheme` in the tree holds an inset. One added later that must be off the scale
+names its file in the gate as a `':!path'` exclusion, with its reason in this section. A non-numeric value, such
+as `{StaticResource ...}`, fails the gate and is reviewed by hand.
+
+No CI job runs the gate, as no CI job runs the colour gate below. The inset tests catch a regression in the
+windows they cover: `TheButtons_TakeTheThemesPaddingAndHeight` in `SettingsViewTests`, `CsvExportWindowTests`
+and `StartupFailureWindowTests`, `PenEditorLayoutViewTests.TheRefreshButton_TakesTheThemesPaddingAndHeight`,
+`ChartMarkerViewTests.TheLabelEditorButtons_TakeTheThemesPaddingAndHeight`,
+`AboutInfoTests.TheCloseButton_TakesTheThemesPaddingAndHeight`,
+`SettingsViewTests.TheDialog_TakesItsInsetsFromTheSpacingScale`,
+`TheForm_TakesItsGapsFromTheSpacingScale` in `CsvExportWindowTests` and `AxisScalePanelLayoutTests`,
+`TimeWindowPanelViewTests.TheGrid_TakesItsGapsFromTheSpacingScale`,
+`ChartMarkerViewTests.TheLabelEditor_StandsItsButtonsEightPixelsUnderTheBox`,
+`ARow_TakesItsInsetsFromTheSpacingScale` and `AnUngroupedRow_TakesItsInsetsFromTheSpacingScale` in
+`TrendLegendViewTests`, the padding assertion of
+`TrendLegendTopRowViewTests.TheTopRow_ShowsTextFromTheThresholdUpAndIconsBelowIt`,
+`AppStatusBarViewTests.TheSeparatorAndTheIndicator_TakeTheirInsetsFromTheSpacingScale`,
+`NavigationBarViewTests.TheHairline_StandsFourPixelsInsideTheBar` and
+`MessagePanelViewTests.AnEntryRowAndTheClearButton_TakeTheirInsetsFromTheSpacingScale`. Each reads realised
+edges, never the attribute text.
+
+A label-to-field gap is measured as the field's left edge less the label's right edge. In Avalonia 12
+`ColumnDefinition.ActualWidth` includes the grid's `ColumnSpacing`, so a gap read as the field's left edge less
+column 0's `ActualWidth` measures 0.
 
 ## A colour literal in AXAML is a defect
 

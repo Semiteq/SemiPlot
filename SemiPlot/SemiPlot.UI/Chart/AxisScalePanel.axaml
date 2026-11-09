@@ -19,7 +19,7 @@
     </UserControl.KeyBindings>
 
     <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto"
-          RowSpacing="10"
+          RowSpacing="8"
           Grid.IsSharedSizeScope="True">
 
         <Grid Grid.Row="0"
@@ -43,8 +43,8 @@
               Name="AxisScaleBounds"
               Classes="invalid-glyph"
               RowDefinitions="Auto,Auto"
-              ColumnSpacing="14"
-              RowSpacing="10">
+              ColumnSpacing="12"
+              RowSpacing="8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"
                                   SharedSizeGroup="AxisScaleLabel" />
@@ -91,7 +91,7 @@
 
         <Grid Grid.Row="2"
               Name="AxisScaleType"
-              ColumnSpacing="14">
+              ColumnSpacing="12">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"
                                   SharedSizeGroup="AxisScaleLabel" />

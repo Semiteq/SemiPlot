@@ -207,3 +207,9 @@ defect in the shipped tree; each is a scoped follow-up an audit named.
   its own PR after `20260903-harness-debloat.md`: the harness clones independent databases per class, so
   parallel gated classes against one server are fine, and the one thing to reword is the
   `ArchiveDatabaseCollection` comment about classes not racing.
+
+- **The message entry's severity dot is centred by a hand-tuned margin.** The 8 px `Ellipse` sits on the
+  title's first line through `Margin="0,4,8,0"` (`Messages/MessagePanelView.axaml:66`), which `desktop-ui`
+  Alignment (`SKILL.md:127-128`) rules out: a glyph is centred with alignment, never with a margin. Alignment
+  cannot reach the first line of a wrapping title, so the fix is a layout that aligns the dot to the first text
+  line, such as a first-line row of its own.

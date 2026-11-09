@@ -36,8 +36,7 @@
             <Button Grid.Column="1"
                     Name="ClearMessages"
                     Content="{x:Static text:Resources.MessagePanelClear}"
-                    Command="{Binding ClearCommand}"
-                    Padding="8,2" />
+                    Command="{Binding ClearCommand}" />
 
         </Grid>
 
@@ -59,12 +58,12 @@
                 <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="messages:MessageEntry">
                         <Grid ColumnDefinitions="Auto,*,Auto,Auto"
-                              Margin="0,2">
+                              Margin="0,4">
 
                             <Ellipse Grid.Column="0"
                                      Width="8"
                                      Height="8"
-                                     Margin="0,5,8,0"
+                                     Margin="0,4,8,0"
                                      VerticalAlignment="Top"
                                      Classes.severity-error="{Binding View.Severity, Converter={x:Static messages:SeverityMatchConverter.Instance}, ConverterParameter=Error}"
                                      Classes.severity-warning="{Binding View.Severity, Converter={x:Static messages:SeverityMatchConverter.Instance}, ConverterParameter=Warning}"

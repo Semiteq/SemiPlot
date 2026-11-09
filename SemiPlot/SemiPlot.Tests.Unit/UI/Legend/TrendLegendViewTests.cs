@@ -407,6 +407,45 @@ public sealed class TrendLegendViewTests
 		LeftOf(rowBox, window).Should().Be(LeftOf(header, window));
 	}
 
+	[AvaloniaFact]
+	public void ARow_TakesItsInsetsFromTheSpacingScale()
+	{
+		var chart = CreateChart();
+		chart.AddPen(new Pen(1, "Chamber pressure", ["Pressures"], "#ff0000", "kPa", "0.000"));
+		using var legend = new TrendLegendViewModel(chart, [new StoredGroup(1, "Pressures", [1])]);
+		ChartTestBuilder.LoadInitialHistory(chart, _scheduler, ChartTestBuilder.From, ChartTestBuilder.To);
+		var window = Realize(legend);
+		var row = SingleRow(window);
+		var content = Descendant<Grid>(row, "RowContent");
+		var header = Descendant<Grid>(window, "GroupHeaderRow");
+		TestContext.Current.TestOutputHelper?.WriteLine($"legend row height {row.Bounds.Height} px (headless)");
+
+		TopOf(content, row).Should().Be(4, "an inset inside a control");
+		(row.Bounds.Height - BottomOf(content, row)).Should().Be(4, "an inset inside a control");
+		LeftOf(content, row).Should().Be(24, "a row under a drawn header keeps its 24 px indent");
+		(LeftOf(Descendant<TextBlock>(row, "RowName"), row) - RightOf(Descendant<Border>(row, "RowColor"), row))
+			.Should().Be(8, "the gap between controls in one row");
+		(LeftOf(Descendant<TextBlock>(row, "RowValue"), row) - RightOf(Descendant<TextBlock>(row, "RowName"), row))
+			.Should().Be(8, "the gap between controls in one row");
+		(TopOf(row, window) - BottomOf(header, window)).Should().Be(4, "the header row's bottom inset");
+		(row.Bounds.Height % 4).Should().Be(0, "the row height {0} px sits on the 4 px grid", row.Bounds.Height);
+	}
+
+	[AvaloniaFact]
+	public void AnUngroupedRow_TakesItsInsetsFromTheSpacingScale()
+	{
+		var chart = CreateChart();
+		chart.AddPen(new Pen(1, "Chamber pressure", [], "#ff0000", "kPa", "0.000"));
+		using var legend = new TrendLegendViewModel(chart, []);
+		var window = Realize(legend);
+		var row = SingleRow(window);
+		var content = Descendant<Grid>(row, "RowContent");
+
+		TopOf(content, row).Should().Be(4, "an inset inside a control");
+		(row.Bounds.Height - BottomOf(content, row)).Should().Be(4, "an inset inside a control");
+		LeftOf(content, row).Should().Be(4, "a row with no drawn header takes no indent");
+	}
+
 	[AvaloniaTheory]
 	[InlineData(AppThemeVariant.Light)]
 	[InlineData(AppThemeVariant.Dark)]

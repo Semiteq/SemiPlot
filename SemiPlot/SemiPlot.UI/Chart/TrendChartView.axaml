@@ -30,7 +30,7 @@
         <Flyout x:Key="MarkerLabelFlyout" Placement="Pointer">
             <Grid Width="360"
                   RowDefinitions="Auto,Auto"
-                  RowSpacing="10"
+                  RowSpacing="8"
                   KeyDown="OnMarkerLabelKeyDown">
                 <TextBox Grid.Row="0"
                          Name="MarkerLabelBox"
@@ -42,12 +42,10 @@
                             Spacing="8">
                     <Button Name="MarkerLabelOk"
                             Content="{x:Static text:Resources.MarkerLabelOk}"
-                            Click="OnMarkerLabelOkClick"
-                            Padding="12,2" />
+                            Click="OnMarkerLabelOkClick" />
                     <Button Name="MarkerLabelCancel"
                             Content="{x:Static text:Resources.MarkerLabelCancel}"
-                            Click="OnMarkerLabelCancelClick"
-                            Padding="12,2" />
+                            Click="OnMarkerLabelCancelClick" />
                 </StackPanel>
             </Grid>
         </Flyout>

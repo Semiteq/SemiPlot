@@ -5,6 +5,8 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
+using AwesomeAssertions;
+
 namespace SemiPlot.Tests.Unit.UI;
 
 internal static class ViewProbe
@@ -22,6 +24,13 @@ internal static class ViewProbe
 	{
 		window.Close();
 		Dispatcher.UIThread.RunJobs();
+	}
+
+	/// <summary>Semi's text button padding, 12,0, and its 32 px height.</summary>
+	public static void ShouldTakeTheThemesButtonInsets(Button button, string because)
+	{
+		button.Padding.Should().Be(new Thickness(12, 0), because);
+		button.Bounds.Height.Should().Be(32, because);
 	}
 
 	public static T Named<T>(Control root, string name)

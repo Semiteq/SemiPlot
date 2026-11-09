@@ -9,6 +9,8 @@ using SemiPlot.UI.Navigation;
 
 using Xunit;
 
+using static SemiPlot.Tests.Unit.UI.ViewProbe;
+
 namespace SemiPlot.Tests.Unit.UI.Navigation;
 
 [Collection(ProcessGlobalStateCollection.Name)]
@@ -56,6 +58,25 @@ public sealed class NavigationBarViewTests
 			.Single(border => border.Name == "GroupSeparator");
 
 		separator.Width.Should().Be(1.0);
+	}
+
+	[AvaloniaFact]
+	public void TheHairline_StandsFourPixelsInsideTheBar()
+	{
+		var view = CreateView();
+		var window = Realise(new Window { Content = view });
+		try
+		{
+			var bar = (StackPanel)view.Content!;
+			var separator = Descendant<Border>(view, "GroupSeparator");
+
+			TopOf(separator, bar).Should().Be(4, "an inset inside the bar");
+			(bar.Bounds.Height - BottomOf(separator, bar)).Should().Be(4, "an inset inside the bar");
+		}
+		finally
+		{
+			Dismiss(window);
+		}
 	}
 
 	private static NavigationBarView CreateView()

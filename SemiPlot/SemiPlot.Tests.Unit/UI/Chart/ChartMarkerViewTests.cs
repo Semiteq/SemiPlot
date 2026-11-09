@@ -680,6 +680,31 @@ public sealed class ChartMarkerViewTests : IDisposable
 	}
 
 	[AvaloniaFact]
+	public void TheLabelEditorButtons_TakeTheThemesPaddingAndHeight()
+	{
+		var marker = new StoredMarker(1, MomentAt(0.25), "Etch start");
+		_channel.Push(marker);
+		OpenLabelEditorToRename(marker);
+
+		foreach (var name in new[] { "MarkerLabelOk", "MarkerLabelCancel" })
+		{
+			ViewProbe.ShouldTakeTheThemesButtonInsets(LabelEditorButton(name), name);
+		}
+	}
+
+	[AvaloniaFact]
+	public void TheLabelEditor_StandsItsButtonsEightPixelsUnderTheBox()
+	{
+		var marker = new StoredMarker(1, MomentAt(0.25), "Etch start");
+		_channel.Push(marker);
+		OpenLabelEditorToRename(marker);
+		var editor = (Control)LabelEditor.Content!;
+
+		(ViewProbe.TopOf(LabelEditorButton("MarkerLabelOk"), editor) - ViewProbe.BottomOf(LabelBox, editor))
+			.Should().Be(8, "the row spacing");
+	}
+
+	[AvaloniaFact]
 	public void RenameOnAMarker_ThenCancel_KeepsTheOldLabel()
 	{
 		var marker = new StoredMarker(1, MomentAt(0.25), "Etch start");

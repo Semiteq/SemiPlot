@@ -133,6 +133,32 @@ public sealed class StartupFailureWindowTests
 	}
 
 	[AvaloniaFact]
+	public void TheButtons_TakeTheThemesPaddingAndHeight()
+	{
+		using var configDirectory = ShippedConfiguration.CopyToTemporaryDirectory();
+		using var viewModel = NewFailureViewModel(configDirectory);
+		var window = new StartupFailureWindow { DataContext = viewModel };
+		ViewProbe.Realise(window);
+		try
+		{
+			foreach (var name in new[]
+			{
+				"StartupFailureSettings", "StartupFailureRestart", "StartupFailureAbout", "StartupFailureExit",
+			})
+			{
+				var button = ViewProbe.Named<Button>(window, name);
+
+				button.IsVisible.Should().BeTrue(name);
+				ViewProbe.ShouldTakeTheThemesButtonInsets(button, name);
+			}
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[AvaloniaFact]
 	public void TheExitButton_ClosesTheWindow()
 	{
 		using var viewModel = NewFailureViewModel(AppContext.BaseDirectory);

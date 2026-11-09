@@ -1004,7 +1004,7 @@ pane.
 - [x] run the key gate under Acceptance Evidence over `-- SemiPlot docs/architecture`: it prints nothing
 - ⚠️ a scratch view test (typed rename, then a left click on the second group row's name) showed the group grid
   takes the focus and the rename writes once; `overview.md` states it, and the probe was deleted
-- [ ] move this plan to `docs/plans/completed/` (left to the delivery step)
+- [x] move this plan to `docs/plans/completed/`
 
 ## Post-Completion
 

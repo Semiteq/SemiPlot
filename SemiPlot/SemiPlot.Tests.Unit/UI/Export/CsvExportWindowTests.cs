@@ -3,6 +3,7 @@ using System.Reactive.Threading.Tasks;
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
@@ -398,13 +399,218 @@ public sealed class CsvExportWindowTests : IDisposable
 	}
 
 	[AvaloniaFact]
+	public void ThePenList_IsCheckboxesWithNoRowSelection()
+	{
+		using var viewModel = BuildWithPens(3);
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			var list = Named<Border>(window, "ExportPens");
+			var items = Named<ItemsControl>(window, "ExportPenItems");
+
+			Descendants<SelectingItemsControl>(list).Should().BeEmpty();
+			Descendants<Control>(list).OfType<ISelectable>().Should().BeEmpty();
+			for (var index = 0; index < 3; index++)
+			{
+				var row = items.ContainerFromIndex(index)!;
+				var focusable = Descendants<Control>(row).Prepend(row).Where(control => control.Focusable).ToList();
+
+				focusable.Should().ContainSingle()
+					.Which.Should().BeOfType<CheckBox>()
+					.Which.DataContext.Should().BeSameAs(viewModel.Pens[index]);
+			}
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void AClickOnAPenLabel_TogglesItsTickAndSelectsNoRow()
+	{
+		using var viewModel = BuildWithPens(3);
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			var header = Named<TextBlock>(window, "ExportPensHeader");
+			var label = LabelOf(Descendants<CheckBox>(Named<Border>(window, "ExportPens")).ElementAt(1));
+
+			HeadlessInput.Click(window, label);
+
+			viewModel.Pens[1].IsTicked.Should().BeTrue();
+			header.Text.Should().Be(Resources.FormatExportPensHeader(2, 3));
+
+			HeadlessInput.Click(window, label);
+
+			viewModel.Pens[1].IsTicked.Should().BeFalse();
+			header.Text.Should().Be(Resources.FormatExportPensHeader(1, 3));
+			var row = Named<ItemsControl>(window, "ExportPenItems").ContainerFromIndex(1).Should()
+				.BeOfType<ContentPresenter>().Subject;
+			row.Classes.Should().NotContain(":selected");
+			row.Background.Should().BeNull();
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void ThePenList_PaintsNoGroundOfItsOwnAndItsBorderFromThePalette()
+	{
+		using var viewModel = BuildWithPens(3);
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			var list = Named<Border>(window, "ExportPens");
+
+			list.TryFindResource("AppBorderBrush", list.ActualThemeVariant, out var brush).Should().BeTrue();
+			list.Background.Should().BeNull();
+			list.BorderThickness.Should().Be(new Thickness(1));
+			list.BorderBrush.Should().BeSameAs(brush);
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void AFullCatalogueOf500Pens_RealisesOnlyTheRowsOnScreen()
+	{
+		using var viewModel = BuildWithPens(500);
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			var items = Named<ItemsControl>(window, "ExportPenItems");
+			var realised = Descendants<CheckBox>(items).Count();
+
+			realised.Should().BePositive();
+			realised.Should().BeLessThan(16, "two viewports of eight rows bound what a virtualising list realises");
+
+			items.ScrollIntoView(499);
+			Dispatcher.UIThread.RunJobs();
+
+			Descendants<CheckBox>(items).Count(box => box.IsVisible)
+				.Should().BeLessThan(16, "the list scrolled to its end realises only the rows on screen");
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void TheList_IsOneTabStop_AndUpDownWalkEveryBoxInOrder()
+	{
+		using var viewModel = BuildWithPens(40);
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			var scroller = Named<ScrollViewer>(window, "ExportPensScroller");
+
+			Named<TextBox>(window, "ExportEndTime").Focus();
+			HeadlessInput.Press(window, PhysicalKey.Tab);
+			FocusedPenIndex(window, viewModel).Should().Be(0, "Tab from the end time enters the list at its first box");
+
+			for (var index = 1; index < 40; index++)
+			{
+				HeadlessInput.Press(window, PhysicalKey.ArrowDown);
+
+				FocusedPenIndex(window, viewModel).Should().Be(index);
+				IsInsideTheViewport(window, scroller).Should().BeTrue($"the box of pen {index} is scrolled into view");
+				if (index < 8)
+				{
+					scroller.Offset.Y.Should().Be(0, $"the box of pen {index} is on the first screen");
+				}
+				else
+				{
+					scroller.Offset.Y.Should().BePositive($"the box of pen {index} lies below the first screen");
+				}
+			}
+
+			HeadlessInput.Press(window, PhysicalKey.ArrowDown);
+			FocusedPenIndex(window, viewModel).Should().Be(39, "Down past the last box keeps it");
+
+			HeadlessInput.Press(window, PhysicalKey.Tab);
+			FocusedElement(window).Should().BeSameAs(Named<Button>(window, "ExportSaveAs"));
+
+			HeadlessInput.Press(window, PhysicalKey.Tab, RawInputModifiers.Shift);
+			FocusedPenIndex(window, viewModel).Should().Be(39, "Shift+Tab returns to the box focused last");
+
+			for (var index = 39; index > 0; index--)
+			{
+				HeadlessInput.Press(window, PhysicalKey.ArrowUp);
+
+				FocusedPenIndex(window, viewModel).Should().Be(index - 1);
+				IsInsideTheViewport(window, scroller).Should()
+					.BeTrue($"the box of pen {index - 1} is scrolled into view");
+			}
+
+			HeadlessInput.Press(window, PhysicalKey.ArrowUp);
+			FocusedPenIndex(window, viewModel).Should().Be(0, "Up past the first box keeps it");
+
+			HeadlessInput.Press(window, PhysicalKey.End);
+			FocusedPenIndex(window, viewModel).Should().Be(39);
+			IsInsideTheViewport(window, scroller).Should().BeTrue("End scrolls the last box into view");
+
+			HeadlessInput.Press(window, PhysicalKey.Home);
+			FocusedPenIndex(window, viewModel).Should().Be(0);
+			IsInsideTheViewport(window, scroller).Should().BeTrue("Home scrolls the first box into view");
+			scroller.Offset.Y.Should().Be(0);
+
+			HeadlessInput.Press(window, PhysicalKey.Tab, RawInputModifiers.Shift);
+			FocusedElement(window).Should().BeSameAs(Named<TextBox>(window, "ExportEndTime"));
+
+			HeadlessInput.Press(window, PhysicalKey.Tab);
+			FocusedPenIndex(window, viewModel).Should().Be(0);
+
+			HeadlessInput.Press(window, PhysicalKey.PageDown);
+			FocusedPenIndex(window, viewModel).Should().Be(8, "PageDown moves the focus one page of eight boxes");
+			IsInsideTheViewport(window, scroller).Should().BeTrue("PageDown scrolls the focused box into view");
+
+			HeadlessInput.Press(window, PhysicalKey.PageUp);
+			FocusedPenIndex(window, viewModel).Should().Be(0, "PageUp moves the focus one page back");
+			IsInsideTheViewport(window, scroller).Should().BeTrue("PageUp scrolls the focused box into view");
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
+	[AvaloniaFact]
+	public void SpaceOnAFocusedPenBox_TogglesItsTick()
+	{
+		using var viewModel = BuildWithPens(3);
+		var window = Realise(new CsvExportWindow { DataContext = viewModel });
+		try
+		{
+			Named<TextBox>(window, "ExportEndTime").Focus();
+			HeadlessInput.Press(window, PhysicalKey.Tab);
+			FocusedPenIndex(window, viewModel).Should().Be(0);
+			viewModel.Pens[0].IsTicked.Should().BeTrue();
+
+			HeadlessInput.Press(window, PhysicalKey.Space);
+
+			viewModel.Pens[0].IsTicked.Should().BeFalse();
+			Named<TextBlock>(window, "ExportPensHeader").Text.Should().Be(Resources.FormatExportPensHeader(0, 3));
+		}
+		finally
+		{
+			Dismiss(window);
+		}
+	}
+
+	[AvaloniaFact]
 	public void ThePenList_GrowsWithItsRowsUpToItsMaxHeight()
 	{
 		using var viewModel = BuildWithPens(12);
 		var window = Realise(new CsvExportWindow { DataContext = viewModel });
 		try
 		{
-			var list = Named<ListBox>(window, "ExportPens");
+			var list = Named<Border>(window, "ExportPens");
 
 			list.Bounds.Height.Should().Be(list.MaxHeight);
 			list.BorderThickness.Should().Be(new Thickness(1));
@@ -422,8 +628,8 @@ public sealed class CsvExportWindowTests : IDisposable
 		var window = Realise(new CsvExportWindow { DataContext = viewModel });
 		try
 		{
-			var list = Named<ListBox>(window, "ExportPens");
-			var rowHeight = list.GetVisualDescendants().OfType<ListBoxItem>().First().Bounds.Height;
+			var list = Named<Border>(window, "ExportPens");
+			var rowHeight = Named<ItemsControl>(window, "ExportPenItems").ContainerFromIndex(0)!.Bounds.Height;
 			var innerHeight = list.MaxHeight - list.BorderThickness.Top - list.BorderThickness.Bottom;
 
 			rowHeight.Should().Be(28);
@@ -442,7 +648,7 @@ public sealed class CsvExportWindowTests : IDisposable
 		var window = Realise(new CsvExportWindow { DataContext = viewModel });
 		try
 		{
-			var list = Named<ListBox>(window, "ExportPens");
+			var list = Named<Border>(window, "ExportPens");
 			var box = window.GetVisualDescendants().OfType<CheckBox>().First();
 			var innerLeft = list.BorderThickness.Left;
 			var boxLeft = box.TranslatePoint(new Point(0, 0), list)!.Value.X;
@@ -486,7 +692,7 @@ public sealed class CsvExportWindowTests : IDisposable
 		var window = Realise(new CsvExportWindow { DataContext = viewModel });
 		try
 		{
-			var list = Named<ListBox>(window, "ExportPens");
+			var list = Named<Border>(window, "ExportPens");
 
 			list.Bounds.Height.Should().BeLessThan(list.MaxHeight);
 		}
@@ -503,7 +709,7 @@ public sealed class CsvExportWindowTests : IDisposable
 		var window = Realise(new CsvExportWindow { DataContext = viewModel });
 		try
 		{
-			var scroller = Descendant<ScrollViewer>(Named<ListBox>(window, "ExportPens"), "PART_ScrollViewer");
+			var scroller = Named<ScrollViewer>(window, "ExportPensScroller");
 
 			scroller.AllowAutoHide.Should().BeFalse();
 			scroller.GetVisualDescendants().OfType<ScrollBar>()
@@ -545,7 +751,7 @@ public sealed class CsvExportWindowTests : IDisposable
 		{
 			var message = Named<TextBlock>(window, "ExportMessage");
 			var saveAs = Named<Button>(window, "ExportSaveAs");
-			var list = Named<ListBox>(window, "ExportPens");
+			var list = Named<Border>(window, "ExportPens");
 
 			var buttonRow = saveAs.GetVisualParent().Should().BeAssignableTo<Control>().Subject;
 			message.Bounds.Bottom.Should().BeLessThanOrEqualTo(buttonRow.Bounds.Top);
@@ -625,7 +831,7 @@ public sealed class CsvExportWindowTests : IDisposable
 			RightOf(window, Named<CalendarDatePicker>(window, "ExportEndDate")).Should().Be(edge);
 			RightOf(window, Named<ComboBox>(window, "ExportStartMarker")).Should().Be(edge);
 			RightOf(window, Named<ComboBox>(window, "ExportEndMarker")).Should().Be(edge);
-			RightOf(window, Named<ListBox>(window, "ExportPens")).Should().Be(edge);
+			RightOf(window, Named<Border>(window, "ExportPens")).Should().Be(edge);
 			RightOf(window, Named<TextBlock>(window, "ExportMessage")).Should().Be(edge);
 			edge.Should().Be(370);
 			window.Width.Should().Be(edge + 20, "the margin is the only space right of the form");
@@ -645,8 +851,8 @@ public sealed class CsvExportWindowTests : IDisposable
 		var window = Realise(new CsvExportWindow { DataContext = viewModel });
 		try
 		{
-			var list = Named<ListBox>(window, "ExportPens");
-			var scroller = Descendant<ScrollViewer>(list, "PART_ScrollViewer");
+			var list = Named<Border>(window, "ExportPens");
+			var scroller = Named<ScrollViewer>(window, "ExportPensScroller");
 			var box = window.GetVisualDescendants().OfType<CheckBox>().Single();
 			var label = LabelOf(box);
 
@@ -719,7 +925,7 @@ public sealed class CsvExportWindowTests : IDisposable
 			{
 				Named<CalendarDatePicker>(window, "ExportStartDate"),
 				Named<TextBox>(window, "ExportEndTime"),
-				Named<ListBox>(window, "ExportPens"),
+				Named<Border>(window, "ExportPens"),
 				Named<ComboBox>(window, "ExportStartMarker"),
 				Named<ComboBox>(window, "ExportEndMarker")
 			};
@@ -1228,6 +1434,35 @@ public sealed class CsvExportWindowTests : IDisposable
 	private static TextBlock LabelOf(CheckBox box)
 	{
 		return box.Content.Should().BeOfType<TextBlock>().Subject;
+	}
+
+	private static IInputElement? FocusedElement(TopLevel window)
+	{
+		return window.FocusManager.GetFocusedElement();
+	}
+
+	private static int FocusedPenIndex(TopLevel window, CsvExportViewModel viewModel)
+	{
+		var box = FocusedElement(window).Should().BeOfType<CheckBox>().Subject;
+		var pen = box.DataContext.Should().BeOfType<ExportPenChoice>().Subject;
+
+		for (var index = 0; index < viewModel.Pens.Count; index++)
+		{
+			if (viewModel.Pens[index] == pen)
+			{
+				return index;
+			}
+		}
+
+		return -1;
+	}
+
+	private static bool IsInsideTheViewport(TopLevel window, ScrollViewer scroller)
+	{
+		var box = (Control)FocusedElement(window)!;
+		var top = box.TranslatePoint(new Point(0, 0), scroller)!.Value.Y;
+
+		return top >= 0 && top + box.Bounds.Height <= scroller.Viewport.Height;
 	}
 
 	private static double LeftOf(Visual root, Control control)

@@ -41,12 +41,6 @@
             <SolidColorBrush x:Key="CheckBoxDefaultBorderBrush" Color="#EBECF0" />
             <SolidColorBrush x:Key="MenuItemSeparatorBackground" Color="#EBECF0" />
 
-            <SolidColorBrush x:Key="ListBoxItemPointeroverForeground" Color="#000000" />
-            <SolidColorBrush x:Key="ListBoxItemPressedForeground" Color="#000000" />
-            <SolidColorBrush x:Key="ListBoxItemSelectedForeground" Color="#000000" />
-            <SolidColorBrush x:Key="ListBoxItemSelectedBackground" Color="#3574F0" Opacity="0.25" />
-            <SolidColorBrush x:Key="ListBoxItemSelectedPointeroverBackground" Color="#3574F0" Opacity="0.25" />
-
             <SolidColorBrush x:Key="ComboBoxItemForeground" Color="#000000" />
             <SolidColorBrush x:Key="ComboBoxItemFocusForeground" Color="#000000" />
             <SolidColorBrush x:Key="ComboBoxItemPointeroverForeground" Color="#000000" />
@@ -130,12 +124,6 @@
             <SolidColorBrush x:Key="MenuFlyoutBorderBrush" Color="#393B40" />
             <SolidColorBrush x:Key="CheckBoxDefaultBorderBrush" Color="#393B40" />
             <SolidColorBrush x:Key="MenuItemSeparatorBackground" Color="#393B40" />
-
-            <SolidColorBrush x:Key="ListBoxItemPointeroverForeground" Color="#DFE1E5" />
-            <SolidColorBrush x:Key="ListBoxItemPressedForeground" Color="#DFE1E5" />
-            <SolidColorBrush x:Key="ListBoxItemSelectedForeground" Color="#DFE1E5" />
-            <SolidColorBrush x:Key="ListBoxItemSelectedBackground" Color="#3574F0" Opacity="0.25" />
-            <SolidColorBrush x:Key="ListBoxItemSelectedPointeroverBackground" Color="#3574F0" Opacity="0.25" />
 
             <SolidColorBrush x:Key="ComboBoxItemForeground" Color="#DFE1E5" />
             <SolidColorBrush x:Key="ComboBoxItemFocusForeground" Color="#DFE1E5" />

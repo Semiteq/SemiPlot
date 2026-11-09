@@ -57,8 +57,6 @@ control, in each state the tree can reach.
 | `MenuFlyoutBackground` | Every open submenu, the `TextBox` context menu included | `#F7F8FA` | `#2B2D30` |
 | `MenuFlyoutBorderBrush` | The same submenu's border | `#EBECF0` | `#393B40` |
 | `MenuItemSeparatorBackground` | The `Separator`s in the View menu | `#EBECF0` | `#393B40` |
-| `ListBoxItemPointeroverForeground`, `ListBoxItemPressedForeground`, `ListBoxItemSelectedForeground` | A hovered, pressed or selected row of the export window's pen list | `#000000` | `#DFE1E5` |
-| `ListBoxItemSelectedBackground`, `ListBoxItemSelectedPointeroverBackground` | The selected row, hovered or not; the same fill as the sidebar's active row | `#3574F0` at 0.25 opacity | `#3574F0` at 0.25 opacity |
 | `ComboBoxItemForeground`, `ComboBoxItemFocusForeground`, `ComboBoxItemPointeroverForeground`, `ComboBoxItemSelectedForeground` | An item of the open line-style list at rest, focused, hovered and selected | `#000000` | `#DFE1E5` |
 | `ComboBoxIconPointeroverForeground` | The line-style box's arrow under the pointer | `#000000` | `#DFE1E5` |
 | `ComboBoxDisabledForeground` | The line-style box's value while a refresh runs | `#A8ADBD` | `#5A5D63` |
@@ -80,7 +78,7 @@ control, in each state the tree can reach.
 | `CheckBoxCheckedDisabledBackground`, `CheckBoxCheckedDisabledBorderBrush` | A checked box that is disabled: a groups pane membership box while its write runs | `#A8ADBD` | `#5A5D63` |
 | `DataGridColumnHeaderForeground` | A column header of the pen list or the group grid, sorted or not | `#818594` | `#6F737A` |
 | `DataGridLineBrush` | The line under each pen editor grid's headers | `#EBECF0` | `#393B40` |
-| `DataGridRowSelectedBackground`, `DataGridRowSelectedPointeroverBackground` | The pen list's selected row, hovered or not; the same fill as the export window's selected pen row | `#3574F0` at 0.25 opacity | `#3574F0` at 0.25 opacity |
+| `DataGridRowSelectedBackground`, `DataGridRowSelectedPointeroverBackground` | The pen list's selected row, hovered or not; the same fill as the sidebar's active row | `#3574F0` at 0.25 opacity | `#3574F0` at 0.25 opacity |
 
 The accent is the one value deliberately equal across the variants: it does not change with the
 ground it sits on.
@@ -120,8 +118,7 @@ holds, a `ToggleButton` in both check states, an unchecked and an indeterminate 
 rest and open, a leaf, a checked item's glyph, a `Separator`, the flyout chrome and an `ItemsControl`
 row. The `Ellipse` of a message-panel row carries no Semi key: its fill is one of this tree's own
 severity brushes, gated by `MessagePanelViewTests`.
-The pen editor's and the export window's controls have six tests of their own:
-`EveryListSurface_PaintsItselfFromThePalette` (a `ListBox` row hovered, pressed and selected),
+The pen editor's and the export window's controls have five tests of their own:
 `TheDestructiveButton_PaintsItselfFromThePalette` (a `destructive` button at rest, hovered and pressed, its
 caption's contrast on each, and disabled),
 `EveryDataGridSurface_PaintsItselfFromThePalette` (a `DataGrid` header, the line under the headers, the cell
@@ -131,7 +128,7 @@ a disabled `CheckBox`), `EveryColourPickerSurface_PaintsItselfFromThePalette` (t
 the spectrum and on the components tab) and
 `EveryCheckBoxStateAMembershipBoxReaches_PaintsItselfFromThePalette` (a box checked and hovered,
 pressed checked and unchecked, and checked while disabled).
-`APaletteKeyCarryingOpacity_KeepsItUnderBothVariants` reads the 0.25 opacity of the six translucent
+`APaletteKeyCarryingOpacity_KeepsItUnderBothVariants` reads the 0.25 opacity of the four translucent
 keys back under both variants, `DataGridRowSelectedBackground` and `DataGridRowSelectedPointeroverBackground`
 among them.
 Resolving a key through `Application.TryGetResource` cannot fail while an override is inert, so a test
@@ -163,8 +160,7 @@ is not.
 `DataGrid` (a row's `Border#BackgroundBorder` and a header's `Border#HeaderBackground`) under both
 variants. Semi paints 3 without the overrides, so the control is what proves them live.
 
-A control the tree gains brings its own key, with two exceptions that carry none. A `ListBoxItem` paints
-0 px in Semi, square as the surfaces around it. The combo box's drop-down
+A control the tree gains brings its own key, with one exception that carries none. The combo box's drop-down
 and the picker's flyout keep Semi's 6 px, as the menu flyout does.
 
 ## The application's own surfaces
@@ -294,12 +290,33 @@ label alone, and its open list the time and the label (`ui-text.md#the-export-wi
 apart; the end label and date carry a 10 px top margin, so 20 px separate the edges, and nothing draws between
 them. Every control keeps Semi's 32 px height, and the picker keeps Semi's text box padding. The dates, the
 marker boxes, the pen list, the message row and the button row end at
-one line, 20 px from the window edge. The list sizes to its rows up to a `MaxHeight` of 226 px (eight 28 px
-rows plus the border; a window-scoped `ListBoxItem` style zeroes Semi's vertical item padding and `MinHeight`,
-as in the pen editor, and keeps a 6 px horizontal padding, the pen editor's cell margin, so a checkbox stands
-6 px off the list border), is bordered with `AppBorderBrush` and keeps its vertical scroll bar visible
-(`AllowAutoHide="False"`). Its horizontal scroll bar is disabled: a pen label is a `TextBlock` with
-`TextTrimming="CharacterEllipsis"` and the full label is the row's tooltip. The message line carries the form
+one line, 20 px from the window edge.
+
+The pen list is the `Border` `ExportPens`: 1 px of `AppBorderBrush`, no background of its own, sized to its
+rows up to a `MaxHeight` of 226 px, eight 28 px rows plus the border. Inside it the `ScrollViewer`
+`ExportPensScroller` keeps its vertical scroll bar visible (`VerticalScrollBarVisibility="Auto"`,
+`AllowAutoHide="False"`) and disables the horizontal one: a pen label is a `TextBlock` with
+`TextTrimming="CharacterEllipsis"`, and the full label is the box's tooltip. The scroller holds the
+`ItemsControl` `ExportPenItems` over a `VirtualizingStackPanel`, so 500 pens realise only the rows on screen.
+Each row is the `CheckBox` alone with `Margin="6,0"`, the pen editor's cell margin, so a box stands 6 px off the
+list border. A row carries one state, its tick (`desktop-ui` One state per row): the list has no row selection
+and paints no row fill under the pointer, only the checkbox's own hover, press and focus visuals.
+`CsvExportWindowTests.ThePenList_IsCheckboxesWithNoRowSelection` finds no `SelectingItemsControl` and no
+`ISelectable` control inside `ExportPens`, and exactly one focusable control per row, the `CheckBox`.
+
+The list is one Tab stop. `ExportPenItems` sets `KeyboardNavigation.TabNavigation="Once"`, so Tab enters at a
+box, Tab or Shift+Tab from any box leaves the list, and Shift+Tab from `Save as...` returns to the box focused
+last. Up, Down, PageUp, PageDown, Home and End move the focus between the boxes through `OnPenItemsKeyDown`, a
+tunnel handler the constructor registers on `ExportPenItems`. It runs ahead of `ItemsControl`'s own bubble
+handler, which skips the non-focusable row containers and would scroll the whole list on one press. The handler
+scrolls the target row into view and focuses its box; at either end it consumes the key and the focus stays.
+PageUp and PageDown move the focus by the number of whole rows the viewport holds, eight at the list's
+`MaxHeight`, and stop at the list ends; the scroller's own page scroll would leave the focus on a box the list
+then recycles. Space toggles the focused box through the `CheckBox`'s own key handling; the window adds no
+handler for it. `TheList_IsOneTabStop_AndUpDownWalkEveryBoxInOrder` and `SpaceOnAFocusedPenBox_TogglesItsTick`
+gate the keyboard.
+
+The message line carries the form
 messages, the progress and success lines and the Excel notice, which are longer than the settings dialog's.
 Measured on 2026-10-14 with Skia and HarfBuzz, the real Win32 platform, the Semi theme, Inter at 14 px, 50
 pens `Damper 01` to `Damper 50`:

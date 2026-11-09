@@ -1,8 +1,14 @@
 using System.Diagnostics;
 using System.Reactive.Concurrency;
 using System.Reactive.Linq;
+using System.Windows.Input;
+
+using Avalonia.Controls;
+using Avalonia.Threading;
 
 using AwesomeAssertions;
+
+using FluentResults;
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -20,6 +26,8 @@ using SemiPlot.UI;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
+using SemiPlot.UI.PenEditor;
+using SemiPlot.UI.Settings;
 using SemiPlot.UI.Startup;
 
 namespace SemiPlot.Tests.Unit.UI.MainWindow;
@@ -158,6 +166,62 @@ internal static class MainWindowTestBuilder
 		archive.Scheduler.AdvanceBy(1);
 
 		return new WindowStand(window, archive);
+	}
+
+	public static MenuItem MenuItemNamed(Window window, string name)
+	{
+		var item = ViewProbe.Named<AppMenuBar>(window, "MenuBar").FindControl<MenuItem>(name);
+		item.Should().NotBeNull("'{0}' is a named item of the menu bar", name);
+
+		return item;
+	}
+
+	/// <summary>Opens the named menu of the window and clicks the item on the menu's popup.</summary>
+	public static void ClickMenuItem(Window window, string menuName, string itemName)
+	{
+		HeadlessInput.Click(window, MenuItemNamed(window, menuName));
+		var item = MenuItemNamed(window, itemName);
+		HeadlessInput.Click(
+			TopLevel.GetTopLevel(item) ?? throw new InvalidOperationException($"'{menuName}' opened no popup."),
+			item);
+	}
+
+	/// <summary>A row reader whose every count runs until its token is cancelled.</summary>
+	public static FakeArchiveRowReader HeldCountReader()
+	{
+		return new FakeArchiveRowReader
+		{
+			OnCount = async call =>
+			{
+				await Task.Delay(Timeout.Infinite, call.Token);
+
+				return Result.Ok(0L);
+			}
+		};
+	}
+
+	public static async Task<SettingsDialog> OpenSettings(WindowStand stand, Window window)
+	{
+		await stand.ViewModel.ShowSettingsCommand.Execute();
+		await HeadlessWait.Until(() => window.OwnedWindows.OfType<SettingsDialog>().Any());
+		Dispatcher.UIThread.RunJobs();
+
+		return window.OwnedWindows.OfType<SettingsDialog>().Single();
+	}
+
+	// A disposed command stops following its inputs: the test left the probe's input blank before the close.
+	public static void ShouldBeDisposed(SettingsViewModel settings)
+	{
+		settings.Password = "secret";
+		((ICommand)settings.SaveCommand).CanExecute(null).Should()
+			.BeFalse("the closed window disposes its view model");
+	}
+
+	public static void ShouldBeDisposed(PenEditorViewModel penEditor)
+	{
+		penEditor.Groups.NewGroupName = "Gas";
+		((ICommand)penEditor.Groups.CreateGroupCommand).CanExecute(null).Should()
+			.BeFalse("the closed window disposes its view model");
 	}
 
 	public static void DriveToLayer(ChartNavigationController navigation, AggregationLayer layer)

@@ -11,6 +11,7 @@ using Avalonia.VisualTree;
 using ReactiveUI;
 
 using SemiPlot.UI.Navigation;
+using SemiPlot.UI.Windows;
 
 using LocalizedText = SemiPlot.UI.Localization.Resources;
 
@@ -18,7 +19,9 @@ namespace SemiPlot.UI.Export;
 
 public partial class CsvExportWindow : Window
 {
+	private readonly OwnedWindowClosing _closing;
 	private IDisposable? _blackoutSync;
+	private bool _isClosed;
 
 	public CsvExportWindow()
 	{
@@ -27,12 +30,29 @@ public partial class CsvExportWindow : Window
 		ExportEndDate.TemplateApplied += OnPickerTemplateApplied;
 		DataContextChanged += OnDataContextChanged;
 		ExportPenItems.AddHandler(KeyDownEvent, OnPenItemsKeyDown, RoutingStrategies.Tunnel);
+
+		_closing = new OwnedWindowClosing(this, () => (DataContext as CsvExportViewModel)?.StopExport());
+	}
+
+	protected override void OnClosing(WindowClosingEventArgs e)
+	{
+		if (_closing.Lets(e))
+		{
+			base.OnClosing(e);
+		}
+	}
+
+	protected override void OnKeyDown(KeyEventArgs e)
+	{
+		base.OnKeyDown(e);
+		_closing.CloseOnEscape(e);
 	}
 
 	protected override void OnClosed(EventArgs e)
 	{
 		_blackoutSync?.Dispose();
 		_blackoutSync = null;
+		_isClosed = true;
 
 		base.OnClosed(e);
 	}
@@ -157,7 +177,7 @@ public partial class CsvExportWindow : Window
 				]
 			});
 
-			if (file is null)
+			if (file is null || _isClosed)
 			{
 				return;
 			}

@@ -43,6 +43,8 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 	private readonly InstanceLauncher _instanceLauncher;
 	private readonly ObservableAsPropertyHelper<string> _penScaleHeader;
 	private readonly ObservableAsPropertyHelper<bool> _showsRecipeMarkers;
+	private readonly OpenViewModels _openViewModels = new();
+	private bool _isClosing;
 
 	/// <summary>
 	/// The window's parts are built and disposed by <see cref="TrendWindow"/>; this view model holds them for the
@@ -101,8 +103,7 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 		_disposables.Add(InitialScaleCommand = ReactiveCommand.Create(
 			() => ChartViewModel.RestoreInitialScale()));
 		_disposables.Add(NewWindowCommand = ReactiveCommand.Create(() => { StartCopy(); }));
-		_disposables.Add(ExitCommand = ReactiveCommand.Create(
-			() => _exitRequests.OnNext(Unit.Default)));
+		_disposables.Add(ExitCommand = ReactiveCommand.Create(RequestExit));
 		_disposables.Add(ShowAboutCommand = ReactiveCommand.Create(
 			() => _aboutRequests.OnNext(AboutInfo.ForCurrentProcess())));
 		_disposables.Add(ShowSettingsCommand = ReactiveCommand.CreateFromTask(RequestSettingsAsync));
@@ -122,13 +123,11 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 
 	public IObservable<Unit> ExitRequests => _exitRequests.AsObservable();
 
-	/// <summary>Each request carries a view model the listener owns and disposes when its dialog closes.</summary>
+	// docs/architecture/overview.md#the-owned-windows
 	public IObservable<SettingsViewModel> SettingsRequests => _settingsRequests.AsObservable();
 
-	/// <summary>Each request carries a view model the listener owns and disposes when its window closes.</summary>
 	public IObservable<PenEditorViewModel> PenEditorRequests => _penEditorRequests.AsObservable();
 
-	/// <summary>Each request carries a view model the listener owns and disposes when its window closes.</summary>
 	public IObservable<CsvExportViewModel> ExportRequests => _exportRequests.AsObservable();
 
 	public bool IsNavigationBarVisible
@@ -196,12 +195,30 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 		MessagePanel.TryReportFailure(new ExceptionalError(failure), _logger);
 	}
 
+	/// <summary>Called by the listener when a window closes, so the next request builds a new view model.</summary>
+	public void ForgetClosedWindow(object viewModel)
+	{
+		_openViewModels.Forget(viewModel);
+	}
+
+	/// <summary>Starts a copy and closes this window, once: a later call during the close starts nothing.</summary>
 	public void RestartApplication()
 	{
+		if (_isClosing)
+		{
+			return;
+		}
+
 		if (StartCopy())
 		{
-			_exitRequests.OnNext(Unit.Default);
+			RequestExit();
 		}
+	}
+
+	private void RequestExit()
+	{
+		_isClosing = true;
+		_exitRequests.OnNext(Unit.Default);
 	}
 
 	private bool StartCopy()
@@ -222,21 +239,44 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 
 	private void RequestExport()
 	{
+		if (_openViewModels.Export is { } open)
+		{
+			_exportRequests.OnNext(open);
+
+			return;
+		}
+
 		var pens = ExportPenChoice.Checklist(
 			[.. ChartViewModel.Pens.Select(state => (state.Pen, state.IsVisible))]);
 
-		_exportRequests.OnNext(_createExport(
-			ChartViewModel.Navigation.From, ChartViewModel.Navigation.To, pens, ChartViewModel.Markers.All));
+		_openViewModels.Export = _createExport(
+			ChartViewModel.Navigation.From, ChartViewModel.Navigation.To, pens, ChartViewModel.Markers.All);
+		_exportRequests.OnNext(_openViewModels.Export);
 	}
 
 	private async Task RequestSettingsAsync()
 	{
-		_settingsRequests.OnNext(await SettingsViewModel.OpenAsync(
-			_instanceLauncher.ConfigDirectory, MessagePanel, _loggerFactory, RestartApplication));
+		if (_openViewModels.Settings is { } open)
+		{
+			_settingsRequests.OnNext(open);
+
+			return;
+		}
+
+		_openViewModels.Settings = await SettingsViewModel.OpenAsync(
+			_instanceLauncher.ConfigDirectory, MessagePanel, _loggerFactory, RestartApplication);
+		_settingsRequests.OnNext(_openViewModels.Settings);
 	}
 
 	private async Task RequestPenEditorAsync()
 	{
+		if (_openViewModels.PenEditor is { } open)
+		{
+			_penEditorRequests.OnNext(open);
+
+			return;
+		}
+
 		var catalogue = await _penCatalogueEditor.ReadAsync();
 
 		if (catalogue.IsFailed)
@@ -246,12 +286,13 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 			return;
 		}
 
-		_penEditorRequests.OnNext(new PenEditorViewModel(
+		_openViewModels.PenEditor = new PenEditorViewModel(
 			_penCatalogueEditor,
 			catalogue.Value,
 			MessagePanel,
 			_loggerFactory.CreateLogger<PenEditorViewModel>(),
-			_readCatalogueNow));
+			_readCatalogueNow);
+		_penEditorRequests.OnNext(_openViewModels.PenEditor);
 	}
 
 	public void Dispose()

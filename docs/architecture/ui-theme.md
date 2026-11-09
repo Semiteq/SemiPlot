@@ -526,7 +526,7 @@ from `PenEditorWindow.MinimumWidth`, 1272 px, `Height` from `PenEditorWindow.Des
 the window.
 
 `MainWindow`'s factory for the editor sets `Width = PenEditorWindow.OpeningWidthFor(WorkingAreaWidth())`
-before `DialogOpener.ShowOwnedDialog` shows the window. `OpeningWidthFor` is pure and returns
+before `DialogOpener.ShowOrActivate` shows the window. `OpeningWidthFor` is pure and returns
 `Math.Max(MinimumWidth, Math.Min(DesignedWidth, workingAreaWidth))`. `WorkingAreaWidth()` reads the screen
 `Screens.ScreenFromWindow(this)` reports for the main window, `WorkingArea.Width / Scaling` in
 device-independent pixels, and returns `double.PositiveInfinity` with no screen, so the window then opens

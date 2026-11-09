@@ -347,6 +347,12 @@ No abbreviations in names.
   (`docs/architecture/trend-interaction.md#the-time-markers`). The bar's `IsSticky` has a single writer
   after the constructor seeds it (the `WindowChanged` handler refreshing from `Navigation.IsSticky`) — do
   not reintroduce imperative `IsSticky =` assignments.
+- The settings window, the export window and the pen editor open only through
+  `MainWindow/DialogOpener.ShowOrActivate`, owned and non-modal; `ShowDialog(` appears only in
+  `DialogOpener.ShowAbout` and `ShowSettings`. Every close hold goes through `Windows/OwnedWindowClosing`, the
+  only file that reads `WindowCloseReason`. `git grep -n "ShowDialog(" -- SemiPlot/SemiPlot.UI` prints only
+  `DialogOpener.cs` lines, and `git grep -n "WindowCloseReason" -- SemiPlot/SemiPlot.UI` prints only
+  `Windows/OwnedWindowClosing.cs` lines (`docs/architecture/overview.md#the-owned-windows`).
 - A checkable menu item reads its flag `Mode=OneWay` and writes it only through the command it
   invokes, so the command is the flag's single writer. A two-way `IsChecked` would make the control a
   second writer and the two halves would drift. The sidebar's visibility box follows the same rule: it

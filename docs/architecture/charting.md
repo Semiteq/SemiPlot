@@ -674,8 +674,12 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
 - `MainWindow/MainWindow` + `MainWindowViewModel` — the six-row window grid, the flags its View
   menu writes and the menu's two axis commands under View -> Pen scale, which call `AutoscaleActivePen`
   and `RestoreInitialScale` on the chart, and the submenu header that names the drawn pen; the window's
-  code-behind owns the five view-side requests (close, About dialog, settings dialog, pen editor, export
+  code-behind owns the five view-side requests (close, About dialog, settings window, pen editor, export
   window).
+- `MainWindow/DialogOpener` + `Windows/OwnedWindowClosing` — the opener shows the About dialog modally and the
+  settings window, the pen editor and the export window once each, owned and non-modal; the closing helper
+  holds each owned window's close, its owner's included, until that window's own work ends, and closes it
+  on Escape (`overview.md#the-owned-windows`).
 - `MainWindow/AppMenuBar` — the File / Edit / View / Help menu. Each checkable item reads its flag
   `Mode=OneWay` and writes it only through the command it invokes (`AGENTS.md`, UI).
 - `MainWindow/AppStatusBar` + `AppStatusBarViewModel` — current connection state and the active
@@ -683,14 +687,15 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   and the chart's navigation, and writes the fault and recovery entries (`data-integration.md`).
 - `MainWindow/AboutDialog` + `AboutInfo` — the modal naming the product, the assembly version and the
   configuration directory this run read.
-- `Settings/SettingsDialog` + `SettingsViewModel` — the modal that edits the `app/` and `connection/`
-  section folders, opened from Edit -> Settings (`overview.md#the-settings-window`).
+- `Settings/SettingsDialog` + `SettingsViewModel` — the owned, non-modal window that edits the `app/` and
+  `connection/` section folders, opened from Edit -> Settings; the startup failure window opens it modally
+  (`overview.md#the-settings-window`).
 - `PenEditor/PenEditorWindow` + `PenEditorViewModel` (+ `PenFormViewModel`, `PenGroupsViewModel`,
-  `PenRowViewModel`, `PenGroupViewModel` and `PenMembershipViewModel`, over `Bridge/ArchiveCallQueue`) - the modal that edits the pen catalogue through
+  `PenRowViewModel`, `PenGroupViewModel` and `PenMembershipViewModel`, over `Bridge/ArchiveCallQueue`) - the owned, non-modal window that edits the pen catalogue through
   `IPenCatalogueEditor`, opened from Edit -> Pens and groups (`overview.md#the-pen-and-group-editor`).
   Nothing under `Chart/` or `Legend/` references it.
 - `Export/CsvExportWindow` + `CsvExportViewModel` (+ `ExportRangeForm`, `ExportRangeProblemText`, `ExportMessageLine`, `ExportPenChoice`, `ExportMarkerChoice`, `ExportFileName`, `CsvFileExporter`)
-  is the modal that writes the archive's stored rows of a range and a set of pens into one CSV table ordered by time, opened
+  is the owned, non-modal window that writes the archive's stored rows of a range and a set of pens into one CSV table ordered by time, opened
   from File -> Export to CSV... (`overview.md#the-export-window`). Nothing under `Chart/` or `Legend/`
   references it.
 - `Messages/MessagePanelView` + `MessagePanelViewModel` — the bounded, newest-first list every failure

@@ -88,7 +88,7 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 				&& password
 				&& pollInterval);
 
-		SaveCommand = ReactiveCommand.CreateFromTask(SaveAsync, canSave);
+		SaveCommand = ReactiveCommand.CreateFromTask(() => SaveInFlight = SaveAsync(), canSave);
 		var canRestartNow = this.WhenAnyValue(vm => vm.IsRestartPending)
 			.CombineLatest(SaveCommand.IsExecuting, (pending, saving) => pending && !saving);
 
@@ -247,6 +247,13 @@ public sealed class SettingsViewModel : ReactiveObject, IDisposable
 	public ReactiveCommand<Unit, Unit> SaveCommand { get; }
 
 	public ReactiveCommand<Unit, Unit> RestartNowCommand { get; }
+
+	/// <summary>The running save, which holds every close of its window; null while no save runs.</summary>
+	internal Task? SaveInFlight
+	{
+		get => field is { IsCompleted: false } save ? save : null;
+		private set;
+	}
 
 	/// <summary>Reads the section files off the UI thread and builds the view model over what they hold.</summary>
 	public static async Task<SettingsViewModel> OpenAsync(

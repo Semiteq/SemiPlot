@@ -92,7 +92,11 @@ internal static class HeadlessInput
 	internal static void Press(TopLevel topLevel, PhysicalKey key, RawInputModifiers modifiers)
 	{
 		topLevel.KeyPressQwerty(key, modifiers);
-		topLevel.KeyReleaseQwerty(key, modifiers);
+		if (topLevel.PlatformImpl is not null)
+		{
+			topLevel.KeyReleaseQwerty(key, modifiers);
+		}
+
 		Dispatcher.UIThread.RunJobs();
 	}
 

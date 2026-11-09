@@ -416,6 +416,80 @@ public sealed class PenEditorViewTests : IDisposable
 	}
 
 	[AvaloniaFact]
+	public async Task Escape_WritesTheTypedNameOnceThenClosesTheEditor()
+	{
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
+		var window = Realise(viewModel);
+		int? changesWhenClosed = null;
+		window.Closed += (_, _) => changesWhenClosed = _editor.Changes.Count();
+		HeadlessInput.Click(window, RowAt(window, 0));
+		Retype(window, Named<TextBox>(window, "FormName"), "Argon");
+
+		HeadlessInput.Press(window, PhysicalKey.Escape);
+		await HeadlessWait.Until(() => !window.IsVisible, "the editor to close after its write");
+
+		_editor.Changes.Should().Equal(new FakeEditorCall.Change(Argon, new PenSettingChange.Name("Argon")));
+		changesWhenClosed.Should().Be(1, "the name is written once, before the window is gone");
+	}
+
+	[AvaloniaFact]
+	public async Task AnEditTypedDuringAHeldDrain_IsWrittenBeforeTheWindowCloses()
+	{
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
+		var window = Realise(viewModel);
+		FakeEditorCall.Change[]? changesWhenClosing = null;
+		window.Closing += (_, _) => changesWhenClosing = [.. _editor.Changes];
+		HeadlessInput.Click(window, RowAt(window, 0));
+		Retype(window, Named<TextBox>(window, "FormName"), "Argon2");
+		var write = _editor.HoldNextCall();
+		window.Close();
+		Dispatcher.UIThread.RunJobs();
+
+		Retype(window, Named<TextBox>(window, "FormUnit"), "bar");
+		write.SetResult();
+		await HeadlessWait.Until(() => !window.IsVisible, "the window to close after both edits");
+
+		changesWhenClosing.Should().Equal(
+			new FakeEditorCall.Change(Argon, new PenSettingChange.Name("Argon2")),
+			new FakeEditorCall.Change(Argon with { Name = "Argon2" }, new PenSettingChange.Unit("bar")));
+	}
+
+	[AvaloniaFact]
+	public void ANameTypedThenTheWindowLosesFocus_WritesItOnce()
+	{
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
+		var window = Realise(viewModel);
+		HeadlessInput.Click(window, RowAt(window, 0));
+		Retype(window, Named<TextBox>(window, "FormName"), "Argon");
+
+		RaisePlatformLostFocus(window);
+
+		_editor.Changes.Should().Equal(new FakeEditorCall.Change(Argon, new PenSettingChange.Name("Argon")));
+
+		Close(window);
+
+		_editor.Changes.Should().Equal(new FakeEditorCall.Change(Argon, new PenSettingChange.Name("Argon")));
+	}
+
+	[AvaloniaFact]
+	public void AScalePairTypedThenTheWindowLosesFocus_WritesItOnce()
+	{
+		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
+		var window = Realise(viewModel);
+		HeadlessInput.Click(window, RowAt(window, 0));
+		HeadlessInput.Type(window, Named<TextBox>(window, "FormScaleMinOnStart"), "1");
+		HeadlessInput.Type(window, Named<TextBox>(window, "FormScaleMaxOnStart"), "2");
+
+		RaisePlatformLostFocus(window);
+
+		_editor.Changes.Should().Equal(new FakeEditorCall.Change(Argon, new PenSettingChange.ScaleOnStart(1, 2)));
+
+		Close(window);
+
+		_editor.Changes.Should().Equal(new FakeEditorCall.Change(Argon, new PenSettingChange.ScaleOnStart(1, 2)));
+	}
+
+	[AvaloniaFact]
 	public void ALineStyleChosenAndTheStartBoxClicked_WriteOneChangeEach()
 	{
 		using var viewModel = _editor.EditorOver(ViewCatalogue, _messagePanel);
@@ -921,6 +995,7 @@ public sealed class PenEditorViewTests : IDisposable
 		HeadlessInput.Press(topLevel, PhysicalKey.Escape);
 
 		flyout.IsOpen.Should().BeFalse("Escape dismisses the picker");
+		window.IsVisible.Should().BeTrue("the picker takes the Escape, so the window stays");
 
 		return _pickedColor;
 	}

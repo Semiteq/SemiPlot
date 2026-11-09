@@ -8,6 +8,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 
 using SemiPlot.Core.Trends;
+using SemiPlot.UI.Windows;
 
 namespace SemiPlot.UI.PenEditor;
 
@@ -41,17 +42,19 @@ public partial class PenEditorWindow : Window
 	public static readonly AttachedProperty<PenField?> FieldProperty =
 		AvaloniaProperty.RegisterAttached<PenEditorWindow, TextBox, PenField?>("Field");
 
+	private readonly OwnedWindowClosing _closing;
 	private Func<Task>? _textEdit;
 	private PenFormViewModel? _scaleForm;
 	private IDisposable? _scaleFocus;
 	private FlyoutBase? _colorFlyout;
 	private PenFormViewModel? _colorForm;
 	private Color _colorAtOpen;
-	private Task? _drain;
 
 	public PenEditorWindow()
 	{
 		InitializeComponent();
+
+		_closing = new OwnedWindowClosing(this, PendingWork);
 
 		AddHandler(GotFocusEvent, OnFieldGotFocus);
 		AddHandler(LostFocusEvent, OnFieldLostFocus);
@@ -108,18 +111,25 @@ public partial class PenEditorWindow : Window
 		base.OnUnloaded(e);
 	}
 
-	// MainWindow disposes the view model after.
 	protected override void OnClosing(WindowClosingEventArgs e)
 	{
-		if (_drain is { IsCompleted: true })
+		if (_closing.Lets(e))
 		{
 			base.OnClosing(e);
-
-			return;
 		}
+	}
 
-		e.Cancel = true;
-		_drain ??= DrainAsync();
+	protected override void OnKeyDown(KeyEventArgs e)
+	{
+		base.OnKeyDown(e);
+		_closing.CloseOnEscape(e);
+	}
+
+	private Task? PendingWork()
+	{
+		return _textEdit is null && _scaleForm is null && (DataContext as PenEditorViewModel)?.IsIdle != false
+			? null
+			: DrainAsync();
 	}
 
 	private async Task DrainAsync()
@@ -144,10 +154,6 @@ public partial class PenEditorWindow : Window
 		catch (Exception exception)
 		{
 			ReportFailure(exception);
-		}
-		finally
-		{
-			Dispatcher.UIThread.Post(Close);
 		}
 	}
 

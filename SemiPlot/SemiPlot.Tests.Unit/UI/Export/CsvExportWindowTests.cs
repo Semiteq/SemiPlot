@@ -1109,6 +1109,7 @@ public sealed class CsvExportWindowTests : IDisposable
 				.Should().Equal(Resources.ExportNoMarker, "08:15:00 Etch.csv", $"08:30:00 {Resources.ExportMarkerUnnamed}");
 
 			HeadlessInput.Press(window, PhysicalKey.Escape);
+			window.IsVisible.Should().BeTrue("the drop-down takes the Escape, so the window stays");
 			HeadlessInput.Pick(window, startBox, viewModel.StartMarkers[0]);
 
 			ShownText(startBox).Should().Be("Etch.csv");

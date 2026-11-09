@@ -9,6 +9,7 @@ using ReactiveUI.Avalonia;
 using SemiPlot.UI.Export;
 using SemiPlot.UI.Legend;
 using SemiPlot.UI.PenEditor;
+using SemiPlot.UI.Settings;
 
 namespace SemiPlot.UI.MainWindow;
 
@@ -34,20 +35,30 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 		_requests.Add(viewModel.AboutRequests.Subscribe(
 			about => DialogOpener.ShowAbout(this, about, viewModel.ReportFailure)));
 		_requests.Add(viewModel.SettingsRequests.Subscribe(
-			settings => DialogOpener.ShowSettings(this, settings, viewModel.ReportFailure)));
-		_requests.Add(viewModel.PenEditorRequests.Subscribe(
-			penEditor => DialogOpener.ShowOwnedDialog(
+			settings => DialogOpener.ShowOrActivate(
 				this,
+				settings,
+				() => new SettingsDialog { DataContext = settings },
+				viewModel.ForgetClosedWindow,
+				viewModel.ReportFailure)));
+		_requests.Add(viewModel.PenEditorRequests.Subscribe(
+			penEditor => DialogOpener.ShowOrActivate(
+				this,
+				penEditor,
 				() => new PenEditorWindow
 				{
 					DataContext = penEditor,
 					Width = PenEditorWindow.OpeningWidthFor(WorkingAreaWidth())
 				},
-				penEditor,
+				viewModel.ForgetClosedWindow,
 				viewModel.ReportFailure)));
 		_requests.Add(viewModel.ExportRequests.Subscribe(
-			export => DialogOpener.ShowOwnedDialog(
-				this, () => new CsvExportWindow { DataContext = export }, export, viewModel.ReportFailure)));
+			export => DialogOpener.ShowOrActivate(
+				this,
+				export,
+				() => new CsvExportWindow { DataContext = export },
+				viewModel.ForgetClosedWindow,
+				viewModel.ReportFailure)));
 		viewModel.LegendViewModel.FitPanel(MaximumPanelWidth());
 	}
 

@@ -128,6 +128,9 @@ public sealed class PenEditorViewModel : ReactiveObject, IDisposable
 	/// </summary>
 	public bool IsRefreshing => _isRefreshing.Value;
 
+	/// <inheritdoc cref="ArchiveCallQueue.IsIdle"/>
+	public bool IsIdle => _archiveCallQueue.IsIdle;
+
 	/// <inheritdoc cref="ArchiveCallQueue.WhenIdleAsync"/>
 	public Task WhenIdleAsync()
 	{

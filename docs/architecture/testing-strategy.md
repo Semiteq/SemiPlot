@@ -49,7 +49,10 @@ and built from the commit under test. Its value is diagnosis.
 Shared helpers sit beside the tests that use them, one home each: `ResultText` (a failed result read in an
 assertion), `TemporaryDirectory`, `FixedClock`, `HeadlessInput` (the four gestures), `ViewProbe` (find, measure,
 show and close a window), `Postgres/FoldTestData` and `UI/Chart/ChartTestBuilder`, with `ChartViewTestBuilder`
-for the realised view.
+for the realised view. `HeadlessInput.Press` skips the key release when the press closed the `TopLevel`, because
+a closed window has no platform window to release the key on.
+`UI/PenEditor/PenEditorWindowDriver.RaisePlatformLostFocus` raises `ITopLevelImpl.LostFocus` through reflection,
+because the Avalonia 12.0.5 reference assembly omits that callback.
 
 The rows for the vendor's row shape and the shipped configuration set are the ones that mislead. A test
 reading a committed CSV, or the tracked YAML the
@@ -83,10 +86,10 @@ dispatcher it installs that thread as the UI thread, and a pool thread that does
 session resets its dispatcher kills the session's dispatch thread and hangs the suite. A plain `[Fact]`
 polls through `HistoryDebouncerTestBuilder.AwaitCondition`, which references no Avalonia type. The exception
 reaches no further: the clock bounds the wait and no test asserts on elapsed time, and a pipeline that takes
-an `IScheduler` runs on a `TestScheduler` instead. Its users besides the theme tests are
+an `IScheduler` runs on a `TestScheduler` instead. Its users besides the theme tests include, for example,
 `UI/MainWindow/MainWindowViewTests.cs`, `UI/Startup/StartupFailureWindowTests.cs`,
-`UI/Settings/SettingsViewModelTests.cs`, `SettingsViewTests.cs`, `UI/Chart/TrendChartViewModelTests.cs`,
-`ChartTestBuilder`, `UI/Export/CsvExportViewModelTests.cs` and `CsvExportWindowTests.cs`.
+`UI/Settings/SettingsViewModelTests.cs`, `UI/Chart/TrendChartViewModelTests.cs` and
+`UI/Export/CsvExportWindowTests.cs`.
 
 `Journeys/JourneyWait.cs` is its copy for the journeys, with the same contract (10 ms poll, dispatcher pump,
 30 s bound), except that it pumps unconditionally, which is safe only because every journey is an
@@ -141,6 +144,14 @@ a realised control can trigger (the pen list's null selection after a Ctrl+click
 `PenEditorWindow.OnPenListSelectionChanged` writes to `SelectedRow`). An
 outcome the view model decides is asserted in the view-model test; the view test drives
 one representative case of the binding.
+
+### A held close, read through `Closing`
+
+An owned window's `OnClosing` calls `base.OnClosing`, which raises `Closing`, only on the pass
+`OwnedWindowClosing.Lets` lets through. A value a test snapshots in a `Closing` handler is therefore the state
+at the moment the window really closes (`UI/MainWindow/OwnedWindowClosingTests`). The snapshot has one limit:
+when the main window closes, an owned window with no work passes `Lets` and raises `Closing` even if a sibling
+that holds work then cancels the close. A snapshot on an idle window reads an attempt, not the close.
 
 ### A pass-through layer
 

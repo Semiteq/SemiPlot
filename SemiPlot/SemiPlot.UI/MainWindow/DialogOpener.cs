@@ -19,17 +19,67 @@ internal static class DialogOpener
 		}
 	}
 
-	public static void ShowSettings(Window owner, SettingsViewModel settings, Action<Exception> reportFailure)
+	/// <summary>
+	/// Shows a window over the view model non-modally, or restores and activates the owned window already showing it.
+	/// </summary>
+	public static void ShowOrActivate(
+		Window owner, IDisposable viewModel, Func<Window> createWindow, Action<object> forget,
+		Action<Exception> reportFailure)
 	{
-		ShowOwnedDialog(owner, () => new SettingsDialog { DataContext = settings }, settings, reportFailure);
+		if (owner.OwnedWindows.FirstOrDefault(window => ReferenceEquals(window.DataContext, viewModel)) is { } open)
+		{
+			// Win32 activation only raises the window; a minimised one stays on the taskbar it is hidden from.
+			if (open.WindowState == WindowState.Minimized)
+			{
+				open.WindowState = WindowState.Normal;
+			}
+
+			open.Activate();
+
+			return;
+		}
+
+		var released = false;
+		Window? shown = null;
+
+		try
+		{
+			shown = createWindow();
+			shown.Closed += (_, _) => Release();
+			shown.Show(owner);
+		}
+		catch (Exception exception)
+		{
+			reportFailure(exception);
+			shown?.Close();
+			Release();
+		}
+
+		void Release()
+		{
+			if (released)
+			{
+				return;
+			}
+
+			released = true;
+			try
+			{
+				forget(viewModel);
+				viewModel.Dispose();
+			}
+			catch (Exception exception)
+			{
+				reportFailure(exception);
+			}
+		}
 	}
 
-	public static async void ShowOwnedDialog(
-		Window owner, Func<Window> createDialog, IDisposable viewModel, Action<Exception> reportFailure)
+	public static async void ShowSettings(Window owner, SettingsViewModel settings, Action<Exception> reportFailure)
 	{
 		try
 		{
-			await createDialog().ShowDialog(owner);
+			await new SettingsDialog { DataContext = settings }.ShowDialog(owner);
 		}
 		catch (Exception exception)
 		{
@@ -37,7 +87,7 @@ internal static class DialogOpener
 		}
 		finally
 		{
-			viewModel.Dispose();
+			settings.Dispose();
 		}
 	}
 }

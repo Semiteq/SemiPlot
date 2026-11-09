@@ -40,6 +40,7 @@ public sealed class CsvExportViewModel : ReactiveObject, IDisposable
 	private readonly ObservableCollection<ExportMarkerChoice> _startChoices;
 	private readonly ObservableCollection<ExportMarkerChoice> _endChoices;
 	private CancellationTokenSource? _exportCancellation;
+	private Task? _export;
 
 	public CsvExportViewModel(
 		IArchiveRowReader archiveRowReader,
@@ -99,7 +100,7 @@ public sealed class CsvExportViewModel : ReactiveObject, IDisposable
 		_disposables.Add(WatchChoices(endLists, _endChoices));
 
 		_disposables.Add(ExportCommand = ReactiveCommand.CreateFromTask<string>(
-			ExportAsync, Form.WhenAnyValue(form => form.IsValid)));
+			path => _export = ExportAsync(path), Form.WhenAnyValue(form => form.IsValid)));
 		_disposables.Add(CancelCommand = ReactiveCommand.Create(
 			() => _exportCancellation?.Cancel(), ExportCommand.IsExecuting));
 	}
@@ -226,6 +227,21 @@ public sealed class CsvExportViewModel : ReactiveObject, IDisposable
 		return Form is { From: { } from, To: { } to }
 			? ExportFileName.Suggest(from, to, SelectedStartMarker.Marker?.Label)
 			: null;
+	}
+
+	/// <summary>
+	/// Cancels the running export and returns it, ending once the partial file is gone; null while idle.
+	/// </summary>
+	internal Task? StopExport()
+	{
+		if (_export is not { IsCompleted: false } export)
+		{
+			return null;
+		}
+
+		_exportCancellation?.Cancel();
+
+		return export;
 	}
 
 	public void Dispose()

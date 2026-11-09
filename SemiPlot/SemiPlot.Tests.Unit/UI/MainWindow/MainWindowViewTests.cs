@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Reactive.Linq;
-using System.Windows.Input;
 
 using Avalonia;
 using Avalonia.Controls;
@@ -22,7 +21,6 @@ using SemiPlot.Tests.Unit.UI.PenEditor;
 using SemiPlot.Tests.Unit.UI.Settings;
 using SemiPlot.UI.Export;
 using SemiPlot.UI.Legend;
-using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
 using SemiPlot.UI.Minimap;
 using SemiPlot.UI.PenEditor;
@@ -57,11 +55,7 @@ public sealed class MainWindowViewTests
 		var window = new MainWindowView { DataContext = viewModel };
 		ViewProbe.Realise(window);
 
-		HeadlessInput.Click(window, MenuItemNamed(window, "EditMenu"));
-		var editorItem = MenuItemNamed(window, "EditPensAndGroups");
-		HeadlessInput.Click(
-			TopLevel.GetTopLevel(editorItem) ?? throw new InvalidOperationException("The Edit menu opened no popup."),
-			editorItem);
+		ClickMenuItem(window, "EditMenu", "EditPensAndGroups");
 		await HeadlessWait.Until(() => window.OwnedWindows.OfType<PenEditorWindow>().Any());
 
 		var editorWindow = window.OwnedWindows.OfType<PenEditorWindow>().Single();
@@ -79,10 +73,7 @@ public sealed class MainWindowViewTests
 		Dispatcher.UIThread.RunJobs();
 
 		window.OwnedWindows.Should().BeEmpty();
-		// A disposed command stops following its inputs, and the blank new-group name left it disabled.
-		penEditor.Groups.NewGroupName = "Gas";
-		((ICommand)penEditor.Groups.CreateGroupCommand).CanExecute(null).Should()
-			.BeFalse("the window disposes the view model its editor showed");
+		ShouldBeDisposed(penEditor);
 		window.Close();
 	}
 
@@ -105,11 +96,7 @@ public sealed class MainWindowViewTests
 		var window = new MainWindowView { DataContext = stand.ViewModel };
 		ViewProbe.Realise(window);
 
-		HeadlessInput.Click(window, MenuItemNamed(window, "FileMenu"));
-		var exportItem = MenuItemNamed(window, "FileExport");
-		HeadlessInput.Click(
-			TopLevel.GetTopLevel(exportItem) ?? throw new InvalidOperationException("The File menu opened no popup."),
-			exportItem);
+		ClickMenuItem(window, "FileMenu", "FileExport");
 		await HeadlessWait.Until(() => window.OwnedWindows.OfType<CsvExportWindow>().Any());
 
 		var exportWindow = window.OwnedWindows.OfType<CsvExportWindow>().Single();
@@ -117,15 +104,17 @@ public sealed class MainWindowViewTests
 		_ = export.ExportCommand.Execute(Path.Combine(directory.Path, "out.csv")).Subscribe(_ => { }, _ => { });
 		var token = await readToken.Task;
 		token.IsCancellationRequested.Should().BeFalse();
+		var partialPath = Path.Combine(directory.Path, "out.csv.partial");
+		File.Exists(partialPath).Should().BeTrue("the running export writes the partial file");
+		bool? partialFileAtClose = null;
+		exportWindow.Closing += (_, _) => partialFileAtClose = File.Exists(partialPath);
 
 		exportWindow.Close();
-		Dispatcher.UIThread.RunJobs();
+		await HeadlessWait.Until(() => window.OwnedWindows.Count == 0, "the export window to close");
 
-		window.OwnedWindows.Should().BeEmpty();
-		await HeadlessWait.Until(() => token.IsCancellationRequested);
-		await HeadlessWait.Until(
-			() => !File.Exists(Path.Combine(directory.Path, "out.csv.partial")),
-			"the partial file to be deleted");
+		token.IsCancellationRequested.Should().BeTrue("the close cancels the export");
+		partialFileAtClose.Should().BeFalse("the export window closes only after the partial file is deleted");
+		File.Exists(partialPath).Should().BeFalse();
 		window.Close();
 	}
 
@@ -138,12 +127,7 @@ public sealed class MainWindowViewTests
 		var window = new MainWindowView { DataContext = viewModel };
 		ViewProbe.Realise(window);
 
-		HeadlessInput.Click(window, MenuItemNamed(window, "EditMenu"));
-		var settingsItem = MenuItemNamed(window, "EditSettings");
-		HeadlessInput.Click(
-			TopLevel.GetTopLevel(settingsItem)
-				?? throw new InvalidOperationException("The Edit menu opened no popup."),
-			settingsItem);
+		ClickMenuItem(window, "EditMenu", "EditSettings");
 		await HeadlessWait.Until(() => window.OwnedWindows.OfType<SettingsDialog>().Any());
 
 		var dialog = window.OwnedWindows.OfType<SettingsDialog>().Single();
@@ -156,10 +140,7 @@ public sealed class MainWindowViewTests
 		Dispatcher.UIThread.RunJobs();
 
 		window.OwnedWindows.Should().BeEmpty();
-		// A disposed command stops following its inputs, and the shipped blank password left it disabled.
-		settings.Password = "secret";
-		((ICommand)settings.SaveCommand).CanExecute(null).Should()
-			.BeFalse("the window disposes the view model its dialog showed");
+		ShouldBeDisposed(settings);
 		window.Close();
 	}
 
@@ -184,6 +165,7 @@ public sealed class MainWindowViewTests
 		Dispatcher.UIThread.RunJobs();
 
 		started.Should().ContainSingle();
+		stand.ViewModel.MessagePanel.Entries.Should().BeEmpty();
 		window.IsVisible.Should().BeFalse("the restart closes the owning window");
 	}
 
@@ -419,13 +401,5 @@ public sealed class MainWindowViewTests
 		Dispatcher.UIThread.RunJobs();
 		window.MouseUp(end, MouseButton.Left);
 		Dispatcher.UIThread.RunJobs();
-	}
-
-	private static MenuItem MenuItemNamed(Window window, string name)
-	{
-		var item = ViewProbe.Named<AppMenuBar>(window, "MenuBar").FindControl<MenuItem>(name);
-		item.Should().NotBeNull("'{0}' is a named item of the menu bar", name);
-
-		return item;
 	}
 }

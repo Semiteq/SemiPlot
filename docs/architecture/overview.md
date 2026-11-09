@@ -56,8 +56,8 @@ Constraint: **$0 budget** — only free/OSS components.
 |     +-- MinimapView         archive-overview strip          |
 |     +-- MessagePanelView    every failure lands here        |
 |     +-- AppStatusBar        connection state, layer         |
-|     +-- PenEditorWindow     pens and groups dialog          |
-|     +-- CsvExportWindow     range to CSV file dialog        |
+|     +-- PenEditorWindow     pens and groups window          |
+|     +-- CsvExportWindow     range to CSV file window        |
 |     +-- SettingsDialog      app and connection settings     |
 |     +-- AboutDialog         version and config folder       |
 |   ViewModels (ReactiveUI) ◄── TrendCoordinator (Rx hub)     |
@@ -119,7 +119,9 @@ connection never changes while a process runs.
 | The language, read at each window's start | The message panel and its entries |
 | The log file `--log-file` names, each event carrying its writer's process id after the timestamp (`#command-line`) | |
 
-`MainWindow/TrendWindow` is the window's composition and its owner. `TrendWindow.Build` takes the start
+`MainWindow/TrendWindow` is the window's composition and its owner. The settings window, the pen editor and
+the export window are owned windows of the main window, one of each kind, and close with it, each after its
+own work (`#the-owned-windows`). `TrendWindow.Build` takes the start
 sequence's `StartupData`, the process's `InstanceLauncher` (which names the configuration directory), the
 UI scheduler, the `CsvDialect` that `App.ConfigureStarted` picks through `App.CsvDialectFor` and the
 archive's time zone (`PostgresConnectionSettings.SourceTimeZone`), and constructs in order:
@@ -163,6 +165,45 @@ logger factory. The container holds no window part, the status bar included. The
 container registration; `App` passes `AvaloniaScheduler.Instance` to `TrendWindow.Build`, while the data
 scheduler comes from the container.
 
+### The owned windows
+
+The settings window, the pen editor and the export window open as owned, non-modal windows of the main
+window: each stays above it and minimises with it, and the chart, the sidebar and the menus take input
+while one is open. The About dialog stays modal, and so does the settings window the startup failure window
+opens (`#the-settings-window`).
+
+- One window of each kind per main window. `MainWindowViewModel` keeps the open view model of each kind in
+  `MainWindow/OpenViewModels`. A request while one is open emits that same view model again and reads, builds
+  and snapshots nothing. `MainWindow` hands every request to `DialogOpener.ShowOrActivate`, which restores the
+  owned window whose `DataContext` is that view model when it is minimised and calls `Activate()` on it, and
+  otherwise builds the window and calls `Show(owner)`. A request while that window's own close is held
+  activates the closing window, which then closes. A second click while the settings or the editor read runs
+  is refused, because a running `CreateFromTask` command cannot execute.
+- The view disposes the view model on the window's `Closed`, once. The release first hands it to
+  `MainWindowViewModel.ForgetClosedWindow`, so the next request builds a new one, then disposes it; a throw
+  reaches the panel through `MainWindowViewModel.ReportFailure`. A `Show` that throws is reported, closes
+  the built window and runs the same release. `MainWindowViewModel` disposes only its own commands and
+  subjects.
+- Every close of an owned window waits for that window's own work: the editor's drain
+  (`#a-field-writes-when-its-edit-ends`), the settings window's save (`#the-settings-window`), the export
+  window's cancelled export (`#the-export-window`). `Windows/OwnedWindowClosing` holds the close for all
+  three. Each window's `OnClosing` passes the close to `Lets`, which asks the window for its pending work on
+  every close that finds no hold running. A task cancels the close, and when the task ends the helper posts a
+  close of the owner that asked, or of the window itself. A close whose reason is not `WindowClosing` is the
+  owner's: the cascade of the main window's close passes `OwnerWindowClosing`.
+- Avalonia asks the owned windows before it closes their owner, and one that cancels cancels the owner's
+  close. So the main window, closed from the title bar, `File` -> `Exit` or `Restart now`, closes after the
+  last held work ends, and every owned window closes before it. No hold has a timeout: until the work ends,
+  every window stays open and usable, and a further close starts no second hold. Each work reports its own
+  failure; the helper reports nothing.
+- Escape with no modifier that no control handled closes each of the three windows through the same hold
+  (`OwnedWindowClosing.CloseOnEscape`). An open drop-down or colour flyout takes the Escape, and the
+  window stays.
+
+`UI/MainWindow/OwnedWindowsTests` and `OwnedWindowClosingTests` gate these rules, for example
+`OwnedWindowClosingTests.ClosingTheMainWindow_WaitsForTheEditorsWrite_ThenClosesEveryOwnedWindow` over `Close`,
+`Exit` and `Restart`, and `OwnedWindowClosingTests.WorkStartedBetweenTwoResumes_IsHeldByTheNextClose`.
+
 ### Another instance
 
 `Startup/InstanceLauncher` starts a copy of the running process with the launch keys it was started with.
@@ -180,6 +221,11 @@ started window always carries its options, and only a failed start can carry non
   `RestartApplication`, on `MainWindowViewModel` and `StartupFailureViewModel`, starts a copy and closes
   the window only once the copy has started. Both report a failed start to the window's own
   panel, each view model through `MessagePanel.ReportFailure`, and keep the window.
+- A main window closes once. `MainWindowViewModel` sets `_isClosing` when `File` -> `Exit` runs and when
+  `RestartApplication` has started its copy, and a later `RestartApplication` returns before it starts one.
+  So a second `Restart now` or `Exit` while an owned window holds the close (`#the-owned-windows`) starts no
+  second copy. A title-bar close reaches no view model, so a `Restart now` during a held title-bar close
+  starts one copy.
 - A copy is a plain child process of the window that started it, not a resource of any stand that
   launched the first process (`bench.md#the-demos-directories`).
 
@@ -254,8 +300,8 @@ event disposes the watch and the watcher it holds.
   sharing, so no handle a save holds blocks another save's `File.Replace` either.
 
 The process that saved applies its theme through the same route as every other process; the settings
-dialog writes no variant itself. An open settings dialog follows the variant its window takes: when it
-changes, `SettingsViewModel.FollowAppliedTheme` moves the dialog's loaded theme to it, and the selection too
+window writes no variant itself. An open settings window follows the variant its owner takes: when it
+changes, `SettingsViewModel.FollowAppliedTheme` moves the window's loaded theme to it, and the selection too
 unless the operator has already picked another theme, so picking the theme the files held before is a
 change the save writes.
 
@@ -412,20 +458,24 @@ one method: nothing else may resolve a service through a static.
 
 ### The settings window
 
-`Edit` -> `Settings` opens `Settings/SettingsDialog`, the viewer's only writer of the section folders. It
+`Edit` -> `Settings` opens `Settings/SettingsDialog`, the viewer's only writer of the section folders. From
+the main window it is an owned, non-modal window, one per main window (`#the-owned-windows`); the startup
+failure window opens it modally through `DialogOpener.ShowSettings`. Escape closes it from either. It
 edits `locale` and `theme` in `app/`, and `host`, `port`, `database`, `user`, `password` and
 `poll_interval_ms` in `connection/`. A key the window does not show, such as `schema`, stays in its file
 and survives every rewrite. A saved `theme` applies live in every running process (`#the-live-theme`), so
-a save that changed only the theme shows no notice. The dialog shows a restart notice after a save that
+a save that changed only the theme shows no notice. The window shows a restart notice after a save that
 changed any other key, and that change takes effect at the next start. A save that also changed the theme
 words the notice `SettingsRestartNoticeThemeApplied`, which names the theme as applied
 (`SettingsViewModel.RestartNotice`). Beside the notice, "Restart now"
 (`SettingsViewModel.RestartNowCommand`) runs the `RestartApplication` of the window that opened the
-dialog, which starts a copy with the same launch keys and closes that window only once the copy has
-started (`#another-instance`). The command cannot execute while `SaveCommand` runs: a copy would read the
-section folders mid-save, and closing the window would end the process inside the save. The view model
-takes that restart as a required argument: the failure window opens the dialog only when launch options
-parsed, so it always has one to hand.
+settings window, which starts a copy with the same launch keys and closes that window only once the copy
+has started (`#another-instance`). The command cannot execute while `SaveCommand` runs, because a copy would
+read the section folders mid-save. Any close of the settings window during a save, the main window's
+included, waits for the save to end (`SettingsViewModel.SaveInFlight`), so the process never ends inside a
+save (`OwnedWindowClosingTests.ClosingTheMainWindow_DuringASave_ClosesItOnlyAfterTheSaveEnds`). The view model
+takes that restart as a required argument: the failure window opens the settings window only when launch
+options parsed, so it always has one to hand.
 
 Each connection field takes only what its loader accepts. `host` is a text box checked by
 `PostgresConnectionLoader.IsIPv4Address`, the loader's own rule. `port` and `poll_interval_ms` are
@@ -442,13 +492,13 @@ as text and the file that owns each key, and the view model fills its fields fro
 loaders fail on exactly the values the window is there to fix, such as the shipped empty password, so a
 typed read would open the window empty on the startup-failure path.
 
-The failure window offers Settings only when both sections read and carry every key the dialog edits:
+The failure window offers Settings only when both sections read and carry every key the window edits:
 `StartupFailureViewModel.OffersSettings` is true when `SettingsSave.ReadOwned` succeeds for both and
 `SettingsSave.FirstAbsentKey` finds nothing absent when the window opens. A missing configuration
 directory, a section folder with no `*.yaml` file, an unreadable file, and a required key that no file of
 its section carries leave the button hidden, and the
 failure text, which names the path and the keys to create, alone instructs the operator; the window
-creates no file, so a dialog over a section it cannot read, or over an absent key, has nothing to save into.
+creates no file, so a window over a section it cannot read, or over an absent key, has nothing to save into.
 `Edit` -> `Settings` over such a folder opens with Save disabled and the reason on the message line. An empty password
 still offers Settings, and a save writes it into the existing `connection.yaml`. `App.RunStarted` and
 `App.RunFailed` hand the parsed launch options to the window they show. When the argument parse failed, the options
@@ -481,10 +531,10 @@ A save goes through `Settings/SettingsSave.Save`:
    promotion goes to the log and the save still succeeds. The loaders read only `app/` and `connection/`, so a staging
    directory left by a killed process is inert.
 
-A failed save reaches the message panel through `ArchiveFailureMapper`, and the dialog stays open. A
+A failed save reaches the message panel through `ArchiveFailureMapper`, and the window stays open. A
 save with no edit writes nothing and shows no restart notice. A section that fails to read is reported
-each time the dialog opens; the panel counts a repeat against its newest entry rather than adding one.
-The dialog also states the first such section on its message line, ahead of the field rules, with Save
+each time the window opens; the panel counts a repeat against its newest entry rather than adding one.
+The window also states the first such section on its message line, ahead of the field rules, with Save
 disabled (`SettingsViewModel.ValidationMessage`); a disabled Save always carries a reason.
 
 The staging folder inherits the protection of `<config-dir>`, not that of the section folders, and it
@@ -673,8 +723,9 @@ disable it: the read fails, `ArchiveFailureMapper` reports it as an `Unreachable
 window opens.
 
 On a successful read the command emits a `PenEditorViewModel` over the catalogue on
-`PenEditorRequests`. `MainWindow` shows `PenEditorWindow` with `ShowDialog` and disposes the view model
-in `finally`, as it does for the settings dialog. No startup code calls the editor
+`PenEditorRequests`. `MainWindow` shows `PenEditorWindow` through `DialogOpener.ShowOrActivate`, once per
+main window: a second request activates the open editor and reads nothing, and the view disposes the view
+model on `Closed` (`#the-owned-windows`). No startup code calls the editor
 (`data-integration.md#startup`).
 
 #### One queue for every call
@@ -755,10 +806,24 @@ A right or middle press on the pen list ends no edit: the grid is a focusable an
 it, and `FocusManager` moves the focus on a left press only.
 The group grid is a focusable `DataGrid` too, so a left press on a group row takes the focus and ends a
 rename as a press on the pen list ends a field's edit. `FocusManager` moves the focus only on a left press, while the handler clears it on any
-button, so a right or middle press on a label or an empty area ends the edit too. Closing the window drains: `Closing` is cancelled until the recorded edits have ended and the queue is
-idle, and then the window closes itself. `MainWindow` disposes the view model only after `ShowDialog`
-returns, so a name typed just before the close is written once and nothing is disposed under a write
-in flight.
+button, so a right or middle press on a label or an empty area ends the edit too.
+
+Every close of the editor drains, its own, Escape and the main window's, through `OwnedWindowClosing`
+(`#the-owned-windows`). The editor has no pending work when no text edit or scale pair is recorded and the
+queue is idle (`PenEditorViewModel.IsIdle`, over `ArchiveCallQueue.IsIdle`); otherwise its work is
+`DrainAsync`, which ends the recorded text edit, then the scale pair, and awaits `WhenIdleAsync`. The close is
+cancelled until the drain ends, and the helper then closes the editor, or the main window that asked. The next
+close asks again, so an edit recorded during a drain, by focus moving into another field, is written before
+the window closes (`PenEditorViewTests.AnEditTypedDuringAHeldDrain_IsWrittenBeforeTheWindowCloses`). A write
+the server refuses reports to the panel, and the close goes on. The view disposes the view model on `Closed`,
+so a name typed just before the close is written once and nothing is disposed under a write in flight
+(`OwnedWindowClosingTests.ClosingTheMainWindow_WaitsForTheEditorsWrite_ThenClosesEveryOwnedWindow`).
+
+Leaving the editor for the chart or another window ends its edit with no code of its own. On Win32,
+`WM_KILLFOCUS` clears the focus of the window that lost it, so the field's `LostFocus`, or the scale pair
+losing the focus within, writes the pending edit once
+(`PenEditorViewTests.ANameTypedThenTheWindowLosesFocus_WritesItOnce`). An IME composition in progress defers
+that focus loss.
 
 ### The live catalogue
 
@@ -1043,9 +1108,10 @@ whatever the count.
 
 ### The export window
 
-`File` -> `Export to CSV...` opens `Export/CsvExportWindow`, a modal dialog that writes the archive's own
-`l = 0` rows of a range and a set of pens into one CSV file. The item is disabled while the chart has no
-pen (`HasNoPens`). The file is one table of three columns, pen, time and value, with no union timeline,
+`File` -> `Export to CSV...` opens `Export/CsvExportWindow`, an owned, non-modal window
+(`#the-owned-windows`) that writes the archive's own `l = 0` rows of a range and a set of pens into one CSV
+file. The item is disabled while the chart has no pen (`HasNoPens`). A second request brings the open window
+to the front with its range and fields as the operator left them, and reads nothing. The file is one table of three columns, pen, time and value, with no union timeline,
 fill, interpolation, decimation, `id` or quality column. The header is operator text in the interface
 language (`Pen`, `Time`, `Value` / `Перо`, `Время`, `Значение`), while the delimiter and the decimal sign
 follow the Windows regional settings (`ui-text.md#the-export-windows-text`). The rows of all ticked pens are
@@ -1099,11 +1165,12 @@ cannot write, or a move that fails, maps to `ExportFileError`; so does a partial
 deleted, which names the partial path and comes first so that the operator sees it. An exception that is
 no I/O failure reaches `CsvExportViewModel.ReportFailure`, which sets the status title and adds one panel
 entry. The text fields are written as stored: a name that starts with `=`, `+`, `-` or `@` is not
-escaped, because the catalogue is the operator's own and an escape would change the data. Closing the window
-during an export cancels it: `DialogOpener.ShowOwnedDialog` disposes the view model in `finally` after `ShowDialog`
-returns, and `CsvExportViewModel.Dispose` cancels the running export and the count. Dispose does not wait for
-the export: the exporter deletes the partial file on the pool shortly after the window has closed, so a process
-that exits in that gap leaves `<path>.partial` behind.
+escaped, because the catalogue is the operator's own and an escape would change the data. Any close of the
+window during an export, its own, Escape or the main window's, cancels the export and waits
+(`#the-owned-windows`). The window's pending work is `CsvExportViewModel.StopExport()`, which cancels the run
+and returns its task, and that task ends only after the exporter has deleted the partial file. So no close
+leaves `<path>.partial` behind (`OwnedWindowClosingTests.ClosingTheMainWindow_DuringAnExport_LeavesNoPartialFile`).
+`CsvExportViewModel.Dispose`, run on `Closed`, cancels the count.
 
 ### Command line
 

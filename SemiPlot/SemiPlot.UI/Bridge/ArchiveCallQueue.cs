@@ -15,6 +15,9 @@ public sealed class ArchiveCallQueue(Action callSucceeded)
 
 	private Task _tail = Task.CompletedTask;
 
+	/// <summary>True when every call queued so far has finished.</summary>
+	public bool IsIdle => _tail.IsCompleted;
+
 	/// <summary>
 	/// Starts the call once every call queued before it has finished, whatever their outcome, and invokes the
 	/// success callback after a call whose result succeeded.

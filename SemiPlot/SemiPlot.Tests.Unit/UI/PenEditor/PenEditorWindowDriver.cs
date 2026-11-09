@@ -1,6 +1,9 @@
+using System.Reflection;
+
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Media;
+using Avalonia.Platform;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
@@ -24,6 +27,19 @@ internal static class PenEditorWindowDriver
 	{
 		ViewProbe.Dismiss(window);
 		window.IsVisible.Should().BeFalse("the close request completes once the edits are written");
+	}
+
+	/// <summary>
+	/// Raises the focus loss Win32 raises on WM_KILLFOCUS; only the reference assembly hides the callback.
+	/// </summary>
+	public static void RaisePlatformLostFocus(PenEditorWindow window)
+	{
+		var callback = typeof(ITopLevelImpl)
+			.GetProperty("LostFocus", BindingFlags.Instance | BindingFlags.Public)?
+			.GetValue(window.PlatformImpl);
+		var lostFocus = callback.Should().BeOfType<Action>("the window subscribes to the platform focus loss").Subject;
+		lostFocus();
+		Dispatcher.UIThread.RunJobs();
 	}
 
 	public static void Retype(PenEditorWindow window, TextBox field, string text)

@@ -366,6 +366,10 @@ No abbreviations in names.
   Editing pens belongs to the pen editor (`PenEditor/PenEditorWindow`, `Edit` -> `Pens and groups`,
   `docs/architecture/overview.md#the-pen-and-group-editor`), so a control added to the row fails the
   suite rather than quietly shipping a second editor.
+- The pen editor's pen list is read-only; its start flag is a `CheckGeometry` glyph, and
+  `ThePenList_RealisesNoCheckBox` fails if a control returns to a row
+  (`docs/architecture/ui-theme.md#the-pen-list`). Every `DataGrid` sizes its columns through
+  `Tables/HeaderMeasuredColumns`.
 - A stored pen or group change reaches the running chart through `Bridge/PenCatalogueSync` and no other
   route: it re-reads `IDataProvider.QueryCatalogueAsync` once when the window opens, every 5 s and on
   `ReadNow()` after each write the editor lands, emits each read that does not `CatalogueRead.Matches` the

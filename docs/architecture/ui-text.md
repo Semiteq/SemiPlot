@@ -95,6 +95,8 @@ targets instead: measured on 2026-09-09, a cold build fails with
 - The time window panel's field formats: the time boxes' `HH:mm:ss` (`WallClockRangeForm.TimeFieldFormat`,
   the export's constant) and the width box's `h:mm:ss` (`WindowWidthText.FieldFormat`). Both are typed and
   read with the invariant culture, and the messages take them as `{0}` (`#the-time-window-panels-text`).
+- The pen form's colour box placeholder `#RRGGBB` (`PenColorConverters.FieldFormat`), the stored colour's
+  format.
 - Log message templates, in `Program.cs` and every `ILogger` call. The operator never reads them on
   the screen; the log is read by whoever triages the machine.
 - `AppSettingsError.Describe` and the other error messages, the two read names
@@ -222,44 +224,70 @@ the one detail naming `<config-dir>` and the staging folder (`overview.md#the-se
 
 `MenuEditPensAndGroups` is the `Edit` menu's second item, "Pens and groups" / "Перья и группы", and
 carries no ellipsis, as `MenuEditSettings` carries none. `PenEditor/PenEditorWindow.axaml` reads
-`PenEditorTitle`, the tab headers `PenEditorPensTab` and `PenEditorGroupsTab`, and the eleven column
-headers `PenEditorColumn*`. The form's labels reuse the column-header keys, one term per concept; its one
-label of its own is `PenFormMaskPreviewLabel`. The line-style cell and the combo box read
-`PenLineStyleInterpolated` and `PenLineStyleStepped` through `PenLineStyleConverters.ToLabel`, a
-`FuncValueConverter` consumed through `{x:Static}`. The visibility column and field read
-`PenEditorColumnOnStart`, "On start" / "При запуске", because the flag is the visibility a pen starts
-with and a change of it switches nothing on a running chart. The scale columns and fields read
-`PenEditorColumnScaleMinOnStart` and `PenEditorColumnScaleMaxOnStart`, "Initial scale, min" / "Начальная
-шкала, от" and "Initial scale, max" / "Начальная шкала, до", because the stored pair is the pen's initial
-scale, the term the axis scale panel's button `AxisScaleInitialScale` ("Restore initial scale" / "Вернуть
-начальную") and the `View` menu item `MenuViewInitialScale` ("Restore initial scale" / "Вернуть начальную
-шкалу") use: it applies when the pen enters a chart and on that command, and it changes no pen already
-shown. The three scale messages open with the same term, "Initial scale:" / "Начальная шкала:". The log
-column and field read `PenEditorColumnLogScaleOnStart`, "Initial scale, logarithmic" / "Начальная
-шкала, логарифмическая": the flag is a start value like the pair, so it takes the pair's term. The
-label names the scale type the way Excel, MasterSCADA 4D and Simple-Scada 2 do and leaves the base out;
-the chart builds base 10 only (`charting.md#log10-y-axis`).
+`PenEditorTitle` and the pen list's five column headers; the window has no tabs and so no tab header.
+The headers are `PenEditorColumnId`, `PenEditorColumnName`, `PenEditorColumnUnit`, `PenEditorColumnOnStart` and
+`PenEditorColumnGroups`. The start flag's column reads `PenEditorColumnOnStart`, "On start" / "При запуске",
+because the flag is the visibility a pen starts with and a change of it switches nothing on a running chart.
 
-The bottom bar reads the button `PenEditorRefresh`, "Refresh pen list" / «Обновить список перьев», which
+The pen pane reads `PenFormEmptyHint`, "Select a pen in the list on the left" / "Выберите перо в списке
+слева", while no pen is selected. Its title is two `TextBlock`s, the id and the name, with no format key, as
+the axis scale panel joins name and unit. The section headers are `PenFormSectionLabel` ("Label" /
+"Подпись"), `PenFormSectionAppearance` ("Appearance" / "Вид") and `PenFormSectionOnStart` ("On start" /
+"При запуске"). The form's labels reuse a key wherever the term is the same concept: `PenEditorColumnName`
+and `PenEditorColumnUnit` from the pen list, `PenFormMaskPreviewLabel`, and the axis scale panel's
+`AxisScaleMinimumLabel` and `AxisScaleMaximumLabel`, "Minimum" / "Минимум" and "Maximum" / "Максимум". The
+rest are its own: `PenFormMaskLabel`, `PenFormColorLabel`, `PenFormLineStyleLabel`, `PenFormVisibilityLabel`
+("Visibility" / "Видимость") and `PenFormScaleTypeLabel` ("Scale type" / "Тип шкалы"). The visibility box
+reads `PenFormShowOnChart`, "Show on the chart" / "Показывать на графике", and the scale type box
+`PenFormLogarithmic`, "Logarithmic" / "Логарифмическая". The line-style combo box reads
+`PenLineStyleInterpolated` and `PenLineStyleStepped` through `PenLineStyleConverters.ToLabel`, a
+`FuncValueConverter` consumed through `{x:Static}`.
+
+The "On start" section holds the visibility flag and the pen's initial scale: the stored pair and the log
+flag apply when the pen enters a chart and on the axis scale panel's `AxisScaleInitialScale` ("Restore
+initial scale" / "Вернуть начальную") and the `View` menu item `MenuViewInitialScale` ("Restore initial
+scale" / "Вернуть начальную шкалу"), and they change no pen already shown. The three scale messages open
+with that term, "Initial scale:" / "Начальная шкала:", because they name the stored pair the section holds.
+The scale pair and the log flag have no column and no header key of their own. The scale type names the
+scale the way Excel, MasterSCADA 4D and Simple-Scada 2 do and leaves the base out; the chart builds base 10
+only (`charting.md#log10-y-axis`).
+
+The top bar reads the button `PenEditorRefresh`, "Refresh pen list" / «Обновить список перьев», which
 names what it refreshes, and `PenEditorAddedCount`, "Pens added: {0}" / "Добавлено перьев: {0}", empty
 until the first successful refresh. It carries no notice: every running chart follows what the editor
 writes through the catalogue read (`overview.md#the-live-catalogue`), except the scale pair and the log
 scale flag, which change no pen already shown (`overview.md#what-a-read-changes`), so there is nothing to
-wait for. The `Groups` tab reads `PenGroupsNewNamePlaceholder`, one of the tree's two watermarks beside
-the marker label editor's `MarkerLabelPlaceholder` (`#the-marker-menu-and-label-editors-text`),
-`PenGroupsCreate`, `PenGroupsNameLabel`, `PenGroupsDelete`, which is also the confirm button's caption,
-`PenGroupsCancel` and `PenGroupsMembersHeader`. The selected group's fold checkbox reads
-`PenGroupsFoldedOnStartLabel`, "Folded when the viewer opens" / "Свёрнута при открытии": the stored flag
-is the fold the group's sidebar header starts with, and a change of it folds nothing on a running sidebar
-(`overview.md#the-sidebar-fold`). `PenGroupsDeleteConfirmation` takes the group name as
-`{0}` and its member count as `{1}`, and is a snapshot taken when delete is pressed. The added count and
-the confirmation put the counted noun first in both languages, "Pens in the group: {1}" / "Перьев в
-группе: {1}", so neither needs a plural form.
+wait for. The top bar's filter box reads the watermark `PenEditorFilterPlaceholder`, "Filter: id, name or
+group" / «Фильтр: номер, имя или группа», which reuses the Id column's term in each language,
+`PenEditorColumnId` "Id" / «Номер», lower-cased inside the sentence (`overview.md#the-pen-list-filter`).
+
+The groups pane reads its title `PenGroupsTitle`, "Groups" / "Группы", and the one-line subtitle
+`PenGroupsSubtitle`, "The selected pen's groups are ticked" / "Отмечены группы выбранного пера". The
+new-group row reads `PenGroupsNewNamePlaceholder`, one of the tree's three watermark keys beside the top
+bar's `PenEditorFilterPlaceholder` and the marker label editor's `MarkerLabelPlaceholder`
+(`#the-marker-menu-and-label-editors-text`), and `PenGroupsCreate`. The
+grid's membership column has no header; the other two read `PenGroupsColumnGroup`, "Group" / "Группа", and
+`PenGroupsColumnActions`, "Actions" / "Действия". A row's pen count carries the tooltip
+`PenGroupsMemberCountTip`, "Pens in the group" / "Перьев в группе", and its "..." button, a glyph and not
+text, the tooltip `PenGroupsActionsTip`, "Group actions" / "Действия с группой". The button's menu reads
+`PenGroupsRename`, "Rename" / "Переименовать", the checkable `PenGroupsFoldedOnStartLabel`, "Folded when
+the viewer opens" / "Свёрнута при открытии", and `PenGroupsDelete`. The stored fold flag is the fold the
+group's sidebar header starts with, and a change of it folds nothing on a running sidebar
+(`overview.md#the-sidebar-fold`).
+
+The rename block reads the label `PenGroupsNameLabel`, which need not repeat the group's name because the
+field shows it, and the button `PenGroupsRenameDone`, "Done" / "Готово". The delete confirmation is three
+lines: `PenGroupsDeleteQuestion`, "Delete group '{0}'?" / «Удалить группу «{0}»?», with the group name as
+`{0}`; `PenGroupsDeleteCount`, "Pens in the group: {0}" / «Перьев в группе: {0}», with the member count;
+and `PenGroupsDeleteKeepsPens`, "The pens themselves stay." / «Сами перья останутся.». The question and the
+count are a snapshot taken when Delete is chosen. The confirm button reads `PenGroupsDelete`, the menu
+item's key, because both name one action, and the other button `PenGroupsCancel`. The added count and the
+count line put the counted noun first in both languages, so neither needs a plural form.
 
 The pen form's message line shows the first rule a draft breaks, in form order: `PenFormNameRequired`,
 `PenFormMaskInvalid`, `PenFormColorInvalid`, `PenFormScaleBoundInvalid`, `PenFormScaleHalfSet`,
-`PenFormScaleInverted` and `ScaleLogMinimumPositive`. The `Groups` tab's line shows
-`PenGroupsNameRequired`. The line is not under the field, so each message opens with the field it names,
+`PenFormScaleInverted` and `ScaleLogMinimumPositive`. The groups pane's line shows
+`PenGroupsNameRequired` for a blank rename. The line is not under the field, so each message opens with the field it names,
 as the settings messages do. `ScaleLogMinimumPositive`, "A logarithmic scale needs a minimum above zero"
 / "Для логарифмической шкалы минимум должен быть больше нуля", is the one exception: the
 axis scale panel shows the same rule with the same key, so it names the rule rather than a form field.

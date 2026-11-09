@@ -1,6 +1,8 @@
+using System.ComponentModel;
 using System.Reactive.Linq;
 using System.Reactive.Threading.Tasks;
 
+using Avalonia.Collections;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 
@@ -46,8 +48,8 @@ public sealed class PenEditorViewModelTests : IDisposable
 	{
 		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
 
-		editor.Rows.Select(row => row.Pen).Should().Equal(Argon, Pressure, Power);
-		editor.Rows.Select(row => row.GroupsText).Should().Equal("Chamber, Gas", "Chamber", string.Empty);
+		RowsOf(editor).Select(row => row.Pen).Should().Equal(Argon, Pressure, Power);
+		RowsOf(editor).Select(row => row.GroupsText).Should().Equal("Chamber, Gas", "Chamber", string.Empty);
 		editor.SelectedRow.Should().BeNull();
 		editor.SelectedForm.Should().BeNull();
 		editor.AddedCountText.Should().BeEmpty();
@@ -58,10 +60,10 @@ public sealed class PenEditorViewModelTests : IDisposable
 	{
 		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
 
-		editor.SelectedRow = editor.Rows[1];
+		editor.SelectedRow = RowsOf(editor)[1];
 
 		editor.SelectedForm.Should().NotBeNull();
-		editor.SelectedForm!.Row.Should().BeSameAs(editor.Rows[1]);
+		editor.SelectedForm!.Row.Should().BeSameAs(RowsOf(editor)[1]);
 		editor.SelectedForm.Name.Should().Be(Pressure.Name);
 
 		editor.SelectedRow = null;
@@ -73,14 +75,14 @@ public sealed class PenEditorViewModelTests : IDisposable
 	public async Task Refresh_RegistersRereadsAndShowsTheNewRowsTheAddedCountAndTheSelectedPen()
 	{
 		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
-		editor.SelectedRow = editor.Rows[1];
+		editor.SelectedRow = RowsOf(editor)[1];
 		_editor.RegisterResult = Result.Ok(1);
 		_editor.ReadResult = Result.Ok(new PenCatalogue([Argon, Pressure, Power, _registered], [Chamber, Gas]));
 
 		await editor.RefreshCommand.Execute();
 
 		_editor.Calls.Should().Equal(new FakeEditorCall.RegisterNewPens(), new FakeEditorCall.Read());
-		editor.Rows.Select(row => row.Pen).Should().Equal(Argon, Pressure, Power, _registered);
+		RowsOf(editor).Select(row => row.Pen).Should().Equal(Argon, Pressure, Power, _registered);
 		editor.AddedCountText.Should().Be(Resources.FormatPenEditorAddedCount(1));
 		editor.SelectedRow.Should().NotBeNull();
 		editor.SelectedRow!.Pen.Should().Be(Pressure);
@@ -91,12 +93,12 @@ public sealed class PenEditorViewModelTests : IDisposable
 	public async Task Refresh_ClearsTheSelectionWhenTheSelectedPenIsGone()
 	{
 		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
-		editor.SelectedRow = editor.Rows[2];
+		editor.SelectedRow = RowsOf(editor)[2];
 		_editor.ReadResult = Result.Ok(new PenCatalogue([Argon, Pressure], [Chamber, Gas]));
 
 		await editor.RefreshCommand.Execute();
 
-		editor.Rows.Select(row => row.Pen).Should().Equal(Argon, Pressure);
+		RowsOf(editor).Select(row => row.Pen).Should().Equal(Argon, Pressure);
 		editor.SelectedRow.Should().BeNull();
 		editor.SelectedForm.Should().BeNull();
 	}
@@ -105,27 +107,41 @@ public sealed class PenEditorViewModelTests : IDisposable
 	public async Task Refresh_KeepsTheSortOrder()
 	{
 		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
-		editor.SortCommand.Execute(PenColumn.Id).Subscribe();
-		editor.SortCommand.Execute(PenColumn.Id).Subscribe();
+		editor.PenRows.SortDescriptions.Add(
+			DataGridSortDescription.FromComparer(PenRowOrder.ById, ListSortDirection.Descending));
 		_editor.ReadResult = Result.Ok(new PenCatalogue([Argon, Pressure, Power, _registered], []));
 
 		await editor.RefreshCommand.Execute();
 
-		editor.Rows.Select(row => row.Pen.Id).Should().Equal(4242, 12, 7, 3);
+		RowsOf(editor).Select(row => row.Pen.Id).Should().Equal(4242, 12, 7, 3);
+	}
+
+	[AvaloniaFact]
+	public void PenRows_ListsEveryRowInCatalogueOrderUntilSorted()
+	{
+		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+		var rows = RowsOf(editor);
+
+		rows.Select(row => row.Pen).Should().Equal(Argon, Pressure, Power);
+		editor.PenRows.SortDescriptions.Should().BeEmpty();
+
+		editor.PenRows.SortDescriptions.Add(DataGridSortDescription.FromComparer(PenRowOrder.ByName));
+
+		RowsOf(editor).Should().Equal(rows[0], rows[2], rows[1]);
 	}
 
 	[AvaloniaFact]
 	public async Task AFailedRegistration_ReportsOnceReadsNothingAndLeavesTheTable()
 	{
 		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
-		var rows = editor.Rows;
+		var rows = RowsOf(editor);
 		_editor.RegisterResult = Result.Fail(
 			FakePenCatalogueEditor.Refusal(ArchiveFault.TableMissing, "semiplot_register_new_pens()"));
 
 		await editor.RefreshCommand.Execute();
 
 		_editor.Calls.Should().Equal(new FakeEditorCall.RegisterNewPens());
-		editor.Rows.Should().BeSameAs(rows);
+		RowsOf(editor).Should().Equal(rows);
 		editor.AddedCountText.Should().BeEmpty();
 		_messagePanel.Entries.Should().ContainSingle();
 	}
@@ -134,14 +150,14 @@ public sealed class PenEditorViewModelTests : IDisposable
 	public async Task AFailedRead_ReportsOnceShowsTheAddedCountAndLeavesTheTable()
 	{
 		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
-		var rows = editor.Rows;
+		var rows = RowsOf(editor);
 		_editor.RegisterResult = Result.Ok(2);
 		_editor.ReadResult = Result.Fail(FakePenCatalogueEditor.Refusal(ArchiveFault.Unreachable, "semiplot_tags"));
 
 		await editor.RefreshCommand.Execute();
 
 		_editor.Calls.Should().Equal(new FakeEditorCall.RegisterNewPens(), new FakeEditorCall.Read());
-		editor.Rows.Should().BeSameAs(rows);
+		RowsOf(editor).Should().Equal(rows);
 		editor.AddedCountText.Should().Be(Resources.FormatPenEditorAddedCount(2), "the registration did succeed");
 		_messagePanel.Entries.Should().ContainSingle();
 	}
@@ -164,7 +180,7 @@ public sealed class PenEditorViewModelTests : IDisposable
 		read.SetResult();
 		await idle;
 
-		editor.Rows.Should().HaveCount(4, "the table was rebuilt before the editor went idle");
+		RowsOf(editor).Should().HaveCount(4, "the table was rebuilt before the editor went idle");
 		await refreshed;
 	}
 
@@ -172,7 +188,7 @@ public sealed class PenEditorViewModelTests : IDisposable
 	public async Task ACommitQueuedBehindTheRefreshRead_ReachesTheRebuiltTableAndForm()
 	{
 		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
-		editor.SelectedRow = editor.Rows[1];
+		editor.SelectedRow = RowsOf(editor)[1];
 		var registration = _editor.HoldNextCall();
 		var read = _editor.HoldNextCall();
 		var refreshed = editor.RefreshCommand.Execute().ToTask();
@@ -193,8 +209,8 @@ public sealed class PenEditorViewModelTests : IDisposable
 			new FakeEditorCall.Read(),
 			new FakeEditorCall.Change(Pressure, new PenSettingChange.Unit("kPa")),
 			new FakeEditorCall.Read());
-		editor.Rows[1].Pen.Unit.Should().Be("kPa");
-		editor.SelectedForm!.Row.Should().BeSameAs(editor.Rows[1]);
+		RowsOf(editor)[1].Pen.Unit.Should().Be("kPa");
+		editor.SelectedForm!.Row.Should().BeSameAs(RowsOf(editor)[1]);
 		editor.SelectedForm.Unit.Should().Be("kPa");
 	}
 
@@ -202,14 +218,14 @@ public sealed class PenEditorViewModelTests : IDisposable
 	public async Task AFormBuiltWhileItsRowsWriteIsHeld_ShowsTheQueuedValueAndAnUntouchedFieldWritesNothing()
 	{
 		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
-		editor.SelectedRow = editor.Rows[1];
+		editor.SelectedRow = RowsOf(editor)[1];
 		var first = editor.SelectedForm!;
 		first.Name = "Renamed";
 		var gate = _editor.HoldNextCall();
 		var held = first.EndEditAsync(PenField.Name);
 
-		editor.SelectedRow = editor.Rows[0];
-		editor.SelectedRow = editor.Rows[1];
+		editor.SelectedRow = RowsOf(editor)[0];
+		editor.SelectedRow = RowsOf(editor)[1];
 		var second = editor.SelectedForm!;
 
 		second.Should().NotBeSameAs(first);
@@ -221,7 +237,7 @@ public sealed class PenEditorViewModelTests : IDisposable
 		await editor.WhenIdleAsync();
 
 		_editor.Changes.Select(change => change.Setting).Should().Equal(new PenSettingChange.Name("Renamed"));
-		editor.Rows[1].Pen.Name.Should().Be("Renamed");
+		RowsOf(editor)[1].Pen.Name.Should().Be("Renamed");
 	}
 
 	[AvaloniaFact]
@@ -229,14 +245,14 @@ public sealed class PenEditorViewModelTests : IDisposable
 	{
 		_editor.ChangeResult = Result.Fail(FakePenCatalogueEditor.Refusal(ArchiveFault.NameTaken, "Renamed"));
 		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
-		editor.SelectedRow = editor.Rows[1];
+		editor.SelectedRow = RowsOf(editor)[1];
 		var first = editor.SelectedForm!;
 		first.Name = "Renamed";
 		var gate = _editor.HoldNextCall();
 		var held = first.EndEditAsync(PenField.Name);
 
-		editor.SelectedRow = editor.Rows[0];
-		editor.SelectedRow = editor.Rows[1];
+		editor.SelectedRow = RowsOf(editor)[0];
+		editor.SelectedRow = RowsOf(editor)[1];
 		var second = editor.SelectedForm!;
 		second.Name.Should().Be("Renamed");
 		second.Unit = "bar";
@@ -255,10 +271,10 @@ public sealed class PenEditorViewModelTests : IDisposable
 	public async Task AFormWhoseRowIsNoLongerSelected_StopsFollowingTheRow()
 	{
 		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
-		editor.SelectedRow = editor.Rows[1];
+		editor.SelectedRow = RowsOf(editor)[1];
 		var left = editor.SelectedForm!;
-		editor.SelectedRow = editor.Rows[0];
-		editor.SelectedRow = editor.Rows[1];
+		editor.SelectedRow = RowsOf(editor)[0];
+		editor.SelectedRow = RowsOf(editor)[1];
 
 		editor.SelectedForm!.Name = "Renamed";
 		await editor.SelectedForm.EndEditAsync(PenField.Name);
@@ -271,7 +287,7 @@ public sealed class PenEditorViewModelTests : IDisposable
 	public async Task ARefreshIssuedWhileACommitIsHeld_RegistersOnlyAfterTheCommitCompletes()
 	{
 		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
-		editor.SelectedRow = editor.Rows[1];
+		editor.SelectedRow = RowsOf(editor)[1];
 		var gate = _editor.HoldNextCall();
 
 		editor.SelectedForm!.Name = "Chamber pressure, main";
@@ -290,56 +306,132 @@ public sealed class PenEditorViewModelTests : IDisposable
 			new FakeEditorCall.Read());
 	}
 
-	[AvaloniaTheory]
-	[InlineData(PenColumn.Id, new[] { 3, 7, 12 })]
-	[InlineData(PenColumn.EnabledOnStart, new[] { 3, 7, 12 })]
-	[InlineData(PenColumn.Color, new[] { 12, 7, 3 })]
-	[InlineData(PenColumn.Name, new[] { 3, 12, 7 })]
-	[InlineData(PenColumn.Unit, new[] { 7, 3, 12 })]
-	[InlineData(PenColumn.Mask, new[] { 3, 12, 7 })]
-	[InlineData(PenColumn.LineStyle, new[] { 7, 12, 3 })]
-	[InlineData(PenColumn.ScaleMinOnStart, new[] { 3, 7, 12 })]
-	[InlineData(PenColumn.ScaleMaxOnStart, new[] { 3, 7, 12 })]
-	[InlineData(PenColumn.LogScaleOnStart, new[] { 3, 12, 7 })]
-	[InlineData(PenColumn.Groups, new[] { 12, 7, 3 })]
-	public void ASort_OrdersTheRowsByTheColumnThenById(PenColumn column, int[] expectedIds)
-	{
-		var withALogPen = _catalogue with { Pens = [Argon, Pressure with { LogScaleOnStart = true }, Power] };
-		using var editor = _editor.EditorOver(withALogPen, _messagePanel);
-
-		editor.SortCommand.Execute(column).Subscribe();
-
-		editor.Rows.Select(row => row.Pen.Id).Should().Equal(expectedIds);
-	}
-
 	[AvaloniaFact]
-	public void ASecondSortOnTheSameColumn_ReversesTheRowsAndKeepsTheSelectionAndItsForm()
+	public void AFilterText_ShowsOnlyTheMatchingRowsAndAClearedTextShowsEveryRow()
 	{
 		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
-		var rows = editor.Rows.ToArray();
-		editor.SelectedRow = rows[1];
-		var form = editor.SelectedForm;
-		form!.Unit = "kPa";
 
-		editor.SortCommand.Execute(PenColumn.Name).Subscribe();
-		editor.SortCommand.Execute(PenColumn.Name).Subscribe();
+		editor.FilterText = "chamber";
 
-		editor.Rows.Should().Equal(rows[1], rows[2], rows[0]);
-		editor.SelectedRow.Should().BeSameAs(rows[1]);
-		editor.SelectedForm.Should().BeSameAs(form);
-		editor.SelectedForm!.Unit.Should().Be("kPa", "the form keeps its drafts");
+		RowsOf(editor).Select(row => row.Pen).Should().Equal(Argon, Pressure);
+		editor.PenRows.Count.Should().Be(2);
+
+		editor.FilterText = string.Empty;
+
+		RowsOf(editor).Select(row => row.Pen).Should().Equal(Argon, Pressure, Power);
+		editor.PenRows.Count.Should().Be(3);
 		_editor.Calls.Should().BeEmpty();
 	}
 
 	[AvaloniaFact]
-	public void ASortOnAnotherColumn_StartsAscending()
+	public void AFilter_KeepsTheSortOrder()
 	{
 		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+		editor.PenRows.SortDescriptions.Add(
+			DataGridSortDescription.FromComparer(PenRowOrder.ById, ListSortDirection.Descending));
 
-		editor.SortCommand.Execute(PenColumn.Name).Subscribe();
-		editor.SortCommand.Execute(PenColumn.Id).Subscribe();
+		editor.FilterText = "chamber";
 
-		editor.Rows.Select(row => row.Pen.Id).Should().Equal(3, 7, 12);
+		RowsOf(editor).Select(row => row.Pen.Id).Should().Equal(7, 3);
+	}
+
+	[AvaloniaFact]
+	public void AFilterTheSelectedRowStillMatches_KeepsTheSelectionAndItsForm()
+	{
+		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+		var pressure = RowsOf(editor)[1];
+		editor.SelectedRow = pressure;
+		var form = editor.SelectedForm;
+
+		editor.FilterText = "press";
+
+		editor.SelectedRow.Should().BeSameAs(pressure);
+		editor.SelectedForm.Should().BeSameAs(form);
+	}
+
+	[AvaloniaFact]
+	public void AFilterTheSelectedRowNoLongerMatches_ClearsTheSelectionAndAClearedTextRestoresNone()
+	{
+		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+		editor.SelectedRow = RowsOf(editor)[2];
+
+		editor.FilterText = "chamber";
+
+		editor.SelectedRow.Should().BeNull();
+		editor.SelectedForm.Should().BeNull();
+
+		editor.FilterText = string.Empty;
+
+		RowsOf(editor).Select(row => row.Pen).Should().Contain(Power);
+		editor.SelectedRow.Should().BeNull();
+	}
+
+	[AvaloniaFact]
+	public async Task ARefreshWhileFiltered_ShowsOnlyTheMatchingRowsAndKeepsTheText()
+	{
+		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+		editor.PenRows.SortDescriptions.Add(
+			DataGridSortDescription.FromComparer(PenRowOrder.ById, ListSortDirection.Descending));
+		editor.FilterText = "4";
+		_editor.ReadResult = Result.Ok(
+			new PenCatalogue([Argon, Pressure, Power, _registered, NumberedPen(14)], [Chamber, Gas]));
+
+		await editor.RefreshCommand.Execute();
+
+		RowsOf(editor).Select(row => row.Pen.Id).Should().Equal(4242, 14);
+		editor.FilterText.Should().Be("4");
+	}
+
+	[AvaloniaFact]
+	public async Task ARefreshThatMakesTheSelectedPenStopMatching_ClearsTheSelection()
+	{
+		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+		editor.FilterText = "chamber";
+		editor.SelectedRow = RowsOf(editor)[1];
+		var renamed = Pressure with { Name = "Gauge" };
+		_editor.ReadResult = Result.Ok(
+			new PenCatalogue([Argon, renamed, Power], [Chamber with { MemberPenIds = [3] }, Gas]));
+
+		await editor.RefreshCommand.Execute();
+
+		editor.SelectedRow.Should().BeNull();
+		editor.SelectedForm.Should().BeNull();
+	}
+
+	[AvaloniaFact]
+	public async Task AMembershipChangeThatStopsTheSelectedRowMatching_KeepsTheRowShownAndSelected()
+	{
+		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+		editor.FilterText = "gas";
+		var argon = RowsOf(editor).Single();
+		editor.SelectedRow = argon;
+		var gas = editor.Groups.Groups[1];
+
+		await gas.Membership!.ToggleMembershipCommand.Execute();
+
+		argon.GroupsText.Should().Be("Chamber");
+		RowsOf(editor).Should().Equal(argon);
+		editor.SelectedRow.Should().BeSameAs(argon);
+
+		editor.FilterText = "gas ";
+
+		RowsOf(editor).Should().BeEmpty("the next text change re-applies the filter");
+		editor.SelectedRow.Should().BeNull();
+	}
+
+	[AvaloniaFact]
+	public void AFilter_LeavesTheGroupsPaneWhole()
+	{
+		using var editor = _editor.EditorOver(_catalogue, _messagePanel);
+		var power = RowsOf(editor)[2];
+		editor.SelectedRow = power;
+		var groups = editor.Groups;
+
+		editor.FilterText = "power";
+
+		editor.Groups.Should().BeSameAs(groups);
+		groups.Groups.Select(group => group.Group.Name).Should().Equal("Chamber", "Gas");
+		groups.Groups.Should().OnlyContain(group => group.Membership!.Row == power);
 	}
 
 	[AvaloniaFact]

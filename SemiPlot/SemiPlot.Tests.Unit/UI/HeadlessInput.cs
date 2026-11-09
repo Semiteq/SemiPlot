@@ -15,7 +15,13 @@ internal static class HeadlessInput
 {
 	internal static void Click(TopLevel topLevel, Control control)
 	{
-		Click(topLevel, control, new Point(control.Bounds.Width / 2, control.Bounds.Height / 2));
+		Click(topLevel, control, RawInputModifiers.None);
+	}
+
+	/// <summary>Clicks <paramref name="control"/>'s centre with <paramref name="modifiers"/> held through the click.</summary>
+	internal static void Click(TopLevel topLevel, Control control, RawInputModifiers modifiers)
+	{
+		Click(topLevel, control, new Point(control.Bounds.Width / 2, control.Bounds.Height / 2), modifiers);
 	}
 
 	/// <summary>Clicks <paramref name="controlPoint"/>, a point in <paramref name="control"/>'s own coordinates.</summary>
@@ -70,10 +76,23 @@ internal static class HeadlessInput
 		Dispatcher.UIThread.RunJobs();
 	}
 
+	internal static void Type(TopLevel topLevel, TextBox textBox, string text, int caretIndex)
+	{
+		Click(topLevel, textBox);
+		textBox.CaretIndex = caretIndex;
+		topLevel.KeyTextInput(text);
+		Dispatcher.UIThread.RunJobs();
+	}
+
 	internal static void Press(TopLevel topLevel, PhysicalKey key)
 	{
-		topLevel.KeyPressQwerty(key, RawInputModifiers.None);
-		topLevel.KeyReleaseQwerty(key, RawInputModifiers.None);
+		Press(topLevel, key, RawInputModifiers.None);
+	}
+
+	internal static void Press(TopLevel topLevel, PhysicalKey key, RawInputModifiers modifiers)
+	{
+		topLevel.KeyPressQwerty(key, modifiers);
+		topLevel.KeyReleaseQwerty(key, modifiers);
 		Dispatcher.UIThread.RunJobs();
 	}
 

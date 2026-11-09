@@ -9,7 +9,9 @@ variant-aware colour, which the section below states.
 
 `Semi.Avalonia` 12.0.3 replaced `FluentTheme`. `App.axaml` is an include manifest and nothing else:
 `<semi:SemiTheme/>` and `<semi:ColorPickerSemiTheme/>` (`Semi.Avalonia.ColorPicker` 12.0.3, the theme
-of the pen editor's `ColorPicker` from `Avalonia.Controls.ColorPicker` 12.0.5) in `Application.Styles`
+of the pen editor's `ColorPicker` from `Avalonia.Controls.ColorPicker` 12.0.5) and
+`<semi:DataGridSemiTheme/>` (`Semi.Avalonia.DataGrid` 12.0.0, the theme of the pen editor's `DataGrid` from
+`Avalonia.Controls.DataGrid` 12.0.1, which depends on Avalonia 12.0.5) in `Application.Styles`
 followed by one `StyleInclude` of `Styles/Forms.axaml`, one
 `ResourceInclude` pointing at the palette, and `RequestedThemeVariant="Light"` as the declared bootstrap
 variant. No style body lives at the application root.
@@ -38,7 +40,7 @@ control, in each state the tree can reach.
 | `WindowDefaultForeground` | `Window`, and every control inheriting from it | `#000000` | `#DFE1E5` |
 | `MenuItemForeground` | Every menu caption at rest: the menu bar's File, Edit, View and Help, their items, the check glyph, and the `TextBox` context menu | `#000000` | `#DFE1E5` |
 | `MenuItemPointeroverForeground` | A menu caption while its submenu is open or the pointer is over it; Semi ships this brighter than its own text colour | `#000000` | `#DFE1E5` |
-| `TextBoxPlaceholderForeground` | A `TextBox` watermark: the new-group-name field on the pen editor's `Groups` tab | `#818594` | `#6F737A` |
+| `TextBoxPlaceholderForeground` | Every `TextBox` watermark: the pen editor's filter box `PenListFilter`, its colour box, the new-group-name field of its groups pane, and the chart's marker label editor | `#818594` | `#6F737A` |
 | `TextBlockDisabledForeground` | Disabled `TextBlock` | `#A8ADBD` | `#5A5D63` |
 | `TextBoxDisabledForeground` | Disabled `TextBox` | `#A8ADBD` | `#5A5D63` |
 | `ButtonDefaultDisabledForeground` | A button whose command cannot execute | `#A8ADBD` | `#5A5D63` |
@@ -55,20 +57,16 @@ control, in each state the tree can reach.
 | `MenuFlyoutBackground` | Every open submenu, the `TextBox` context menu included | `#F7F8FA` | `#2B2D30` |
 | `MenuFlyoutBorderBrush` | The same submenu's border | `#EBECF0` | `#393B40` |
 | `MenuItemSeparatorBackground` | The `Separator`s in the View menu | `#EBECF0` | `#393B40` |
-| `TabItemLineHeaderForeground` | A pen editor tab header at rest | `#818594` | `#6F737A` |
-| `TabItemLineHeaderPointeroverForeground`, `TabItemLineHeaderSelectedForeground` | A hovered tab header, and the selected one | `#000000` | `#DFE1E5` |
-| `TabItemLinePipeSelectedBackground` | The selected tab's underline | `#3574F0` | `#3574F0` |
-| `TabControlSeparatorBorderBrush` | The line under the tab headers | `#EBECF0` | `#393B40` |
-| `ListBoxItemPointeroverForeground`, `ListBoxItemPressedForeground`, `ListBoxItemSelectedForeground` | A hovered, pressed or selected row of the pen table and the group list | `#000000` | `#DFE1E5` |
+| `ListBoxItemPointeroverForeground`, `ListBoxItemPressedForeground`, `ListBoxItemSelectedForeground` | A hovered, pressed or selected row of the export window's pen list | `#000000` | `#DFE1E5` |
 | `ListBoxItemSelectedBackground`, `ListBoxItemSelectedPointeroverBackground` | The selected row, hovered or not; the same fill as the sidebar's active row | `#3574F0` at 0.25 opacity | `#3574F0` at 0.25 opacity |
 | `ComboBoxItemForeground`, `ComboBoxItemFocusForeground`, `ComboBoxItemPointeroverForeground`, `ComboBoxItemSelectedForeground` | An item of the open line-style list at rest, focused, hovered and selected | `#000000` | `#DFE1E5` |
 | `ComboBoxIconPointeroverForeground` | The line-style box's arrow under the pointer | `#000000` | `#DFE1E5` |
-| `ComboBoxDisabledForeground` | The line-style box's value while no pen is selected | `#A8ADBD` | `#5A5D63` |
+| `ComboBoxDisabledForeground` | The line-style box's value while a refresh runs | `#A8ADBD` | `#5A5D63` |
 | `ComboBoxSelectorPressedBorderBrush` | The line-style box's border while its list is open | `#3574F0` | `#3574F0` |
 | `ComboBoxItemSelectedBackground` | The selected item of the open line-style list | `#3574F0` at 0.25 opacity | `#3574F0` at 0.25 opacity |
 | `ComboBoxPopupBackground` | The open line-style list | `#F7F8FA` | `#2B2D30` |
 | `ComboBoxPopupBorderBrush` | The same list's border | `#EBECF0` | `#393B40` |
-| `CheckBoxDefaultDisabledBorderBrush` | The form's "on start" box while no pen is selected | `#EBECF0` | `#393B40` |
+| `CheckBoxDefaultDisabledBorderBrush` | The form's unchecked visibility and scale type boxes while a refresh runs | `#EBECF0` | `#393B40` |
 | `FlyoutForeground` | Text in the colour picker's flyout | `#000000` | `#DFE1E5` |
 | `FlyoutBackground` | The colour picker's flyout | `#F7F8FA` | `#2B2D30` |
 | `FlyoutBorderBrush` | The same flyout's border | `#EBECF0` | `#393B40` |
@@ -77,9 +75,12 @@ control, in each state the tree can reach.
 | `ColorViewRadioButtonCheckedBackground` | The chosen colour model on the picker's components tab | `#3574F0` | `#3574F0` |
 | `ColorViewRadioButtonForeground` | The other colour model's caption | `#3574F0` | `#3574F0` |
 | `ColorViewRadioButtonBackground` | The other colour model's ground | `#FFFFFF` | `#1E1F22` |
-| `CheckBoxCheckedPointeroverBackground`, `CheckBoxCheckedPointeroverBorderBrush` | A hovered checked box: a membership box, the form's "on start" box, a legend box | `#3574F0` | `#3574F0` |
+| `CheckBoxCheckedPointeroverBackground`, `CheckBoxCheckedPointeroverBorderBrush` | A hovered checked box: a groups pane membership box, the form's visibility box, a legend box | `#3574F0` | `#3574F0` |
 | `CheckBoxCheckedPressedBackground`, `CheckBoxCheckedPressedBorderBrush`, `CheckBoxPressedBorderBrush` | A pressed box, checked or not | `#3574F0` | `#3574F0` |
-| `CheckBoxCheckedDisabledBackground`, `CheckBoxCheckedDisabledBorderBrush` | A checked box that is disabled: a membership box while its write runs | `#A8ADBD` | `#5A5D63` |
+| `CheckBoxCheckedDisabledBackground`, `CheckBoxCheckedDisabledBorderBrush` | A checked box that is disabled: a groups pane membership box while its write runs | `#A8ADBD` | `#5A5D63` |
+| `DataGridColumnHeaderForeground` | A column header of the pen list or the group grid, sorted or not | `#818594` | `#6F737A` |
+| `DataGridLineBrush` | The line under each pen editor grid's headers | `#EBECF0` | `#393B40` |
+| `DataGridRowSelectedBackground`, `DataGridRowSelectedPointeroverBackground` | The pen list's selected row, hovered or not; the same fill as the export window's selected pen row | `#3574F0` at 0.25 opacity | `#3574F0` at 0.25 opacity |
 
 The accent is the one value deliberately equal across the variants: it does not change with the
 ground it sits on.
@@ -91,10 +92,24 @@ under `Light` and `#FFFFFF` at 0.12 under `Dark`; the `PART_ClearButton` and `PA
 glyph foregrounds of a `TextBox` are `#1C1F23` at 0.62 and `#F9F9F9` at 0.6. They are correct as they
 stand; the palette overrides a key only where Semi's stock value does not match the JetBrains one.
 The pen editor's controls keep Semi's value in the same places, measured on 2026-09-28: the
-translucent hover and press overlays of tabs, list rows, combo items and checkboxes, the picker's icons
+translucent hover and press overlays of list rows, combo items and checkboxes, the picker's icons
 at 0.62 and 0.35, the white check glyphs, and the black and white contrast edges of the picker's
-sliders.
+sliders. The pen list keeps Semi's hover overlay on a row and Semi's hover and press fills on a header.
+The probe of the `DataGrid` found two cell keys it leaves Semi's: `DataGridCellCurrentBorderBrush` strokes
+the current cell's `Rectangle#CurrencyVisual`, and `DataGridCellFocusBorderBrush` the `Rectangle` in a
+pressed cell's `Panel#FocusVisual`. The pen editor hides both parts in both of its grids with one
+window-wide style on Semi's own triggers, `DataGridCell:current /template/ Rectangle#CurrencyVisual` and
+`DataGridCell:focus /template/ Panel#FocusVisual`; a selector without the pseudo-class loses to Semi's
+`:current` trigger. That style is the editor's only cell-outline rule, so a clicked pen row shows the row
+highlight and no cell outline. The group grid shows no highlight either: two window styles on Semi's own
+`:selected` trigger repaint a selected group row as an unselected one.
+`DataGrid#GroupList DataGridRow:selected /template/ Border#BackgroundBorder` takes
+`{DynamicResource DataGridRowBackground}`, and the same selector with `:selected:pointerover` takes
+`{DynamicResource DataGridRowPointeroverBackground}`, the two keys Semi paints a row from at rest and
+hovered.
 Adding a control means running the same marker probe for it, not copying a key list.
+The `destructive` button class paints from this tree's own keys; its style arms, and why each targets the
+button's presenter, are under `#the-applications-own-surfaces`.
 
 `ThemeTests.EverySemiControl_PaintsItselfFromThePalette` shows a real `Button`, `TextBlock`, `TextBox`
 and checked `CheckBox` under both variants and reads their resolved brushes back;
@@ -105,15 +120,20 @@ holds, a `ToggleButton` in both check states, an unchecked and an indeterminate 
 rest and open, a leaf, a checked item's glyph, a `Separator`, the flyout chrome and an `ItemsControl`
 row. The `Ellipse` of a message-panel row carries no Semi key: its fill is one of this tree's own
 severity brushes, gated by `MessagePanelViewTests`.
-The pen editor's controls have four tests of their own: `EveryTabAndListSurface_PaintsItselfFromThePalette`
-(a `TabControl` and a `ListBox` at rest, hovered, pressed and selected),
+The pen editor's and the export window's controls have six tests of their own:
+`EveryListSurface_PaintsItselfFromThePalette` (a `ListBox` row hovered, pressed and selected),
+`TheDestructiveButton_PaintsItselfFromThePalette` (a `destructive` button at rest, hovered and pressed, its
+caption's contrast on each, and disabled),
+`EveryDataGridSurface_PaintsItselfFromThePalette` (a `DataGrid` header, the line under the headers, the cell
+text and the selected row's `Border#BackgroundBorder` at rest and hovered),
 `EveryComboBoxSurface_PaintsItselfFromThePalette` (the line-style list open, hovered and disabled, and
 a disabled `CheckBox`), `EveryColourPickerSurface_PaintsItselfFromThePalette` (the picker's flyout on
 the spectrum and on the components tab) and
 `EveryCheckBoxStateAMembershipBoxReaches_PaintsItselfFromThePalette` (a box checked and hovered,
 pressed checked and unchecked, and checked while disabled).
-`APaletteKeyCarryingOpacity_KeepsItUnderBothVariants` reads the 0.25 opacity of the four translucent
-keys back under both variants.
+`APaletteKeyCarryingOpacity_KeepsItUnderBothVariants` reads the 0.25 opacity of the six translucent
+keys back under both variants, `DataGridRowSelectedBackground` and `DataGridRowSelectedPointeroverBackground`
+among them.
 Resolving a key through `Application.TryGetResource` cannot fail while an override is inert, so a test
 written that way proves nothing about the retint. A control the tree gains is added to one of those
 tests in every state it reaches.
@@ -132,35 +152,36 @@ context menu of the axis scale panel's fields.
 
 ## Corner radius sits outside the theme dictionaries
 
-`Styles/Palette.axaml` overrides five keys at 4 px: `ButtonCornerRadius`,
-`TextBoxDefaultCornerRadius`, `CheckBoxBoxCornerRadius`, `ComboBoxSelectorCornerRadius` and
-`ColorPickerCornerRadius`. They sit at the top level of the dictionary, not inside
+`Styles/Palette.axaml` overrides seven keys at 4 px: `ButtonCornerRadius`,
+`TextBoxDefaultCornerRadius`, `CheckBoxBoxCornerRadius`, `ComboBoxSelectorCornerRadius`,
+`ColorPickerCornerRadius`, `DataGridRowCornerRadius` and `DataGridColumnHeaderCornerRadius`. They sit at the top level of the dictionary, not inside
 `ResourceDictionary.ThemeDictionaries`: a radius does not change with the variant. The same
 `StaticResource` alias as above is why the component keys are overridden and `SemiBorderRadiusSmall`
 is not.
-`ThemeTests.EveryCornerRadius_ComesFromThePalette` reads all five back off a real `Button`, `TextBox`,
-`CheckBox`, `ComboBox` (its `Background` border) and `ColorPicker` (its `PART_Background` border) under
-both variants. Semi paints 3 without the overrides, so the control is what proves them live.
+`ThemeTests.EveryCornerRadius_ComesFromThePalette` reads all seven back off a real `Button`, `TextBox`,
+`CheckBox`, `ComboBox` (its `Background` border), `ColorPicker` (its `PART_Background` border) and
+`DataGrid` (a row's `Border#BackgroundBorder` and a header's `Border#HeaderBackground`) under both
+variants. Semi paints 3 without the overrides, so the control is what proves them live.
 
-A control the tree gains brings its own key, with two exceptions that carry none. A `ListBoxItem` and a
-line-style `TabItem` paint 0 px in Semi, square as the surfaces around them. The combo box's drop-down
+A control the tree gains brings its own key, with two exceptions that carry none. A `ListBoxItem` paints
+0 px in Semi, square as the surfaces around it. The combo box's drop-down
 and the picker's flyout keep Semi's 6 px, as the menu flyout does.
 
 ## The application's own surfaces
 
-Semi owns the controls; these sixteen keys are ours, and each exists in both variants.
+Semi owns the controls; these twenty keys are ours, and each exists in both variants.
 
 | Key | Consumers | Light | Dark |
 | --- | --- | --- | --- |
 | `AppPanelBackgroundBrush` | Navigation bar, legend panel, message panel, status bar, startup-failure window's message panel, minimap frame, chart hover readout, the plot's figure background | `#F7F8FA` | `#2B2D30` |
 | `AppContentBackgroundBrush` | Chart area and the plot's data background, minimap strip canvas, the sidebar's resize handle, the ground of the active pen's reading at each marker | `#FFFFFF` | `#1E1F22` |
-| `AppBorderBrush` | The border of the navigation bar, legend panel, message panel and status bar, of the startup-failure window's message panel, of the minimap frame, of the chart hover readout and of the export window's pen list | `#EBECF0` | `#393B40` |
+| `AppBorderBrush` | The border of the navigation bar, legend panel, message panel and status bar, of the startup-failure window's message panel, of the minimap frame, of the chart hover readout, of the export window's pen list, of the pen editor's pen list, pen pane, groups pane and group grid, and the ring of a pen list row's colour dot | `#EBECF0` | `#393B40` |
 | `AppSubtleLineBrush` | Plot grid, the line above every sidebar group header but the first, the line under the sidebar's top row, the status bar's separator after the connection indicator, the navigation bar's group separator | `#EBECF0` | `#393B40` |
 | `AppMinorGridLineBrush` | The plot's minor gridlines, drawn on a log10 axis only | `#F4F5F7` | `#2B2D30` |
-| `AppSecondaryForegroundBrush` | Minimap end labels, hover line and hover time, chart crosshair, plot axis furniture, the chart's empty-catalogue message, the sidebar group header caption, its fold chevron and a row's unit, the axis scale panel's unit, the message panel's empty text and an entry's remedy, repeat count and time | `#818594` | `#6F737A` |
+| `AppSecondaryForegroundBrush` | Minimap end labels, hover line and hover time, chart crosshair, plot axis furniture, the chart's empty-catalogue message, the sidebar group header caption, its fold chevron and a row's unit, the axis scale panel's unit, the message panel's empty text and an entry's remedy, repeat count and time, the pen editor's groups cell, the pen pane's empty hint, its title's id and its mask preview, the groups pane's subtitle, a group row's pen count and "..." glyph, and the delete confirmation's note | `#818594` | `#6F737A` |
 | `AppAccentBrush` | Minimap window highlight border, the active sidebar row's left bar, a group header's fold chevron under the pointer (`overview.md#the-sidebar-fold`) | `#3574F0` | `#3574F0` |
 | `AppAccentFillBrush` | Minimap window highlight fill, the active sidebar row's background | `#3574F0` at 0.25 opacity | `#3574F0` at 0.25 opacity |
-| `AppSeverityErrorBrush` | The message panel's dot on an `Error` entry; a form's invalid field border and its message line | `#DB3B4B` | `#E55765` |
+| `AppSeverityErrorBrush` | The message panel's dot on an `Error` entry; a form's invalid field border, the pen form's warning glyph and a form's message line | `#DB3B4B` | `#E55765` |
 | `AppSeverityWarningBrush` | The same dot on a `Warning` entry | `#E3AE4D` | `#F2C55C` |
 | `AppSeverityInfoBrush` | The same dot on an `Info` entry | `#3574F0` | `#3574F0` |
 | `AppConnectionOkBrush` | The status bar's connection indicator, `connection-ok` | `#208A3C` | `#5FAD65` |
@@ -168,6 +189,23 @@ Semi owns the controls; these sixteen keys are ours, and each exists in both var
 | `AppMarkerLineBrush` | The operator's time marker lines on the plot (`#the-plot`), and the tick of every shown marker on the minimap strip | `#6F737A` | `#A8ADBD` |
 | `AppRecipeMarkerLineBrush` | The recipe marker lines on the plot | `#834DF0` | `#A571E6` |
 | `AppMarkerLabelBrush` | Every time marker label on the plot | `#000000` | `#DFE1E5` |
+| `AppDestructiveBackgroundBrush` | A `destructive` button at rest: the groups pane's confirm-delete button | `#C7303F` | `#C7303F` |
+| `AppDestructivePointeroverBackgroundBrush` | The same button under the pointer | `#B02A38` | `#B02A38` |
+| `AppDestructivePressedBackgroundBrush` | The same button pressed | `#992431` | `#992431` |
+| `AppDestructiveForegroundBrush` | The same button's caption in all three states | `#FFFFFF` | `#FFFFFF` |
+
+`Styles/Buttons.axaml`, included from `App.axaml` after `Forms.axaml`, styles `Button.destructive` from the
+four `AppDestructive*` keys; Semi's `Danger` class is not used. Semi paints every button state on the
+template's `ContentPresenter#PART_ContentPresenter`, so each setter targets that presenter: a setter on the
+`Button` paints the rest state only, and Semi's hover and press triggers repaint the presenter over it. The
+rest arm is `Button.destructive:not(:disabled) /template/ ContentPresenter#PART_ContentPresenter`, because a
+presenter arm without the pseudo-class also beats Semi's `:disabled` trigger; the `:pointerover` and
+`:pressed` arms follow it. A disabled `destructive` button therefore paints what a disabled default button
+paints. White on the three backgrounds measures about 5.4:1, 6.5:1 and 7.9:1 (WCAG relative luminance),
+above the 4.5:1 a 14 px caption needs; `AppSeverityErrorBrush`'s `#DB3B4B` gives 4.4:1 and fills no
+button. The values are equal across the variants, as the accent is, because a filled button carries its
+own ground. `ThemeTests.TheDestructiveButton_PaintsItselfFromThePalette` asserts each surface, the ratio
+of 4.5:1 or more, and the disabled paint.
 
 Pen colours are not theme keys. They come from the archive with the pen and stay per pen under both
 variants. The pen editor's colour swatch is the pen's own colour through `LegendConverters.HexToBrush`,
@@ -182,8 +220,16 @@ colour and text, never size:
 - A dialog has a fixed `Width` and `SizeToContent="Height"`. Its height comes from rows that exist in
   every state; no row appears or disappears with validation. A window the operator may resize keeps
   the same rule for every part but its lists (A resizable window keeps its fixed parts, below).
-- An invalid field is marked by its border alone. The field binds `Classes.invalid` to its `Is*Valid`
-  flag, and `Styles/Forms.axaml` paints that border with `AppSeverityErrorBrush`.
+- An invalid field shows the `invalid` border and a warning glyph inside the box. The field binds
+  `Classes.invalid` to its `Is*Valid` flag, and `Styles/Forms.axaml` paints that border with
+  `AppSeverityErrorBrush`. The glyph is a 16 px `PathIcon` of `WarningGeometry` (`Styles/Icons.axaml`) in
+  `AppSeverityErrorBrush`, 8 px from the box's right edge, set as the box's `InnerRightContent` through a
+  `<Template>` setter, so every invalid box builds its own icon. The pen editor's form carries the glyph
+  through its window-scoped style `Panel#PenForm TextBox.invalid`; another form adopts it when it is next
+  touched, and until then marks an invalid field by the border alone.
+  `PenFormPaneViewTests.AnInvalidField_ShowsTheWarningGlyphInsideTheBoxWithoutResizing` gates two boxes
+  invalid at once, each with its own visible glyph inside its bounds and nothing resized, and
+  `AValidField_ShowsNoWarningGlyph` the valid state.
 - One message line sits left of the buttons, or on its own full-width row above them (the export window), or
   as the last row of a form (the time window panel, and the axis scale panel below its buttons). It is a
   `TextBlock.form-message`: two lines of 20 px
@@ -366,69 +412,250 @@ scrolls inside it. No headless test sees the clipping, so the width is checked b
 
 ### A resizable window keeps its fixed parts
 
-The pen editor is the one form the operator may resize, because its table grows with the catalogue.
-`PenEditor/PenEditorWindow.axaml` opens at a fixed `Width` and `Height`, 1272 x 720 px, with
-`MinWidth="1260"`, `SizeToContent="Manual"` and `CanResize="True"`: the operator may widen it, and nothing
-inside it sizes the window. The smallest screen the editor opens on is 1280 px wide; the 720 px height exceeds
-the working area of a 768 px screen. The rule above holds for every part but the two lists:
+The pen editor is the one form the operator may resize, because its pen list grows with the catalogue.
+`PenEditor/PenEditorWindow.axaml` takes `Width` from `PenEditorWindow.DesignedWidth`, 1440 px, and `MinWidth`
+from `PenEditorWindow.MinimumWidth`, 1272 px, `Height` from `PenEditorWindow.DesignedHeight`, 720 px, and
+`MinHeight` from `PenEditorWindow.MinimumHeight`, 536 px, with `SizeToContent="Manual"` and `CanResize="True"`: the operator may resize it, and nothing inside it sizes
+the window.
 
-- Resizing grows the pen table and the membership list only. The form panel (240 px high), the `Groups` tab's
-  side panel (320 px wide), its confirmation row (32 px high) and the bottom bar keep fixed sizes, made of
-  rows that exist in every state.
-- A pen row, a group row and a membership row are each `RowHeight`, 28 px, and all three lists
-  virtualise.
-- The pen table's header row and its row template read one column list, the window's
-  `PenTableColumns` resource: 72, 112, 68, 220, 96, 96, 104, 104, 104 and 160 px, and the groups column takes
-  the rest. The resource is `x:Shared="False"`, so every grid gets its own copy. The membership row's id
-  column reads the same `IdColumnWidth`.
-- The bottom bar, on both tabs, holds the added count and the refresh button in a right-aligned `Auto,Auto`
-  grid, 12 px apart, and carries no notice. Each tab has its own reserved `form-message` line.
-- An invalid field is marked by the `invalid` class alone. The line-style combo box and the "on start"
-  checkbox refuse no value, and `Forms.axaml` styles `invalid` on `TextBox`, `NumericUpDown` and
-  `CalendarDatePicker` only, not on a `ComboBox` or a `CheckBox`, so
-  a failed write of either shows on the message line and in the panel only. The log scale checkbox refuses
-  a tick while the pen stores a minimum at or below zero; the refusal shows on the message line alone, and
-  a minimum that breaks the rule while the box is ticked marks the minimum `TextBox` `invalid`.
-- The log scale checkbox is the form's third row under the scale pair, outside `FormScale`, the pair's focus
-  scope. A wrapper grid spans the three rows and lines the box up under the bounds through a shared label
-  column (`SharedSizeGroup="ScaleLabel"`), so the form panel keeps its 240 px.
-- A header button wraps its text (`TextWrapping="Wrap"`) and every header button is 44 px high, so the
-  two-line scale headers do not change the row's height between cultures. The 44 px is chosen, not measured.
+`MainWindow`'s factory for the editor sets `Width = PenEditorWindow.OpeningWidthFor(WorkingAreaWidth())`
+before `DialogOpener.ShowOwnedDialog` shows the window. `OpeningWidthFor` is pure and returns
+`Math.Max(MinimumWidth, Math.Min(DesignedWidth, workingAreaWidth))`. `WorkingAreaWidth()` reads the screen
+`Screens.ScreenFromWindow(this)` reports for the main window, `WorkingArea.Width / Scaling` in
+device-independent pixels, and returns `double.PositiveInfinity` with no screen, so the window then opens
+at `DesignedWidth`. The width is set before the window is shown because `CenterOwner` centres the width
+the window has when it is shown; a width changed after `Show` would move only the right edge. The working
+area counts the frame, so on a screen narrower than 1440 px the client width equals the area's width and
+the frame overhangs it by its border. A screen narrower than 1272 px opens the window at its minimum.
 
-Measured on 2026-09-30 with Skia and HarfBuzz, the composite Inter font at 14 px, every field valid; the log
-scale column, its form label, the window width and the form were measured again on 2026-10-07. The fixed
-columns total 1136 px and the window margin is 24 px, so no fixed column clips from 1160 px up. `MinWidth` 1260
-leaves the groups column 100 px, and it gets 112 px at the opening width. The two `PenEditorColumnScale*`
-headers measure 106.9 and 109.4 px in English and 145.2 and 147.3 px in Russian on one line, and wrap to two
-lines of at most 81.4 px in English and 79.1 px in Russian, inside the 90 px a 104 px column leaves after its
-padding and border. `PenEditorColumnLogScaleOnStart`, in the DemiBold face the header button renders,
-measures 157.5 px in English and 255.2 px in Russian on one line and wraps in the 146 px its 160 px column
-leaves to two lines: "Initial scale," at 81.4 px with its trailing space and "logarithmic" at 76.1 px in
-English, «Начальная шкала,» at 130.0 px with its trailing space and «логарифмическая» at 125.2 px in Russian,
-so the cell holds 1.12 times its widest line. Two lines need «Начальная шкала,» on one line, and the 1.1
-margin over its 130.0 px asks for a 143 px cell, so the column is 160 px. A 112 px column wraps the
-Russian header to four lines, breaking «логарифмическая» inside the word, and the 44 px button shows the first
-two.
-The widest other Russian header is `PenEditorColumnOnStart` at 86.1 px, and the widest line-style label is
-`PenLineStyleStepped` at 69 px. Each fixed column is at least 1.1 times its widest header line (the wrapped
-line for the two `PenEditorColumnScale*` headers and `PenEditorColumnLogScaleOnStart`) or fixed-vocabulary
-cell, plus the 12 px cell margin. At 1272 x 720 px the table shows 11 rows. The form's labels share one column
-(`ScaleLabel`), as wide as its widest label: "Initial scale, logarithmic" takes 157.5 px and the column
-159.0 px in English, «Начальная шкала, логарифмическая» 255.2 px and the column 257.0 px in Russian. The
-form's natural size is 742 x 195 px in English and 877 x 195 px in Russian, inside a 1248 x 232 px area at the
-opening width and 1236 x 232 px at `MinWidth`. The longest form message is `PenFormMaskInvalid`, 476.6 px in
-English and 480.3 px in Russian, on a 1236 px line; `ScaleLogMinimumPositive` is 329.3 px in English and
-468.6 px in Russian, and `PenFormScaleInverted` 371.3 px in English and 434.0 px in Russian. Measured on
-2026-09-29, with a three-digit added count the bottom bar needs 472 px in English, 210 px for the count, 12 px
-between and 250 px for "Refresh pen list", and 640 px in Russian, 294 + 12 + 334 px for «Обновить список
-перьев»; both fit the 1260 px minimum width.
-The side panel's 320 px and the confirmation row's 32 px are chosen, not measured; the confirmation
-text spans the tab's width and trims only past it.
-`PenEditorViewTests.AnUnusableMask_WritesNothingRevertsMarksAndSaysWhyWithoutResizing` gates the size
-half of the rule: the window's and the form panel's `Bounds` are equal before and after the mask turns
-invalid.
-`PenEditorViewTests.TheWindow_OpensOnA1280PxScreenAndAtItsMinimumWidthClipsNoFixedColumn` gates the width,
-the 100 px groups column at `MinWidth` and equal header button heights.
+The root grid has `Margin="16"` and two rows 16 px apart. The top row is the top bar `PenEditorTopBar`, a
+`*,Auto,Auto` grid with 8 px column spacing. Column 0 holds the filter box `PenListFilter`,
+`PenEditorWindow.FilterBoxWidth` (280 px) wide and left-aligned, so its left edge is the root margin and the
+pen list border's left edge. The box is wider than the 240 px of a free-text field because it carries a
+sentence-long placeholder rather than one value, with room left for typed text past it. It realises at the
+button's height with no `Height` set, so the bar stays 32 px. Columns 1 and 2 hold `PenEditorAddedCount` and
+`PenEditorRefreshButton` (`Padding="12,2"`), so both stand right-aligned and the button's right edge is the
+groups pane's. The top bar carries no notice. The second row is a `*,16,Auto,16,Auto` grid of the bordered
+pen list, the pen pane `PenFormPanel` and the groups pane `GroupsPanel`. The rule above holds for every part
+but the two grids:
+
+- Resizing grows the two grids only. The pen list takes the spare width and height; the group grid takes
+  the spare height of its pane. The pen pane (`PenEditorWindow.PenPaneWidth`, 420 px) and the groups pane
+  (`PenEditorWindow.GroupsPaneWidth`, 340 px) keep their widths, and every other row of the groups pane exists in every state.
+- At `MinWidth` the pen list's border box is 1272 - 4 x 16 - 420 - 340 = 448 px and its grid 438 px, which
+  holds Id, Name and Unit at their opening widths (84 + 200 + 96 = 380 px). The rest scrolls
+  horizontally, and both panes keep their widths. At the designed 1440 px the grid is 606 px, its viewport
+  598 px with the vertical scroll bar shown, and every column fits with no horizontal scroll.
+- `MinHeight` is the fixed rows plus four list rows: margin 16 + top bar 32 + 16 + groups pane + margin 16.
+  The groups pane is 2 border + 32 padding + title 24 + 4 + subtitle 20 + 8 + new-group row 32 + 8 + list
+  + 8 + action block 116 + 8 + message 40 = 302 px plus the list; the list's border, padding, 32 px header
+  and four 28 px rows are 2 + 8 + 32 + 112 = 154 px. That is 80 + 456 = 536 px. Below 702 px the pen form
+  scrolls inside its pane; a `MinHeight` of 702 would not fit the working area of a 1366 x 768 screen less
+  its title bar. The opening height of 720 px holds 16 + 32 + 16 + 622 + 16 = 702 px, so the whole form
+  shows.
+- A pen row and a group row are each `RowHeight`, 28 px, and both grids virtualise. The rows reach 28 px
+  through a window-scoped `DataGridCellMinHeight` of 28, which the cell theme reads through
+  `DynamicResource`; Semi's own 32 px minimum would raise every row.
+  `PenListViewTests.ARow_ShowsThePenAsStoredUnderItsHeader` pins the resource to `RowHeight`.
+- Both grids take the window-wide header style, 12 px `SemiBold`, and the window-wide cell-outline rule
+  (`#how-the-retint-reaches-a-control`). Each pane has its own reserved `form-message` line.
+
+#### The pen list
+
+The pen list is the `DataGrid` `PenList` inside a `Border` of 1 px `AppBorderBrush`, `CornerRadius` 4 and
+4 px padding. It is read-only, selects one row, shows column headers only, draws no grid lines and lets no
+column move. Its five columns are `DataGridTemplateColumn`s, each `CanUserSort`, `CanUserResize` and sorted
+by its `PenRowOrder` comparer (`overview.md#the-pen-and-group-editor`):
+
+| Column | Opening width | Cell |
+| --- | --- | --- |
+| Id | 84 px, `PenListIdColumnWidth` | `RowId`, the pen id |
+| Name | 200 px | The 12 x 12 px colour dot `RowColor`, ringed with 1 px `AppBorderBrush`, then `RowName` 8 px right of it |
+| Unit | 96 px | `RowUnit` |
+| On start | 120 px | `RowEnabledOnStart`, a 12 x 12 px `CheckGeometry` glyph, centred, shown while the pen starts visible |
+| Groups | 96 px, then the fill rule | `RowGroups`, the pen's groups in `AppSecondaryForegroundBrush` |
+
+- A header renders at 12 px `SemiBold`. Semi's header pads its text 12 px from the left and lays out its sort
+  arrow at a fixed size with an 8 px right margin whether the column is sorted or not, so a sorted header is
+  as wide as an unsorted one and the arrow never pushes the text into an ellipsis.
+  `HeaderMeasuredColumnsTests.AnUnsortedHeader_ReservesTheSortArrowSlot` gates it.
+- Every column opens no narrower than its realised header. `Tables/HeaderMeasuredColumns.FitsColumns` on the
+  grid measures every visible column's header unconstrained once all of them are realised, sets the column's
+  `MinWidth` to the ceiling of that width and raises a narrower declared `Width` to it. The header is matched
+  to its column through `DataGridColumn.GetColumnContainingElement`, never through its text.
+- The column marked `HeaderMeasuredColumns.IsFill`, Groups, takes the spare width: its `Width` is
+  `max(MinWidth, viewport - others)`, where the viewport is the headers presenter's width less the vertical
+  scroll bar's while that bar is visible and `others` the sum of the other visible columns' `ActualWidth`.
+  The rule runs on every `LayoutUpdated` while the grid is attached and writes only when the target differs
+  by more than 0.5 px. So the Groups column grows and shrinks with the window, takes back what a resize of
+  another column gives up, and stops at its minimum, past which the grid scrolls horizontally. The fill
+  column has a pixel width, never `*`, so the last column keeps a grab edge.
+- The fit runs in the `LayoutUpdated` of the layout pass that realises the headers, and the pass it
+  invalidates is laid out before the frame is committed, so the first frame shows the fitted widths;
+  nothing is posted to the dispatcher. The behaviour adds `LayoutUpdated` on attach and removes it on
+  detach, and caches the headers presenter and the scroll bar so a pass walks no row's visuals.
+- The Groups header is measured while the filler header still stands right of it, so its 1 px
+  `VerticalSeparator` is part of that measure and is hidden once the fill closes the gap: the Groups
+  minimum may sit 1 px over the header's later unconstrained width.
+- A text cell is `TextBlock.grid-cell`: centred vertically, trimmed with an ellipsis, and carrying its own
+  text as a tooltip (`$self.Text`). The class sets no margin; each cell sets its own. `RowId` and `RowUnit`
+  stand 12 px from the cell's left edge and 8 px from its right. The fill column's cell keeps 12 px on both
+  sides, so its text ends 12 px before the vertical scroll bar. The name cell's grid carries the 12 and 8 px
+  insets and its `RowName` none. The glyph cell carries no tooltip: its
+  column opens no narrower than its header, wider than the glyph.
+- A clicked row shows Semi's row highlight from `DataGridRowSelectedBackground` and no cell outline. The
+  window style that hides the currency rectangle and the focus visual is under
+  `#how-the-retint-reaches-a-control`.
+
+#### The pen pane
+
+The pane is the `Border` `PenFormPanel`, `PenEditorWindow.PenPaneWidth` (420 px) wide, with 16 px padding, a 1 px `AppBorderBrush` border and
+`CornerRadius` 4, disabled while a refresh runs. With no pen selected it shows only the hint
+`PenFormEmptyHint`, centred both ways in `AppSecondaryForegroundBrush`. With a pen selected it shows the
+`ScrollViewer` `PenFormScroller` (`Focusable="False"`, no horizontal scrolling), which holds the form:
+
+- The title, a 24 px row of two 16 px `SemiBold` blocks 8 px apart: the id `PenFormTitleId` in
+  `AppSecondaryForegroundBrush`, then the name `PenFormTitleName`, trimmed, with the full name as its tooltip.
+- Three section headers, Label, Appearance and On start: `TextBlock.form-section`, `SemiBold`, 20 px high,
+  16 px above and 8 px below.
+- Under each header a grid of the window resource `PenFormColumns` (`x:Shared="False"`): a 112 px label
+  column and a 240 px field column, every row 32 px. Each grid is a `Grid.form-grid`, whose window style sets
+  12 px between the columns, 8 px between the rows and `HorizontalAlignment="Left"`: stretched across the scroller, a grid widens both pixel columns by a pixel
+  and puts every field 125 px off the label edge.
+- Every label is `TextBlock.form-label` in the label column; every field, the two checkboxes included,
+  starts at the field column's edge, 124 px right of the label edge. Name and Line stretch across the 240 px
+  field column; Unit, Mask, Colour, Minimum and Maximum carry their own 120 px width. The colour row is the 120 px `FormColor` box
+  and, 8 px right of it, the 32 x 32 px `FormColorPicker` with no padding, its drop-down arrow hidden, so the
+  picker is the swatch alone. The mask preview is a trimmed `TextBlock` with its text as a tooltip.
+- The On start section holds the visibility box, `FormScale` and the scale type box. `FormScale` is the scale
+  pair's focus scope and its own `PenFormColumns` grid of two 32 px rows, Minimum and Maximum, spanning both
+  columns of the section's grid; the scale type box is the row under it, outside the scope, on the same field
+  edge.
+- The reserved `form-message` line, 40 px, 16 px under the last section.
+
+The form's height is fixed by the AXAML: title 24 px; three section headers at 16 + 20 + 8 px; rows
+4 x 32 + 3 x 8, 2 x 32 + 8, and 32 + (2 x 32 + 8) + 32 + 2 x 8 px; the message line 16 + 40 px. That is
+24 + 132 + 152 + 72 + 152 + 56 = 588 px, inside the pane's 32 px of padding and 2 px of border, 622 px in
+all. At the opening height of 720 px the scroller needs no scrolling; a lower window scrolls the form rather
+than clipping it.
+
+An invalid field takes the `invalid` class and the warning glyph (`#a-form-never-resizes-on-validation`).
+The line-style combo box and the checkboxes refuse no value, and `Forms.axaml` styles `invalid` on
+`TextBox`, `NumericUpDown` and `CalendarDatePicker` only, not on a `ComboBox` or a `CheckBox`, so a failed
+write of either shows on the message line and in the panel only. The scale type box refuses a tick while the
+pen stores a minimum at or below zero; the refusal shows on the message line alone, and a minimum that breaks
+the rule while the box is ticked marks the minimum `TextBox` `invalid`.
+
+#### The groups pane
+
+The pane is the `Border` `GroupsPanel`, `PenEditorWindow.GroupsPaneWidth` (340 px) wide, with 16 px padding, a 1 px `AppBorderBrush` border and
+`CornerRadius` 4, disabled while a refresh runs; its content is 306 px wide. Its grid has the rows
+`Auto,Auto,*,Auto,Auto`, 8 px apart:
+
+- The title `GroupsTitle`, `TextBlock.form-title`, 24 px, and 4 px under it the subtitle `GroupsSubtitle`,
+  a `TextBlock.pane-line` in `AppSecondaryForegroundBrush`. The window style `pane-line` sets one 20 px line,
+  centred and trimmed.
+- The new-group row: `NewGroupName` and `CreateGroupButton` in a `*,Auto` grid, 8 px apart.
+- The `DataGrid` `GroupList` inside a `Border` of 1 px `AppBorderBrush`, `CornerRadius` 4 and 4 px padding,
+  so the grid is 296 px wide less the vertical scroll bar while it shows. It is read-only, selects one row
+  without showing it (`#how-the-retint-reaches-a-control`), shows column headers only, draws no grid
+  lines, sorts nothing, lets no column move and carries `HeaderMeasuredColumns.FitsColumns`.
+- The action block `GroupActionBlock`, 116 px in every state.
+- The reserved `form-message` line `GroupsMessage`, 40 px.
+
+| Column | Header | Opening width | Resize | Cell |
+| --- | --- | --- | --- | --- |
+| Membership | none | 36 px | no | `MembershipBox`, centred |
+| Group | `PenGroupsColumnGroup` | 120 px, then the fill rule (`IsFill`) | yes | A `*,Auto` grid, 8 px column spacing, `Margin="12,0,8,0"`: `GroupName`, a `TextBlock.grid-cell` with its text as a tooltip, then `GroupMemberCount`, right-aligned in `AppSecondaryForegroundBrush` with the tooltip `PenGroupsMemberCountTip` |
+| Actions | `PenGroupsColumnActions` | 40 px, raised to its header | no | `GroupActionsButton`, `BorderlessButton` theme, 28 x 24 px, no padding, 12 px from the cell's left edge, the tooltip `PenGroupsActionsTip`, holding a 16 x 16 px `MoreGeometry` `PathIcon` in `AppSecondaryForegroundBrush`; its `MenuFlyout` opens `BottomEdgeAlignedLeft` |
+
+- The membership and action columns do not resize: each holds one fixed-size control, and a wider column
+  shows nothing more. Group stands in the middle because the box a membership list is read by stands
+  first and the row's menu last; `FitFillColumn` fits a fill column wherever it stands, and Actions keeps
+  the last grab edge.
+- `MembershipBox` binds `IsChecked` to `Membership.IsMember` `Mode=OneWay` with `FallbackValue=False`,
+  `Command` to `Membership.ToggleMembershipCommand` and `IsEnabled` to `Membership` through
+  `ObjectConverters.IsNotNull`. With no pen selected the compiled binding through the null `Membership`
+  reads the fallback, so the box is disabled and unchecked, never indeterminate; while a write runs, the
+  command's `IsExecuting` disables it.
+- The grid declares its three columns statically, binds no column `IsVisible` and disables rather than
+  hides a membership box, so the `HeaderMeasuredColumns` measure, which latches on its first success, sees
+  every column; a grid with no group still realises the headers.
+- The action block is as tall as its tallest state, the confirmation: question 20 + 8 + count 20 + 8 +
+  note 20 + 8 + buttons 32 = 116 px. `GroupRenameBlock` holds the 20 px label `PenGroupsNameLabel`, then a
+  `*,Auto` grid, 8 px apart, of the `TextBox` `GroupRename` (inside a `Panel` whose `DataContext` is
+  `PendingRename`, with `Classes.invalid` bound to `!IsNameValid`) and `GroupRenameDoneButton`.
+  `GroupDeletionBlock` holds `GroupDeletionQuestion`, `GroupDeletionCount` and `GroupDeletionNote` (in
+  `AppSecondaryForegroundBrush`), each a `TextBlock.pane-line`, the question with its text as a tooltip, then a
+  right-aligned row, 8 px apart, of `ConfirmDeleteButton` (`Classes="destructive"`) and
+  `CancelDeleteButton`. No state moves anything else in the pane.
+
+Measured in Inter with 40 groups, so the vertical scroll bar shows
+(`TheGroupColumns_LeaveTheNameAtLeast100PxInInter`): in `en` Actions takes 81.5 px, Group 169.5 px and the
+name text 115.3 px; in `ru` 95.2, 155.8 and 101.6 px. The name text is Group less the 12 and 8 px cell
+insets, the 8 px gap and the width of "999".
+
+#### What gates the layout
+
+`EveryPenFormLabel_FitsTheLabelColumnInInter` measures each of the form's ten label texts in the Inter font
+the app ships, at the label's `FontSize`, through Skia (`SemiPlot.Tests.Unit/UI/InterMeasure.cs`), in `en` and `ru`: each is at
+most 112 px. The headless tests measure with the test font, which is about twice as wide, so every other
+gate reads the realised layout. The longest form message, `PenFormMaskInvalid`, measured 476.6 px in English
+and 480.3 px in Russian on one line on 2026-09-30, so it wraps into the second reserved line; the wrapped
+line has not been measured in the pane. Measured on 2026-09-29, with a three-digit added count the count needs
+210 px in English and 294 px in Russian, and the button 250 px for "Refresh pen list" and 334 px for «Обновить
+список перьев»; with the 280 px filter box and the 8 px gaps the top bar needs 756 px in English and 924 px
+in Russian, inside the 1240 px it has at `MinWidth`. Measured on 2026-11-03 in Inter at the box's
+`FontSize` (`ThePlaceholder_FitsTheFilterBoxInInter`), the filter placeholder is 157.6 px in English and
+217.3 px in Russian, inside the box's 254 px inner width, 280 px less its `Padding` and `BorderThickness` on
+both sides. The groups pane's 340 px is chosen; its texts are gated in Inter against the realised
+`GroupsSubtitle` width, 306 px. The headless font also pushes the pen list's Groups column partly past the
+viewport at the designed 1440 px, so `EachHeaderClick_OrdersTheListByItsColumn` scrolls that column in
+through `PenEditorWindowDriver.ScrollColumnIntoView` before it clicks the header. The realised list raises
+each fixed width to its header in the headless font, so
+`AtTheOpeningWidth_EveryPenListColumnFitsTheViewportInInter` reads the declared widths from an unshown
+`PenEditorWindow`. Measured in Inter at 1440 px with 100 pens, the viewport is 598 px and the columns take
+84 + 200 + 96 + 120 px plus the Groups header, 78.5 px in `en` and 81.1 px in `ru`: 578.5 and 581.1 px. A
+220 px Name column would take 598.5 and 601.1 px and scroll.
+
+| Test | Part it gates |
+| --- | --- |
+| `PenEditorLayoutViewTests.TheWindow_ShowsThePenListThePenPaneAndTheGroupsPaneSideBySide` | No `TabControl`; the pen list's border, the 420 px pen pane and the 340 px groups pane on one top, 16 px apart, 16 px from the window's edges, the top bar 16 px above them |
+| `PenEditorLayoutViewTests.TheTopBar_StandsAboveThePanesRightAlignedAndTheVisibilityColumnReadsOnStart` | The count and the button 8 px apart above the panes, the button's right edge on the groups pane's, and the On start header |
+| `PenEditorLayoutViewTests.TheFilterBox_StandsLeftInTheTopBar280PxWideWithItsPlaceholder` | The filter box inside the top bar, `FilterBoxWidth` wide, its left edge on the pen list border's, the box and the bar at the button's height, its placeholder, and its right edge left of the count |
+| `PenEditorLayoutViewTests.ThePlaceholder_FitsTheFilterBoxInInter` | The filter placeholder in Inter, in `en` and `ru`, inside the box's width less its `Padding` and `BorderThickness` |
+| `PenEditorLayoutViewTests.AtTheMinimumWidth_BothPanesKeepTheirWidthAndThePenListScrolls` | The opening at `DesignedWidth`; at `MinWidth` both panes at their widths, every pen column at or above its minimum, Id and Name inside the viewport, and the horizontal scroll |
+| `PenEditorLayoutViewTests.BothPanes_StayFixedWhenTheWindowWidens` | Both panes unchanged and the pen list 300 px wider when the window widens by 300 px |
+| `PenEditorLayoutViewTests.TheOpeningWidth_TakesTheDesignedWidthWhereTheWorkingAreaAllowsAndNeverLessThanTheMinimum` | `OpeningWidthFor` over working areas of 1920, 1440, 1366, 1280 and 1024 px and the infinite width of no screen |
+| `PenEditorLayoutViewTests.AtTheMinimumHeight_EveryFixedRowShowsAndEachListShowsFourRows` | At `MinHeight` 536 px the confirmation inside the action block, the message line inside the pane, and four rows in each grid |
+| `MainWindowViewTests.EditPensAndGroups_ClickedOnTheRealisedWindow_OpensTheEditorOverIt` | The opening width from the main window's screen; the headless screen reports 1920 px, so the window opens at 1440 px |
+| `PenListViewTests.AtTheOpeningWidth_EveryPenListColumnFitsTheViewportInInter` | Every pen column inside the viewport at 1440 px in Inter, in `en` and `ru` |
+| `PenListViewTests.EveryColumn_IsResizableAndOpensNoNarrowerThanItsHeader` | `CanUserResize` on every column; each minimum between its header's unconstrained width and 1 px more |
+| `PenListViewTests.ARow_ShowsThePenAsStoredUnderItsHeader` | The cells as stored, the colour dot inside the name cell, the 28 px row |
+| `PenListViewTests.EveryTextCell_TrimsWithAnEllipsisAndCarriesItsTextAsATooltip` | The trimming and the tooltip of every text cell |
+| `PenListViewTests.AFullCatalogue_RealisesOnlyTheRowsOnScreen` | The virtualised rows |
+| `PenListViewTests.AClickedRow_ShowsTheRowHighlightAndNoCellOutline` | The selection fill and no visible currency rectangle or focus visual |
+| `PenFormPaneViewTests.WithNoPenSelected_ThePaneShowsOnlyTheHint`, `PenFormPaneViewTests.AClickedPen_FillsTheFormUnderAOneLineTitle` | The hint and the one-line title |
+| `PenFormPaneViewTests.TheForm_HasThreeSectionsOnOneLabelColumnAndOneFieldEdge`, `PenFormPaneViewTests.EveryField_HasTheWidthOfItsContentType`, `PenFormPaneViewTests.TheColourSwatchPicker_IsSquare` | The sections, the 124 px field edge, the field widths, the 32 x 32 px swatch 8 px right of the colour box |
+| `PenFormPaneViewTests.AtTheOpeningSize_ThePaneShowsTheWholeForm` | The form's extent inside the scroller's viewport at 1440 x 720 px |
+| `PenEditorViewTests.AnUnusableMask_WritesNothingRevertsMarksAndSaysWhyWithoutResizing` | The window's and the pane's `Bounds` equal before and after the mask turns invalid |
+| `PenGroupsViewTests.AGroupRow_ShowsTheNameAndTheCountWithItsTooltip` | The name, the count right of it inside the name cell, its tooltip, the 28 px row |
+| `PenGroupsViewTests.ARowClick_ShowsNoSelectionHighlightAndNoCellOutline` | A clicked group row painted as an unclicked one at rest and hovered; no visible currency rectangle or focus visual |
+| `PenGroupsViewTests.TheGroupGrid_SortsNothingOnAHeaderClick` | The row order and no sort arrow after a header click |
+| `PenGroupsViewTests.EveryGroupColumn_OpensNoNarrowerThanItsHeader` | With no group and with two: each minimum between its header's unconstrained width and 1 px more; only Group resizes |
+| `PenGroupsViewTests.WithNoPenSelected_EveryMembershipBoxIsDisabledAndUnchecked` | The disabled, unchecked box with no pen selected |
+| `PenGroupsViewTests.TheRowMenu_HoldsRenameTheFoldFlagAndDelete` | The menu's items in order and the button's tooltip |
+| `PenGroupsViewTests.TheActionBlock_KeepsItsBoundsEmptyRenamingAndAskingToDelete` | The action block's and the pane's `Bounds` equal in the three states, every visible part inside the block |
+| `PenGroupsViewTests.TheConfirmButton_IsDestructiveFromThePaletteNotSemisDanger` | The `destructive` class on the confirm button, and no `Danger` |
+| `PenGroupsViewTests.AFullCatalogue_RealisesOnlyTheGroupRowsOnScreen` | The virtualised group rows |
+| `PenGroupsViewTests.TheGroupColumns_LeaveTheNameAtLeast100PxInInter` | At least 100 px of name text beside the membership and action columns in Inter, in `en` and `ru` |
+| `PenGroupsViewTests.ThePaneTexts_FitTheirLinesInInter` | The subtitle, the count line for 999 pens and the note each on one line of the pane in Inter, in `en` and `ru` |
+
+`HeaderMeasuredColumnsTests` gates the behaviour on a bare grid: the header-width minimum, a declared width
+above it kept, the fit inside the layout pass that realises the headers, the reserved arrow slot, the fill
+column taking, shrinking to its minimum and growing back with the viewport, a resize handed to the fill
+column, the visible vertical scroll bar left out of the viewport, and the fit after the grid is detached and
+attached again.
 
 ## How the variant reaches the application
 

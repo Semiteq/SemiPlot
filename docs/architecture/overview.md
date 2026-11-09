@@ -518,22 +518,150 @@ catalogue. It writes `semiplot_tags`, `semiplot_groups` and `semiplot_pen_groups
 `IPenCatalogueEditor` and nothing else (`data-integration.md#the-pen-catalogue-editor`). It never adds a
 pen by hand, deletes one or changes an `id`, because the key is the SCADA variable number.
 
-The window is a `TabControl` of two tabs over a bottom bar that both tabs share:
+The window has no tabs. It is one row of three parts under a top bar, pen list | pen pane | groups pane:
 
 | Part | Holds |
 | --- | --- |
-| `Pens` tab | A read-only table of every pen: a click on a column header sorts by that column, a second click reverses. Under it, the form of the selected pen: name, unit, mask with a live preview, colour as a `#RRGGBB` text box beside a `ColorPicker`, line style, "on start", the scale pair and the log scale flag under it. A pen's groups show in the table as text and are not edited there. |
-| `Groups` tab | The group list with a new-name field, a create button, one rename field, a delete button and, under them, the selected group's fold flag as a checkbox, disabled while no group is selected. Beside it, every pen of the catalogue as a checkbox, checked where the pen is a member of the selected group. Membership is edited here only. A delete asks once, in a row the tab always reserves, naming the group and how many pens it holds. |
-| Bottom bar | The number of pens the last refresh added and `Refresh pen list`, right-aligned. `Refresh pen list` registers the keys the SCADA writes as hidden pens and reads the catalogue again. |
+| Top bar | On the left, the filter box: the pen list shows the rows whose id, name or group text contains the typed text, trimmed at both ends and compared case-insensitively, and an empty box shows every row; the groups pane is not filtered (`#the-pen-list-filter`). On the right, the number of pens the last refresh added and `Refresh pen list`. `Refresh pen list` registers the keys the SCADA writes as hidden pens and reads the catalogue again. |
+| Pen list and pen pane | A read-only `DataGrid` of every pen: id, name with the pen's colour dot, unit, the start flag as a check glyph, and groups. A click on a column header sorts by that column ascending, the next click descending, and the header's arrow shows the direction. Every column resizes and opens no narrower than its header, and the groups column takes the spare width. Beside it, the 420 px pen pane: a hint while no pen is selected, otherwise a one-line title (id, then name), the sections Label (name, unit, mask, preview), Appearance (colour as a `#RRGGBB` text box, which normalises what the operator types or pastes to upper-case `#RRGGBB` and shows a stored value as stored, beside a square `ColorPicker` swatch; line style) and On start (visibility, minimum, maximum, scale type), and the reserved message line. A pen's groups show in the list as text and are not edited there. |
+| Groups pane | The title, a one-line subtitle, a new-name field with a create button, then a read-only `DataGrid` of every group in three columns: the membership box, the group name with its pen count as secondary text, and a "..." button. The box is ticked where the pen selected in the pen list is a member of the group; with no pen selected every box is disabled and unchecked. Membership is edited here only, from the pen side. The "..." button opens a menu of Rename, the fold flag as a checkable item, and Delete. A row shows no selection highlight and no cell outline. Under the grid a block the pane always reserves shows the rename field or the delete confirmation, and the pane's reserved message line closes it. |
 
 The editor reads fresh from the tables when it opens and after each refresh, and shows the values as
 stored: a pen with no colour opens with an empty, invalid colour field
 (`data-integration.md#the-stored-read`). It keeps that snapshot while it is open and reads again only on
-`Refresh pen list`, so no periodic read rebuilds a form under the operator's hands. The visibility column and
-field read "on start": the flag is the visibility a pen starts with, and a change of it switches nothing
-on a running chart. What the editor writes reaches the running chart as The live catalogue, below,
+`Refresh pen list`, so no periodic read rebuilds a form under the operator's hands. The start flag's column
+reads "On start", and its field, "Show on the chart", stands in the "On start" section: the flag is the
+visibility a pen starts with, and a change of it switches nothing on a running chart. What the editor writes reaches the running chart as The live catalogue, below,
 states. Several viewers may run on one machine, and the last write wins per column. The layout is in
 `ui-theme.md#a-resizable-window-keeps-its-fixed-parts`, the text in `ui-text.md#the-pen-editors-text`.
+
+The grid owns the sort, and the view model owns the collection view it sorts. `PenEditorViewModel` holds the
+rows in one private `ObservableCollection<PenRowViewModel>`, never replaced, and exposes one
+`DataGridCollectionView` over it, `PenRows`, built once. A header click writes a
+`DataGridSortDescription` of the column's `PenEditor/PenRowOrder` comparer into `PenRows.SortDescriptions`;
+the header's arrow is its `:sortascending` or `:sortdescending` pseudo-class, which the grid sets from that
+description. Each comparer orders by its column's key and then by `Pen.Id`, text through
+`StringComparer.CurrentCultureIgnoreCase`, and a descending sort reverses the whole order, the tie-break
+included. A refresh clears and refills the collection with no `DeferRefresh` (the view throws on a change
+inside a deferral), the view places each added row at its sorted position, so the sort and its arrow
+survive, and the refresh then sets `SelectedRow` to the pen selected before if its new row passes the
+filter (`#the-pen-list-filter`). A refresh of N pens raises N
+inserts into the view, each placed at its sorted position, rather than one reset. The refresh builds the new
+`PenGroupsViewModel` after it sets `SelectedRow`, over the row array it built, so the new pane's first
+memberships are the restored pen's (`#the-groups-pane`).
+
+The list's `SelectedItem` binds `SelectedRow` one way, and `OnPenListSelectionChanged` in the code-behind
+writes every selection change back to `SelectedRow`, null included. A sort raises no selection change in
+Avalonia 12.0.1, so it keeps the selected pen and its form
+(`PenListViewTests.AHeaderClick_SortsAscendingThenDescendingAndKeepsTheSelectedPenAndItsForm`). The
+refresh's `Clear()` raises one null, which the refresh overwrites with the pen selected before. A Ctrl+click
+on the selected row clears the selection, and the pane shows the hint
+(`ANameTypedThenTheSelectedRowCtrlClicked_WritesOnceAndShowsTheHint`).
+
+#### The pen list filter
+
+The filter narrows the same view the grid sorts. `PenRows.Filter` is set once, in the constructor, to a
+lookup in `_matchingRows`, the set of rows `PenEditor/PenRowFilter.Matches` accepts for `FilterText`. The
+match trims the text at both ends; an empty or whitespace-only text matches every row. Otherwise a row
+matches when its id as invariant decimal text, `Pen.Name` or `GroupsText` contains the text under
+`StringComparison.CurrentCultureIgnoreCase`, the comparison the sort uses, so Cyrillic folds case too; the
+unit is not matched (`PenRowFilterTests`). The box `PenListFilter` is the one writer of `FilterText`,
+through a two-way `Text` binding that writes on every keystroke; a null it writes becomes an empty text. The
+setter calls `ShowRowsMatchingFilter` when the value changes, which recomputes the set over every row and
+calls `PenRows.Refresh()`, which re-creates the view with its sort descriptions and its filter. Nothing
+touches the sort descriptions, so the order and the header's arrow stay (`AFilter_KeepsTheSortOrder`,
+`PenListViewTests.AFilterUnderASort_KeepsTheOrderAndItsArrow`). No throttle runs: the rows are in memory and
+the view realises only the rows on screen.
+
+The selection stays while the selected row matches: the same `SelectedItem`, `SelectedRow` and
+`SelectedForm` (`PenListViewTests.AFilterTheSelectedRowMatches_KeepsTheRowSelectedAndItsForm`). When the new
+text hides the selected row, `ShowRowsMatchingFilter` sets `SelectedRow` to null before the refresh, so the
+form drops, the pane shows the hint and every membership box disables
+(`PenListViewTests.AFilterTheSelectedRowFailsToMatch_ClearsTheListSelectionAndShowsTheHint`). A selected row
+the operator cannot see would keep an editable form and membership boxes for a pen the list does not show. A
+cleared text restores no selection, so `SelectedRow` holds no remembered hidden row
+(`AFilterTheSelectedRowNoLongerMatches_ClearsTheSelectionAndAClearedTextRestoresNone`).
+
+After a refresh the grid selects the view's current item, and the current item can be a row while nothing
+is selected. The view opens with no current item, but a Ctrl+click that clears the selection leaves its row
+current; when the filter then hides that row, the refresh makes the first matching row current and the grid
+selects it. `ShowRowsMatchingFilter` therefore calls `PenRows.MoveCurrentTo(SelectedRow)` after the clear
+and before the refresh. With a row selected the grid already holds that row current and the call changes
+nothing; with none it puts the current item before the first row, and the refresh selects nothing
+(`PenListViewTests.AFilterAfterACtrlClickClearedTheSelection_SelectsNoRow`). The grid's echo through
+`OnPenListSelectionChanged` writes the same null.
+
+The catalogue refresh keeps `FilterText`. `RefreshAsync` recomputes the set over the new rows before the
+refill, so each row the refill adds enters the view only if it matches, at its sorted place
+(`ARefreshWhileFiltered_ShowsOnlyTheMatchingRowsAndKeepsTheText`), and it restores the selected pen only if
+its new row matches, since the re-read row may carry a new name or new groups
+(`ARefreshThatMakesTheSelectedPenStopMatching_ClearsTheSelection`,
+`PenListViewTests.ARefreshThatMakesTheSelectedPenStopMatching_ClearsTheListSelectionAndShowsTheHint`).
+
+The view does not filter a row again when the row's name or groups change, because the filter reads the set
+and not the row: the filter applies at the next text change and at the next refresh. A column sort also
+re-creates the view, and the set keeps the selected row in it
+(`PenListViewTests.AHeaderClickAfterTheSelectedRowStoppedMatching_KeepsTheRowShownAndSelected`). With
+"Chamber" typed, unticking Chamber for the selected pen, or renaming it in its form, would otherwise hide the
+row and drop the form under the operator's hands
+(`AMembershipChangeThatStopsTheSelectedRowMatching_KeepsTheRowShownAndSelected`). The groups pane takes the
+row array, not `PenRows`, so it lists every group whatever the list shows (`AFilter_LeavesTheGroupsPaneWhole`,
+`PenListViewTests.TheGroupsPane_ListsEveryGroupWhileThePenListIsFiltered`).
+
+The box carries no `PenEditorWindow.Field`, and its `DataContext` is the `PenEditorViewModel`, so the
+edit-end routing ignores it as it ignores `NewGroupName`. A click into the box ends a pending form edit
+through the form field's own `LostFocus`
+(`PenEditorViewTests.ANameTypedThenTheFilterBoxTypedAndEnterPressed_WritesOnceAndTheFilterWritesNothing`).
+The box stays enabled during a refresh, because the refill keeps the view it filters. The text lives for the
+window's life and is written nowhere.
+
+#### The groups pane
+
+`PenGroupsViewModel` takes the row array and `this.WhenAnyValue(editor => editor.SelectedRow)` from
+`PenEditorViewModel`. One pipeline, that observable combined with the pane's own `Groups` through
+`CombineLatest`, sets every `PenGroupViewModel.Membership` to the selected pen's entry, or to null with no
+pen selected; the pane is `Membership`'s one writer, and no property of the pane mirrors the selected pen.
+The subscription is disposed with the pane, which `PenEditorViewModel` disposes when a refresh replaces it,
+before the selection moves onto the new rows, and in its own `Dispose`.
+
+The group grid binds no selection, so a group has no selected state; its one state is the membership box.
+It sorts nothing (`CanUserSortColumns="False"`): the groups stand in the order the catalogue reads them, and
+a created group appends at the end until the next refresh.
+
+Each row's menu acts through commands on the row's view model: `AskRenameCommand` and `AskDeleteCommand`
+call back into the pane, and the fold item invokes `ToggleFoldedOnStartCommand`. The menu items inside the
+cell template's `MenuFlyout` take the row's `DataContext`. The pane holds one action at a time:
+`PendingRename` and `PendingDeletion`, where asking one clears the other, and a refresh builds a pane with
+neither. The reserved block shows the rename field while `PendingRename` is set and the confirmation while
+`PendingDeletion` is set.
+
+- Rename opens the block on that group, with its name in `GroupRename`, focused and selected. The
+  code-behind subscribes `GroupRename.DataContextChanged` in `OnLoaded` and removes it in `OnUnloaded`;
+  when the data context becomes a `PenGroupViewModel`, it posts the focus and `SelectAll` at
+  `DispatcherPriority.Background`. The flyout hands the focus back to `GroupActionsButton` as it closes,
+  and the posted focus lands after it. A `Click` handler named on a `MenuItem` inside the cell template's
+  `MenuFlyout` never runs in Avalonia 12.0.5, so the route keys on the data context instead. Rename on the
+  group whose block is already open clears `PendingRename` and sets it again, so the field takes the focus
+  again.
+- The rename block closes on Done, not on Cancel. A press on any button ends the edit first, and the edit
+  writes when it ends, so a Cancel button could not stop the write it suggests it stops. Done's press ends
+  the edit, and `CloseRenameCommand` then clears `PendingRename` only while `PendingRename.IsNameValid`
+  holds. A blank draft is refused when the edit ends, before the click lands, so it stays in the open
+  block, reverted and marked, with the rule on the message line. A second Done with the reverted name left
+  as it is closes the block, writes nothing and drops the mark (`PenGroupViewModel.TryClose`), so the next
+  Rename on that group opens unmarked; a blank draft never closes it. A rename the archive refuses lands
+  after the block has closed: `PenGroupViewModel.EndRenameAsync` reports it through `PenGroupWriter.RefuseWrite`,
+  so the pane's message line names the refusal with the block open or closed, the panel gets one entry,
+  and the next Rename on that group opens the field reverted and marked. The block also closes when
+  another row action replaces it and on refresh.
+- Delete asks in the block, on three lines: the question naming the group, trimmed with its full text as
+  a tooltip; the group's pen count; and the note that the pens themselves stay. A long name trims its own
+  line and never pushes the count or the note out of the block. The question and the count are a snapshot
+  taken when Delete is chosen. The confirm button carries the `destructive` class
+  (`ui-theme.md#the-applications-own-surfaces`). `ConfirmDeleteAsync` clears `PendingDeletion` before it
+  awaits the write; a landed delete removes the group from `Groups`, disposes its membership entries and
+  updates the groups text of the rows it held. A rename or a second deletion asked on the group while its
+  delete waited in the queue closes when the delete lands.
 
 #### Where the view model is built
 
@@ -562,7 +690,7 @@ and never stops the next. `WhenIdleAsync` also waits for a call queued while it 
 on the UI thread, so the queue takes no lock. `MarkerSync` owns a queue of its own for the chart's marker
 writes (`#the-live-markers`).
 
-While a refresh runs, the pen form and the whole groups tab are disabled, because the rebuild replaces
+While a refresh runs, the pen form and the whole groups pane are disabled, because the rebuild replaces
 the view models they edit: text typed then would end its edit on a form or group nobody shows any more.
 A click on `Refresh pen list` takes the focus first, so the edit in progress ends, and is queued, before
 the registration.
@@ -572,7 +700,7 @@ the registration.
 There is no save button.
 
 - A text field's edit ends on Tab, on Enter, on a click on another control, on a click on empty space
-  (a label, the empty area of a form or of the groups tab) and on the window's close, and the field
+  (a label, the empty area of a form or of the groups pane) and on the window's close, and the field
   writes then. The edit ends on the form that owned the field when focus entered it, so a click on another row writes to the pen the
   field was showing. A field compares its draft with the value it holds once every write of it still
   queued succeeds, so a second end of an unchanged edit writes nothing and an edit back to the stored
@@ -587,7 +715,7 @@ There is no save button.
   is the last name, and any queued name is a later write. The two share only the append and the removal
   of the settled entry, and a common type would take both differences as parameters.
 - The scale pair writes only when focus leaves the pair, so tabbing from the minimum to the maximum
-  writes no half pair; both bounds go in one statement. The log scale checkbox sits under the pair but
+  writes no half pair; both bounds go in one statement. The scale type box sits under the pair but
   outside its focus scope, so a click on it ends the pair's edit first, and the flag's rule, a minimum
   above zero, reads the minimum just typed.
 - The line-style combo box and the two start checkboxes write only a value that differs from the draft,
@@ -599,14 +727,16 @@ There is no save button.
   adds one entry to the message panel.
 - A membership checkbox reads `IsMember` one way and writes only through its own
   `ToggleMembershipCommand`. A failed toggle raises `PropertyChanged(nameof(IsMember))` with the value
-  unchanged, and the binding puts the box back. A group keeps one entry per pen for the life of the
-  groups tab, so the box shown after the group is selected again is the entry whose toggle may still
-  run: it stays disabled until the toggle lands and then shows it.
-- The group's fold checkbox follows the same rule. It reads `PenGroupViewModel.FoldedOnStart`, the
-  stored `folded_on_start`, one way and writes only through `ToggleFoldedOnStartCommand`, which stores
-  the opposite of the stored flag through `IPenCatalogueEditor.SetFoldedOnStartAsync`. A landed write
-  updates the group's record; a failed one fills the tab's message line, adds one panel entry and raises
-  `PropertyChanged(nameof(FoldedOnStart))` with the value unchanged, and the binding puts the box back.
+  unchanged, and the binding puts the box back. The pane keeps one `PenMembershipViewModel` per pen and
+  group for its own life and hands each group row the entry of the selected pen, so the box shown after
+  the pen is selected again is the entry whose toggle may still run: it stays disabled until the toggle
+  lands and then shows it.
+- The fold flag follows the same rule. The row menu's checkable item `GroupFoldItem` reads
+  `PenGroupViewModel.FoldedOnStart`, the stored `folded_on_start`, one way and writes only through
+  `ToggleFoldedOnStartCommand`, which stores the opposite of the stored flag through
+  `IPenCatalogueEditor.SetFoldedOnStartAsync`. A landed write updates the group's record; a failed one
+  fills the pane's message line, adds one panel entry and raises `PropertyChanged(nameof(FoldedOnStart))`
+  with the value unchanged, and the binding puts the item back.
   The flag is the fold a sidebar header starts with, so a change of it folds nothing on a running sidebar
   that already shows the header (`#the-sidebar-fold`).
 
@@ -615,10 +745,16 @@ An edit ends when its field loses the focus, and a label or an empty area takes 
 So the window handles every pointer press in the tunnel phase, handled ones too: a press on an element
 with no focusable, enabled ancestor inside the window clears the focus through the window's
 `FocusManager`, and the field's `LostFocus`, or the scale pair losing the focus within, ends the edit as
-a click on another control does. A press on a field, a button, a row of the pen table or the group list,
-or any other focusable control passes untouched, because that control takes the focus itself. The two
-lists themselves, their scroll bars and their empty area below the rows take no focus in Avalonia 12.0.5,
-so a press there ends the edit as a press on a label does. `FocusManager` moves the focus only on a left press, while the handler clears it on any
+a click on another control does. A press on a field, a button, a row of either grid,
+or any other focusable control passes untouched, because that control takes the focus itself. The pen
+list's `DataGrid` is focusable and takes the focus on a left press anywhere inside it, on a row, a header or
+the empty area below the rows, so the field's `LostFocus` ends the edit; the handler has no branch of its own
+for the list (`PenEditorViewTests.ANameTypedThenAnotherRowClicked_WritesToThePenTheFieldShowed`,
+`ANameTypedThenAColumnHeaderClicked_WritesOnce`, `ANameTypedThenThePenListsEmptyAreaClicked_WritesOnce`).
+A right or middle press on the pen list ends no edit: the grid is a focusable ancestor, so the handler passes
+it, and `FocusManager` moves the focus on a left press only.
+The group grid is a focusable `DataGrid` too, so a left press on a group row takes the focus and ends a
+rename as a press on the pen list ends a field's edit. `FocusManager` moves the focus only on a left press, while the handler clears it on any
 button, so a right or middle press on a label or an empty area ends the edit too. Closing the window drains: `Closing` is cancelled until the recorded edits have ended and the queue is
 idle, and then the window closes itself. `MainWindow` disposes the view model only after `ShowDialog`
 returns, so a name typed just before the close is written once and nothing is disposed under a write

@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
+using Avalonia.Data;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Input;
@@ -87,13 +88,19 @@ public sealed class ThemeTests
 		var check = new CheckBox();
 		var combo = new ComboBox { ItemsSource = new[] { "first", "second" }, SelectedIndex = 0 };
 		var picker = new ColorPicker();
-		var window = new Window { Content = Stacked(button, box, check, combo, picker) };
+		var grid = GridOfTwoRows();
+		var window = new Window { Content = Stacked(button, box, check, combo, picker, grid), Height = 600 };
 		try
 		{
 			window.Show();
 			Dispatcher.UIThread.RunJobs();
 
 			var palette = new CornerRadius(4);
+			var row = grid.GetVisualDescendants().OfType<DataGridRow>().First();
+			var columnHeader = grid.GetVisualDescendants().OfType<DataGridColumnHeader>()
+				.First(candidate => Equals(candidate.Content, "header"));
+			NamedBorder(row, "BackgroundBorder").CornerRadius.Should().Be(palette);
+			NamedBorder(columnHeader, "HeaderBackground").CornerRadius.Should().Be(palette);
 			button.CornerRadius.Should().Be(palette);
 			NamedBorder(box, "PART_ContentPresenterBorder").CornerRadius.Should().Be(palette);
 			NamedBorder(check, "NormalRectangle").CornerRadius.Should().Be(palette);
@@ -195,39 +202,28 @@ public sealed class ThemeTests
 		}
 	}
 
-	// The pen editor's tabs and table, read back off realised controls in each state the window reaches:
+	// A list's rows in each state the export window's pen list reaches, read back off realised rows:
 	// docs/architecture/ui-theme.md, How the retint reaches a control.
 	[AvaloniaTheory]
-	[InlineData(AppThemeVariant.Light, "#000000", "#818594", "#EBECF0")]
-	[InlineData(AppThemeVariant.Dark, "#DFE1E5", "#6F737A", "#393B40")]
-	public void EveryTabAndListSurface_PaintsItselfFromThePalette(
-		AppThemeVariant theme, string text, string secondaryText, string border)
+	[InlineData(AppThemeVariant.Light, "#000000")]
+	[InlineData(AppThemeVariant.Dark, "#DFE1E5")]
+	public void EveryListSurface_PaintsItselfFromThePalette(AppThemeVariant theme, string text)
 	{
 		using var scope = ThemeProbe.ApplyVariant(App.VariantFor(theme));
 		Dispatcher.UIThread.RunJobs();
 
-		var selectedTab = new TabItem { Header = "selected", Content = new TextBlock { Text = "content" } };
-		var otherTab = new TabItem { Header = "other" };
-		var tabs = new TabControl { ItemsSource = new[] { selectedTab, otherTab } };
 		var list = new ListBox { ItemsSource = new[] { "selected", "hovered", "pressed" }, SelectedIndex = 0 };
-		var window = new Window { Content = Stacked(tabs, list) };
+		var window = new Window { Content = Stacked(list) };
 		try
 		{
 			window.Show();
 			Dispatcher.UIThread.RunJobs();
 			var selectedRow = list.ContainerFromIndex(0).Should().BeOfType<ListBoxItem>().Subject;
 
-			ColourOf(TextOf(selectedTab)).Should().Be(Color.Parse(text), "the selected tab's caption");
-			ColourOf(TextOf(otherTab)).Should().Be(Color.Parse(secondaryText), "a tab at rest");
-			ColourOf(NamedBorder(selectedTab, "PART_RootBorder").BorderBrush).Should().Be(Color.Parse(Accent));
-			ColourOf(NamedBorder(tabs, "PART_BorderSeparator").Background).Should().Be(Color.Parse(border));
 			ColourOf(TextOf(selectedRow)).Should().Be(Color.Parse(text), "the selected row");
 			var selection = selectedRow.Background.Should().BeAssignableTo<ISolidColorBrush>().Subject;
 			selection.Color.Should().Be(Color.Parse(Accent));
 			selection.Opacity.Should().Be(0.25);
-
-			PointAt(window, otherTab);
-			ColourOf(TextOf(otherTab)).Should().Be(Color.Parse(text), "a hovered tab");
 
 			PointAt(window, list.ContainerFromIndex(1)!);
 			ColourOf(TextOf(list.ContainerFromIndex(1)!)).Should().Be(Color.Parse(text), "a hovered row");
@@ -238,6 +234,44 @@ public sealed class ThemeTests
 			Dispatcher.UIThread.RunJobs();
 			ColourOf(TextOf(pressedRow)).Should().Be(Color.Parse(text), "a pressed row");
 			window.MouseUp(pressedAt, MouseButton.Left);
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	// The pen list's header, separator line, selected row and cell text, at rest and with the selection hovered.
+	[AvaloniaTheory]
+	[InlineData(AppThemeVariant.Light, "#000000", "#818594", "#EBECF0")]
+	[InlineData(AppThemeVariant.Dark, "#DFE1E5", "#6F737A", "#393B40")]
+	public void EveryDataGridSurface_PaintsItselfFromThePalette(
+		AppThemeVariant theme, string text, string header, string line)
+	{
+		using var scope = ThemeProbe.ApplyVariant(App.VariantFor(theme));
+		Dispatcher.UIThread.RunJobs();
+
+		var grid = GridOfTwoRows();
+		var window = new Window { Content = grid, Width = 400, Height = 300 };
+		try
+		{
+			window.Show();
+			Dispatcher.UIThread.RunJobs();
+			var columnHeader = grid.GetVisualDescendants().OfType<DataGridColumnHeader>()
+				.First(candidate => Equals(candidate.Content, "header"));
+			var selectedRow = grid.GetVisualDescendants().OfType<DataGridRow>().Single(row => row.Index == 0);
+
+			ColourOf(columnHeader.Foreground).Should().Be(Color.Parse(header));
+			var separator = grid.GetVisualDescendants()
+				.OfType<Rectangle>()
+				.Single(rectangle => rectangle.Name == "PART_ColumnHeadersAndRowsSeparator");
+			ColourOf(separator.Fill).Should().Be(Color.Parse(line));
+			ColourOf(TextOf(selectedRow)).Should().Be(Color.Parse(text), "the cell text");
+			SelectionOf(selectedRow).Should().Be((Color.Parse(Accent), 0.25), "a selected row");
+
+			PointAt(window, selectedRow);
+			selectedRow.Classes.Should().Contain(":pointerover", "the pointer rests on the selected row");
+			SelectionOf(selectedRow).Should().Be((Color.Parse(Accent), 0.25), "a hovered selected row");
 		}
 		finally
 		{
@@ -339,6 +373,58 @@ public sealed class ThemeTests
 		}
 	}
 
+	// The groups pane's confirm button at rest, hovered, pressed and disabled.
+	[AvaloniaTheory]
+	[InlineData(AppThemeVariant.Light)]
+	[InlineData(AppThemeVariant.Dark)]
+	public void TheDestructiveButton_PaintsItselfFromThePalette(AppThemeVariant theme)
+	{
+		const double MinimumContrast = 4.5;
+		var caption = Color.Parse("#FFFFFF");
+		using var scope = ThemeProbe.ApplyVariant(App.VariantFor(theme));
+		Dispatcher.UIThread.RunJobs();
+
+		var button = new Button { Classes = { "destructive" }, Content = "Delete" };
+		var dimButton = new Button { Classes = { "destructive" }, Content = "Delete", IsEnabled = false };
+		var dimDefault = new Button { Content = "Delete", IsEnabled = false };
+		var window = new Window { Content = Stacked(button, dimButton, dimDefault) };
+		try
+		{
+			window.Show();
+			Dispatcher.UIThread.RunJobs();
+
+			AssertSurface(button, "#C7303F", "at rest");
+
+			var center = PointAt(window, button);
+			button.Classes.Should().Contain(":pointerover");
+			AssertSurface(button, "#B02A38", "hovered");
+
+			window.MouseDown(center, MouseButton.Left);
+			Dispatcher.UIThread.RunJobs();
+			button.Classes.Should().Contain(":pressed");
+			AssertSurface(button, "#992431", "pressed");
+			window.MouseUp(center, MouseButton.Left);
+			Dispatcher.UIThread.RunJobs();
+
+			var dimSurface = SurfaceOf(dimButton);
+			var defaultSurface = SurfaceOf(dimDefault);
+			ColourOf(dimSurface.Background).Should().Be(ColourOf(defaultSurface.Background), "a disabled button");
+			ColourOf(dimSurface.Foreground).Should().Be(ColourOf(defaultSurface.Foreground), "a disabled caption");
+		}
+		finally
+		{
+			window.Close();
+		}
+
+		void AssertSurface(Button target, string background, string state)
+		{
+			var surface = SurfaceOf(target);
+			ColourOf(surface.Background).Should().Be(Color.Parse(background), state);
+			ColourOf(surface.Foreground).Should().Be(caption, state);
+			ContrastOf(caption, Color.Parse(background)).Should().BeGreaterThanOrEqualTo(MinimumContrast, state);
+		}
+	}
+
 	// The pen form's colour picker with its flyout open on the spectrum and on the components tab.
 	[AvaloniaTheory]
 	[InlineData(AppThemeVariant.Light, "#000000", "#F7F8FA", "#EBECF0", "#FFFFFF")]
@@ -396,6 +482,8 @@ public sealed class ThemeTests
 	[InlineData("ListBoxItemSelectedBackground")]
 	[InlineData("ListBoxItemSelectedPointeroverBackground")]
 	[InlineData("ComboBoxItemSelectedBackground")]
+	[InlineData("DataGridRowSelectedBackground")]
+	[InlineData("DataGridRowSelectedPointeroverBackground")]
 	public void APaletteKeyCarryingOpacity_KeepsItUnderBothVariants(string key)
 	{
 		const double Opacity = 0.25;
@@ -486,6 +574,55 @@ public sealed class ThemeTests
 		};
 	}
 
+	private static DataGrid GridOfTwoRows()
+	{
+		var grid = new DataGrid
+		{
+			ItemsSource = new[] { new GridRow("first"), new GridRow("second") },
+			IsReadOnly = true,
+			HeadersVisibility = DataGridHeadersVisibility.Column
+		};
+		grid.Columns.Add(new DataGridTextColumn { Header = "header", Binding = new Binding(nameof(GridRow.Text)) });
+		grid.SelectedIndex = 0;
+
+		return grid;
+	}
+
+	private static (Color Colour, double Opacity) SelectionOf(DataGridRow row)
+	{
+		var brush = NamedBorder(row, "BackgroundBorder").Background.Should().BeAssignableTo<ISolidColorBrush>()
+			.Subject;
+
+		return (brush.Color, brush.Opacity);
+	}
+
+	private static ContentPresenter SurfaceOf(Button button)
+	{
+		return button.GetVisualDescendants().OfType<ContentPresenter>()
+			.Single(presenter => presenter.Name == "PART_ContentPresenter");
+	}
+
+	// WCAG 2 contrast ratio from relative luminance.
+	private static double ContrastOf(Color first, Color second)
+	{
+		var lighter = Math.Max(LuminanceOf(first), LuminanceOf(second));
+		var darker = Math.Min(LuminanceOf(first), LuminanceOf(second));
+
+		return (lighter + 0.05) / (darker + 0.05);
+	}
+
+	private static double LuminanceOf(Color colour)
+	{
+		return (0.2126 * LinearOf(colour.R)) + (0.7152 * LinearOf(colour.G)) + (0.0722 * LinearOf(colour.B));
+	}
+
+	private static double LinearOf(byte channel)
+	{
+		var value = channel / 255.0;
+
+		return value <= 0.03928 ? value / 12.92 : Math.Pow((value + 0.055) / 1.055, 2.4);
+	}
+
 	private static Border NamedBorder(Control control, string name)
 	{
 		return control.GetVisualDescendants().OfType<Border>().Single(border => border.Name == name);
@@ -569,4 +706,6 @@ public sealed class ThemeTests
 	{
 		return brush.Should().BeAssignableTo<ISolidColorBrush>().Subject.Color;
 	}
+
+	private sealed record GridRow(string Text);
 }

@@ -66,7 +66,7 @@ public sealed class MainWindowViewModelTests
 
 		using var penEditor = requests.Should().ContainSingle().Which;
 		penCatalogueEditor.Calls.Should().Equal(new FakeEditorCall.Read());
-		penEditor.Rows.Select(row => row.Pen).Should().Equal(pen);
+		PenEditorFixture.RowsOf(penEditor).Select(row => row.Pen).Should().Equal(pen);
 		penEditor.Groups.Groups.Select(group => group.Group.Name).Should().Equal("Chamber");
 		viewModel.MessagePanel.Entries.Should().BeEmpty();
 	}
@@ -120,7 +120,7 @@ public sealed class MainWindowViewModelTests
 		var pensQueriesBefore = stand.Provider.CatalogueQueryCount;
 		var viewModel = stand.ViewModel;
 		using var penEditor = await OpenPenEditorAsync(viewModel);
-		penEditor.SelectedRow = penEditor.Rows.Single();
+		penEditor.SelectedRow = PenEditorFixture.RowsOf(penEditor).Single();
 		var form = penEditor.SelectedForm!;
 
 		form.Name = "Chamber pressure";

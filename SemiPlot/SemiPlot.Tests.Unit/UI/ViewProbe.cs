@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -43,6 +44,22 @@ internal static class ViewProbe
 		return root.GetVisualDescendants().OfType<T>();
 	}
 
+	public static DataGridColumnHeader HeaderOf(DataGrid grid, string header)
+	{
+		return grid.GetVisualDescendants().OfType<DataGridColumnHeader>()
+			.Single(candidate => Equals(candidate.Content, header));
+	}
+
+	/// <summary>The headers presenter's width less the vertical scroll bar's while that bar is visible.</summary>
+	public static double ViewportOf(DataGrid grid)
+	{
+		var scrollBar = Descendant<ScrollBar>(grid, "PART_VerticalScrollbar");
+		var scrollBarWidth = scrollBar.IsVisible ? scrollBar.Bounds.Width : 0;
+
+		return Descendant<DataGridColumnHeadersPresenter>(grid, "PART_ColumnHeadersPresenter").Bounds.Width
+			- scrollBarWidth;
+	}
+
 	public static Color? ColourOf(IBrush? brush)
 	{
 		return (brush as ISolidColorBrush)?.Color;
@@ -68,5 +85,16 @@ internal static class ViewProbe
 	public static double BottomOf(Control control, Visual ancestor)
 	{
 		return TopOf(control, ancestor) + control.Bounds.Height;
+	}
+
+	/// <summary>The control's desired width with no constraint, rounded up, and the window laid out again.</summary>
+	public static double UnconstrainedWidthOf(Window window, Control control)
+	{
+		control.Measure(Size.Infinity);
+		var width = Math.Ceiling(control.DesiredSize.Width);
+		control.InvalidateMeasure();
+		window.UpdateLayout();
+
+		return width;
 	}
 }

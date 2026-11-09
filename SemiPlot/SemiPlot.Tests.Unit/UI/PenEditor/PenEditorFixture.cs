@@ -1,5 +1,6 @@
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Trends;
+using SemiPlot.UI.PenEditor;
 
 namespace SemiPlot.Tests.Unit.UI.PenEditor;
 
@@ -21,6 +22,9 @@ internal static class PenEditorFixture
 
 	public static readonly StoredGroup Spare = new(5, "Spare", []);
 
+	/// <summary>The catalogue the realised-window tests open the editor over.</summary>
+	public static readonly PenCatalogue ViewCatalogue = new([Argon, Pressure, Power], [Chamber, Spare]);
+
 	/// <summary>A pen named by its number, hidden on start, with no unit, mask or scale.</summary>
 	public static StoredPen NumberedPen(int id)
 	{
@@ -31,5 +35,16 @@ internal static class PenEditorFixture
 	public static List<StoredPen> PensNumbered(int count)
 	{
 		return [.. Enumerable.Range(1, count).Select(NumberedPen)];
+	}
+
+	public static List<StoredGroup> GroupsNumbered(int count)
+	{
+		return [.. Enumerable.Range(1, count).Select(id => new StoredGroup(id, $"Group {id}", []))];
+	}
+
+	/// <summary>The rows of the editor's pen list in the order its view shows them.</summary>
+	public static PenRowViewModel[] RowsOf(PenEditorViewModel editor)
+	{
+		return [.. editor.PenRows.Cast<PenRowViewModel>()];
 	}
 }

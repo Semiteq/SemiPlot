@@ -11,7 +11,7 @@ using SemiPlot.UI.Messages;
 namespace SemiPlot.UI.PenEditor;
 
 /// <summary>
-/// The groups tab's one route to the editor, shared by the tab, its groups and their membership entries.
+/// The groups pane's one route to the editor, shared by the pane, its groups and their membership entries.
 /// </summary>
 internal sealed class PenGroupWriter(
 	IPenCatalogueEditor penCatalogueEditor,
@@ -26,7 +26,7 @@ internal sealed class PenGroupWriter(
 	private readonly ILogger _logger = logger;
 	private readonly Action<IReadOnlyCollection<int>> _showGroupsOn = showGroupsOn;
 
-	/// <summary>The title of the last failed tab write, until a later tab write succeeds.</summary>
+	/// <summary>The title of the last failed pane write, until a later pane write succeeds.</summary>
 	public string Refusal
 	{
 		get;
@@ -47,16 +47,11 @@ internal sealed class PenGroupWriter(
 		return result;
 	}
 
-	public void ReportFailure(IResultBase failed)
-	{
-		_messagePanel.ReportFailure(failed, _logger);
-	}
-
-	/// <summary>Shows a failed tab write on the tab's message line and in the message panel.</summary>
+	/// <summary>Shows a failed pane write on the pane's message line and in the message panel.</summary>
 	public void RefuseWrite(IResultBase failed)
 	{
 		Refusal = ArchiveFailureMapper.Map(failed.Errors[0]).Title;
-		ReportFailure(failed);
+		_messagePanel.ReportFailure(failed, _logger);
 	}
 
 	/// <summary>Renames the groups text of the rows of these pens after a group write the editor has made.</summary>

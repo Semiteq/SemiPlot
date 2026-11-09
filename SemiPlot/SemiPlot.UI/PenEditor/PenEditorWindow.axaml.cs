@@ -16,8 +16,24 @@ namespace SemiPlot.UI.PenEditor;
 /// </summary>
 public partial class PenEditorWindow : Window
 {
-	/// <summary>One height for every table row, so the virtualised list estimates its extent exactly.</summary>
+	/// <summary>One height for a pen, group and membership row, so each virtualised list estimates its extent.</summary>
 	public const double RowHeight = 28;
+
+	public const double PenPaneWidth = 420;
+
+	public const double GroupsPaneWidth = 340;
+
+	public const double FilterBoxWidth = 280;
+
+	public const double DesignedWidth = 1440;
+
+	/// <summary>The pen list's first three columns beside both panes at their widths.</summary>
+	public const double MinimumWidth = 1272;
+
+	public const double DesignedHeight = 720;
+
+	/// <summary>Every fixed row of the window with four rows showing in each list.</summary>
+	public const double MinimumHeight = 536;
 
 	public static readonly IReadOnlyList<PenLineStyle> LineStyles = Enum.GetValues<PenLineStyle>();
 
@@ -40,6 +56,12 @@ public partial class PenEditorWindow : Window
 		AddHandler(GotFocusEvent, OnFieldGotFocus);
 		AddHandler(LostFocusEvent, OnFieldLostFocus);
 		AddHandler(KeyDownEvent, OnFieldKeyDown, RoutingStrategies.Tunnel);
+	}
+
+	/// <summary>The designed width where the owner's working area holds it, never below the minimum.</summary>
+	public static double OpeningWidthFor(double workingAreaWidth)
+	{
+		return Math.Max(MinimumWidth, Math.Min(DesignedWidth, workingAreaWidth));
 	}
 
 	public static PenField? GetField(TextBox textBox)
@@ -65,12 +87,10 @@ public partial class PenEditorWindow : Window
 		_scaleFocus = FormScale.GetObservable(IsKeyboardFocusWithinProperty)
 			.Subscribe(OnScaleFocusWithinChanged);
 
-		_colorFlyout = FormColorPicker.GetVisualDescendants().OfType<DropDownButton>().FirstOrDefault()?.Flyout;
-		if (_colorFlyout is not null)
-		{
-			_colorFlyout.Opened += OnColorFlyoutOpened;
-			_colorFlyout.Closed += OnColorFlyoutClosed;
-		}
+		FormColorPicker.TemplateApplied += OnColorPickerTemplateApplied;
+		AttachColorFlyout();
+
+		GroupRename.DataContextChanged += OnGroupRenameDataContextChanged;
 	}
 
 	protected override void OnUnloaded(RoutedEventArgs e)
@@ -80,12 +100,10 @@ public partial class PenEditorWindow : Window
 		_scaleFocus?.Dispose();
 		_scaleFocus = null;
 
-		if (_colorFlyout is not null)
-		{
-			_colorFlyout.Opened -= OnColorFlyoutOpened;
-			_colorFlyout.Closed -= OnColorFlyoutClosed;
-			_colorFlyout = null;
-		}
+		FormColorPicker.TemplateApplied -= OnColorPickerTemplateApplied;
+		DetachColorFlyout();
+
+		GroupRename.DataContextChanged -= OnGroupRenameDataContextChanged;
 
 		base.OnUnloaded(e);
 	}
@@ -220,6 +238,31 @@ public partial class PenEditorWindow : Window
 		}
 	}
 
+	private void OnPenListSelectionChanged(object? sender, SelectionChangedEventArgs e)
+	{
+		if (DataContext is PenEditorViewModel editor)
+		{
+			editor.SelectedRow = PenList.SelectedItem as PenRowViewModel;
+		}
+	}
+
+	// The focus waits for the block's layout and for the row menu, which hands the focus back to its button as it closes.
+	private void OnGroupRenameDataContextChanged(object? sender, EventArgs e)
+	{
+		if (GroupRename.DataContext is PenGroupViewModel)
+		{
+			Dispatcher.UIThread.Post(FocusRename, DispatcherPriority.Background);
+		}
+	}
+
+	private void FocusRename()
+	{
+		if (GroupRename.Focus())
+		{
+			GroupRename.SelectAll();
+		}
+	}
+
 	private async void OnLineStyleSelectionChanged(object? sender, SelectionChangedEventArgs e)
 	{
 		try
@@ -257,6 +300,34 @@ public partial class PenEditorWindow : Window
 		catch (Exception exception)
 		{
 			ReportFailure(exception);
+		}
+	}
+
+	// The picker applies its template only once the form shows, after the window has loaded.
+	private void OnColorPickerTemplateApplied(object? sender, TemplateAppliedEventArgs e)
+	{
+		AttachColorFlyout();
+	}
+
+	private void AttachColorFlyout()
+	{
+		DetachColorFlyout();
+
+		_colorFlyout = FormColorPicker.GetVisualDescendants().OfType<DropDownButton>().FirstOrDefault()?.Flyout;
+		if (_colorFlyout is not null)
+		{
+			_colorFlyout.Opened += OnColorFlyoutOpened;
+			_colorFlyout.Closed += OnColorFlyoutClosed;
+		}
+	}
+
+	private void DetachColorFlyout()
+	{
+		if (_colorFlyout is not null)
+		{
+			_colorFlyout.Opened -= OnColorFlyoutOpened;
+			_colorFlyout.Closed -= OnColorFlyoutClosed;
+			_colorFlyout = null;
 		}
 	}
 

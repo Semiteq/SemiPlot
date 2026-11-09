@@ -3,7 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:chart="clr-namespace:SemiPlot.UI.Chart"
-             xmlns:navigation="clr-namespace:SemiPlot.UI.Navigation"
+             xmlns:input="clr-namespace:SemiPlot.UI.Input"
              xmlns:text="clr-namespace:SemiPlot.UI.Localization"
              mc:Ignorable="d"
              d:DesignWidth="360"
@@ -21,7 +21,7 @@
 
     <UserControl.Styles>
         <Style Selector="CalendarDatePicker /template/ TextBox#PART_TextBox">
-            <Setter Property="navigation:TimeFieldInput.Layout" Value="Date" />
+            <Setter Property="input:FormattedFieldInput.Layout" Value="Date" />
         </Style>
     </UserControl.Styles>
 
@@ -38,7 +38,7 @@
         <TextBox Grid.Row="0"
                  Grid.Column="1"
                  Name="TimeWindowStartTime"
-                 navigation:TimeFieldInput.Layout="ClockTime"
+                 input:FormattedFieldInput.Layout="ClockTime"
                  Width="110"
                  Classes.invalid="{Binding Form.IsStartTimeInvalid}"
                  Text="{Binding Form.StartTimeText}">
@@ -68,7 +68,7 @@
         <TextBox Grid.Row="1"
                  Grid.Column="1"
                  Name="TimeWindowEndTime"
-                 navigation:TimeFieldInput.Layout="ClockTime"
+                 input:FormattedFieldInput.Layout="ClockTime"
                  Width="110"
                  Classes.invalid="{Binding Form.IsEndTimeInvalid}"
                  Text="{Binding Form.EndTimeText}">
@@ -98,7 +98,7 @@
         <TextBox Grid.Row="2"
                  Grid.Column="1"
                  Name="TimeWindowWidth"
-                 navigation:TimeFieldInput.Layout="Duration"
+                 input:FormattedFieldInput.Layout="Duration"
                  Width="110"
                  Classes.invalid="{Binding Form.IsWidthInvalid}"
                  Text="{Binding Form.WidthText}">

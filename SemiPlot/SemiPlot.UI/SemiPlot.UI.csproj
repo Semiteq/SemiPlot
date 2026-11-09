@@ -20,6 +20,7 @@
   <ItemGroup>
     <PackageReference Include="Avalonia"/>
     <PackageReference Include="Avalonia.Controls.ColorPicker"/>
+    <PackageReference Include="Avalonia.Controls.DataGrid"/>
     <PackageReference Include="Avalonia.Desktop"/>
     <PackageReference Include="Avalonia.HarfBuzz"/>
     <PackageReference Include="Avalonia.Win32"/>
@@ -28,6 +29,7 @@
     <PackageReference Include="ScottPlot.Avalonia"/>
     <PackageReference Include="Semi.Avalonia"/>
     <PackageReference Include="Semi.Avalonia.ColorPicker"/>
+    <PackageReference Include="Semi.Avalonia.DataGrid"/>
     <PackageReference Include="Microsoft.CodeAnalysis.ResxSourceGenerator" PrivateAssets="all"/>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection"/>
     <PackageReference Include="Microsoft.Extensions.Logging"/>

@@ -177,7 +177,7 @@ Semi owns the controls; these twenty keys are ours, and each exists in both vari
 | `AppSecondaryForegroundBrush` | Minimap end labels, hover line and hover time, chart crosshair, plot axis furniture, the chart's empty-catalogue message, the sidebar group header caption, its fold chevron and a row's unit, the axis scale panel's unit, the message panel's empty text and an entry's remedy, repeat count and time, the pen editor's groups cell, the pen pane's empty hint, its title's id and its mask preview, the groups pane's subtitle, a group row's pen count and "..." glyph, and the delete confirmation's note | `#818594` | `#6F737A` |
 | `AppAccentBrush` | Minimap window highlight border, the active sidebar row's left bar, a group header's fold chevron under the pointer (`overview.md#the-sidebar-fold`) | `#3574F0` | `#3574F0` |
 | `AppAccentFillBrush` | Minimap window highlight fill, the active sidebar row's background | `#3574F0` at 0.25 opacity | `#3574F0` at 0.25 opacity |
-| `AppSeverityErrorBrush` | The message panel's dot on an `Error` entry; a form's invalid field border, the pen form's warning glyph and a form's message line | `#DB3B4B` | `#E55765` |
+| `AppSeverityErrorBrush` | The message panel's dot on an `Error` entry; a form's invalid field border, the warning glyph of the pen form and the axis scale panel, and a form's message line | `#DB3B4B` | `#E55765` |
 | `AppSeverityWarningBrush` | The same dot on a `Warning` entry | `#E3AE4D` | `#F2C55C` |
 | `AppSeverityInfoBrush` | The same dot on an `Info` entry | `#3574F0` | `#3574F0` |
 | `AppConnectionOkBrush` | The status bar's connection indicator, `connection-ok` | `#208A3C` | `#5FAD65` |
@@ -220,12 +220,17 @@ colour and text, never size:
   `Classes.invalid` to its `Is*Valid` flag, and `Styles/Forms.axaml` paints that border with
   `AppSeverityErrorBrush`. The glyph is a 16 px `PathIcon` of `WarningGeometry` (`Styles/Icons.axaml`) in
   `AppSeverityErrorBrush`, 8 px from the box's right edge, set as the box's `InnerRightContent` through a
-  `<Template>` setter, so every invalid box builds its own icon. The pen editor's form carries the glyph
-  through its window-scoped style `Panel#PenForm TextBox.invalid`; another form adopts it when it is next
-  touched, and until then marks an invalid field by the border alone.
+  `<Template>` setter, so every invalid box builds its own icon. The setter is the one style
+  `.invalid-glyph TextBox.invalid` in `Styles/Forms.axaml`: a form adopts the glyph by putting the class
+  `invalid-glyph` on the panel that holds its fields. The pen editor's form (`Panel#PenForm`) and the axis
+  scale panel's bounds (`Grid#AxisScaleBounds`) carry it; another form adopts it when it is next touched, and
+  until then marks an invalid field by the border alone.
   `PenFormPaneViewTests.AnInvalidField_ShowsTheWarningGlyphInsideTheBoxWithoutResizing` gates two boxes
   invalid at once, each with its own visible glyph inside its bounds and nothing resized, and
   `AValidField_ShowsNoWarningGlyph` the valid state.
+  `AxisScalePanelLayoutTests.AnInvalidBound_ShowsTheWarningGlyphInsideTheBoxWithoutResizing`,
+  `AValidBound_ShowsNoWarningGlyph` and `ABoundCorrected_DropsTheWarningGlyph` gate the panel's two bounds the
+  same way.
 - One message line sits left of the buttons, or on its own full-width row above them (the export window), or
   as the last row of a form (the time window panel, and the axis scale panel below its buttons). It is a
   `TextBlock.form-message`: two lines of 20 px
@@ -364,28 +369,52 @@ languages before it ships.
 
 `Chart/AxisScalePanel` is a `Flyout` form under the same rule. The panel is 280 px wide, with rows that exist
 in every state: the header with the pen name and its unit right after it, the two `TextBox` rows of the
-bounds grid, the Logarithmic scale `CheckBox` row, the Autoscale toggle and the Restore initial scale button
-one per row across the full width, and the reserved message line (`form-message`, 40 px) last, so its empty
-band reads as the bottom margin. Each bound is a 140 px `TextBox` aligned left in the field column, on
-Semi's default fill. The checkbox spans the panel from the left edge under the labels. The Autoscale toggle
-keeps Semi's checked look, the one the navigation bar's Sticky and Delta toggles show. The panel has no apply
-button. An invalid or empty field takes the `invalid` border, and a refused Logarithmic scale click leaves
-the box as it was and fills the message line, so nothing appears or disappears.
+bounds grid, the Scale type row (the label `PenFormScaleTypeLabel` in the label column and the Logarithmic
+`CheckBox` in the field column), the Autoscale toggle and the Restore initial scale button one per row across
+the full width, and the reserved message line (`form-message`, 40 px) last, so its empty band reads as the
+bottom margin. Each bound is a 140 px `TextBox` aligned left in the field column, on Semi's default fill.
+
+The Logarithmic box starts at the fields' left edge. The bounds grid and the Scale type grid `AxisScaleType`
+each name their `Auto` label column `SharedSizeGroup="AxisScaleLabel"` under the outer grid's
+`Grid.IsSharedSizeScope`, so the column is the widest of the three labels in each language and the form has
+one label edge and one field edge (`desktop-ui` Alignment). Both grids use a 14 px `ColumnSpacing`. The box
+keeps its own grid outside `AxisScaleBounds`, so focus onto it ends the pair's edit
+(`trend-interaction.md#the-axis-scale-panel`). The box is `HorizontalAlignment="Left"`, so only the box and
+its text toggle the flag, and a click on the label or on the empty right part of the row gives the panel the
+keyboard; `AxisScalePanelLayoutTests.AClickOnTheScaleTypeLabelOrBesideTheBox_LeavesTheFlagAndGivesThePanelTheKeyboard`
+gates both clicks. `AxisScalePanelLayoutTests.TheLogarithmicBox_StartsAtTheFieldEdge_UnderTheScaleTypeLabel` gates
+the edge and the shared column in both cultures, and `TheScaleTypeRow_FitsThePanelInInter` the fit in Inter: the
+label column, the gap and the 140 px field leave at least 24 px of the panel free, and the label column, the
+gap and the box fit the panel.
+
+The Autoscale toggle keeps Semi's checked look, the one the navigation bar's Sticky and Delta toggles show.
+The panel has no apply button. An invalid or empty field takes the `invalid` border and the warning glyph,
+and a refused Logarithmic click leaves the box as it was and fills the message line, so nothing appears or
+disappears.
 
 Measured on 2026-10-16 with Skia and HarfBuzz, in the real theme at 14 px on the Windows machine fonts, off a
 realised panel with no view model, so the header row is empty:
 
 | | English | Russian |
 | --- | --- | --- |
-| Panel | 280 x 264 px | 280 x 264 px |
-| Field column start, field width | 82.0 px, 140 px | 88.0 px, 140 px |
-| Logarithmic scale checkbox | 141 x 19 px, ends 141.0 px from the left | 199 x 19 px, ends 199.0 px from the left |
+| Panel, before the Scale type row | 280 x 264 px | 280 x 264 px |
+| Field column start, field width, before the Scale type row | 82.0 px, 140 px | 88.0 px, 140 px |
+| Logarithmic scale checkbox, before the Scale type row | 141 x 19 px, ends 141.0 px from the left | 199 x 19 px, ends 199.0 px from the left |
 | Button text in a 280 x 32 px button, Autoscale and Restore initial scale | 69.1 and 135.8 px | 99.1 and 145.8 px |
 | `AxisScaleBoundInvalid` | 188.6 px, one line | 211.0 px, one line |
 | `AxisScaleBoundsRequired` | 125.2 px, one line | 152.7 px, one line |
 | `AxisScaleMinimumBelowMaximum` | 226.2 and 66.5 px, two lines | 228.3 and 78.6 px, two lines |
 | `ScaleLogMinimumPositive` | 255.5 and 73.8 px, two lines | 283.2 and 185.4 px, two lines (the first with its trailing space) |
 | Panel size with each message shown | unchanged | unchanged |
+
+The three rows marked "before the Scale type row" predate the current layout; the current row, measured in
+Inter at 14 px through Skia by `TheScaleTypeRow_FitsThePanelInInter` (2026-11-03):
+
+| Inter | English | Russian |
+| --- | --- | --- |
+| Labels Maximum, Minimum, Scale type | 63.7, 59.8, 69.6 px | 72.8, 66.1, 75.0 px |
+| Label column | 69.6 px | 75.0 px |
+| Logarithmic box, its 24.0 px chrome included | 101.9 px | 149.2 px |
 
 The submenu header with the pen "Damper valve 01" in mTorr, measured at 360 px: 181.3 px in a 270 px item in
 English, 215.1 px in a 304 px item in Russian.

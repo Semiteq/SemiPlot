@@ -524,7 +524,7 @@ public sealed class PenListViewTests : IDisposable
 			var widths = list.Columns
 				.Select((column, index) =>
 				{
-					var headerWidth = HeaderWidthInInter(window, HeaderOf(list, (string)column.Header!), semiBold);
+					var headerWidth = ContentWidthInInter(window, HeaderOf(list, (string)column.Header!), semiBold);
 
 					return HeaderMeasuredColumns.GetIsFill(column) ? headerWidth : Math.Max(declaredWidths[index], headerWidth);
 				})

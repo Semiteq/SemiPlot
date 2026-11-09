@@ -165,9 +165,6 @@
   <data name="AxisScaleMinimumBelowMaximum" xml:space="preserve">
     <value>The minimum must be below the maximum</value>
   </data>
-  <data name="AxisScaleLogarithmic" xml:space="preserve">
-    <value>Logarithmic scale</value>
-  </data>
   <data name="ScaleLogMinimumPositive" xml:space="preserve">
     <value>A logarithmic scale needs a minimum above zero</value>
   </data>

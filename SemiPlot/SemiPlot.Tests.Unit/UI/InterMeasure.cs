@@ -21,12 +21,12 @@ internal static class InterMeasure
 		return new SKFont(typeface, (float)fontSize) { LinearMetrics = true, Subpixel = true };
 	}
 
-	/// <summary>The header's width with its text measured in Inter, its padding and sort slot as realised.</summary>
-	public static double HeaderWidthInInter(Window window, DataGridColumnHeader header, SKTypeface semiBold)
+	/// <summary>The control's width with its text content measured in Inter, its chrome as realised.</summary>
+	public static double ContentWidthInInter(Window window, ContentControl control, SKTypeface typeface)
 	{
-		var text = ViewProbe.Descendants<TextBlock>(header).Single(block => Equals(block.Text, header.Content));
-		var chrome = ViewProbe.UnconstrainedWidthOf(window, header) - ViewProbe.UnconstrainedWidthOf(window, text);
-		using var font = InterFont(semiBold, header.FontSize);
+		var text = ViewProbe.Descendants<TextBlock>(control).Single(block => Equals(block.Text, control.Content));
+		var chrome = ViewProbe.UnconstrainedWidthOf(window, control) - ViewProbe.UnconstrainedWidthOf(window, text);
+		using var font = InterFont(typeface, text.FontSize);
 
 		return chrome + font.MeasureText(text.Text);
 	}

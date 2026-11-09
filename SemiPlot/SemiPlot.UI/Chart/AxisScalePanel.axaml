@@ -19,7 +19,8 @@
     </UserControl.KeyBindings>
 
     <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto"
-          RowSpacing="10">
+          RowSpacing="10"
+          Grid.IsSharedSizeScope="True">
 
         <Grid Grid.Row="0"
               ColumnDefinitions="Auto,*"
@@ -40,10 +41,15 @@
 
         <Grid Grid.Row="1"
               Name="AxisScaleBounds"
+              Classes="invalid-glyph"
               RowDefinitions="Auto,Auto"
-              ColumnDefinitions="Auto,*"
               ColumnSpacing="14"
               RowSpacing="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"
+                                  SharedSizeGroup="AxisScaleLabel" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
 
             <TextBlock Grid.Row="0"
                        Grid.Column="0"
@@ -83,11 +89,27 @@
 
         </Grid>
 
-        <CheckBox Grid.Row="2"
-                  Name="AxisScaleLogarithmic"
-                  Content="{x:Static text:Resources.AxisScaleLogarithmic}"
-                  IsChecked="{Binding IsLogarithmic, Mode=OneWay}"
-                  Command="{Binding ToggleLogarithmicCommand}" />
+        <Grid Grid.Row="2"
+              Name="AxisScaleType"
+              ColumnSpacing="14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"
+                                  SharedSizeGroup="AxisScaleLabel" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0"
+                       Name="AxisScaleTypeLabel"
+                       VerticalAlignment="Center"
+                       Text="{x:Static text:Resources.PenFormScaleTypeLabel}" />
+
+            <CheckBox Grid.Column="1"
+                      Name="AxisScaleLogarithmic"
+                      HorizontalAlignment="Left"
+                      Content="{x:Static text:Resources.PenFormLogarithmic}"
+                      IsChecked="{Binding IsLogarithmic, Mode=OneWay}"
+                      Command="{Binding ToggleLogarithmicCommand}" />
+        </Grid>
 
         <Grid Grid.Row="3"
               RowDefinitions="Auto,Auto"

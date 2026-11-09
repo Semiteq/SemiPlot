@@ -907,7 +907,7 @@ Height of the form, from the AXAML: title 24; three section headers at 16 + 20 +
       grid taking the focus or, when Task 4 added it, through the handler's rows-presenter branch
 - [x] run the key gate under Acceptance Evidence over `-- SemiPlot docs/architecture`: it prints
       nothing; no rewritten paragraph names a deleted or renamed key
-- [ ] move this plan to `docs/plans/completed/` (left to the delivery step)
+- [x] move this plan to `docs/plans/completed/`
 - ⚠️ the docs describe the selection route as built: `SelectedItem` binds one way and
   `OnPenListSelectionChanged` writes every selection change to `SelectedRow`, null included (review fix:
   a sort raises no selection change in 12.0.1, and a Ctrl+click deselect now shows the hint); the refresh refills the

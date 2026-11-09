@@ -575,7 +575,7 @@ before the change and passes after it.
       name or group" / «Фильтр: номер, имя или группа», which reuses the Id column's term in each language
 - [x] if a Task 2 or Task 3 fallback ran, state the built behaviour in the matching `overview.md` sentence
       (the Task 3 no-selection fallback: `overview.md#the-pen-list-filter`, the `MoveCurrentTo` paragraph)
-- [ ] move this plan to `docs/plans/completed/` (left to the delivery step)
+- [x] move this plan to `docs/plans/completed/`
 
 ## Post-Completion
 

@@ -202,45 +202,6 @@ public sealed class ThemeTests
 		}
 	}
 
-	// A list's rows in each state the export window's pen list reaches, read back off realised rows:
-	// docs/architecture/ui-theme.md, How the retint reaches a control.
-	[AvaloniaTheory]
-	[InlineData(AppThemeVariant.Light, "#000000")]
-	[InlineData(AppThemeVariant.Dark, "#DFE1E5")]
-	public void EveryListSurface_PaintsItselfFromThePalette(AppThemeVariant theme, string text)
-	{
-		using var scope = ThemeProbe.ApplyVariant(App.VariantFor(theme));
-		Dispatcher.UIThread.RunJobs();
-
-		var list = new ListBox { ItemsSource = new[] { "selected", "hovered", "pressed" }, SelectedIndex = 0 };
-		var window = new Window { Content = Stacked(list) };
-		try
-		{
-			window.Show();
-			Dispatcher.UIThread.RunJobs();
-			var selectedRow = list.ContainerFromIndex(0).Should().BeOfType<ListBoxItem>().Subject;
-
-			ColourOf(TextOf(selectedRow)).Should().Be(Color.Parse(text), "the selected row");
-			var selection = selectedRow.Background.Should().BeAssignableTo<ISolidColorBrush>().Subject;
-			selection.Color.Should().Be(Color.Parse(Accent));
-			selection.Opacity.Should().Be(0.25);
-
-			PointAt(window, list.ContainerFromIndex(1)!);
-			ColourOf(TextOf(list.ContainerFromIndex(1)!)).Should().Be(Color.Parse(text), "a hovered row");
-
-			var pressedRow = list.ContainerFromIndex(2)!;
-			var pressedAt = PointAt(window, pressedRow);
-			window.MouseDown(pressedAt, MouseButton.Left);
-			Dispatcher.UIThread.RunJobs();
-			ColourOf(TextOf(pressedRow)).Should().Be(Color.Parse(text), "a pressed row");
-			window.MouseUp(pressedAt, MouseButton.Left);
-		}
-		finally
-		{
-			window.Close();
-		}
-	}
-
 	// The pen list's header, separator line, selected row and cell text, at rest and with the selection hovered.
 	[AvaloniaTheory]
 	[InlineData(AppThemeVariant.Light, "#000000", "#818594", "#EBECF0")]
@@ -479,8 +440,6 @@ public sealed class ThemeTests
 
 	[AvaloniaTheory]
 	[InlineData("AppAccentFillBrush")]
-	[InlineData("ListBoxItemSelectedBackground")]
-	[InlineData("ListBoxItemSelectedPointeroverBackground")]
 	[InlineData("ComboBoxItemSelectedBackground")]
 	[InlineData("DataGridRowSelectedBackground")]
 	[InlineData("DataGridRowSelectedPointeroverBackground")]

@@ -32,10 +32,6 @@
     </Window.Resources>
 
     <Window.Styles>
-        <Style Selector="ListBox#ExportPens ListBoxItem">
-            <Setter Property="Padding" Value="6,0" />
-            <Setter Property="MinHeight" Value="0" />
-        </Style>
         <Style Selector="CalendarDatePicker /template/ TextBox#PART_TextBox">
             <Setter Property="input:FormattedFieldInput.Layout" Value="Date" />
         </Style>
@@ -146,32 +142,37 @@
                 </TextBlock.Text>
             </TextBlock>
 
-            <ListBox Grid.Row="5"
-                     Grid.ColumnSpan="2"
-                     Name="ExportPens"
-                     BorderThickness="1"
-                     BorderBrush="{DynamicResource AppBorderBrush}"
-                     MaxHeight="226"
-                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                     ScrollViewer.VerticalScrollBarVisibility="Auto"
-                     ScrollViewer.AllowAutoHide="False"
-                     ItemsSource="{Binding Pens}">
-                <ListBox.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <VirtualizingStackPanel />
-                    </ItemsPanelTemplate>
-                </ListBox.ItemsPanel>
-                <ListBox.ItemTemplate>
-                    <DataTemplate x:DataType="local:ExportPenChoice">
-                        <CheckBox Height="28"
-                                  IsChecked="{Binding IsTicked}"
-                                  ToolTip.Tip="{Binding Label}">
-                            <TextBlock Text="{Binding Label}"
-                                       TextTrimming="CharacterEllipsis" />
-                        </CheckBox>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
+            <Border Grid.Row="5"
+                    Grid.ColumnSpan="2"
+                    Name="ExportPens"
+                    BorderThickness="1"
+                    BorderBrush="{DynamicResource AppBorderBrush}"
+                    MaxHeight="226">
+                <ScrollViewer Name="ExportPensScroller"
+                              HorizontalScrollBarVisibility="Disabled"
+                              AllowAutoHide="False">
+                    <ItemsControl Name="ExportPenItems"
+                                  KeyboardNavigation.TabNavigation="Once"
+                                  ItemsSource="{Binding Pens}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <VirtualizingStackPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="local:ExportPenChoice">
+                                <CheckBox Height="28"
+                                          Margin="6,0"
+                                          IsChecked="{Binding IsTicked}"
+                                          ToolTip.Tip="{Binding Label}">
+                                    <TextBlock Text="{Binding Label}"
+                                               TextTrimming="CharacterEllipsis" />
+                                </CheckBox>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Border>
 
             <TextBlock Grid.Row="6"
                        Grid.ColumnSpan="2"

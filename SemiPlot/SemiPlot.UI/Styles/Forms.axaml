@@ -1,6 +1,7 @@
 <!-- docs/architecture/ui-theme.md#a-form-never-resizes-on-validation -->
 <Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:input="clr-namespace:SemiPlot.UI.Input">
 
     <Style Selector="TextBox.invalid /template/ Border#PART_ContentPresenterBorder">
         <Setter Property="BorderBrush" Value="{DynamicResource AppSeverityErrorBrush}" />
@@ -24,6 +25,10 @@
 
     <Style Selector="CalendarDatePicker.invalid /template/ Border#Background">
         <Setter Property="BorderBrush" Value="{DynamicResource AppSeverityErrorBrush}" />
+    </Style>
+
+    <Style Selector="CalendarDatePicker /template/ TextBox#PART_TextBox">
+        <Setter Property="input:FormattedFieldInput.Layout" Value="Date" />
     </Style>
 
     <Style Selector="TextBlock.form-message">

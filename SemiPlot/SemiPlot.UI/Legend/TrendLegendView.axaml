@@ -25,30 +25,14 @@
         <Style Selector="Border#RowRoot.active">
             <Setter Property="Background" Value="{DynamicResource AppAccentFillBrush}" />
         </Style>
-        <Style Selector="ToggleButton#GroupFoldToggle /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-        </Style>
-        <Style Selector="ToggleButton#GroupFoldToggle:checked /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-        </Style>
-        <Style Selector="ToggleButton#GroupFoldToggle:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-        </Style>
-        <Style Selector="ToggleButton#GroupFoldToggle:pressed /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderBrush" Value="Transparent" />
-        </Style>
-        <Style Selector="ToggleButton#GroupFoldToggle PathIcon">
-            <Setter Property="Data" Value="{StaticResource ChevronUpGeometry}" />
+        <Style Selector="Button#GroupFoldToggle">
+            <Setter Property="Content" Value="{StaticResource ChevronUpGeometry}" />
             <Setter Property="Foreground" Value="{DynamicResource AppSecondaryForegroundBrush}" />
         </Style>
-        <Style Selector="ToggleButton#GroupFoldToggle:checked PathIcon">
-            <Setter Property="Data" Value="{StaticResource ChevronDownGeometry}" />
+        <Style Selector="Button#GroupFoldToggle.folded">
+            <Setter Property="Content" Value="{StaticResource ChevronDownGeometry}" />
         </Style>
-        <Style Selector="ToggleButton#GroupFoldToggle:pointerover PathIcon">
+        <Style Selector="Button#GroupFoldToggle:pointerover">
             <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
         </Style>
 
@@ -177,20 +161,14 @@
                                            ToolTip.Tip="{Binding Name}"
                                            VerticalAlignment="Center" />
 
-                                <ToggleButton Name="GroupFoldToggle"
-                                              Grid.Column="2"
-                                              IsChecked="{Binding IsFolded, Mode=OneWay}"
-                                              Command="{Binding FoldCommand}"
-                                              ToolTip.Tip="{Binding FoldName}"
-                                              AutomationProperties.Name="{Binding FoldName}"
-                                              Width="20"
-                                              Height="16"
-                                              MinHeight="0"
-                                              Padding="0"
-                                              VerticalAlignment="Center">
-                                    <PathIcon Width="10"
-                                              Height="10" />
-                                </ToggleButton>
+                                <Button Name="GroupFoldToggle"
+                                        Grid.Column="2"
+                                        Theme="{StaticResource InnerIconButton}"
+                                        Classes.folded="{Binding IsFolded}"
+                                        Command="{Binding FoldCommand}"
+                                        ToolTip.Tip="{Binding FoldName}"
+                                        AutomationProperties.Name="{Binding FoldName}"
+                                        VerticalAlignment="Center" />
 
                             </Grid>
 

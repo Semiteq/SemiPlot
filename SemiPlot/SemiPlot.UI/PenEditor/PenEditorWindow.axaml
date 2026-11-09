@@ -1,7 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:SemiPlot.UI.PenEditor"
-        xmlns:input="clr-namespace:SemiPlot.UI.Input"
         xmlns:legend="clr-namespace:SemiPlot.UI.Legend"
         xmlns:tables="clr-namespace:SemiPlot.UI.Tables"
         xmlns:text="clr-namespace:SemiPlot.UI.Localization"
@@ -37,14 +36,11 @@
             <Setter Property="FontSize" Value="12" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
-        <Style Selector="DataGridCell:current /template/ Rectangle#CurrencyVisual, DataGridCell:focus /template/ Panel#FocusVisual">
-            <Setter Property="IsVisible" Value="False" />
+        <Style Selector="Button#GroupActionsButton">
+            <Setter Property="Foreground" Value="{DynamicResource AppSecondaryForegroundBrush}" />
         </Style>
-        <Style Selector="DataGrid#GroupList DataGridRow:selected /template/ Border#BackgroundBorder">
-            <Setter Property="Background" Value="{DynamicResource DataGridRowBackground}" />
-        </Style>
-        <Style Selector="DataGrid#GroupList DataGridRow:selected:pointerover /template/ Border#BackgroundBorder">
-            <Setter Property="Background" Value="{DynamicResource DataGridRowPointeroverBackground}" />
+        <Style Selector="Button#GroupActionsButton:pointerover">
+            <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
         </Style>
         <Style Selector="TextBlock.grid-cell">
             <Setter Property="VerticalAlignment" Value="Center" />
@@ -72,9 +68,6 @@
             <Setter Property="Height" Value="20" />
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-        </Style>
-        <Style Selector="ColorPicker#FormColorPicker /template/ DropDownButton /template/ :is(Control)#DropDownGlyph">
-            <Setter Property="IsVisible" Value="False" />
         </Style>
     </Window.Styles>
 
@@ -358,33 +351,27 @@
                                                Classes="form-label"
                                                Text="{x:Static text:Resources.PenFormColorLabel}" />
 
-                                    <StackPanel Grid.Row="0"
-                                                Grid.Column="1"
-                                                Orientation="Horizontal"
-                                                Spacing="8">
-
-                                        <TextBox Name="FormColor"
-                                                 Width="120"
-                                                 local:PenEditorWindow.Field="Color"
-                                                 input:FormattedFieldInput.Layout="HexColor"
-                                                 PlaceholderText="{x:Static local:PenColorConverters.FieldFormat}"
-                                                 Classes.invalid="{Binding !IsColorValid}"
-                                                 Text="{Binding Color}" />
-
-                                        <ColorPicker Name="FormColorPicker"
-                                                     Width="32"
-                                                     Height="32"
-                                                     Padding="0"
-                                                     IsAlphaEnabled="False"
-                                                     IsAlphaVisible="False">
-                                            <ColorPicker.Color>
-                                                <Binding Path="Color"
-                                                         Mode="OneWay"
-                                                         Converter="{x:Static local:PenColorConverters.ToColor}" />
-                                            </ColorPicker.Color>
-                                        </ColorPicker>
-
-                                    </StackPanel>
+                                    <ColorPicker Grid.Row="0"
+                                                 Grid.Column="1"
+                                                 Name="FormColorPicker"
+                                                 Height="32"
+                                                 HorizontalAlignment="Stretch"
+                                                 IsAlphaEnabled="False"
+                                                 IsAlphaVisible="False">
+                                        <ColorPicker.Color>
+                                            <Binding Path="Color"
+                                                     Mode="OneWay"
+                                                     Converter="{x:Static local:PenColorConverters.ToColor}" />
+                                        </ColorPicker.Color>
+                                        <ColorPicker.Content>
+                                            <Border Name="FormColorSwatch"
+                                                    Margin="4"
+                                                    HorizontalAlignment="Stretch"
+                                                    VerticalAlignment="Stretch"
+                                                    CornerRadius="{StaticResource ColorPickerCornerRadius}"
+                                                    Background="{Binding Color, Converter={x:Static local:PenColorConverters.ToBrush}}" />
+                                        </ColorPicker.Content>
+                                    </ColorPicker>
 
                                     <TextBlock Grid.Row="1"
                                                Grid.Column="0"
@@ -551,6 +538,24 @@
                                       CanUserReorderColumns="False"
                                       RowHeight="{x:Static local:PenEditorWindow.RowHeight}"
                                       tables:HeaderMeasuredColumns.FitsColumns="True">
+                                <DataGrid.Resources>
+                                    <ResourceDictionary>
+                                        <ResourceDictionary.ThemeDictionaries>
+                                            <ResourceDictionary x:Key="Light">
+                                                <StaticResource x:Key="DataGridRowSelectedBackground"
+                                                                ResourceKey="DataGridRowBackground" />
+                                                <StaticResource x:Key="DataGridRowSelectedPointeroverBackground"
+                                                                ResourceKey="DataGridRowPointeroverBackground" />
+                                            </ResourceDictionary>
+                                            <ResourceDictionary x:Key="Dark">
+                                                <StaticResource x:Key="DataGridRowSelectedBackground"
+                                                                ResourceKey="DataGridRowBackground" />
+                                                <StaticResource x:Key="DataGridRowSelectedPointeroverBackground"
+                                                                ResourceKey="DataGridRowPointeroverBackground" />
+                                            </ResourceDictionary>
+                                        </ResourceDictionary.ThemeDictionaries>
+                                    </ResourceDictionary>
+                                </DataGrid.Resources>
                                 <DataGrid.Columns>
 
                                     <DataGridTemplateColumn Width="36"
@@ -604,10 +609,8 @@
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate x:DataType="local:PenGroupViewModel">
                                                 <Button Name="GroupActionsButton"
-                                                        Theme="{DynamicResource BorderlessButton}"
-                                                        Width="28"
-                                                        Height="24"
-                                                        Padding="0"
+                                                        Theme="{StaticResource InnerIconButton}"
+                                                        Content="{StaticResource MoreGeometry}"
                                                         Margin="12,0,0,0"
                                                         HorizontalAlignment="Left"
                                                         VerticalAlignment="Center"
@@ -633,10 +636,6 @@
 
                                                         </MenuFlyout>
                                                     </Button.Flyout>
-                                                    <PathIcon Width="16"
-                                                              Height="16"
-                                                              Data="{StaticResource MoreGeometry}"
-                                                              Foreground="{DynamicResource AppSecondaryForegroundBrush}" />
                                                 </Button>
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>

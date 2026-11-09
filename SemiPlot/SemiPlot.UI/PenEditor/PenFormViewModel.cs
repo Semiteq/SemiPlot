@@ -116,8 +116,6 @@ public sealed class PenFormViewModel : ReactiveObject, IDisposable
 
 	public bool IsMaskValid => IsValid(PenField.Mask, RuleOf(PenField.Mask));
 
-	public bool IsColorValid => IsValid(PenField.Color, RuleOf(PenField.Color));
-
 	public bool IsScaleMinOnStartValid =>
 		IsValid(
 			PenField.ScaleOnStart,
@@ -325,7 +323,6 @@ public sealed class PenFormViewModel : ReactiveObject, IDisposable
 		this.RaisePropertyChanged(nameof(IsNameValid));
 		this.RaisePropertyChanged(nameof(IsUnitValid));
 		this.RaisePropertyChanged(nameof(IsMaskValid));
-		this.RaisePropertyChanged(nameof(IsColorValid));
 		this.RaisePropertyChanged(nameof(IsScaleMinOnStartValid));
 		this.RaisePropertyChanged(nameof(IsScaleMaxOnStartValid));
 		this.RaisePropertyChanged(nameof(Message));

@@ -523,11 +523,11 @@ The window has no tabs. It is one row of three parts under a top bar, pen list |
 | Part | Holds |
 | --- | --- |
 | Top bar | On the left, the filter box: the pen list shows the rows whose id, name or group text contains the typed text, trimmed at both ends and compared case-insensitively, and an empty box shows every row; the groups pane is not filtered (`#the-pen-list-filter`). On the right, the number of pens the last refresh added and `Refresh pen list`. `Refresh pen list` registers the keys the SCADA writes as hidden pens and reads the catalogue again. |
-| Pen list and pen pane | A read-only `DataGrid` of every pen: id, name with the pen's colour dot, unit, the start flag as a check glyph, and groups. A click on a column header sorts by that column ascending, the next click descending, and the header's arrow shows the direction. Every column resizes and opens no narrower than its header, and the groups column takes the spare width. Beside it, the 420 px pen pane: a hint while no pen is selected, otherwise a one-line title (id, then name), the sections Label (name, unit, mask, preview), Appearance (colour as a `#RRGGBB` text box, which normalises what the operator types or pastes to upper-case `#RRGGBB` and shows a stored value as stored, beside a square `ColorPicker` swatch; line style) and On start (visibility, minimum, maximum, scale type), and the reserved message line. A pen's groups show in the list as text and are not edited there. |
+| Pen list and pen pane | A read-only `DataGrid` of every pen: id, name with the pen's colour dot, unit, the start flag as a check glyph, and groups. A click on a column header sorts by that column ascending, the next click descending, and the header's arrow shows the direction. Every column resizes and opens no narrower than its header, and the groups column takes the spare width. Beside it, the 420 px pen pane: a hint while no pen is selected, otherwise a one-line title (id, then name), the sections Label (name, unit, mask, preview), Appearance (colour as a `ColorPicker` across the field column, whose swatch shows the stored colour and whose flyout's hex box is the one place a colour is typed; line style) and On start (visibility, minimum, maximum, scale type), and the reserved message line. A pen's groups show in the list as text and are not edited there. |
 | Groups pane | The title, a one-line subtitle, a new-name field with a create button, then a read-only `DataGrid` of every group in three columns: the membership box, the group name with its pen count as secondary text, and a "..." button. The box is ticked where the pen selected in the pen list is a member of the group; with no pen selected every box is disabled and unchecked. Membership is edited here only, from the pen side. The "..." button opens a menu of Rename, the fold flag as a checkable item, and Delete. A row shows no selection highlight and no cell outline. Under the grid a block the pane always reserves shows the rename field or the delete confirmation, and the pane's reserved message line closes it. |
 
 The editor reads fresh from the tables when it opens and after each refresh, and shows the values as
-stored: a pen with no colour opens with an empty, invalid colour field
+stored: a pen with no colour, or with one that does not read as `#RRGGBB`, opens with a transparent swatch and the colour message on the form's message line
 (`data-integration.md#the-stored-read`). It keeps that snapshot while it is open and reads again only on
 `Refresh pen list`, so no periodic read rebuilds a form under the operator's hands. The start flag's column
 reads "On start", and its field, "Show on the chart", stands in the "On start" section: the flag is the
@@ -928,14 +928,15 @@ Each viewer keeps its own folds, so a fold set in one window stays local to it.
 
 `TrendLegendGroupViewModel.SetFolded` is the one writer of `IsFolded`, and it records the fold in the
 map. It has three callers: `FoldCommand`, which the toggle invokes, fold-all below, and the pick rule below.
-The toggle reads `IsFolded` `Mode=OneWay` and shows `ChevronUpGeometry` while the group is unfolded and
-`ChevronDownGeometry` while it is folded (`SemiPlot.UI/Styles/Icons.axaml`); its tooltip and accessible
-name, `FoldName`, name what the next press does (`ui-text.md#the-sidebars-text`). The toggle is a ghost: it
-paints no fill and no border in either check state, its glyph is `AppSecondaryForegroundBrush`, and only
-under the pointer does the glyph turn `AppAccentBrush`, so the active pen's 3 px bar stays the one accent
-among folded headers. Semi paints the toggle's `PART_ContentPresenter` from triggered state setters that
-beat a plain style, so `TrendLegendView.axaml` sets that part's `Background` and `BorderBrush` to
-`Transparent` in four styles of its own: at rest, `:checked`, `:pointerover` and `:pressed`. The header
+The toggle is a `Button`, `GroupFoldToggle`, with Semi's `InnerIconButton` theme, whose template is one
+`PathIcon` drawing the button's `Content` geometry at Semi's `SemiWidthIconMedium`, 16 x 16 px, so the click
+target is the glyph. It reads `IsFolded` through its `folded` class (`Classes.folded="{Binding IsFolded}"`), and
+two styles set its `Content`: `ChevronUpGeometry` while the group is unfolded and `ChevronDownGeometry` while
+it is folded (`SemiPlot.UI/Styles/Icons.axaml`); its tooltip and accessible name, `FoldName`, name what the
+next press does (`ui-text.md#the-sidebars-text`). The toggle paints no fill and no border in any state, folded
+or not. Its glyph is `AppSecondaryForegroundBrush` at rest and `AppAccentBrush` under the pointer and pressed,
+from `Foreground` styles that outrank the theme's own `:pointerover` and `:pressed` arms. So the active pen's
+3 px bar stays the one accent among folded headers at rest. The header
 keeps a 16 px right margin, so the toggle clears the vertical scroll bar at
 `TrendLegendViewModel.PanelMinWidth`. A header caption that does not fit trims with an ellipsis and carries
 the group name as stored, not the capitals of the caption, as its tooltip.

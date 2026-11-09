@@ -74,6 +74,26 @@ internal static class ViewProbe
 		return (brush as ISolidColorBrush)?.Color;
 	}
 
+	public static byte AlphaOf(IBrush? brush)
+	{
+		return brush switch
+		{
+			null => 0,
+			ISolidColorBrush solid => (byte)(solid.Color.A * solid.Opacity),
+			_ => throw new InvalidOperationException($"The control paints a {brush.GetType().Name}.")
+		};
+	}
+
+	/// <summary>An icon button on Semi's InnerIconButton: the rendered glyph in one colour and no fill behind it.</summary>
+	public static void ShouldPaintTheGlyphAlone(Button button, Color glyph, string state)
+	{
+		var icon = Descendants<PathIcon>(button).Single();
+
+		AlphaOf(button.Background).Should().Be(0, "the button paints no fill {0}", state);
+		AlphaOf(icon.Background).Should().Be(0, "the glyph paints no fill {0}", state);
+		ColourOf(icon.Foreground).Should().Be(glyph, "the glyph {0}", state);
+	}
+
 	public static double LeftOf(Control control, Visual ancestor)
 	{
 		return control.TranslatePoint(default, ancestor)?.X

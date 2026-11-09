@@ -40,7 +40,7 @@ control, in each state the tree can reach.
 | `WindowDefaultForeground` | `Window`, and every control inheriting from it | `#000000` | `#DFE1E5` |
 | `MenuItemForeground` | Every menu caption at rest: the menu bar's File, Edit, View and Help, their items, the check glyph, and the `TextBox` context menu | `#000000` | `#DFE1E5` |
 | `MenuItemPointeroverForeground` | A menu caption while its submenu is open or the pointer is over it; Semi ships this brighter than its own text colour | `#000000` | `#DFE1E5` |
-| `TextBoxPlaceholderForeground` | Every `TextBox` watermark: the pen editor's filter box `PenListFilter`, its colour box, the new-group-name field of its groups pane, and the chart's marker label editor | `#818594` | `#6F737A` |
+| `TextBoxPlaceholderForeground` | Every `TextBox` watermark: the pen editor's filter box `PenListFilter`, the new-group-name field of its groups pane, and the chart's marker label editor | `#818594` | `#6F737A` |
 | `TextBlockDisabledForeground` | Disabled `TextBlock` | `#A8ADBD` | `#5A5D63` |
 | `TextBoxDisabledForeground` | Disabled `TextBox` | `#A8ADBD` | `#5A5D63` |
 | `ButtonDefaultDisabledForeground` | A button whose command cannot execute | `#A8ADBD` | `#5A5D63` |
@@ -79,6 +79,8 @@ control, in each state the tree can reach.
 | `DataGridColumnHeaderForeground` | A column header of the pen list or the group grid, sorted or not | `#818594` | `#6F737A` |
 | `DataGridLineBrush` | The line under each pen editor grid's headers | `#EBECF0` | `#393B40` |
 | `DataGridRowSelectedBackground`, `DataGridRowSelectedPointeroverBackground` | The pen list's selected row, hovered or not; the same fill as the sidebar's active row | `#3574F0` at 0.25 opacity | `#3574F0` at 0.25 opacity |
+| `DataGridCellCurrentBorderBrush` | The stroke of a grid cell's `Rectangle#CurrencyVisual`, the current cell's outline; transparent, so a clicked row shows no cell outline | `Transparent` | `Transparent` |
+| `DataGridCellFocusBorderBrush` | The stroke of the `Rectangle` in a grid cell's `Panel#FocusVisual`, a pressed cell's outline; transparent for the same reason | `Transparent` | `Transparent` |
 
 The accent is the one value deliberately equal across the variants: it does not change with the
 ground it sits on.
@@ -93,18 +95,20 @@ The pen editor's controls keep Semi's value in the same places, measured on 2026
 translucent hover and press overlays of list rows, combo items and checkboxes, the picker's icons
 at 0.62 and 0.35, the white check glyphs, and the black and white contrast edges of the picker's
 sliders. The pen list keeps Semi's hover overlay on a row and Semi's hover and press fills on a header.
-The probe of the `DataGrid` found two cell keys it leaves Semi's: `DataGridCellCurrentBorderBrush` strokes
+The probe of the `DataGrid` found two cell keys that stroke a cell outline: `DataGridCellCurrentBorderBrush`
 the current cell's `Rectangle#CurrencyVisual`, and `DataGridCellFocusBorderBrush` the `Rectangle` in a
-pressed cell's `Panel#FocusVisual`. The pen editor hides both parts in both of its grids with one
-window-wide style on Semi's own triggers, `DataGridCell:current /template/ Rectangle#CurrencyVisual` and
-`DataGridCell:focus /template/ Panel#FocusVisual`; a selector without the pseudo-class loses to Semi's
-`:current` trigger. That style is the editor's only cell-outline rule, so a clicked pen row shows the row
-highlight and no cell outline. The group grid shows no highlight either: two window styles on Semi's own
-`:selected` trigger repaint a selected group row as an unselected one.
-`DataGrid#GroupList DataGridRow:selected /template/ Border#BackgroundBorder` takes
-`{DynamicResource DataGridRowBackground}`, and the same selector with `:selected:pointerover` takes
-`{DynamicResource DataGridRowPointeroverBackground}`, the two keys Semi paints a row from at rest and
-hovered.
+pressed cell's `Panel#FocusVisual`. Both are dynamic: with each key set to a marker colour in the palette, a
+click on a pen list row reads the marker off both strokes (measured 2026-11-09). The palette sets both to
+`Transparent`, which is the only cell-outline rule, so both parts still show on Semi's triggers and paint
+nothing, and a clicked pen row shows the row highlight and no cell outline. The pen editor's two grids are
+the only `DataGrid`s in the application. The group grid shows no highlight either. Semi's `DataGridRow` theme
+paints a selected row's `Border#BackgroundBorder` from `DataGridRowSelectedBackground` and a hovered selected
+row from `DataGridRowSelectedPointeroverBackground`, focused or not, both through `DynamicResource`.
+`DataGrid#GroupList` carries its own `ThemeDictionaries` that alias the two keys, per variant, to
+`DataGridRowBackground` and `DataGridRowPointeroverBackground`, the keys Semi paints an unselected row from
+at rest and hovered. The aliases reach only that grid, so the pen list keeps the palette's highlight.
+`PenGroupsViewTests.ARowClick_ShowsNoSelectionHighlightAndNoCellOutline_AcrossALiveThemeSwitch` reads the
+selected row's brush back at rest and hovered, before and after a live switch of the variant.
 Adding a control means running the same marker probe for it, not copying a key list.
 The `destructive` button class paints from this tree's own keys; its style arms, and why each targets the
 button's presenter, are under `#the-applications-own-surfaces`.
@@ -163,6 +167,51 @@ variants. Semi paints 3 without the overrides, so the control is what proves the
 A control the tree gains brings its own key, with one exception that carries none. The combo box's drop-down
 and the picker's flyout keep Semi's 6 px, as the menu flyout does.
 
+## How a stock control is customised
+
+A change to a Semi or Avalonia control takes the first rung of this ladder that reaches the surface:
+
+1. A Semi theme or class.
+2. A public property of the control.
+3. A dynamic Semi component key, overridden in `Styles/Palette.axaml` only when no unrelated control reads
+   it, otherwise in the resources of the one control that needs it.
+4. A keyed `ControlTheme` of this tree.
+5. A `/template/` selector on a part the control names with `[TemplatePart]`.
+6. A `/template/` selector on a part only Semi's template names.
+7. A lookup in code-behind.
+
+Rungs 6 and 7 depend on names and shapes no public contract keeps, so each needs a test that reads the
+rendered result back and fails when a Semi update moves the part.
+
+A `ControlTheme` with `BasedOn` a Semi theme costs as much as the arms inside the base: every state arm of
+Semi's theme still applies, and the new theme has to beat each one it changes. A component key is
+overridable only where the template reads it through `DynamicResource`; a key the template reads through
+`StaticResource` resolves once at load, and an override of it never reaches the control. The decompiled
+template answers which form it is.
+
+The tree's cases:
+
+- The group header's fold toggle and the group row's "..." button take Semi's `InnerIconButton` (rung 1):
+  the template is a bare `PathIcon` drawing the `Content` geometry, with a transparent `Background`, so
+  neither button paints a fill in any state. Their glyph colour is the public `Foreground` (rung 2), set by
+  styles, which outrank the theme's own `:pointerover` and `:pressed` arms
+  (`overview.md#the-sidebar-fold`, `#the-groups-pane`).
+- The `destructive` button class is rung 6: Semi paints every button state on `PART_ContentPresenter`, a
+  name of Semi's template, and the class targets that part the way Semi's own state arms do
+  (`#the-applications-own-surfaces`). `ThemeTests.TheDestructiveButton_PaintsItselfFromThePalette` reads it
+  back.
+- The group grid's selected row is rung 3, scoped to `DataGrid#GroupList` because the pen list reads the same
+  two keys (`#how-the-retint-reaches-a-control`).
+- The colour picker's drop-down button stays as Semi draws it. Semi's `ColorPicker` template passes neither
+  `Foreground` nor `Background` to its `DropDownButton`, so no property of the picker reaches it, and nothing
+  about it needs a change.
+- `Styles/Forms.axaml` sets `FormattedFieldInput.Layout` on every `CalendarDatePicker`'s `PART_TextBox`
+  (rung 5): `CalendarDatePicker` names that part with `[TemplatePart]`.
+- The pen form finds the colour picker's flyout in code-behind (rung 7): `ColorPicker` raises no open or
+  closed event, so `PenEditorWindow` takes the `Flyout` of the first `DropDownButton` in the picker's visual
+  tree, by type, and listens to its `Opened` and `Closed`. `PenEditorViewTests` finds the flyout the same way,
+  opens and closes it, and reads what the close writes.
+
 ## The application's own surfaces
 
 Semi owns the controls; these twenty keys are ours, and each exists in both variants.
@@ -175,7 +224,7 @@ Semi owns the controls; these twenty keys are ours, and each exists in both vari
 | `AppSubtleLineBrush` | Plot grid, the line above every sidebar group header but the first, the line under the sidebar's top row, the status bar's separator after the connection indicator, the navigation bar's group separator | `#EBECF0` | `#393B40` |
 | `AppMinorGridLineBrush` | The plot's minor gridlines, drawn on a log10 axis only | `#F4F5F7` | `#2B2D30` |
 | `AppSecondaryForegroundBrush` | Minimap end labels, hover line and hover time, chart crosshair, plot axis furniture, the chart's empty-catalogue message, the sidebar group header caption, its fold chevron and a row's unit, the axis scale panel's unit, the message panel's empty text and an entry's remedy, repeat count and time, the pen editor's groups cell, the pen pane's empty hint, its title's id and its mask preview, the groups pane's subtitle, a group row's pen count and "..." glyph, and the delete confirmation's note | `#818594` | `#6F737A` |
-| `AppAccentBrush` | Minimap window highlight border, the active sidebar row's left bar, a group header's fold chevron under the pointer (`overview.md#the-sidebar-fold`) | `#3574F0` | `#3574F0` |
+| `AppAccentBrush` | Minimap window highlight border, the active sidebar row's left bar, a group header's fold chevron and a group row's "..." glyph under the pointer and pressed (`overview.md#the-sidebar-fold`) | `#3574F0` | `#3574F0` |
 | `AppAccentFillBrush` | Minimap window highlight fill, the active sidebar row's background | `#3574F0` at 0.25 opacity | `#3574F0` at 0.25 opacity |
 | `AppSeverityErrorBrush` | The message panel's dot on an `Error` entry; a form's invalid field border, the warning glyph of the pen form and the axis scale panel, and a form's message line | `#DB3B4B` | `#E55765` |
 | `AppSeverityWarningBrush` | The same dot on a `Warning` entry | `#E3AE4D` | `#F2C55C` |
@@ -206,7 +255,8 @@ of 4.5:1 or more, and the disabled paint.
 Pen colours are not theme keys. They come from the archive with the pen and stay per pen under both
 variants. The pen editor's colour swatch is the pen's own colour through `LegendConverters.HexToBrush`,
 the converter the sidebar dot and the minimap band use, and a pen with no colour shows a transparent
-swatch.
+swatch. The pen form's picker swatch reads the draft through `PenColorConverters.ToBrush`, the strict
+`#RRGGBB` read the picker's colour takes, so a stored named colour such as `red` shows transparent there.
 
 ## A form never resizes on validation
 
@@ -514,7 +564,7 @@ the button's right edge is the groups pane's. The top bar carries no notice. The
   through a window-scoped `DataGridCellMinHeight` of 28, which the cell theme reads through
   `DynamicResource`; Semi's own 32 px minimum would raise every row.
   `PenListViewTests.ARow_ShowsThePenAsStoredUnderItsHeader` pins the resource to `RowHeight`.
-- Both grids take the window-wide header style, 12 px `SemiBold`, and the window-wide cell-outline rule
+- Both grids take the window-wide header style, 12 px `SemiBold`, and the palette's cell-outline rule
   (`#how-the-retint-reaches-a-control`). Each pane has its own reserved `form-message` line.
 
 #### The pen list
@@ -561,7 +611,7 @@ by its `PenRowOrder` comparer (`overview.md#the-pen-and-group-editor`):
   insets and its `RowName` none. The glyph cell carries no tooltip: its
   column opens no narrower than its header, wider than the glyph.
 - A clicked row shows Semi's row highlight from `DataGridRowSelectedBackground` and no cell outline. The
-  window style that hides the currency rectangle and the focus visual is under
+  two transparent palette keys that blank the currency rectangle and the focus visual are under
   `#how-the-retint-reaches-a-control`.
 
 #### The pen pane
@@ -581,9 +631,13 @@ The pane is the `Border` `PenFormPanel`, `PenEditorWindow.PenPaneWidth` (420 px)
   and puts every field 125 px off the label edge.
 - Every label is `TextBlock.form-label` in the label column; every field, the two checkboxes included,
   starts at the field column's edge, 124 px right of the label edge. Name and Line stretch across the 240 px
-  field column; Unit, Mask, Colour, Minimum and Maximum carry their own 120 px width. The colour row is the 120 px `FormColor` box
-  and, 8 px right of it, the 32 x 32 px `FormColorPicker` with no padding, its drop-down arrow hidden, so the
-  picker is the swatch alone. The mask preview is a trimmed `TextBlock` with its text as a tooltip.
+  field column; Unit, Mask, Minimum and Maximum carry their own 120 px width. Colour is the 32 px tall
+  `FormColorPicker` alone, stretched across the 240 px field column as Line is, at Semi's own padding: the
+  swatch, then the drop-down arrow. The swatch is the picker's local `Content`, the `Border`
+  `FormColorSwatch`, which replaces the swatch Semi's style supplies through that property: it stretches
+  across the button up to the arrow with a 4 px inset on every side and `ColorPickerCornerRadius`, and no
+  checkerboard, because the picker takes no alpha. The flyout's hex box is the only place the operator types
+  a colour. The mask preview is a trimmed `TextBlock` with its text as a tooltip.
 - The On start section holds the visibility box, `FormScale` and the scale type box. `FormScale` is the scale
   pair's focus scope and its own `PenFormColumns` grid of two 32 px rows, Minimum and Maximum, spanning both
   columns of the section's grid; the scale type box is the row under it, outside the scope, on the same field
@@ -599,7 +653,9 @@ than clipping it.
 An invalid field takes the `invalid` class and the warning glyph (`#a-form-never-resizes-on-validation`).
 The line-style combo box and the checkboxes refuse no value, and `Forms.axaml` styles `invalid` on
 `TextBox`, `NumericUpDown` and `CalendarDatePicker` only, not on a `ComboBox` or a `CheckBox`, so a failed
-write of either shows on the message line and in the panel only. The scale type box refuses a tick while the
+write of either shows on the message line and in the panel only. The colour picker is in the same state: it
+takes no `invalid` border, and a stored colour that does not read as `#RRGGBB`, an empty one included,
+shows a transparent swatch and its message on the message line. The scale type box refuses a tick while the
 pen stores a minimum at or below zero; the refusal shows on the message line alone, and a minimum that breaks
 the rule while the box is ticked marks the minimum `TextBox` `invalid`.
 
@@ -624,7 +680,7 @@ The pane is the `Border` `GroupsPanel`, `PenEditorWindow.GroupsPaneWidth` (340 p
 | --- | --- | --- | --- | --- |
 | Membership | none | 36 px | no | `MembershipBox`, centred |
 | Group | `PenGroupsColumnGroup` | 120 px, then the fill rule (`IsFill`) | yes | A `*,Auto` grid, 8 px column spacing, `Margin="12,0,8,0"`: `GroupName`, a `TextBlock.grid-cell` with its text as a tooltip, then `GroupMemberCount`, right-aligned in `AppSecondaryForegroundBrush` with the tooltip `PenGroupsMemberCountTip` |
-| Actions | `PenGroupsColumnActions` | 40 px, raised to its header | no | `GroupActionsButton`, `BorderlessButton` theme, 28 x 24 px, no padding, 12 px from the cell's left edge, the tooltip `PenGroupsActionsTip`, holding a 16 x 16 px `MoreGeometry` `PathIcon` in `AppSecondaryForegroundBrush`; its `MenuFlyout` opens `BottomEdgeAlignedLeft` |
+| Actions | `PenGroupsColumnActions` | 40 px, raised to its header | no | `GroupActionsButton`, Semi's `InnerIconButton` theme with `MoreGeometry` as its `Content`, a 16 x 16 px glyph that is the whole click target, 12 px from the cell's left edge, the tooltip `PenGroupsActionsTip`, no fill in any state, the glyph `AppSecondaryForegroundBrush` at rest and `AppAccentBrush` under the pointer and pressed; its `MenuFlyout` opens `BottomEdgeAlignedLeft` |
 
 - The membership and action columns do not resize: each holds one fixed-size control, and a wider column
   shows nothing more. Group stands in the middle because the box a membership list is read by stands
@@ -693,7 +749,7 @@ each fixed width to its header in the headless font, so
 | `PenListViewTests.AFullCatalogue_RealisesOnlyTheRowsOnScreen` | The virtualised rows |
 | `PenListViewTests.AClickedRow_ShowsTheRowHighlightAndNoCellOutline` | The selection fill and no visible currency rectangle or focus visual |
 | `PenFormPaneViewTests.WithNoPenSelected_ThePaneShowsOnlyTheHint`, `PenFormPaneViewTests.AClickedPen_FillsTheFormUnderAOneLineTitle` | The hint and the one-line title |
-| `PenFormPaneViewTests.TheForm_HasThreeSectionsOnOneLabelColumnAndOneFieldEdge`, `PenFormPaneViewTests.EveryField_HasTheWidthOfItsContentType`, `PenFormPaneViewTests.TheColourSwatchPicker_IsSquare` | The sections, the 124 px field edge, the field widths, the 32 x 32 px swatch 8 px right of the colour box |
+| `PenFormPaneViewTests.TheForm_HasThreeSectionsOnOneLabelColumnAndOneFieldEdge`, `PenFormPaneViewTests.EveryField_HasTheWidthOfItsContentType`, `PenFormPaneViewTests.TheColourPicker_ShowsItsDropDownArrow` | The sections, the 124 px field edge, the field widths, the 240 x 32 px picker on the field edge with its arrow and a swatch over 150 px wide, inset equally on every side |
 | `PenFormPaneViewTests.AtTheOpeningSize_ThePaneShowsTheWholeForm` | The form's extent inside the scroller's viewport at 1440 x 720 px |
 | `PenEditorViewTests.AnUnusableMask_WritesNothingRevertsMarksAndSaysWhyWithoutResizing` | The window's and the pane's `Bounds` equal before and after the mask turns invalid |
 | `PenGroupsViewTests.AGroupRow_ShowsTheNameAndTheCountWithItsTooltip` | The name, the count right of it inside the name cell, its tooltip, the 28 px row |
@@ -799,9 +855,10 @@ above and 8 below, a plain list cell inset 8, a gap between controls in one row 
 
 A text button carries no padding of its own. Semi's `Button` theme supplies `ButtonDefaultPadding`, `12,0`, and
 a `MinHeight` of 32 px, so every dialog button, the status bar's `ConnectionIndicator` and the message panel's
-`ClearMessages` are 32 px tall with 12 px sides. Fixed-size icon buttons set `Padding="0"`: the sidebar's top
-row in its icon form, the group fold toggle (`Legend/TrendLegendView.axaml`) and the pen editor's
-`GroupActionsButton` (`PenEditor/PenEditorWindow.axaml`). The sidebar's top-row text buttons have a fixed 24 px
+`ClearMessages` are 32 px tall with 12 px sides. The sidebar's top row in its icon form is a fixed-size icon
+button and sets `Padding="0"`. The group fold toggle (`Legend/TrendLegendView.axaml`) and the pen editor's
+`GroupActionsButton` (`PenEditor/PenEditorWindow.axaml`) take Semi's `InnerIconButton`, whose template has no
+presenter and so no padding. The sidebar's top-row text buttons have a fixed 24 px
 `Height` in a 28 px row and keep their own `Padding` setter, `8,0`.
 
 This command finds an off-scale inset, and returns nothing today:

@@ -1,19 +1,19 @@
 using Avalonia.Data.Converters;
 using Avalonia.Media;
 
-using SemiPlot.UI.Input;
-
 namespace SemiPlot.UI.PenEditor;
 
 public static class PenColorConverters
 {
-	public const string FieldFormat = "#RRGGBB";
-
-	private const int StoredColorLength = FormattedFieldInput.HexColorDigitCount + 1;
+	private const int StoredColorLength = 7;
 
 	/// <summary>The picker's colour: the draft's, and transparent for an empty or malformed draft.</summary>
 	public static readonly FuncValueConverter<string?, Color> ToColor =
 		new(color => TryParse(color, out var parsed) ? parsed : Colors.Transparent);
+
+	/// <summary>The picker's swatch: the draft's colour, and transparent for an empty or malformed draft.</summary>
+	public static readonly FuncValueConverter<string?, IBrush> ToBrush =
+		new(color => TryParse(color, out var parsed) ? new SolidColorBrush(parsed) : Brushes.Transparent);
 
 	/// <summary>Reads only the #RRGGBB form the archive stores; Color.TryParse alone also takes names.</summary>
 	internal static bool TryParse(string? color, out Color parsed)

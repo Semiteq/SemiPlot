@@ -143,13 +143,18 @@ public sealed class TrendLegendViewTests
 			.ToList();
 
 		controls.Should().AllSatisfy(control =>
-			(control is Border or Grid or TextBlock or PathIcon or CheckBox or ToggleButton)
+			(control is Border or Grid or TextBlock or CheckBox or Button)
 				.Should()
 				.BeTrue(
 					"'{0}' is not one of the controls the group header is allowed",
 					control.GetType().Name));
 		controls.OfType<CheckBox>().Should().ContainSingle();
-		controls.OfType<ToggleButton>().Where(control => control is not CheckBox).Should().ContainSingle();
+		controls.OfType<Button>()
+			.Where(control => control is not CheckBox)
+			.Should()
+			.ContainSingle()
+			.Which.Name.Should()
+			.Be("GroupFoldToggle");
 	}
 
 	// Every text editor Avalonia ships puts a TextBox in its template.
@@ -482,7 +487,7 @@ public sealed class TrendLegendViewTests
 		var chartBefore = ChartState(chart);
 		var toggle = FoldToggles(window)[0];
 		toggle.Command.Should().NotBeNull("the toggle writes the fold through the group's command");
-		toggle.IsChecked.Should().BeFalse();
+		IsFolded(toggle).Should().BeFalse();
 		AutomationProperties.GetName(toggle).Should().Be(Resources.FormatLegendFoldGroup("Heaters"));
 		ChevronOf(toggle).Should().BeSameAs(Icon("ChevronUpGeometry"));
 
@@ -490,7 +495,7 @@ public sealed class TrendLegendViewTests
 
 		VisibleRowNames(window).Should().Equal("Chamber pressure");
 		HeaderTexts(window).Should().Equal(Caption("Heaters"), Caption("Pressures"));
-		toggle.IsChecked.Should().BeTrue();
+		IsFolded(toggle).Should().BeTrue();
 		AutomationProperties.GetName(toggle).Should().Be(Resources.FormatLegendUnfoldGroup("Heaters"));
 		ToolTip.GetTip(toggle).Should().Be(Resources.FormatLegendUnfoldGroup("Heaters"));
 		ChevronOf(toggle).Should().BeSameAs(Icon("ChevronDownGeometry"));
@@ -499,7 +504,7 @@ public sealed class TrendLegendViewTests
 		HeadlessInput.Click(window, toggle);
 
 		VisibleRowNames(window).Should().Equal("Heater 01", "Heater 02", "Chamber pressure");
-		toggle.IsChecked.Should().BeFalse();
+		IsFolded(toggle).Should().BeFalse();
 		ChevronOf(toggle).Should().BeSameAs(Icon("ChevronUpGeometry"));
 		ChartState(chart).Should().Equal(chartBefore);
 	}
@@ -517,23 +522,23 @@ public sealed class TrendLegendViewTests
 		var pressures = legend.Groups.Single(group => group.Name == "Pressures");
 		var pressuresToggle = FoldToggles(window)[1];
 
-		pressuresToggle.IsChecked = true;
+		pressuresToggle.Classes.Add("folded");
 		Dispatcher.UIThread.RunJobs();
 
-		pressures.IsFolded.Should().BeFalse("the toggle is not a writer of the fold");
+		pressures.IsFolded.Should().BeFalse("the toggle's class is not a writer of the fold");
 		VisibleRowNames(window).Should().Equal("Heater 01", "Chamber pressure");
 
 		pressures.FoldCommand.Execute().Subscribe();
 		Dispatcher.UIThread.RunJobs();
 
-		pressuresToggle.IsChecked.Should().BeTrue();
+		IsFolded(pressuresToggle).Should().BeTrue();
 		VisibleRowNames(window).Should().Equal("Heater 01");
 
 		chart.SetActivePen(2).Should().BeTrue();
 		Dispatcher.UIThread.RunJobs();
 
 		pressures.IsFolded.Should().BeFalse();
-		pressuresToggle.IsChecked.Should().BeFalse();
+		IsFolded(pressuresToggle).Should().BeFalse();
 		VisibleRowNames(window).Should().Equal("Heater 01", "Chamber pressure");
 	}
 
@@ -663,11 +668,11 @@ public sealed class TrendLegendViewTests
 		return [.. Descendants<CheckBox>(window).Where(box => box.Name == "GroupSwitch" && box.IsEffectivelyVisible)];
 	}
 
-	private static IReadOnlyList<ToggleButton> FoldToggles(Window window)
+	private static IReadOnlyList<Button> FoldToggles(Window window)
 	{
 		return
 		[
-			.. Descendants<ToggleButton>(window)
+			.. Descendants<Button>(window)
 				.Where(toggle => toggle.Name == "GroupFoldToggle" && toggle.IsEffectivelyVisible)
 		];
 	}
@@ -677,9 +682,14 @@ public sealed class TrendLegendViewTests
 		return [.. Descendants<Border>(window).Where(border => border.Name == "HeaderActiveBar")];
 	}
 
-	private static Geometry? ChevronOf(ToggleButton toggle)
+	private static Geometry? ChevronOf(Button toggle)
 	{
-		return toggle.GetLogicalDescendants().OfType<PathIcon>().Single().Data;
+		return Descendants<PathIcon>(toggle).Single().Data;
+	}
+
+	private static bool IsFolded(Button toggle)
+	{
+		return toggle.Classes.Contains("folded");
 	}
 
 	private static object? Icon(string key)

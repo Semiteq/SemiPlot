@@ -279,7 +279,7 @@ together. A viewer window started from `File` -> `New window` or `Restart` is no
 dotnet run --project SemiPlot/SemiPlot.AppHost
 ```
 
-or the `Live demo` run configuration, which runs the `http` launch profile (the profile carries
+or the `Live demo (Two days)` run configuration, which runs the `http` launch profile (the profile carries
 `ASPIRE_ALLOW_UNSECURED_TRANSPORT`, without which the AppHost refuses its http dashboard address). Either
 way, stopping the AppHost stops the container: it runs under the AppHost's default
 `ContainerLifetime.Session`, and DCP watches its parent process, so a Ctrl+C and a hard kill of
@@ -296,7 +296,7 @@ nor the viewer carries an OpenTelemetry SDK or the `Microsoft.Extensions.Logging
 the variables are inert.
 
 The `six-months` launch profile runs the same stand over the six-month archive
-(`#the-six-month-stand`); the `.run/` configuration and the `.zed/tasks.json` task named `Live demo (six months)` start
+(`#the-six-month-stand`); the `.run/` configuration and the `.zed/tasks.json` task named `Live demo (Six months)` start
 it, and so does
 
 ```powershell
@@ -590,8 +590,8 @@ file for a refused login, delete the catalogue rows for an empty catalogue.
 Nothing machine-dependent lives in `AppHost.cs`: the role passwords are `BenchRoles`' public
 constants, the port is 55432, the configuration and log paths come from `DemoDirectories`, and the
 seeder and the viewer both take the machine's own time zone. The
-`Live demo` run configuration at the repository root's `.run/` is an `AspireHostConfiguration` over
-`SemiPlot.AppHost`'s `http` launch profile, and `Live demo (six months)` one over the `six-months`
+`Live demo (Two days)` run configuration at the repository root's `.run/` is an `AspireHostConfiguration` over
+`SemiPlot.AppHost`'s `http` launch profile, and `Live demo (Six months)` one over the `six-months`
 launch profile (`#the-six-month-stand`). A launch profile name carries no space or parenthesis, because a
 `.zed/` task hands its arguments to `pwsh -C`, which reads `(...)` as a subexpression.
 

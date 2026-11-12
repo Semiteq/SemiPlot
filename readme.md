@@ -109,7 +109,7 @@ SemiPlot — программа просмотра трендов техноло
 - При ошибке запуска программа открывает окно ошибки, из которого доступны настройки и перезапуск.
 
 <div align="center">
-    <img src="./docs/img/pens-and-groups.png" width="600" />
+    <img src="./docs/img/pens-and-groups.png" width="800" />
     <p><em>Окно перьев и групп</em></p>
 </div>
 

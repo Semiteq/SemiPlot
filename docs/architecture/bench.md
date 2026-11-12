@@ -452,6 +452,70 @@ max 5.9 ms, spacing p50 286 ms. A later comparison repeats the same capture: fol
 pens and 0.5 s, 30 s, the first 10 s skipped. No drag capture was taken, because nothing on the bench drives a drag
 without synthesised desktop input (`testing-strategy.md#frame-cost`).
 
+#### The stand after the two-track minimap
+
+Measured again on 2026-11-10 on `fb8739e`, the same machine and Docker, an image built again from
+`SemiPlot/bench` over the same two base images, and the same `converge` command run as the Debug
+executable: 32.4 s, 86.7 MB peak working set, a span from 2026-05-12 07:10:30 to 21:20:30 on
+2026-11-10, 11 431 916, 6 977 996 and 186 808 rows in layers 0, 1 and 2, 122 sessions and 4 120
+recipe markers. The two baseline `converge` runs reported the database ready in 0.3 and 0.2 s and this
+one in 0.1 s,
+so no server wait explains the shorter wall time; the gap was not investigated. The viewer, the writer
+and the statement log ran as above, and the viewer column was read on the fresh seed, before any
+`ANALYZE`. The psql figures were taken after `ANALYZE trends, semiplot_tags`, as for
+`data-integration.md#read-cost`, with the shipped statement text and its parameters written in as
+literals. The extent statement is unchanged since the baseline, and its 80-84 ms confirms the server
+was in the same state as for the baseline's warm runs.
+A pass before the `ANALYZE` read the extent at 108-154 ms and the full day spans at 220-313 ms, with
+one first run of 3 112 ms; those figures are left out.
+
+| Read | Viewer | psql planning | psql execution |
+| --- | --- | --- | --- |
+| Archive extent, at start | two reads: bind 49 and 52 ms, execute 151 and 153 ms | 6.7, 7.0, 6.8 ms | 79.7, 80.2, 83.8 ms |
+| Archive days, 2026-05-12 to 2026-11-10 | not read at start | 3.4, 3.3, 3.3 ms | 13.9, 13.5, 14.2 ms |
+| Day spans, 2026-05-12 to 2026-11-10, at start | bind 93 ms, execute 288 ms; 474 ms in the minimap's log line | 42.9, 14.3, 12.1 ms | 184.1, 169.3, 164.1 ms, 122 days |
+| Day spans, 2026-11-10 alone | not observed: no midnight passed during the run | 12.2, 12.9, 16.3 ms | 4.8, 5.0, 5.8 ms |
+| Day spans, 2026-11-09 to 2026-11-10, the range a rollover reads | not observed | 11.2, 13.1, 10.3 ms | 5.4, 7.0, 7.2 ms |
+| Markers, 4 120 rows | execute 1.3 ms at start, 1.4 to 1.8 ms on the 5 s re-reads | | |
+| Band, Day page, at start | the calendar day at `Minute`, 1 000 columns: 91 ms in `MinimapBandFeed`, 17 ms in the provider; then 07:00 to 22:00 at `Minute`, 1 000 columns: 9 ms, 7 ms in the provider; re-read every 54 s at 5 to 12 ms | 4.2, 0.3, 0.4 ms | 3.0, 2.4, 2.2 ms |
+| Band, Fri 6 Nov over today's 07:00 to 22:00 bounds, `Minute`, 1 000 columns | | 0.9, 0.3, 0.4 ms | 1.2, 1.4, 1.8 ms |
+| Band, Week page 9 to 16 Nov, `Minute`, 1 000 columns | not driven | 2.2, 0.5, 0.5 ms | 3.3, 3.0, 3.5 ms |
+| Band, Week page 2 to 9 Nov, `Minute`, 1 000 columns | not driven | 2.2, 0.7, 0.7 ms | 6.0, 6.4, 5.8 ms |
+| Band, Week page 2 to 9 Nov, `Hour`, 1 000 columns | | 0.7, 0.9, 0.6 ms | 0.8, 0.7, 0.7 ms |
+| Chart, first `Raw` read, 2 h at 4 096 columns, 49 pens in 4 groups | 73 ms in the provider | | |
+
+The strip was 1 000 columns wide. The Day page took 07:00 to 22:00, because the seed's last session
+runs to `--end`, 21:20:30, and the writer continues it, so today's rows widen the page past the derived
+hours. This run drove no window control, so the Week page was timed in psql only, as the pen the
+viewer drew (2000) over Monday to Monday with the 604.8 s bucket of 1 000 columns.
+`ChartNavigationController.LayerForWidth` picks `Minute` there: with one pen the `Minute` ceiling is
+15 min x 1 000 = 250 h, above the 168 h week. The psql rows time the coarse statement only; on the page that holds the newest sample the viewer also issues the `Raw` fresh-tail
+statement over the minutes past the newest `Minute` row.
+
+The frame time comes from follow captures taken the same way as the baseline's, on the first seed and
+on a second one (33.3 s, 90.1 MB, ready in 2.2 s, 122 sessions and 4 120 markers again). The uptime is
+the window the script read, counted from the viewer's first log line:
+
+| Capture | Uptime read | `RenderOnce` runs | Mean | Max | Spacing p50 | `EnvelopeLine.Render` |
+| --- | --- | --- | --- | --- | --- | --- |
+| Baseline, run 2 above | 32 to 52 s | 79 | 3.0 ms | 5.9 ms | 286 ms | 81.0 ms in 20 s |
+| Second seed, early, `--skip-seconds 30` of 52 s | 31 to 53 s | 84 | 2.8 ms | 6.3 ms | 298 ms | 80.5 ms in 22 s |
+| First seed | 4 min 6 s to 4 min 26 s | 80 | 3.8 ms | 8.2 ms | 295 ms | 147.1 ms in 20 s |
+| Second seed, late | 8 min 40 s to 9 min | 79 | 4.1 ms | 6.0 ms | 298 ms | 202.8 ms in 20 s |
+| First seed | 9 min 35 s to 9 min 55 s | 79 | 5.3 ms | 8.6 ms | 297 ms | 261.5 ms in 20 s |
+| First seed | 10 min 7 s to 10 min 27 s | 78 | 5.0 ms | 8.5 ms | 296 ms | 239.2 ms in 20 s |
+
+At the baseline's uptime the frame is unchanged: 2.8 against 3.0 ms on the mean. The frame then grows
+with the viewer's uptime on both seeds, and the growth sits in `EnvelopeLine.Render`, which draws the
+pens. That growth is independent of the minimap and navigation work:
+`git log 033576d..fb8739e -- SemiPlot/SemiPlot.UI/Chart/` prints nothing, and the baseline has no capture past its first minute. The live tail filling the
+window is the likely cause; it is not confirmed. The minimap's per-sample work runs on the UI thread,
+not inside `RenderOnce`: `MinimapViewModel.OnNewestSampleMoved`, which calls `RefreshShadedRuns`, took
+2.0 to 4.4 ms in each capture's read window. `MarkerNavigation.Runs`, which both the minimap and the
+navigation bar call on every newest sample, took 1.9 ms in the early capture's read window, 10.3 ms
+over its 5 to 52 s, and none in the four later 30 s captures. Recomputing the runs on every newest
+sample costs no measurable frame time with 4 120 markers in the table.
+
 #### The stand from the launcher
 
 Measured on 2026-11-11 on the same machine and Docker, through
@@ -549,9 +613,9 @@ where a realised control sits in the strip, at what size and with which figures.
 | `UI/Chart/ChartGapRenderTests` | ScottPlot's rasteriser, no Avalonia | a `NaN` column leaves the rendered line broken, and a continuous series leaves no such break |
 | `UI/Chart/LogAxisRenderTests` | ScottPlot's rasteriser, no Avalonia, through `ChartAxisBinder.Apply` | the 1e-4 plateau of a 1e-6..1e-2 log axis draws within 2 px of the data area's middle, and a plateau at `0` or under the minimum draws 2 px above its bottom row; it pins two ScottPlot behaviours, the bottom axis frame drawn over the data area's bottom row and a linear `YAxisBase.GetPixel` |
 | `UI/Chart/ChartPointerInputTests` | headless pointer events into `TrendChartView` | a drag pans the navigation window, a wheel zooms it, a capture loss ends the drag, a click within the slop picks the nearest pen and never pans, a click on empty space or below the data area outside the time axis band keeps the active pen and drops its emphasis, a drag through empty space keeps it; Shift + wheel pans by a tenth of the window, Ctrl + wheel and Ctrl + drag shift only the active pen, the wheel over the active axis scales it about the cursor, a horizontal wheel leaves the window, a Ctrl + click changes nothing, and the press fixes the drag's action and its cursor; a click on the time axis opens the time window panel, picks no pen and keeps the emphasis, in delta mode too without placing a cursor, Escape in that panel closes the chart's flyout and writes nothing, a drag on the time axis pans and opens nothing, a Ctrl drag from the time axis shifts the active pen, and closing the window with a picker's calendar open throws nothing and writes the pending pair |
-| `UI/Minimap/MinimapPointerInputTests` | headless pointer events into `MinimapView` | a drag on the strip moves the chart's window to each pointer fraction, a move after release reaches the strip and moves nothing, a window past the extent keeps its marker inside the strip |
-| `UI/Minimap/MinimapHoverTests` | headless pointer events into `MinimapView` | a hover shows a line at the pointer and its time centred under it in the label row, inside the row at either end, where the time hides only the end label it covers, also after a new extent relabels that label; the line stays inside the strip at its right edge and keeps its fraction through a resize; a newer sample relabels the time; a drag keeps the line under the pointer, and a move off the strip or an exit hides the line and the time |
-| `UI/Minimap/MinimapViewTests` | a realised `MinimapView` with a published band | the strip holds the band, the marker and the hover line in that order and no baseline; the band is sized to the strip, with figures in the pen's colour that a pan leaves as they are; the end labels sit in a row under the strip, and the view keeps its height when the extent fills them |
+| `UI/Minimap/MinimapPointerInputTests` | headless pointer events into `MinimapView` | a drag on the detail track moves the chart's window to each pointer fraction of the page, a move after release reaches the strip and moves nothing, a window past the extent keeps its box inside the strip of its own page; a click on a weekend cell of the day calendar lands on the nearer working day's data, a click under the Week unit shows the week holding the day, a click past the last cell moves nothing, and a drag along the cells lands on each day under the pointer and a move after release on none |
+| `UI/Minimap/MinimapHoverTests` | headless pointer events into `MinimapView` | a hover over the detail track shows a line at the pointer and its time centred under it in the tick row, inside the row at either end, where the time hides only the tick labels it covers; the line stays inside the strip at its right edge and keeps its fraction through a resize; a page turn relabels the time; a drag keeps the line under the pointer, and a move off the strip or an exit hides the line and the time; a hover over a day calendar cell rings it and names the day and its first and last sample in the tooltip, a day without rows says so, and leaving the row or passing the last cell clears both |
+| `UI/Minimap/MinimapViewTests` | a realised `MinimapView` with a published band | the strip holds the band below the window box and no baseline, with the page's hour labels in a row under it; the band is sized to the strip, read over the page at the strip's own width, with figures in the pen's colour that a pan leaves as they are; the strip ticks each operator marker on the page; a click on either chevron steps the chart a working day; the strip spans the panel between the two chevrons, 8 px from each, directly under the chart, with its tick row under it, an 8 px gap and the day calendar across the strip's width under that, in a 97 px row that keeps its height when the extent fills its labels; the calendar takes one cell per day, fills the days with rows right-aligned at a 20 px pitch, draws two 19 px cells at the row's right end and no slab for a two-day archive, rings the page and follows a page step, stops a week's outline at the last day, regrades the newest cell only across a coverage step through a live sample, ticks the days of the operator's markers only, keeps the outline without day spans, and labels the months of a short archive with a Monday dropped where it would touch a month, or the months of a six-month archive with a separator before each start |
 
 **The render guard.** `Plot.GetImage(width, height)` rasterises through SkiaSharp with no Avalonia in
 the loop. `LogAxisRenderTests` builds a bare `Plot` and is a plain `[Fact]`; `ChartGapRenderTests` builds

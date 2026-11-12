@@ -1028,6 +1028,7 @@ public sealed class CsvExportWindowTests : IDisposable
 
 			ToolTip.GetTip(message).Should().Be(path);
 			message.Text.Should().Contain("out.csv").And.NotContain(directory.Path);
+			ShouldShowTheWholeTip(message, path, "the line's two-line trimming stays out of its tooltip");
 		}
 		finally
 		{

@@ -303,6 +303,25 @@ public sealed class MarkerSetTests
 	}
 
 	[Fact]
+	public void OperatorMarkers_HoldTheUserKindOnly_ThroughApplyPlaceAndRemove_WhateverTheRecipeToggle()
+	{
+		var recipeStart = new StoredMarker(4, _origin.AddMinutes(5), "Etch.csv", MarkerKind.RecipeStart, true);
+		var set = SetOf(_etchStart, recipeStart, _etchEnd);
+		set.OperatorMarkers.Should().Equal(_etchStart, _etchEnd);
+		var moved = _etchStart with { TimeUtc = _origin.AddMinutes(30) };
+
+		set.Place(moved);
+		set.Place(recipeStart with { TimeUtc = _origin.AddMinutes(40) });
+		set.OperatorMarkers.Should().Equal(_etchEnd, moved);
+
+		set.ToggleRecipeMarkers();
+		set.Remove(_etchEnd.Id);
+
+		set.OperatorMarkers.Should().Equal(moved);
+		set.ShownMarkers.Should().BeSameAs(set.OperatorMarkers, "hidden recipe markers leave the operator's shown");
+	}
+
+	[Fact]
 	public void ShownMarkers_ReturnsTheSameArrayBetweenTwoChanges()
 	{
 		var recipeStart = new StoredMarker(4, _origin.AddMinutes(5), "Etch.csv", MarkerKind.RecipeStart, true);

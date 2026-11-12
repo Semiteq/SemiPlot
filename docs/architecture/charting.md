@@ -593,7 +593,9 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   `Chart/TrendChartView.Markers.cs`.
 - `Chart/LocalTimeAxis` — UTC↔local-OADate conversion at every render boundary.
 - `Navigation/NavigationBarView` + `NavigationBarViewModel` — time navigation only: jump-to-now,
-  sticky toggle, delta-mode toggle + inline Δt/Δy readout (ReactiveUI commands). The axis scale panel
+  sticky toggle, the recipe-run group (run steps, latest run, the marker list,
+  `trend-interaction.md#recipe-run-and-marker-steps`), delta-mode toggle + inline Δt/Δy readout
+  (ReactiveUI commands). The axis scale panel
   holds autoscale, the two limit boxes and set-limits, and the status bar shows the layer.
 - `Navigation/WallClockRangeForm` — the date-plus-`HH:mm:ss` range fields and the five range rules that
   `Export/ExportRangeForm` and `Navigation/TimeWindowForm` derive from; `TimeWindowForm` adds the width
@@ -661,14 +663,16 @@ models, backed by renderer-agnostic models in `SemiPlot.Core`. Responsibilities:
   carries its own template, a `Border` painting its `Background`; without one it draws nothing and a
   press never reaches it. The handle shows only while `IsLegendVisible` holds. Nothing persists the state
   or the widths — every start opens expanded at 280.
-- `Minimap/MinimapView` + `MinimapViewModel` — Canvas-based archive-overview strip with no baseline,
-  and a label row under it that holds the two end labels and, under the pointer, the time at the strip's
-  1 px hover line (`HoverAt`, `ClearHover`, `HoverFraction`, `HoverLabel`); navigates via the shared
-  `ChartNavigationController`, ends at the later of the extent's last sample and the navigation's
-  `NewestSample`; its `Minimap/MinimapBandFeed` reads the drawn pen's band over the whole strip
-  (`trend-interaction.md#archive-overview-minimap`).
-- `Minimap/MinimapBand` — the strip's band, a `Control` with a `Render` override that fills and strokes
-  the figures `MinimapGeometry.BandFigures` shapes; it reads nothing.
+- `Minimap/MinimapView` + `MinimapViewModel` — the archive-overview minimap: a detail track over one
+  working day, week or month, the smallest that holds the chart window, between two chevron page steps,
+  and under it a day calendar of one cell per wall-clock day of the whole extent, which ends at the
+  later of the extent's last sample and the navigation's `NewestSample`. `Minimap/ArchivePresenceFeed`
+  reads the days that hold rows, `Minimap/MinimapPager` derives the page and lands every step through the
+  shared `ChartNavigationController`, and `Minimap/MinimapBandFeed` reads the drawn pen's band over the
+  page (`trend-interaction.md#archive-overview-minimap`).
+- `Minimap/MinimapBand` — the detail track's band, a `Control` with a `Render` override that fills and
+  strokes the figures `MinimapGeometry.BandFigures` shapes; it reads nothing. `Minimap/MinimapDayCalendar`
+  and `Minimap/MinimapRunShading` draw the day calendar and the Day page's recipe runs the same way.
 - `MainWindow/TrendWindow` — builds the window's parts once, in dependency order, and disposes them in
   reverse (`overview.md#one-window-per-process`).
 - `MainWindow/MainWindow` + `MainWindowViewModel` — the six-row window grid, the flags its View
@@ -770,11 +774,18 @@ quoting). `SemiPlot.Core.Export.ArchiveRowSlices` holds the 15 minute slice widt
   multiplies the reading by 100.
 - `TrendNavigationModel` — `[from, to]` window, sticky flag, zoom width; pan / zoom / jump-to-now /
   live-edge advance, clamped 1 s … 1 year, zoom width quantized onto a 1.25 ladder, `From ≥ FirstSample`.
-- `MinimapGeometry` — extent + window → strip start/width fractions, and fraction → timestamp;
-  `MarkerSpan` → the marker's left edge and width, clamped inside the strip; `RightBound` → the later
+- `MinimapGeometry` — timestamp → fraction of a span, and fraction → timestamp clamped to the span;
+  `SpanLeftWithin` → a span's left edge kept inside the strip; `RightBound` → the later
   of the extent's last sample and the newest sample; `BandFigures` → one outline and centre line per
   run of finite envelope columns, scaled to the pen's own range. The band's next-read delay is the
   read schedule's own, `Minimap/MinimapBandFeed.NextReadDelay`.
+- `MinimapPage` — the minimap's Day and Week pages in the archive's wall clock: the working hours from
+  the day spans, `Snap`, `Step` to the nearest page with rows, `Land` and `SnapToData`.
+  `DayCalendar` gives every wall-clock day of the extent a cell at a whole pitch of at most 20 px and turns
+  the spans, the page and the markers into graded cells, the page outline and the marker ticks;
+  `DayCalendarLabels` places its day and month labels, and `MinimapTrackGeometry` turns the page and the
+  window into the clipped window box, run shades and tick positions. `MarkerNavigation` pairs the recipe markers into
+  runs (`trend-interaction.md#archive-overview-minimap`).
 - `CursorReadoutModel` — cursor X → per-pen `Center` value read as the pen's line draws it: a `Stepped`
   pen holds the `Center` of the last column at or before the cursor, an `Interpolated` pen interpolates
   between the two neighbouring `Center`s (gaps and a cursor outside the columns → no value).
@@ -892,8 +903,8 @@ the Rx hub between the two and the view model:
   query, returning one `PenHistoryEnvelope` per pen (ascending `Timestamps` + `Min` + `Max` +
   `Center`; NaN = gap). The initial load and every gesture re-query go through
   `ChartHistoryRequestDebouncer`, which runs one query at a time and lets the newest window asked
-  for run last. The minimap band is a second reader outside the debouncer: one pen at 250 columns
-  every 2-60 s (`trend-interaction.md#archive-overview-minimap`).
+  for run last. The minimap band is a second reader outside the debouncer: one pen over the minimap's
+  page at 250 to 2 500 columns every 2-60 s (`trend-interaction.md#archive-overview-minimap`).
 - **Realtime:** the live edge comes through `ILiveSource` as one `LivePoll` per answered poll, and the
   coordinator republishes it as `IObservable<RealtimeBatch>`, one per buffer window that holds a poll: the
   window's newest `AnsweredAtUtc`, whether any poll in it `ResumesAfterFailure`, an ascending union timeline
@@ -914,6 +925,11 @@ the Rx hub between the two and the view model:
   that hold a layer-0 row of a catalogue pen. `TrendCoordinator.QueryArchiveDaysAsync` is a pass-through
   to the provider; the time window panel reads it once per open and the export window once per window for
   their calendars' blackout days (`trend-interaction.md#the-time-window-panel`).
+- **Archive day spans:** `QueryArchiveDaySpansAsync(firstDay, lastDay, ct)` returns one `ArchiveDaySpan`
+  per local day of the range that holds a layer-0 row, with that day's first and last sample in UTC.
+  `TrendCoordinator.QueryArchiveDaySpansAsync` is a pass-through to the provider; the minimap's
+  `ArchivePresenceFeed` reads it over the extent and again on each new day
+  (`trend-interaction.md#archive-overview-minimap`).
 - **Connection state:** `Bridge/PenCatalogueSync.ConnectionStates` carries the
   `ArchiveConnectionState` its catalogue reads show, on the UI thread; neither the provider nor the
   coordinator carries one. `MainWindow/AppStatusBarViewModel` binds it and shows it in the status bar,

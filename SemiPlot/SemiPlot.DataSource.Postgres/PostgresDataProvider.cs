@@ -190,6 +190,46 @@ public sealed class PostgresDataProvider : IDataProvider
 		}
 	}
 
+	/// <summary>
+	/// The days bind as archive wall-clock days, as in <see cref="QueryArchiveDaysAsync"/>; the samples convert.
+	/// </summary>
+	public async Task<Result<IReadOnlyList<ArchiveDaySpan>>> QueryArchiveDaySpansAsync(
+		DateOnly firstDay,
+		DateOnly lastDay,
+		CancellationToken cancellationToken = default)
+	{
+		try
+		{
+			await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+			await using var command = new NpgsqlCommand(ArchiveStatements.ArchiveDaySpans, connection);
+
+			BindArchiveDays(command, firstDay, lastDay);
+
+			await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+			var spans = new List<ArchiveDaySpan>();
+
+			while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+			{
+				spans.Add(new ArchiveDaySpan(
+					reader.GetFieldValue<DateOnly>(0),
+					_timeConverter.ToUtc(reader.GetDateTime(1)),
+					_timeConverter.ToUtc(reader.GetDateTime(2))));
+			}
+
+			return Result.Ok<IReadOnlyList<ArchiveDaySpan>>(spans);
+		}
+		catch (OperationCanceledException)
+		{
+			throw;
+		}
+		catch (Exception exception)
+		{
+			return Result.Fail<IReadOnlyList<ArchiveDaySpan>>(
+				Map(exception, ArchiveStatements.TagCatalogAndTrendsRelations));
+		}
+	}
+
 	// docs/architecture/data-integration.md#operation-to-statement
 	private async Task<IReadOnlyList<PenHistoryEnvelope>> ReadHistoryAsync(
 		int[] penIds,

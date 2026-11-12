@@ -1,4 +1,4 @@
-using System.Globalization;
+using System.Reactive;
 using System.Reactive.Concurrency;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
@@ -14,6 +14,7 @@ using SemiPlot.Core.Trends;
 using SemiPlot.UI.Bridge;
 using SemiPlot.UI.Chart;
 using SemiPlot.UI.Messages;
+using SemiPlot.UI.Navigation;
 
 namespace SemiPlot.UI.Minimap;
 
@@ -29,6 +30,8 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 	private readonly OutageReport _extentOutage;
 	private readonly CompositeDisposable _disposables = [];
 	private readonly SerialDisposable _missingExtentRead = new();
+	private readonly ObservableAsPropertyHelper<string?> _hint;
+	private readonly ObservableAsPropertyHelper<IReadOnlyList<DateTime>> _operatorMarkerTimes;
 
 	private bool _isExtentMissing;
 	private DateTimeOffset _nextMissingExtentRead = DateTimeOffset.MinValue;
@@ -38,91 +41,88 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 		TrendCoordinator coordinator,
 		TrendChartViewModel chart,
 		IScheduler uiScheduler,
+		TimeZoneInfo archiveZone,
 		MessagePanelViewModel messagePanel,
 		ILogger<MinimapViewModel> logger)
 	{
 		_coordinator = coordinator;
 		_chart = chart;
 		_uiScheduler = uiScheduler;
+		ArchiveZone = archiveZone;
 		_messagePanel = messagePanel;
 		_logger = logger;
 		_extentOutage = new OutageReport("archive extent read", messagePanel, logger);
-		BandFeed = new MinimapBandFeed(coordinator, chart, ReadBounds, uiScheduler, messagePanel, logger);
+		PresenceFeed = new ArchivePresenceFeed(
+			coordinator, chart.Navigation, archiveZone, uiScheduler, messagePanel, logger);
+		Pager = new MinimapPager(chart.Navigation, PresenceFeed, Extents(), archiveZone);
+		BandFeed = new MinimapBandFeed(coordinator, chart, Pager, () => HasExtent, uiScheduler, messagePanel, logger);
 
 		_disposables.Add(FollowNavigation());
-		_disposables.Add(chart.Markers.Changed.Subscribe(_ => RefreshTimeMarkerFractions(), ReportFailure));
+		_disposables.Add(this
+			.WhenAnyValue(
+				viewModel => viewModel.IsArchiveEmpty,
+				viewModel => viewModel.HasExtent,
+				viewModel => viewModel.Pager.Page,
+				viewModel => viewModel.PresenceFeed.Spans,
+				viewModel => viewModel.BandFeed.HasReadFailed,
+				MinimapHint.For)
+			.ToProperty(this, viewModel => viewModel.Hint, out _hint));
+		_disposables.Add(chart.Markers.Changed
+			.StartWith(Unit.Default)
+			.Select(_ => OperatorMarkerTimesOf(chart.Markers))
+			.DistinctUntilChanged(SequenceComparer<DateTime>.Instance)
+			.ToProperty(this, viewModel => viewModel.OperatorMarkerTimes, out _operatorMarkerTimes));
+		RefreshShadedRuns();
+		_disposables.Add(chart.Markers.Changed.Subscribe(_ => RefreshShadedRuns(), ReportFailure));
 		_disposables.Add(_missingExtentRead);
 		_disposables.Add(BandFeed);
+		_disposables.Add(PresenceFeed);
+		_disposables.Add(Pager);
 	}
 
 	public DateTime ExtentFirst
 	{
 		get;
-		private set
-		{
-			this.RaiseAndSetIfChanged(ref field, value);
-			this.RaisePropertyChanged(nameof(ExtentFirstLabel));
-			this.RaisePropertyChanged(nameof(HoverLabel));
-		}
+		private set => this.RaiseAndSetIfChanged(ref field, value);
 	}
 
-	/// <summary>The strip's right bound: the later of the extent's last sample and the chart's newest sample.</summary>
+	/// <summary>The minimap's right bound: the later of the extent's last sample and the chart's newest sample.</summary>
 	public DateTime ExtentLast
 	{
 		get;
-		private set
-		{
-			this.RaiseAndSetIfChanged(ref field, value);
-			this.RaisePropertyChanged(nameof(ExtentLastLabel));
-			this.RaisePropertyChanged(nameof(HoverLabel));
-		}
+		private set => this.RaiseAndSetIfChanged(ref field, value);
 	}
 
 	public bool HasExtent
 	{
 		get;
-		private set
-		{
-			this.RaiseAndSetIfChanged(ref field, value);
-			this.RaisePropertyChanged(nameof(ExtentFirstLabel));
-			this.RaisePropertyChanged(nameof(ExtentLastLabel));
-		}
+		private set => this.RaiseAndSetIfChanged(ref field, value);
 	}
 
-	public string ExtentFirstLabel => HasExtent ? FormatTime(ExtentFirst) : string.Empty;
-
-	public string ExtentLastLabel => HasExtent ? FormatTime(ExtentLast) : string.Empty;
-
-	public double WindowStartFraction
+	/// <summary>True once an extent read answered with no rows and no extent was ever read.</summary>
+	public bool IsArchiveEmpty
 	{
 		get;
 		private set => this.RaiseAndSetIfChanged(ref field, value);
 	}
 
-	public double WindowWidthFraction
-	{
-		get;
-		private set => this.RaiseAndSetIfChanged(ref field, value);
-	} = 1.0;
-
-	public double? HoverFraction
-	{
-		get;
-		private set
-		{
-			this.RaiseAndSetIfChanged(ref field, value);
-			this.RaisePropertyChanged(nameof(HoverLabel));
-		}
-	}
-
-	public string HoverLabel => HoverFraction is { } fraction
-		? FormatTime(MinimapGeometry.TimeAtFraction(ExtentFirst, ExtentLast, fraction))
-		: string.Empty;
+	/// <summary>The archive's wall-clock zone, which the day calendar and the detail track read.</summary>
+	public TimeZoneInfo ArchiveZone { get; }
 
 	public MinimapBandFeed BandFeed { get; }
 
-	/// <summary>Where each time marker inside the extent sits along the strip; empty without an extent.</summary>
-	public IReadOnlyList<double> TimeMarkerFractions
+	public ArchivePresenceFeed PresenceFeed { get; }
+
+	public MinimapPager Pager { get; }
+
+	/// <summary>The detail track's hint (docs/architecture/trend-interaction.md#archive-overview-minimap).</summary>
+	public string? Hint => _hint.Value;
+
+	/// <summary>The operator's markers for the day calendar's marker ticks.</summary>
+	public IReadOnlyList<DateTime> OperatorMarkerTimes => _operatorMarkerTimes.Value;
+
+	/// <summary>The recipe runs the Day page shades; empty while the View menu hides recipe markers.</summary>
+	public IReadOnlyList<RecipeRun> ShadedRuns
 	{
 		get;
 		private set => this.RaiseAndSetIfChanged(ref field, value);
@@ -150,52 +150,30 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 		return result;
 	}
 
-	public void NavigateToFraction(double fraction)
+	/// <summary>The day calendar over the extent's wall-clock days; null without an extent or a width.</summary>
+	public DayCalendar? Calendar(double width)
 	{
-		ObjectDisposedException.ThrowIf(_isDisposed, this);
-
-		if (!HasExtent)
-		{
-			return;
-		}
-
-		var target = MinimapGeometry.TimeAtFraction(ExtentFirst, ExtentLast, fraction);
-		var navigation = _chart.Navigation;
-		var currentCenter = navigation.From + ((navigation.To - navigation.From) / 2.0);
-		navigation.PanBy(target - currentCenter);
-	}
-
-	public void HoverAt(double fraction)
-	{
-		if (!HasExtent)
-		{
-			return;
-		}
-
-		HoverFraction = fraction;
-	}
-
-	public void ClearHover()
-	{
-		HoverFraction = null;
+		return HasExtent
+			? DayCalendar.Over(
+				ArchiveClock.DayOf(ExtentFirst, ArchiveZone), ArchiveClock.DayOf(ExtentLast, ArchiveZone), width)
+			: null;
 	}
 
 	private IDisposable FollowNavigation()
 	{
 		var navigation = _chart.Navigation;
-		navigation.WindowChanged += OnNavigationWindowChanged;
 		navigation.NewestSampleMoved += OnNewestSampleMoved;
 
-		return Disposable.Create(() =>
-		{
-			navigation.WindowChanged -= OnNavigationWindowChanged;
-			navigation.NewestSampleMoved -= OnNewestSampleMoved;
-		});
+		return Disposable.Create(() => navigation.NewestSampleMoved -= OnNewestSampleMoved);
 	}
 
-	private (DateTime First, DateTime Last)? ReadBounds()
+	private IObservable<(DateTime First, DateTime Last)?> Extents()
 	{
-		return HasExtent ? (ExtentFirst, ExtentLast) : null;
+		return this.WhenAnyValue(
+			viewModel => viewModel.HasExtent,
+			viewModel => viewModel.ExtentFirst,
+			viewModel => viewModel.ExtentLast,
+			(hasExtent, first, last) => hasExtent ? (first, last) : ((DateTime First, DateTime Last)?)null);
 	}
 
 	private void ApplyExtent(Result<ArchiveExtent> result)
@@ -215,6 +193,7 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 		}
 
 		_extentOutage.Succeeded();
+		IsArchiveEmpty = !HasExtent && result.Value.IsEmpty;
 
 		// An empty extent is a normal state of a fresh archive: leave HasExtent false so the strip stays
 		// blank.
@@ -227,9 +206,8 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 		ExtentFirst = result.Value.FirstUtc;
 		ExtentLast = MinimapGeometry.RightBound(result.Value.LastUtc, navigation.NewestSample);
 		HasExtent = true;
-		RefreshWindowFraction(navigation.From, navigation.To);
-		RefreshTimeMarkerFractions();
 		BandFeed.RequestRead();
+		PresenceFeed.ReadExtent(ExtentFirst, ExtentLast);
 	}
 
 	private void ReadMissingExtent()
@@ -259,68 +237,37 @@ public sealed class MinimapViewModel : ReactiveObject, IDisposable
 		_messagePanel.TryReportFailure(new ExceptionalError(failure), _logger);
 	}
 
-	private static string FormatTime(DateTime utc)
-	{
-		return utc.ToLocalTime().ToString("MMM d HH:mm", CultureInfo.CurrentCulture);
-	}
-
-	private void OnNavigationWindowChanged(object? sender, NavigationWindow window)
-	{
-		RefreshWindowFraction(window.From, window.To);
-	}
-
 	private void OnNewestSampleMoved(object? sender, DateTime newestSample)
 	{
-		if (!HasExtent)
+		RefreshShadedRuns();
+		if (HasExtent)
 		{
-			var isRetryDue = _uiScheduler.Now >= _nextMissingExtentRead;
-			if (_isExtentMissing && isRetryDue)
-			{
-				ReadMissingExtent();
-			}
-
-			return;
+			ExtentLast = MinimapGeometry.RightBound(ExtentLast, newestSample);
+			PresenceFeed.FollowNewestSample();
+		}
+		else if (_isExtentMissing && _uiScheduler.Now >= _nextMissingExtentRead)
+		{
+			ReadMissingExtent();
 		}
 
-		var rightBound = MinimapGeometry.RightBound(ExtentLast, newestSample);
-		if (rightBound == ExtentLast)
-		{
-			return;
-		}
-
-		ExtentLast = rightBound;
-		RefreshWindowFraction(_chart.Navigation.From, _chart.Navigation.To);
-		RefreshTimeMarkerFractions();
+		Pager.FollowNewestSample();
 	}
 
-	private void RefreshWindowFraction(DateTime from, DateTime to)
+	private static IReadOnlyList<DateTime> OperatorMarkerTimesOf(ChartMarkers markers)
 	{
-		if (!HasExtent)
-		{
-			return;
-		}
-
-		var (start, width) = MinimapGeometry.WindowFraction(ExtentFirst, ExtentLast, from, to);
-		WindowStartFraction = start;
-		WindowWidthFraction = width;
+		return [.. markers.OperatorMarkers.Select(marker => marker.TimeUtc)];
 	}
 
-	private void RefreshTimeMarkerFractions()
+	/// <summary>Reassigns only on a change, so a live sample redraws nothing while the last run is closed.</summary>
+	private void RefreshShadedRuns()
 	{
-		if (!HasExtent)
+		var markers = _chart.Markers;
+		var runs = markers.ShowsRecipeMarkers
+			? MarkerNavigation.Runs(markers.All, _chart.Navigation.NewestSample)
+			: [];
+		if (!runs.SequenceEqual(ShadedRuns))
 		{
-			return;
+			ShadedRuns = runs;
 		}
-
-		var fractions = new List<double>();
-		foreach (var marker in _chart.Markers.ShownMarkers)
-		{
-			if (MinimapGeometry.FractionAt(ExtentFirst, ExtentLast, marker.TimeUtc) is { } fraction)
-			{
-				fractions.Add(fraction);
-			}
-		}
-
-		TimeMarkerFractions = fractions;
 	}
 }

@@ -3,7 +3,9 @@ using System.Windows.Input;
 
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
+using Avalonia.Input;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 using AwesomeAssertions;
 
@@ -14,6 +16,7 @@ using SemiPlot.Core.Trends;
 using SemiPlot.UI.Localization;
 using SemiPlot.UI.MainWindow;
 using SemiPlot.UI.Messages;
+using SemiPlot.UI.Navigation;
 
 using Xunit;
 
@@ -50,7 +53,8 @@ public sealed class AppMenuBarTests
 				[
 					"FileNewWindow", "FileExport", "FileExit", "EditSettings", "EditPensAndGroups", "ViewLegendValues",
 					"ViewFoldAllGroups", "ViewShowAllPens", "ViewHideAllPens", "ViewAutoscale", "ViewInitialScale",
-					"ViewMessagePanel", "HelpAbout"
+					"ViewMessagePanel", "GoPreviousPage", "GoNextPage", "GoPreviousRun", "GoNextRun", "GoLatestRun",
+					"GoRecipeRunList", "GoPreviousMarker", "GoNextMarker", "GoMarkerList", "HelpAbout"
 				],
 				"the walk descends into every menu");
 
@@ -91,6 +95,96 @@ public sealed class AppMenuBarTests
 		items.Select(item => item.Name).Should().Equal("EditSettings", "EditPensAndGroups");
 		items[0].Command.Should().BeSameAs(viewModel.ShowSettingsCommand);
 		items[1].Command.Should().BeSameAs(viewModel.ShowPenEditorCommand);
+	}
+
+	[AvaloniaFact]
+	public void GoMenu_HoldsThePageTheRunAndTheMarkerStepsEachBoundToItsCommand()
+	{
+		using var stand = NewWindowStand();
+		var viewModel = stand.ViewModel;
+		var menuBar = ShowMenuBar(viewModel);
+		var pager = viewModel.MinimapViewModel.Pager;
+		var bar = viewModel.NavigationBarViewModel;
+
+		var goMenu = menuBar.FindControl<MenuItem>("GoMenu");
+		goMenu.Should().NotBeNull();
+		goMenu!.Header.Should().Be(Resources.MenuGo);
+
+		goMenu.Items.OfType<Control>()
+			.Select(item => item is Separator ? "-" : item.Name)
+			.Should()
+			.Equal(
+				"GoPreviousPage", "GoNextPage", "-", "GoPreviousRun", "GoNextRun", "GoLatestRun", "GoRecipeRunList",
+				"-", "GoPreviousMarker", "GoNextMarker", "GoMarkerList");
+		var commands = goMenu.Items.OfType<MenuItem>().Select(item => item.Command).ToList();
+		commands.Should().Equal(
+			[
+				pager.PreviousPageCommand, pager.NextPageCommand, bar.PreviousRunCommand, bar.NextRunCommand,
+				bar.LatestRunCommand, viewModel.ShowRecipeRunListCommand, bar.PreviousMarkerCommand,
+				bar.NextMarkerCommand, viewModel.ShowMarkerListCommand
+			],
+			ReferenceEquals);
+	}
+
+	[AvaloniaFact]
+	public void EveryGoItem_ShowsItsGesture_AndThatKeyFindsTheItem()
+	{
+		using var stand = NewWindowStand();
+		var viewModel = stand.ViewModel;
+		var menuBar = ShowMenuBar(viewModel);
+		var items = menuBar.FindControl<MenuItem>("GoMenu")!.Items.OfType<MenuItem>().ToList();
+
+		items.Select(item => item.InputGesture).Should().Equal(
+			WindowGestures.PreviousPage, WindowGestures.NextPage, WindowGestures.PreviousRun, WindowGestures.NextRun,
+			WindowGestures.LatestRun, WindowGestures.RecipeRunList, WindowGestures.PreviousMarker,
+			WindowGestures.NextMarker, WindowGestures.MarkerList);
+
+		foreach (var item in items)
+		{
+			var gesture = item.InputGesture!;
+			var key = new KeyEventArgs { Key = gesture.Key, KeyModifiers = gesture.KeyModifiers };
+
+			menuBar.GoItemFor(key).Should().BeSameAs(item, "'{0}' names its gesture", item.Name);
+		}
+	}
+
+	// Avalonia's own key names, which every tooltip naming a gesture prints too.
+	[AvaloniaFact]
+	public void TheOpenGoMenu_PrintsEachItemsGestureBesideItsCaption()
+	{
+		using var stand = NewWindowStand();
+		var menuBar = ShowMenuBar(stand.ViewModel);
+		var goMenu = menuBar.FindControl<MenuItem>("GoMenu")!;
+
+		goMenu.Open();
+		Dispatcher.UIThread.RunJobs();
+		try
+		{
+			var printed = goMenu.Items.OfType<MenuItem>()
+				.Select(item => item.GetVisualDescendants().OfType<TextBlock>().Select(text => text.Text).Last())
+				.ToList();
+
+			printed.Should().Equal(
+				"Alt+Left Arrow", "Alt+Right Arrow", "Ctrl+Left Arrow", "Ctrl+Right Arrow", "Ctrl+End", "Ctrl+R",
+				"Ctrl+Shift+Left Arrow", "Ctrl+Shift+Right Arrow", "Ctrl+M");
+			string[] tips =
+			[
+				WindowGestures.PreviousDayTip, WindowGestures.NextDayTip, WindowGestures.PreviousRunTip,
+				WindowGestures.NextRunTip, WindowGestures.LatestRunTip, WindowGestures.RecipeRunListTip
+			];
+			tips.Zip(printed).Should().OnlyContain(
+				pair => pair.Second != null && pair.First.Contains(pair.Second, StringComparison.Ordinal),
+				"a tooltip names its gesture in the text the menu prints");
+			WindowGestures.MarkerListTip.Should().Contain(printed[^1]);
+			WindowGestures.PreviousWeekTip.Should().Contain(printed[0]);
+			WindowGestures.NextWeekTip.Should().Contain(printed[1]);
+			WindowGestures.PreviousMonthTip.Should().Contain(printed[0]);
+			WindowGestures.NextMonthTip.Should().Contain(printed[1]);
+		}
+		finally
+		{
+			goMenu.Close();
+		}
 	}
 
 	[AvaloniaTheory]

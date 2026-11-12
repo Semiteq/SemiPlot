@@ -34,6 +34,7 @@ public sealed class ArchiveStatementTextTests
 	[InlineData(ArchiveStatements.ExportSliceRows, "ORDER BY t, array_position(@ids, id);")]
 	// The calendar takes the days as an ascending list.
 	[InlineData(ArchiveStatements.ArchiveDays, "ORDER BY 1;")]
+	[InlineData(ArchiveStatements.ArchiveDaySpans, "ORDER BY 1;")]
 	public void AStatementEndsWithItsOuterOrdering(string statement, string ordering)
 	{
 		statement.ReplaceLineEndings("\n").Should().EndWith(ordering);
@@ -131,6 +132,16 @@ public sealed class ArchiveStatementTextTests
 	[InlineData(ArchiveStatements.ArchiveDays, new[] { "ORDER BY t", "LIMIT 1" })]
 	[InlineData(
 		ArchiveStatements.ArchiveDays, new[] { "t >= day.start AND t < day.start + interval '1 day'" })]
+	[InlineData(ArchiveStatements.ArchiveDaySpans, new[] { "AND l = 0", "CROSS JOIN semiplot_tags tag" })]
+	[InlineData(
+		ArchiveStatements.ArchiveDaySpans, new[] { "AND t >= day.start AND t < day.start + interval '1 day') AS lo" })]
+	[InlineData(
+		ArchiveStatements.ArchiveDaySpans, new[] { "AND t >= day.start AND t < day.start + interval '1 day') AS hi" })]
+	// A day of the range with no raw row has no span, rather than a span of nulls.
+	[InlineData(ArchiveStatements.ArchiveDaySpans, new[] { "HAVING min(bounds.lo) IS NOT NULL" })]
+	// Without the fence the planner flattens the pair into the aggregate and the HAVING runs the first probe
+	// a second time per pen and day.
+	[InlineData(ArchiveStatements.ArchiveDaySpans, new[] { "OFFSET 0" })]
 	public void AStatementCarriesTheClauseItsReaderDependsOn(string statement, string[] fragments)
 	{
 		foreach (var fragment in fragments)
@@ -155,14 +166,16 @@ public sealed class ArchiveStatementTextTests
 		AssertBinderNamesTheStatementsOwnParameters(command, ArchiveStatements.BucketedHistoryWindow);
 	}
 
-	[Fact]
-	public void TheArchiveDaysBinderNamesExactlyTheStatementsOwnParameters()
+	[Theory]
+	[InlineData(ArchiveStatements.ArchiveDays)]
+	[InlineData(ArchiveStatements.ArchiveDaySpans)]
+	public void TheArchiveDaysBinderNamesExactlyTheParametersOfEachStatementItBinds(string statement)
 	{
-		using var command = new NpgsqlCommand(ArchiveStatements.ArchiveDays);
+		using var command = new NpgsqlCommand(statement);
 
 		PostgresDataProvider.BindArchiveDays(command, new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31));
 
-		AssertBinderNamesTheStatementsOwnParameters(command, ArchiveStatements.ArchiveDays);
+		AssertBinderNamesTheStatementsOwnParameters(command, statement);
 	}
 
 	[Fact]

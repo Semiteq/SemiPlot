@@ -18,13 +18,14 @@ using SemiPlot.UI.Messages;
 namespace SemiPlot.UI.Minimap;
 
 /// <summary>
-/// Reads the drawn pen's overview over the strip's bounds and publishes it with the pen's colour
-/// (docs/architecture/trend-interaction.md#archive-overview-minimap).
+/// Reads the drawn pen's overview over the pager's page at the strip's width and publishes it with the pen's
+/// colour (docs/architecture/trend-interaction.md#archive-overview-minimap).
 /// </summary>
 public sealed class MinimapBandFeed : ReactiveObject, IDisposable
 {
-	/// <summary>Below HistoryColumnTarget.MinColumns, so no chart read asks for it.</summary>
-	internal const int MinimapColumns = 250;
+	internal const int ColumnStep = 250;
+
+	internal const int MaximumColumns = 2500;
 
 	private const double ReadDelayDivisor = 1000.0;
 	private static readonly TimeSpan _fastestRead = TimeSpan.FromSeconds(2.0);
@@ -32,7 +33,8 @@ public sealed class MinimapBandFeed : ReactiveObject, IDisposable
 
 	private readonly TrendCoordinator _coordinator;
 	private readonly TrendChartViewModel _chart;
-	private readonly Func<(DateTime First, DateTime Last)?> _readBounds;
+	private readonly MinimapPager _pager;
+	private readonly Func<bool> _hasExtent;
 	private readonly IScheduler _uiScheduler;
 	private readonly MessagePanelViewModel _messagePanel;
 	private readonly ILogger _logger;
@@ -44,18 +46,21 @@ public sealed class MinimapBandFeed : ReactiveObject, IDisposable
 
 	private BandRequest? _latestRequest;
 	private AggregationLayer _layer;
+	private int _columns = ColumnStep;
 
 	internal MinimapBandFeed(
 		TrendCoordinator coordinator,
 		TrendChartViewModel chart,
-		Func<(DateTime First, DateTime Last)?> readBounds,
+		MinimapPager pager,
+		Func<bool> hasExtent,
 		IScheduler uiScheduler,
 		MessagePanelViewModel messagePanel,
 		ILogger logger)
 	{
 		_coordinator = coordinator;
 		_chart = chart;
-		_readBounds = readBounds;
+		_pager = pager;
+		_hasExtent = hasExtent;
 		_uiScheduler = uiScheduler;
 		_messagePanel = messagePanel;
 		_logger = logger;
@@ -65,11 +70,19 @@ public sealed class MinimapBandFeed : ReactiveObject, IDisposable
 		_disposables.Add(_nextRead);
 		_disposables.Add(_requests);
 		_disposables.Add(ReadOnDrawnPenChange());
+		_disposables.Add(ReadOnPageChange());
 		_disposables.Add(DrawnPenColor().ToProperty(this, feed => feed.BandColor, out _bandColor));
 	}
 
-	/// <summary>The drawn pen's overview over the strip; null with no drawn pen, no bounds or no rows.</summary>
+	/// <summary>The drawn pen's overview over the page; null with no drawn pen, no extent or no rows.</summary>
 	public PenHistoryEnvelope? Band
+	{
+		get;
+		private set => this.RaiseAndSetIfChanged(ref field, value);
+	}
+
+	/// <summary>True from a failed read until the next read lands; the band it held stays as it was.</summary>
+	public bool HasReadFailed
 	{
 		get;
 		private set => this.RaiseAndSetIfChanged(ref field, value);
@@ -83,6 +96,26 @@ public sealed class MinimapBandFeed : ReactiveObject, IDisposable
 		_disposables.Dispose();
 	}
 
+	/// <summary>Reads at the strip width's column count; a width inside the same 250 px step reads nothing.</summary>
+	public void SetStripWidth(double stripWidth)
+	{
+		var columns = ColumnsForWidth(stripWidth);
+		if (columns == _columns)
+		{
+			return;
+		}
+
+		_columns = columns;
+		RequestRead();
+	}
+
+	internal static int ColumnsForWidth(double stripWidth)
+	{
+		var steps = (int)Math.Round(stripWidth / ColumnStep, MidpointRounding.AwayFromZero);
+
+		return Math.Clamp(steps * ColumnStep, ColumnStep, MaximumColumns);
+	}
+
 	/// <summary>Reads the band now, in place of the read in flight and the scheduled one.</summary>
 	public void RequestRead()
 	{
@@ -90,6 +123,11 @@ public sealed class MinimapBandFeed : ReactiveObject, IDisposable
 		if (request?.PenId != Band?.PenId)
 		{
 			Band = null;
+		}
+
+		if (request is null)
+		{
+			HasReadFailed = false;
 		}
 
 		_latestRequest = request;
@@ -126,6 +164,14 @@ public sealed class MinimapBandFeed : ReactiveObject, IDisposable
 			.Subscribe(_ => TryRequestRead(), ReportFailure);
 	}
 
+	private IDisposable ReadOnPageChange()
+	{
+		return _pager
+			.WhenAnyValue(pager => pager.Page)
+			.Skip(1)
+			.Subscribe(_ => TryRequestRead(), ReportFailure);
+	}
+
 	private IObservable<string?> DrawnPenColor()
 	{
 		return _chart
@@ -138,15 +184,16 @@ public sealed class MinimapBandFeed : ReactiveObject, IDisposable
 
 	private BandRequest? NextRequest()
 	{
-		if (_readBounds() is not { } bounds || _chart.DrawnPenId is not { } penId)
+		if (!_hasExtent() || _chart.DrawnPenId is not { } penId)
 		{
 			return null;
 		}
 
+		var page = _pager.Page;
 		_layer = ChartNavigationController.LayerForWidth(
-			bounds.Last - bounds.First, _layer, MinimapColumns, visiblePenCount: 1);
+			page.ToUtc - page.FromUtc, _layer, _columns, visiblePenCount: 1);
 
-		return new BandRequest(penId, bounds.First, bounds.Last, _layer);
+		return new BandRequest(penId, page.FromUtc, page.ToUtc, _layer, _columns);
 	}
 
 	private IObservable<LandedRead> Read(BandRequest? request)
@@ -166,7 +213,7 @@ public sealed class MinimapBandFeed : ReactiveObject, IDisposable
 		try
 		{
 			var read = await _coordinator.QueryHistoryAsync(
-				[request.PenId], request.FromUtc, request.ToUtc, request.Layer, MinimapColumns, cancellation);
+				[request.PenId], request.FromUtc, request.ToUtc, request.Layer, request.Columns, cancellation);
 			result = read.Map(envelopes => envelopes.FirstOrDefault(envelope => envelope.PenId == request.PenId));
 		}
 		catch (Exception readFailure)
@@ -177,7 +224,7 @@ public sealed class MinimapBandFeed : ReactiveObject, IDisposable
 		_logger.LogDebug(
 			"The minimap band read {Layer} at {Columns} columns in {Elapsed}",
 			request.Layer,
-			MinimapColumns,
+			request.Columns,
 			Stopwatch.GetElapsedTime(started));
 
 		return result;
@@ -212,6 +259,7 @@ public sealed class MinimapBandFeed : ReactiveObject, IDisposable
 
 	private void ApplyResult(Result<PenHistoryEnvelope?> result)
 	{
+		HasReadFailed = result.IsFailed;
 		if (result.IsFailed)
 		{
 			_outage.Failed(result.Errors);
@@ -228,7 +276,7 @@ public sealed class MinimapBandFeed : ReactiveObject, IDisposable
 		_messagePanel.TryReportFailure(new ExceptionalError(failure), _logger);
 	}
 
-	private sealed record BandRequest(int PenId, DateTime FromUtc, DateTime ToUtc, AggregationLayer Layer);
+	private sealed record BandRequest(int PenId, DateTime FromUtc, DateTime ToUtc, AggregationLayer Layer, int Columns);
 
 	private sealed record LandedRead(BandRequest Request, Result<PenHistoryEnvelope?> Result);
 }

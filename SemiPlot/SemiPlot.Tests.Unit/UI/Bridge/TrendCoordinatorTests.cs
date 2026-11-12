@@ -318,13 +318,19 @@ public sealed class TrendCoordinatorTests
 			ChartColumnCount,
 			TestContext.Current.CancellationToken);
 		await coordinator.QueryArchiveExtentAsync();
+		await coordinator.QueryArchiveDaySpansAsync(
+			DateOnly.FromDateTime(FakeDataProvider.RealtimeEpoch),
+			DateOnly.FromDateTime(FakeDataProvider.RealtimeEpoch),
+			TestContext.Current.CancellationToken);
 
 		liveSource.LiveSubscriptionsOpened.Should().Be(1);
 		liveSource.HistoryQueryCount.Should().Be(0);
 		liveSource.ExtentQueryCount.Should().Be(0);
+		liveSource.DaySpansRanges.Should().BeEmpty();
 		dataProvider.LiveSubscriptionsOpened.Should().Be(0);
 		dataProvider.HistoryQueryCount.Should().Be(1);
 		dataProvider.ExtentQueryCount.Should().Be(1);
+		dataProvider.DaySpansRanges.Should().ContainSingle();
 	}
 
 	// docs/architecture/data-integration.md#realtime

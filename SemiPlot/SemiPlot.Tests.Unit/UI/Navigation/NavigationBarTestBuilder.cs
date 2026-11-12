@@ -6,9 +6,12 @@ namespace SemiPlot.Tests.Unit.UI.Navigation;
 
 internal static class NavigationBarTestBuilder
 {
-	public static (TrendChartViewModel Chart, NavigationBarViewModel Bar) CreateBar()
+	public static (TrendChartViewModel Chart, NavigationBarViewModel Bar) CreateBar(
+		FakeMarkerChannel? markerChannel = null)
 	{
-		var chart = ChartTestBuilder.CreateViewModel(ChartTestBuilder.RealtimeInterval).ViewModel;
+		var chart = ChartTestBuilder
+			.CreateViewModel(ChartTestBuilder.RealtimeInterval, markerChannel: markerChannel)
+			.ViewModel;
 
 		return (chart, new NavigationBarViewModel(chart));
 	}

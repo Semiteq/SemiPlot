@@ -59,6 +59,10 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 				() => new CsvExportWindow { DataContext = export },
 				viewModel.ForgetClosedWindow,
 				viewModel.ReportFailure)));
+		_requests.Add(viewModel.MarkerListRequests.Subscribe(
+			_ => NavigationBarContent.ShowMarkerList(MenuBar.GoMenuHeader)));
+		_requests.Add(viewModel.RecipeRunListRequests.Subscribe(
+			_ => NavigationBarContent.ShowRecipeRunList(MenuBar.GoMenuHeader)));
 		viewModel.LegendViewModel.FitPanel(MaximumPanelWidth());
 	}
 
@@ -67,6 +71,23 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 		_requests.Clear();
 
 		base.OnUnloaded(e);
+	}
+
+	/// <summary>Runs the Go item a key no control took names, and never one typed into a text box.</summary>
+	protected override void OnKeyDown(KeyEventArgs e)
+	{
+		base.OnKeyDown(e);
+
+		if (e.Handled || e.Source is TextBox)
+		{
+			return;
+		}
+
+		if (MenuBar.GoItemFor(e) is { Command: { } command } item && command.CanExecute(item.CommandParameter))
+		{
+			command.Execute(item.CommandParameter);
+			e.Handled = true;
+		}
 	}
 
 	private void OnPanelResizeHandleDragDelta(object? sender, VectorEventArgs e)

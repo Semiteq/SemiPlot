@@ -162,6 +162,7 @@ internal static class MainWindowTestBuilder
 		var launcher = TestLaunch.LauncherAt(configDirectory ?? AppContext.BaseDirectory, start);
 		var window = TrendWindow.Build(
 			archive.Data, launcher, archive.Scheduler, App.CsvDialectFor(UiLanguage.En), TimeZoneInfo.Utc);
+		archive.Provider.RecognizeBandReadsOf(window.ViewModel.ChartViewModel, window.ViewModel.MinimapViewModel);
 
 		archive.Scheduler.AdvanceBy(1);
 

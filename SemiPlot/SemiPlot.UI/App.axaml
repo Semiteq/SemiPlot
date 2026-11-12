@@ -17,5 +17,6 @@
         <semi:DataGridSemiTheme />
         <StyleInclude Source="avares://SemiPlot.UI/Styles/Forms.axaml" />
         <StyleInclude Source="avares://SemiPlot.UI/Styles/Buttons.axaml" />
+        <StyleInclude Source="avares://SemiPlot.UI/Styles/ToolTips.axaml" />
     </Application.Styles>
 </Application>

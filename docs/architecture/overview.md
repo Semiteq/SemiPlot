@@ -49,11 +49,11 @@ Constraint: **$0 budget** — only free/OSS components.
 |                                                             |
 |   App / MainWindow (Grid: six rows, table below)            |
 |     built and owned by TrendWindow                          |
-|     +-- AppMenuBar          File / Edit / View / Help       |
-|     +-- NavigationBarView   jump to now, sticky, delta      |
+|     +-- AppMenuBar          File / Edit / View / Go / Help  |
+|     +-- NavigationBarView   jump, sticky, runs, delta       |
 |     +-- TrendChartView ---hosts--> ScottPlot AvaPlot        |
 |     +-- TrendLegendView     grouped pen rows                |
-|     +-- MinimapView         archive-overview strip          |
+|     +-- MinimapView         day calendar, day/week/month    |
 |     +-- MessagePanelView    every failure lands here        |
 |     +-- AppStatusBar        connection state, layer         |
 |     +-- PenEditorWindow     pens and groups window          |
@@ -336,6 +336,10 @@ reading back a property the command does not write would let a click move nothin
 over `ChartMarkers.Changed`, because `ChartMarkers` raises no property notification
 (`trend-interaction.md#the-time-markers`).
 
+The `Go` menu, between `View` and `Help`, writes no row either: its items step the chart window and open the
+marker list, each with its gesture from `Navigation/WindowGestures`, so they work with rows 1 and 3
+collapsed (`trend-interaction.md#the-go-menu-and-the-gestures`).
+
 Row 4 is the one whose flag the operator is not the only source of. `MessagePanel.IsVisible` starts
 closed, so a session that never fails is never given the row, and `MessagePanelViewModel.Report`
 opens it for a failure the list does not already carry — an entry that landed off screen would be a
@@ -401,8 +405,8 @@ one method: nothing else may resolve a service through a static.
   query, reached through the debouncer by the initial load and every gesture alike) → provider
   returns one server-reduced `PenHistoryEnvelope` per pen (ascending `Timestamps` + `Min`/`Max`/`Center`) → the view
   model applies the result into the plot; the debouncer runs one query at a time and lets the newest
-  window asked for run last. The minimap band is a second reader outside the debouncer: one pen at 250
-  columns every 2-60 s (`trend-interaction.md#archive-overview-minimap`).
+  window asked for run last. The minimap band is a second reader outside the debouncer: one pen over the
+  minimap's page at 250 to 2 500 columns every 2-60 s (`trend-interaction.md#archive-overview-minimap`).
 - **Time markers:** `MarkerSync` reads every stored marker every 5 s and after each marker write →
   `ChartMarkers` reconciles the read into its `MarkerSet` → the view's `ChartMarkerLines` draws a
   line per marker inside the time window. A gesture writes through `IMarkerChannel` and updates the set
@@ -1052,7 +1056,7 @@ no other route. Nothing is pushed between windows, for the reasons
 | `Markers/MarkerSync` | The read loop and the write queue over `IMarkerStore`. It implements `Chart/IMarkerChannel` and reports every failure but a lost connection to the message panel; a lost connection reaches it through the catalogue read's state (`#a-failed-read`). `TrendWindow` builds and disposes it. |
 | `Chart/IMarkerChannel` | The chart's port: `Reads`, every read no write overtook, on the UI thread, and the five writes, each returning a `Result`. |
 | `Chart/ChartMarkers` | `TrendChartViewModel.Markers`, created and disposed by the chart view model. It reconciles each read into a `MarkerSet`, runs the gestures' writes and raises `Changed` once per change, a flip of the recipe flag included. |
-| `Core/Trends/MarkerSet` | Every marker in `All`, sorted by moment, then id; the shown ones in `ShownMarkers`, an array rebuilt only when the set or the `ShowsRecipeMarkers` flag changes; the hold counts; and the hit test `NearestWithin`, a binary search over `ShownMarkers`. |
+| `Core/Trends/MarkerSet` | Every marker in `All`, sorted by moment, then id; the shown ones in `ShownMarkers`, an array rebuilt only when the set or the `ShowsRecipeMarkers` flag changes; the operator's markers in `OperatorMarkers`, which the marker steps, the marker list and the minimap read; the hold counts; and the hit test `NearestWithin`, a binary search over `ShownMarkers`. |
 | `Chart/ChartMarkerLines` | One line per marker on the view's plot (`trend-interaction.md#the-time-markers`). |
 
 `Markers/` uses `Chart/` and `Bridge/`, and neither uses `Markers/`. `MarkerSync` implements

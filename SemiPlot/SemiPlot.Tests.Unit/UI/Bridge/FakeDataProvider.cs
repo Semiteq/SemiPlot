@@ -9,6 +9,7 @@ using FluentResults;
 using SemiPlot.Core.Data;
 using SemiPlot.Core.Data.Errors;
 using SemiPlot.Core.Trends;
+using SemiPlot.UI.Chart;
 using SemiPlot.UI.Minimap;
 
 namespace SemiPlot.Tests.Unit.UI.Bridge;
@@ -35,6 +36,8 @@ internal sealed class FakeDataProvider(
 	private int? _penToBreakOnNextTick;
 
 	private bool _previousRealtimePollFailed;
+
+	private Func<IReadOnlyList<int>, DateTime, DateTime, int, bool> _isBandRead = (_, _, _, _) => false;
 
 	public DateTime ArchiveFirstUtc { get; set; } = new(2025, 12, 25, 0, 0, 0, DateTimeKind.Utc);
 
@@ -83,6 +86,23 @@ internal sealed class FakeDataProvider(
 
 	public CancellationToken LastDaysCancellationToken { get; private set; }
 
+	// The day spans; a read answers the ones inside its range, ascending, as the real statement does.
+	public IReadOnlyList<ArchiveDaySpan> ArchiveDaySpans { get; set; } = [];
+
+	public bool FailDaySpans { get; set; }
+
+	// A spans read that throws instead of answering, the shape of a defect rather than of an outage.
+	public Exception? DaySpansReadException { get; set; }
+
+	// Plain, for the reason stated at CatalogueGate. A gated spans read waits on the gate in place when it starts.
+	public TaskCompletionSource<Result<IReadOnlyList<ArchiveDaySpan>>> DaySpansGate { get; set; } = new();
+
+	public bool GateDaySpans { get; set; }
+
+	public List<(DateOnly FirstDay, DateOnly LastDay)> DaySpansRanges { get; } = [];
+
+	public CancellationToken LastDaySpansCancellationToken { get; private set; }
+
 	// When set, a query for this layer returns the gate's task, holding it in flight so a newer query can
 	// complete first (cross-path race).
 	public AggregationLayer? GatedLayer { get; set; }
@@ -102,8 +122,7 @@ internal sealed class FakeDataProvider(
 	// A history read that throws instead of answering, the shape of a defect rather than of an outage.
 	public Exception? HistoryReadException { get; set; }
 
-	public IReadOnlyList<HistoryQuery> BandHistoryQueries =>
-		[.. HistoryQueries.Where(query => query.TargetColumnCount == MinimapBandFeed.MinimapColumns)];
+	public IReadOnlyList<HistoryQuery> BandHistoryQueries => [.. HistoryQueries.Where(query => query.IsBandRead)];
 
 	/// <summary>The chart's query count; like every LastQueried member below, it ignores the band's reads.</summary>
 	public int HistoryQueryCount => ChartHistoryQueries.Count;
@@ -120,12 +139,11 @@ internal sealed class FakeDataProvider(
 
 	public CancellationToken LastQueriedCancellationToken => LastHistoryQuery?.CancellationToken ?? default;
 
-	public IReadOnlyList<HistoryQuery> ChartHistoryQueries =>
-		[.. HistoryQueries.Where(query => query.TargetColumnCount != MinimapBandFeed.MinimapColumns)];
+	public IReadOnlyList<HistoryQuery> ChartHistoryQueries => [.. HistoryQueries.Where(query => !query.IsBandRead)];
 
 	private HistoryQuery? LastHistoryQuery => ChartHistoryQueries is [.., var last] ? last : null;
 
-	private IReadOnlyList<HistoryQuery> HistoryQueries
+	public IReadOnlyList<HistoryQuery> HistoryQueries
 	{
 		get
 		{
@@ -331,7 +349,9 @@ internal sealed class FakeDataProvider(
 	{
 		lock (_historyQueriesGate)
 		{
-			_historyQueries.Add(new HistoryQuery(penIds, fromUtc, toUtc, layer, targetColumnCount, cancellationToken));
+			var isBandRead = _isBandRead(penIds, fromUtc, toUtc, targetColumnCount);
+			_historyQueries.Add(
+				new HistoryQuery(penIds, fromUtc, toUtc, layer, targetColumnCount, isBandRead, cancellationToken));
 		}
 
 		if (HistoryReadException is { } readException)
@@ -414,6 +434,36 @@ internal sealed class FakeDataProvider(
 		return Task.FromResult(Result.Ok(days));
 	}
 
+	public Task<Result<IReadOnlyList<ArchiveDaySpan>>> QueryArchiveDaySpansAsync(
+		DateOnly firstDay,
+		DateOnly lastDay,
+		CancellationToken cancellationToken = default)
+	{
+		DaySpansRanges.Add((firstDay, lastDay));
+		LastDaySpansCancellationToken = cancellationToken;
+
+		if (DaySpansReadException is { } readException)
+		{
+			return Task.FromException<Result<IReadOnlyList<ArchiveDaySpan>>>(readException);
+		}
+
+		if (FailDaySpans)
+		{
+			return Task.FromResult(
+				Result.Fail<IReadOnlyList<ArchiveDaySpan>>(BenchArchiveError(ArchiveFault.ReadFailed, "42601")));
+		}
+
+		if (GateDaySpans)
+		{
+			return DaySpansGate.Task.WaitAsync(cancellationToken);
+		}
+
+		IReadOnlyList<ArchiveDaySpan> spans =
+			[.. ArchiveDaySpans.Where(span => span.Day >= firstDay && span.Day <= lastDay).OrderBy(span => span.Day)];
+
+		return Task.FromResult(Result.Ok(spans));
+	}
+
 	/// <summary>An archive failure against the bench address, which every fake answers with.</summary>
 	public static ArchiveError BenchArchiveError(ArchiveFault fault, string detail = "")
 	{
@@ -423,6 +473,21 @@ internal sealed class FakeDataProvider(
 	public static ArchiveError UnreachableArchive()
 	{
 		return BenchArchiveError(ArchiveFault.Unreachable);
+	}
+
+	/// <summary>
+	/// From now on, a read of only the drawn pen over the page in force as it is issued is the band's.
+	/// </summary>
+	public void RecognizeBandReadsOf(TrendChartViewModel chart, MinimapViewModel minimap)
+	{
+		minimap.HasExtent.Should().BeFalse("the band reads only once the minimap holds an extent");
+
+		_isBandRead = (penIds, fromUtc, toUtc, targetColumnCount) =>
+			penIds is [var penId]
+			&& penId == chart.DrawnPenId
+			&& fromUtc == minimap.Pager.Page.FromUtc
+			&& toUtc == minimap.Pager.Page.ToUtc
+			&& targetColumnCount % MinimapBandFeed.ColumnStep == 0;
 	}
 
 	private sealed class PoisonedSampleList : IReadOnlyList<Sample>
@@ -458,4 +523,5 @@ internal sealed record HistoryQuery(
 	DateTime ToUtc,
 	AggregationLayer Layer,
 	int TargetColumnCount,
+	bool IsBandRead,
 	CancellationToken CancellationToken);

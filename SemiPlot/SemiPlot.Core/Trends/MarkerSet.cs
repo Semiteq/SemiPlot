@@ -12,6 +12,7 @@ public sealed class MarkerSet
 	private readonly Dictionary<long, int> _holdCounts = [];
 
 	private StoredMarker[] _all = [];
+	private StoredMarker[] _operatorMarkers = [];
 	private StoredMarker[] _shownMarkers = [];
 
 	/// <summary>Every marker, shown or hidden; a snapshot like <see cref="ShownMarkers"/>.</summary>
@@ -22,12 +23,15 @@ public sealed class MarkerSet
 	/// </summary>
 	public IReadOnlyList<StoredMarker> ShownMarkers => _shownMarkers;
 
+	/// <summary>The operator's markers, shown or hidden, as a snapshot; recipe kinds never reach it.</summary>
+	public IReadOnlyList<StoredMarker> OperatorMarkers => _operatorMarkers;
+
 	public bool ShowsRecipeMarkers { get; private set; } = true;
 
 	public void ToggleRecipeMarkers()
 	{
 		ShowsRecipeMarkers = !ShowsRecipeMarkers;
-		RebuildShown();
+		_shownMarkers = ShowsRecipeMarkers ? _all : _operatorMarkers;
 	}
 
 	public bool Apply(IReadOnlyList<StoredMarker> read)
@@ -63,7 +67,7 @@ public sealed class MarkerSet
 		}
 
 		_all = [.. next];
-		RebuildShown();
+		RebuildViews();
 
 		return true;
 	}
@@ -97,20 +101,18 @@ public sealed class MarkerSet
 	public void Place(StoredMarker marker)
 	{
 		_all = Upsert(_all, marker);
-		if (ShowsRecipeMarkers)
+		if (IsOperatorMarker(marker))
 		{
-			_shownMarkers = _all;
+			_operatorMarkers = Upsert(_operatorMarkers, marker);
 		}
-		else if (IsShownWhileRecipesHidden(marker))
-		{
-			_shownMarkers = Upsert(_shownMarkers, marker);
-		}
+
+		_shownMarkers = ShowsRecipeMarkers ? _all : _operatorMarkers;
 	}
 
 	public void Remove(long id)
 	{
 		_all = Array.FindAll(_all, marker => marker.Id != id);
-		RebuildShown();
+		RebuildViews();
 	}
 
 	/// <summary>The marker closest to <paramref name="time"/> within the tolerance; the lower id wins a tie.</summary>
@@ -157,7 +159,7 @@ public sealed class MarkerSet
 		return byTime != 0 ? byTime : first.Id.CompareTo(second.Id);
 	}
 
-	private static bool IsShownWhileRecipesHidden(StoredMarker marker)
+	private static bool IsOperatorMarker(StoredMarker marker)
 	{
 		return marker.Kind == MarkerKind.User;
 	}
@@ -192,28 +194,14 @@ public sealed class MarkerSet
 		return next;
 	}
 
-	private void RebuildShown()
+	private void RebuildViews()
 	{
-		_shownMarkers = ShowsRecipeMarkers ? _all : Array.FindAll(_all, IsShownWhileRecipesHidden);
+		_operatorMarkers = Array.FindAll(_all, IsOperatorMarker);
+		_shownMarkers = ShowsRecipeMarkers ? _all : _operatorMarkers;
 	}
 
 	private int FirstAtOrAfter(DateTime time)
 	{
-		var low = 0;
-		var high = _shownMarkers.Length;
-		while (low < high)
-		{
-			var middle = low + ((high - low) / 2);
-			if (_shownMarkers[middle].TimeUtc < time)
-			{
-				low = middle + 1;
-			}
-			else
-			{
-				high = middle;
-			}
-		}
-
-		return low;
+		return SortedSearch.FirstIndex(_shownMarkers.Length, index => _shownMarkers[index].TimeUtc >= time);
 	}
 }

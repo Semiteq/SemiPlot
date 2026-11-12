@@ -19,6 +19,7 @@
             <SolidColorBrush x:Key="WindowDefaultForeground" Color="#000000" />
             <SolidColorBrush x:Key="MenuItemForeground" Color="#000000" />
             <SolidColorBrush x:Key="MenuItemPointeroverForeground" Color="#000000" />
+            <SolidColorBrush x:Key="MenuItemInputGestureTextForeground" Color="#000000" />
 
             <SolidColorBrush x:Key="TextBoxPlaceholderForeground" Color="#818594" />
 
@@ -84,7 +85,9 @@
             <SolidColorBrush x:Key="AppMarkerLineBrush" Color="#6F737A" />
             <SolidColorBrush x:Key="AppMarkerLabelBrush" Color="#000000" />
             <SolidColorBrush x:Key="AppRecipeMarkerLineBrush" Color="#834DF0" />
+            <SolidColorBrush x:Key="AppRecipeRunFillBrush" Color="#834DF0" Opacity="0.15" />
             <SolidColorBrush x:Key="AppSecondaryForegroundBrush" Color="#818594" />
+            <SolidColorBrush x:Key="AppMinimapPresenceBrush" Color="#818594" />
             <SolidColorBrush x:Key="AppAccentBrush" Color="#3574F0" />
             <SolidColorBrush x:Key="AppAccentFillBrush" Color="#3574F0" Opacity="0.25" />
             <SolidColorBrush x:Key="AppSeverityErrorBrush" Color="#DB3B4B" />
@@ -105,6 +108,7 @@
             <SolidColorBrush x:Key="WindowDefaultForeground" Color="#DFE1E5" />
             <SolidColorBrush x:Key="MenuItemForeground" Color="#DFE1E5" />
             <SolidColorBrush x:Key="MenuItemPointeroverForeground" Color="#DFE1E5" />
+            <SolidColorBrush x:Key="MenuItemInputGestureTextForeground" Color="#DFE1E5" />
 
             <SolidColorBrush x:Key="TextBoxPlaceholderForeground" Color="#6F737A" />
 
@@ -170,7 +174,9 @@
             <SolidColorBrush x:Key="AppMarkerLineBrush" Color="#A8ADBD" />
             <SolidColorBrush x:Key="AppMarkerLabelBrush" Color="#DFE1E5" />
             <SolidColorBrush x:Key="AppRecipeMarkerLineBrush" Color="#A571E6" />
+            <SolidColorBrush x:Key="AppRecipeRunFillBrush" Color="#A571E6" Opacity="0.15" />
             <SolidColorBrush x:Key="AppSecondaryForegroundBrush" Color="#6F737A" />
+            <SolidColorBrush x:Key="AppMinimapPresenceBrush" Color="#6F737A" />
             <SolidColorBrush x:Key="AppAccentBrush" Color="#3574F0" />
             <SolidColorBrush x:Key="AppAccentFillBrush" Color="#3574F0" Opacity="0.25" />
             <SolidColorBrush x:Key="AppSeverityErrorBrush" Color="#E55765" />

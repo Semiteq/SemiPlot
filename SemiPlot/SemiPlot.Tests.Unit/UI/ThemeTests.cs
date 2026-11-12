@@ -1,3 +1,5 @@
+using System.Reactive.Linq;
+
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
@@ -14,7 +16,11 @@ using Avalonia.VisualTree;
 
 using AwesomeAssertions;
 
+using SemiPlot.Core.Data;
+using SemiPlot.Core.Trends;
 using SemiPlot.UI;
+using SemiPlot.UI.Minimap;
+using SemiPlot.UI.Navigation;
 using SemiPlot.UI.Startup;
 
 using Xunit;
@@ -166,10 +172,19 @@ public sealed class ThemeTests
 			ToggleType = MenuItemToggleType.CheckBox,
 			IsChecked = true
 		};
+		var gestured = new MenuItem { Header = "gestured", InputGesture = new KeyGesture(Key.M, KeyModifiers.Control) };
+		var disabledGestured = new MenuItem
+		{
+			Header = "disabled",
+			InputGesture = new KeyGesture(Key.M, KeyModifiers.Control),
+			IsEnabled = false
+		};
 		var top = new MenuItem { Header = "top" };
+		top.Items.Add(disabledGestured);
 		top.Items.Add(leaf);
 		top.Items.Add(separator);
 		top.Items.Add(checkable);
+		top.Items.Add(gestured);
 		var menu = new Menu();
 		menu.Items.Add(top);
 		var items = new ItemsControl { ItemsSource = new[] { "row" } };
@@ -190,6 +205,9 @@ public sealed class ThemeTests
 			ColourOf(TextOf(leaf)).Should().Be(Color.Parse(text));
 			ColourOf(TextOf(checkable)).Should().Be(Color.Parse(text));
 			ColourOf(CheckGlyphOf(checkable)).Should().Be(Color.Parse(text));
+			ColourOf(GestureTextOf(gestured)).Should().Be(Color.Parse(text), "the gesture beside a caption");
+			ColourOf(GestureTextOf(disabledGestured)).Should().Be(
+				ColourOf(TextOf(disabledGestured)), "a disabled item's gesture follows its caption");
 			ColourOf(SeparatorFillOf(separator)).Should().Be(Color.Parse(border));
 			ColourOf(FlyoutBorderOf(top).Background).Should().Be(Color.Parse(flyoutBackground));
 			ColourOf(FlyoutBorderOf(top).BorderBrush).Should().Be(Color.Parse(border));
@@ -438,18 +456,126 @@ public sealed class ThemeTests
 		}
 	}
 
+	// A drop-down button with a menu, the navigation bar's Markers button and the time window panel's presets: the
+	// caption and the arrow at rest, hovered and disabled, and the open list.
 	[AvaloniaTheory]
-	[InlineData("AppAccentFillBrush")]
-	[InlineData("ComboBoxItemSelectedBackground")]
-	[InlineData("DataGridRowSelectedBackground")]
-	[InlineData("DataGridRowSelectedPointeroverBackground")]
-	public void APaletteKeyCarryingOpacity_KeepsItUnderBothVariants(string key)
+	[InlineData(AppThemeVariant.Light, "#000000", "#A8ADBD", "#F7F8FA", "#EBECF0")]
+	[InlineData(AppThemeVariant.Dark, "#DFE1E5", "#5A5D63", "#2B2D30", "#393B40")]
+	public void EveryDropDownButtonSurface_PaintsItselfFromThePalette(
+		AppThemeVariant theme, string text, string disabledText, string flyoutBackground, string border)
 	{
-		const double Opacity = 0.25;
+		using var scope = ThemeProbe.ApplyVariant(App.VariantFor(theme));
+		Dispatcher.UIThread.RunJobs();
 
+		var list = new MenuFlyout { ItemsSource = new[] { "marker" } };
+		var button = new DropDownButton { Content = "Markers", Flyout = list };
+		var dimButton = new DropDownButton { Content = "Markers", IsEnabled = false, Flyout = new MenuFlyout() };
+		var window = new Window { Content = Stacked(button, dimButton) };
+		try
+		{
+			window.Show();
+			Dispatcher.UIThread.RunJobs();
+
+			ColourOf(TextOf(button)).Should().Be(Color.Parse(Accent), "the resting caption");
+			ColourOf(ArrowOf(button)).Should().Be(Color.Parse(Accent), "the resting arrow");
+			ColourOf(TextOf(dimButton)).Should().Be(Color.Parse(disabledText), "a disabled caption");
+			ColourOf(ArrowOf(dimButton)).Should().Be(Color.Parse(disabledText), "a disabled arrow");
+
+			PointAt(window, button);
+			ColourOf(TextOf(button)).Should().Be(Color.Parse(Accent), "the hovered caption");
+			ColourOf(ArrowOf(button)).Should().Be(Color.Parse(Accent), "the hovered arrow");
+
+			HeadlessInput.Click(window, button);
+			var presenter = list.Popup.Child!.GetSelfAndVisualDescendants().OfType<MenuFlyoutPresenter>().Single();
+			var item = presenter.GetVisualDescendants().OfType<MenuItem>().Single();
+
+			ColourOf(presenter.Background).Should().Be(Color.Parse(flyoutBackground));
+			ColourOf(presenter.BorderBrush).Should().Be(Color.Parse(border));
+			ColourOf(TextOf(item)).Should().Be(Color.Parse(text), "an item of the open list");
+		}
+		finally
+		{
+			list.Hide();
+			window.Close();
+		}
+	}
+
+	// The marker list's own content in its flyout: the presenter, the filter, the framed list, a month header, a
+	// row's date, the active row and its bar, and the no-match line.
+	[AvaloniaTheory]
+	[InlineData(AppThemeVariant.Light, "#000000", "#F7F8FA", "#EBECF0", false)]
+	[InlineData(AppThemeVariant.Dark, "#DFE1E5", "#2B2D30", "#393B40", false)]
+	[InlineData(AppThemeVariant.Light, "#000000", "#F7F8FA", "#EBECF0", true)]
+	[InlineData(AppThemeVariant.Dark, "#DFE1E5", "#2B2D30", "#393B40", true)]
+	public void TheMarkerAndRunListFlyouts_PaintTheirContentFromThePalette(
+		AppThemeVariant theme, string text, string flyoutBackground, string border, bool isRunList)
+	{
+		var variant = App.VariantFor(theme);
+		using var scope = ThemeProbe.ApplyVariant(variant);
+		Dispatcher.UIThread.RunJobs();
+
+		var now = new DateTime(2026, 11, 11, 10, 0, 0, DateTimeKind.Utc);
+		var entry = isRunList
+			? NavigationListEntry.Of(new RecipeRun(now, now.AddMinutes(35), IsInterrupted: true, "Etch.csv"))
+			: NavigationListEntry.Of(new StoredMarker(1, now, "Etch"));
+		using var list = new NavigationListViewModel(
+			Observable.Return<IReadOnlyList<NavigationListEntry>>([entry]), () => now, _ => { }, TimeZoneInfo.Utc,
+			"filter", "none");
+		var content = new NavigationListView { DataContext = list };
+		var flyout = new Flyout { Content = content };
+		flyout.Opening += (_, _) => content.Prepare();
+		var button = new DropDownButton { Content = "List", Flyout = flyout };
+		var window = new Window { Content = Stacked(button), Width = 800, Height = 600 };
+		try
+		{
+			window.Show();
+			Dispatcher.UIThread.RunJobs();
+			HeadlessInput.Click(window, button);
+
+			var presenter = content.GetVisualAncestors().OfType<FlyoutPresenter>().First();
+			var secondary = ThemeProbe.Colour("AppSecondaryForegroundBrush", variant);
+			ColourOf(presenter.Background).Should().Be(Color.Parse(flyoutBackground));
+			ColourOf(presenter.BorderBrush).Should().Be(Color.Parse(border));
+			ColourOf(ViewProbe.Named<Border>(content, "ListFrame").BorderBrush).Should()
+				.Be(ThemeProbe.Colour("AppBorderBrush", variant), "the list's frame");
+			ColourOf(ViewProbe.Descendant<TextBlock>(content, "MonthHeaderText").Foreground).Should().Be(secondary, "a header");
+			ColourOf(ViewProbe.Descendant<TextBlock>(content, "MonthHeaderCount").Foreground).Should().Be(secondary);
+			ColourOf(ViewProbe.Descendant<TextBlock>(content, "EntryName").Foreground).Should().Be(Color.Parse(text), "a name");
+			ColourOf(ViewProbe.Descendant<TextBlock>(content, "EntryDate").Foreground).Should().Be(secondary, "a row's date");
+			ColourOf(ViewProbe.Descendant<Border>(content, "EntryRow").Background).Should()
+				.Be(ThemeProbe.Colour("AppAccentFillBrush", variant), "the active row");
+			ColourOf(ViewProbe.Descendant<Border>(content, "ActiveBar").Background).Should().Be(Color.Parse(Accent));
+			if (isRunList)
+			{
+				ColourOf(ViewProbe.Descendant<TextBlock>(content, "EntryDuration").Foreground).Should()
+					.Be(secondary, "a run's duration");
+				ColourOf(ViewProbe.Descendant<PathIcon>(content, "InterruptedGlyph").Foreground).Should()
+					.Be(ThemeProbe.Colour("AppRecipeMarkerLineBrush", variant), "the interrupted glyph");
+			}
+
+			list.FilterText = "zzz";
+			Dispatcher.UIThread.RunJobs();
+
+			ColourOf(ViewProbe.Named<TextBlock>(content, "NoMatchLine").Foreground).Should().Be(secondary, "the no-match line");
+		}
+		finally
+		{
+			flyout.Hide();
+			window.Close();
+		}
+	}
+
+	[AvaloniaTheory]
+	[InlineData("AppAccentFillBrush", 0.25)]
+	[InlineData("ComboBoxItemSelectedBackground", 0.25)]
+	[InlineData("DataGridRowSelectedBackground", 0.25)]
+	[InlineData("DataGridRowSelectedPointeroverBackground", 0.25)]
+	[InlineData("AppRecipeRunFillBrush", 0.15)]
+	public void APaletteKeyCarryingOpacity_KeepsItUnderBothVariants(string key, double opacity)
+	{
 		foreach (var variant in new[] { ThemeVariant.Light, ThemeVariant.Dark })
 		{
-			ThemeProbe.Brush(key, variant).Opacity.Should().Be(Opacity);
+			ThemeProbe.Brush(key, variant).Opacity.Should().Be(opacity);
 		}
 	}
 
@@ -479,6 +605,103 @@ public sealed class ThemeTests
 			dark.Chart.Should().Be(ThemeProbe.Colour("AppContentBackgroundBrush", ThemeVariant.Dark));
 			light.Strip.Should().Be(ThemeProbe.Colour("AppContentBackgroundBrush", ThemeVariant.Light));
 			dark.Strip.Should().Be(ThemeProbe.Colour("AppContentBackgroundBrush", ThemeVariant.Dark));
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[AvaloniaFact]
+	public void TheDayCalendar_PaintsEveryFigureFromItsKey_UnderEachVariant()
+	{
+		using var scope = ThemeProbe.PreserveVariant();
+		var application = Application.Current!;
+		var window = new MainWindowView();
+		try
+		{
+			window.Show();
+			var calendar = window.GetVisualDescendants().OfType<MinimapDayCalendar>().Single();
+
+			var presences = new[] { (ThemeVariant.Light, "#818594"), (ThemeVariant.Dark, "#6F737A") };
+			foreach (var (variant, presence) in presences)
+			{
+				application.RequestedThemeVariant = variant;
+				Dispatcher.UIThread.RunJobs();
+
+				ThemeProbe.Colour("AppMinimapPresenceBrush", variant).Should().Be(Color.Parse(presence));
+				ColourOf(calendar.PresenceBrush).Should().Be(Color.Parse(presence), "under {0}", variant);
+				ColourOf(calendar.AccentBrush).Should().Be(ThemeProbe.Colour("AppAccentBrush", variant));
+				ColourOf(calendar.HoverBrush).Should().Be(ThemeProbe.Colour("AppSecondaryForegroundBrush", variant));
+				ColourOf(calendar.SeparatorBrush).Should().Be(ThemeProbe.Colour("AppSubtleLineBrush", variant));
+				ColourOf(calendar.MarkerBrush).Should().Be(ThemeProbe.Colour("AppMarkerLineBrush", variant));
+			}
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	// The minimap's page steps: Semi's borderless theme from the narrow step style, its Tertiary glyph colour.
+	[AvaloniaTheory]
+	[InlineData(AppThemeVariant.Light)]
+	[InlineData(AppThemeVariant.Dark)]
+	public void TheNarrowStep_PaintsNoGroundUntilHovered(AppThemeVariant theme)
+	{
+		var variant = App.VariantFor(theme);
+		using var scope = ThemeProbe.ApplyVariant(variant);
+		Dispatcher.UIThread.RunJobs();
+
+		var step = new Button
+		{
+			Classes = { "iconStep", "narrow", "Tertiary" },
+			Content = new PathIcon { Data = Geometry.Parse("M0,0 L8,6 L0,12 Z") }
+		};
+		var window = new Window { Content = Stacked(step) };
+		try
+		{
+			window.Show();
+			Dispatcher.UIThread.RunJobs();
+
+			var application = Application.Current!;
+			step.Theme.Should().BeSameAs(application.FindResource(variant, "BorderlessButton"));
+			AlphaOf(SurfaceOf(step).Background).Should().Be(0, "a step at rest paints no ground");
+			ColourOf(SurfaceOf(step).Foreground).Should().Be(
+				ColourOf(application.FindResource(variant, "ButtonDefaultTertiaryForeground") as IBrush));
+
+			PointAt(window, step);
+
+			step.Classes.Should().Contain(":pointerover");
+			AlphaOf(SurfaceOf(step).Background).Should().BePositive("a hovered step shows its ground");
+		}
+		finally
+		{
+			window.Close();
+		}
+	}
+
+	[AvaloniaFact]
+	public void TheRunShading_PaintsFromTheRecipeKeys_UnderEachVariant()
+	{
+		using var scope = ThemeProbe.PreserveVariant();
+		var application = Application.Current!;
+		var window = new MainWindowView();
+		try
+		{
+			window.Show();
+			var shading = window.GetVisualDescendants().OfType<MinimapRunShading>().Single();
+
+			foreach (var (variant, recipe) in new[] { (ThemeVariant.Light, "#834DF0"), (ThemeVariant.Dark, "#A571E6") })
+			{
+				application.RequestedThemeVariant = variant;
+				Dispatcher.UIThread.RunJobs();
+
+				ThemeProbe.Colour("AppRecipeRunFillBrush", variant).Should().Be(Color.Parse(recipe));
+				ColourOf(shading.FillBrush).Should().Be(Color.Parse(recipe), "under {0}", variant);
+				shading.FillBrush!.Opacity.Should().Be(0.15);
+				ColourOf(shading.EdgeBrush).Should().Be(ThemeProbe.Colour("AppRecipeMarkerLineBrush", variant));
+			}
 		}
 		finally
 		{
@@ -615,9 +838,19 @@ public sealed class ThemeTests
 			.First(border => border.Background is ISolidColorBrush { Color.A: 255 });
 	}
 
+	private static IBrush? ArrowOf(DropDownButton button)
+	{
+		return button.GetVisualDescendants().OfType<PathIcon>().Single().Foreground;
+	}
+
 	private static IBrush? CheckGlyphOf(MenuItem item)
 	{
 		return item.GetVisualDescendants().OfType<Shape>().First(shape => shape.Fill is not null).Fill;
+	}
+
+	private static IBrush? GestureTextOf(MenuItem item)
+	{
+		return item.GetVisualDescendants().OfType<TextBlock>().Last().Foreground;
 	}
 
 	private static IBrush? TextOf(Control control)
@@ -659,6 +892,11 @@ public sealed class ThemeTests
 		Dispatcher.UIThread.RunJobs();
 
 		return (ColourOf(chartBorder.Background), ColourOf(strip.Background));
+	}
+
+	private static byte AlphaOf(IBrush? brush)
+	{
+		return brush is ISolidColorBrush solid ? (byte)(solid.Color.A * solid.Opacity) : (byte)0;
 	}
 
 	private static Color ColourOf(IBrush? brush)

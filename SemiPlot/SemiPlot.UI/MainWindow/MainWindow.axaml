@@ -31,7 +31,8 @@
                 BorderBrush="{DynamicResource AppBorderBrush}"
                 Padding="8,4"
                 IsVisible="{Binding IsNavigationBarVisible}">
-            <navigation:NavigationBarView DataContext="{Binding NavigationBarViewModel}" />
+            <navigation:NavigationBarView Name="NavigationBarContent"
+                                          DataContext="{Binding NavigationBarViewModel}" />
         </Border>
 
         <Grid Grid.Row="2"

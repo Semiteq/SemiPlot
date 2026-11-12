@@ -12,7 +12,7 @@ variant-aware colour, which the section below states.
 of the pen editor's `ColorPicker` from `Avalonia.Controls.ColorPicker` 12.0.5) and
 `<semi:DataGridSemiTheme/>` (`Semi.Avalonia.DataGrid` 12.0.0, the theme of the pen editor's `DataGrid` from
 `Avalonia.Controls.DataGrid` 12.0.1, which depends on Avalonia 12.0.5) in `Application.Styles`
-followed by one `StyleInclude` of `Styles/Forms.axaml`, one
+followed by the `StyleInclude`s of `Styles/Forms.axaml`, `Styles/Buttons.axaml` and `Styles/ToolTips.axaml`, one
 `ResourceInclude` pointing at the palette, and `RequestedThemeVariant="Light"` as the declared bootstrap
 variant. No style body lives at the application root.
 
@@ -38,8 +38,9 @@ control, in each state the tree can reach.
 | `TextBoxForeground` | `TextBox` | `#000000` | `#DFE1E5` |
 | `CheckBoxForeground` | `CheckBox` | `#000000` | `#DFE1E5` |
 | `WindowDefaultForeground` | `Window`, and every control inheriting from it | `#000000` | `#DFE1E5` |
-| `MenuItemForeground` | Every menu caption at rest: the menu bar's File, Edit, View and Help, their items, the check glyph, and the `TextBox` context menu | `#000000` | `#DFE1E5` |
+| `MenuItemForeground` | Every menu caption at rest: the menu bar's File, Edit, View, Go and Help, their items, the check glyph, and the `TextBox` context menu | `#000000` | `#DFE1E5` |
 | `MenuItemPointeroverForeground` | A menu caption while its submenu is open or the pointer is over it; Semi ships this brighter than its own text colour | `#000000` | `#DFE1E5` |
+| `MenuItemInputGestureTextForeground` | The gesture printed beside a menu item: every `Go` menu item, and Cut, Copy and Paste in the `TextBox` context menu; Semi ships `#1C1F23` and `#F9F9F9`, off the caption beside it. A disabled item's gesture keeps Semi's stock brush, as its caption does | `#000000` | `#DFE1E5` |
 | `TextBoxPlaceholderForeground` | Every `TextBox` watermark: the pen editor's filter box `PenListFilter`, the new-group-name field of its groups pane, and the chart's marker label editor | `#818594` | `#6F737A` |
 | `TextBlockDisabledForeground` | Disabled `TextBlock` | `#A8ADBD` | `#5A5D63` |
 | `TextBoxDisabledForeground` | Disabled `TextBox` | `#A8ADBD` | `#5A5D63` |
@@ -56,7 +57,7 @@ control, in each state the tree can reach.
 | `WindowDefaultBackground` | The window ground | `#FFFFFF` | `#1E1F22` |
 | `MenuFlyoutBackground` | Every open submenu, the `TextBox` context menu included | `#F7F8FA` | `#2B2D30` |
 | `MenuFlyoutBorderBrush` | The same submenu's border | `#EBECF0` | `#393B40` |
-| `MenuItemSeparatorBackground` | The `Separator`s in the View menu | `#EBECF0` | `#393B40` |
+| `MenuItemSeparatorBackground` | The `Separator`s in the View and Go menus | `#EBECF0` | `#393B40` |
 | `ComboBoxItemForeground`, `ComboBoxItemFocusForeground`, `ComboBoxItemPointeroverForeground`, `ComboBoxItemSelectedForeground` | An item of the open line-style list at rest, focused, hovered and selected | `#000000` | `#DFE1E5` |
 | `ComboBoxIconPointeroverForeground` | The line-style box's arrow under the pointer | `#000000` | `#DFE1E5` |
 | `ComboBoxDisabledForeground` | The line-style box's value while a refresh runs | `#A8ADBD` | `#5A5D63` |
@@ -132,9 +133,21 @@ a disabled `CheckBox`), `EveryColourPickerSurface_PaintsItselfFromThePalette` (t
 the spectrum and on the components tab) and
 `EveryCheckBoxStateAMembershipBoxReaches_PaintsItselfFromThePalette` (a box checked and hovered,
 pressed checked and unchecked, and checked while disabled).
-`APaletteKeyCarryingOpacity_KeepsItUnderBothVariants` reads the 0.25 opacity of the four translucent
-keys back under both variants, `DataGridRowSelectedBackground` and `DataGridRowSelectedPointeroverBackground`
-among them.
+`EveryDropDownButtonSurface_PaintsItselfFromThePalette` reads a `DropDownButton` with a `MenuFlyout`, the
+navigation bar's `Markers` button and the time window panel's presets: the caption and the arrow at rest,
+hovered and disabled, and the open list's chrome and item text. Every one of them lands on a key the table
+above already carries (measured 2026-11-10), so the control adds no key.
+`TheMarkerAndRunListFlyouts_PaintTheirContentFromThePalette` opens `Navigation/NavigationListView` in a
+`Flyout` under each variant, once over a marker and once over an interrupted run, and reads back the
+presenter's `FlyoutBackground` and `FlyoutBorderBrush`, the list frame's `AppBorderBrush`, the month header
+and its count, a row's date, a run's duration and the no-match line in `AppSecondaryForegroundBrush`, a row's
+name in the flyout's text colour, the interrupted glyph in `AppRecipeMarkerLineBrush`, and the active row's
+`AppAccentFillBrush` fill and `AppAccentBrush` bar. The list reaches the `Flyout*` keys through Semi's own
+`FlyoutPresenter`, the colour picker's route, on rung 1 of the ladder, and its rows are the application's own
+template, so it adds no key and no `/template/` selector.
+`APaletteKeyCarryingOpacity_KeepsItUnderBothVariants` reads the opacity of the five translucent keys back
+under both variants: 0.25 for four, `DataGridRowSelectedBackground` and
+`DataGridRowSelectedPointeroverBackground` among them, and 0.15 for `AppRecipeRunFillBrush`.
 Resolving a key through `Application.TryGetResource` cannot fail while an override is inert, so a test
 written that way proves nothing about the retint. A control the tree gains is added to one of those
 tests in every state it reaches.
@@ -202,6 +215,17 @@ The tree's cases:
   back.
 - The group grid's selected row is rung 3, scoped to `DataGrid#GroupList` because the pen list reads the same
   two keys (`#how-the-retint-reaches-a-control`).
+- The minimap's page steps take Semi's `BorderlessButton` theme through a `Theme` setter of the
+  `Button.iconStep.narrow` style and Semi's `Tertiary` class on each element, because a style cannot add a
+  class (rung 1): no ground at rest, Semi's hover ground under the pointer, the chevron in the tertiary text
+  brush. `ThemeTests.TheNarrowStep_PaintsNoGroundUntilHovered` reads the theme, the rest and hover grounds and
+  the glyph colour back under both variants.
+- The navigation bar's `RecipeRunsButton` and `MarkersButton` keep Semi's `DropDownButton` and take a plain
+  `Flyout` (rung 1), whose `FlyoutPresenter` paints from `FlyoutBackground`, `FlyoutBorderBrush` and
+  `FlyoutForeground` as the colour picker's does. Their content, `Navigation/NavigationListView`, is the
+  application's own: a stock `TextBox` with its
+  public `Height` (rung 2), and a framed `ItemsControl` whose row templates paint only palette keys, so no
+  part of a Semi template is selected (`trend-interaction.md#the-marker-and-run-lists`).
 - The colour picker's drop-down button stays as Semi draws it. Semi's `ColorPicker` template passes neither
   `Foreground` nor `Background` to its `DropDownButton`, so no property of the picker reaches it, and nothing
   about it needs a change.
@@ -211,28 +235,66 @@ The tree's cases:
   closed event, so `PenEditorWindow` takes the `Flyout` of the first `DropDownButton` in the picker's visual
   tree, by type, and listens to its `Opened` and `Closed`. `PenEditorViewTests` finds the flyout the same way,
   opens and closes it, and reads what the close writes.
+- Every `ToolTip` resets three properties it would inherit (rung 2), in `Styles/ToolTips.axaml`
+  (`#a-tooltip-resets-what-it-inherits`).
+
+## A tooltip resets what it inherits
+
+`Styles/ToolTips.axaml` sets `UseLayoutRounding="True"`, `TextBlock.TextTrimming="None"` and
+`TextBlock.MaxLines="0"` on every `ToolTip`. Without it, a tooltip inside the marker and run lists showed
+`Deposit.c...` for `Deposit.csv`, `Прерва` for `Прерван` and `Проверка` for `Проверка вакуума`.
+
+A `ToolTip` opens in a `Popup` whose logical parent is the control the tip is attached to, so the tip
+inherits every inheritable property of that control. Three of them cut its text:
+
+- `UseLayoutRounding`. Semi's `FlyoutPresenter` sets it to `False` in its theme and on its template's
+  `LayoutRoot`, and `MenuFlyoutPresenter` sets it on its template's `LayoutRoot`, so every tip attached
+  inside a flyout measures to a fractional size. The Win32 popup window then opens at the whole pixel below
+  it (a desired 155.95 px tip opened at 155 px), the text is arranged narrower than it measured, and Semi's
+  tooltip template, which wraps (`TextWrapping="Wrap"` on its presenter), moves the last word or letter to
+  a second line that the one-line height drops.
+- `TextBlock.TextTrimming`. A trimmed `TextBlock` hands `CharacterEllipsis` to its own tip, which then
+  ends a word that does not fit its line with an ellipsis (`Deposit.c...`) instead of wrapping it.
+- `TextBlock.MaxLines`. The export window's message line, `TextBlock.form-message`, hands its two-line limit
+  and its trimming to the tip that carries the full path, which drops every line of a long path past the
+  second.
+
+A style setter on the `ToolTip` outranks the inherited value, and the text inside its template inherits the
+reset values in turn. Semi's own tooltip setters (`ToolTipMaxWidth` 320 px, the wrap) stay in force, so a
+long tip still wraps inside 320 px.
+
+The headless shaper advances every glyph by a whole font size, so no headless test reproduces the
+fractional width. `ViewProbe.ShouldShowTheWholeTip` asserts the reset values on the realised tip text, no
+trimmed line and every character laid out; `NavigationListViewTests.EveryRowTooltip_LaysOutItsWholeText_InsideTheFlyout`,
+`TrendLegendTopRowViewTests.EveryTooltipOfTheSidebar_ShowsItsText` and
+`CsvExportWindowTests.AfterASuccess_TheMessageLineToolTipIsTheFullPath` call it. The pixel figures above
+come from a Win32 run at 100 % scaling with Semi 12.0.3 and Avalonia 12.0.5, which opened tips on
+replicas of these controls inside and outside a `Flyout` and read each tip's desired size, its window's
+client size and its text lines, without the style and with it.
 
 ## The application's own surfaces
 
-Semi owns the controls; these twenty keys are ours, and each exists in both variants.
+Semi owns the controls; these twenty-two keys are ours, and each exists in both variants.
 
 | Key | Consumers | Light | Dark |
 | --- | --- | --- | --- |
 | `AppPanelBackgroundBrush` | Navigation bar, legend panel, message panel, status bar, startup-failure window's message panel, minimap frame, chart hover readout, the plot's figure background | `#F7F8FA` | `#2B2D30` |
-| `AppContentBackgroundBrush` | Chart area and the plot's data background, minimap strip canvas, the sidebar's resize handle, the ground of the active pen's reading at each marker | `#FFFFFF` | `#1E1F22` |
-| `AppBorderBrush` | The border of the navigation bar, legend panel, message panel and status bar, of the startup-failure window's message panel, of the minimap frame, of the chart hover readout, of the export window's pen list, of the pen editor's pen list, pen pane, groups pane and group grid, and the ring of a pen list row's colour dot | `#EBECF0` | `#393B40` |
-| `AppSubtleLineBrush` | Plot grid, the line above every sidebar group header but the first, the line under the sidebar's top row, the status bar's separator after the connection indicator, the navigation bar's group separator | `#EBECF0` | `#393B40` |
+| `AppContentBackgroundBrush` | Chart area and the plot's data background, the minimap's detail track (`StripCanvas`), the sidebar's resize handle, the ground of the active pen's reading at each marker | `#FFFFFF` | `#1E1F22` |
+| `AppBorderBrush` | The border of the navigation bar, legend panel, message panel and status bar, of the startup-failure window's message panel, of the minimap frame, of the chart hover readout, of the marker and run lists' frame, of the export window's pen list, of the pen editor's pen list, pen pane, groups pane and group grid, and the ring of a pen list row's colour dot | `#EBECF0` | `#393B40` |
+| `AppSubtleLineBrush` | Plot grid, the line above every sidebar group header but the first, the line under the sidebar's top row, the status bar's separator after the connection indicator, the navigation bar's two group separators (`Border.groupSeparator`), the minimap day calendar's month separators | `#EBECF0` | `#393B40` |
 | `AppMinorGridLineBrush` | The plot's minor gridlines, drawn on a log10 axis only | `#F4F5F7` | `#2B2D30` |
-| `AppSecondaryForegroundBrush` | Minimap end labels, hover line and hover time, chart crosshair, plot axis furniture, the chart's empty-catalogue message, the sidebar group header caption, its fold chevron and a row's unit, the axis scale panel's unit, the message panel's empty text and an entry's remedy, repeat count and time, the pen editor's groups cell, the pen pane's empty hint, its title's id and its mask preview, the groups pane's subtitle, a group row's pen count and "..." glyph, and the delete confirmation's note | `#818594` | `#6F737A` |
-| `AppAccentBrush` | Minimap window highlight border, the active sidebar row's left bar, a group header's fold chevron and a group row's "..." glyph under the pointer and pressed (`overview.md#the-sidebar-fold`) | `#3574F0` | `#3574F0` |
-| `AppAccentFillBrush` | Minimap window highlight fill, the active sidebar row's background | `#3574F0` at 0.25 opacity | `#3574F0` at 0.25 opacity |
+| `AppSecondaryForegroundBrush` | The minimap's calendar labels, hovered cell ring, tick labels, hint, hover line and hover time, the marker and run lists' month headers, their counts, a row's date, a run's duration and the no-match line, chart crosshair, plot axis furniture, the chart's empty-catalogue message, the sidebar group header caption, its fold chevron and a row's unit, the axis scale panel's unit, the message panel's empty text and an entry's remedy, repeat count and time, the pen editor's groups cell, the pen pane's empty hint, its title's id and its mask preview, the groups pane's subtitle, a group row's pen count and "..." glyph, and the delete confirmation's note | `#818594` | `#6F737A` |
+| `AppMinimapPresenceBrush` | The minimap day calendar's cells, at opacity 0.35, 0.65 or 1 by coverage; a key of its own with the values of `AppSecondaryForegroundBrush` | `#818594` | `#6F737A` |
+| `AppAccentBrush` | The minimap's window box border, the day calendar's page outline, the active sidebar row's and the marker and run lists' active row's left bar, a group header's fold chevron and a group row's "..." glyph under the pointer and pressed (`overview.md#the-sidebar-fold`) | `#3574F0` | `#3574F0` |
+| `AppAccentFillBrush` | The minimap's window box fill, the active sidebar row's and the marker and run lists' active row's background | `#3574F0` at 0.25 opacity | `#3574F0` at 0.25 opacity |
 | `AppSeverityErrorBrush` | The message panel's dot on an `Error` entry; a form's invalid field border, the warning glyph of the pen form and the axis scale panel, and a form's message line | `#DB3B4B` | `#E55765` |
 | `AppSeverityWarningBrush` | The same dot on a `Warning` entry | `#E3AE4D` | `#F2C55C` |
 | `AppSeverityInfoBrush` | The same dot on an `Info` entry | `#3574F0` | `#3574F0` |
 | `AppConnectionOkBrush` | The status bar's connection indicator, `connection-ok` | `#208A3C` | `#5FAD65` |
 | `AppConnectionFaultBrush` | The same indicator, `connection-fault` | `#DB3B4B` | `#E55765` |
-| `AppMarkerLineBrush` | The operator's time marker lines on the plot (`#the-plot`), and the tick of every shown marker on the minimap strip | `#6F737A` | `#A8ADBD` |
-| `AppRecipeMarkerLineBrush` | The recipe marker lines on the plot | `#834DF0` | `#A571E6` |
+| `AppMarkerLineBrush` | The operator's time marker lines on the plot (`#the-plot`), and the minimap's operator marker ticks on the detail track and above the day calendar's cells | `#6F737A` | `#A8ADBD` |
+| `AppRecipeMarkerLineBrush` | The recipe marker lines on the plot, the edge at an interrupted run's end on the minimap's Day page, and the run list's interrupted glyph | `#834DF0` | `#A571E6` |
+| `AppRecipeRunFillBrush` | The minimap's recipe run shading on a Day page: the recipe marker hue, translucent | `#834DF0` at 0.15 opacity | `#A571E6` at 0.15 opacity |
 | `AppMarkerLabelBrush` | Every time marker label on the plot | `#000000` | `#DFE1E5` |
 | `AppDestructiveBackgroundBrush` | A `destructive` button at rest: the groups pane's confirm-delete button | `#C7303F` | `#C7303F` |
 | `AppDestructivePointeroverBackgroundBrush` | The same button under the pointer | `#B02A38` | `#B02A38` |
@@ -251,6 +313,16 @@ above the 4.5:1 a 14 px caption needs; `AppSeverityErrorBrush`'s `#DB3B4B` gives
 button. The values are equal across the variants, as the accent is, because a filled button carries its
 own ground. `ThemeTests.TheDestructiveButton_PaintsItselfFromThePalette` asserts each surface, the ratio
 of 4.5:1 or more, and the disabled paint.
+
+The same file's `Button.iconStep` class sizes a square chevron button: 32 x 32 px, no padding, a 12 px
+`PathIcon` and a tooltip that also shows while the button is disabled. The navigation bar's run steps carry
+it. Its `narrow` variant, `Button.iconStep.narrow`, follows it in the file: Semi's `BorderlessButton`
+theme, 24 px wide, no fixed height, and stretched to the height of its row. The minimap's page steps carry
+it, with the `Tertiary` class beside it, 8 px from the 36 px detail track
+(`#how-a-stock-control-is-customised`, `trend-interaction.md#archive-overview-minimap`). The detail track is
+the minimap's top row, directly under the chart, with its tick row under it; the day calendar follows in the
+track's column after an 8 px gap, which is a row of `TrackGrid` (`36,14,8,16,14`) and no margin, so no
+off-scale inset enters the view.
 
 Pen colours are not theme keys. They come from the archive with the pen and stay per pen under both
 variants. The pen editor's colour swatch is the pen's own colour through `LegendConverters.HexToBrush`,
@@ -859,7 +931,8 @@ a `MinHeight` of 32 px, so every dialog button, the status bar's `ConnectionIndi
 button and sets `Padding="0"`. The group fold toggle (`Legend/TrendLegendView.axaml`) and the pen editor's
 `GroupActionsButton` (`PenEditor/PenEditorWindow.axaml`) take Semi's `InnerIconButton`, whose template has no
 presenter and so no padding. The sidebar's top-row text buttons have a fixed 24 px
-`Height` in a 28 px row and keep their own `Padding` setter, `8,0`.
+`Height` in a 28 px row and keep their own `Padding` setter, `8,0`. The navigation bar's `RecipeRunsButton`
+and `MarkersButton` take Semi's padding as text buttons do.
 
 This command finds an off-scale inset, and returns nothing today:
 
@@ -903,7 +976,7 @@ and `StartupFailureWindowTests`, `PenEditorLayoutViewTests.TheRefreshButton_Take
 `TrendLegendViewTests`, the padding assertion of
 `TrendLegendTopRowViewTests.TheTopRow_ShowsTextFromTheThresholdUpAndIconsBelowIt`,
 `AppStatusBarViewTests.TheSeparatorAndTheIndicator_TakeTheirInsetsFromTheSpacingScale`,
-`NavigationBarViewTests.TheHairline_StandsFourPixelsInsideTheBar` and
+`NavigationBarViewTests.TheHairlines_StandFourPixelsInsideTheBar` and
 `MessagePanelViewTests.AnEntryRowAndTheClearButton_TakeTheirInsetsFromTheSpacingScale`. Each reads realised
 edges, never the attribute text.
 
@@ -924,7 +997,10 @@ git grep -nE '#[0-9A-Fa-f]{6,8}\b|"(Gray|Black|White)"' -- 'SemiPlot/SemiPlot.UI
 No CI job runs it; the suite catches the same thing from the other side.
 `ThemeTests.TheChartBorderAndTheMinimapStrip_TakeTheirBrushFromTheVariant` shows the main window and
 reads both surfaces back under each variant, and a surface left on a literal resolves to one brush
-under both.
+under both. The minimap's two `Render` controls read their brushes back the same way:
+`TheDayCalendar_PaintsEveryFigureFromItsKey_UnderEachVariant` for the day calendar's presence, accent,
+hover, separator and marker brushes, and `TheRunShading_PaintsFromTheRecipeKeys_UnderEachVariant` for the run shading's fill and
+edge.
 
 Consumers read their keys with `DynamicResource`, not `StaticResource`: a `StaticResource` alias
 resolves once and stops following the variant, which is the same mechanism that makes the

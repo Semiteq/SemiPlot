@@ -66,6 +66,114 @@
   <data name="NavigationDelta" xml:space="preserve">
     <value>Delta</value>
   </data>
+  <data name="NavigationRecipeRun" xml:space="preserve">
+    <value>Recipe run</value>
+  </data>
+  <data name="NavigationLatestRun" xml:space="preserve">
+    <value>Latest run</value>
+  </data>
+  <data name="NavigationMarkers" xml:space="preserve">
+    <value>Markers</value>
+  </data>
+  <data name="NavigationPreviousRunTip" xml:space="preserve">
+    <value>Previous recipe run ({0})</value>
+  </data>
+  <data name="NavigationNextRunTip" xml:space="preserve">
+    <value>Next recipe run ({0})</value>
+  </data>
+  <data name="NavigationLatestRunTip" xml:space="preserve">
+    <value>Newest recipe run ({0})</value>
+  </data>
+  <data name="NavigationNoEarlierRunTip" xml:space="preserve">
+    <value>No earlier recipe run</value>
+  </data>
+  <data name="NavigationNoLaterRunTip" xml:space="preserve">
+    <value>No later recipe run</value>
+  </data>
+  <data name="NavigationNoRecipeRunsTip" xml:space="preserve">
+    <value>No recipe runs</value>
+  </data>
+  <data name="NavigationMarkersTip" xml:space="preserve">
+    <value>Go to an operator marker ({0})</value>
+  </data>
+  <data name="NavigationNoMarkersTip" xml:space="preserve">
+    <value>No operator markers</value>
+  </data>
+  <data name="NavigationRecipeRunsTip" xml:space="preserve">
+    <value>Go to a recipe run ({0})</value>
+  </data>
+  <data name="MarkerListFilterPlaceholder" xml:space="preserve">
+    <value>Filter: label or date</value>
+  </data>
+  <data name="MarkerListNoMatch" xml:space="preserve">
+    <value>No markers match the filter</value>
+  </data>
+  <data name="RunListFilterPlaceholder" xml:space="preserve">
+    <value>Filter: recipe or date</value>
+  </data>
+  <data name="RunListNoMatch" xml:space="preserve">
+    <value>No recipe runs match the filter</value>
+  </data>
+  <data name="RunListInterruptedTip" xml:space="preserve">
+    <value>Interrupted</value>
+  </data>
+  <data name="RunListDurationMinutes" xml:space="preserve">
+    <value>{0} min</value>
+  </data>
+  <data name="RunListDurationHours" xml:space="preserve">
+    <value>{0} h {1} min</value>
+  </data>
+  <data name="MinimapPreviousDayTip" xml:space="preserve">
+    <value>Previous day with rows ({0})</value>
+  </data>
+  <data name="MinimapNextDayTip" xml:space="preserve">
+    <value>Next day with rows ({0})</value>
+  </data>
+  <data name="MinimapPreviousWeekTip" xml:space="preserve">
+    <value>Previous week with rows ({0})</value>
+  </data>
+  <data name="MinimapNextWeekTip" xml:space="preserve">
+    <value>Next week with rows ({0})</value>
+  </data>
+  <data name="MinimapPreviousMonthTip" xml:space="preserve">
+    <value>Previous month with rows ({0})</value>
+  </data>
+  <data name="MinimapNextMonthTip" xml:space="preserve">
+    <value>Next month with rows ({0})</value>
+  </data>
+  <data name="MinimapNoEarlierRowsTip" xml:space="preserve">
+    <value>No earlier rows in the archive</value>
+  </data>
+  <data name="MinimapNoLaterRowsTip" xml:space="preserve">
+    <value>No later rows in the archive</value>
+  </data>
+  <data name="MinimapNoRowsInArchive" xml:space="preserve">
+    <value>No rows in the archive</value>
+  </data>
+  <data name="MinimapNoRowsOn" xml:space="preserve">
+    <value>No rows on {0}</value>
+  </data>
+  <data name="MinimapBandNotRead" xml:space="preserve">
+    <value>Not read, see messages</value>
+  </data>
+  <data name="MinimapDayRowsTip" xml:space="preserve">
+    <value>{0} · rows {1}-{2}</value>
+  </data>
+  <data name="MinimapDayNoRowsTip" xml:space="preserve">
+    <value>{0} · no rows</value>
+  </data>
+  <data name="MinimapDayMarkersTip" xml:space="preserve">
+    <value>{0} · {1}</value>
+  </data>
+  <data name="MinimapMarkerCountOne" xml:space="preserve">
+    <value>{0} marker</value>
+  </data>
+  <data name="MinimapMarkerCountFew" xml:space="preserve">
+    <value>{0} markers</value>
+  </data>
+  <data name="MinimapMarkerCountMany" xml:space="preserve">
+    <value>{0} markers</value>
+  </data>
   <data name="StatusConnectionOk" xml:space="preserve">
     <value>Archive connected</value>
   </data>
@@ -170,6 +278,36 @@
   </data>
   <data name="MenuViewMessagePanel" xml:space="preserve">
     <value>Message panel</value>
+  </data>
+  <data name="MenuGo" xml:space="preserve">
+    <value>Go</value>
+  </data>
+  <data name="MenuGoPreviousPage" xml:space="preserve">
+    <value>Previous day, week or month</value>
+  </data>
+  <data name="MenuGoNextPage" xml:space="preserve">
+    <value>Next day, week or month</value>
+  </data>
+  <data name="MenuGoPreviousRun" xml:space="preserve">
+    <value>Previous recipe run</value>
+  </data>
+  <data name="MenuGoNextRun" xml:space="preserve">
+    <value>Next recipe run</value>
+  </data>
+  <data name="MenuGoLatestRun" xml:space="preserve">
+    <value>Newest recipe run</value>
+  </data>
+  <data name="MenuGoRunList" xml:space="preserve">
+    <value>Recipe runs...</value>
+  </data>
+  <data name="MenuGoPreviousMarker" xml:space="preserve">
+    <value>Previous operator marker</value>
+  </data>
+  <data name="MenuGoNextMarker" xml:space="preserve">
+    <value>Next operator marker</value>
+  </data>
+  <data name="MenuGoMarkerList" xml:space="preserve">
+    <value>Operator markers...</value>
   </data>
   <data name="MenuHelp" xml:space="preserve">
     <value>Help</value>

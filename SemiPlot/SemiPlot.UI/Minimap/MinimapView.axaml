@@ -3,18 +3,64 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:minimap="clr-namespace:SemiPlot.UI.Minimap"
+             xmlns:navigation="clr-namespace:SemiPlot.UI.Navigation"
              xmlns:legend="clr-namespace:SemiPlot.UI.Legend"
+             xmlns:text="clr-namespace:SemiPlot.UI.Localization"
              mc:Ignorable="d"
              d:DesignWidth="900"
-             d:DesignHeight="51"
+             d:DesignHeight="97"
              x:Class="SemiPlot.UI.Minimap.MinimapView"
              x:DataType="minimap:MinimapViewModel">
 
     <Border Background="{DynamicResource AppPanelBackgroundBrush}"
             BorderThickness="0,1,0,0"
-            BorderBrush="{DynamicResource AppBorderBrush}">
-        <Grid RowDefinitions="36,Auto">
+            BorderBrush="{DynamicResource AppBorderBrush}"
+            Padding="8,4">
+        <Grid Name="TrackGrid"
+              RowDefinitions="36,14,8,16,14"
+              ColumnDefinitions="24,*,24"
+              ColumnSpacing="8">
+            <Grid.Styles>
+                <Style Selector="Canvas > TextBlock, TextBlock#HintLabel">
+                    <Setter Property="FontSize" Value="10" />
+                    <Setter Property="Foreground" Value="{DynamicResource AppSecondaryForegroundBrush}" />
+                </Style>
+                <Style Selector="Button#PreviousPageButton">
+                    <Setter Property="ToolTip.Tip" Value="{x:Static navigation:WindowGestures.PreviousDayTip}" />
+                </Style>
+                <Style Selector="Button#PreviousPageButton.week">
+                    <Setter Property="ToolTip.Tip" Value="{x:Static navigation:WindowGestures.PreviousWeekTip}" />
+                </Style>
+                <Style Selector="Button#PreviousPageButton.month">
+                    <Setter Property="ToolTip.Tip" Value="{x:Static navigation:WindowGestures.PreviousMonthTip}" />
+                </Style>
+                <Style Selector="Button#PreviousPageButton:disabled">
+                    <Setter Property="ToolTip.Tip" Value="{x:Static text:Resources.MinimapNoEarlierRowsTip}" />
+                </Style>
+                <Style Selector="Button#NextPageButton">
+                    <Setter Property="ToolTip.Tip" Value="{x:Static navigation:WindowGestures.NextDayTip}" />
+                </Style>
+                <Style Selector="Button#NextPageButton.week">
+                    <Setter Property="ToolTip.Tip" Value="{x:Static navigation:WindowGestures.NextWeekTip}" />
+                </Style>
+                <Style Selector="Button#NextPageButton.month">
+                    <Setter Property="ToolTip.Tip" Value="{x:Static navigation:WindowGestures.NextMonthTip}" />
+                </Style>
+                <Style Selector="Button#NextPageButton:disabled">
+                    <Setter Property="ToolTip.Tip" Value="{x:Static text:Resources.MinimapNoLaterRowsTip}" />
+                </Style>
+            </Grid.Styles>
+            <Button Grid.Row="0"
+                    Grid.Column="0"
+                    Name="PreviousPageButton"
+                    Classes="iconStep narrow Tertiary"
+                    Classes.week="{Binding Pager.Page.Unit, Converter={x:Static minimap:MinimapConverters.IsWeek}}"
+                    Classes.month="{Binding Pager.Page.Unit, Converter={x:Static minimap:MinimapConverters.IsMonth}}"
+                    Command="{Binding Pager.PreviousPageCommand}">
+                <PathIcon Data="{StaticResource ChevronLeftGeometry}" />
+            </Button>
             <Canvas Grid.Row="0"
+                    Grid.Column="1"
                     Name="StripCanvas"
                     Background="{DynamicResource AppContentBackgroundBrush}"
                     ClipToBounds="True"
@@ -24,11 +70,16 @@
                                      Canvas.Top="0"
                                      IsHitTestVisible="False"
                                      BandColor="{Binding BandFeed.BandColor,
-                                                         Converter={x:Static legend:LegendConverters.HexToBrush}}" />
+                                         Converter={x:Static legend:LegendConverters.HexToBrush}}" />
+                <minimap:MinimapRunShading Name="RunShading"
+                                           Canvas.Left="0"
+                                           Canvas.Top="0"
+                                           IsHitTestVisible="False"
+                                           FillBrush="{DynamicResource AppRecipeRunFillBrush}"
+                                           EdgeBrush="{DynamicResource AppRecipeMarkerLineBrush}" />
                 <Border Name="WindowHighlight"
                         Canvas.Top="0"
                         Background="{DynamicResource AppAccentFillBrush}"
-                        BorderThickness="2"
                         BorderBrush="{DynamicResource AppAccentBrush}" />
                 <Path Name="TimeMarkerTicks"
                       Canvas.Left="0"
@@ -43,27 +94,36 @@
                         IsHitTestVisible="False"
                         Background="{DynamicResource AppSecondaryForegroundBrush}" />
             </Canvas>
-            <Panel Grid.Row="1"
-                   Name="LabelRow"
-                   Margin="4,0">
-                <Panel.Styles>
-                    <Style Selector="TextBlock">
-                        <Setter Property="FontSize" Value="10" />
-                        <Setter Property="Foreground" Value="{DynamicResource AppSecondaryForegroundBrush}" />
-                    </Style>
-                </Panel.Styles>
-                <TextBlock Name="ExtentFirstLabel"
-                           HorizontalAlignment="Left"
-                           Text="{Binding ExtentFirstLabel}" />
-                <TextBlock Name="ExtentLastLabel"
-                           HorizontalAlignment="Right"
-                           Text="{Binding ExtentLastLabel}" />
-                <Canvas>
-                    <TextBlock Name="HoverTimeLabel"
-                               Canvas.Top="0"
-                               IsVisible="False" />
-                </Canvas>
-            </Panel>
+            <TextBlock Grid.Row="0"
+                       Grid.Column="1"
+                       Name="HintLabel"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       IsHitTestVisible="False"
+                       Text="{Binding Hint}"
+                       IsVisible="{Binding Hint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <Button Grid.Row="0"
+                    Grid.Column="2"
+                    Name="NextPageButton"
+                    Classes="iconStep narrow Tertiary"
+                    Classes.week="{Binding Pager.Page.Unit, Converter={x:Static minimap:MinimapConverters.IsWeek}}"
+                    Classes.month="{Binding Pager.Page.Unit, Converter={x:Static minimap:MinimapConverters.IsMonth}}"
+                    Command="{Binding Pager.NextPageCommand}">
+                <PathIcon Data="{StaticResource ChevronRightGeometry}" />
+            </Button>
+            <Canvas Grid.Row="1"
+                    Grid.Column="1"
+                    Name="PageTickRow"
+                    ClipToBounds="True">
+                <Canvas Name="TickLabels" />
+                <TextBlock Name="HoverTimeLabel"
+                           Canvas.Top="0"
+                           IsVisible="False" />
+            </Canvas>
+            <minimap:DayCalendarView Grid.Row="3"
+                                     Grid.RowSpan="2"
+                                     Grid.Column="1"
+                                     Name="DayCalendarView" />
         </Grid>
     </Border>
 

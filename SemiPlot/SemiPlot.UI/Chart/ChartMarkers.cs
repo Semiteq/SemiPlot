@@ -43,6 +43,9 @@ public sealed class ChartMarkers : IDisposable
 	/// <summary>The shown markers in time order, then by id; a new list per change.</summary>
 	public IReadOnlyList<StoredMarker> ShownMarkers => _markerSet.ShownMarkers;
 
+	/// <summary>The operator's markers of <see cref="All"/> in the same order; a new list per change.</summary>
+	public IReadOnlyList<StoredMarker> OperatorMarkers => _markerSet.OperatorMarkers;
+
 	/// <summary>The window's own flag, not stored; a new window starts with recipe markers shown.</summary>
 	public bool ShowsRecipeMarkers => _markerSet.ShowsRecipeMarkers;
 

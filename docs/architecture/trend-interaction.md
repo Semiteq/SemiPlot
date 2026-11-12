@@ -515,10 +515,11 @@ A time marker is a stored vertical line at a moment, with an optional label of a
 operator marks an event worth returning to, the start of a process for one, and finds it again after a
 restart and in every other window (`overview.md#the-live-markers`, `data-integration.md#the-marker-store`).
 The count has no cap: every window reads every marker and draws every shown one inside its time window.
-The SCADA adds recipe markers of its own, locked, at the start, the end and the interruption of a recipe. A marker
-list and bookmark navigation are not built (`trend-feature-spec.md` §CU-4); the minimap strip marks every
-marker of the archive with a tick (`#archive-overview-minimap`), and a press there brings it into the
-window.
+The SCADA adds recipe markers of its own, locked, at the start, the end and the interruption of a recipe. The
+navigation bar and the `Go` menu step between recipe runs and between operator markers, and the marker list
+centres any operator marker (`#recipe-run-and-marker-steps`, `trend-feature-spec.md` §CU-4). The minimap's day
+calendar ticks every day of the archive that holds an operator marker, its Day page shades every recipe run,
+and a press on a day's cell brings that day into the window (`#archive-overview-minimap`).
 
 - **Drawing.** `Chart/ChartMarkerLines` owns one ScottPlot `VerticalLine` per marker, pinned to
   `plot.Axes.Bottom` with `EnableAutoscale = false`, 1.5 px wide. A locked line is solid and an unlocked
@@ -620,8 +621,157 @@ window.
 - **Hiding the recipe markers.** `View` -> `Recipe markers` hides the recipe markers in one window. The
   flag is `MarkerSet.ShowsRecipeMarkers`, flipped through `ChartMarkers.ToggleRecipeMarkers`, which
   raises `Changed`. It is not stored, and a new window starts with the recipe markers shown. A hidden
-  marker leaves `ShownMarkers`, so it loses its line, its reading, its hit and its minimap tick, and stays in
-  `MarkerSet.All`, so a revert or a `MarkerGone` of a write that began before the hiding still lands.
+  marker leaves `ShownMarkers`, so it loses its line, its reading and its hit, the minimap's Day page drops
+  its run's shading, and it stays in `MarkerSet.All`, so a revert or a `MarkerGone` of a write that began
+  before the hiding still lands.
+
+### Recipe-run and marker steps
+
+`Navigation/NavigationBarViewModel` steps the window between recipe runs and between operator markers. Each
+step writes the window through `ChartNavigationController.SetWindow` and nothing else, so a step drops sticky
+(`TrendNavigationModel.SetWindow`), and the chart, the minimap and the bar follow as for any window change.
+
+- **Targets.** The steps read `ChartMarkers.All`, hidden markers included. The runs are
+  `MarkerNavigation.Runs(All, NewestSample)`, paired as the minimap pairs them (`#archive-overview-minimap`),
+  so a run still steps while `View` -> `Recipe markers` hides its markers and the Day page drops its
+  shading. The marker steps take `ChartMarkers.OperatorMarkers`, the `MarkerKind.User` markers shown or
+  hidden, which `Core/Trends/MarkerSet` keeps beside `All`, so no recipe marker reaches them. The runs are paired again on `ChartMarkers.Changed` and `NewestSampleMoved`; a window change only
+  runs `MarkerNavigation`'s binary searches.
+- **The reference.** A step measures from the window centre, or from `FirstSample` when the centre lies
+  before it. `PreviousRunCommand` frames the last run that ends before the reference and `NextRunCommand` the
+  first run that starts after it, so a run that holds the reference is neither. `PreviousMarkerCommand` and
+  `NextMarkerCommand` centre the last operator marker before the reference and the first after it, keeping
+  the width. `LatestRunCommand` frames the newest run from any window.
+- **The frame.** `MarkerNavigation.Frame` is the run plus a tenth of its length on each side.
+- **The first-sample floor.** A run that ends at or before `FirstSample` is no target, and a run that starts
+  before it is framed from it. An operator marker before `FirstSample` is no step target, and neither is one
+  whose centred window the floor clamps back onto the window shown, so an enabled marker step always moves
+  the window.
+- **Enabled state.** Each step command's `canExecute` follows its target, recomputed on a marker change, on a
+  newest sample and on every window change, and each command body recomputes the target from the live state.
+  `LatestRunCommand` stays enabled while the newest run is framed already: an open last run grows with the
+  newest sample, and a second press frames the grown run. `HasRecipeRuns` is true while the newest run is a
+  target.
+
+The navigation bar's run group stands between `Sticky` and `Delta`, a `Border.groupSeparator` on each side:
+the `RecipeRunsButton` `DropDownButton` captioned "Recipe run", which opens the run list
+(`#the-marker-and-run-lists`), the chevron steps `PreviousRunButton` and `NextRunButton` (32 x 32), the text
+button `LatestRunButton` and the `MarkersButton` `DropDownButton`. A run control's tooltip names its step and
+gesture while enabled. A disabled step shows "No earlier recipe run" or "No later recipe run" while another
+run exists, and every run step shows "No recipe runs" while `HasRecipeRuns` is false, through the
+`noRuns` class. `RecipeRunsButton` is disabled while the run list is empty (`HasRecipeRunEntries`) and then
+shows "No recipe runs", and `MarkersButton` is disabled while the marker list is empty and then shows "No
+operator markers". The Russian bar measures 1239 px in Inter
+(`ui-text.md#the-navigation-bars-text`). The
+bar carries no marker steps; they are `Go` items (`#the-go-menu-and-the-gestures`). The texts are under
+`ui-text.md#the-navigation-bars-text`.
+
+### The marker and run lists
+
+One list control serves two lists under one policy: `MarkersButton.Flyout`, the operator marker list, and
+`RecipeRunsButton.Flyout`, the recipe run list. Each is a plain `Flyout`, `BottomEdgeAlignedLeft`, whose
+content is a `Navigation/NavigationListView` over a `Navigation/NavigationListViewModel` the bar owns:
+`NavigationBarViewModel.MarkerList` over `OperatorMarkers`, the operator's markers newest first, shown or
+hidden, those before `FirstSample` included, and `RecipeRunList` over `RecipeRunEntries`, every run of
+`MarkerNavigation.Runs(ChartMarkers.All, NewestSample)` newest first, the source the run steps read. Recipe
+markers never reach the marker list, and neither list carries an edit or delete action. Both lists cover the
+whole archive with no count cap.
+
+- **The entries.** `Navigation/NavigationListEntry` is one entry: its key (a marker's id, a run's start in
+  ticks), its moment, its name, and for a run its duration in whole minutes and whether it ended in an
+  interruption. `NavigationListEntry.Of(StoredMarker)` takes the marker's label; `Of(RecipeRun)` takes the
+  run's `Label`, the `RecipeStart` marker's label (`MarkerNavigation.Runs`). A blank label is no name. The
+  bar republishes `RecipeRunEntries` only when the entries differ, so an open run's growing end changes the
+  list once a minute, when its rounded duration does.
+- **The content.** 400 px wide: `ListFilter`, a 32 px `TextBox` with the list's watermark, then 8 px below
+  `ListFrame`, a 1 px `AppBorderBrush` frame with 4 px padding around `ListScroller`, a fixed 280 px viewport
+  of ten entry rows (`NavigationListView.ViewportHeight`), and its `ItemsControl` `ListItems` over a
+  `VirtualizingStackPanel`. The rows are `NavigationListViewModel.Rows`, two typed templates over one list,
+  their heights the view's `HeaderHeight` and `RowHeight` constants: a 24 px `MonthHeader` (the month in
+  capitals and, at the right, the count of its entries the filter keeps, both 11 px in
+  `AppSecondaryForegroundBrush`, the sidebar group header's style) and a 28 px `EntryRow`. A row holds
+  `EntryName` at the left, trimmed with an ellipsis and its full text as the tooltip, then at the right, 8 px
+  apart, the 16 px `EntryFlag` slot, the 108 px `EntryDate` column (`d MMM HH:mm`) and the 88 px
+  right-aligned `EntryDuration` column, the two text columns in `AppSecondaryForegroundBrush`. A marker row
+  shows no flag slot and no duration. A run row's flag slot holds `InterruptedGlyph`, the 12 px
+  `WarningGeometry` in `AppRecipeMarkerLineBrush` with the tooltip "Interrupted", when the run ended in an
+  interruption. The fixed columns line up the virtualised rows; the date and duration widths hold the widest
+  Russian forms in Inter, 103.6 px and 82.8 px with every digit as the widest one. An entry with no name shows
+  its date alone, and the year stands only in the header.
+- **The rows.** `Navigation/NavigationListRows` builds them, pure: each entry in the machine's zone
+  (`TimeZoneInfo.Local`), its date as `d MMM HH:mm` and its month header as `MMMM yyyy` in capitals, both in
+  `CultureInfo.CurrentCulture`, and a run's duration as "35 min" under an hour and "1 h 05 min" from it
+  (`ui-text.md#the-navigation-bars-text`). The filter splits its text on whitespace and keeps an entry for
+  which every token is found in its name, its shown date or its month header, ignoring case through the
+  culture's `CompareInfo`, so "нояб etch" keeps a November entry whose name holds "etch", and "2026" every
+  entry of that year. A list with no row shows `NoMatchLine`, "No markers match the filter" or "No recipe
+  runs match the filter", in the list area: a filter that keeps nothing, or the last entry gone through a
+  read while the list is open.
+- **The active row.** `NavigationListViewModel` marks one `NavigationListItem` active, the one writer of its
+  `IsActive`. `Open` clears the filter and activates the entry nearest the window centre
+  (`NavigationListRows.Nearest`): a marker by its moment, a run by its span, at no distance while the centre
+  lies inside it; the newer on a tie. A rebuilt list keeps its active entry, by key, while the filter keeps
+  it, else activates the nearest kept one. The active row wears the sidebar's active-row look: an
+  `AppAccentFillBrush` fill and a 3 px `AppAccentBrush` bar at its left.
+- **The view.** On the flyout's `Opening`, `NavigationListView.Prepare` runs `Open` ahead of the first
+  layout pass. On `Opened`, `FocusFilter` focuses the filter and scrolls to the active row after the layout
+  pass. Every rebuild of `Rows`, a filter typed or a read while the list is open, scrolls to the active row the
+  same way, at `Background` priority, so the view model has moved it and the list has its layout. The fixed
+  viewport never resizes the open list. Focus stays in the filter: a tunnelling `KeyDown` handler takes Down
+  and Up, which move the active row over the entry rows and hold at the ends, Enter, which goes to the active
+  entry and closes, and Esc, which closes. Every other key reaches the box, so Ctrl+Left moves its caret and
+  steps no run (`#the-go-menu-and-the-gestures`). A click on an entry row goes to its entry and closes. A hover
+  moves nothing. The bar hands the marker list a go-to that centres the marker and keeps the width, and the
+  run list its private `GoToRun`, which frames the run with the start it names as it stands now
+  (`MarkerNavigation.Frame`); a target before `FirstSample` lands on the window the floor places.
+
+`NavigationBarView` sets each content's `DataContext` to the bar's list itself, so a list keeps its model at
+any anchor. `MainWindowViewModel.ShowMarkerListCommand`, enabled while `NavigationBarViewModel.HasOperatorMarkers`
+holds, the one flag that also enables `MarkersButton`, raises `MarkerListRequests`, and `MainWindow` answers with
+`NavigationBarView.ShowMarkerList(AppMenuBar.GoMenuHeader)`. `ShowRecipeRunListCommand`, enabled while
+`HasRecipeRunEntries` holds, raises `RecipeRunListRequests`, answered by `ShowRecipeRunList`. A list opens under
+its button while that button is effectively visible, and under the `Go` menu's header while the navigation bar
+is hidden. `NavigationListRowsTests` and `NavigationListViewModelTests` pin the rows of both kinds, the token
+filter, the month grouping, the durations, the interrupted flag and the active row; `NavigationListViewTests`
+drives both realised lists through `HeadlessInput`, keeps the active row in view when a filter moves it fifteen
+rows up, shows `NoMatchLine` once the last marker goes or no run holds every token, and measures the
+watermarks, the widest month header and the date and duration columns in Inter; `WindowGestureTests` opens
+each list from either anchor.
+
+### The Go menu and the gestures
+
+`AppMenuBar`'s `GoMenu` stands between `View` and `Help` and carries every step, so each one works with the
+navigation bar and the minimap hidden. Its items run in three blocks split by separators: the page steps, the
+run steps with the run list, the marker steps with the marker list. Every item carries a command and the `InputGesture` of
+`Navigation/WindowGestures`, the one gesture table:
+
+| Item | Command | Gesture |
+| --- | --- | --- |
+| Previous day, week or month, Next day, week or month | `MinimapViewModel.Pager.PreviousPageCommand`, `NextPageCommand` | Alt+Left, Alt+Right |
+| Previous recipe run, Next recipe run | `NavigationBarViewModel.PreviousRunCommand`, `NextRunCommand` | Ctrl+Left, Ctrl+Right |
+| Newest recipe run | `NavigationBarViewModel.LatestRunCommand` | Ctrl+End |
+| Recipe runs... | `MainWindowViewModel.ShowRecipeRunListCommand` | Ctrl+R |
+| Previous operator marker, Next operator marker | `NavigationBarViewModel.PreviousMarkerCommand`, `NextMarkerCommand` | Ctrl+Shift+Left, Ctrl+Shift+Right |
+| Operator markers... | `MainWindowViewModel.ShowMarkerListCommand` | Ctrl+M |
+
+- **The gesture rule.** `MainWindow.OnKeyDown` runs the `Go` menu: `AppMenuBar.GoItemFor` finds the item
+  whose `InputGesture` matches the key, and the window runs the item's command and marks the key handled
+  when the command can execute, so the pairing of key and command is written once, on the item. A key a control already handled, and a key whose source is a `TextBox`, run nothing, and a
+  disabled command leaves the key unhandled. So a gesture works with the keyboard on the chart, on a bar
+  button or on a sidebar check box, and Ctrl+Left in the marker label editor or the time window panel moves
+  the caret and steps no run, and so does Ctrl+Left in the marker list's filter box (`#the-marker-and-run-lists`). No
+  window `KeyBinding` carries a gesture: a `KeyBinding` walks the visual
+  parents ahead of `KeyDown` (`#the-time-window-panel`), so it would take the key from the focused `TextBox`.
+  The `TextBox` source rule matters for Alt+Left, Alt+Right, Ctrl+M and Ctrl+R, the keys a `TextBox` leaves
+  unhandled. Ctrl+R is free elsewhere: no control of the tree and no other gesture of `WindowGestures` reads it.
+- **The gesture text.** The open menu prints a gesture with Avalonia's key names, "Alt+Left Arrow" for
+  Alt+Left, and every tooltip that names a gesture prints the same text through `WindowGestures`' private `TextOf`
+  (`ui-text.md#the-gesture-text`).
+- **The tests.** `AppMenuBarTests` pins the item order, the commands and the gestures. `WindowGestureTests`
+  presses each gesture with the bar and the minimap hidden, opens the marker list from the menu and from
+  Ctrl+M and the run list from the menu and from Ctrl+R with the bar shown and hidden, and types the gestures
+  into the marker label editor, the time window panel and the marker list's filter box. The headless platform hosts a flyout inside the window and sends an Alt-modified arrow with no
+  Alt key-down, so no headless test covers the label editor as a Win32 popup or the menu bar's Alt handling.
 
 ## Decimation & performance (architectural core)
 
@@ -703,32 +853,66 @@ measured extremes.
 
 ## Archive-overview minimap
 
-Required by trend-feature-spec.md §TM-4. As-built: a 36 px overview strip beneath the chart shows
-the **full archive extent** with the current `[From, To]` view window highlighted over a min/max band
-of the drawn pen, for orientation and fast navigation across long archives. A label row under the
-strip names its two ends and, while the pointer is over the strip, the time under it.
+Required by trend-feature-spec.md §TM-4. As-built: a 97 px row beneath the chart holds the **detail track**
+between the two page steps and its tick row, and under them the **day calendar** and its label row. The day
+calendar shows the whole archive extent as one cell per archive wall-clock day: which days
+hold rows and how much of the working hours each covers, the days that hold an operator marker, and an
+outline around the detail page. The detail track spans one page, a working day, a Monday-to-Monday week or a
+calendar month, the smallest that holds the chart window, at the strip's full width: the drawn pen's min/max
+band, the chart window's box, the recipe runs of a Day page and the operator's markers. The day calendar
+answers which days hold data, the detail track what one day, week or month looked like, and the chart is the
+third level.
 
-- The extent comes from a new `IDataProvider.QueryArchiveExtentAsync()` seam returning an
-  `ArchiveExtent(FirstUtc, LastUtc)` (data-integration.md), which `PostgresDataProvider` answers
-  with the true bounds of the configured variables; an archive with no rows answers
-  `ArchiveExtent.Empty`, and the strip stays blank.
-- `Minimap/MinimapViewModel` reaches the archive through `TrendCoordinator.QueryArchiveExtentAsync()`
-  and `QueryHistoryAsync` on the UI scheduler; it never holds the `IDataProvider` directly. It takes
-  the chart (`TrendChartViewModel`) and reads its `Navigation`, `DrawnPenId`, `Pens` and `FindPen`.
-  The band is its own part, `Minimap/MinimapBandFeed`, which the view model builds, exposes as
-  `BandFeed` and disposes. The strip's geometry is pure (`Core/Trends/MinimapGeometry`).
-- The strip reads the extent at start (`TrendWindow.StartExtentLoad`), before a catalogue read gives
+- The extent comes from `IDataProvider.QueryArchiveExtentAsync()`, which returns an
+  `ArchiveExtent(FirstUtc, LastUtc)` (data-integration.md); `PostgresDataProvider` answers it with the
+  true bounds of the configured variables, and an archive with no rows answers `ArchiveExtent.Empty`.
+  The days that hold rows come from `IDataProvider.QueryArchiveDaySpansAsync`, one
+  `ArchiveDaySpan(Day, FirstUtc, LastUtc)` per archive wall-clock day with a raw row
+  (`data-integration.md#the-provider-surface`).
+- `Minimap/MinimapViewModel` and its parts reach the archive through `TrendCoordinator.QueryArchiveExtentAsync()`,
+  `QueryArchiveDaySpansAsync` and `QueryHistoryAsync` on the UI scheduler; it never holds the
+  `IDataProvider` directly. It takes the chart (`TrendChartViewModel`) and reads its `Navigation`,
+  `DrawnPenId`, `Pens`, `FindPen` and `Markers`, and it takes `archiveZone` from `TrendWindow.Build`, the
+  zone every wall-clock day and label of the minimap is read in. It builds, exposes and disposes three
+  parts: `PresenceFeed` (`Minimap/ArchivePresenceFeed`, the day spans), `Pager` (`Minimap/MinimapPager`,
+  the page and its steps) and `BandFeed` (`Minimap/MinimapBandFeed`, the band). The geometry is pure and
+  lives in Core: `Core/Trends/MinimapPage` (pages, the page that holds a window, working hours, steps,
+  landing), `DayCalendar` (the calendar's pitch, cells, coverage, page outline, marker ticks and counts,
+  month separators and hit test),
+  `DayCalendarLabels` (the calendar's label row), `MinimapTrackGeometry` (the window box, the run shades,
+  the page ticks), `MinimapGeometry` (fractions, the right bound, the band's figures) and
+  `MarkerNavigation` (the recipe runs).
+- The minimap reads the extent at start (`TrendWindow.StartExtentLoad`), before a catalogue read gives
   an empty chart its first pens, and after a read adds a pen to a chart that already has some
-  (`overview.md#what-a-read-changes`). `LoadExtentAsync` returns the read once the strip has applied
+  (`overview.md#what-a-read-changes`). `LoadExtentAsync` returns the read once the minimap has applied
   it. Both callers widen the navigation's first sample to an earlier one in that read
-  (`TrendChartViewModel.WidenToArchiveExtent`), so the chart pans back as far as the strip draws and
-  reads the rows a moved floor brings into the window in view; the empty-chart caller seeds the
-  navigation from the same read first. A read that leaves the strip blank, failed or empty, is read
-  once more on the next `NewestSampleMoved`: a sample exists, so the archive has rows. One such read
-  runs at a time, only a read that again leaves the strip blank arms the next one, and the next one
+  (`TrendChartViewModel.WidenToArchiveExtent`), so the chart pans back as far as the day calendar reaches
+  and reads the rows a moved floor brings into the window in view; the empty-chart caller seeds the
+  navigation from the same read first. A read that leaves the minimap without an extent, failed or
+  empty, is read once more on the next `NewestSampleMoved`: a sample exists, so the archive has rows. One
+  such read runs at a time, only a read that again leaves no extent arms the next one, and the next one
   waits for a sample at least 60 s after the previous retry started, so an extent read that keeps
-  failing while the live edge works costs one read a minute. The extent reads share the band's
-  outage policy (see Failures).
+  failing while the live edge works costs one read a minute. The extent reads share the band's outage
+  policy (see Failures).
+
+**The layout.** `Minimap/MinimapView.axaml` is a `Border` with a 1 px `AppBorderBrush` top line and
+`8,4` padding around `TrackGrid`, rows `36,14,8,16,14`, columns `24,*,24` and a `ColumnSpacing` of 8;
+1 + 4 + 36 + 14 + 8 + 16 + 14 + 4 makes the 97 px. The first row, directly under the chart, holds
+`PreviousPageButton`, `StripCanvas` (the detail track, with `HintLabel` centred over it) and
+`NextPageButton`, each step 8 px from the strip; the second holds `PageTickRow` (tick labels and the hover
+time) in the strip's column, so the tick labels, the hover time and the window box share the strip's x. The
+third row is the 8 px gap between the tick row and the calendar. The last two rows hold
+`Minimap/DayCalendarView` in the strip's column only, so the calendar and the strip share their left and
+right edges, and the steps stand beside the strip alone. It is a control of its own with rows `16,14` and
+one column: `CalendarCellRow` (the cells' pointer area) in the 16 px row, `CalendarLabels` (the day and month
+labels) under it, and `CalendarCells` (the drawing) over both rows: marker ticks at y 0 to 2, cells at y 4
+to 14 and the page outline at y 2 to 16 of the cell row. No page indicator names the page: the outline
+around its cells marks it on the calendar, and only the hint over a page without rows names it.
+`TrackGrid` sets every label row's text (`Canvas > TextBlock`) and `HintLabel` to 10 px in
+`AppSecondaryForegroundBrush`. `MainWindow.axaml` sets no height on the minimap row, so the row takes the
+view's own height. `MinimapView.axaml.cs` lays out the band, `MinimapView.DetailTrack.cs` the detail track
+and its pointer, and `DayCalendarView.axaml.cs` the calendar, its labels, its hover and its pointer.
+`Minimap/TrackLabels` measures the labels of both label rows and places and hides those of the tick row.
 
 **The bounds.** The left bound (`ExtentFirst`) is the extent's first sample. The archive is never
 pruned, so it moves only when a reloaded extent starts earlier, and no periodic extent read exists.
@@ -738,106 +922,353 @@ writes it once, from the archive seed or the chart's first history, and afterwar
 (`OnLiveEdge`) moves it. `NewestSample` is null until one of the two writes it, so the controller's
 wall-clock start never becomes a bound, and it only moves forward. `NewestSampleMoved` fires on every
 forward move, sticky or not; when the window also moves, it fires after the move and ahead of
-`WindowChanged`. The minimap recomputes the right bound, `ExtentLastLabel` and the window fractions
-on it. An extent applied after a newer sample takes that sample as its right bound.
+`WindowChanged`. On it the minimap pairs the recipe runs again, moves the right bound and hands the
+sample to the presence feed while it has an extent, and then hands it to the pager
+(`MinimapPager.FollowNewestSample`), in that order, so the page never judges a sample the day spans do not
+hold yet (see The page follows the zoom). An extent applied after a newer sample takes that sample as its
+right bound.
 
-**The marker.** `Minimap/MinimapView` draws the strip on a Canvas, `StripCanvas` (not a second
-`AvaPlot`). A highlight border marks the window: `MinimapGeometry.MarkerSpan` turns
-`WindowStartFraction` and `WindowWidthFraction` into a width of
-`min(strip, max(6 px, widthFraction × strip))` and a left edge clamped to `[0, strip − width]`, so the
-marker lies whole inside the strip at any zoom and window position. Press/drag converts pointer-X to a
-fraction → `NavigateToFraction`, which recenters the window via the **same**
-`ChartNavigationController` the chart navigates with. The highlight tracks every `WindowChanged` (pan /
-zoom and the sticky live-edge advance) and every move of the right bound.
+**The day spans.** `ArchivePresenceFeed.Spans` holds the days of the extent that hold rows, ascending,
+each with its first and last raw sample. `MinimapViewModel.ApplyExtent` calls `ReadExtent` on every applied non-empty
+extent, which
+reads every day from the extent's first wall-clock day to its last, the days computed through
+`ArchiveClock.DayOf` in `archiveZone`. `MinimapViewModel` calls `FollowNewestSample` on every
+`NewestSampleMoved` while it has an extent:
 
-**The time markers.** The strip draws one full-height 1 px tick per shown time marker inside the extent,
-recipe markers included, in `AppMarkerLineBrush`, over the highlight and under the hover line
-(`#the-time-markers`). The ticks show where the markers outside the window are; a press on one navigates as a press anywhere on the strip does,
-so the ticks take no pointer. `MinimapViewModel.TimeMarkerFractions` comes from
-`MinimapGeometry.FractionAt` over the chart's `ShownMarkers`, which drops a marker outside the extent, and is
-recomputed on every `ChartMarkers.Changed`, on the extent read and on every move of the right bound.
-The view draws the fractions as one `Path` of `LineGeometry` children, `TimeMarkerTicks`.
+- The newest span's `LastUtc` moves to `Navigation.NewestSample` when that sample lies on the same
+  wall-clock day, with no read.
+- A sample on a day past the last day of the last successful read appends that day at once, its first and
+  last sample both the newest sample, so the day calendar and the hint show today before its read lands
+  and while a failed read waits for its retry. The landed read replaces it.
+- A sample on a new day reads from the last day of the last successful read to the newest day, and the
+  answer replaces the held spans from its first day on. A midnight rollover therefore reads two days and
+  refreshes the finished day's true last sample, and a jump over a weekend or an outage reads the days in
+  between. A read of a whole extent also drops every held span before the extent's first day, so days
+  whose partitions were dropped leave the list.
+- One read runs at a time: a sample while a read is in flight requests nothing, so the live poll does
+  not cancel and restart the read on every tick of a new day. A newer extent cancels the read in flight
+  through its `CancellationToken`.
+- A failed read keeps the spans the feed held. The next sample reads again, at most one retry a minute:
+  a retry waits for a sample at least 60 s after the previous retry started. A retry reads from the last
+  complete day, or from the extent's first day when no read has landed. The feed sets no timer: it reads
+  `uiScheduler.Now` only, so on an archive that no longer grows a failed read is retried only by the next
+  applied extent, as the extent read is.
+- `IsExtentReadPending` is true from `ReadExtent` until a read lands or fails.
 
-**The label row.** `MinimapView` is a two-row grid: the 36 px strip (`StripCanvas`) on top and
-`LabelRow`, one line of 10 px text with a 4 px side margin, under it. The strip draws the band, the
-marker and the hover line and nothing else; no baseline runs through it, because a line through the
-middle of the band is no zero and no value. The chart's own time labels sit directly above the strip,
-so the end labels sit under it: `ExtentFirstLabel` at the row's left edge and `ExtentLastLabel` at its
-right edge, both `MMM d HH:mm` in local time and in `AppSecondaryForegroundBrush`. `MainWindow.axaml`
-sets no height on the minimap row, so the row takes the view's own height, the same with empty labels
-as with filled ones.
+Each read logs its day range and duration at Debug. Every live sample on the newest day republishes
+`Spans` with a new `LastUtc`, so a consumer that depends on the days alone compares the day lists and
+rebuilds only when they change. Over six months a full read executes in 167 to 176 ms and the newest
+day's read in 4.5 to 4.9 ms (`data-integration.md#read-cost`).
 
-**The hover.** The code-behind takes `PointerMoved` and `PointerExited` on `StripCanvas` and hands the
-pointer's strip fraction to `MinimapViewModel.HoverAt`, or calls `ClearHover`; a strip with no width
-hovers and navigates nothing. `HoverAt` does nothing without an extent. The view model publishes
-`HoverFraction` (`double?`, null while no hover shows) and `HoverLabel`, the time
-`MinimapGeometry.TimeAtFraction` gives at that fraction, formatted as the end labels are; a move of
-either bound relabels it. The view draws `HoverLine`, a 1 px `Border` above the marker in the chart
-crosshair's `AppSecondaryForegroundBrush`, at the pointer's x, kept inside the strip by
-`MinimapGeometry.SpanLeftWithin`. `MinimapGeometry.PlaceHoverTime` centres `HoverTimeLabel` under the
-line in the label row, clamped inside the row, and decides which end label it covers from the widths of
-the time and of the two end labels. The view measures the three texts as it places them, because a new
-extent or a newer sample relabels an end label ahead of the layout pass. An end label the time covers,
-or comes within the view's `EndLabelCoverDistance` of 6 px, takes `Opacity` 0, so its layout stays put
-and it shows again once the time moves away. A press and drag navigate as before, and the line follows the pointer. A
-captured drag keeps delivering moves past the strip's edges, so a move off the strip clears the hover;
-capturing the pointer raises `PointerExited` while the pointer is still over the strip, so
-`PointerExited` is ignored while a drag holds.
+**The pages.** A `MinimapPage` carries its `Unit` (`MinimapPageUnit.Day`, `Week` or `Month`), `FirstDay`, the
+common `Hours`, and `FromUtc` and `ToUtc`; `EndDay` is the day after its last. Every page function works
+in the archive's wall clock and converts to UTC only at the edges; a wall-clock time the spring change
+skips takes the zone's base offset through `Core/Data/ArchiveClock.ToUtc`, which `ArchiveTimeConverter.ToUtc`
+calls too.
 
-**The band read.** `MinimapBandFeed` runs one read pipeline on the UI scheduler. Three things request
-a read: an applied non-empty extent, a change of `DrawnPenId` (`WhenAnyValue` drops a raise with the
-same value, and the value at construction is skipped), and the next-read schedule. Each request
-snapshots the drawn pen, the bounds and the layer on the UI thread, drops the scheduled read, and
+- The common working hours are `MinimapPage.WorkingHours(spans, zone)`: the 5th percentile of each day's
+  first sample to the 95th percentile of each day's last sample, as archive wall-clock times of day,
+  floored and ceiled to whole hours. The percentile is the nearest rank, so below 20 days it is the
+  earliest first and the latest last sample. The start stays at or before 23:00 and the page is at least
+  one hour wide. No spans give 00:00-24:00 (`DayHours.FullDay`), and so does an archive that runs around
+  the clock.
+- A Day page is its day's common hours. A day whose own span starts earlier or ends later widens its
+  page in whole hours, so no sample of the day is hidden and the live day rescales at most once an hour.
+  Common hours keep one clock time at one x on every day's page, so runs line up from day to day.
+- A Week page runs from Monday 00:00 to the next Monday 00:00 and ignores the hours.
+- A Month page runs from the 1st 00:00 to the next month's 1st 00:00 and ignores the hours.
+
+**The page follows the zoom.** No control picks the unit, and `Page` has no writer but its derivation. `Page`
+is `MinimapPage.Holding(Navigation.From, Navigation.To, NewestSample, WorkingHours(Spans), Spans,
+archiveZone)`, the smallest page that holds the chart window against the page's own extent
+(`MinimapPage.Holds`): the Day page of the window's start, its working hours widened by its own span, while
+the window lies inside it; else the Monday-to-Sunday Week page that holds it; else the calendar Month page
+that holds it. A window wider than a month, or one that crosses a month's end, keeps the Month page of its
+start, and the box is clipped there. A Day page is its working hours, so a 12 h window on 07:00-17:00 hours,
+an hour before 07:00 or a window across midnight shows its week. The shown unit is `Page.Unit`, with no
+property of its own.
+
+The hold is judged against the window clipped to the newest sample: the end `Holding` tests is
+`min(Navigation.To, NewestSample)` while a newest sample exists, and the window's start is unchanged. A sticky
+window's right end is the latest poll time, which passes the live day's widened end at an hour boundary and
+in the evening after the shift; no sample lies past that end, so the Day page keeps holding the window and no
+band read runs. A window that lies wholly past the newest sample, such as a sticky evening window after the
+last sample at 17:00, also keeps the Day page of its start, and its box is hidden there (see The detail
+track). A historical window ends before the newest sample, so the clip changes nothing for it. With no newest
+sample the whole window is judged.
+
+`Window` mirrors `[From, To]` for the detail track's box. `Page` is a `CombineLatest` over `WindowChanged`,
+the spans and `MinimapPager.NewestSample`, ending in `ToProperty`, so one window event yields one `Page` and
+the working hours are computed once per spans republish, never per window move. `NewestSample` is the
+navigation's newest sample as of the last `FollowNewestSample`, which `MinimapViewModel` calls on every
+`NewestSampleMoved` after the presence feed has extended the spans to that sample: the live day is widened
+before the page reads the sample past its end, so the page never shows the week in between. `MinimapPage` is a
+record struct and `ToProperty` raises only on a change, so a sample or a spans republish that leaves the page
+equal raises nothing and reads no band.
+`MinimapPagerTests.AStickyWindowPastTheLiveDaysEnd_KeepsTheDayPage_AndReadsTheBandOnlyWhenTheDayWidens` drives
+a poll past the day's end, then a sample past it, and fails on a Week page in between or a band read while the
+page stays; the `Holding_*` cases of `MinimapPageTests` pin the clip.
+
+**Steps and landing.** `PreviousPage` and `NextPage` are the step targets, and `PreviousPageCommand` and
+`NextPageCommand` turn to them, each enabled while its target is not null.
+
+- A target is `MinimapPage.Step`: the nearest page in the direction whose days hold a span, at the
+  shown unit and hours, so a step skips a weekend, a maintenance week or a month without rows. Past the
+  first or the last span it is null.
+- A step lands through `MinimapPage.Land(From, To, page, Spans, zone)`. The window keeps its width and
+  its clock offset: from its own day's midnight on a Day page, from its own Monday on a Week page, from its
+  own month's 1st on a Month page. When no day span of the target page overlaps the window at that offset,
+  the window moves to the first sample of the page's first day with rows, width kept. A page with no span
+  keeps the offset. The page then follows the landed window, so a landing that moves the window onto its
+  page's first sample can show a smaller page than the one stepped from.
+- The landing calls `Navigation.SetWindow(from, to)` and nothing else, so Sticky drops there
+  (`TrendNavigationModel`) with no second writer. A step depends on the spans only, never on a band read.
+- With no spans held and the extent's read still pending (`IsExtentReadPending`), both steps are disabled
+  and a press on the day calendar moves nothing, because a landing without spans could pick a day with no
+  rows.
+- With no spans held after that read answered, every page is a whole calendar day, week or month, so a step goes
+  to the calendar neighbour while that neighbour meets `[ExtentFirst, ExtentLast]`. Without an extent both
+  steps are disabled.
+
+**The day calendar.** `MinimapViewModel.Calendar(width)` builds `DayCalendar.Over(first day, last day,
+width)` over the archive wall-clock days of `ExtentFirst` and `ExtentLast` (`ArchiveClock.DayOf` in
+`archiveZone`), at the width of `CalendarCellRow`; it is null without an extent or when the width leaves no
+room right of the inset. The last day follows the right bound, so on a live archive it is today.
+
+- The cells are anchored at the row's right end: the last day's cell ends at `DayCalendar.Right`, the row's
+  width, which is the strip's right edge, and the earlier days fill leftwards. A short archive leaves the
+  row empty left of its cells: two days are two 19 px cells at the right end, under the newest part of the
+  strip. The row starts at the strip's left edge, so the calendar and the strip share both edges.
+- The pitch is `min(20 px, floor(available / days))`, `available` being the row less a 2 px inset at its left
+  end (`DayCalendar.OutlineStroke`, the room the page outline's stroke takes left of the first cell). At the
+  right end the outline of the last day draws its stroke 2 px past the row, into the 8 px gap before the step
+  column, so neither `CalendarCells` nor `DayCalendarView` clips (`ClipToBounds="False"` on the view, which
+  clips by default). A pitch of 4 px or more leaves a 1 px gap before each cell. An
+  archive with more days than pixels takes the fractional pitch `available / days` with no gap. Each day
+  then falls in the whole pixel column its offset from the right end floors to, the last ending at the row's
+  right end, and `Cells` draws one 1 px cell per column at the highest grade of its days, so two short days
+  never composite into a darker cell.
+- `Cells(spans, hours, zone)` gives one `CalendarCell` per day span on the calendar, or per pixel column below
+  a 1 px pitch, graded by `CoverageOf`:
+  the share of the common working hours (`Page.Hours`, the `MinimapPage.WorkingHours` of the held spans)
+  that the span's first-to-last sample covers, in the archive's wall clock. Under 25 % is `Low`, under 75 %
+  `Medium`, the rest `Full`, so a short day and a full one read apart. A day with rows is never empty, even
+  one whose rows fall wholly outside the working hours. On an archive that runs around the clock the hours
+  are 00:00-24:00, so the share is of the whole day. Today is graded by its span so far, which the presence
+  feed extends to the newest sample. A day without rows has no cell and draws nothing.
+- `PageOutline(page)` rings the page's cells, a day, a Monday-to-Sunday week or a month, with the 2 px stroke
+  outside them. A page running past the last day stops at that day's cell, and a page off the calendar has
+  none.
+- `MarkerTicks(markerTimes, zone)` gives one cell-wide tick per day that holds at least one of
+  `MinimapViewModel.OperatorMarkerTimes`, the times of `ChartMarkers.OperatorMarkers`; recipe markers never
+  reach the calendar.
+- `MarkerCountsByDay(markerTimes, zone)` counts the same markers per archive wall-clock day, for a cell's
+  tooltip.
+- `MonthSeparators()` gives the x of a 1 px line in the gap before each month's first cell on an archive of
+  more than 42 days, whose label row names months only, and none while it names Mondays
+  (`ShowsMondayLabels`).
+- `DayAt(x)` is the day whose pitch holds x, its leading gap included; x before the first cell's pitch or
+  past the row's right end is no day.
+
+`Minimap/MinimapDayCalendar`, a `Control` with a `Render` override that reads nothing, draws over the cell
+row and the label row, bottom to top: the month separators through both rows in `AppSubtleLineBrush`; each
+cell, 10 px tall at y 4 to 14 of the 16 px row, in `AppMinimapPresenceBrush` at opacity 0.35, 0.65 or 1 by
+its grade; the page outline, y 2 to 16, a 2 px `AppAccentBrush` stroke with no fill; the hovered cell, a 1 px
+`AppSecondaryForegroundBrush` ring inside it; and the marker ticks, 2 px tall at y 0 to 2 in
+`AppMarkerLineBrush`. A tick stands above the outline, which starts at y 2, so neither covers the other, and
+off the cell, because the marker brush on the presence fill reads at almost no contrast in the light variant.
+The control is not hit-testable.
+
+The view recomputes the cells on every spans republish and assigns them only when their sequence changes, so
+a live sample redraws the calendar only when today crosses a coverage step. The calendar itself changes with
+the extent's days and the row's width, and each change lays out the separators, the labels and the hover
+again. The outline follows `Pager.Page`, and
+`OperatorMarkerTimes` is reassigned only when its sequence changes. With no spans held the calendar fills no
+cell, and the outline, the marker ticks and the labels still draw, because they come from the page, the
+markers and the extent. A day span holds only its first and last sample, so a stop in the middle of a day
+does not lower its grade; the detail track's band shows it as a break.
+
+`CalendarLabels` sits under the cells and always shows. The archive's length picks the label kinds, never the
+row's width: `DayCalendarLabels.Candidates` names the month at the first cell and at each month's first day,
+and on an archive of 42 days or less (`DayCalendar.ShowsMondayLabels`) each Monday as well. A Monday label
+stands at its cell's left edge and a month label 2 px past it, clear of the separator. The labels are `ddd d`
+and `MMM` (`MinimapLabels.Calendar`), so a Russian Monday reads `пн 9` and a month `нояб.`, and no label names
+an hour. The view measures each candidate on the row, and `DayCalendarLabels.Fitted` drops only the labels
+that would collide: it places the first cell's label, then each month, then each Monday; a label that would
+run past the row's right end is moved left to end there, and it is kept when it starts inside the row 4 px
+clear of every label kept before it. So the first cell's label always shows, a month label beats a Monday it
+would touch, a narrow row shows fewer labels of the same kinds, and a two-day archive shows its month at its
+first cell.
+
+A hover over `CalendarCellRow` goes through `Minimap/TrackPointer` and `DayAt`. The view holds the hovered x
+as a distance from the row's right end, where the cells hang, so a resize keeps the ring on the cell under the
+pointer. The cell under the pointer takes the hover ring, and the row's tooltip names the day and its rows
+through `MinimapLabels.DayTip`, `Wed 11 Nov 2026 · rows 07:02-16:40`, or `Wed 11 Nov 2026 · no rows` for a day
+without rows, and adds the count of the day's operator markers when it holds any,
+`Wed 11 Nov 2026 · rows 07:02-16:40 · 2 markers` (`ui-text.md#the-minimaps-text`). The view keeps the counts
+of `DayCalendar.MarkerCountsByDay`, recomputed on each `OperatorMarkerTimes` change, so a hover only looks its
+day up. The row keeps the default arrow cursor. A press, and every move of its
+drag, calls `MinimapPager.NavigateToArchiveDay` for the day under the pointer. It snaps the day's wall-clock
+noon through `MinimapPage.SnapToData`, which picks the day itself when it holds rows and otherwise the
+neighbour whose span lies nearer, the earlier on a tie, and lands the chart through `MinimapPage.Land` on that
+day's Day page whatever the shown unit, the window's width and clock offset kept. A click on a Saturday
+therefore lands on Friday and one on a Sunday on Monday. The page then shows the smallest page that holds the
+landed window, so a window wider than the day shows the week or the month that holds it. A press left of the
+first cell or past the last moves nothing.
+
+**The detail track.** `StripCanvas` draws, bottom to top, `MinimapBand`, `MinimapRunShading`,
+`WindowHighlight`, `TimeMarkerTicks` and `HoverLine`, all over `Pager.Page`. No baseline runs through it,
+because a line through the middle of the band is no zero and no value.
+
+- The window box is `MinimapTrackGeometry.WindowBox(page, Window, width, 6 px)`:
+  it clips the window's start and end to fractions of the page and gives a width of
+  `min(strip, max(6 px, widthFraction × strip))` and a left edge `MinimapGeometry.SpanLeftWithin` keeps
+  inside the strip. It fills with
+  `AppAccentFillBrush` inside a 2 px `AppAccentBrush` border, and an edge the page cuts draws no border.
+  A window that misses the page hides the box: a window wholly outside a day's widened hours, such as an
+  evening window on a day whose rows end at 17:00, or on an archive that runs around the clock the first
+  window width after midnight, while the live window still starts on the day before. The box follows
+  every `WindowChanged` and every page.
+- The recipe runs are `MinimapViewModel.ShadedRuns`, `MarkerNavigation.Runs(ChartMarkers.All,
+  NewestSample)` while `ChartMarkers.ShowsRecipeMarkers` holds and empty while `View` -> `Recipe markers`
+  hides them. A run is a `RecipeStart` up to the next `RecipeEnd` or `RecipeInterrupted`. A start
+  followed by another start runs to it, the last open start runs to the newest sample, a close with no
+  start is skipped, and a run of no length is dropped. The list is paired again on every
+  `ChartMarkers.Changed` and every `NewestSampleMoved` and reassigned only when it changes.
+  `MinimapTrackGeometry.RunShades` clips each run that meets a Day page through `WindowBox` at a 2 px
+  minimum, and `Minimap/MinimapRunShading` fills it full height with `AppRecipeRunFillBrush`. An
+  interrupted run whose end lies on the page draws a 2 px `AppRecipeMarkerLineBrush` edge there. A Week or
+  Month page shades no run.
+- `TimeMarkerTicks` is one `Path` of full-height 1 px lines, one per operator marker on the page
+  (`MinimapGeometry.FractionAt`), in `AppMarkerLineBrush`. A recipe marker draws no tick at either unit;
+  the Day page shades its run instead.
+- `PageTickRow` holds the tick labels of `MinimapTrackGeometry.PageTicks`. A Day page ticks whole
+  wall-clock hours whose hour divides by a stride of 1, 2, 3, 4, 6 or 12, the smallest whose spacing
+  reaches the widest label plus 8 px, stepped in UTC and kept at least one stride of real hours apart
+  across a daylight-saving change. A Week or Month page ticks midnights at a stride of 1, 2 or 7 days. The labels
+  are `HH:mm` and `ddd d` (`MinimapLabels.Tick`), and a label that would overflow the right end is
+  dropped.
+
+**The detail hover.** The code-behind takes the pointer on `StripCanvas` through `Minimap/TrackPointer`,
+which the day calendar shares: a left press and every move of its drag navigate at the pointer's x, and
+a move over the track hovers there; a strip
+with no width hovers and navigates nothing, and without an extent nothing shows. `HoverLine` is a 1 px
+`Border` above the box in the chart crosshair's `AppSecondaryForegroundBrush`, at the pointer's x and kept
+inside the strip by `MinimapGeometry.SpanLeftWithin`. `HoverTimeLabel` shows the archive wall-clock time
+under it, `HH:mm` on a Day page and `ddd d HH:mm` on a Week or Month page (`MinimapLabels.HoverTime`), centred
+under the line and kept inside the row; a tick label it overlaps takes `Opacity` 0, so its layout stays
+put and it shows again once the time moves away. The view holds the pointer's fraction, so a resize keeps
+the line at its fraction and a page turn relabels the time. A press and a drag call
+`MinimapPager.NavigateToPageFraction` with the pointer's fraction, which `MinimapGeometry.TimeAtFraction`
+clamps to `[0, 1]`, and the pager centres the window there,
+width kept, its start held at or after the page's start, through `Navigation.SetWindow`. The line follows
+the pointer during a drag. A captured drag keeps delivering moves past the strip's edges, so a move off
+the strip clears the hover; capturing the pointer raises `PointerExited` while the pointer is still over
+the strip, so `PointerExited` is ignored while a drag holds.
+
+**The controls.** The minimap's only controls are the two page steps.
+
+- `PreviousPageButton` and `NextPageButton` stand at the strip's two ends, 8 px from it, the strip's 36 px
+  tall, as `Button.iconStep.narrow` with Semi's `Tertiary` class (`ui-theme.md#the-applications-own-surfaces`),
+  each with a 12 px chevron `PathIcon` (`ChevronLeftGeometry`, `ChevronRightGeometry`). Their tooltips come from styles: the
+  Day text, the Week text under the `week` class and the Month text under the `month` class, both following
+  `Page.Unit`, and "No earlier rows in the archive" or "No later rows in the archive" on `:disabled`, shown
+  while disabled (`ToolTip.ShowOnDisabled`). The texts are under `ui-text.md#the-minimaps-text`.
+- `MinimapViewTests.TheStrip_AndTheDayCalendarUnderIt_StackInANinetySevenPixelRow` pins the 97 px, the row
+  order, the 8 px gap and the calendar's two edges on the strip's;
+  `TheLastDaysCell_EndsAtTheStripsRightEdge_AndItsOutlineIsNotClipped` and
+  `ATwoDayArchive_DrawsTwoNineteenPixelCells_AtTheRightEndOfTheRow` pin the right anchor.
+
+**The states.** `MinimapViewModel.Hint` is `MinimapHint.For` over `IsArchiveEmpty`, `HasExtent`, the
+page, the spans and `BandFeed.HasReadFailed`; `HintLabel` shows it centred over the strip and takes no
+pointer. The hint over a page without rows names the page through `MinimapLabels.Page` in
+`CultureInfo.CurrentCulture`, with the year of the page's last day: a Day page as `Fri 14 Aug 2026`, a Week
+page as its days inclusive, `11-17 May 2026`, `27 Apr - 3 May 2026` across a month and
+`29 Dec 2025 - 4 Jan 2026` across a year, and a Month page as its month, `November 2026`. A day number always
+stands beside a month, so a Russian day or week takes the genitive (`пн 9 нояб. 2026`), and a Month page's
+`MMMM` stands alone and takes the nominative (`ноябрь 2026`).
+
+| State | Day calendar | Detail track | Controls |
+| --- | --- | --- | --- |
+| Empty archive: an extent read answered with no rows and no extent is held (`IsArchiveEmpty`) | blank | hint "No rows in the archive" | steps disabled |
+| No extent after a failed extent read | blank | no hint, unless an earlier read answered empty; the message panel holds the failure | steps disabled |
+| One-day archive | one cell at the row's right end inside the outline, its month label ending there | the day | both steps disabled, each with its "No earlier/later rows" tooltip |
+| Page with no rows, while spans are held | the cells, the outline around a day with no cell | hint "No rows on {page}" | each step enabled while its side holds rows |
+| Failed band read | unchanged | the band it held, hint "Not read, see messages" until the next read lands or the request empties | enabled |
+| Day-spans read pending with no spans held | no cell; the outline, the marker ticks and the labels | the band | steps disabled, a calendar press moves nothing |
+| Failed day-spans read with no spans held | no cell; the outline, the marker ticks and the labels | the band; no page is declared empty | calendar steps |
+| No recipe runs, or recipe markers hidden | unchanged | no shading | unchanged |
+
+**The band read.** `MinimapBandFeed` runs one read pipeline on the UI scheduler. Five things request a
+read: an applied non-empty extent, a change of `DrawnPenId` (`WhenAnyValue` drops a raise with the same
+value, and the value at construction is skipped), a change of `Pager.Page` (the value at construction is
+skipped), a change of the column count, and the next-read schedule. Each request snapshots the drawn pen,
+the page's bounds, the layer and the column count on the UI thread, drops the scheduled read, and
 `Switch` cancels the read in flight through its `CancellationToken`. A request for a pen other than the
 one `Band` holds turns `Band` null at once, so the band never shows one pen's shape in another pen's
 colour, even when the new pen's read fails. An answer that lands after a newer request, already queued
 on the UI scheduler when `Switch` dropped it, is discarded and schedules nothing. A read asks
-`QueryHistoryAsync` for `[DrawnPenId]` over `[ExtentFirst, ExtentLast]` at
-`MinimapBandFeed.MinimapColumns` (250) columns and logs its layer, column count and duration at Debug.
-`Band` holds the drawn pen's envelope from the answer, null when the answer has none. With no drawn pen
-or no extent the request is empty: `Band` turns null and no read runs or stays scheduled, so a chart
-that draws no pen issues no band reads until one is drawn again.
+`QueryHistoryAsync` for `[DrawnPenId]` over `[Page.FromUtc, Page.ToUtc)` at the request's column count
+and logs its layer, column count and duration at Debug. `Band` holds the drawn pen's envelope from the
+answer, null when the answer has none. With no drawn pen or no extent the request is empty: `Band` turns
+null, `HasReadFailed` clears, and no read runs or stays scheduled, so a chart that draws no pen issues no
+band reads until one is drawn again. At start the first read covers the calendar day, because no spans
+have landed and the hours are 00:00-24:00; the landed spans change the page to the working hours, and
+that page change reads again, cancelling the first read if it is still in flight.
 
-**The overview layer** is `ChartNavigationController.LayerForWidth(span, the band's previous layer,
-250, 1 visible pen)`: the chart's own ladder at the strip's column count, so no second ladder exists, and
-the chart's pen count never shrinks the strip's ladder. 250 columns
-read `Raw` up to about 62 min, `Minute` up to about 62 h and `Hour` beyond, and the hysteresis keeps
-a span at a boundary on the layer it already has. Every coarse read, `Minute` or `Hour`, includes the provider's raw fresh tail, up to four point spacings of one pen
-(`data-integration.md#layer-ladder`). 250 columns are about 6 px each on a 1500 px strip. 250 is below
-the chart's 256-column floor (`Chart/HistoryColumnTarget.MinColumns`), so no chart read asks for it,
-and the test fake tells the band's reads from the chart's by that count
-(`FakeDataProvider.BandHistoryQueries`).
+**The column count.** The view reports `StripCanvas`'s width on every bounds change and on a new
+`DataContext`, to `MinimapBandFeed.SetStripWidth`.
+`MinimapBandFeed.ColumnsForWidth` rounds the width to the nearest multiple of `ColumnStep` (250), half
+away from zero, and clamps it to `[250, MaximumColumns]`, `MaximumColumns` being 2 500, so a strip up to
+2 500 px reads about one column per pixel. A width that keeps the count reads nothing, so a resize issues
+no read per pixel, and every new count reads once. The count does not set the band's reads apart from the
+chart's: a chart read asks for the data area's width clamped to 256..2 048
+(`HistoryColumnTarget.FromDataAreaWidth`) times a `FetchRange.ColumnFactor` of 1 to 3, and that product
+can be a multiple of 250. The provider needs no split. The test fake tells the band's reads from the
+chart's by the request, judged as it is issued: a band read names the drawn pen alone over exactly the
+page in force, at a multiple of 250 (`FakeDataProvider.RecognizeBandReadsOf`, installed by the fixtures
+that build a minimap). A chart read that shows only the drawn pen over a fetch range equal to the page at
+such a count would pass for the band's; no test builds one.
+
+**The overview layer** is `ChartNavigationController.LayerForWidth(page span, the band's previous
+layer, the column count, 1 visible pen)`: the chart's own ladder at the band's column count, so no
+second ladder exists, and the chart's pen count never shrinks the band's ladder. The ladder reads `Raw`
+up to 15 s times the column count, `Minute` up to 15 min times the column count and `Hour` beyond, and
+the hysteresis keeps a span at a boundary on the layer it already has. A 10 h Day page reads `Minute` at
+1 500 columns (a `Raw` ceiling of 6 h 15 min) and `Raw` at 2 500 (10 h 25 min); a week reads `Hour` at
+250 columns and `Minute` at 1 500. A 10 h page at 1 500 columns is a 24 s bucket. Every coarse read,
+`Minute` or `Hour`, includes the provider's raw fresh tail, up to four point spacings of one pen
+(`data-integration.md#layer-ladder`).
 
 **The next-read schedule.** When a read lands, success or failure, the next read is scheduled
-`MinimapBandFeed.NextReadDelay(span)` later: `clamp(span / 1000, 2 s, 60 s)` over the span that read
-covered. A requested read drops the scheduled one, so a read slower than that delay is never cut off by
-its own successor; the next read follows it one delay after it lands. Between reads the right bound
-grows and the band's right end trails it by up to one delay; on a 1500 px strip that is 5 px at a
-10-minute span, 1.5 px from 33 minutes to 16.7 hours, and past 16.7 hours a read a minute whose trail
-shrinks with the span, about 1 px on a day and 0.15 px on a week. The schedule keeps reading while the
-operator hides the minimap row, at the same cost as when the strip shows.
+`MinimapBandFeed.NextReadDelay(span)` later: `clamp(span / 1000, 2 s, 60 s)` over the page span that read
+covered, 36 s on a 10 h Day page and 60 s on a week. A requested read drops the scheduled one, so a read
+slower than that delay is never cut off by its own successor; the next read follows it one delay after
+it lands. While the newest sample lies on the page, the band's right end trails it by up to one delay:
+a thousandth of the strip on a page from 33 min to 16.7 h, 1.5 px on a 1 500 px strip, and 0.15 px on a
+week. The schedule keeps reading while the operator hides the minimap row, at the same cost as when the
+strip shows.
 
 **The band's shape** is pure geometry. `MinimapGeometry.BandFigures(band, first, last, width,
-height)` maps the envelope to `BandFigure(Outline, CenterLine)` values in control coordinates, each
-point a `BandPoint(X, Y)` (`Core/Trends/BandFigure.cs`). A column is drawn when it lies in `[first,
-last]` and its min, max and centre are all finite; a NaN or an infinite value is a break. Each run of
-drawn columns is one figure: its outline runs along the max line forward and the min line back, and its
-centre line follows `Center`, so a break in the archive is a gap in the band. A run of one column is
-drawn 2 px wide, kept inside the strip, so a short island between two breaks stays visible. The y range
-is the pen's own, the min and max of the drawn columns, widened through `Core/Trends/ValueRange.Widen`,
-the NaN-skipping rule `PenScaleModel` uses for its auto scale. The maximum maps to the top and the band
-is never logarithmic. A flat range is padded by ±1, so a flat pen draws a band at mid-height. A zero
-span, width or height, or an envelope with no drawn column, gives no figure.
+height)`, called with the page's `FromUtc` and `ToUtc`, maps the envelope to `BandFigure(Outline,
+CenterLine)` values in control coordinates, each point a `BandPoint(X, Y)` (`Core/Trends/BandFigure.cs`).
+A column is drawn when it lies in `[first, last]` and its min, max and centre are all finite; a NaN or an
+infinite value is a break. Each run of drawn columns is one figure: its outline runs along the max line
+forward and the min line back, and its centre line follows `Center`, so a break in the archive is a gap
+in the band. A run of one column is drawn 2 px wide, kept inside the strip, so a short island between two
+breaks stays visible. The y range is the pen's own, the min and max of the drawn columns, widened through
+`Core/Trends/ValueRange.Widen`, the NaN-skipping rule `PenScaleModel` uses for its auto scale. The maximum
+maps to the top and the band is never logarithmic. A flat range is padded by ±1, so a flat pen draws a
+band at mid-height. A zero span, width or height, or an envelope with no drawn column, gives no figure.
 
 **The band control.** `Minimap/MinimapBand` is a `Control` with a `Render` override (avalonia.md,
 custom drawing) and reads nothing. `Figures` and `BandColor` are styled properties registered with
 `AffectsRender`; `Render` fills each outline with `BandColor` at 35 % opacity and strokes each centre
-line 1 px wide at full colour. It sits below the marker and the hover line, with
-`IsHitTestVisible="False"`, so a press on the band reaches the strip. `MinimapView.LayoutBand`
-sizes it to the strip and computes its figures from `Band`, `ExtentFirst`, `ExtentLast` and the strip's
-size; it runs on a resize of the strip and on a change of `HasExtent`, `ExtentFirst`, `ExtentLast` or
-`Band`. `PlaceMarker` runs on a resize and on a change of the window fractions or `HasExtent`, so a pan
-or a drag moves the marker and leaves the figures as they are.
+line 1 px wide at full colour. It sits at the bottom of the strip with `IsHitTestVisible="False"`, so a
+press on the band reaches the strip. `MinimapView.LayoutBand` sizes it to the strip and computes its
+figures from `Band`, the page and the strip's size; it runs on a resize of the strip and on a change of
+`HasExtent`, `Pager.Page` or `Band`. The window box is placed on a change of `HasExtent`, the page or
+`Pager.Window`, so a pan or a drag inside the page moves the box and leaves the figures as they are.
 
 **The band's colour** follows the drawn pen's stored colour live. `BandColor` is a `WhenAnyValue`
 over `DrawnPenId` and `Pens`, switched to that pen state's `Pen.Color` and ending in `ToProperty`, so a
@@ -845,19 +1276,20 @@ recolour in the pen editor reaches the strip with the chart and needs no read. I
 string, null with no drawn pen, and the view converts it with the legend's
 `LegendConverters.HexToBrush`.
 
-**Failures.** A failed band read reaches the message panel through
+**Failures.** A failed band, day-spans or extent read reaches the message panel through
 `ResultReporting.TryReportFailure`, which maps it through `ArchiveFailureMapper.Map` like every
 other read. `Minimap/OutageReport` holds the outage policy, one instance for the band reads in
-`MinimapBandFeed` and one for the extent reads in `MinimapViewModel`: it reports the first failed read
-of an outage and logs every further one at Warning, with the exception when the read threw, and the
-first successful read ends the outage and arms the report again. The report starts armed. The panel coalesces a repeat
-of its newest entry only, and during an outage other entries land between two band reads, the status
-bar's `ConnectionLost` and the chart's failed history reads among them, so a band entry per read would
-not coalesce; one entry per outage keeps the panel readable. The catalogue sync reports no lost
-connection itself: it logs each one, and three in a row turn the status bar to the fault with one entry
-(`overview.md#a-failed-read`). Each read turns a throw into a failed `Result`, so a
-throw never ends the pipeline and the next read is still scheduled; a throw while a read is applied,
-the next read's scheduling included, goes to `TryReportFailure` as well.
+`MinimapBandFeed`, one for the day-spans reads in `ArchivePresenceFeed` and one for the extent reads in
+`MinimapViewModel`: it reports the first failed read of an outage and logs every further one at Warning,
+with the exception when the read threw, and the first successful read ends the outage and arms the
+report again. The report starts armed. The panel coalesces a repeat of its newest entry only, and during
+an outage other entries land between two band reads, the status bar's `ConnectionLost` and the chart's
+failed history reads among them, so a band entry per read would not coalesce; one entry per outage keeps
+the panel readable. The catalogue sync reports no lost connection itself: it logs each one, and three in
+a row turn the status bar to the fault with one entry (`overview.md#a-failed-read`). Each band and
+day-spans read turns a throw into a failed `Result`, so a throw never ends its pipeline and the next band
+read is still scheduled; a throw while a read is applied, the next read's scheduling included, goes to
+`TryReportFailure` as well.
 
 ## Out of scope / later
 

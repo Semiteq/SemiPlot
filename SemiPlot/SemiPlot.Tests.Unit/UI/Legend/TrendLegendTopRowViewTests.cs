@@ -1,5 +1,3 @@
-using System.Reflection;
-
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
@@ -214,14 +212,9 @@ public sealed class TrendLegendTopRowViewTests
 
 		foreach (var holder in holders)
 		{
-			var text = OpenTooltipText(holder);
+			var tip = ToolTip.GetTip(holder).Should().BeOfType<string>("'{0}' carries a text tooltip", holder.Name).Subject;
 
-			text.Text.Should().Be(ToolTip.GetTip(holder) as string, "'{0}' at {1} px", holder.Name, width);
-			text.IsEffectivelyVisible.Should().BeTrue("'{0}' at {1} px shows its tooltip text", holder.Name, width);
-			text.Bounds.Width.Should().BePositive("'{0}' at {1} px lays its tooltip text out", holder.Name, width);
-
-			ToolTip.SetIsOpen(holder, false);
-			Dispatcher.UIThread.RunJobs();
+			ShouldShowTheWholeTip(holder, tip, $"'{holder.Name}' at {width} px");
 		}
 	}
 
@@ -275,22 +268,6 @@ public sealed class TrendLegendTopRowViewTests
 		Dispatcher.UIThread.RunJobs();
 
 		return centre;
-	}
-
-	// Avalonia keeps the open ToolTip behind an internal property; no public member reaches it.
-	private static TextBlock OpenTooltipText(Control holder)
-	{
-		var property = typeof(ToolTip).GetField("ToolTipProperty", BindingFlags.NonPublic | BindingFlags.Static)
-			?.GetValue(null) as AvaloniaProperty
-			?? throw new InvalidOperationException("Avalonia no longer exposes ToolTip.ToolTipProperty.");
-
-		ToolTip.SetIsOpen(holder, true);
-		Dispatcher.UIThread.RunJobs();
-
-		var tooltip = holder.GetValue(property) as ToolTip
-			?? throw new InvalidOperationException($"'{holder.Name}' opened no tooltip.");
-
-		return Descendants<TextBlock>(tooltip).Single();
 	}
 
 	private static IReadOnlyList<Button> TopRowButtons(Window window)

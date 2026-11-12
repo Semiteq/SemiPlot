@@ -58,13 +58,121 @@
     <value>Развернуть группу {0}</value>
   </data>
   <data name="NavigationJumpToNow" xml:space="preserve">
-    <value>Перейти к текущему времени</value>
+    <value>К текущему времени</value>
   </data>
   <data name="NavigationSticky" xml:space="preserve">
     <value>Следовать за текущим временем</value>
   </data>
   <data name="NavigationDelta" xml:space="preserve">
     <value>Приращение</value>
+  </data>
+  <data name="NavigationRecipeRun" xml:space="preserve">
+    <value>Рецепт</value>
+  </data>
+  <data name="NavigationLatestRun" xml:space="preserve">
+    <value>Последний</value>
+  </data>
+  <data name="NavigationMarkers" xml:space="preserve">
+    <value>Метки</value>
+  </data>
+  <data name="NavigationPreviousRunTip" xml:space="preserve">
+    <value>Предыдущий запуск рецепта ({0})</value>
+  </data>
+  <data name="NavigationNextRunTip" xml:space="preserve">
+    <value>Следующий запуск рецепта ({0})</value>
+  </data>
+  <data name="NavigationLatestRunTip" xml:space="preserve">
+    <value>Последний запуск рецепта ({0})</value>
+  </data>
+  <data name="NavigationNoEarlierRunTip" xml:space="preserve">
+    <value>Раньше запусков рецепта нет</value>
+  </data>
+  <data name="NavigationNoLaterRunTip" xml:space="preserve">
+    <value>Позже запусков рецепта нет</value>
+  </data>
+  <data name="NavigationNoRecipeRunsTip" xml:space="preserve">
+    <value>Нет запусков рецепта</value>
+  </data>
+  <data name="NavigationMarkersTip" xml:space="preserve">
+    <value>Перейти к метке оператора ({0})</value>
+  </data>
+  <data name="NavigationNoMarkersTip" xml:space="preserve">
+    <value>Нет меток оператора</value>
+  </data>
+  <data name="NavigationRecipeRunsTip" xml:space="preserve">
+    <value>Перейти к запуску рецепта ({0})</value>
+  </data>
+  <data name="MarkerListFilterPlaceholder" xml:space="preserve">
+    <value>Фильтр: метка или дата</value>
+  </data>
+  <data name="MarkerListNoMatch" xml:space="preserve">
+    <value>Нет меток по фильтру</value>
+  </data>
+  <data name="RunListFilterPlaceholder" xml:space="preserve">
+    <value>Фильтр: рецепт или дата</value>
+  </data>
+  <data name="RunListNoMatch" xml:space="preserve">
+    <value>Нет запусков рецепта по фильтру</value>
+  </data>
+  <data name="RunListInterruptedTip" xml:space="preserve">
+    <value>Прерван</value>
+  </data>
+  <data name="RunListDurationMinutes" xml:space="preserve">
+    <value>{0} мин</value>
+  </data>
+  <data name="RunListDurationHours" xml:space="preserve">
+    <value>{0} ч {1} мин</value>
+  </data>
+  <data name="MinimapPreviousDayTip" xml:space="preserve">
+    <value>Предыдущий день с данными ({0})</value>
+  </data>
+  <data name="MinimapNextDayTip" xml:space="preserve">
+    <value>Следующий день с данными ({0})</value>
+  </data>
+  <data name="MinimapPreviousWeekTip" xml:space="preserve">
+    <value>Предыдущая неделя с данными ({0})</value>
+  </data>
+  <data name="MinimapNextWeekTip" xml:space="preserve">
+    <value>Следующая неделя с данными ({0})</value>
+  </data>
+  <data name="MinimapPreviousMonthTip" xml:space="preserve">
+    <value>Предыдущий месяц с данными ({0})</value>
+  </data>
+  <data name="MinimapNextMonthTip" xml:space="preserve">
+    <value>Следующий месяц с данными ({0})</value>
+  </data>
+  <data name="MinimapNoEarlierRowsTip" xml:space="preserve">
+    <value>Раньше в архиве нет данных</value>
+  </data>
+  <data name="MinimapNoLaterRowsTip" xml:space="preserve">
+    <value>Позже в архиве нет данных</value>
+  </data>
+  <data name="MinimapNoRowsInArchive" xml:space="preserve">
+    <value>В архиве нет данных</value>
+  </data>
+  <data name="MinimapNoRowsOn" xml:space="preserve">
+    <value>Нет данных за {0}</value>
+  </data>
+  <data name="MinimapBandNotRead" xml:space="preserve">
+    <value>Не прочитано, см. сообщения</value>
+  </data>
+  <data name="MinimapDayRowsTip" xml:space="preserve">
+    <value>{0} · данные {1}-{2}</value>
+  </data>
+  <data name="MinimapDayNoRowsTip" xml:space="preserve">
+    <value>{0} · нет данных</value>
+  </data>
+  <data name="MinimapDayMarkersTip" xml:space="preserve">
+    <value>{0} · {1}</value>
+  </data>
+  <data name="MinimapMarkerCountOne" xml:space="preserve">
+    <value>{0} метка</value>
+  </data>
+  <data name="MinimapMarkerCountFew" xml:space="preserve">
+    <value>{0} метки</value>
+  </data>
+  <data name="MinimapMarkerCountMany" xml:space="preserve">
+    <value>{0} меток</value>
   </data>
   <data name="StatusConnectionOk" xml:space="preserve">
     <value>Связь с базой данных установлена</value>
@@ -170,6 +278,36 @@
   </data>
   <data name="MenuViewMessagePanel" xml:space="preserve">
     <value>Панель сообщений</value>
+  </data>
+  <data name="MenuGo" xml:space="preserve">
+    <value>Переход</value>
+  </data>
+  <data name="MenuGoPreviousPage" xml:space="preserve">
+    <value>Предыдущий день, неделя или месяц</value>
+  </data>
+  <data name="MenuGoNextPage" xml:space="preserve">
+    <value>Следующий день, неделя или месяц</value>
+  </data>
+  <data name="MenuGoPreviousRun" xml:space="preserve">
+    <value>Предыдущий запуск рецепта</value>
+  </data>
+  <data name="MenuGoNextRun" xml:space="preserve">
+    <value>Следующий запуск рецепта</value>
+  </data>
+  <data name="MenuGoLatestRun" xml:space="preserve">
+    <value>Последний запуск рецепта</value>
+  </data>
+  <data name="MenuGoRunList" xml:space="preserve">
+    <value>Запуски рецептов...</value>
+  </data>
+  <data name="MenuGoPreviousMarker" xml:space="preserve">
+    <value>Предыдущая метка оператора</value>
+  </data>
+  <data name="MenuGoNextMarker" xml:space="preserve">
+    <value>Следующая метка оператора</value>
+  </data>
+  <data name="MenuGoMarkerList" xml:space="preserve">
+    <value>Метки оператора...</value>
   </data>
   <data name="MenuHelp" xml:space="preserve">
     <value>Справка</value>

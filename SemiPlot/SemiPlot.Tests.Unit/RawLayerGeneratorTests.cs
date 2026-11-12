@@ -105,6 +105,25 @@ public sealed class RawLayerGeneratorTests
 		}
 	}
 
+	// Computed from the walk itself, not through the generator's value lookup, so a schedule leaking into
+	// the continuous path moves a value here.
+	[Fact]
+	public void EveryContinuousRowCarriesTheWalkAtItsHeldIndex()
+	{
+		var options = BenchOptions.For();
+		var interval = TimeSpan.FromSeconds(options.ChangeSeconds).Ticks;
+		var pens = RawLayerGenerator.SelectPens(options.PenCount).ToDictionary(pen => pen.PenId);
+
+		pens.Values.Should().Contain(pen => pen.ChangeStride(interval) > 1).And.Contain(pen => pen.LogScaleOnStart);
+
+		foreach (var row in RawLayerGenerator.Generate(options))
+		{
+			var pen = pens[row.Id];
+
+			row.Value.Should().Be(BenchRows.Walk(options.Seed, pen, BenchRows.HeldIndex(row, pen, interval)));
+		}
+	}
+
 	[Fact]
 	public void TimestampsAreStrictlyAscendingPerPen()
 	{

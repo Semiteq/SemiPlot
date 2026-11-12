@@ -8,7 +8,8 @@ public sealed record SeederOptions(
 	long Seed,
 	double ChangeSeconds,
 	int BreakCount,
-	string? AdminConnectionString)
+	string? AdminConnectionString,
+	ArchiveSchedule Schedule = ArchiveSchedule.Continuous)
 {
 	public const int DefaultDays = 1;
 	public const int DefaultPenCount = 10;
@@ -17,4 +18,11 @@ public sealed record SeederOptions(
 	public const int DefaultBreakCount = 4;
 
 	public DateTime Start => End - TimeSpan.FromDays(Days);
+}
+
+/// <summary>Continuous archives every minute of the span; shifts archives weekday sessions of recipe runs.</summary>
+public enum ArchiveSchedule
+{
+	Continuous,
+	Shifts
 }

@@ -11,12 +11,13 @@ is remains in `scada-archive.md`; what SemiPlot reads from it remains in `data-i
 | Database, roles, grants, default-privileges chain, the configuration tables, `public.trends` with `tpdefault` | `semibase bench` (`github.com/Semiteq/SemiBase`), carried in the bench image |
 | The daily partitions and the rows | `SemiPlot.Tools.ArchiveSeeder`, connected as `scada_writer` |
 | The catalogue rows in `semiplot_tags`, `semiplot_groups` and `semiplot_pen_groups` | `SemiPlot.Tools.ArchiveSeeder` over the admin connection, written once when the stand comes up |
+| The recipe and operator markers in `semiplot_markers` of a `shifts` seed | `SemiPlot.Tools.ArchiveSeeder`, connected as `scada_writer` (`#the-shift-schedule`) |
 | The moving live edge of a demo archive | `SemiPlot.Tools.ArchiveSeeder --follow`, connected as `scada_writer` |
 | Template build, the clones, teardown | `SemiPlot.Tests.Integration` |
 
 The archive table is the provisioner's, not this repository's: nothing here transcribes the vendor's
-DDL. The seeding run creates the day partitions its rows land in and nothing else, and issues no
-`DROP`. An absent `public.trends` is a failure naming the provisioning that did not run; a table already
+DDL. The seeding run creates one day partition per calendar day of its span and no other relation,
+and issues no `DROP`. An absent `public.trends` is a failure naming the provisioning that did not run; a table already
 carrying rows or day partitions is refused. Two things drop databases: the test fixture, only ones it
 created itself, and `converge`, which recreates the `semiplot_` database `--connection` names with
 `DROP DATABASE IF EXISTS ... WITH (FORCE)` (`#the-converge-verb`).
@@ -46,7 +47,7 @@ Layer `0` only; the coarse layers are derived from it.
   `SyntheticValueWalk.LogValue`, which walks the same function between `log10(min)` and `log10(max)`
   and takes `10^v`, clamped to `min..max`, so the walk moves in decades rather than in value; the
   lattice is the same. `RawLayerGenerator` (run by run between the breaks) and
-  `LiveTailGenerator` (window by window) both emit through `RawLayerGenerator.AppendWindow`, so a
+  `LiveTailGenerator` (window by window) both emit through `RawLayerGenerator.WindowRows`, so a
   follow run resuming at the archive edge continues the lattice the seeding wrote.
   `SharedLatticeTests` goes red if the two are split again.
 - A change carries its pre-anchor: the previous value one poll interval (100 ms) earlier, then the
@@ -59,7 +60,7 @@ Layer `0` only; the coarse layers are derived from it.
   often than stated. A change sits on an index that is a multiple of `k` and carries the walk's value
   at that index; its anchor carries the value of the previous change, `k` indices back. The pen writes
   no row between two changes, so the reader sees an unchanged value, never a gap. Both generators
-  apply the stride inside `AppendWindow`, so a follow run continues a slow pen exactly where the
+  apply the stride inside `WindowRows`, so a follow run continues a slow pen exactly where the
   seeding left it.
 - Timestamps carry whole milliseconds only, matching `timestamp(3)`.
 - The lattice carries no per-pen phase, so every pen changes at the same instants. A defect that only
@@ -76,7 +77,9 @@ Each break takes an equal slot of the span, lasts 3 to 10 minutes and leaves at 
 archiving on either side, so every break empties at least one whole calendar minute — the empty
 period the thinner has to survive. A span holds at most one break per 20 minutes: 72 in a day, and
 `BreakPlan` refuses a `SeederOptions.BreakCount` above that. The seeder states no option for it:
-`SeederOptions.DefaultBreakCount` breaks fit any span the command line can ask for.
+`SeederOptions.DefaultBreakCount` breaks fit any span the command line can ask for. These bounds bind
+the `continuous` schedule only; under `shifts` the off periods between sessions are the breaks
+(`#the-shift-schedule`).
 
 Both markers land on lattice rows, so with breaks every archiving run must hold at least two lattice
 points. The tight run is the first or the last, which `BreakPlan` guarantees only `MinimumRun`;
@@ -86,6 +89,60 @@ may hold one value across a whole run, so it writes its held value at the run's 
 before a break and at the first one after it, and the markers go there: the vendor writes every tag at
 the project stop and start instants (`scada-archive.md#quality-and-gaps`). Those two rows repeat a
 value, so they carry no anchor.
+
+## The shift schedule
+
+`--schedule shifts`, a `converge` key (`#the-converge-verb`), gives the span a plasma tool's working
+pattern. `ShiftSchedule` is pure in the seed and the day, and draws every bound as a lattice index, so a
+session and a run start and end on lattice points at any `--change-seconds`.
+
+- A day is on when it is a weekday outside the maintenance week and outside the random off days. The
+  maintenance week recurs every 26 calendar weeks at a phase the seed draws, so a 183-day span holds
+  one. A further 4% of weekdays are off at random.
+- An on day holds one session. It starts between 07:00 and 08:30 and lasts 6 to 10 hours.
+- A session holds recipe runs of 6 to 18 minutes with pauses of 4 to 20 minutes between them, and one
+  pause in ten is 40 minutes longer. About one run in 15 is interrupted. A run that would pass the
+  session's end is not drawn.
+
+**The schedule clips the span.** `ShiftSchedule.Clip(Start, End)` opens the generated span at the first
+session start at or after `Start`, and leaves out a session that cannot hold two changes before `End`.
+The last session runs to `End` whatever the clock, so the demo writer's `StaleArchiveGuard` accepts a
+stand converged at any hour. The off periods between sessions are the `BreakPlan`'s breaks: nights,
+weekends, the maintenance week and the off days. The sessions are its runs. A session after the
+first therefore opens with `q = 16`, and a session before the last closes with `q = 32` (`#breaks`).
+
+**Values.** Inside a recipe run a pen walks the lattice as under `continuous`. Between runs it holds an
+idle level, `min + 0.05 * (max - min)` of its stored pair. `LatticeValues` decides both at the held
+index, so a slow pen's anchors and strides stay on the lattice. Every lattice point inside a session
+writes a row, idle ones included.
+
+**Partitions.** `PartitionScript.CoveredDays` takes the calendar days of `[Start, End)`, not the days
+that hold rows. Under `shifts` the weekends, the off days and the day before the first session carry
+empty partitions: the six-month stand has 184 day partitions and rows in 122 of them
+(`#the-six-month-stand`).
+
+**Recipe markers.** After the archive `COPY` commits, `ShiftMarkerWriter.RecipePlan` plans two markers
+for every run that opens inside the span and closes before `End`: `RecipeStart` at its start, and
+`RecipeEnd`, or `RecipeInterrupted` for an interrupted run, at its end. Both are locked and carry the same
+label, one of five recipe file names. A run still open at `End` walks in the rows and has no marker.
+
+**Operator markers.** `ShiftMarkerWriter.OperatorPlan` plans the markers an operator would have left:
+`User` kind, unlocked. A calendar week draws two or three, each on an on day of its own and at a whole
+second inside that day's session; a week with fewer on days takes one per on day, and the maintenance week
+takes none. A marker before the generated span opens, or at `End` and later, is dropped. The draws depend
+on the seed and the calendar alone, so a later `End` adds markers and moves none. A marker carries no label
+(`NULL`) at a 15% draw; the others take one of seven Russian labels from `OperatorMarkerLabels.txt`, a
+resource of the seeder, because the C# source stays ASCII (`ui-text.md`).
+
+`ShiftMarkerWriter` writes both plans in one binary `COPY`. It connects as `scada_writer`, the role the
+SCADA writes its markers as, and binds `t` as `timestamptz` from the archive's wall-clock time through the
+zone it is given, `TimeZoneInfo.Local` in a seeding run and in `converge`. A `continuous` seed writes no
+marker of either kind, and a seeding run, which has no `--schedule`, is always `continuous`.
+
+`ShiftScheduleTests` pins the schedule, `ShiftsGenerationTests` the rows and quality marks it generates,
+and `ShiftMarkerWriterTests` both marker plans, the operator plan over a 183-day span. `ShiftSeedTests`
+seeds 14 days into a provisioned clone and reads both kinds back through `PostgresMarkerStore`; one more
+marker goes through a writer given `Europe/Berlin`, so a host in UTC still checks the conversion.
 
 ## The demo writer
 
@@ -140,7 +197,11 @@ bench keeps the first and the last as well, because the opening-row write of `Co
 the closed flush selecting the first row. `LayerThinner.Thin` is the only implementation, and
 `l=2 ⊆ l=1 ⊆ l=0` holds by construction.
 
-A seeding run thins every layer from the raw rows it generated. The demo writer thins the minute
+A seeding run thins every layer from the raw rows it generated, one calendar day at a time.
+`SeedFiller` yields each day's raw rows and then that day's thinned rows into one
+`ArchiveWriter.WriteAsync`: one `COPY` in one transaction, so the seeded-archive refusal holds. A minute
+or an hour period never crosses midnight, so thinning per day equals thinning over the span, and the
+run holds about one day of rows rather than the span. The demo writer thins the minute
 layer from the raw rows and the hour layer from the minute layer, which is exact: a period's minute
 rows already carry that period's first, last, minimum and maximum, and every marker. The invariant it
 rests on is the order of `CoarseFlush.FlushAsync`, minute, then hour inside one call, so the minute
@@ -234,9 +295,31 @@ OpenTelemetry and console-formatter environment variables into every project res
 nor the viewer carries an OpenTelemetry SDK or the `Microsoft.Extensions.Logging` console provider, so
 the variables are inert.
 
+The `six-months` launch profile runs the same stand over the six-month archive
+(`#the-six-month-stand`); the `.run/` configuration and the `.zed/tasks.json` task named `Live demo (six months)` start
+it, and so does
+
+```powershell
+dotnet run --project SemiPlot/SemiPlot.AppHost --launch-profile six-months
+```
+
+The profile differs from `http` in one variable, `SEMIPLOT_DEMO_DATASET=six-months`.
+`DemoDataset.FromName` (`SemiPlot/SemiPlot.AppHost/`) reads it from the AppHost's configuration and
+picks the keys `converge` and the writer take:
+
+| Dataset | `converge` keys | Writer keys |
+| --- | --- | --- |
+| `one-day`, the variable unset | `--change-seconds 0.5` | `--follow 1 --change-seconds 0.5` |
+| `six-months` | `--schedule shifts --days 183 --pens 50 --change-seconds 30` | `--follow 1 --pens 50 --change-seconds 30` |
+
+The writer repeats the seed's pens and interval, so the live tail continues the seeded lattice on every
+seeded pen (`#the-demo-writer`). Any other value stops the AppHost before a resource starts, naming the
+two accepted ones.
+
 There is no volume: `converge` recreates the archive on every start regardless of what a previous
-session left, so a volume would carry nothing across runs. Every stand start pays `initdb`,
-`semibase bench` and the day-slice seed.
+session left, so a volume would carry nothing across runs, and a saved archive would sit behind the
+clock past `StaleArchiveGuard`'s five minutes. Every stand start pays `initdb`, `semibase bench` and the
+seed: the day slice, or about 50 s for the six-month archive.
 
 ### The converge verb
 
@@ -259,12 +342,23 @@ dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder -- converge `
 It first refuses a database `--connection` names unless the name starts with `semiplot_` and is not
 `semiplot_provisioned` itself (`Converge.RequireBenchDatabase`), before it opens any connection. It then
 waits for the admin connection up to 60 s, runs `DROP DATABASE IF EXISTS ... WITH (FORCE)` and
-`CREATE DATABASE ... TEMPLATE semiplot_provisioned` against that database, seeds it with `SeederOptions` at the defaults (`--change-seconds` may override
-the change interval; the AppHost passes the writer's 0.5 s so the seeded day and the live tail share
-one density) up to `--end` or this machine's
-clock, fills the catalogue through `--admin-connection` re-pointed at the stand database, and
-writes `connection/connection.yaml` under `--config-dir` with the bench `semiplot` role's fixed
-password and a `poll_interval_ms` of 250.
+`CREATE DATABASE ... TEMPLATE semiplot_provisioned` against that database, seeds it up to `--end` or
+this machine's clock with the `SeederOptions` its keys build (`ConvergeOptions.ToSeederOptions`), fills
+the catalogue through `--admin-connection` re-pointed at the stand database, and writes
+`connection/connection.yaml` under `--config-dir` with the bench `semiplot` role's fixed password and a
+`poll_interval_ms` of 250.
+
+| Key | Default | Values |
+| --- | --- | --- |
+| `--schedule` | `continuous` | `continuous`, `shifts` (`#the-shift-schedule`), by name, case-insensitive |
+| `--days` | 1 (`SeederOptions.DefaultDays`) | whole days, at least 1 |
+| `--pens` | 10 (`SeederOptions.DefaultPenCount`) | 1 to the catalogue's 52 |
+| `--change-seconds` | 5 (`SeederOptions.DefaultChangeSeconds`) | as in a seeding run; the AppHost passes the writer's interval, 0.5 s for the one-day dataset and 30 s for the six-month one, so the seed and the live tail share one density |
+
+Seed 1 and `SeederOptions.DefaultBreakCount` are fixed. `converge` without the three newer keys builds
+the `SeederOptions` it built before them, which `SeederCommandTests` pins. It prints the plan before the
+counts: the generated span, the schedule, the pens, `sessions N` under `shifts` in place of `breaks N`,
+the partitions, the rows of each layer, `recipe markers N` and `operator markers N`.
 
 The catalogue is written once, here. `TagCatalogWriter` upserts `semiplot_tags`, inserts the group
 names into `semiplot_groups` and replaces each pen's rows in `semiplot_pen_groups`, all three in one
@@ -296,6 +390,91 @@ alone: `locale: ru` and `theme: light` come from the tracked set the AppHost cop
 passwords live; the container fixture reads them from there, and the AppHost repeats the same fixed
 values as environment variables for the container, because an Aspire AppHost project cannot compile
 against a project resource's own assembly.
+
+### The six-month stand
+
+The minimap and the marker navigation need six months of working days with recipe and operator markers.
+The `six-months` launch profile builds that archive on every stand start
+(`#the-application-bench`). By hand, `converge` builds it against a bench container on port 55432 and a
+`--config-dir` copy as above:
+
+```powershell
+dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder -- converge `
+  --connection "Host=127.0.0.1;Port=55432;Database=semiplot_app;Username=scada_writer;Password=<writer>" `
+  --admin-connection "Host=127.0.0.1;Port=55432;Database=postgres;Username=postgres;Password=<super>" `
+  --config-dir SemiPlot\Artifacts\dev-config `
+  --schedule shifts --days 183 --pens 50 --change-seconds 30
+```
+
+Measured on 2026-11-10 on `033576d`. The machine: Intel Core i7-1355U, 10 logical processors, 31.5 GiB
+RAM, Windows 11 Pro 10.0.26300; Docker Desktop 4.98.0, Engine 29.9.2, WSL 2 kernel 6.18.54.1, the VM
+with 10 CPUs and 15.4 GiB; the image built from `SemiPlot/bench/Dockerfile` over `postgres:17-alpine`
+(PostgreSQL 17.11) and `ghcr.io/semiteq/semibase@sha256:02ebe9b5`. The seeder ran as the Debug build's
+executable with the arguments above, so the times exclude the build.
+
+| Measure | Run 1 | Run 2 |
+| --- | --- | --- |
+| Wall time | 62.7 s | 58.8 s |
+| Peak working set | 89.5 MB | 83.7 MB |
+| Span | 2026-05-12 07:10:30 to 15:15:27 on 2026-11-10 | 2026-05-12 07:10:30 to 15:18:58 on 2026-11-10 |
+| Layer 0 rows | 11 361 570 | 11 362 242 |
+| Layer 1 rows | 6 942 738 | 6 943 074 |
+| Layer 2 rows | 186 208 | 186 208 |
+| Sessions | 122 | 122 |
+| Recipe markers | 4 120 | 4 120 |
+
+The runs differ only in the end, which follows the clock. The SQL checks and the size below were taken
+on run 1's archive. `count(*)` grouped by `l` equals the printed counts. The raw rows fall on Monday to Friday only, on 122 days, and `max(t)` is
+15:15:00, the last lattice point before the end. The markers are 2 060 `RecipeStart`, 1 928 `RecipeEnd`
+and 132 `RecipeInterrupted`, all locked. The database holds 184 day partitions and `tpdefault`, and
+`pg_database_size` is 1 786 230 451 bytes (1 703 MB). From 2026-05-12 to 2026-11-10 there are 131
+weekdays, so 9 weekdays hold no session.
+
+The viewer read run 2's archive at `--logging-level debug`, Release, with the demo writer running at
+`--follow 1 --change-seconds 0.5` and its default 10 pens; the psql figures also read the writer's rows up
+to 15:21:26. The server logged every statement
+(`log_min_duration_statement = 0`); the psql figures connect as `semiplot` with `jit = off`, three runs
+each, the first then the two warm ones.
+
+| Read | Viewer | psql planning | psql execution |
+| --- | --- | --- | --- |
+| Archive extent, at start | two reads: bind 45 and 50 ms, execute 176 and 169 ms | 50.5, 10.7, 9.3 ms | 134.3, 84.6, 79.6 ms |
+| Archive days, 2026-05-11 to 2026-11-10 | not read at start; only the time window panel and the export read it | 4.7, 4.4, 3.9 ms | 15.4, 15.0, 15.2 ms, 122 days, an index-only scan per day partition |
+| Markers, 4 120 rows | execute 1.7 ms at start, 1.6 and 2.1 ms on the 5 s re-reads | 0.3 ms, then under 0.1 ms | 0.83, 0.79, 0.78 ms |
+| Minimap band, `Hour` over the whole extent at 250 columns | 85 ms in `MinimapBandFeed`, 43 ms of it in the provider; 50 ms on the re-read a minute later | | |
+| Chart, first `Raw` read, 14:20 to 16:20 local at 4 096 columns, 49 pens in 4 groups | 64 ms in the provider | | |
+
+The chart's frame time comes from a follow capture with no pointer in the window. The chart's first read
+started at 14:20 local and the newest marker sits at 14:23:30, so at most a few markers were in range:
+the figure is the cost of holding 4 120 markers, not of drawing them. `dotnet-trace` ran for 30 s and
+`scripts/perf/trace-shares.py --skip-seconds 10` read the last 20 s: 79 `RenderOnce` runs, mean 3.0 ms,
+max 5.9 ms, spacing p50 286 ms. A later comparison repeats the same capture: follow, the writer at 10
+pens and 0.5 s, 30 s, the first 10 s skipped. No drag capture was taken, because nothing on the bench drives a drag
+without synthesised desktop input (`testing-strategy.md#frame-cost`).
+
+#### The stand from the launcher
+
+Measured on 2026-11-11 on the same machine and Docker, through
+`dotnet run --project SemiPlot/SemiPlot.AppHost --launch-profile six-months`, Debug build.
+The figures come from the converge resource's output and from `psql` against the stand database while
+the writer and the viewer ran. The `converge` time is not a timed process, unlike the Debug-executable
+runs above: it runs from the creation of the resource's output files in the DCP session directory to the
+timestamp DCP put on its last line, so it includes the process start. The writer's first tick appended 96
+rows, and every 30 s after it about as many.
+
+| Measure | Value |
+| --- | --- |
+| `converge`, process start to its last line | 52.4 s, the database ready in 0.7 s |
+| `dotnet run` start, build included, to the viewer's first log line | 70 s |
+| Span | 2026-05-13 08:18:30 to 15:54:01 on 2026-11-11 |
+| Rows, layers 0, 1 and 2 | 11 363 784, 6 943 656 and 186 240, 18 493 680 in all |
+| Sessions, day partitions | 122, 184 and `tpdefault` |
+| Recipe markers | 4 124: 2 062 `RecipeStart`, 1 929 `RecipeEnd`, 133 `RecipeInterrupted`, all locked |
+| Operator markers | 63, all `User` and unlocked, 9 without a label |
+| `pg_database_size` | 1 783 633 587 bytes (1 701 MB) |
+
+The operator markers carry all seven labels: `Чистка камеры` 12, `Утечка He` 11, `Проверка вакуума` and
+`Замена кольца` 8 each, `Новая партия` and `Калибровка MFC` 6 each, `Смена мишени` 3.
 
 ### The demo's directories
 
@@ -348,7 +527,9 @@ Nothing machine-dependent lives in `AppHost.cs`: the role passwords are `BenchRo
 constants, the port is 55432, the configuration and log paths come from `DemoDirectories`, and the
 seeder and the viewer both take the machine's own time zone. The
 `Live demo` run configuration at the repository root's `.run/` is an `AspireHostConfiguration` over
-`SemiPlot.AppHost`'s `http` launch profile.
+`SemiPlot.AppHost`'s `http` launch profile, and `Live demo (six months)` one over the `six-months`
+launch profile (`#the-six-month-stand`). A launch profile name carries no space or parenthesis, because a
+`.zed/` task hands its arguments to `pwsh -C`, which reads `(...)` as a subexpression.
 
 The launchers that start the viewer alone - `.run/Debug.run.xml` and the `.zed/` run and debug
 entries - point `--config-dir` at `SemiPlot/Artifacts/dev-config` through `$PROJECT_DIR$` and

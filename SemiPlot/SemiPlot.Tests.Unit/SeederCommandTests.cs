@@ -224,7 +224,10 @@ public sealed class SeederCommandTests
 	public async Task AConvergeRunAppliesDefaultsWhenOnlyRequiredOptionsAreGiven()
 	{
 		var run = await RunAsync(
-			["converge", "--connection", Connection, "--admin-connection", "Host=127.0.0.1;Database=postgres", "--config-dir", "C:\\config"]);
+			[
+				"converge", "--connection", Connection, "--admin-connection", "Host=127.0.0.1;Database=postgres",
+				"--config-dir", "C:\\config"
+			]);
 
 		run.ExitCode.Should().Be(0);
 		run.Seed.Should().BeNull();
@@ -237,6 +240,105 @@ public sealed class SeederCommandTests
 		options.ConfigDirectory.Should().Be("C:\\config");
 		options.End.Should().BeNull();
 		options.ChangeSeconds.Should().Be(SeederOptions.DefaultChangeSeconds);
+		options.Days.Should().Be(SeederOptions.DefaultDays);
+		options.PenCount.Should().Be(SeederOptions.DefaultPenCount);
+		options.Schedule.Should().Be(ArchiveSchedule.Continuous);
+	}
+
+	// The keys a converge run did not take before must leave its seeding run exactly as it was.
+	[Fact]
+	public async Task AConvergeRunWithoutTheScheduleDaysOrPensSeedsAsBefore()
+	{
+		const string StandAdmin = "Host=127.0.0.1;Database=semiplot_app;Username=postgres";
+		var run = await RunAsync(
+		[
+			"converge", "--connection", Connection, "--admin-connection", "Host=127.0.0.1;Database=postgres",
+			"--config-dir", "C:\\config", "--end", EndText
+		]);
+
+		var seeding = run.Converge.Should().BeOfType<ConvergeOptions>().Which
+			.ToSeederOptions(StandAdmin, new DateTime(2030, 6, 1, 12, 0, 0, DateTimeKind.Local));
+
+		seeding.Should().Be(new SeederOptions(
+			Connection,
+			BenchOptions.End,
+			SeederOptions.DefaultDays,
+			SeederOptions.DefaultPenCount,
+			SeederOptions.DefaultSeed,
+			SeederOptions.DefaultChangeSeconds,
+			SeederOptions.DefaultBreakCount,
+			StandAdmin));
+		seeding.Schedule.Should().Be(ArchiveSchedule.Continuous);
+	}
+
+	[Fact]
+	public async Task AConvergeRunWithoutAnEndSeedsUpToTheLocalClockWithNoTimeZone()
+	{
+		var now = new DateTime(2030, 6, 1, 12, 0, 0, DateTimeKind.Local);
+		var run = await RunAsync(
+			[
+				"converge", "--connection", Connection, "--admin-connection", "Host=127.0.0.1;Database=postgres",
+				"--config-dir", "C:\\config"
+			]);
+
+		var seeding = run.Converge.Should().BeOfType<ConvergeOptions>().Which.ToSeederOptions("Host=127.0.0.1", now);
+
+		seeding.End.Should().Be(now);
+		seeding.End.Kind.Should().Be(DateTimeKind.Unspecified);
+	}
+
+	[Theory]
+	[InlineData("continuous", ArchiveSchedule.Continuous)]
+	[InlineData("shifts", ArchiveSchedule.Shifts)]
+	[InlineData("Shifts", ArchiveSchedule.Shifts)]
+	public async Task AConvergeRunAcceptsTheScheduleDaysAndPens(string scheduleName, ArchiveSchedule schedule)
+	{
+		var run = await RunAsync(
+		[
+			"converge", "--connection", Connection, "--admin-connection", "Host=127.0.0.1;Database=postgres",
+			"--config-dir", "C:\\config", "--schedule", scheduleName, "--days", "183", "--pens", "50"
+		]);
+
+		run.ExitCode.Should().Be(0);
+
+		var options = run.Converge.Should().BeOfType<ConvergeOptions>().Which;
+
+		options.Schedule.Should().Be(schedule);
+		options.Days.Should().Be(183);
+		options.PenCount.Should().Be(50);
+
+		var seeding = options.ToSeederOptions("Host=127.0.0.1", BenchOptions.End);
+
+		seeding.Schedule.Should().Be(schedule);
+		seeding.Days.Should().Be(183);
+		seeding.PenCount.Should().Be(50);
+	}
+
+	// A schedule is taken by name only: the enum's numeric value is refused.
+	[Theory]
+	[InlineData("--schedule", "weekly")]
+	[InlineData("--schedule", "1")]
+	[InlineData("--days", "0")]
+	[InlineData("--days", "many")]
+	[InlineData("--pens", "0")]
+	[InlineData("--pens", "53")]
+	public async Task AConvergeValueOutsideItsRangeIsRejected(string option, string value)
+	{
+		var run = await RunAsync(
+		[
+			"converge", "--connection", Connection, "--admin-connection", "Host=127.0.0.1;Database=postgres",
+			"--config-dir", "C:\\config", option, value
+		]);
+
+		AssertRejectedWith(run, option);
+	}
+
+	[Fact]
+	public async Task ASeedingRunRejectsTheConvergeOnlySchedule()
+	{
+		AssertRejectedWith(
+			await RunAsync(["--connection", Connection, "--end", EndText, "--schedule", "shifts"]),
+			"--schedule");
 	}
 
 	[Fact]

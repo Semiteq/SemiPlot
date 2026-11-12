@@ -34,7 +34,7 @@ and built from the commit under test. Its value is diagnosis.
 | Area | Files |
 | --- | --- |
 | Navigation, scale, cursor geometry | `SemiPlot.Tests.Unit/Core/Trends/TrendNavigationModelTests.cs`, `PenScaleModelTests.cs`, `MinimapGeometryTests.cs`, `Chart/CursorReadoutModelTests.cs`, `DeltaCursorModelTests.cs` |
-| The seeder's generation rules | `SemiPlot.Tests.Unit/LayerThinnerTests.cs`, `RawLayerGeneratorTests.cs`, `BreakGenerationTests.cs`, `PartitionScriptTests.cs` |
+| The seeder's generation rules | `SemiPlot.Tests.Unit/LayerThinnerTests.cs`, `RawLayerGeneratorTests.cs`, `BreakGenerationTests.cs`, `PartitionScriptTests.cs`, `ShiftScheduleTests.cs` (the shift schedule), `ShiftsGenerationTests.cs` (the rows and the quality marks at session edges under shifts), `ShiftMarkerWriterTests.cs` (the recipe and operator marker plans), `StreamedSeedTests.cs` (the streamed day-by-day rows equal one materialised pass) |
 | The demo writer's own rules and the command line | `SemiPlot.Tests.Unit/LiveTailGeneratorTests.cs`, `SharedLatticeTests.cs`, `SeederCommandTests.cs`. Its coarse flush is not here: it reads the finer layer back from the server and thins it with `LayerThinner.Thin`, so `Integration/CoarseFlushTests.cs` carries it, gated |
 | The error types' shape and extent arithmetic | `SemiPlot.Tests.Unit/Errors/DataErrorTests.cs`, `Data/ArchiveExtentTests.cs` |
 | The provider's statement text and its binder | `SemiPlot.Tests.Unit/Postgres/ArchiveStatementTextTests.cs` |

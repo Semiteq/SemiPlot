@@ -13,4 +13,8 @@
     <ProjectReference Include="..\SemiPlot.Core\SemiPlot.Core.csproj"/>
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="OperatorMarkerLabels.txt" LogicalName="OperatorMarkerLabels.txt"/>
+  </ItemGroup>
+
 </Project>

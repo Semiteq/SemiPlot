@@ -6,18 +6,14 @@ public static class RawLayerGenerator
 
 	public static IReadOnlyList<ArchiveRow> Generate(SeederOptions options)
 	{
-		var rows = new List<ArchiveRow>();
-		var breaks = BreakPlan.Create(options);
-		var intervalTicks = ChangeIntervalTicks(options.ChangeSeconds);
+		return [.. PenStreams(options).SelectMany(pen => pen)];
+	}
 
-		RequireTwoChangesPerRun(breaks, intervalTicks, options);
-
-		foreach (var pen in SelectPens(options.PenCount))
-		{
-			AppendPen(rows, pen, options.Seed, intervalTicks, breaks);
-		}
-
-		return rows;
+	/// <summary>The raw rows of every pen, one calendar day per list in day order; a day without a row is
+	/// skipped.</summary>
+	public static IEnumerable<IReadOnlyList<ArchiveRow>> GenerateDays(SeederOptions options)
+	{
+		return ByDay(PenStreams(options), options.Start.Date);
 	}
 
 	// Round-robin across the groups, never the first N: the first eight of the catalogue are all Heaters.
@@ -51,10 +47,9 @@ public static class RawLayerGenerator
 	}
 
 	// The one lattice both generators write on: docs/architecture/bench.md#what-the-generator-emits.
-	internal static void AppendWindow(
-		List<ArchiveRow> rows,
+	internal static IEnumerable<ArchiveRow> WindowRows(
 		SyntheticPen pen,
-		long seed,
+		LatticeValues values,
 		long intervalTicks,
 		long fromTicks,
 		long toExclusiveTicks,
@@ -79,14 +74,14 @@ public static class RawLayerGenerator
 			// that anchor would carry the q = 32 mark.
 			if (anchorTicks >= toExclusiveTicks || (breakFollows && changeTicks >= toExclusiveTicks))
 			{
-				return;
+				yield break;
 			}
 
 			var isChange = index % stride == 0;
 
 			if (isChange && carriesAnchor && !dropsAnchor && anchorTicks >= fromTicks)
 			{
-				rows.Add(Row(pen, anchorTicks, HeldValue(seed, pen, stride, index - 1)));
+				yield return Row(pen, anchorTicks, values.At(pen, stride, index - 1));
 			}
 
 			// The project start and stop write every pen, so a pen holding its value still gets the row a
@@ -95,7 +90,7 @@ public static class RawLayerGenerator
 
 			if (changeTicks >= fromTicks && changeTicks < toExclusiveTicks && (isChange || marksBoundary))
 			{
-				rows.Add(Row(pen, changeTicks, HeldValue(seed, pen, stride, index)));
+				yield return Row(pen, changeTicks, values.At(pen, stride, index));
 
 				dropsAnchor = false;
 			}
@@ -111,46 +106,119 @@ public static class RawLayerGenerator
 		return (long)milliseconds * TimeSpan.TicksPerMillisecond;
 	}
 
-	private static void AppendPen(
-		List<ArchiveRow> rows,
+	// Not an iterator, so a refused plan throws here rather than inside the COPY that enumerates the rows.
+	private static IReadOnlyList<IEnumerable<ArchiveRow>> PenStreams(SeederOptions options)
+	{
+		var breaks = BreakPlan.Create(options);
+		var intervalTicks = ChangeIntervalTicks(options.ChangeSeconds);
+		var values = ValuesFor(options, intervalTicks);
+
+		RequireTwoChangesPerRun(breaks, intervalTicks, options);
+
+		return [.. SelectPens(options.PenCount).Select(pen => PenRows(pen, values, intervalTicks, breaks))];
+	}
+
+	private static LatticeValues ValuesFor(SeederOptions options, long intervalTicks)
+	{
+		return options.Schedule == ArchiveSchedule.Shifts
+			? ShiftValues(options, intervalTicks)
+			: LatticeValues.Continuous(options.Seed);
+	}
+
+	private static IEnumerable<ArchiveRow> PenRows(
 		SyntheticPen pen,
-		long seed,
+		LatticeValues values,
 		long intervalTicks,
 		BreakPlan breaks)
 	{
 		for (var runIndex = 0; runIndex < breaks.Runs.Count; runIndex++)
 		{
 			var run = breaks.Runs[runIndex];
-			var firstIndex = rows.Count;
 			var resumed = runIndex > 0;
 			var breakFollows = runIndex < breaks.Runs.Count - 1;
 
-			AppendWindow(
-				rows,
+			var rows = WindowRows(
 				pen,
-				seed,
+				values,
 				intervalTicks,
 				fromTicks: run.Start.Ticks,
 				toExclusiveTicks: run.End.Ticks,
 				resumedAfterBreak: resumed,
 				breakFollows: breakFollows);
 
-			MarkRunBoundaries(rows, firstIndex, resumed, breakFollows);
+			foreach (var row in MarkRunBoundaries(rows, resumed, breakFollows))
+			{
+				yield return row;
+			}
 		}
 	}
 
 	// Both markers land on lattice rows: the run's first for q = 16 and its last for q = 32, and
 	// RequireTwoChangesPerRun has made sure a run bounded by a break holds two distinct ones.
-	private static void MarkRunBoundaries(List<ArchiveRow> rows, int firstIndex, bool resumed, bool breakFollows)
+	private static IEnumerable<ArchiveRow> MarkRunBoundaries(
+		IEnumerable<ArchiveRow> rows,
+		bool resumed,
+		bool breakFollows)
 	{
-		if (resumed)
+		ArchiveRow? held = null;
+
+		foreach (var row in rows)
 		{
-			rows[firstIndex] = rows[firstIndex] with { Quality = ArchiveRow.FirstAfterBreakQuality };
+			if (held is not null)
+			{
+				yield return held;
+			}
+
+			held = held is null && resumed ? row with { Quality = ArchiveRow.FirstAfterBreakQuality } : row;
 		}
 
-		if (breakFollows)
+		if (held is not null)
 		{
-			rows[^1] = rows[^1] with { Quality = ArchiveRow.LastBeforeBreakQuality };
+			yield return breakFollows ? held with { Quality = ArchiveRow.LastBeforeBreakQuality } : held;
+		}
+	}
+
+	// Each pen's rows ascend in time, so a day is every pen's rows up to the next midnight. A minute or an
+	// hour period never crosses midnight, so the day is also a whole set of thinning periods.
+	private static IEnumerable<IReadOnlyList<ArchiveRow>> ByDay(
+		IReadOnlyList<IEnumerable<ArchiveRow>> pens,
+		DateTime firstMidnight)
+	{
+		var cursors = pens.Select(pen => pen.GetEnumerator()).ToArray();
+		var pending = new bool[cursors.Length];
+
+		try
+		{
+			for (var pen = 0; pen < cursors.Length; pen++)
+			{
+				pending[pen] = cursors[pen].MoveNext();
+			}
+
+			for (var dayEnd = firstMidnight.AddDays(1); pending.Contains(true); dayEnd = dayEnd.AddDays(1))
+			{
+				var day = new List<ArchiveRow>();
+
+				for (var pen = 0; pen < cursors.Length; pen++)
+				{
+					while (pending[pen] && cursors[pen].Current.Timestamp < dayEnd)
+					{
+						day.Add(cursors[pen].Current);
+						pending[pen] = cursors[pen].MoveNext();
+					}
+				}
+
+				if (day.Count > 0)
+				{
+					yield return day;
+				}
+			}
+		}
+		finally
+		{
+			foreach (var cursor in cursors)
+			{
+				cursor.Dispose();
+			}
 		}
 	}
 
@@ -185,18 +253,14 @@ public static class RawLayerGenerator
 		return Math.Max(1L, (fromTicks + intervalTicks - 1) / intervalTicks);
 	}
 
-	// A slow pen holds the value of its last change, the nearest index at or below that is a multiple of
-	// its stride.
-	private static double HeldValue(long seed, SyntheticPen pen, long stride, long index)
+	private static LatticeValues ShiftValues(SeederOptions options, long intervalTicks)
 	{
-		return ValueAt(seed, pen, index - (index % stride));
-	}
+		var schedule = ShiftSchedule.For(options);
+		var firstDay = DateOnly.FromDateTime(options.Start);
+		var dayCount = DateOnly.FromDateTime(options.End).DayNumber - firstDay.DayNumber + 1;
+		var runs = Enumerable.Range(0, dayCount).SelectMany(offset => schedule.RecipeRuns(firstDay.AddDays(offset)));
 
-	private static double ValueAt(long seed, SyntheticPen pen, long index)
-	{
-		return pen.LogScaleOnStart
-			? SyntheticValueWalk.LogValue(seed, pen.PenId, index, pen.MinValue, pen.MaxValue)
-			: SyntheticValueWalk.Value(seed, pen.PenId, index, pen.MinValue, pen.MaxValue);
+		return LatticeValues.Shifts(options.Seed, intervalTicks, runs);
 	}
 
 	private static ArchiveRow Row(SyntheticPen pen, long ticks, double value)

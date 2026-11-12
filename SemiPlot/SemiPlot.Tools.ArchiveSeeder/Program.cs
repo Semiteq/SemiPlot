@@ -32,9 +32,10 @@ public static class Program
 	{
 		var fill = await SeedFiller.FillAsync(options);
 
-		ReportPlan(options, fill.Rows);
+		ReportPlan(options, fill.RowsPerLayer);
 
 		Console.WriteLine($"rows written    {fill.RowsWritten}");
+		ReportMarkers(fill.RecipeMarkersWritten, fill.OperatorMarkersWritten);
 		Console.WriteLine(fill.TagsWritten is { } tags
 			? $"tags written    {tags}"
 			: "tags written    skipped, no --admin-connection");
@@ -132,25 +133,39 @@ public static class Program
 		var result = await Converge.RunAsync(options);
 
 		Console.WriteLine($"database        {result.Database}, ready in {result.ReadinessWait.TotalSeconds:0.#} s");
+		ReportPlan(result.Seeding, result.RowsPerLayer);
 		Console.WriteLine($"rows written    {result.RowsWritten}");
+		ReportMarkers(result.RecipeMarkersWritten, result.OperatorMarkersWritten);
 		Console.WriteLine($"tags written    {result.TagsWritten}");
 		Console.WriteLine($"config          {ConnectionFileWriter.PathFor(options.ConfigDirectory)}");
 
 		return 0;
 	}
 
-	private static void ReportPlan(SeederOptions options, IReadOnlyCollection<ArchiveRow> rows)
+	private static void ReportMarkers(int recipeMarkers, int operatorMarkers)
 	{
-		Console.WriteLine($"span            {options.Start:O} .. {options.End:O} (exclusive)");
+		Console.WriteLine($"recipe markers  {recipeMarkers}");
+		Console.WriteLine($"operator markers {operatorMarkers}");
+	}
+
+	// The span printed is the generated one: under shifts it opens at the first session start.
+	private static void ReportPlan(SeederOptions options, IReadOnlyDictionary<short, long> rowsPerLayer)
+	{
+		var plan = BreakPlan.Create(options);
+
+		Console.WriteLine($"span            {plan.Runs[0].Start:O} .. {plan.Runs[^1].End:O} (exclusive)");
+		Console.WriteLine($"schedule        {SeederCommand.NameOf(options.Schedule)}");
 		Console.WriteLine($"pens            {options.PenCount}");
 		Console.WriteLine($"seed            {options.Seed}");
 		Console.WriteLine($"change seconds  {options.ChangeSeconds}");
-		Console.WriteLine($"breaks          {options.BreakCount}");
+		Console.WriteLine(options.Schedule == ArchiveSchedule.Shifts
+			? $"sessions        {plan.Runs.Count}"
+			: $"breaks          {options.BreakCount}");
 		Console.WriteLine($"partitions      {PartitionScript.CoveredDays(options.Start, options.End).Count}");
 
-		foreach (var layer in rows.GroupBy(row => row.Layer).OrderBy(layer => layer.Key))
+		foreach (var (layer, count) in rowsPerLayer.OrderBy(entry => entry.Key))
 		{
-			Console.WriteLine($"layer {layer.Key} rows    {layer.Count()}");
+			Console.WriteLine($"layer {layer} rows    {count}");
 		}
 	}
 }

@@ -106,7 +106,7 @@ itself (`File` -> `New window`, `Restart`) is no stand resource and outlives the
 dotnet run --project SemiPlot/SemiPlot.AppHost
 ```
 
-The `six-months` launch profile (the `Live demo (six months)` launchers) runs the same stand over a six-month
+The `six-months` launch profile (the `Live demo (Six months)` launchers) runs the same stand over a six-month
 shifts archive with recipe and operator markers, seeded on every start
 (`docs/architecture/bench.md#the-six-month-stand`).
 

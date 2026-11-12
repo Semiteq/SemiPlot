@@ -16,6 +16,11 @@ internal static class BenchOptions
 
 	public static readonly DateTime End = DateTime.Parse(EndText, CultureInfo.InvariantCulture);
 
+	// Fourteen days to a Friday midnight, so stretching the last session to the end crosses no weekend.
+	// Seven pens reach the five-minute setpoint, whose stride spans the session edges as well.
+	public static readonly SeederOptions Shifts =
+		For(days: 14, pens: 7, changeSeconds: 30.0, breaks: 0) with { Schedule = ArchiveSchedule.Shifts };
+
 	public static SeederOptions For(
 		int days = SeederOptions.DefaultDays,
 		int pens = SeederOptions.DefaultPenCount,

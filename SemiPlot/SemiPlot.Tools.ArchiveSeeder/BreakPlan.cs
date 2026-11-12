@@ -34,6 +34,11 @@ public sealed class BreakPlan
 
 	public static BreakPlan Create(SeederOptions options)
 	{
+		if (options.Schedule == ArchiveSchedule.Shifts)
+		{
+			return FromShifts(options);
+		}
+
 		ArgumentOutOfRangeException.ThrowIfNegative(options.BreakCount);
 
 		if (options.BreakCount == 0)
@@ -56,6 +61,15 @@ public sealed class BreakPlan
 			BuildWindows(options.Seed, options.Start, span / options.BreakCount, options.BreakCount),
 			options.Start,
 			options.End);
+	}
+
+	// The off periods are the breaks and the sessions the runs, so the break count and the duration bounds
+	// do not apply.
+	private static BreakPlan FromShifts(SeederOptions options)
+	{
+		var span = ShiftSchedule.For(options).Clip(options.Start, options.End);
+
+		return new BreakPlan(span.OffPeriods, span.Start, span.End);
 	}
 
 	// One break per equal slot of the span, which spaces them across the run without letting two of

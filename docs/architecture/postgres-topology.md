@@ -222,5 +222,5 @@ flowchart LR
 ```
 
 The provisioning creates `public.trends` empty; the seeder writes into it as `scada_writer`, the way
-the SCADA writes its own, and adds only the day partitions its rows land in. Every read in the tests
+the SCADA writes its own, and adds one day partition per calendar day of its span. Every read in the tests
 connects as `semiplot`. Nothing in this repository defines a table, a role or a grant.

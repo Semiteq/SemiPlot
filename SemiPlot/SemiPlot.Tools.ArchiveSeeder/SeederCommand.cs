@@ -33,7 +33,7 @@ public static class SeederCommand
 
 	private static readonly Option<int> _days = new("--days")
 	{
-		Description = "Whole days covered, ending at --end. Seeding only.",
+		Description = "Whole days covered, ending at --end. Seeding and converge only.",
 		DefaultValueFactory = _ => SeederOptions.DefaultDays,
 		CustomParser = result => ParseWholeNumber(result, "--days", 1, int.MaxValue)
 	};
@@ -84,6 +84,15 @@ public static class SeederCommand
 	{
 		Description = "Configuration root. The archive connection is written into its connection/ folder.",
 		Required = true
+	};
+
+	private static readonly Option<ArchiveSchedule> _schedule = new("--schedule")
+	{
+		Description = "continuous archives the whole span; shifts archives weekday sessions of recipe runs and "
+					  + "leaves nights, weekends and off days empty.",
+		HelpName = "continuous|shifts",
+		DefaultValueFactory = _ => ArchiveSchedule.Continuous,
+		CustomParser = ParseSchedule
 	};
 
 	private static readonly Command _convergeCommand = BuildConverge();
@@ -141,8 +150,8 @@ public static class SeederCommand
 		return root;
 	}
 
-	// Shares --connection and --end with the root command: converge accepts the same connection string
-	// shape and the same optional end bound, and System.CommandLine allows one Option under several commands.
+	// Shares --connection, --end, --days, --pens and --change-seconds with the root command: converge accepts
+	// the same values with the same rules.
 	private static Command BuildConverge()
 	{
 		var converge = new Command(
@@ -150,7 +159,10 @@ public static class SeederCommand
 			"Recreates the stand database from semiplot_provisioned, seeds it, fills the tag catalogue and "
 			+ "writes the connection file. Bench only.");
 
-		foreach (var option in new Option[] { _connection, _convergeAdminConnection, _configDir, _end, _changeSeconds })
+		foreach (var option in new Option[]
+				 {
+					 _connection, _convergeAdminConnection, _configDir, _end, _changeSeconds, _days, _pens, _schedule
+				 })
 		{
 			converge.Options.Add(option);
 		}
@@ -196,6 +208,29 @@ public static class SeederCommand
 		}
 
 		return value;
+	}
+
+	/// <summary>The name a schedule takes on the command line and in the printed plan.</summary>
+	internal static string NameOf(ArchiveSchedule schedule)
+	{
+		return schedule.ToString().ToLowerInvariant();
+	}
+
+	private static ArchiveSchedule ParseSchedule(ArgumentResult result)
+	{
+		var text = result.Tokens[^1].Value;
+
+		foreach (var schedule in Enum.GetValues<ArchiveSchedule>())
+		{
+			if (string.Equals(text, NameOf(schedule), StringComparison.OrdinalIgnoreCase))
+			{
+				return schedule;
+			}
+		}
+
+		result.AddError($"Option '--schedule' expects continuous or shifts, got '{text}'.");
+
+		return ArchiveSchedule.Continuous;
 	}
 
 	private static long ParseSeed(ArgumentResult result)
@@ -284,7 +319,10 @@ public static class SeederCommand
 			parsed.GetValue(_convergeAdminConnection)!,
 			parsed.GetValue(_configDir)!,
 			parsed.GetValue(_end),
-			parsed.GetValue(_changeSeconds)));
+			parsed.GetValue(_changeSeconds),
+			parsed.GetValue(_days),
+			parsed.GetValue(_pens),
+			parsed.GetValue(_schedule)));
 	}
 
 	// Both modes are decided here, after the parse, so no value is read off an option that failed to parse.

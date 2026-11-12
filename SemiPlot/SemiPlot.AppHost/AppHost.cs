@@ -17,8 +17,8 @@ const string WriterPassword = "semibase-container-writer";
 const string PlotPassword = "semibase-container-plot";
 const ushort HostPort = 55432;
 const ushort ContainerPort = 5432;
-// One density for the seeded day and the live tail, so the chart shows no seam between them.
-const string ChangeSeconds = "0.5";
+
+var dataset = DemoDataset.FromName(builder.Configuration[DemoDataset.VariableName]);
 
 // AppHostDirectory is SemiPlot/SemiPlot.AppHost, so the tracked set sits two levels above it.
 var trackedConfiguration = Path.GetFullPath(Path.Combine(builder.AppHostDirectory, "..", "..", "ConfigFiles"));
@@ -40,15 +40,17 @@ var adminConnection = $"Host=127.0.0.1;Port={HostPort};Database={MaintenanceData
 
 var converge = builder.AddProject<Projects.SemiPlot_Tools_ArchiveSeeder>("converge")
 	.WithArgs(
+	[
 		"converge",
 		"--connection", writerConnection,
 		"--admin-connection", adminConnection,
 		"--config-dir", configDirectory,
-		"--change-seconds", ChangeSeconds)
+		.. dataset.SeedArguments
+	])
 	.WaitFor(bench);
 
 builder.AddProject<Projects.SemiPlot_Tools_ArchiveSeeder>("writer")
-	.WithArgs("--connection", writerConnection, "--follow", "1", "--change-seconds", ChangeSeconds)
+	.WithArgs(["--connection", writerConnection, "--follow", "1", .. dataset.FollowArguments])
 	.WaitForCompletion(converge);
 
 builder.AddProject<Projects.SemiPlot_UI>("viewer")

@@ -1,3 +1,5 @@
+using SemiPlot.Core.Data;
+
 namespace SemiPlot.DataSource.Postgres;
 
 /// <summary>
@@ -13,14 +15,7 @@ public sealed class ArchiveTimeConverter(TimeZoneInfo sourceTimeZone)
 	/// </summary>
 	public DateTime ToUtc(DateTime archiveLocal)
 	{
-		var wallClock = DateTime.SpecifyKind(archiveLocal, DateTimeKind.Unspecified);
-
-		if (sourceTimeZone.IsInvalidTime(wallClock))
-		{
-			return DateTime.SpecifyKind(wallClock - sourceTimeZone.BaseUtcOffset, DateTimeKind.Utc);
-		}
-
-		return TimeZoneInfo.ConvertTimeToUtc(wallClock, sourceTimeZone);
+		return ArchiveClock.ToUtc(archiveLocal, sourceTimeZone);
 	}
 
 	/// <summary>
@@ -30,9 +25,6 @@ public sealed class ArchiveTimeConverter(TimeZoneInfo sourceTimeZone)
 	/// </summary>
 	public DateTime ToArchiveLocal(DateTime utc)
 	{
-		var instant = DateTime.SpecifyKind(utc, DateTimeKind.Utc);
-		var local = TimeZoneInfo.ConvertTimeFromUtc(instant, sourceTimeZone);
-
-		return DateTime.SpecifyKind(local, DateTimeKind.Unspecified);
+		return ArchiveClock.WallClockOf(utc, sourceTimeZone);
 	}
 }

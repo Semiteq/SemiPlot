@@ -4,8 +4,17 @@ using Npgsql;
 
 namespace SemiPlot.Tools.ArchiveSeeder;
 
-/// <summary>What a converge run reports: the wait for the server, and the archive and catalogue it filled.</summary>
-public sealed record ConvergeResult(TimeSpan ReadinessWait, long RowsWritten, int TagsWritten, string Database);
+/// <summary>What a converge run reports: the wait for the server, the seeding run it made, and the archive,
+/// markers and catalogue that run filled.</summary>
+public sealed record ConvergeResult(
+	TimeSpan ReadinessWait,
+	long RowsWritten,
+	int TagsWritten,
+	string Database,
+	SeederOptions Seeding,
+	IReadOnlyDictionary<short, long> RowsPerLayer,
+	int RecipeMarkersWritten,
+	int OperatorMarkersWritten);
 
 // The bench-only verb: docs/architecture/bench.md#the-application-bench.
 public static class Converge
@@ -38,15 +47,7 @@ public static class Converge
 		NpgsqlConnection.ClearPool(new NpgsqlConnection(options.ConnectionString));
 		NpgsqlConnection.ClearPool(new NpgsqlConnection(adminOnStand));
 
-		var seederOptions = new SeederOptions(
-			options.ConnectionString,
-			DateTime.SpecifyKind(options.End ?? DateTime.Now, DateTimeKind.Unspecified),
-			SeederOptions.DefaultDays,
-			SeederOptions.DefaultPenCount,
-			SeederOptions.DefaultSeed,
-			options.ChangeSeconds,
-			SeederOptions.DefaultBreakCount,
-			adminOnStand);
+		var seederOptions = options.ToSeederOptions(adminOnStand, DateTime.Now);
 
 		var fill = await SeedFiller.FillAsync(seederOptions, cancellationToken);
 
@@ -62,7 +63,15 @@ public static class Converge
 			_pollInterval,
 			cancellationToken);
 
-		return new ConvergeResult(waited, fill.RowsWritten, fill.TagsWritten ?? 0, database);
+		return new ConvergeResult(
+			waited,
+			fill.RowsWritten,
+			fill.TagsWritten ?? 0,
+			database,
+			seederOptions,
+			fill.RowsPerLayer,
+			fill.RecipeMarkersWritten,
+			fill.OperatorMarkersWritten);
 	}
 
 	// The admin connection targets the maintenance database, so the wait covers initdb and `semibase

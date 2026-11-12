@@ -88,6 +88,11 @@ dotnet run --project SemiPlot/SemiPlot.Tools.ArchiveSeeder/SemiPlot.Tools.Archiv
   --config-dir SemiPlot\Artifacts\dev-config
 ```
 
+`converge` also takes `--days`, `--pens` and `--schedule continuous|shifts`. `shifts` seeds weekday
+sessions with nights, weekends and a maintenance week off, and writes locked recipe markers as
+`scada_writer`; adding `--schedule shifts --days 183 --pens 50 --change-seconds 30` builds the six-month
+stand (`docs/architecture/bench.md#the-shift-schedule`, `#the-six-month-stand`).
+
 The demo writer is the same seeder run with `--follow <seconds>` instead of `--end`: it appends to
 the archive `converge` created and thins it into the coarse layers on every tick
 (`docs/architecture/bench.md#the-demo-writer`).
@@ -100,6 +105,10 @@ itself (`File` -> `New window`, `Restart`) is no stand resource and outlives the
 ```powershell
 dotnet run --project SemiPlot/SemiPlot.AppHost
 ```
+
+The `six-months` launch profile (the `Live demo (six months)` launchers) runs the same stand over a six-month
+shifts archive with recipe and operator markers, seeded on every start
+(`docs/architecture/bench.md#the-six-month-stand`).
 
 The stand copies `ConfigFiles/` into `%TEMP%\SemiPlot\ConfigFiles`, points the log at
 `%TEMP%\SemiPlot\Logs`, hands both to the processes it launches, and removes the configuration copy
@@ -461,11 +470,11 @@ No abbreviations in names.
   and `SyntheticPen`. `RawLayerGeneratorTests` pins the generator by determinism and invariants —
   the absolute lattice, the break holes, the row-pair shape — not by a digest. **One lattice serves
   both generators**: a change sits at `index * intervalTicks` from absolute tick zero, and
-  `RawLayerGenerator` and `LiveTailGenerator` both emit through `RawLayerGenerator.AppendWindow`.
+  `RawLayerGenerator` and `LiveTailGenerator` both emit through `RawLayerGenerator.WindowRows`.
   `SemiPlot.Tests.Unit/SharedLatticeTests.cs` goes red if they are split. `public.trends`,
   the configuration tables, the two roles and their grants are SemiBase's; the seeder fills the
-  archive table and the catalogue, and creates only the day partitions its rows land in
-  (`docs/architecture/bench.md`).
+  archive table, the catalogue and, under `shifts`, the recipe markers, and creates one day partition
+  per calendar day of its span (`docs/architecture/bench.md`).
 - The provider and the live source run no cold-path reader: a failed read is mapped by
   `ArchiveExceptionMapper`, which stays synchronous, pure and unit-testable, and nothing opens a second
   connection to enrich the error. Each read supplies every relation its statement touches, which the

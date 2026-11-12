@@ -8,4 +8,23 @@ public sealed record ConvergeOptions(
 	string AdminConnectionString,
 	string ConfigDirectory,
 	DateTime? End,
-	double ChangeSeconds);
+	double ChangeSeconds,
+	int Days = SeederOptions.DefaultDays,
+	int PenCount = SeederOptions.DefaultPenCount,
+	ArchiveSchedule Schedule = ArchiveSchedule.Continuous)
+{
+	/// <summary>The seeding run converge performs on the recreated database, ending at End or at localNow.</summary>
+	public SeederOptions ToSeederOptions(string standAdminConnectionString, DateTime localNow)
+	{
+		return new SeederOptions(
+			ConnectionString,
+			DateTime.SpecifyKind(End ?? localNow, DateTimeKind.Unspecified),
+			Days,
+			PenCount,
+			SeederOptions.DefaultSeed,
+			ChangeSeconds,
+			SeederOptions.DefaultBreakCount,
+			standAdminConnectionString,
+			Schedule);
+	}
+}

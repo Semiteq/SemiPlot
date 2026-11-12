@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:local="clr-namespace:SemiPlot.UI.MainWindow"
+             xmlns:navigation="clr-namespace:SemiPlot.UI.Navigation"
              xmlns:text="clr-namespace:SemiPlot.UI.Localization"
              mc:Ignorable="d"
              d:DesignWidth="1280"
@@ -89,6 +90,48 @@
                       Command="{Binding MessagePanel.ToggleCommand}"
                       ToggleType="CheckBox"
                       IsChecked="{Binding MessagePanel.IsVisible, Mode=OneWay}" />
+        </MenuItem>
+
+        <MenuItem Name="GoMenu"
+                  Header="{x:Static text:Resources.MenuGo}">
+            <MenuItem Name="GoPreviousPage"
+                      Header="{x:Static text:Resources.MenuGoPreviousPage}"
+                      Command="{Binding MinimapViewModel.Pager.PreviousPageCommand}"
+                      InputGesture="{x:Static navigation:WindowGestures.PreviousPage}" />
+            <MenuItem Name="GoNextPage"
+                      Header="{x:Static text:Resources.MenuGoNextPage}"
+                      Command="{Binding MinimapViewModel.Pager.NextPageCommand}"
+                      InputGesture="{x:Static navigation:WindowGestures.NextPage}" />
+            <Separator />
+            <MenuItem Name="GoPreviousRun"
+                      Header="{x:Static text:Resources.MenuGoPreviousRun}"
+                      Command="{Binding NavigationBarViewModel.PreviousRunCommand}"
+                      InputGesture="{x:Static navigation:WindowGestures.PreviousRun}" />
+            <MenuItem Name="GoNextRun"
+                      Header="{x:Static text:Resources.MenuGoNextRun}"
+                      Command="{Binding NavigationBarViewModel.NextRunCommand}"
+                      InputGesture="{x:Static navigation:WindowGestures.NextRun}" />
+            <MenuItem Name="GoLatestRun"
+                      Header="{x:Static text:Resources.MenuGoLatestRun}"
+                      Command="{Binding NavigationBarViewModel.LatestRunCommand}"
+                      InputGesture="{x:Static navigation:WindowGestures.LatestRun}" />
+            <MenuItem Name="GoRecipeRunList"
+                      Header="{x:Static text:Resources.MenuGoRunList}"
+                      Command="{Binding ShowRecipeRunListCommand}"
+                      InputGesture="{x:Static navigation:WindowGestures.RecipeRunList}" />
+            <Separator />
+            <MenuItem Name="GoPreviousMarker"
+                      Header="{x:Static text:Resources.MenuGoPreviousMarker}"
+                      Command="{Binding NavigationBarViewModel.PreviousMarkerCommand}"
+                      InputGesture="{x:Static navigation:WindowGestures.PreviousMarker}" />
+            <MenuItem Name="GoNextMarker"
+                      Header="{x:Static text:Resources.MenuGoNextMarker}"
+                      Command="{Binding NavigationBarViewModel.NextMarkerCommand}"
+                      InputGesture="{x:Static navigation:WindowGestures.NextMarker}" />
+            <MenuItem Name="GoMarkerList"
+                      Header="{x:Static text:Resources.MenuGoMarkerList}"
+                      Command="{Binding ShowMarkerListCommand}"
+                      InputGesture="{x:Static navigation:WindowGestures.MarkerList}" />
         </MenuItem>
 
         <MenuItem Name="HelpMenu"

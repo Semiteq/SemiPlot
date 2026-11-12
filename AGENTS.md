@@ -373,7 +373,14 @@ No abbreviations in names.
   and does nothing, and it also forces an exemption into `AppMenuBarTests`, which walks the declared
   `Items` and requires every leaf to carry one or the other. The chart's two marker menus, keyed
   `MenuFlyout`s in `TrendChartView.axaml`, are no placeholders: each item runs a `Click` handler that acts
-  on the moment and the marker under the pointer.
+  on the moment and the marker under the pointer. Every `Go` item carries a command and its `InputGesture`
+  from `Navigation/WindowGestures`, the one gesture table; `git grep -n "InputGesture=" -- SemiPlot/SemiPlot.UI`
+  prints only lines that read `WindowGestures`. A tooltip that names a gesture prints it through
+  `WindowGestures.TextOf`, the text the menu prints (`docs/architecture/ui-text.md#the-gesture-text`).
+- A window gesture runs from `MainWindow.OnKeyDown`, which runs the `Go` item whose `InputGesture` matches
+  the key (`AppMenuBar.GoItemFor`), only on a key no control handled and never on one typed into a `TextBox`. No window `KeyBinding` carries one, because a `KeyBinding` runs
+  ahead of the focused `TextBox`; `git grep -n "KeyBinding" -- SemiPlot/SemiPlot.UI/MainWindow` prints nothing
+  (`docs/architecture/trend-interaction.md#the-go-menu-and-the-gestures`).
 - The sidebar row is read-only but for its visibility box, and `TrendLegendViewTests` gates it as an
   allowlist over the realised row template: every control in it is a `Border`, `Grid`, `TextBlock` or
   `CheckBox`, and exactly one `CheckBox` is present. `ThePanel_RealisesNoTextEditor` gates the panel's
@@ -402,6 +409,16 @@ No abbreviations in names.
   re-reads `IMarkerStore.ReadAsync` every 5 s and on `ReadNow()` after each marker write, and
   `Chart/ChartMarkers` reconciles each read into `Core/Trends/MarkerSet`, which keeps a marker
   with a write in flight as the window shows it (`docs/architecture/overview.md#the-live-markers`).
+  The run and marker steps and the marker list read `ChartMarkers.All` in
+  `Navigation/NavigationBarViewModel` and move the chart with `Navigation.SetWindow` and nothing else; the
+  one marker list is the bar's `MarkersButton` flyout, which the `Go` menu and Ctrl+M open too, and the one
+  run list is the bar's `RecipeRunsButton` flyout, which the `Go` menu and Ctrl+R open too; both are
+  `Navigation/NavigationListView` over one row policy, `NavigationListRows`
+  (`docs/architecture/trend-interaction.md#the-marker-and-run-lists`).
+- The minimap moves the chart only through `Minimap/MinimapPager`, which lands every page step and track
+  press with `Navigation.SetWindow` and nothing else. The page has no writer but its derivation,
+  `MinimapPage.Holding` over the chart window clipped to the newest sample, so no control picks a Day, Week or
+  Month unit and no indicator names the page (`docs/architecture/trend-interaction.md#archive-overview-minimap`).
 - Every chart history request comes from `Chart/ChartHistoryPlanner.Next` and names the visible pens
   only; no caller builds a `HistoryRequest` of its own
   (`docs/architecture/data-integration.md#what-one-history-query-covers`).
@@ -479,7 +496,7 @@ No abbreviations in names.
   `ArchiveExceptionMapper`, which stays synchronous, pure and unit-testable, and nothing opens a second
   connection to enrich the error. Each read supplies every relation its statement touches, which the
   detail line names: one relation for the history and realtime reads, `semiplot_tags, trends` for the
-  archive extent and the archive days, all three of `semiplot_tags`, `semiplot_groups` and
+  archive extent, the archive days and the archive day spans, all three of `semiplot_tags`, `semiplot_groups` and
   `semiplot_pen_groups` for the pen catalogue, and `semiplot_markers` for every marker read and write.
 
 ---

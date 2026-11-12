@@ -34,6 +34,8 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 	private readonly Subject<SettingsViewModel> _settingsRequests = new();
 	private readonly Subject<PenEditorViewModel> _penEditorRequests = new();
 	private readonly Subject<CsvExportViewModel> _exportRequests = new();
+	private readonly Subject<Unit> _markerListRequests = new();
+	private readonly Subject<Unit> _recipeRunListRequests = new();
 
 	private readonly ILoggerFactory _loggerFactory;
 	private readonly ILogger<MainWindowViewModel> _logger;
@@ -89,6 +91,8 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 		_disposables.Add(_settingsRequests);
 		_disposables.Add(_penEditorRequests);
 		_disposables.Add(_exportRequests);
+		_disposables.Add(_markerListRequests);
+		_disposables.Add(_recipeRunListRequests);
 
 		_disposables.Add(ToggleNavigationBarCommand = ReactiveCommand.Create(
 			() => { IsNavigationBarVisible = !IsNavigationBarVisible; }));
@@ -111,6 +115,12 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 		_disposables.Add(ExportCommand = ReactiveCommand.Create(
 			RequestExport,
 			ChartViewModel.WhenAnyValue(chart => chart.HasNoPens).Select(none => !none)));
+		_disposables.Add(ShowMarkerListCommand = ReactiveCommand.Create(
+			() => _markerListRequests.OnNext(Unit.Default),
+			NavigationBarViewModel.WhenAnyValue(bar => bar.HasOperatorMarkers)));
+		_disposables.Add(ShowRecipeRunListCommand = ReactiveCommand.Create(
+			() => _recipeRunListRequests.OnNext(Unit.Default),
+			NavigationBarViewModel.WhenAnyValue(bar => bar.HasRecipeRunEntries)));
 	}
 
 	/// <summary>The process-wide panel, owned by the container and shown in the window's panel row.</summary>
@@ -129,6 +139,10 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 	public IObservable<PenEditorViewModel> PenEditorRequests => _penEditorRequests.AsObservable();
 
 	public IObservable<CsvExportViewModel> ExportRequests => _exportRequests.AsObservable();
+
+	public IObservable<Unit> MarkerListRequests => _markerListRequests.AsObservable();
+
+	public IObservable<Unit> RecipeRunListRequests => _recipeRunListRequests.AsObservable();
 
 	public bool IsNavigationBarVisible
 	{
@@ -188,6 +202,12 @@ public sealed class MainWindowViewModel : ReactiveObject, IDisposable
 
 	/// <summary>Snapshots the visible window and the pens into a request on ExportRequests.</summary>
 	public ReactiveCommand<Unit, Unit> ExportCommand { get; }
+
+	/// <summary>Asks the window for the operator marker list; enabled while the list holds a marker.</summary>
+	public ReactiveCommand<Unit, Unit> ShowMarkerListCommand { get; }
+
+	/// <summary>Asks the window for the recipe run list; enabled while the list holds a run.</summary>
+	public ReactiveCommand<Unit, Unit> ShowRecipeRunListCommand { get; }
 
 	/// <summary>The window's own code-behind route to the panel, for a throw it cannot let escape.</summary>
 	public void ReportFailure(Exception failure)

@@ -151,12 +151,103 @@ come from the mapper (`#what-the-mappers-two-consumers-read`):
 
 ## The navigation bar's text
 
-`Navigation/NavigationBarView.axaml` reads the bar's three buttons:
+`Navigation/NavigationBarView.axaml` reads the bar's captions and tooltips through `x:Static`. A tooltip
+that names a gesture is a format whose `{0}` is the gesture's text (`#the-gesture-text`). The two lists'
+dates and headers are no keys: `Navigation/NavigationListRows` formats a row's date as `d MMM HH:mm` and a
+month header as `MMMM yyyy` in capitals, in the machine's zone under `CultureInfo.CurrentCulture`, so a
+Russian row reads "12 нояб. 14:32" with the genitive month and its header "НОЯБРЬ 2026" with the nominative;
+an entry with no name shows its date alone. The filter also matches the header's text, so "ноябрь" or
+"2026" keeps the month's entries. `NavigationListRowsTests` pins the Russian forms on May, "11 мая 14:32"
+under "МАЙ 2026". A run's duration is a key: `RunListDurationMinutes` under an hour, `RunListDurationHours`
+from it, its minutes padded to two digits in code, so "1 ч 05 мин". In Inter the wider watermark, the
+Russian "Фильтр: рецепт или дата", measures 173.4 px at the box's font size and the widest Russian month header
+88.7 px at 11 px, inside the 400 px list (`NavigationListViewTests.TheWatermarkAndTheWidestHeader_FitTheList`).
+The Russian bar measures 1239 px in Inter with a sample delta readout, the widest window's delta time and a
+five-digit difference, inside the 1264 px the default 1280 px window leaves
+(`NavigationBarViewTests.TheWholeBar_FitsTheDefaultWindow_WithAWideDeltaReadout`). The jump button reads
+"К текущему времени" so that the run group's drop-down button fits that width.
 
 | Key | English / Russian | Where |
 | --- | --- | --- |
-| `NavigationJumpToNow` | "Jump to now" / "Перейти к текущему времени" | The jump button |
+| `NavigationJumpToNow` | "Jump to now" / "К текущему времени" | The jump button |
 | `NavigationSticky`, `NavigationDelta` | "Sticky" / "Следовать за текущим временем", "Delta" / "Приращение" | The two toggle buttons |
+| `NavigationRecipeRun` | "Recipe run" / "Рецепт" | The run list button, which opens the run group |
+| `NavigationLatestRun`, `NavigationMarkers` | "Latest run" / "Последний", "Markers" / "Метки" | The latest-run button and the marker list button |
+| `NavigationPreviousRunTip`, `NavigationNextRunTip`, `NavigationLatestRunTip` | "Previous recipe run ({0})" / "Предыдущий запуск рецепта ({0})", "Next recipe run ({0})" / "Следующий запуск рецепта ({0})", "Newest recipe run ({0})" / "Последний запуск рецепта ({0})" | The run controls' tooltips, through `WindowGestures.PreviousRunTip`, `NextRunTip` and `LatestRunTip` |
+| `NavigationNoEarlierRunTip`, `NavigationNoLaterRunTip` | "No earlier recipe run" / "Раньше запусков рецепта нет", "No later recipe run" / "Позже запусков рецепта нет" | A disabled run step's tooltip while another run exists |
+| `NavigationNoRecipeRunsTip` | "No recipe runs" / "Нет запусков рецепта" | Every run step's tooltip while no run with a sample in it exists, and the run list button's while no run exists |
+| `NavigationRecipeRunsTip` | "Go to a recipe run ({0})" / "Перейти к запуску рецепта ({0})" | The run list button's tooltip while enabled, through `WindowGestures.RecipeRunListTip` |
+| `NavigationMarkersTip`, `NavigationNoMarkersTip` | "Go to an operator marker ({0})" / "Перейти к метке оператора ({0})", "No operator markers" / "Нет меток оператора" | The marker list button's tooltip, enabled through `WindowGestures.MarkerListTip` and disabled |
+| `MarkerListFilterPlaceholder` | "Filter: label or date" / "Фильтр: метка или дата" | The marker list's filter box watermark |
+| `MarkerListNoMatch` | "No markers match the filter" / "Нет меток по фильтру" | The marker list's one line while it holds no row |
+| `RunListFilterPlaceholder` | "Filter: recipe or date" / "Фильтр: рецепт или дата" | The run list's filter box watermark |
+| `RunListNoMatch` | "No recipe runs match the filter" / "Нет запусков рецепта по фильтру" | The run list's one line while it holds no row |
+| `RunListInterruptedTip` | "Interrupted" / "Прерван" | The tooltip of a run row's interrupted glyph |
+| `RunListDurationMinutes`, `RunListDurationHours` | "{0} min" / "{0} мин", "{0} h {1} min" / "{0} ч {1} мин" | A run row's duration, `{0}` the minutes under an hour, else `{0}` the hours and `{1}` the minutes as two digits |
+
+## The minimap's text
+
+`Minimap/MinimapView.axaml` reads the steps' tooltips through `x:Static`, `Minimap/MinimapHint` the detail
+track's hint, and `MinimapLabels.DayTip` a calendar day's tooltip. Dates are no keys: `Minimap/MinimapLabels`
+formats them under `CultureInfo.CurrentCulture` with literal patterns, a day number beside every month so
+Russian takes the genitive; the day calendar's month label, `MMM`, and a Month page's name, `MMMM`, stand
+alone and take the nominative ("нояб.", "ноябрь"). The hint over a page without rows names the page through
+`MinimapLabels.Page`: the page's name and the year of its last day in one text. A step's tooltip is a format
+whose `{0}` is the gesture's text (`#the-gesture-text`). The day tooltips carry the middle dot U+00B7 between the day and its rows, and
+`MinimapDayMarkersTip`, "{0} · {1}" in both sets, adds the marker count after a second one;
+`ResourcesTests.GlyphValues_KeepTheCodePointsTheOperatorSees` pins the three in both sets. The count is a
+counted noun (`#a-counted-noun`).
+
+| Key | English / Russian | Where |
+| --- | --- | --- |
+| `MinimapPreviousDayTip`, `MinimapNextDayTip` | "Previous day with rows ({0})" / "Предыдущий день с данными ({0})", "Next day with rows ({0})" / "Следующий день с данными ({0})" | The page steps' tooltips on a Day page, through `WindowGestures.PreviousDayTip` and `NextDayTip` |
+| `MinimapPreviousWeekTip`, `MinimapNextWeekTip` | "Previous week with rows ({0})" / "Предыдущая неделя с данными ({0})", "Next week with rows ({0})" / "Следующая неделя с данными ({0})" | The same tooltips on a Week page, through `WindowGestures.PreviousWeekTip` and `NextWeekTip` |
+| `MinimapPreviousMonthTip`, `MinimapNextMonthTip` | "Previous month with rows ({0})" / "Предыдущий месяц с данными ({0})", "Next month with rows ({0})" / "Следующий месяц с данными ({0})" | The same tooltips on a Month page, through `WindowGestures.PreviousMonthTip` and `NextMonthTip` |
+| `MinimapNoEarlierRowsTip`, `MinimapNoLaterRowsTip` | "No earlier rows in the archive" / "Раньше в архиве нет данных", "No later rows in the archive" / "Позже в архиве нет данных" | A disabled page step's tooltip, shown while it is disabled |
+| `MinimapNoRowsInArchive` | "No rows in the archive" / "В архиве нет данных" | The hint after an extent read answered with no rows |
+| `MinimapNoRowsOn` | "No rows on {0}" / "Нет данных за {0}" | The hint over a page no day span falls on, `{0}` the page as `MinimapLabels.Page` writes it |
+| `MinimapBandNotRead` | "Not read, see messages" / "Не прочитано, см. сообщения" | The hint after a failed band read, until the next read lands |
+| `MinimapDayRowsTip` | "{0} · rows {1}-{2}" / "{0} · данные {1}-{2}" | A calendar day's tooltip, `{0}` the day as `ddd d MMM yyyy`, `{1}` and `{2}` its first and last sample as `HH:mm` in the archive's wall clock |
+| `MinimapDayNoRowsTip` | "{0} · no rows" / "{0} · нет данных" | The tooltip of a calendar day without rows, `{0}` the day |
+| `MinimapDayMarkersTip` | "{0} · {1}" in both sets | A day tooltip with operator markers, `{0}` the tooltip above, `{1}` the count |
+| `MinimapMarkerCountOne`, `MinimapMarkerCountFew`, `MinimapMarkerCountMany` | "{0} marker", "{0} markers", "{0} markers" / "{0} метка", "{0} метки", "{0} меток" | The count of a day's operator markers, picked by `Localization/CountForms` |
+
+## The Go menu's text
+
+`MainWindow/AppMenuBar.axaml` reads the `Go` items through `x:Static`. The page steps name a day, a week or a
+month, because the operator never sees the word page (`trend-interaction.md#the-go-menu-and-the-gestures`).
+
+| Key | English / Russian | Where |
+| --- | --- | --- |
+| `MenuGo` | "Go" / "Переход" | The menu's header |
+| `MenuGoPreviousPage`, `MenuGoNextPage` | "Previous day, week or month" / "Предыдущий день, неделя или месяц", "Next day, week or month" / "Следующий день, неделя или месяц" | The minimap's page steps |
+| `MenuGoPreviousRun`, `MenuGoNextRun`, `MenuGoLatestRun` | "Previous recipe run" / "Предыдущий запуск рецепта", "Next recipe run" / "Следующий запуск рецепта", "Newest recipe run" / "Последний запуск рецепта" | The run steps |
+| `MenuGoPreviousMarker`, `MenuGoNextMarker` | "Previous operator marker" / "Предыдущая метка оператора", "Next operator marker" / "Следующая метка оператора" | The marker steps |
+| `MenuGoMarkerList` | "Operator markers..." / "Метки оператора..." | The item that opens the marker list |
+| `MenuGoRunList` | "Recipe runs..." / "Запуски рецептов..." | The item that opens the run list |
+
+### The gesture text
+
+A gesture prints in one text everywhere: Avalonia's English key names in both sets, such as "Alt+Left Arrow",
+"Ctrl+Shift+Right Arrow" and "Ctrl+End". The open `Go` menu prints it beside an item through Semi's
+template and Avalonia's `PlatformKeyGestureConverter`. `Navigation/WindowGestures`' private `TextOf` returns
+the same text, `KeyGesture.ToString("p", null)`, and every tooltip that names a gesture is a `WindowGestures`
+property that formats its resx key over it: `PreviousRunTip`, `NextRunTip`, `LatestRunTip`,
+`RecipeRunListTip`, `MarkerListTip`, `PreviousDayTip`, `NextDayTip`, `PreviousWeekTip`, `NextWeekTip`,
+`PreviousMonthTip` and `NextMonthTip`. The two views read
+these properties through `x:Static`. `AppMenuBarTests.TheOpenGoMenu_PrintsEachItemsGestureBesideItsCaption`
+checks that each tooltip holds the text the open menu prints for its item, so a menu and a tooltip cannot name
+a key differently.
+
+### A counted noun
+
+A count the operator reads beside its noun takes the noun's plural form. The forms are three keys, `One`,
+`Few` and `Many`, because the C# source stays ASCII, and `Localization/CountForms.Pick` chooses among them by
+the resource language, `CultureInfo.CurrentUICulture`: Russian takes `One` for a count ending in 1 but not 11,
+`Few` for one ending in 2 to 4 but not 12 to 14, and `Many` otherwise; every other language takes `One` for 1
+and `Many` otherwise, so the English `Few` and `Many` values are equal. The day tooltip's marker count is the
+one consumer (`MinimapMarkerCount*`); `MinimapLabelsTests` pins 1, 2, 5, 11, 21, 22 and 112. A count line that
+puts its noun first, such as `PenGroupsDeleteCount`, needs no form (`#the-pen-editors-text`).
 
 ## The sidebar's text
 

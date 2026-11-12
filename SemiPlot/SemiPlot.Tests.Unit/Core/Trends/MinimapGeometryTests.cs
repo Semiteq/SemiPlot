@@ -12,92 +12,10 @@ namespace SemiPlot.Tests.Unit.Core.Trends;
 public sealed class MinimapGeometryTests
 {
 	private const double StripWidth = 900.0;
-	private const double MinimumMarkerWidth = 6.0;
 	private const double BandWidth = 400.0;
 	private const double BandHeight = 30.0;
-	private const double LabelWidth = 60.0;
-	private const double CoverDistance = 6.0;
 	private static readonly DateTime _first = new(2026, 6, 10, 0, 0, 0, DateTimeKind.Utc);
 	private static readonly DateTime _last = new(2026, 6, 20, 0, 0, 0, DateTimeKind.Utc);
-
-	[Fact]
-	public void WindowFraction_MidWindow_MapsToCenteredRectangle()
-	{
-		var from = new DateTime(2026, 6, 12, 0, 0, 0, DateTimeKind.Utc);
-		var to = new DateTime(2026, 6, 16, 0, 0, 0, DateTimeKind.Utc);
-
-		var (start, width) = MinimapGeometry.WindowFraction(_first, _last, from, to);
-
-		start.Should().BeApproximately(0.2, 1e-9);
-		width.Should().BeApproximately(0.4, 1e-9);
-	}
-
-	[Fact]
-	public void WindowFraction_WindowEqualsExtent_FillsStrip()
-	{
-		var (start, width) = MinimapGeometry.WindowFraction(_first, _last, _first, _last);
-
-		start.Should().Be(0.0);
-		width.Should().BeApproximately(1.0, 1e-9);
-	}
-
-	[Fact]
-	public void WindowFraction_WindowReachesBeyondExtent_ClampsToStrip()
-	{
-		var from = _first - TimeSpan.FromDays(5.0);
-		var to = _last + TimeSpan.FromDays(5.0);
-
-		var (start, width) = MinimapGeometry.WindowFraction(_first, _last, from, to);
-
-		start.Should().Be(0.0);
-		width.Should().Be(1.0);
-	}
-
-	[Fact]
-	public void WindowFraction_ZeroSpanExtent_ReturnsFullStrip()
-	{
-		var (start, width) = MinimapGeometry.WindowFraction(_first, _first, _first, _first);
-
-		start.Should().Be(0.0);
-		width.Should().Be(1.0);
-	}
-
-	[Theory]
-	[InlineData(1.0)]
-	[InlineData(0.999)]
-	public void MarkerSpan_AtTheRightEnd_StaysInsideTheStrip(double startFraction)
-	{
-		var (left, width) = MinimapGeometry.MarkerSpan(startFraction, 0.0, StripWidth, MinimumMarkerWidth);
-
-		width.Should().Be(MinimumMarkerWidth);
-		(left + width).Should().BeLessThanOrEqualTo(StripWidth);
-	}
-
-	[Fact]
-	public void MarkerSpan_WindowWiderThanTheStrip_FillsItExactly()
-	{
-		var (left, width) = MinimapGeometry.MarkerSpan(-0.5, 2.0, StripWidth, MinimumMarkerWidth);
-
-		left.Should().Be(0.0);
-		width.Should().Be(StripWidth);
-	}
-
-	[Fact]
-	public void MarkerSpan_ZeroStripWidth_IsEmpty()
-	{
-		var span = MinimapGeometry.MarkerSpan(0.5, 0.1, 0.0, MinimumMarkerWidth);
-
-		span.Should().Be((0.0, 0.0));
-	}
-
-	[Fact]
-	public void MarkerSpan_WindowAtTheLeftEdge_KeepsLeftAtZero()
-	{
-		var (left, width) = MinimapGeometry.MarkerSpan(0.0, 0.001, StripWidth, MinimumMarkerWidth);
-
-		left.Should().Be(0.0);
-		width.Should().Be(MinimumMarkerWidth);
-	}
 
 	[Theory]
 	[InlineData(100.0, 100.0)]
@@ -112,42 +30,6 @@ public sealed class MinimapGeometryTests
 	public void SpanLeftWithin_ASpanWiderThanTheLimit_StartsAtItsLeftEdge()
 	{
 		MinimapGeometry.SpanLeftWithin(10.0, StripWidth + 50.0, StripWidth).Should().Be(0.0);
-	}
-
-	[Fact]
-	public void PlaceHoverTime_InTheMiddle_CentresOnThePointerAndCoversNeitherEndLabel()
-	{
-		var placement = MinimapGeometry.PlaceHoverTime(
-			450.0, LabelWidth, StripWidth, LabelWidth, LabelWidth, CoverDistance);
-
-		placement.Should().Be(
-			new HoverTimePlacement(450.0 - (LabelWidth / 2.0), CoversFirst: false, CoversLast: false));
-	}
-
-	[Theory]
-	[InlineData(0.0, 0.0)]
-	[InlineData(StripWidth, StripWidth - LabelWidth)]
-	public void PlaceHoverTime_AtAnEnd_StaysInTheRowAndCoversThatEndLabelOnly(double pointerX, double expectedLeft)
-	{
-		var placement = MinimapGeometry.PlaceHoverTime(
-			pointerX, LabelWidth, StripWidth, LabelWidth, LabelWidth, CoverDistance);
-
-		var atLeftEnd = pointerX == 0.0;
-		placement.Should().Be(new HoverTimePlacement(expectedLeft, CoversFirst: atLeftEnd, CoversLast: !atLeftEnd));
-	}
-
-	[Theory]
-	[InlineData(CoverDistance - 3.0, true)]
-	[InlineData(CoverDistance + 1.0, false)]
-	public void PlaceHoverTime_ATimeWithinTheCoverDistanceOfAnEndLabel_CoversIt(double distance, bool covers)
-	{
-		var nearFirst = LabelWidth + distance + (LabelWidth / 2.0);
-		var nearLast = StripWidth - LabelWidth - distance - (LabelWidth / 2.0);
-
-		MinimapGeometry.PlaceHoverTime(nearFirst, LabelWidth, StripWidth, LabelWidth, LabelWidth, CoverDistance)
-			.CoversFirst.Should().Be(covers);
-		MinimapGeometry.PlaceHoverTime(nearLast, LabelWidth, StripWidth, LabelWidth, LabelWidth, CoverDistance)
-			.CoversLast.Should().Be(covers);
 	}
 
 	[Fact]

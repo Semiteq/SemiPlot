@@ -314,6 +314,33 @@ public sealed class ExplainPlanTests(
 				+ $"every row of its pen and day.{Environment.NewLine}{plan}");
 	}
 
+	// The same range as ArchiveDays_ReadsThroughTheIndex: a row-holding partition and an empty day on each side.
+	[Fact]
+	public async Task ArchiveDaySpans_ReachesEachBoundByAnIndexEdge()
+	{
+		var database = analysedArchive.Database;
+		var seededDay = DateOnly.FromDateTime(ArchiveTemplate.Slice.Start);
+
+		var plan = await ExplainAsync(
+			database.PlotConnectionString,
+			ArchiveStatements.ArchiveDaySpans,
+			command => PostgresDataProvider.BindArchiveDays(command, seededDay.AddDays(-1), seededDay.AddDays(1)),
+			TestContext.Current.CancellationToken);
+
+		_sequentialScanOverRows.IsMatch(plan).Should().BeFalse(
+			"The day spans statement no longer narrows on the primary key: the plan reads a row-holding trends "
+				+ $"partition sequentially.{Environment.NewLine}{plan}");
+
+		(_indexEdgeReachedRows.Count(plan) >= BoundedSubqueryCount).Should().BeTrue(
+			"The day spans plan reaches no row-holding trends partition through an index scan from each of its "
+				+ "two bounded subqueries; each must step to one index edge per pen and day."
+				+ $"{Environment.NewLine}{plan}");
+
+		_bitmapReadRows.IsMatch(plan).Should().BeFalse(
+			"The day spans statement reads a row-holding trends partition as a bitmap, so one probe collects every "
+				+ $"row of its pen and day.{Environment.NewLine}{plan}");
+	}
+
 	// An unbounded seek is one probe per older day, per pen, on every window change.
 	private static void AssertSeedWalkStaysWithinItsBound(
 		string plan, string statement, int maximumPartitionReads = MaximumDayPartitionsRead)

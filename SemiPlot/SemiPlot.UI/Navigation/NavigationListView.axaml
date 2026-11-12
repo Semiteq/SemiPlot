@@ -1,0 +1,134 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:navigation="clr-namespace:SemiPlot.UI.Navigation"
+             xmlns:text="clr-namespace:SemiPlot.UI.Localization"
+             mc:Ignorable="d"
+             d:DesignHeight="330"
+             x:Class="SemiPlot.UI.Navigation.NavigationListView"
+             x:DataType="navigation:NavigationListViewModel"
+             Width="{x:Static navigation:NavigationListView.ListWidth}">
+
+    <UserControl.Styles>
+        <Style Selector="TextBlock.secondary">
+            <Setter Property="Foreground" Value="{DynamicResource AppSecondaryForegroundBrush}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="TextBlock.monthHeader">
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+        <Style Selector="Border#EntryRow">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="Border#EntryRow.active">
+            <Setter Property="Background" Value="{DynamicResource AppAccentFillBrush}" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid RowDefinitions="Auto,Auto"
+          RowSpacing="8">
+        <TextBox Grid.Row="0"
+                 Name="ListFilter"
+                 Height="32"
+                 PlaceholderText="{Binding FilterPlaceholder}"
+                 Text="{Binding FilterText}" />
+        <Border Grid.Row="1"
+                Name="ListFrame"
+                BorderThickness="1"
+                BorderBrush="{DynamicResource AppBorderBrush}"
+                Padding="4">
+            <Panel>
+                <ScrollViewer Name="ListScroller"
+                              Height="{x:Static navigation:NavigationListView.ViewportHeight}"
+                              HorizontalScrollBarVisibility="Disabled"
+                              AllowAutoHide="False">
+                    <ItemsControl Name="ListItems"
+                                  ItemsSource="{Binding Rows}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <VirtualizingStackPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.DataTemplates>
+                            <DataTemplate DataType="navigation:NavigationListHeader">
+                                <Grid Name="MonthHeader"
+                                      Height="{x:Static navigation:NavigationListView.HeaderHeight}"
+                                      Margin="8,0"
+                                      ColumnDefinitions="*,Auto"
+                                      ColumnSpacing="8">
+                                    <TextBlock Grid.Column="0"
+                                               Name="MonthHeaderText"
+                                               Classes="secondary monthHeader"
+                                               TextTrimming="CharacterEllipsis"
+                                               Text="{Binding Text}" />
+                                    <TextBlock Grid.Column="1"
+                                               Name="MonthHeaderCount"
+                                               Classes="secondary monthHeader"
+                                               Text="{Binding Count}" />
+                                </Grid>
+                            </DataTemplate>
+                            <DataTemplate DataType="navigation:NavigationListItem">
+                                <Border Name="EntryRow"
+                                        Height="{x:Static navigation:NavigationListView.RowHeight}"
+                                        Cursor="Hand"
+                                        Classes.active="{Binding IsActive}"
+                                        Tapped="OnRowTapped">
+                                    <Grid>
+                                        <Border Name="ActiveBar"
+                                                Width="3"
+                                                HorizontalAlignment="Left"
+                                                Background="{DynamicResource AppAccentBrush}"
+                                                IsVisible="{Binding IsActive}" />
+                                        <Grid Margin="8,0"
+                                              ColumnDefinitions="*,Auto"
+                                              ColumnSpacing="8">
+                                            <TextBlock Grid.Column="0"
+                                                       Name="EntryName"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Text="{Binding Name}"
+                                                       ToolTip.Tip="{Binding NameTip}" />
+                                            <StackPanel Grid.Column="1"
+                                                        Orientation="Horizontal"
+                                                        Spacing="8">
+                                                <Panel Name="EntryFlag"
+                                                       Width="{x:Static navigation:NavigationListView.FlagColumnWidth}"
+                                                       IsVisible="{Binding IsRun}">
+                                                    <PathIcon Name="InterruptedGlyph"
+                                                              Width="12"
+                                                              Height="12"
+                                                              Data="{StaticResource WarningGeometry}"
+                                                              Foreground="{DynamicResource AppRecipeMarkerLineBrush}"
+                                                              Background="Transparent"
+                                                              ToolTip.Tip="{x:Static text:Resources.RunListInterruptedTip}"
+                                                              IsVisible="{Binding IsInterrupted}" />
+                                                </Panel>
+                                                <TextBlock Name="EntryDate"
+                                                           Classes="secondary"
+                                                           Width="{x:Static navigation:NavigationListView.DateColumnWidth}"
+                                                           Text="{Binding DateText}" />
+                                                <TextBlock Name="EntryDuration"
+                                                           Classes="secondary"
+                                                           Width="{x:Static navigation:NavigationListView.DurationColumnWidth}"
+                                                           TextAlignment="Right"
+                                                           IsVisible="{Binding IsRun}"
+                                                           Text="{Binding DurationText}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.DataTemplates>
+                    </ItemsControl>
+                </ScrollViewer>
+                <TextBlock Name="NoMatchLine"
+                           Classes="secondary"
+                           HorizontalAlignment="Center"
+                           Text="{Binding NoMatchText}"
+                           IsVisible="{Binding HasNoMatch}" />
+            </Panel>
+        </Border>
+    </Grid>
+
+</UserControl>

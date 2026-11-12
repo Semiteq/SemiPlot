@@ -23,4 +23,10 @@ public interface IDataProvider
 		DateOnly firstDay,
 		DateOnly lastDay,
 		CancellationToken cancellationToken = default);
+
+	// One span per archive wall-clock day in [firstDay, lastDay] that holds a raw row of a catalogue pen, ascending.
+	Task<Result<IReadOnlyList<ArchiveDaySpan>>> QueryArchiveDaySpansAsync(
+		DateOnly firstDay,
+		DateOnly lastDay,
+		CancellationToken cancellationToken = default);
 }

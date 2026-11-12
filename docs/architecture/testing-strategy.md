@@ -33,7 +33,7 @@ and built from the commit under test. Its value is diagnosis.
 
 | Area | Files |
 | --- | --- |
-| Navigation, scale, cursor geometry | `SemiPlot.Tests.Unit/Core/Trends/TrendNavigationModelTests.cs`, `PenScaleModelTests.cs`, `MinimapGeometryTests.cs`, `Chart/CursorReadoutModelTests.cs`, `DeltaCursorModelTests.cs` |
+| Navigation, scale, cursor geometry | `SemiPlot.Tests.Unit/Core/Trends/TrendNavigationModelTests.cs`, `PenScaleModelTests.cs`, `MinimapGeometryTests.cs`, `MinimapPageTests.cs`, `DayCalendarTests.cs`, `DayCalendarLabelsTests.cs`, `MinimapTrackGeometryTests.cs`, `MarkerNavigationTests.cs`, `Chart/CursorReadoutModelTests.cs`, `DeltaCursorModelTests.cs` |
 | The seeder's generation rules | `SemiPlot.Tests.Unit/LayerThinnerTests.cs`, `RawLayerGeneratorTests.cs`, `BreakGenerationTests.cs`, `PartitionScriptTests.cs`, `ShiftScheduleTests.cs` (the shift schedule), `ShiftsGenerationTests.cs` (the rows and the quality marks at session edges under shifts), `ShiftMarkerWriterTests.cs` (the recipe and operator marker plans), `StreamedSeedTests.cs` (the streamed day-by-day rows equal one materialised pass) |
 | The demo writer's own rules and the command line | `SemiPlot.Tests.Unit/LiveTailGeneratorTests.cs`, `SharedLatticeTests.cs`, `SeederCommandTests.cs`. Its coarse flush is not here: it reads the finer layer back from the server and thins it with `LayerThinner.Thin`, so `Integration/CoarseFlushTests.cs` carries it, gated |
 | The error types' shape and extent arithmetic | `SemiPlot.Tests.Unit/Errors/DataErrorTests.cs`, `Data/ArchiveExtentTests.cs` |
@@ -200,12 +200,13 @@ gives them the unreachable address and an adjustable poll interval.
 
 **Against a real Avalonia** — `SemiPlot.Tests.Unit/UI/`, under `[AvaloniaFact]` and `[AvaloniaTheory]`,
 for example the classes that realise a view: `ChartPointerInputTests`, `MinimapPointerInputTests`,
-`MinimapViewTests`, `TrendChartViewTests`, `ChartMarkerViewTests`, `AxisScalePanelViewTests`,
+`MinimapViewTests`, `MinimapDetailTrackTests`, `TrendChartViewTests`, `ChartMarkerViewTests`, `AxisScalePanelViewTests`,
 `TimeWindowPanelViewTests`, `CsvExportWindowTests`, `MainWindowViewTests`, `TrendLegendViewTests`,
 `PenEditorViewTests`, `PenListViewTests`, `PenFormPaneViewTests`, `ThemeTests` and `StartupFailureWindowTests`. Seams guarded: the dispatcher, layout, hit-testing,
 pointer capture and event routing. Real framework, synthetic data. These are what catch a rendering-stack version bump.
-The headless platform draws no pixels, so `Minimap/MinimapBand.Render` has no test: `MinimapViewTests`
-pins the figures it receives, and the minimap's smoke walk on the demo stand covers what it paints.
+The headless platform draws no pixels, so the `Render` of `Minimap/MinimapBand`, `MinimapDayCalendar` and
+`MinimapRunShading` has no test: `MinimapViewTests` and `MinimapDetailTrackTests` pin the figures, cells and
+shades each receives, and the minimap's smoke walk on the demo stand covers what they paint.
 
 **Against a real rasterizer** — `SemiPlot.Tests.Unit/UI/Chart/ChartGapRenderTests.cs`, under `[AvaloniaFact]`:
 it renders through SkiaSharp and asserts on pixels that a `NaN` column breaks the

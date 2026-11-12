@@ -54,10 +54,35 @@ each is a scoped future task.
   already moved, without losing the snap from the constructor's wall clock that a normal start relies on.
   Deferred from the review of the hold to the poll answer (#152).
 
-- **Minimap — further work.** The strip draws the drawn pen's min/max band under the window marker. Still
-  wanted: clearer window handles, and possibly a per-pen presence row. Treat as its own task.
+- **Minimap — further work.** The archive track marks the days with rows, and the detail track draws the
+  drawn pen's min/max band over one page under the window box, whose cut edges draw no border. Still
+  wanted: possibly a per-pen presence row, and a mark for a chart window that misses the detail page (the
+  box hides then, `trend-interaction.md#archive-overview-minimap`). Treat as its own task.
+
+- **A failed day-spans or extent read on an archive that no longer grows.** `ArchivePresenceFeed` and
+  `MinimapViewModel` retry a failed read only on a `NewestSampleMoved`, at most once a minute, so on a
+  customer dump a failed first read stays failed until the next applied extent or a restart: after a failed
+  spans read the page steps keep their calendar fallback, and after a failed extent read both are disabled. A timer-driven retry needs a `Schedule` call, which the AGENTS.md
+  `TestScheduler` hang rule warns about; decide it together for both reads.
+
+- **A one-hour Day page on the spring-skipped hour.** `ArchiveClock.ToUtc` gives a skipped wall-clock time
+  the zone's base offset, so a 02:00-03:00 page on the spring day maps 02:00 with the base offset and 03:00
+  with the summer offset to the same UTC instant: a zero-width range, against `data-integration.md`'s "the
+  minimap's page spans at least one whole wall-clock hour". Qualify the sentence or widen such a page by an
+  hour.
+
+- **The previous-run step can loop on a run shorter than about 0.45 s.** `MarkerNavigation.Frame` adds a
+  tenth of the run on each side, and `TrendNavigationModel.MinimumWidth` (1 s) widens the window, so for a
+  run shorter than 0.5 s / 1.1 the widened window's centre lies past the run's end and
+  `PreviousRunCommand` selects the same run on every press. Recipe runs last minutes, so no stand shows it.
 
 ## Rendering / performance
+
+- **The frame grows with the viewer's uptime.** On the six-month stand a follow capture's mean
+  `RenderOnce` rose from 2.8 ms in the first minute to 3.8-5.3 ms after 4 to 10 minutes, the growth inside
+  `EnvelopeLine.Render`, with no chart change between the captures (`bench.md#the-stand-after-the-two-track-minimap`).
+  The live tail filling the window is the likely cause; it is not confirmed. Profile a long follow run
+  before changing the renderer.
 
 - **The strip a drag exposes still lags behind the gesture.** Measured on the stand on 2026-09-07 after
   the culled `EnvelopeLine` polyline: the frame is cheap, but a pan past the prefetched band waits on the
@@ -118,7 +143,7 @@ nearby edit.
 Paths are under `SemiPlot/SemiPlot.UI/` unless they name another project.
 
 - **Disposed guards set inconsistently.** `ObjectDisposedException.ThrowIf` opens 11 members of
-  `Chart/TrendChartViewModel.cs` (`:219` to `:390`) and 2 of `Minimap/MinimapViewModel.cs` (`:92`, `:102`).
+  `Chart/TrendChartViewModel.cs` (`:219` to `:390`) and 1 of `Minimap/MinimapViewModel.cs` (`:142`).
   Some guard real work: `RequestInitialHistory` (`:219`) and `ApplyCatalogue` (`:231`) push into the
   debouncer and the live edge. Others are missing on the paths the guarded `SetAxisLimits` (`:390`) shares:
   `AutoscalePen` (`:375`), `RestoreInitialScale(int)` (`:382`) and `WidenToArchiveExtent` (`:259`) carry no
@@ -145,9 +170,9 @@ Paths are under `SemiPlot/SemiPlot.UI/` unless they name another project.
 - **`throw exception;` loses the stack trace.** `ArchiveExceptionMapper.Map`
   (`SemiPlot.DataSource.Postgres/ArchiveExceptionMapper.cs:28`) rethrows `OperationCanceledException` that way.
 - **Double UI hop.** `MinimapViewModel.LoadExtentAsync` resumes its `await` on the UI thread its callers run
-  on, then posts `ApplyExtent` to the UI scheduler again (`Minimap/MinimapViewModel.cs:94-95`). Under a
-  `TestScheduler` no `SynchronizationContext` exists, and the `Observable.Start` at `:95` is the one route
-  that brings `ApplyExtent` back, so dropping `:95` is no fix: keep one of the two marshalling routes.
+  on, then posts `ApplyExtent` to the UI scheduler again (`Minimap/MinimapViewModel.cs:144-145`). Under a
+  `TestScheduler` no `SynchronizationContext` exists, and the `Observable.Start` at `:145` is the one route
+  that brings `ApplyExtent` back, so dropping `:145` is no fix: keep one of the two marshalling routes.
 - **Allocation per pointer move.** Every `MoveCursor` (`Chart/TrendChartView.axaml.cs:656`) builds a
   dictionary in `ChartCursorReader.ReadAt` (`Chart/ChartCursorReader.cs:12`).
 - **An idle chart keeps a 400 ms timer.** The debouncer's `Sample` runs on the data scheduler for the chart's
@@ -199,6 +224,11 @@ defect in the shipped tree; each is a scoped follow-up an audit named.
   convention is that later notes supersede earlier ones, so this is noted rather than rewritten — read the
   code, not the plan, for what teardown does.
 
+- **`MarkerSyncTests.ALockWrite_WaitsForTheWriteAheadOfIt_AndReadsAfterItLands` failed once in a full run.**
+  It reported `Expected _store.ReadCount to be 2, found 1` in one of two full unit runs on 2026-11-10 and
+  passed three runs alone; the cause is not confirmed. Rerun it in a loop under load before touching
+  `Markers/MarkerSync`.
+
 ## Tooling and layout
 
 - **xunit.v3 4.0.0 with adapter 4.0.0.** Released 2026-08-14; the repository is on 3.2.2 with
@@ -207,6 +237,11 @@ defect in the shipped tree; each is a scoped follow-up an audit named.
   its own PR after `20260903-harness-debloat.md`: the harness clones independent databases per class, so
   parallel gated classes against one server are fine, and the one thing to reword is the
   `ArchiveDatabaseCollection` comment about classes not racing.
+
+- **The Russian navigation bar has 13 px to spare.** At the default 1280 px window the bar with a sample
+  delta readout measures 1251 px in Inter against the 1264 px it gets
+  (`NavigationBarViewTests`), so a pen mask wider than five digits overflows it, and a further bar control
+  needs a shorter caption somewhere.
 
 - **The message entry's severity dot is centred by a hand-tuned margin.** The 8 px `Ellipse` sits on the
   title's first line through `Margin="0,4,8,0"` (`Messages/MessagePanelView.axaml:66`), which `desktop-ui`

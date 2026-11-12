@@ -55,6 +55,12 @@ public interface IDataProvider
         DateOnly firstDay,
         DateOnly lastDay,
         CancellationToken cancellationToken = default);
+
+    // One span per archive wall-clock day in [firstDay, lastDay] that holds a raw row of a catalogue pen, ascending.
+    Task<Result<IReadOnlyList<ArchiveDaySpan>>> QueryArchiveDaySpansAsync(
+        DateOnly firstDay,
+        DateOnly lastDay,
+        CancellationToken cancellationToken = default);
 }
 ```
 
@@ -65,6 +71,7 @@ public interface IDataProvider
 | `Sample` | `PenId`, `TimestampUtc`, `Value` | Realtime element. Timestamps are UTC by the time they leave the live source. A null `Value` is a break the live source reported: the pen has no data from that moment until its next sample. |
 | `PenHistoryEnvelope` | parallel `Timestamps` / `Min` / `Max` / `Center`, strictly ascending, `NaN` marks a gap | One per pen per history query. |
 | `ArchiveExtent` | `FirstUtc`, `LastUtc`, `IsEmpty` | The span of the configured variables, consumed by the minimap (`TM-4`). `ArchiveExtent.Empty` is the no-span form. |
+| `ArchiveDaySpan` | `Day`, `FirstUtc`, `LastUtc` | One archive wall-clock day that holds a raw row of a catalogue pen, with its earliest and latest raw sample across the catalogue's pens, consumed by the minimap's day calendar and pages (`trend-interaction.md#archive-overview-minimap`). |
 | `AggregationLayer` | `Raw`, `Minute`, `Hour` | Maps one-to-one onto the archive's `l` column. |
 | `ArchiveConnectionState` | `Fault`, `IsConnected` | `Fault` is null while the archive answers and carries the typed error while it does not. No member of `IDataProvider` returns it: `PenCatalogueSync` derives it from its catalogue reads (The connection state the catalogue read reports, below). |
 
@@ -80,8 +87,10 @@ Contract points every implementation keeps:
 - The provider checks no argument of `QueryHistoryAsync`; its callers keep the invariants. The layer
   always comes from `LayerForWidth`, never from a cast. The column count is
   `HistoryColumnTarget.FromDataAreaWidth`'s clamp to 256…2048 times the fetched range's
-  `FetchRange.ColumnFactor`, one per window the range spans, or the minimap's constant 250. The window keeps `fromUtc` before `toUtc`: `TrendNavigationModel` holds it at
-  least one second wide, and the minimap's bounds are `min(t)` and `max(t)` of the archive.
+  `FetchRange.ColumnFactor`, one per window the range spans, or the minimap band's multiple of 250 from 250
+  to 2 500 (`MinimapBandFeed.ColumnsForWidth`). The window keeps `fromUtc` before `toUtc`:
+  `TrendNavigationModel` holds it at least one second wide, and the minimap's page spans at least one whole
+  wall-clock hour.
 - A history read whose `cancellationToken` is cancelled ends in `OperationCanceledException`, never in
   a failed `Result`. The chart treats only that exception, while its own token is cancelled, as its
   own cancellation.
@@ -92,6 +101,13 @@ Contract points every implementation keeps:
   the export window call it, both through `TrendCoordinator.QueryArchiveDaysAsync`
   (`trend-interaction.md#the-time-window-panel`, `overview.md#the-export-window`). A cancelled read ends in
   `OperationCanceledException`, as a history read does.
+- `QueryArchiveDaySpansAsync` takes the same two wall-clock days, inclusive, and answers the days of the
+  range that hold a row, ascending, by the same rule. Each `Day` is a wall-clock day, unconverted;
+  `FirstUtc` and `LastUtc` are the day's earliest and latest `l = 0` sample across the catalogue's pens,
+  converted through `ArchiveTimeConverter.ToUtc` (Time boundary, below). The minimap's
+  `Minimap/ArchivePresenceFeed` is its one caller, through `TrendCoordinator.QueryArchiveDaySpansAsync`,
+  and a newer extent or the window's close cancels its read; a cancelled read ends in
+  `OperationCanceledException`.
 
 The CSV export reads through a third interface, `IArchiveRowReader`
 (`SemiPlot.Core/Data/IArchiveRowReader.cs`), implemented by `PostgresArchiveRowReader` and registered by
@@ -374,6 +390,7 @@ marker store's statements are in their own tables above.
 | Catalogue read | `StoredPens` + `StoredGroups` | The editor's stored pair (The pen catalogue editor, above) runs as the one catalogue read on one connection, each statement under the catalogue command's 5 s bound. `StoredPens` reads `semiplot_tags` alone and orders by id, so a pen in two groups or in none stays one row; `StoredGroups` reads the groups left-joined to the memberships and orders by name, and a group in no pen stays one row with an empty member list. The normaliser sorts the `Pens` projection by name then id (The stored read, above). An empty table is an empty list; a missing one is `ArchiveFault.TableMissing` naming all three relations, `semiplot_tags, semiplot_groups, semiplot_pen_groups` (`CatalogueRelations`). |
 | Archive extent | `ArchiveExtent` | Rooted at `semiplot_tags`, one `min(t)`/`max(t)` subquery pair per configured `id` at `l = 0`. A bare `min(t)` over `trends` cannot use `PRIMARY KEY (id, l, t)` and scans the archive. Nulls map to `ArchiveExtent.Empty`; an empty catalogue over a full archive is also `Empty`, since no pen could draw it. |
 | Archive days | `ArchiveDays` | `generate_series(@firstDay, @lastDay, interval '1 day')` filtered by `EXISTS` over `semiplot_tags` with the extent's lateral probe per `id`: `l = 0 AND t >= day.start AND t < day.start + interval '1 day' ORDER BY t LIMIT 1`, then `ORDER BY 1`. The probe stops at the first row of each pen's day, and the `ORDER BY t` keeps it one index edge rather than a `Bitmap Heap Scan` over the pen's whole day ("Read cost"). Both days bind as `Timestamp` values of kind `Unspecified` at midnight, unconverted. An empty catalogue returns no day; a failure maps with `TagCatalogAndTrendsRelations`, `semiplot_tags, trends`. |
+| Archive day spans | `ArchiveDaySpans` | `generate_series(@firstDay, @lastDay, interval '1 day')` cross-joined with `semiplot_tags` and the extent's lateral pair per pen and day: one `min(t)` and one `max(t)` subquery at `l = 0 AND t >= day.start AND t < day.start + interval '1 day'`, each an index edge, then `GROUP BY day.start`, `HAVING min(bounds.lo) IS NOT NULL` and `ORDER BY 1`. The lateral ends in `OFFSET 0`: without the fence the planner flattens the pair into the aggregate and the `HAVING` runs the first probe again ("Read cost"). Both days bind through `BindArchiveDays`, as for `ArchiveDays`. An empty catalogue returns no day; a failure maps with `TagCatalogAndTrendsRelations`, `semiplot_tags, trends`. |
 | History | `BucketedHistoryWindow` | Two branches at `l = @layer` under one outer `ORDER BY id, t`. The seed branch reads per pen one row strictly before `@from`, bounded to the wider of the window and one day: the bound prunes older partitions from the seed's `Merge Append`, and the seed keeps a steady variable on the chart as a horizontal line. The server reduces the window branch to one row per column: `GROUP BY id, segment, date_bin(@bucket, t, @from)`. `segment` counts the `q = 32` markers strictly before each row, so a marker closes its own bucket and no bucket straddles a break. Each bucket carries `min(v)`, `max(v)`, whether it ends in a gap, and the bucket's newest non-null sample as the column's timestamp and value, which is what the legend reads at the cursor. A `q = 32` marker and a null `v` both end the bucket in a gap. `BucketedRowFold` groups by consecutive identifier, so the single total ordering keeps each pen one run. Every layer takes this statement: a coarse row is a verbatim raw row and the markers are copied into the coarse layers (`scada-archive.md#layers`), so the buckets and the break split hold at `Minute` and `Hour` as at `Raw`. `@bucket` is `(to - from) / targetColumnCount`, never below one millisecond, the column's own resolution, and truncated down to whole microseconds (`PostgresDataProvider.BucketFor`). |
 | Realtime poll | `RealtimePoll` | `id = ANY(@ids) AND l = 0 AND t > @lastSeen ORDER BY t`. The variable list is mandatory or the read scans the day's partition; the bound is strict so the row that set `@lastSeen` is never returned twice. |
 | Realtime baseline | `RealtimeBaseline` | The extent's lateral shape over `DISTINCT unnest(@ids)`: one index probe per variable. `NULL` means no row yet — a state, not a failure. |
@@ -390,9 +407,13 @@ the seed, the slice and the count that no sequential scan reads a row-holding pa
 that an index or bitmap reaches the rows and that one day partition is read.
 `ExplainPlanTests.ArchiveDays_ReadsThroughTheIndex` asserts that the per-pen probe reaches `trends` by an
 index scan, and that no day partition is read by a sequential scan or a `Bitmap Heap Scan`.
+`ExplainPlanTests.ArchiveDaySpans_ReachesEachBoundByAnIndexEdge` asserts that no sequential scan and no bitmap
+reads a row-holding partition, and that at least two index scans reach the rows, as many as the statement has
+bounded subqueries.
 
-Seven statements bind parameters through a binder of their own, each pinned against its statement's
-parameter names: `PostgresDataProvider.BindLocalBucketedWindow` and `BindArchiveDays`, `RealtimePoll.BindPoll`,
+Eight statements bind parameters through a binder of their own, each pinned against its statement's
+parameter names: `PostgresDataProvider.BindLocalBucketedWindow`, `BindArchiveDays`, which binds `firstDay`
+and `lastDay` for both `ArchiveDays` and `ArchiveDaySpans`, `RealtimePoll.BindPoll`,
 `RealtimePoll.BindBaseline`, and `PostgresArchiveRowReader.BindSeed` and `BindPensRange`, which binds
 `ids`, `from` and `to` for both `ExportRowCount` and `ExportSliceRows`. A gap explanation over `messages` is
 designed but not shipped; nothing issues it.
@@ -858,8 +879,9 @@ Measured 2026-10-12 under the server defaults, the margin read at 8 pens in one 
 on `postgres:17.11-alpine`, with the host and toolchain above. The archive holds 8 pens loaded as above.
 A chart case is a visible window of width `w` ending at `E - w`; `HistoryPrefetch.Expand` turns it into
 the fetched range `[E - 3w, E]` at three times the column count, so the fresh tail runs. A hysteresis
-edge is 1.1x the unshrunk ceiling. The minimap reads the whole archive span of one pen at
-`MinimapColumns`, with no `Expand`. A time is the median of 44 timed calls in four rounds of 2 warm-up
+edge is 1.1x the unshrunk ceiling. The Minimap case reads the whole archive span of one pen at 250
+columns, with no `Expand`; the minimap's band reads one page (`trend-interaction.md#archive-overview-minimap`).
+A time is the median of 44 timed calls in four rounds of 2 warm-up
 and 11 timed calls, min to max in brackets. Rows per pen are the window statement's, then `+` the
 fresh-tail statement's, each with its seed row.
 
@@ -909,6 +931,31 @@ The archive days read (`ArchiveDays`) was measured 2026-10-15 on the `SemiPlot/b
   planner takes a `Bitmap Heap Scan` whose `Bitmap Index Scan` reads 33 998 index entries to return one
   row; over three days the read executes in 1.57 ms there and in 0.27 ms with the ordering.
 
+The archive day spans read (`ArchiveDaySpans`) and the archive days read were measured 2026-11-10 on the
+six-month stand (`bench.md#the-six-month-stand`, same machine and image): `converge --schedule shifts --days
+183 --pens 50 --change-seconds 30`, 11 365 900 raw rows on 122 of 184 day partitions, `ANALYZE` on `trends`
+and `semiplot_tags`. Both read 2026-05-11 .. 2026-11-10 as `semiplot` with `jit = off`, three
+`EXPLAIN (ANALYZE)` runs in one psql session.
+
+| Read | Planning | Execution |
+| --- | --- | --- |
+| `ArchiveDaySpans`, 184 days | 44.4, 13.7, 13.3 ms | 176.0, 172.0, 166.7 ms |
+| `ArchiveDays`, 184 days | 4.4, 3.3, 3.2 ms | 16.4, 14.5, 19.5 ms |
+| `ArchiveDaySpans`, the newest day only | 11.1, 10.9, 10.6 ms | 4.9, 4.9, 4.5 ms |
+| `ArchiveDays`, the newest day only | 3.7, 3.4, 3.1 ms | 1.5, 1.5, 1.4 ms |
+
+- The spans read runs both probes for every pen on every day of the range: 184 x 50 x 2 = 18 400 index
+  probes, each on its own day partition (run-time pruning; every partition runs 50 loops per probe). The days
+  read stops at the first pen with a row, so a working day costs it one probe and an empty day 50:
+  122 + 62 x 50 = 3 222 in all.
+- Without the `OFFSET 0` fence the planner flattens the lateral pair into the aggregate, and the `HAVING`
+  evaluates the first probe a third time per pen and day: 270.5 to 276.8 ms. A variant that skips the second
+  probe when the first finds no row executes in 158.9 to 163.0 ms and still misses the threshold below.
+  Both figures come from three runs, each in a fresh psql session.
+- The calendars of the time window panel and the export window keep `ArchiveDays`. The rule was to move
+  them to the spans read at 100 ms of execution or less over six months. The spans read takes about ten
+  times as long as the days read for the days the calendars need, so both statements stay.
+
 ## Time boundary
 
 The archive stores naive local wall-clock time; everything above the provider is UTC. The one column
@@ -920,6 +967,7 @@ SemiPlot reads that is not naive local is `semiplot_markers.t`, a `timestamptz` 
 - The conversion happens only at the provider edge. Display-local rendering is a separate, later
   conversion in `LocalTimeAxis`.
 - Three paths skip `ArchiveTimeConverter`: the export path, the archive days read and the marker store.
+  The archive day spans read is split: its days skip it, its sample times go through it (below).
 - The export path: `PostgresArchiveRowReader` takes no `ArchiveTimeConverter`. It
   binds the range bounds as `Timestamp` values as typed, reads `t` with `GetDateTime`
   (`DateTimeKind.Unspecified`) and returns it in `StoredArchiveRow.Time` unconverted. The export window
@@ -937,6 +985,13 @@ SemiPlot reads that is not naive local is `semiplot_markers.t`, a `timestamptz` 
   panel's typed edges go the other way through `TimeZoneInfo.ConvertTimeToUtc` in the same zone: an
   ambiguous autumn hour takes the standard offset, under the cosmetic rule below, and a time the spring
   change skips is a form problem, never converted (`trend-interaction.md#the-time-window-panel`).
+- The archive day spans read: `QueryArchiveDaySpansAsync` binds its two days through `BindArchiveDays` and
+  returns each `Day` as the days read does, unconverted. Each day's first and last `t` go through
+  `ArchiveTimeConverter.ToUtc`. `Minimap/ArchivePresenceFeed` computes the days it asks for through
+  `ArchiveClock.DayOf` in `archiveZone`, and `Core/Trends/MinimapPage` turns its wall-clock page edges back
+  into UTC in the same zone through `ArchiveClock.ToUtc`; a time the spring change skips takes the zone's
+  base offset. `ArchiveTimeConverter.ToUtc` and `ToArchiveLocal` call the same `Core/Data/ArchiveClock`, so
+  the rule lives in one place (`trend-interaction.md#archive-overview-minimap`).
 - The marker store: the viewer knows the exact instant it places a marker at, so `semiplot_markers.t` is a
   `timestamptz` and `PostgresMarkerStore` binds it as `TimestampTz` with `Kind = Utc` and reads it back as
   UTC, unconverted. A naive local value would be ambiguous in the repeated autumn hour; an instant is not,
@@ -1294,8 +1349,8 @@ hands on, so one bad batch does not end the realtime subscription. `Deliver` gua
 only: the result it reports instead is reported by a handler that guards itself. The catalogue and
 the marker read loops report any failure but a lost connection from the third in a row, the threshold
 that also raises the connection fault (`ArchiveConnectionState.ConsecutiveFailuresBeforeFault`); the
-first two log a warning (`overview.md#a-failed-read`). The minimap's band and extent reads each report
-the first failure of an outage and log every repeat at Warning
+first two log a warning (`overview.md#a-failed-read`). The minimap's band, day-spans and extent reads each
+report the first failure of an outage and log every repeat at Warning
 (`trend-interaction.md#archive-overview-minimap`).
 
 A failure for lack of a connection follows one rule in the three readers that repeat on their own, the
@@ -1333,8 +1388,9 @@ covers each read and its apply but not the wait between reads, and lets the canc
 end the loop unreported, since the marker read honours that token,
 `MainWindow/PenCatalogueApplier.ApplyAsync`, the last through
 `TrendChartViewModel.ReportFailure`, the minimap band's `Minimap/MinimapBandFeed.ApplyRead`, whose guard
-covers the next read's scheduling too, and `TryRequestRead`, which the schedule and the pen-change
-subscription call, `Minimap/MinimapViewModel.TryApplyExtent` for the extent read once more after a
+covers the next read's scheduling too, and `TryRequestRead`, which the schedule and the pen-change and
+page-change subscriptions call, `Minimap/ArchivePresenceFeed.ApplyRead` for the day-spans read,
+`Minimap/MinimapViewModel.TryApplyExtent` for the extent read once more after a
 blank one, `Chart/TimeWindowPanelViewModel.TryApplyDays` for the archive days read, whose failed result
 and throw both go through `TrendChartViewModel.ReportFailure`, and `App.ApplyTheme`, which holds a failure
 for the first window until it exists and has only the log after the failure window closes
@@ -1397,11 +1453,12 @@ through `TrendChartViewModel.ReportFailure`.
 chart superseded, the export's count, seed and slice reads, the time window panel's archive days read,
 which `TimeWindowPanelViewModel.Close()` cancels when the panel closes before it lands, and the export
 window's archive days read, which `CsvExportViewModel.Dispose` cancels when the window closes before it
-lands. Npgsql raises
+lands, and the minimap's archive day spans read, which a newer extent or the window's close cancels.
+Npgsql raises
 `OperationCanceledException` for a cancellation it requested, which the provider and the row reader rethrow
 ahead of the mapper; a `57014` that reaches the mapper is therefore the server's own timeout or an
-administrator's cancel. Of `IDataProvider`, only `QueryHistoryAsync` and `QueryArchiveDaysAsync` take a
-`CancellationToken`, and of `IArchiveRowReader` its three reads; no member of `IPenCatalogueEditor` takes one,
+administrator's cancel. Of `IDataProvider`, only `QueryHistoryAsync`, `QueryArchiveDaysAsync` and
+`QueryArchiveDaySpansAsync` take a `CancellationToken`, and of `IArchiveRowReader` its three reads; no member of `IPenCatalogueEditor` takes one,
 and of `IMarkerStore` only `ReadAsync` does, which the marker loop cancels when its window is disposed.
 
 ## Configuration

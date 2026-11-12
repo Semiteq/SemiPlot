@@ -44,6 +44,11 @@ public sealed class ResourcesTests
 		Resources.DeltaTimeLabel.Should().Be("\u0394t");
 		Resources.DeltaValueLabel.Should().Be("\u0394y");
 		Resources.MarkerLineLabelFormat.Should().Be("{0} \u00b7 {1}");
+		foreach (var set in new[] { ReadSet(CultureInfo.InvariantCulture), ReadSet(RussianCulture) })
+		{
+			set["MinimapDayRowsTip"].Should().StartWith("{0} \u00b7 ");
+			set["MinimapDayNoRowsTip"].Should().StartWith("{0} \u00b7 ");
+		}
 	}
 
 	[Fact]
@@ -107,13 +112,16 @@ public sealed class ResourcesTests
 		}
 	}
 
-	// Four keys are glyphs and share their value by design; every other key has to differ.
+	// Five keys are glyphs and share their value by design; every other key has to differ.
 	[Fact]
 	public void EveryRussianValue_DiffersFromTheNeutralOneOutsideTheGlyphKeys()
 	{
 		var neutral = ReadSet(CultureInfo.InvariantCulture);
 		var russian = ReadSet(RussianCulture);
-		string[] glyphKeys = ["DeltaTimeLabel", "DeltaValueLabel", "NoValuePlaceholder", "MarkerLineLabelFormat"];
+		string[] glyphKeys =
+		[
+			"DeltaTimeLabel", "DeltaValueLabel", "NoValuePlaceholder", "MarkerLineLabelFormat", "MinimapDayMarkersTip"
+		];
 
 		foreach (var entry in russian.Where(entry => !glyphKeys.Contains(entry.Key)))
 		{

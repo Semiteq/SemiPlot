@@ -195,6 +195,29 @@ internal static class ArchiveStatements
 	                                  """;
 
 	/// <summary>
+	/// The earliest and latest raw timestamp of each archive-local day of a range that holds a raw row of a
+	/// configured variable: the extent's lateral pair per pen and day. The <c>OFFSET 0</c> is load-bearing, without
+	/// it the <c>HAVING</c> runs the first probe a second time (docs/architecture/data-integration.md#read-cost).
+	/// </summary>
+	public const string ArchiveDaySpans = """
+	                                      SELECT day.start::date AS day, min(bounds.lo) AS first, max(bounds.hi) AS last
+	                                      FROM generate_series(@firstDay, @lastDay, interval '1 day') AS day(start)
+	                                      CROSS JOIN semiplot_tags tag
+	                                      CROSS JOIN LATERAL (
+	                                          SELECT (SELECT min(t) FROM trends
+	                                                  WHERE id = tag.id AND l = 0
+	                                                    AND t >= day.start AND t < day.start + interval '1 day') AS lo,
+	                                                 (SELECT max(t) FROM trends
+	                                                  WHERE id = tag.id AND l = 0
+	                                                    AND t >= day.start AND t < day.start + interval '1 day') AS hi
+	                                          OFFSET 0
+	                                      ) bounds
+	                                      GROUP BY day.start
+	                                      HAVING min(bounds.lo) IS NOT NULL
+	                                      ORDER BY 1;
+	                                      """;
+
+	/// <summary>
 	/// Every raw sample newer than the last one a subscription saw, issued once per poll tick with a strict
 	/// <c>&gt;</c> so the row that set <c>@lastSeen</c> never returns twice (docs/architecture/scada-archive.md).
 	/// </summary>

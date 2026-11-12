@@ -238,9 +238,9 @@ public sealed class MainWindowViewTests
 		var row = ViewProbe.Named<Border>(window, "MinimapRow");
 		var minimap = ViewProbe.Named<MinimapView>(window, "Minimap");
 		var strip = ViewProbe.Named<Canvas>(minimap, "StripCanvas");
-		var lastLabel = ViewProbe.Named<TextBlock>(minimap, "ExtentLastLabel");
+		var tickRow = ViewProbe.Named<Canvas>(minimap, "PageTickRow");
 
-		var label = MinimapViewStand.AreaIn(row, lastLabel);
+		var label = MinimapViewStand.AreaIn(row, tickRow);
 
 		label.Height.Should().BePositive("the label row holds one line of text");
 		label.Top.Should().BeGreaterThanOrEqualTo(

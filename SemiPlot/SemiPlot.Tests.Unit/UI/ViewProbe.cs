@@ -1,3 +1,5 @@
+using System.Reflection;
+
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -51,6 +53,40 @@ internal static class ViewProbe
 		where T : Control
 	{
 		return root.GetVisualDescendants().OfType<T>();
+	}
+
+	// Avalonia keeps the open ToolTip behind an internal property; no public member reaches it.
+	public static TextBlock OpenTooltipText(Control holder)
+	{
+		var property = typeof(ToolTip).GetField("ToolTipProperty", BindingFlags.NonPublic | BindingFlags.Static)
+			?.GetValue(null) as AvaloniaProperty
+			?? throw new InvalidOperationException("Avalonia no longer exposes ToolTip.ToolTipProperty.");
+
+		ToolTip.SetIsOpen(holder, true);
+		Dispatcher.UIThread.RunJobs();
+
+		var tooltip = holder.GetValue(property) as ToolTip
+			?? throw new InvalidOperationException($"'{holder.Name}' opened no tooltip.");
+
+		return Descendants<TextBlock>(tooltip).Single();
+	}
+
+	/// <summary>Opens the holder's tooltip, finds its text laid out whole, and closes it again.</summary>
+	public static void ShouldShowTheWholeTip(Control holder, string expected, string because)
+	{
+		var text = OpenTooltipText(holder);
+
+		text.Text.Should().Be(expected, because);
+		text.IsEffectivelyVisible.Should().BeTrue(because);
+		text.UseLayoutRounding.Should().BeTrue(because);
+		text.TextTrimming.Should().Be(TextTrimming.None, because);
+		text.MaxLines.Should().Be(0, because);
+		text.TextLayout.TextLines.Should().OnlyContain(line => !line.HasCollapsed, because);
+		text.TextLayout.TextLines.Sum(line => line.Length).Should().BeGreaterThanOrEqualTo(expected.Length, because);
+		text.Bounds.Width.Should().BeGreaterThanOrEqualTo(text.DesiredSize.Width, because);
+
+		ToolTip.SetIsOpen(holder, false);
+		Dispatcher.UIThread.RunJobs();
 	}
 
 	public static DataGridColumnHeader HeaderOf(DataGrid grid, string header)
